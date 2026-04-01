@@ -11,8 +11,8 @@ export default function AuthLayout({
     <div className="relative flex h-screen w-screen overflow-hidden bg-[#6FA8A6]"
       style={{
         backgroundImage: `
-          repeating-linear-gradient(to right, rgba(0,0,0,0.05) 0, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 50px),
-          repeating-linear-gradient(to bottom, rgba(0,0,0,0.05) 0, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 50px)
+          repeating-linear-gradient(to right, rgba(0,0,0,0.02) 0, rgba(0,0,0,0.02) 1px, transparent 1px, transparent 50px),
+          repeating-linear-gradient(to bottom, rgba(0,0,0,0.02) 0, rgba(0,0,0,0.02) 1px, transparent 1px, transparent 50px)
         `,
       }}
     >
