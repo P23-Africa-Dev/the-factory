@@ -19,7 +19,7 @@ export default function AuthLayout({
       {/* Mobile top wave */}
       <div className="md:hidden h-[220px] sm:h-[280px] shrink-0 relative">
         <div className="absolute bottom-[20px] left-6 top-6 sm:top-12 flex items-center justify-center">
-             {/* If we needed a logo or something here on mobile, it would go here */}
+          {/* If we needed a logo or something here on mobile, it would go here */}
         </div>
         <div className="absolute bottom-0 left-0 right-0">
           <svg viewBox="0 0 390 200" fill="none" preserveAspectRatio="none" className="w-full h-[140px] sm:h-[200px] block">
@@ -53,7 +53,7 @@ export default function AuthLayout({
           width={532}
           height={531}
           priority
-          className="w-[320px] h-auto lg:w-[532px] lg:h-[531px] object-contain object-bottom absolute bottom-0 md:-right-[180px] lg:-right-[240px] xl:-right-[260px] z-10 pointer-events-none"
+          className="w-[320px] h-auto lg:w-[532px] lg:h-[531px] object-contain object-bottom absolute bottom-0 md:-right-[180px] lg:-right-[240px] xl:-right-[260px] z-50 pointer-events-none"
         />
       </div>
 
