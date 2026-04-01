@@ -17,9 +17,12 @@ export default function AuthLayout({
       }}
     >
       {/* Mobile top wave */}
-      <div className="md:hidden h-[280px] shrink-0 relative">
+      <div className="md:hidden h-[220px] sm:h-[280px] shrink-0 relative">
+        <div className="absolute bottom-[20px] left-6 top-6 sm:top-12 flex items-center justify-center">
+             {/* If we needed a logo or something here on mobile, it would go here */}
+        </div>
         <div className="absolute bottom-0 left-0 right-0">
-          <svg viewBox="0 0 390 200" fill="none" preserveAspectRatio="none" className="w-full h-[200px] block">
+          <svg viewBox="0 0 390 200" fill="none" preserveAspectRatio="none" className="w-full h-[140px] sm:h-[200px] block">
             <path d="M0 200 L0 15 C80 0 160 140 250 150 C310 156 360 120 390 110 L390 200 Z" fill="white" />
           </svg>
         </div>
@@ -27,7 +30,7 @@ export default function AuthLayout({
 
       {/* Desktop sidebar */}
       <div
-        className="relative max-w-[523px] w-[40%] shrink-0 hidden md:flex flex-col px-[101px] pt-[132px]"
+        className="relative lg:max-w-[523px] md:w-[45%] lg:w-[40%] shrink-0 hidden md:flex flex-col md:px-10 lg:px-[101px] md:pt-[100px] lg:pt-[132px]"
       >
         <Image
           src={Logo}
@@ -36,10 +39,10 @@ export default function AuthLayout({
           height={48}
         />
 
-        <h1 className="text-[40px] font-bold text-white leading-[83px]">
+        <h1 className="text-[32px] lg:text-[40px] font-bold text-white md:leading-[60px] lg:leading-[83px] mt-4 md:mt-0">
           Factory 23
         </h1>
-        <p className="text-white text-[15px] leading-[16px] max-w-[240px]">
+        <p className="text-white text-[14px] lg:text-[15px] leading-[18px] lg:leading-[16px] max-w-[240px]">
           Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
           eiusmod
         </p>
@@ -49,11 +52,13 @@ export default function AuthLayout({
           alt="3D Objects"
           width={532}
           height={531}
-          className="w-[532px] h-[531px] object-contain object-bottom absolute bottom-0 left-[240px] z-10"
+          priority
+          className="w-[320px] h-auto lg:w-[532px] lg:h-[531px] object-contain object-bottom absolute bottom-0 md:-right-[180px] lg:-right-[240px] xl:-right-[260px] z-10 pointer-events-none"
         />
       </div>
 
-      <div className="flex-1 bg-white md:min-w-[595px] md:shadow-[0px_2px_6px_2px_#00000026,0px_1px_2px_0px_#0000004D] md:rounded-l-[72px] flex items-start md:items-center justify-center py-8 md:py-12 px-6 md:px-0 md:pl-[210px] md:overflow-y-auto">
+      {/* Form Container */}
+      <div className="flex-1 bg-white md:shadow-[[-4px_0_24px_rgba(0,0,0,0.05)]] md:rounded-l-[50px] lg:rounded-l-[72px] flex items-start md:items-center justify-center py-6 sm:py-8 md:py-12 px-6 md:px-12 lg:pl-[210px] lg:pr-16 md:overflow-y-auto z-20 relative">
         {children}
       </div>
     </div>
