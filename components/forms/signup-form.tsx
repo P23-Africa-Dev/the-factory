@@ -7,9 +7,9 @@ export default function SignupForm() {
   return (
     <div className="flex flex-col">
       <Input type="text" placeholder="Full Name" className="mb-9" />
-      <Input type="email" placeholder="Email" className="mb-16" />
+      <Input type="email" placeholder="Email" className="md:mb-16 mb-6" />
 
-      <div className="flex flex-col gap-3 mt-2">
+      <div className="flex flex-col md:gap-3 gap-6 mt-2">
         <Button>Create Account</Button>
         <p className="text-center text-xs text-[#A9AAAB]">
           Already have an account?{" "}
@@ -19,7 +19,7 @@ export default function SignupForm() {
         </p>
       </div>
 
-      <div className="flex items-center gap-[10px] mt-16 mb-[19px] h-[38px]">
+      <div className="flex items-center gap-[10px] md:mt-16 mt-[18px] md:mb-[19px] mb-3.5 h-[38px]">
         <div className="flex-1 h-px bg-gray-200" />
         <span className="text-xs text-[#A9AAAB]">Or</span>
         <div className="flex-1 h-px bg-gray-200" />
