@@ -30,7 +30,7 @@ export default function AuthLayout({
         <h1 className="text-[2.5rem] font-bold text-white leading-tight mb-4">
           Factory 23
         </h1>
-        <p className="text-white/70 text-[0.85rem] leading-relaxed max-w-[240px]">
+        <p className="text-white text-[15px] leading-[16px] max-w-[240px]">
           Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
           eiusmod
         </p>
