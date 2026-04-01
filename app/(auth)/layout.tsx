@@ -1,7 +1,52 @@
+import Image from "next/image";
+import Logo from "@/assets/images/logo.png";
+import Icon3d from "@/assets/images/3d-image.png";
+
 export default function AuthLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <div className="min-h-screen flex items-center justify-center">{children}</div>;
+  return (
+    <div className="relative flex h-screen w-screen overflow-hidden bg-[#6FA8A6]"
+      style={{
+        backgroundImage: `
+          repeating-linear-gradient(to right, rgba(0,0,0,0.05) 0, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 50px),
+          repeating-linear-gradient(to bottom, rgba(0,0,0,0.05) 0, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 50px)
+        `,
+      }}
+    >
+      <div
+        className="relative max-w-[523px] w-[40%] shrink-0 flex flex-col px-[101px] pt-[132px]"
+      >
+        <Image
+          src={Logo}
+          alt="Factory 23 Logo"
+          width={48}
+          height={48}
+          className="mb-6"
+        />
+
+        <h1 className="text-[2.5rem] font-bold text-white leading-tight mb-4">
+          Factory 23
+        </h1>
+        <p className="text-white/70 text-[0.85rem] leading-relaxed max-w-[240px]">
+          Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+          eiusmod
+        </p>
+
+        <Image
+          src={Icon3d}
+          alt="3D Objects"
+          width={532}
+          height={531}
+          className="w-[532px] h-[531px] object-contain object-bottom absolute bottom-0 left-[240px] border z-10"
+        />
+      </div>
+
+      <div className="flex-1 bg-white min-w-[595px] shadow-[0px_2px_6px_2px_#00000026,0px_1px_2px_0px_#0000004D] rounded-l-[72px] flex items-center justify-center py-12 pl-[210px] overflow-y-auto">
+        {children}
+      </div>
+    </div>
+  );
 }
