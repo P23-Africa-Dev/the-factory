@@ -53,7 +53,7 @@ export default function AuthLayout({
         />
       </div>
 
-      <div className="flex-1 bg-white shadow-[shadow-[0px_2px_6px_2px_#00000026,0px_1px_2px_0px_#0000004D]] md:rounded-l-[50px] lg:rounded-l-[72px] flex items-start md:items-center justify-center py-6 sm:py-8 md:py-12 px-6 md:px-12 lg:pl-[210px] lg:pr-16 md:overflow-y-auto relative">
+      <div className="flex-1 bg-white shadow-[shadow-[0px_2px_6px_2px_#00000026,0px_1px_2px_0px_#0000004D]] md:rounded-l-[50px] lg:rounded-l-[72px] flex items-start md:items-center justify-center py-6 sm:py-8 md:py-12 px-6 md:px-12 lg:pl-[210px] lg:pr-16 md:overflow-y-auto relative -mt-px md:mt-0">
         {children}
       </div>
     </div>
