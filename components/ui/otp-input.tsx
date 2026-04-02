@@ -44,7 +44,7 @@ export default function OtpInput({
     <div
       role="group"
       aria-label={`Verification code, ${length} digits`}
-      className="relative flex gap-3 justify-center cursor-text"
+      className="relative flex gap-2 md:gap-3 justify-center cursor-text w-full px-[27px] md:px-0"
       onClick={() => inputRef.current?.focus()}
     >
       <input
@@ -73,7 +73,7 @@ export default function OtpInput({
           <div
             key={i}
             className={`
-              w-[65px] h-[60px] rounded-[10px] border flex items-center justify-center
+              w-full md:w-[65px] aspect-square md:aspect-auto md:h-[60px] rounded-[10px] border flex items-center justify-center
               text-lg font-medium text-[#34373C] transition-colors
               ${isActive
                 ? "border-[#6FA8A6] shadow-[0px_0px_0px_1px_#6FA8A6]"

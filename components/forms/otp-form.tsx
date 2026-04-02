@@ -33,7 +33,7 @@ export default function OtpForm() {
         {minutes}:{seconds} mins
       </p>
 
-      <div className="flex flex-col md:gap-3 gap-3 mt-2 w-full">
+      <div className="flex flex-col md:gap-3 gap-3 mt-2 w-full px-[27px] md:px-0">
         <Button>Verify</Button>
         <p className="text-center text-xs text-[#A9AAAB]">
           Already have an account?{" "}
