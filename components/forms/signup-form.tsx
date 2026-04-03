@@ -1,21 +1,26 @@
+"use client";
+
 import GoogleLogo from "@/assets/images/google-logo.png";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function SignupForm() {
+  const router = useRouter();
   return (
     <div className="flex flex-col">
       <Input type="text" placeholder="Full Name" className="mb-9" />
       <Input type="email" placeholder="Email" className="md:mb-16 mb-6" />
 
       <div className="flex flex-col md:gap-3 gap-6 mt-2">
-        <Button>Create Account</Button>
+        <Button onClick={() => router.push("/complete-onboarding")}>Create Account</Button>
         <p className="text-center text-xs text-[#A9AAAB]">
           Already have an account?{" "}
-          <span className="font-bold text-[#34373C] cursor-pointer hover:underline">
+          <Link href="/login" className="font-bold text-[#34373C] cursor-pointer hover:underline">
             Sign in
-          </span>
+          </Link>
         </p>
       </div>
 

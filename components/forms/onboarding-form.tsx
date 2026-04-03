@@ -4,11 +4,13 @@ import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Select from "@/components/ui/select";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function OnboardingForm() {
   const [teamSize, setTeamSize] = useState("");
   const [useCase, setUseCase] = useState("");
   const [role, setRole] = useState("");
+  const router = useRouter();
 
   return (
     <div className="flex flex-col">
@@ -61,7 +63,7 @@ export default function OnboardingForm() {
         />
       </div>
 
-      <Button>Continue</Button>
+      <Button onClick={() => router.push("/dashboard")}>Continue</Button>
     </div>
   );
 }
