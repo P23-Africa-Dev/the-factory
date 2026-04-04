@@ -1,5 +1,5 @@
 import React from 'react';
-import { MyActivitiesChart, TotalLeadsChart } from '@/components/dashboard/dashboard-charts';
+// import { MyActivitiesChart, TotalLeadsChart } from '@/components/dashboard/dashboard-charts';
 
 export default function DashboardPage() {
   const currentDate = new Date('2026-07-29'); // Matching the screenshot
