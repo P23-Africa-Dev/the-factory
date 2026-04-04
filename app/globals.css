@@ -1,1 +1,33 @@
 @import "tailwindcss";
+
+@theme {
+  --color-dash-dark: #0B1215;
+  --color-dash-teal: #4FD1C5;
+  --color-dash-purple: #D15FE2;
+  --color-dash-orange: #FF7E5F;
+  --color-dash-blue: #3182CE;
+  --color-dash-red: #E53E3E;
+  --color-dash-bg: #F4F7F9;
+}
+
+:root {
+  --font-poppins: "Poppins", sans-serif;
+}
+
+@layer utilities {
+  .hero-grid {
+    background-image: 
+      linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  
+  .scalloped-edges {
+    background-color: white;
+    mask-image: 
+      radial-gradient(circle at 0px 50%, transparent 12px, black 13px),
+      radial-gradient(circle at 100% 50%, transparent 12px, black 13px);
+    mask-size: 100% 64px;
+    mask-repeat: repeat-y;
+  }
+}
