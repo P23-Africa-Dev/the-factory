@@ -103,6 +103,7 @@ export function TaskBoard({
 
   return (
     <DndContext
+      id="board-context"
       sensors={sensors}
       collisionDetection={closestCorners}
       onDragStart={handleDragStart}
