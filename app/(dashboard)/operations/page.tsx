@@ -53,13 +53,13 @@ interface CustomLabelProps {
 
 function CustomLabel({ cx = 0, cy = 0, midAngle = 0, innerRadius = 0, outerRadius = 0, value = 0 }: CustomLabelProps) {
   const RADIAN = Math.PI / 180;
-  const radius = outerRadius + 22;
+  const radius = innerRadius + (outerRadius - innerRadius) / 2;
   const x = cx + radius * Math.cos(-midAngle * RADIAN);
   const y = cy + radius * Math.sin(-midAngle * RADIAN);
   return (
     <g>
-      <circle cx={x} cy={y} r={16} fill="white" />
-      <text x={x} y={y} textAnchor="middle" dominantBaseline="central" fill="#0B1215" fontSize={9} fontWeight={800}>
+      <circle cx={x} cy={y} r={22} fill="white" />
+      <text x={x} y={y} textAnchor="middle" dominantBaseline="central" fill="#0B1215" fontSize={12} fontWeight={800}>
         {value}%
       </text>
     </g>
@@ -159,29 +159,29 @@ export default function OperationsPage() {
           </div>
 
           {/* ── Right Sidebar ────────────────────────────── */}
-          <div className="w-full xl:w-72 2xl:w-80 flex flex-col gap-5 shrink-0">
+          <div className="w-full xl:w-[360px] 2xl:w-[420px] flex flex-col gap-6 shrink-0">
 
             {/* Calendar */}
             <OperationsCalendar />
 
             {/* Task Stats */}
-            <div className="bg-[#0B1215] rounded-[28px] p-5 shadow-xl">
-              <h3 className="text-gray-400 font-medium text-xs uppercase tracking-wide mb-4">
+            <div className="bg-[#0A1A22] rounded-[32px] p-7 shadow-xl mt-2 relative overflow-hidden">
+              <h3 className="text-gray-400 font-medium text-[15px] mb-6">
                 Task Stats
               </h3>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-6">
                 {/* Donut Chart */}
-                <div className="w-36 h-36 shrink-0">
+                <div className="w-48 h-48 shrink-0 relative -left-4">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={stats}
                         cx="50%"
                         cy="50%"
-                        innerRadius={38}
-                        outerRadius={58}
-                        paddingAngle={4}
+                        innerRadius={48}
+                        outerRadius={78}
+                        paddingAngle={0}
                         dataKey="value"
                         stroke="none"
                         labelLine={false}
@@ -196,14 +196,14 @@ export default function OperationsPage() {
                 </div>
 
                 {/* Legend */}
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {stats.map((stat, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
+                    <div key={idx} className="flex items-center gap-3">
                       <div
-                        className="w-3 h-3 rounded-full shrink-0"
+                        className="w-4 h-4 rounded-full shrink-0"
                         style={{ backgroundColor: stat.color }}
                       />
-                      <span className="text-xs text-gray-400 font-medium">{stat.name}</span>
+                      <span className="text-[13px] text-gray-400 font-medium">{stat.name}</span>
                     </div>
                   ))}
                 </div>
