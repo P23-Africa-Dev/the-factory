@@ -32,34 +32,28 @@ export function TaskCard({ item }: TaskCardProps) {
       {...attributes}
       {...listeners}
       className={`
-        bg-white rounded-[20px] p-4 shadow-sm border border-gray-100 mb-3
-        cursor-grab active:cursor-grabbing transition-all duration-200 select-none
+        bg-white rounded-[32px] p-6 shadow-[0px_4px_20px_rgba(0,0,0,0.03)] border border-gray-100 flex flex-col gap-6
+        cursor-grab active:cursor-grabbing transition-all duration-200 select-none mb-3
         ${isDragging ? 'opacity-50 scale-105 z-50 shadow-xl' : 'hover:shadow-md hover:-translate-y-0.5'}
       `}
     >
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex-1 min-w-0 pr-2">
-          <h4 className="text-[#0B1215] font-bold text-sm leading-tight">{item.label}</h4>
-          <p className="text-gray-400 text-xs mt-0.5 leading-snug">{item.description}</p>
-        </div>
-        <Maximize2 size={16} className="text-gray-300 rotate-45 shrink-0 mt-0.5" />
+      <div>
+        <h4 className="text-[#0B1215] font-bold text-[17px] tracking-tight">{item.label}</h4>
+        <p className="text-gray-400 text-[13px] mt-1">{item.description}</p>
       </div>
 
-      <div className="space-y-2">
-        <div>
-          <span className="text-[#0B1215] font-bold text-xs block mb-1">Location</span>
-          <div className="flex items-end justify-between gap-2">
-            <span className="text-gray-400 text-[11px] underline decoration-gray-200 underline-offset-2 leading-snug flex-1">
-              {item.location}
-            </span>
-            <button className="bg-[#D15FE2] text-white text-[9px] font-bold px-2.5 py-1.5 rounded-full hover:bg-[#B14FC2] transition-colors uppercase tracking-wider shrink-0 whitespace-nowrap">
+      <div className="space-y-2.5">
+        <span className="text-[#0B1215] font-bold text-[15px] block">Location</span>
+        <div className="flex items-start justify-between gap-3">
+          <span className="text-gray-500 text-[12px] underline decoration-gray-300 underline-offset-4 leading-relaxed flex-1">
+            {item.location}
+          </span>
+          <div className="flex flex-col items-end gap-2.5 shrink-0">
+            <button className="bg-[#D15FE2] text-white text-[10px] font-semibold px-3 py-1.5 rounded-full hover:bg-[#B14FC2] transition-colors">
               View on Map
             </button>
+            <span className="text-gray-400 text-[11px]">{item.time}</span>
           </div>
-        </div>
-
-        <div className="flex justify-end">
-          <span className="text-gray-400 text-[10px] font-medium">{item.time}</span>
         </div>
       </div>
     </div>

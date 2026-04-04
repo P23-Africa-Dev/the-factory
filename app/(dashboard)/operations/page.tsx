@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { Filter, MessageSquarePlus } from 'lucide-react';
+import { SlidersHorizontal, BookmarkPlus } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { TaskBoard } from '@/components/operations/task-board';
 import { OperationsCalendar } from '@/components/operations/operations-calendar';
@@ -114,15 +114,15 @@ export default function OperationsPage() {
             {/* Top Bar */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               {/* Tabs */}
-              <div className="flex gap-1 bg-white rounded-full p-1 shadow-sm border border-gray-100">
+              <div className="flex gap-1 bg-white rounded-full p-1.5 border border-gray-100">
                 {TABS.map((tab) => (
                   <button
                     key={tab.value}
                     onClick={() => setActiveTab(tab.value)}
-                    className={`px-5 py-2 rounded-full text-xs font-bold transition-all ${
+                    className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all ${
                       activeTab === tab.value
                         ? 'bg-[#0B1215] text-white shadow-sm'
-                        : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'
+                        : 'text-gray-400 hover:text-gray-600'
                     }`}
                   >
                     {tab.label}
@@ -131,17 +131,17 @@ export default function OperationsPage() {
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-3">
-                <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-50 transition-colors shadow-sm">
+              <div className="flex items-center gap-4">
+                <button className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 rounded-full text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors">
                   <span>Filter</span>
-                  <Filter size={14} />
+                  <SlidersHorizontal size={14} className="opacity-70" />
                 </button>
                 <button
                   onClick={() => setShowModal(true)}
-                  className="flex items-center gap-2 px-5 py-2 bg-[#0B1215] text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-lg"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-full text-sm font-semibold hover:bg-slate-800 transition-colors shadow-md"
                 >
                   <span>Create New Task</span>
-                  <MessageSquarePlus size={14} />
+                  <BookmarkPlus size={16} />
                 </button>
               </div>
             </div>

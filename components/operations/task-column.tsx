@@ -42,16 +42,16 @@ export function TaskColumn({ id, title, color, items, onAddCard }: TaskColumnPro
   };
 
   return (
-    <div className="flex flex-col min-w-0">
+    <div className="flex flex-col relative h-full">
       {/* Column Header */}
       <div
-        className="rounded-t-[24px] px-5 py-4 flex justify-between items-center"
+        className="rounded-t-[32px] px-6 pt-6 pb-10 flex gap-3 items-center"
         style={{ backgroundColor: color }}
       >
-        <h3 className="text-white font-bold text-[15px]">{title}</h3>
+        <h3 className="text-white font-medium text-lg">{title}</h3>
         <div
-          className="rounded-full w-7 h-7 flex items-center justify-center font-bold text-xs shadow-sm"
-          style={{ backgroundColor: 'rgba(255,255,255,0.9)', color }}
+          className="rounded-full min-w-[28px] h-7 px-2 flex items-center justify-center font-bold text-xs bg-white"
+          style={{ color }}
         >
           {items.length}
         </div>
@@ -60,8 +60,8 @@ export function TaskColumn({ id, title, color, items, onAddCard }: TaskColumnPro
       {/* Droppable Body */}
       <div
         ref={setNodeRef}
-        className={`flex-1 p-3 rounded-b-[24px] -mt-3 z-10 relative transition-colors duration-200 min-h-[300px] ${
-          isOver ? 'bg-gray-100 ring-2 ring-inset ring-gray-200' : 'bg-[#F4F7F9]'
+        className={`flex-1 relative z-10 -mt-6 transition-colors duration-200 min-h-[300px] flex flex-col ${
+          isOver ? 'bg-gray-100/50 rounded-[32px] ring-2 ring-inset ring-gray-200' : ''
         }`}
       >
         <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
