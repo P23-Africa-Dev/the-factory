@@ -1,5 +1,8 @@
 import React from 'react';
-// import { MyActivitiesChart, TotalLeadsChart } from '@/components/dashboard/dashboard-charts';
+import { MyActivitiesChart, TotalLeadsChart } from '@/components/dashboard/dashboard-charts';
+import { TopCustomers } from '@/components/dashboard/dashboard-top-customers';
+import { WeeklyTasks, CRMPipeline, AIWorkspace } from '@/components/dashboard/dashboard-cards';
+
 
 export default function DashboardPage() {
   const currentDate = new Date('2026-07-29'); // Matching the screenshot
@@ -34,19 +37,30 @@ export default function DashboardPage() {
         </div>
 
         {/* Floating Top Section Cards - Overlapping the section transition */}
-        {/* <div className="max-w-7xl mx-auto grid grid-cols-12 gap-8 mt-16 absolute left-12 right-12 bottom-[-100px] z-[30]">
+        <div className="max-w-7xl mx-auto grid grid-cols-12 gap-8 mt-16 absolute left-12 right-12 bottom-[-100px] z-[30]">
             <div className="col-span-12 lg:col-start-5 lg:col-span-3 h-[200px]">
                 <MyActivitiesChart />
             </div>
             <div className="col-span-12 lg:col-span-3 h-[200px]">
                 <TotalLeadsChart />
             </div>
-        </div> */}
+        </div>
       </div>
 
       {/* Main Content Area (White background) */}
       <div className="bg-[#F4F7F9] min-h-screen pt-20 md:pt-40 pb-16 px-6 md:px-12 relative z-10 shadow-inner">
-        
+        <div className="max-w-7xl mx-auto grid grid-cols-12 gap-8">
+          <div className="col-span-12 lg:col-span-4">
+            <TopCustomers />
+          </div>
+          <div className="col-span-12 lg:col-span-4">
+            <WeeklyTasks />
+          </div>
+          <div className="col-span-12 lg:col-span-4 flex flex-col gap-8">
+            <CRMPipeline />
+            <AIWorkspace />
+          </div>
+        </div>
       </div>
     </div>
   );
