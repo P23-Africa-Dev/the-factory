@@ -36,10 +36,10 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
         onClick={onClose}
       />
 
-      <div className="relative w-full max-w-215 bg-white rounded-[40px] shadow-2xl overflow-hidden z-10 flex flex-col" style={{ maxHeight: '90vh' }}>
+      <div className="relative w-full max-w-[94%] md:max-w-215 bg-white rounded-[28px] md:rounded-[40px] shadow-2xl overflow-hidden z-10 flex flex-col" style={{ maxHeight: '92vh' }}>
 
         {/* ── Map Section ──────────────────────────────────────────────── */}
-        <div className="relative h-55 w-full bg-[#eef0f3] overflow-hidden shrink-0">
+        <div className="relative h-44 md:h-55 w-full bg-[#eef0f3] overflow-hidden shrink-0">
 
           {/* Grid lines */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-30">
@@ -58,68 +58,68 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
           </div>
 
           {/* Route line */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none">
+          <svg className="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none">
             <path
-              d="M340 160 C380 165 430 158 470 135 C490 122 500 135 590 135 C630 135 650 140 670 150"
+              d="M100 160 C200 165 300 158 400 135 C450 122 500 135 600 135 C700 135 800 140 900 150"
               stroke="#3B82F6"
               strokeWidth="10"
               strokeLinecap="round"
               fill="none"
+              vectorEffect="non-scaling-stroke"
             />
           </svg>
 
           {/* Origin pin */}
-          <div className="absolute" style={{ left: 328, top: 120 }}>
-            <MapPin size={22} className="text-red-500 fill-red-500 drop-shadow-md" />
+          <div className="absolute left-[10%] top-[40%]">
+            <MapPin size={20} className="text-red-500 fill-red-500 drop-shadow-md" />
           </div>
 
           {/* Agent marker */}
-          <div className="absolute flex flex-col items-center" style={{ left: 318, top: 142 }}>
-            <div className="w-9 h-9 rounded-full border-[3px] border-white shadow-lg overflow-hidden">
+          <div className="absolute flex flex-col items-center left-[15%] top-[55%]">
+            <div className="w-8 h-8 rounded-full border-[3px] border-white shadow-lg overflow-hidden">
               <img
                 src={task.avatar || 'https://i.pravatar.cc/150?u=lane'}
                 className="w-full h-full object-cover"
                 alt="Agent"
               />
             </div>
-            <div className="bg-[#B7E4C7] px-2.5 py-0.5 rounded-full mt-1 shadow-sm text-center whitespace-nowrap">
-              <p className="text-[9px] font-bold text-[#2D6A4F]">Lane Wade</p>
-              <p className="text-[8px] text-[#2D6A4F]/70">Active at Kemsi Street</p>
+            <div className="bg-[#B7E4C7] px-2 py-0.5 rounded-full mt-1 shadow-sm text-center whitespace-nowrap hidden sm:block">
+              <p className="text-[8px] font-bold text-[#2D6A4F]">Lane Wade</p>
             </div>
           </div>
 
           {/* Mid waypoint */}
-          <div className="absolute" style={{ left: 468, top: 120 }}>
-            <div className="w-7 h-7 bg-[#3B82F6] rounded-full flex items-center justify-center shadow-lg border-2 border-white">
-              <Share2 size={12} className="text-white fill-white" />
+          <div className="absolute left-[50%] top-[45%]">
+            <div className="w-6 h-6 bg-[#3B82F6] rounded-full flex items-center justify-center shadow-lg border-2 border-white">
+              <Share2 size={10} className="text-white fill-white" />
             </div>
           </div>
 
           {/* Destination marker */}
-          <div className="absolute" style={{ left: 658, top: 132 }}>
-            <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center shadow-lg border-4 border-[#C77DFF]/40">
-              <div className="w-2.5 h-2.5 bg-[#9D4EDD] rounded-full" />
+          <div className="absolute left-[85%] top-[55%]">
+            <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-lg border-4 border-[#C77DFF]/40">
+              <div className="w-2 h-2 bg-[#9D4EDD] rounded-full" />
             </div>
           </div>
 
-          {/* Business card overlay — top right */}
-          <div className="absolute top-4 right-16 flex rounded-[14px] overflow-hidden shadow-xl bg-white" style={{ width: 200 }}>
-            <div className="w-16 h-16 shrink-0 bg-gray-200 overflow-hidden">
+          {/* Business card overlay — hidden on small mobile */}
+          <div className="absolute top-4 right-16 hidden sm:flex rounded-[14px] overflow-hidden shadow-xl bg-white w-[180px]">
+            <div className="w-12 h-12 shrink-0 bg-gray-200 overflow-hidden">
               <img
                 src="https://images.unsplash.com/photo-1486325212027-8081e485255e?w=200&q=80"
                 className="w-full h-full object-cover"
                 alt="Location"
               />
             </div>
-            <div className="flex-1 px-2.5 py-2 min-w-0">
-              <p className="text-[11px] font-bold text-dash-dark truncate">Company Name</p>
-              <p className="text-[10px] text-gray-400 leading-snug mt-0.5">London SE1 2UF, UK</p>
+            <div className="flex-1 px-2 py-1.5 min-w-0">
+              <p className="text-[10px] font-bold text-dash-dark truncate">Company Name</p>
+              <p className="text-[9px] text-gray-400 leading-none mt-0.5">London SE1 2UF, UK</p>
             </div>
           </div>
 
-          {/* Status badge — overlaps business card top-right */}
+          {/* Status badge */}
           <div
-            className="absolute top-3 right-3 px-4 py-1.5 rounded-xl text-[12px] font-bold shadow-md z-20"
+            className="absolute top-3 right-3 px-3 py-1.5 rounded-xl text-[11px] font-bold shadow-md z-20"
             style={{ backgroundColor: currentStatus.bg, color: currentStatus.text }}
           >
             {currentStatus.label}
@@ -135,13 +135,13 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
         </div>
 
         {/* ── Content Section ──────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto px-10 py-8">
-          <div className="grid grid-cols-2 gap-12">
+        <div className="flex-1 overflow-y-auto px-6 py-6 md:px-10 md:py-8 no-scrollbar">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-12">
 
             {/* Left column */}
-            <div className="space-y-7">
+            <div className="space-y-6 md:space-y-7">
               <section>
-                <h3 className="text-[15px] font-bold text-dash-dark mb-1.5">Task Title</h3>
+                <h3 className="text-[14px] md:text-[15px] font-bold text-dash-dark mb-1.5">Task Title</h3>
                 <p className="text-[14px] text-gray-500 leading-snug">
                   {task.description || 'Cover the entirety of Ikeja, For our product publicity'}
                 </p>
