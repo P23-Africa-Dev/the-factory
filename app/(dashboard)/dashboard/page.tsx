@@ -9,6 +9,7 @@ import {
   CRMPipeline,
   AIWorkspace,
 } from "@/components/dashboard/dashboard-cards";
+import { DashboardMap } from "@/components/dashboard/dashboard-map";
 
 export default function DashboardPage() {
   const currentDate = new Date("2026-07-29"); // Matching the screenshot
@@ -56,15 +57,12 @@ export default function DashboardPage() {
       </div>
 
       {/* Main Content Area (White background) */}
-      <div className="bg-dash-bg min-h-screen pt-4.25 md:pt-4.25 pb-16 px-6 md:px-12 relative z-10 shadow-inner">
-        <div className="max-w-7xl mx-auto gap-8 flex">
-          <div className="">
-            <TopCustomers />
-          </div>
-          <div className="col-span-12 lg:col-span-4">
-            <WeeklyTasks />
-          </div>
-          <div className="col-span-12 lg:col-span-4 flex flex-col gap-8">
+      <div className="bg-dash-bg min-h-screen pt-4.25 md:pt-4.25 pb-16 relative z-10 shadow-inner">
+        <div className="max-w-340 border mx-auto gap-4.25 flex">
+          <TopCustomers />
+          <WeeklyTasks />
+          <DashboardMap />
+          <div className="max-w-34 mt-23.75">
             <CRMPipeline />
             <AIWorkspace />
           </div>

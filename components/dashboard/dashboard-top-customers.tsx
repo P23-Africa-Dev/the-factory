@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, MoreHorizontal } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
+import { FilterSelect } from "@/components/ui/filter-select";
 import Image from "next/image";
 import {
   RadialBarChart,
@@ -22,34 +23,37 @@ const datasets = {
   Yearly: chartData.map((d) => ({ ...d, value: d.value - 10 })),
 };
 
+const filterOptions = Object.keys(datasets) as FilterOption[];
+
+const customers = [
+  { name: "Lane Wade", category: "E-commerce", avatarBg: "#EAEAEA" },
+  { name: "Lane Wade", category: "E-commerce", avatarBg: "#B29D8B" },
+];
+
 type FilterOption = keyof typeof datasets;
 
 export function TopCustomers() {
   const [filter, setFilter] = useState<FilterOption>("Weekly");
   const data = datasets[filter];
+  const maxValue = Math.max(...data.map((d) => d.value));
 
   return (
-    <div className="bg-[#09232D] rounded-[20px] p-6 shadow-sm flex flex-col h-min">
+    <div className="bg-[#09232D] rounded-[20px] p-6 flex flex-col h-min shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
       <div className="flex justify-between items-center mb-2">
         <h3 className="text-white font-medium text-[14px]">Top Leads</h3>
-        <div className="relative">
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as FilterOption)}
-            className="appearance-none outline-none text-[9px] leading-3.5 font-medium bg-[#5E5D5D] text-white px-1.5 pr-5.25 py-px flex items-center rounded-md transition-colors hover:bg-[#3F4254] cursor-pointer"
-          >
-            <option value="Weekly">Weekly</option>
-            <option value="Monthly">Monthly</option>
-            <option value="Yearly">Yearly</option>
-          </select>
-          <ChevronDown className="w-3 h-3 text-white absolute right-[8px] top-1/2 -translate-y-1/2 pointer-events-none" />
-        </div>
+        <FilterSelect
+          value={filter}
+          onChange={setFilter}
+          options={filterOptions}
+        />
       </div>
 
       {/* Radial Bar Chart */}
       <div className="relative h-66 w-full mx-auto">
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <span className="text-[24px] font-bold text-white mt-1">99%</span>
+          <span className="text-[24px] font-bold text-white mt-1">
+            {maxValue}%
+          </span>
         </div>
         <ResponsiveContainer width="100%" height="100%">
           <RadialBarChart
@@ -78,19 +82,15 @@ export function TopCustomers() {
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center justify-center gap-4 mb-8">
-        {[
-          { color: "#7BB6B8", label: "Customer 1" },
-          { color: "#146AFA", label: "Customer 2" },
-          { color: "#FD6046", label: "Customer 3" },
-        ].map((item) => (
-          <div key={item.label} className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-3 mb-6.25">
+        {chartData.map((item) => (
+          <div key={item.name} className="flex items-center gap-2.5">
             <div
               className="w-[14px] h-[14px] rounded-full"
-              style={{ background: item.color }}
+              style={{ background: item.fill }}
             />
             <span className="text-[10px] font-medium text-white">
-              {item.label}
+              {item.name}
             </span>
           </div>
         ))}
@@ -98,53 +98,38 @@ export function TopCustomers() {
 
       {/* Customer List */}
       <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between p-2 rounded-[15px] transition-colors hover:bg-[#EAEAEA] group/item cursor-pointer">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#EAEAEA] overflow-hidden flex items-center justify-center">
-              <Image
-                src="/placeholder.svg"
-                width={40}
-                height={40}
-                className="w-full h-full object-cover"
-                alt="Avatar"
-              />
+        {customers.map((customer, index) => (
+          <div
+            key={index}
+            className="flex items-center justify-between p-2 rounded-[15px] transition-colors hover:bg-[#EAEAEA] group/item cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center"
+                style={{ backgroundColor: customer.avatarBg }}
+              >
+                <Image
+                  src="/placeholder.svg"
+                  width={40}
+                  height={40}
+                  className="w-full h-full object-cover"
+                  alt={customer.name}
+                />
+              </div>
+              <div>
+                <p className="text-[14px] font-bold text-white leading-tight group-hover/item:text-[#041114]">
+                  {customer.name}
+                </p>
+                <p className="text-[10px] font-medium text-white group-hover/item:text-[#7E7E7E]">
+                  {customer.category}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-[14px] font-bold text-white leading-tight group-hover/item:text-[#041114]">
-                Lane Wade
-              </p>
-              <p className="text-[10px] font-medium text-white group-hover/item:text-[#7E7E7E]">E-commerce</p>
-            </div>
+            <button className="text-white group-hover/item:text-[#34373C] p-1">
+              <MoreHorizontal className="w-5 h-5" />
+            </button>
           </div>
-          <button className="text-white group-hover/item:text-[#34373C] p-1">
-            <MoreHorizontal className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between p-2 rounded-[15px] transition-colors hover:bg-[#EAEAEA] group/item cursor-pointer">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#B29D8B] overflow-hidden flex items-center justify-center">
-              <Image
-                src="/placeholder.svg"
-                width={40}
-                height={40}
-                className="w-full h-full object-cover"
-                alt="Avatar"
-              />
-            </div>
-            <div>
-              <p className="text-[14px] font-bold text-white leading-tight group-hover/item:text-[#041114]">
-                Lane Wade
-              </p>
-              <p className="text-[10px] font-medium text-white group-hover/item:text-[#7E7E7E]">
-                E-commerce
-              </p>
-            </div>
-          </div>
-          <button className="text-white group-hover/item:text-[#34373C] p-1">
-            <MoreHorizontal className="w-5 h-5" />
-          </button>
-        </div>
+        ))}
       </div>
     </div>
   );

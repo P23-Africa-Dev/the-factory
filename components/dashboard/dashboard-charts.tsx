@@ -13,6 +13,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { TinyButton } from "../ui/tiny-button";
 
 const activitiesData = [
   { name: "Mon", value: 30 },
@@ -135,9 +136,7 @@ export function TotalLeadsChart() {
             </span>
           </div>
         </div>
-        <button className="bg-[#5E5D5D] rounded-[3px] py-px px-1.5 text-[9px] font-medium text-white">
-          View
-        </button>
+        <TinyButton>View</TinyButton>
       </div>
 
       <div className="w-full h-10.25 mt-auto">
