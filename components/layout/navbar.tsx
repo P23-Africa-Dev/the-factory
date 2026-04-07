@@ -39,7 +39,7 @@ export function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
-    <nav className="h-20 flex items-center justify-between px-6 lg:px-10 bg-[#09232D] text-white sticky top-0 z-50 hero-grid">
+    <nav className="h-20 flex items-center justify-between px-6 lg:px-10 bg-[#09232D] text-white sticky top-0 z-50">
       {/* Logo */}
       <div className="flex items-center">
         <Link href="/dashboard" className="flex items-center">

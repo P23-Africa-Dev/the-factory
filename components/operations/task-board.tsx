@@ -22,6 +22,7 @@ interface TaskBoardProps {
   containers: DndContainer[];
   activeTab: TaskCategory;
   onAddCard: (containerId: string, item: DndItem) => void;
+  onTaskClick?: (item: DndItem, containerId: string) => void;
   findContainer: (id: string) => DndContainer | undefined;
   moveItem: (activeId: string, overId: string, containerId: string) => void;
   moveToContainer: (activeId: string, overContainerId: string) => void;
@@ -41,6 +42,7 @@ export function TaskBoard({
   moveItem,
   moveToContainer,
   moveBetweenContainers,
+  onTaskClick,
 }: TaskBoardProps) {
   const [activeItem, setActiveItem] = useState<DndItem | null>(null);
 
@@ -119,6 +121,7 @@ export function TaskBoard({
             color={container.color}
             items={container.items}
             onAddCard={(item) => onAddCard(container.id, item)}
+            onTaskClick={(item) => onTaskClick?.(item, container.id)}
           />
         ))}
       </div>

@@ -2,6 +2,7 @@ import React from 'react';
 import { MyActivitiesChart, TotalLeadsChart } from '@/components/dashboard/dashboard-charts';
 import { TopCustomers } from '@/components/dashboard/dashboard-top-customers';
 import { WeeklyTasks, CRMPipeline, AIWorkspace } from '@/components/dashboard/dashboard-cards';
+import { OperationsCalendar } from '@/components/operations/operations-calendar';
 
 
 export default function DashboardPage() {
@@ -53,8 +54,8 @@ export default function DashboardPage() {
           <div className="col-span-12 lg:col-span-4">
             <TopCustomers />
           </div>
-          <div className="col-span-12 lg:col-span-4">
-            <WeeklyTasks />
+          <div className="col-span-12 lg:col-span-4 bg-white rounded-[32px] p-8 shadow-2xl relative border border-dash-dark/5">
+            <OperationsCalendar />
           </div>
           <div className="col-span-12 lg:col-span-4 flex flex-col gap-8">
             <CRMPipeline />
