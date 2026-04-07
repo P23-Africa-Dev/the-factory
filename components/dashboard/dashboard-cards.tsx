@@ -1,18 +1,13 @@
 "use client";
 
+import AIIcon from "@/assets/images/ai-icon.png";
 import happyIcon from "@/assets/images/happy.png";
+import SearchListIcon from "@/assets/images/search-list-icon.png";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { cn } from "@/lib/utils/sample";
-import {
-  ArrowUpRight,
-  ChevronRight,
-  MoreHorizontal,
-  Search,
-} from "lucide-react";
+import { ArrowUpRight, ChevronRight, MoreHorizontal } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
-import AIIcon from "@/assets/images/ai-icon.png";
-import SearchListIcon from "@/assets/images/search-list-icon.png";
 
 export function TopCustomers() {
   const customers = [
@@ -283,7 +278,6 @@ export function CRMPipeline() {
     <div className="py-3.75 px-2.75 pb-10 bg-[#D056DC] h-fit rounded-[20px] text-white relative overflow-hidden mb-2.5">
       <div className="z-20 relative">
         <div className="w-12.75 h-12.75 rounded-[50px] bg-[#D056DC] backdrop-blur-xl flex items-center justify-center mb-2.25 drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)]">
-          {/* <Search size={28} className="text-white drop-shadow-md" /> */}
           <Image
             src={SearchListIcon}
             alt="Search List Icon"
@@ -311,8 +305,6 @@ export function AIWorkspace() {
     <div className="py-3.75 px-2.75 bg-[#7BB6B8] h-fit rounded-[20px] text-white relative overflow-hidden">
       <div className="z-20 relative text-[#09232D]">
         <div className="w-12.75 h-12.75 rounded-[50px] bg-[#09232D] backdrop-blur-xl flex items-center justify-center mb-2.25 drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)]">
-          {/* <Search size={28} className="text-white drop-shadow-md" /> */}
-
           <Image
             src={AIIcon}
             alt="AI Icon"
