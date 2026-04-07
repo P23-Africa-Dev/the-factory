@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 @theme {
-  --color-dash-dark: #0B1215;
-  --color-dash-teal: #4FD1C5;
-  --color-dash-purple: #D15FE2;
-  --color-dash-orange: #FF7E5F;
-  --color-dash-blue: #3182CE;
-  --color-dash-red: #E53E3E;
-  --color-dash-bg: #F4F7F9;
+  --color-dash-dark: #0b1215;
+  --color-dash-teal: #4fd1c5;
+  --color-dash-purple: #d15fe2;
+  --color-dash-orange: #ff7e5f;
+  --color-dash-blue: #3182ce;
+  --color-dash-red: #e53e3e;
+  --color-dash-bg: #f4f7f9;
 }
 
 :root {
@@ -16,18 +16,61 @@
 
 @layer utilities {
   .hero-grid {
-    background-image: 
+    background-image:
       linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
       linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
     background-size: 40px 40px;
   }
-  
-  .scalloped-edges {
-    background-color: white;
-    mask-image: 
-      radial-gradient(circle at 0px 50%, transparent 12px, black 13px),
-      radial-gradient(circle at 100% 50%, transparent 12px, black 13px);
-    mask-size: 100% 64px;
-    mask-repeat: repeat-y;
+
+  .ticket-cutout {
+    --notch-size: 16px;
+    mask-image:
+      radial-gradient(
+        circle var(--notch-size) at 0% 12%,
+        transparent 98%,
+        black 100%
+      ),
+      radial-gradient(
+        circle var(--notch-size) at 0% 52%,
+        transparent 98%,
+        black 100%
+      ),
+      radial-gradient(
+        circle var(--notch-size) at 100% 12%,
+        transparent 98%,
+        black 100%
+      ),
+      radial-gradient(
+        circle var(--notch-size) at 100% 52%,
+        transparent 98%,
+        black 100%
+      );
+    mask-size: 100% 100%;
+    mask-repeat: no-repeat;
+    mask-composite: intersect;
+    -webkit-mask-image:
+      radial-gradient(
+        circle var(--notch-size) at 0% 12%,
+        transparent 98%,
+        black 100%
+      ),
+      radial-gradient(
+        circle var(--notch-size) at 0% 52%,
+        transparent 98%,
+        black 100%
+      ),
+      radial-gradient(
+        circle var(--notch-size) at 100% 12%,
+        transparent 98%,
+        black 100%
+      ),
+      radial-gradient(
+        circle var(--notch-size) at 100% 52%,
+        transparent 98%,
+        black 100%
+      );
+    -webkit-mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-composite: source-in;
   }
 }
