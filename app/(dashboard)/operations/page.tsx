@@ -6,6 +6,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { TaskBoard } from '@/components/operations/task-board';
 import { OperationsCalendar } from '@/components/operations/operations-calendar';
 import { CreateTaskModal } from '@/components/operations/create-task-modal';
+import { TaskDetailModal } from '@/components/operations/task-detail-modal';
 import { useDragAndDrop } from '@/lib/hooks/use-tasks-dnd';
 import type { DndContainer, DndItem, TaskCategory } from '@/types/operations';
 
@@ -16,7 +17,18 @@ const INITIAL_DATA: DndContainer[] = [
     title: 'Pending Task',
     color: '#BD7A22',
     items: [
-      { id: 'task-1', label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV', location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', time: '12 hours ago', category: 'agent' },
+      { 
+        id: 'task-1', 
+        label: 'Francis Nasyomba', 
+        description: 'Cover the entirety of Ikeja CV', 
+        location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', 
+        time: '12 hours ago', 
+        category: 'agent',
+        dueDate: 'Tomorrow (Friday, 3rd April. 2026)',
+        assignedBy: 'Ridwan Thomson (Supervisor)',
+        addedDescription: 'Visit the Ikeja Computer village, and promote (product name) to the target audience there.\n\nSpeak with the business owner and note:\n- Contact Details\n- Prospect brief\n- Any other usable details.',
+        statusLabel: 'Pending'
+      },
       { id: 'task-4', label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV', location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', time: '12 hours ago', category: 'attendance' },
       { id: 'task-7', label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV', location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', time: '12 hours ago', category: 'agent' },
     ],
@@ -26,7 +38,18 @@ const INITIAL_DATA: DndContainer[] = [
     title: 'Task In-Progress',
     color: '#094B5C',
     items: [
-      { id: 'task-2', label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV', location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', time: '12 hours ago', category: 'attendance' },
+      { 
+        id: 'task-2', 
+        label: 'Francis Nasyomba', 
+        description: 'Cover the entirety of Ikeja CV', 
+        location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', 
+        time: '12 hours ago', 
+        category: 'attendance',
+        dueDate: 'Tomorrow (Friday, 3rd April. 2026)',
+        assignedBy: 'Ridwan Thomson (Supervisor)',
+        addedDescription: 'Visit the Ikeja Computer village, and promote (product name) to the target audience there.\n\nSpeak with the business owner and note:\n- Contact Details\n- Prospect brief\n- Any other usable details.',
+        statusLabel: 'In Progress'
+      },
       { id: 'task-5', label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV', location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', time: '12 hours ago', category: 'agent' },
       { id: 'task-8', label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV', location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', time: '12 hours ago', category: 'attendance' },
     ],
@@ -80,6 +103,7 @@ export default function OperationsPage() {
 
   const [activeTab, setActiveTab] = useState<TaskCategory>('all');
   const [showModal, setShowModal] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<{item: DndItem, containerId: string} | null>(null);
 
   // Dynamic stats
   const stats = useMemo(() => {
@@ -155,6 +179,7 @@ export default function OperationsPage() {
               moveItem={moveItem}
               moveToContainer={moveToContainer}
               moveBetweenContainers={moveBetweenContainers}
+              onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
             />
           </div>
 
@@ -218,6 +243,14 @@ export default function OperationsPage() {
         isOpen={showModal}
         onClose={() => setShowModal(false)}
         onCreateTask={handleCreateTask}
+      />
+
+      {/* Task Detail Modal */}
+      <TaskDetailModal
+        isOpen={!!selectedTask}
+        onClose={() => setSelectedTask(null)}
+        task={selectedTask?.item ?? null}
+        status={selectedTask?.containerId ?? ''}
       />
     </div>
   );

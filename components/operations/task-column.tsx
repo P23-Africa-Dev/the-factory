@@ -13,9 +13,10 @@ interface TaskColumnProps {
   color: string;
   items: DndItem[];
   onAddCard: (item: DndItem) => void;
+  onTaskClick?: (item: DndItem) => void;
 }
 
-export function TaskColumn({ id, title, color, items, onAddCard }: TaskColumnProps) {
+export function TaskColumn({ id, title, color, items, onAddCard, onTaskClick }: TaskColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ label: '', description: '', location: '' });
@@ -67,7 +68,7 @@ export function TaskColumn({ id, title, color, items, onAddCard }: TaskColumnPro
         <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
           <div className="pt-2">
             {items.map((item) => (
-              <TaskCard key={item.id} item={item} />
+              <TaskCard key={item.id} item={item} onClick={onTaskClick} />
             ))}
           </div>
         </SortableContext>
