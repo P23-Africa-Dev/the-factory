@@ -58,7 +58,7 @@ export default function DashboardPage() {
 
       {/* Main Content Area (White background) */}
       <div className="bg-dash-bg min-h-screen pt-4.25 md:pt-4.25 pb-16 relative z-10 shadow-inner">
-        <div className="max-w-340 border mx-auto gap-4.25 flex">
+        <div className="max-w-340 mx-auto gap-4.25 flex">
           <TopCustomers />
           <WeeklyTasks />
           <DashboardMap />
