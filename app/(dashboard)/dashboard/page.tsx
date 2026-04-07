@@ -12,7 +12,7 @@ import {
 import { DashboardMap } from "@/components/dashboard/dashboard-map";
 
 export default function DashboardPage() {
-  const currentDate = new Date("2026-07-29"); // Matching the screenshot
+  const currentDate = new Date("2026-07-29");
   const day = currentDate.getDate();
   const weekDay = currentDate.toLocaleDateString("en-US", { weekday: "long" });
   const month = currentDate.toLocaleDateString("en-US", { month: "long" });

@@ -8,9 +8,10 @@ import { Maximize2 } from 'lucide-react';
 
 interface TaskCardProps {
   item: DndItem;
+  onClick?: (item: DndItem) => void;
 }
 
-export function TaskCard({ item }: TaskCardProps) {
+export function TaskCard({ item, onClick }: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -33,9 +34,10 @@ export function TaskCard({ item }: TaskCardProps) {
       {...listeners}
       className={`
         bg-white rounded-[32px] p-6 shadow-[0px_4px_20px_rgba(0,0,0,0.03)] border border-gray-100 flex flex-col gap-6
-        cursor-grab active:cursor-grabbing transition-all duration-200 select-none mb-3
-        ${isDragging ? 'opacity-50 scale-105 z-50 shadow-xl' : 'hover:shadow-md hover:-translate-y-0.5'}
+        cursor-pointer transition-all duration-200 select-none mb-3
+        ${isDragging ? 'opacity-50 scale-105 z-50 shadow-xl cursor-grabbing' : 'hover:shadow-md hover:-translate-y-0.5'}
       `}
+      onClick={() => onClick?.(item)}
     >
       <div>
         <h4 className="text-[#0B1215] font-bold text-[17px] tracking-tight">{item.label}</h4>
@@ -49,7 +51,10 @@ export function TaskCard({ item }: TaskCardProps) {
             {item.location}
           </span>
           <div className="flex flex-col items-end gap-2.5 shrink-0">
-            <button className="bg-[#D15FE2] text-white text-[10px] font-semibold px-3 py-1.5 rounded-full hover:bg-[#B14FC2] transition-colors">
+            <button 
+              onClick={(e) => { e.stopPropagation(); /* Map action */ }}
+              className="bg-[#D15FE2] text-white text-[10px] font-semibold px-3 py-1.5 rounded-full hover:bg-[#B14FC2] transition-colors"
+            >
               View on Map
             </button>
             <span className="text-gray-400 text-[11px]">{item.time}</span>

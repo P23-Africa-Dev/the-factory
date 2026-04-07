@@ -9,6 +9,11 @@ export interface DndItem {
   avatar?: string;
   icon?: string;
   category?: TaskCategory;
+  dueDate?: string;
+  assignedBy?: string;
+  addedDescription?: string;
+  statusLabel?: string;
+  routeData?: any;
 }
 
 export interface DndContainer {

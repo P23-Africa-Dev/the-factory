@@ -6,8 +6,12 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { TaskBoard } from '@/components/operations/task-board';
 import { OperationsCalendar } from '@/components/operations/operations-calendar';
 import { CreateTaskModal } from '@/components/operations/create-task-modal';
+import { TaskDetailModal } from '@/components/operations/task-detail-modal';
+import { AgentView } from '@/components/operations/agent-view';
+import { AttendanceView } from '@/components/operations/attendance-view';
 import { useDragAndDrop } from '@/lib/hooks/use-tasks-dnd';
 import type { DndContainer, DndItem, TaskCategory } from '@/types/operations';
+import { Search } from 'lucide-react';
 
 // ─── Initial Data ────────────────────────────────────────────────────────────
 const INITIAL_DATA: DndContainer[] = [
@@ -16,7 +20,18 @@ const INITIAL_DATA: DndContainer[] = [
     title: 'Pending Task',
     color: '#BD7A22',
     items: [
-      { id: 'task-1', label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV', location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', time: '12 hours ago', category: 'agent' },
+      { 
+        id: 'task-1', 
+        label: 'Francis Nasyomba', 
+        description: 'Cover the entirety of Ikeja CV', 
+        location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', 
+        time: '12 hours ago', 
+        category: 'agent',
+        dueDate: 'Tomorrow (Friday, 3rd April. 2026)',
+        assignedBy: 'Ridwan Thomson (Supervisor)',
+        addedDescription: 'Visit the Ikeja Computer village, and promote (product name) to the target audience there.\n\nSpeak with the business owner and note:\n- Contact Details\n- Prospect brief\n- Any other usable details.',
+        statusLabel: 'Pending'
+      },
       { id: 'task-4', label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV', location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', time: '12 hours ago', category: 'attendance' },
       { id: 'task-7', label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV', location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', time: '12 hours ago', category: 'agent' },
     ],
@@ -26,7 +41,18 @@ const INITIAL_DATA: DndContainer[] = [
     title: 'Task In-Progress',
     color: '#094B5C',
     items: [
-      { id: 'task-2', label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV', location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', time: '12 hours ago', category: 'attendance' },
+      { 
+        id: 'task-2', 
+        label: 'Francis Nasyomba', 
+        description: 'Cover the entirety of Ikeja CV', 
+        location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', 
+        time: '12 hours ago', 
+        category: 'attendance',
+        dueDate: 'Tomorrow (Friday, 3rd April. 2026)',
+        assignedBy: 'Ridwan Thomson (Supervisor)',
+        addedDescription: 'Visit the Ikeja Computer village, and promote (product name) to the target audience there.\n\nSpeak with the business owner and note:\n- Contact Details\n- Prospect brief\n- Any other usable details.',
+        statusLabel: 'In Progress'
+      },
       { id: 'task-5', label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV', location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', time: '12 hours ago', category: 'agent' },
       { id: 'task-8', label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV', location: 'Computer Village, Ikeja, Otigba, Ikeja, Lagos', time: '12 hours ago', category: 'attendance' },
     ],
@@ -80,6 +106,7 @@ export default function OperationsPage() {
 
   const [activeTab, setActiveTab] = useState<TaskCategory>('all');
   const [showModal, setShowModal] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<{item: DndItem, containerId: string} | null>(null);
 
   // Dynamic stats
   const stats = useMemo(() => {
@@ -112,103 +139,132 @@ export default function OperationsPage() {
           <div className="flex-1 min-w-0 flex flex-col gap-5">
 
             {/* Top Bar */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              {/* Tabs */}
-              <div className="flex gap-1 bg-white rounded-full p-1.5 border border-gray-100">
-                {TABS.map((tab) => (
-                  <button
-                    key={tab.value}
-                    onClick={() => setActiveTab(tab.value)}
-                    className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all ${
-                      activeTab === tab.value
-                        ? 'bg-[#0B1215] text-white shadow-sm'
-                        : 'text-gray-400 hover:text-gray-600'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
+            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
+              <div className="flex flex-col sm:flex-row items-center gap-4 w-full xl:w-auto">
+                {/* Tabs */}
+                <div className="flex gap-1 bg-white rounded-full p-1.5 border border-gray-100 shadow-sm shrink-0">
+                  {TABS.map((tab) => (
+                    <button
+                      key={tab.value}
+                      onClick={() => setActiveTab(tab.value)}
+                      className={`px-5 py-2.5 rounded-full text-[13px] font-bold transition-all ${
+                        activeTab === tab.value
+                          ? 'bg-[#0B1215] text-white shadow-lg'
+                          : 'text-gray-400 hover:text-gray-600'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Search Bar (Only for Agent View) */}
+                {activeTab === 'agent' && (
+                  <div className="relative flex-1 sm:min-w-[420px] group">
+                    <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-dash-teal" size={18} />
+                    <input
+                      type="text"
+                      placeholder="Search for Agents"
+                      className="w-full bg-white border border-gray-100 rounded-full py-4 pl-14 pr-6 text-[14px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-4">
-                <button className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 rounded-full text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors">
-                  <span>Filter</span>
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                <button className="flex items-center gap-2.5 px-6 py-3.5 bg-white border border-gray-100 rounded-full text-[13px] font-bold text-gray-500 hover:bg-gray-50 transition-all shadow-sm">
+                  <span className="opacity-70">Filter</span>
                   <SlidersHorizontal size={14} className="opacity-70" />
                 </button>
-                <button
-                  onClick={() => setShowModal(true)}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-full text-sm font-semibold hover:bg-slate-800 transition-colors shadow-md"
-                >
-                  <span>Create New Task</span>
-                  <BookmarkPlus size={16} />
-                </button>
+                {activeTab === 'agent' ? (
+                  <button className="flex items-center gap-2.5 px-7 py-3.5 bg-[#0B1215] text-white rounded-full text-[13px] font-bold hover:opacity-90 transition-all shadow-lg">
+                    <span>Add New Agent</span>
+                    <BookmarkPlus size={16} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowModal(true)}
+                    className="flex items-center gap-2.5 px-7 py-3.5 bg-[#0B1215] text-white rounded-full text-[13px] font-bold hover:opacity-90 transition-all shadow-lg"
+                  >
+                    <span>Create New Task</span>
+                    <BookmarkPlus size={16} />
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* Kanban Board */}
-            <TaskBoard
-              containers={containers}
-              activeTab={activeTab}
-              onAddCard={addItem}
-              findContainer={findContainer}
-              moveItem={moveItem}
-              moveToContainer={moveToContainer}
-              moveBetweenContainers={moveBetweenContainers}
-            />
-          </div>
+            {/* View Switcher */}
+            {activeTab === 'all' ? (
+              <div className="flex flex-col xl:flex-row gap-6 mt-1">
+                {/* Kanban Board */}
+                <div className="flex-1 min-w-0">
+                  <TaskBoard
+                    containers={containers}
+                    activeTab={activeTab}
+                    onAddCard={addItem}
+                    findContainer={findContainer}
+                    moveItem={moveItem}
+                    moveToContainer={moveToContainer}
+                    moveBetweenContainers={moveBetweenContainers}
+                    onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
+                  />
+                </div>
 
-          {/* ── Right Sidebar ────────────────────────────── */}
-          <div className="w-full xl:w-[360px] 2xl:w-[420px] flex flex-col gap-6 shrink-0">
+                {/* Right Sidebar (Only for All Task tab) */}
+                <div className="w-full xl:w-[360px] 2xl:w-[420px] flex flex-col gap-6 shrink-0">
+                  {/* Calendar */}
+                  <OperationsCalendar />
 
-            {/* Calendar */}
-            <OperationsCalendar />
+                  {/* Task Stats */}
+                  <div className="bg-[#0A1A22] rounded-[32px] p-7 shadow-xl relative overflow-hidden">
+                    <h3 className="text-gray-400 font-medium text-[15px] mb-6">Task Stats</h3>
+                    <div className="flex items-center gap-3">
+                      {/* Donut Chart */}
+                      <div className="w-48 h-48 shrink-0 relative -left-4">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={stats}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={48}
+                              outerRadius={78}
+                              paddingAngle={0}
+                              dataKey="value"
+                              stroke="none"
+                              labelLine={false}
+                              label={(props) => <CustomLabel {...props} />}
+                            >
+                              {stats.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
 
-            {/* Task Stats */}
-            <div className="bg-[#0A1A22] rounded-[32px] p-7 shadow-xl mt-2 relative overflow-hidden">
-              <h3 className="text-gray-400 font-medium text-[15px] mb-6">
-                Task Stats
-              </h3>
-
-              <div className="flex items-center gap-6">
-                {/* Donut Chart */}
-                <div className="w-48 h-48 shrink-0 relative -left-4">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={stats}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={48}
-                        outerRadius={78}
-                        paddingAngle={0}
-                        dataKey="value"
-                        stroke="none"
-                        labelLine={false}
-                        label={(props) => <CustomLabel {...props} />}
-                      >
-                        {stats.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
+                      {/* Legend */}
+                      <div className="space-y-4">
+                        {stats.map((stat, idx) => (
+                          <div key={idx} className="flex items-center gap-3">
+                            <div
+                              className="w-4 h-4 rounded-full shrink-0"
+                              style={{ backgroundColor: stat.color }}
+                            />
+                            <span className="text-[13px] text-gray-400 font-medium">{stat.name}</span>
+                          </div>
                         ))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-
-                {/* Legend */}
-                <div className="space-y-4">
-                  {stats.map((stat, idx) => (
-                    <div key={idx} className="flex items-center gap-3">
-                      <div
-                        className="w-4 h-4 rounded-full shrink-0"
-                        style={{ backgroundColor: stat.color }}
-                      />
-                      <span className="text-[13px] text-gray-400 font-medium">{stat.name}</span>
+                      </div>
                     </div>
-                  ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : activeTab === 'agent' ? (
+              <AgentView />
+            ) : (
+              <AttendanceView />
+            )}
           </div>
         </div>
       </div>
@@ -218,6 +274,14 @@ export default function OperationsPage() {
         isOpen={showModal}
         onClose={() => setShowModal(false)}
         onCreateTask={handleCreateTask}
+      />
+
+      {/* Task Detail Modal */}
+      <TaskDetailModal
+        isOpen={!!selectedTask}
+        onClose={() => setSelectedTask(null)}
+        task={selectedTask?.item ?? null}
+        status={selectedTask?.containerId ?? ''}
       />
     </div>
   );
