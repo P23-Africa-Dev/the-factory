@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
-import { SlidersHorizontal, BookmarkPlus } from 'lucide-react';
+import React, { useState, useMemo, Suspense } from 'react';
+import { SlidersHorizontal, BookmarkPlus, Search } from 'lucide-react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { TaskBoard } from '@/components/operations/task-board';
 import { OperationsCalendar } from '@/components/operations/operations-calendar';
@@ -11,7 +12,6 @@ import { AgentView } from '@/components/operations/agent-view';
 import { AttendanceView } from '@/components/operations/attendance-view';
 import { useDragAndDrop } from '@/lib/hooks/use-tasks-dnd';
 import type { DndContainer, DndItem, TaskCategory } from '@/types/operations';
-import { Search } from 'lucide-react';
 
 // ─── Initial Data ────────────────────────────────────────────────────────────
 const INITIAL_DATA: DndContainer[] = [
@@ -100,25 +100,41 @@ const TABS: { value: TaskCategory; label: string }[] = [
 ];
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
-export default function OperationsPage() {
+function OperationsContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+
   const { containers, addItem, moveItem, moveToContainer, moveBetweenContainers, findContainer } =
     useDragAndDrop(INITIAL_DATA);
 
-  const [activeTab, setActiveTab] = useState<TaskCategory>('all');
+  // Source of truth for active tab is the URL
+  const activeTab = (searchParams.get('tab') as TaskCategory) || 'all';
+
   const [showModal, setShowModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState<{item: DndItem, containerId: string} | null>(null);
 
+  const handleTabChange = (tab: TaskCategory) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab === 'all') {
+      params.delete('tab');
+    } else {
+      params.set('tab', tab);
+    }
+    router.push(`${pathname}?${params.toString()}`);
+  };
+
   // Dynamic stats
   const stats = useMemo(() => {
-    const total = containers.reduce((s, c) => s + c.items.length, 0);
+    const total = containers.reduce((s: number, c: DndContainer) => s + c.items.length, 0);
     if (total === 0) return [
       { name: 'Pending', value: 0, color: '#BD7A22' },
       { name: 'In Progress', value: 0, color: '#094B5C' },
       { name: 'Complete', value: 0, color: '#4FD1C5' },
     ];
-    const pending = containers.find((c) => c.id === 'pending')?.items.length ?? 0;
-    const inProgress = containers.find((c) => c.id === 'in-progress')?.items.length ?? 0;
-    const completed = containers.find((c) => c.id === 'completed')?.items.length ?? 0;
+    const pending = containers.find((c: DndContainer) => c.id === 'pending')?.items.length ?? 0;
+    const inProgress = containers.find((c: DndContainer) => c.id === 'in-progress')?.items.length ?? 0;
+    const completed = containers.find((c: DndContainer) => c.id === 'completed')?.items.length ?? 0;
     return [
       { name: 'Pending', value: Math.round((pending / total) * 100), color: '#BD7A22' },
       { name: 'In Progress', value: Math.round((inProgress / total) * 100), color: '#094B5C' },
@@ -146,8 +162,8 @@ export default function OperationsPage() {
                   {TABS.map((tab) => (
                     <button
                       key={tab.value}
-                      onClick={() => setActiveTab(tab.value)}
-                      className={`px-5 py-2.5 rounded-full text-[13px] font-bold transition-all ${
+                      onClick={() => handleTabChange(tab.value)}
+                      className={`px-5 py-2.5 rounded-full text-[13px] font-bold transition-all cursor-pointer ${
                         activeTab === tab.value
                           ? 'bg-[#0B1215] text-white shadow-lg'
                           : 'text-gray-400 hover:text-gray-600'
@@ -159,7 +175,7 @@ export default function OperationsPage() {
                 </div>
 
                 {/* Search Bar (Only for Agent View) */}
-                {activeTab === 'agent' && (
+                {/* {activeTab === 'agent' && (
                   <div className="relative flex-1 sm:min-w-[420px] group">
                     <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-dash-teal" size={18} />
                     <input
@@ -168,7 +184,7 @@ export default function OperationsPage() {
                       className="w-full bg-white border border-gray-100 rounded-full py-4 pl-14 pr-6 text-[14px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
                     />
                   </div>
-                )}
+                )} */}
               </div>
 
               {/* Actions */}
@@ -284,5 +300,17 @@ export default function OperationsPage() {
         status={selectedTask?.containerId ?? ''}
       />
     </div>
+  );
+}
+
+export default function OperationsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#F4F7F9] p-8 flex items-center justify-center font-bold text-gray-400">
+        Loading Operations...
+      </div>
+    }>
+      <OperationsContent />
+    </Suspense>
   );
 }
