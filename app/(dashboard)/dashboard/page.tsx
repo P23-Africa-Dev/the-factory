@@ -46,23 +46,33 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="max-w-6xl gap-8 absolute z-30 -bottom-18.25 flex ml-auto right-26 items-end">
-          <div className="col-span-12 lg:col-span-3 h-43.25 w-84.25">
+        <div className="hidden md:flex max-w-6xl gap-8 absolute z-30 -bottom-18.25 ml-auto right-26 items-end">
+          <div className="h-43.25 w-84.25">
             <MyActivitiesChart />
           </div>
-          <div className="col-span-12 lg:col-span-3 h-36 w-79.5">
+          <div className="h-36 w-79.5">
+            <TotalLeadsChart />
+          </div>
+        </div>
+
+        {/* Mobile charts - stacked inline */}
+        <div className="flex md:hidden flex-col gap-4 mt-6 px-4">
+          <div className="h-44">
+            <MyActivitiesChart />
+          </div>
+          <div className="h-36">
             <TotalLeadsChart />
           </div>
         </div>
       </div>
 
       {/* Main Content Area (White background) */}
-      <div className="bg-dash-bg min-h-screen pt-4.25 md:pt-4.25 pb-16 relative z-10 shadow-inner">
-        <div className="max-w-340 mx-auto gap-4.25 flex">
+      <div className="bg-dash-bg min-h-screen pt-6 md:pt-4.25 pb-16 relative z-10 shadow-inner">
+        <div className="max-w-340 mx-auto gap-4.25 flex flex-col lg:flex-row px-4 md:px-6 lg:px-0">
           <TopCustomers />
           <WeeklyTasks />
           <DashboardMap />
-          <div className="max-w-34 mt-23.75">
+          <div className="w-full lg:max-w-34 mt-0 lg:mt-23.75">
             <CRMPipeline />
             <AIWorkspace />
           </div>

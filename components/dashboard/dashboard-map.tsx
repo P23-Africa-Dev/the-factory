@@ -2,7 +2,7 @@ import { TinyButton } from "../ui/tiny-button";
 
 export const DashboardMap = () => {
   return (
-    <div className="mt-26.5 min-w-lg flex flex-col h-min">
+    <div className="mt-6 lg:mt-26.5 min-w-0 lg:min-w-lg flex flex-col h-min">
       <div className="flex items-center justify-between px-4.75 mb-4">
         <h3 className="text-[#203B5F] font-medium text-[16px] ">
           Active Field Agents
