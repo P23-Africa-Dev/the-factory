@@ -1,4 +1,16 @@
+"use client";
+import dynamic from "next/dynamic";
 import { TinyButton } from "../ui/tiny-button";
+
+const MapView = dynamic(
+  () => import("@/components/map/map-view").then((m) => m.MapView),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-72 rounded-[20px] bg-[#F0F0F0] animate-pulse" />
+    ),
+  },
+);
 
 export const DashboardMap = () => {
   return (
@@ -9,8 +21,8 @@ export const DashboardMap = () => {
         </h3>
         <TinyButton>Open Map</TinyButton>
       </div>
-      <div className="w-full h-72 shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026] rounded-[20px] flex items-center justify-center bg-[#F0F0F0]">
-        Sales Map Placeholder
+      <div className="w-full h-72 shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026] rounded-[20px] overflow-hidden">
+        <MapView compact />
       </div>
     </div>
   );
