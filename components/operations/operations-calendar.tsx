@@ -42,9 +42,9 @@ export function OperationsCalendar() {
   const isSelected = (day: number) => day === selectedDate;
 
   return (
-    <div className="flex flex-col pt-2 relative min-h-[430px]">
+    <div className="flex flex-col pt- relative min-h-[430px]">
       {/* Header */}
-      <div className="flex justify-between items-center mb-10 px-2">
+      <div className="flex justify-between items-center mb-4 px-2">
         <h3 className="text-[#094B5C] font-extrabold text-[17px] tracking-tight">Schedule Self Task</h3>
         <MoreVertical size={20} className="text-[#094B5C] cursor-pointer" strokeWidth={2.5} />
       </div>
@@ -69,7 +69,7 @@ export function OperationsCalendar() {
       </div>
 
       {/* Horizontal Scrollable Dates */}
-      <div className="flex overflow-x-auto pb-4 mb-4 no-scrollbar gap-6 px-2">
+      <div className="flex overflow-x-auto pb-4 mb-2 no-scrollbar gap-6 px-2">
         {days.map((day) => {
           const label = getDayLabel(day);
           const selected = isSelected(day);
@@ -123,7 +123,7 @@ export function OperationsCalendar() {
       </div>
 
       {/* Add Button (Floating) */}
-      <div className="absolute bottom-1 right-2">
+      <div className="absolute bottom-[50px] right-2">
         <button className="w-8 h-8 border-[2px] border-[#7EB5AE] rounded-full flex items-center justify-center text-[#7EB5AE] hover:bg-[#7EB5AE] hover:text-white transition-all shadow-sm cursor-pointer">
           <Plus size={10} strokeWidth={2.5} />
         </button>
