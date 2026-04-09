@@ -49,7 +49,11 @@ function createMarkerEl(agent: Agent): HTMLElement {
   return el;
 }
 
-export function MapView() {
+interface MapViewProps {
+  compact?: boolean;
+}
+
+export function MapView({ compact = false }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef       = useRef<mapboxgl.Map | null>(null);
   const markersRef   = useRef<Map<string, mapboxgl.Marker>>(new Map());
@@ -72,47 +76,50 @@ export function MapView() {
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/light-v11',
       center: [3.3600, 6.5950],
-      zoom: 12.5,
+      zoom: compact ? 11.5 : 12.5,
       attributionControl: false,
+      ...(compact && { interactive: false }),
     });
 
     mapRef.current = map;
 
     map.on('load', () => {
-      // Route line
-      map.addSource('route', {
-        type: 'geojson',
-        data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: ROUTE_COORDS } },
-      });
-      map.addLayer({
-        id: 'route-line', type: 'line', source: 'route',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': '#3B82F6', 'line-width': 10, 'line-opacity': 0.9 },
-      });
+      if (!compact) {
+        // Route line
+        map.addSource('route', {
+          type: 'geojson',
+          data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: ROUTE_COORDS } },
+        });
+        map.addLayer({
+          id: 'route-line', type: 'line', source: 'route',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: { 'line-color': '#3B82F6', 'line-width': 10, 'line-opacity': 0.9 },
+        });
 
-      // Destination pulse
-      const destEl = document.createElement('div');
-      destEl.innerHTML = `
-        <style>.dest-pulse{animation:destpulse 2s infinite}@keyframes destpulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.2);opacity:.7}}</style>
-        <div class="dest-pulse" style="width:44px;height:44px;border-radius:50%;background:rgba(199,119,255,0.15);border:5px solid rgba(199,119,255,0.4);display:flex;align-items:center;justify-content:center;">
-          <div style="width:14px;height:14px;border-radius:50%;background:#9D4EDD;border:2px solid white;"></div>
-        </div>
-      `;
-      new mapboxgl.Marker({ element: destEl, anchor: 'center' }).setLngLat([3.4050, 6.6300]).addTo(map);
+        // Destination pulse
+        const destEl = document.createElement('div');
+        destEl.innerHTML = `
+          <style>.dest-pulse{animation:destpulse 2s infinite}@keyframes destpulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.2);opacity:.7}}</style>
+          <div class="dest-pulse" style="width:44px;height:44px;border-radius:50%;background:rgba(199,119,255,0.15);border:5px solid rgba(199,119,255,0.4);display:flex;align-items:center;justify-content:center;">
+            <div style="width:14px;height:14px;border-radius:50%;background:#9D4EDD;border:2px solid white;"></div>
+          </div>
+        `;
+        new mapboxgl.Marker({ element: destEl, anchor: 'center' }).setLngLat([3.4050, 6.6300]).addTo(map);
 
-      // Navigation arrow
-      const navEl = document.createElement('div');
-      navEl.innerHTML = `
-        <div style="width:34px;height:34px;border-radius:50%;background:#3B82F6;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(59,130,246,0.5);">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>
-        </div>
-      `;
-      new mapboxgl.Marker({ element: navEl, anchor: 'center' }).setLngLat([3.3750, 6.5760]).addTo(map);
+        // Navigation arrow
+        const navEl = document.createElement('div');
+        navEl.innerHTML = `
+          <div style="width:34px;height:34px;border-radius:50%;background:#3B82F6;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(59,130,246,0.5);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>
+          </div>
+        `;
+        new mapboxgl.Marker({ element: navEl, anchor: 'center' }).setLngLat([3.3750, 6.5760]).addTo(map);
+      }
 
       // Agent markers
       agentsRef.current.forEach((agent) => {
         const el = createMarkerEl(agent);
-        el.addEventListener('click', () => setSelectedAgent(agent));
+        if (!compact) el.addEventListener('click', () => setSelectedAgent(agent));
         const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
           .setLngLat([agent.lng, agent.lat])
           .addTo(map);
@@ -123,11 +130,11 @@ export function MapView() {
     });
 
     return () => { map.remove(); mapRef.current = null; };
-  }, [token]);
+  }, [token, compact]);
 
   // ── Animate agents ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapReady) return;
+    if (!mapReady || compact) return;
     const interval = setInterval(() => {
       setAgents((prev) => {
         const next = prev.map((a) => ({ ...a, lat: a.lat + jitter(), lng: a.lng + jitter() }));
@@ -151,6 +158,13 @@ export function MapView() {
   );
 
   if (!token) {
+    if (compact) {
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-[#F0F0F0] text-sm text-gray-400">
+          Map requires NEXT_PUBLIC_MAPBOX_TOKEN
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center bg-dash-bg" style={{ height: 'calc(100vh - 64px)' }}>
         <div className="bg-white rounded-3xl p-10 shadow-lg max-w-md text-center space-y-4">
@@ -162,6 +176,10 @@ export function MapView() {
         </div>
       </div>
     );
+  }
+
+  if (compact) {
+    return <div ref={mapContainer} className="w-full h-full" />;
   }
 
   return (
