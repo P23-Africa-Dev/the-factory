@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { ArrowUpRight, MessageSquare, Map as MapIcon, Plus, MapPin, Share2 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 
@@ -131,9 +132,9 @@ export function AttendanceView() {
         <div className="bg-white rounded-4xl p-5 sm:p-8 shadow-sm">
           {/* Header */}
           <div className="flex justify-end mb-5">
-            <button className="px-5 py-2 bg-dash-dark text-white rounded-full text-[12px] font-semibold hover:opacity-90 transition-colors">
+            <Link href="/operations/attendance" className="px-5 py-2 bg-dash-dark text-white rounded-full text-[12px] font-semibold hover:opacity-90 transition-colors">
               Attendance List
-            </button>
+            </Link>
           </div>
 
           <div className="space-y-3">
