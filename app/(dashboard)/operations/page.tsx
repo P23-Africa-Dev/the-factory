@@ -10,6 +10,7 @@ import { CreateTaskModal } from '@/components/operations/create-task-modal';
 import { TaskDetailModal } from '@/components/operations/task-detail-modal';
 import { AgentView } from '@/components/operations/agent-view';
 import { AttendanceView } from '@/components/operations/attendance-view';
+import { AddAgentModal } from '@/components/operations/add-agent-modal';
 import { useDragAndDrop } from '@/lib/hooks/use-tasks-dnd';
 import type { DndContainer, DndItem, TaskCategory } from '@/types/operations';
 
@@ -112,6 +113,7 @@ function OperationsContent() {
   const activeTab = (searchParams.get('tab') as TaskCategory) || 'all';
 
   const [showModal, setShowModal] = useState(false);
+  const [showAddAgent, setShowAddAgent] = useState(false);
   const [selectedTask, setSelectedTask] = useState<{item: DndItem, containerId: string} | null>(null);
 
   const handleTabChange = (tab: TaskCategory) => {
@@ -193,7 +195,10 @@ function OperationsContent() {
                   <SlidersHorizontal size={14} className="opacity-70" />
                 </button>
                 {activeTab === 'agent' ? (
-                  <button className="flex items-center gap-2.5 px-7 py-3.5 bg-[#0B1215] text-white rounded-full text-[13px] font-bold hover:opacity-90 transition-all shadow-lg">
+                  <button
+                    onClick={() => setShowAddAgent(true)}
+                    className="flex items-center gap-2.5 px-7 py-3.5 bg-[#0B1215] text-white rounded-full text-[13px] font-bold hover:opacity-90 transition-all shadow-lg"
+                  >
                     <span>Add New Agent</span>
                     <BookmarkPlus size={16} />
                   </button>
@@ -291,6 +296,9 @@ function OperationsContent() {
         onClose={() => setShowModal(false)}
         onCreateTask={handleCreateTask}
       />
+
+      {/* Add Agent Modal */}
+      {showAddAgent && <AddAgentModal onClose={() => setShowAddAgent(false)} />}
 
       {/* Task Detail Modal */}
       <TaskDetailModal
