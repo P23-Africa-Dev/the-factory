@@ -1,20 +1,15 @@
 'use client';
 
-import React from 'react';
-import { ArrowUpRight, MessageCircle, Map as MapIcon, Plus } from 'lucide-react';
+import { ArrowUpRight, MessageSquare, Map as MapIcon, Plus, MapPin, Share2 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 
-const chartData = [
-  { value: 30 },
-  { value: 45 },
-  { value: 35 },
-  { value: 50 },
-  { value: 40 },
-  { value: 60 },
-  { value: 55 },
-  { value: 70 },
-  { value: 65 },
-  { value: 80 },
+const chartDataTeal = [
+  { v: 20 }, { v: 35 }, { v: 28 }, { v: 42 }, { v: 33 },
+  { v: 50 }, { v: 44 }, { v: 58 }, { v: 52 }, { v: 65 },
+];
+const chartDataOrange = [
+  { v: 40 }, { v: 30 }, { v: 48 }, { v: 25 }, { v: 38 },
+  { v: 20 }, { v: 35 }, { v: 18 }, { v: 30 }, { v: 22 },
 ];
 
 const attendanceList = [
@@ -27,7 +22,8 @@ const attendanceList = [
     role: 'Field Agent',
     status: 'Absent',
     subText: 'Since Yesterday',
-    theme: 'light'
+    active: false,
+    avatar: 'https://i.pravatar.cc/150?u=11',
   },
   {
     id: 2,
@@ -38,7 +34,8 @@ const attendanceList = [
     role: 'Field Agent',
     status: 'Present',
     subText: 'Active',
-    theme: 'dark'
+    active: true,
+    avatar: 'https://i.pravatar.cc/150?u=12',
   },
   {
     id: 3,
@@ -49,7 +46,8 @@ const attendanceList = [
     role: 'Field Agent',
     status: 'Absent',
     subText: 'Since Yesterday',
-    theme: 'light'
+    active: false,
+    avatar: 'https://i.pravatar.cc/150?u=13',
   },
   {
     id: 4,
@@ -60,329 +58,276 @@ const attendanceList = [
     role: 'Field Agent',
     status: 'Absent',
     subText: 'Since Yesterday',
-    theme: 'light'
-  }
+    active: false,
+    avatar: 'https://i.pravatar.cc/150?u=14',
+  },
 ];
 
 export function AttendanceView() {
   return (
-    <div className="flex flex-col lg:flex-row gap-6 mt-2 animate-in fade-in slide-in-from-bottom-5 duration-700">
-      
-      {/* ─── Left Column (Stats + List) ─────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col gap-6">
-        
-        {/* Stats Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 min-h-fit sm:h-[180px]">
-          {/* Present Card */}
-          <div className="bg-white rounded-[24px] sm:rounded-[32px] p-5 sm:p-6 shadow-sm border border-gray-50 flex flex-col relative overflow-hidden group">
-            <div className="flex justify-between items-start z-10 w-full mb-2">
-              <div className="space-y-1">
-                <h3 className="text-[32px] sm:text-[42px] font-black leading-none text-[#0B1215]">150</h3>
-                <p className="text-[12px] sm:text-[14px] font-bold text-gray-500">Present Agents Today</p>
+    <div className="flex flex-col xl:flex-row gap-5 mt-2 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+      {/* ── Left column ─────────────────────────────────── */}
+      <div className="flex-1 min-w-0 flex flex-col gap-5">
+
+        {/* Stat cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+          {/* Present */}
+          <div className="bg-white rounded-4xl p-6 shadow-sm relative overflow-hidden min-h-[160px]">
+            <div className="flex justify-between items-start relative z-10">
+              <div>
+                <h2 className="text-[52px] font-black leading-none text-dash-dark">150</h2>
+                <p className="text-[13px] text-gray-500 font-medium mt-1">Present Agents Today</p>
               </div>
-              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-[#82BDBE] text-white rounded-full text-[10px] sm:text-[11px] font-black uppercase tracking-wider hover:opacity-90 transition-all shrink-0">
-                View All
-                <ArrowUpRight size={14} />
+              <button className="flex items-center gap-1.5 px-3.5 py-1.5 bg-dash-teal/80 text-white rounded-full text-[11px] font-bold hover:opacity-90 transition-all shrink-0 mt-1">
+                View All <ArrowUpRight size={13} />
               </button>
             </div>
-            {/* Recharts AreaChart */}
-            <div className="absolute bottom-0 left-0 right-0 h-[60px] sm:h-[80px] opacity-80 pointer-events-none">
+            {/* Mini chart */}
+            <div className="absolute bottom-0 left-0 right-0 h-20 pointer-events-none">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
+                <AreaChart data={chartDataTeal} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="colorPresent" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#82BDBE" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#82BDBE" stopOpacity={0}/>
+                    <linearGradient id="gradPresent" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#4FD1C5" stopOpacity={0.25} />
+                      <stop offset="100%" stopColor="#4FD1C5" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <Area 
-                    type="monotone" 
-                    dataKey="value" 
-                    stroke="#82BDBE" 
-                    strokeWidth={2}
-                    fillOpacity={1} 
-                    fill="url(#colorPresent)" 
-                  />
+                  <Area type="monotone" dataKey="v" stroke="#4FD1C5" strokeWidth={2.5} fill="url(#gradPresent)" dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Absent Card */}
-          <div className="bg-white rounded-[24px] sm:rounded-[32px] p-5 sm:p-6 shadow-sm border border-gray-50 flex flex-col relative overflow-hidden group">
-            <div className="flex justify-between items-start z-10 w-full mb-2">
-              <div className="space-y-1">
-                <h3 className="text-[32px] sm:text-[42px] font-black leading-none text-[#0B1215]">150</h3>
-                <p className="text-[12px] sm:text-[14px] font-bold text-gray-500">Absent Agents Today</p>
+          {/* Absent */}
+          <div className="bg-white rounded-4xl p-6 shadow-sm relative overflow-hidden min-h-[160px]">
+            <div className="flex justify-between items-start relative z-10">
+              <div>
+                <h2 className="text-[52px] font-black leading-none text-dash-dark">150</h2>
+                <p className="text-[13px] text-gray-500 font-medium mt-1">Absent Agents Today</p>
               </div>
-              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F48243] text-white rounded-full text-[10px] sm:text-[11px] font-black uppercase tracking-wider hover:opacity-90 transition-all shrink-0">
-                View All
-                <ArrowUpRight size={14} />
+              <button className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#F48243]/90 text-white rounded-full text-[11px] font-bold hover:opacity-90 transition-all shrink-0 mt-1">
+                View All <ArrowUpRight size={13} />
               </button>
             </div>
-            {/* Recharts AreaChart */}
-            <div className="absolute bottom-0 left-0 right-0 h-[60px] sm:h-[80px] opacity-80 pointer-events-none">
+            <div className="absolute bottom-0 left-0 right-0 h-20 pointer-events-none">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
+                <AreaChart data={chartDataOrange} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="colorAbsent" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#F48243" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#F48243" stopOpacity={0}/>
+                    <linearGradient id="gradAbsent" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#F48243" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="#F48243" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <Area 
-                    type="monotone" 
-                    dataKey="value" 
-                    stroke="#F48243" 
-                    strokeWidth={2}
-                    fillOpacity={1} 
-                    fill="url(#colorAbsent)" 
-                  />
+                  <Area type="monotone" dataKey="v" stroke="#F48243" strokeWidth={2.5} fill="url(#gradAbsent)" dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
         </div>
 
-        {/* Attendance List Container */}
-        <div className="bg-white rounded-[24px] sm:rounded-[40px] p-5 sm:p-6 shadow-sm flex-1 relative border border-gray-50 min-h-[300px]">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-[18px] sm:text-[20px] font-black text-[#0B1215]">Attendance Records</h3>
-            <div className="bg-[#6B7280] text-white text-[10px] sm:text-[11px] px-3.5 py-1.5 rounded-lg font-bold shadow-sm">
+        {/* Attendance list */}
+        <div className="bg-white rounded-4xl p-5 sm:p-8 shadow-sm">
+          {/* Header */}
+          <div className="flex justify-end mb-5">
+            <button className="px-5 py-2 bg-dash-dark text-white rounded-full text-[12px] font-semibold hover:opacity-90 transition-colors">
               Attendance List
-            </div>
+            </button>
           </div>
 
-          <div className="flex flex-col gap-4">
+          <div className="space-y-3">
             {attendanceList.map((item) => (
-              <div 
+              <div
                 key={item.id}
-                className={`relative flex flex-col p-4 sm:py-5 sm:px-6 rounded-[24px] sm:rounded-[40px] overflow-hidden transition-all ${
-                  item.theme === 'dark' 
-                  ? 'bg-[#0B1215] text-white shadow-xl translate-y-[-2px] sm:translate-y-0' 
-                  : 'bg-white border border-gray-100 hover:border-gray-200 hover:shadow-sm'
+                className={`flex items-center gap-3 sm:gap-5 rounded-[20px] pr-4 sm:pr-5 overflow-hidden cursor-pointer transition-all hover:shadow-md ${
+                  item.active ? 'bg-dash-dark' : 'bg-gray-50/60'
                 }`}
               >
-                {/* Blue indicator for light theme */}
-                {item.theme === 'light' && (
-                  <div className="absolute left-0 top-0 bottom-0 w-[8px] sm:w-[12px] bg-[#6ea0fc] rounded-l-[40px]" />
-                )}
+                {/* Left accent */}
+                <div className={`w-2 self-stretch shrink-0 rounded-l-[20px] ${item.active ? 'bg-[#3B82F6]' : 'bg-[#93C5FD]/60'}`} />
 
-                {/* Info Container */}
-                <div className="flex flex-col md:flex-row md:items-center gap-4 w-full">
-                  
-                  {/* Left: Avatar & Title (Primary Info) */}
-                  <div className={`flex items-center gap-3 md:w-[35%] ${item.theme === 'light' ? 'pl-2' : ''}`}>
-                    <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden shrink-0 border-2 ${item.theme === 'dark' ? 'border-[#0B1215] bg-[#EED58D]' : 'border-white shadow-sm bg-[#F48243]'}`}>
-                       <img src={`https://i.pravatar.cc/150?u=${item.id + 10}`} alt="avatar" className="w-full h-full object-cover" />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className={`text-[14px] sm:text-[15px] font-black truncate ${item.theme === 'dark' ? 'text-white' : 'text-[#0B1215]'}`}>{item.name}</h4>
-                      <p className={`text-[11px] sm:text-[12px] leading-tight mt-0.5 truncate pr-2 ${item.theme === 'dark' ? 'text-gray-400' : 'text-gray-400 font-medium'}`}>
-                        {item.address}
-                      </p>
-                    </div>
+                {/* Avatar */}
+                <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-full border-2 border-white shadow-sm overflow-hidden shrink-0 my-4">
+                  <img src={item.avatar} className="w-full h-full object-cover" alt={item.name} />
+                </div>
+
+                {/* Name + address */}
+                <div className="min-w-0 flex-1 sm:flex-none sm:w-36 lg:w-44 py-4">
+                  <p className={`text-[13px] sm:text-[14px] font-bold truncate ${item.active ? 'text-white' : 'text-dash-dark'}`}>
+                    {item.name}
+                  </p>
+                  <p className={`text-[10px] sm:text-[11px] mt-0.5 leading-snug ${item.active ? 'text-white/50' : 'text-gray-400'}`}>
+                    {item.address}
+                  </p>
+                </div>
+
+                {/* Check-In */}
+                <div className="hidden sm:block flex-1 min-w-0 py-4">
+                  <p className={`text-[10px] font-bold mb-0.5 ${item.active ? 'text-white/40' : 'text-gray-400'}`}>Check-In</p>
+                  <p className={`text-[13px] font-medium ${item.active ? 'text-white/80' : 'text-gray-600'}`}>{item.checkIn}</p>
+                </div>
+
+                {/* Check-Out */}
+                <div className="hidden md:block flex-1 min-w-0 py-4">
+                  <p className={`text-[10px] font-bold mb-0.5 ${item.active ? 'text-white/40' : 'text-gray-400'}`}>Check-Out</p>
+                  <p className={`text-[13px] font-medium ${item.active ? 'text-white/80' : 'text-gray-600'}`}>{item.checkOut}</p>
+                </div>
+
+                {/* Role */}
+                <div className="hidden lg:block flex-1 min-w-0 py-4">
+                  <p className={`text-[10px] font-bold mb-0.5 ${item.active ? 'text-white/40' : 'text-gray-400'}`}>Role</p>
+                  <p className={`text-[13px] font-medium ${item.active ? 'text-white/80' : 'text-gray-600'}`}>{item.role}</p>
+                </div>
+
+                {/* Status */}
+                <div className="shrink-0 text-right py-4">
+                  <div className={`inline-block px-3 py-1.5 rounded-full text-[10px] sm:text-[11px] font-bold ${
+                    item.active ? 'bg-[#1A452C] text-[#4ADE80]' : 'bg-[#F48243] text-white'
+                  }`}>
+                    {item.status}
                   </div>
-
-                  {/* Right: Sub Grid for Details (3 columns on md+) */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1 md:items-center">
-                    {/* Check-In */}
-                    <div className="flex flex-col gap-0.5">
-                      <h5 className={`text-[10px] sm:text-[12px] font-bold uppercase tracking-wider ${item.theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>Check-In</h5>
-                      <p className={`text-[12px] sm:text-[13px] font-bold ${item.theme === 'dark' ? 'text-white' : 'text-[#0B1215]'}`}>
-                        {item.checkIn}
-                      </p>
-                    </div>
-
-                    {/* Check-Out */}
-                    <div className="flex flex-col gap-0.5">
-                      <h5 className={`text-[10px] sm:text-[12px] font-bold uppercase tracking-wider ${item.theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>Check-Out</h5>
-                      <p className={`text-[12px] sm:text-[13px] font-bold ${item.theme === 'dark' ? 'text-white' : 'text-[#0B1215]'}`}>
-                        {item.checkOut}
-                      </p>
-                    </div>
-
-                    {/* Role (Hidden on very small screens, visible on mobile grid) */}
-                    <div className="hidden sm:flex flex-col gap-0.5">
-                       <h5 className={`text-[10px] sm:text-[12px] font-bold uppercase tracking-wider ${item.theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>Role</h5>
-                       <p className={`text-[12px] sm:text-[13px] font-bold ${item.theme === 'dark' ? 'text-white' : 'text-[#0B1215]'}`}>
-                        {item.role}
-                      </p>
-                    </div>
-
-                    {/* Status (End aligned on larger screens) */}
-                    <div className="flex flex-col items-start md:items-end gap-1.5 col-span-1 md:col-span-1">
-                      <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        item.status === 'Present' 
-                        ? 'bg-[#1A452C] text-[#4ADE80]' 
-                        : 'bg-[#F48243] text-white shadow-sm'
-                      }`}>
-                        {item.status}
-                      </div>
-                      <p className={`text-[10px] font-bold ${item.theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                        {item.subText}
-                      </p>
-                    </div>
-                  </div>
-
+                  <p className={`text-[10px] sm:text-[11px] mt-1 ${item.active ? 'text-white/40' : 'text-gray-400'}`}>
+                    {item.subText}
+                  </p>
                 </div>
               </div>
             ))}
           </div>
         </div>
-
       </div>
 
-      {/* ─── Right Column (Agent Info + Tracking) ────────────────────────── */}
-      <div className="w-full lg:w-[460px] flex flex-col gap-6 shrink-0">
-        
-        {/* Agent Info Panel */}
-        <div className="flex flex-col sm:flex-row gap-6 lg:gap-4 pt-2">
-          {/* Info Details List */}
-          <div className="flex-1 space-y-5 sm:space-y-6 pt-3 px-2">
-            <div>
-              <h3 className="text-[17px] font-black text-[#0B1215] mb-1">Lane Wade</h3>
-              <p className="text-[13px] text-gray-400 font-medium leading-relaxed pr-2">
-                Visit the ikeja Computer village, and promote...
-              </p>
-            </div>
-            <div className="grid grid-cols-2 sm:block gap-4">
-              <div>
-                <h4 className="text-[14px] sm:text-[15px] font-black text-[#0B1215] mb-0.5">Zone</h4>
-                <p className="text-[13px] text-gray-500 font-medium">Ikeja LGA</p>
-              </div>
-              <div>
-                <h4 className="text-[14px] sm:text-[15px] font-black text-[#0B1215] mb-0.5">Phone Number</h4>
-                <p className="text-[13px] text-gray-500 font-medium">+234 803 4567890</p>
-              </div>
-            </div>
-            <div>
-              <h4 className="text-[14px] sm:text-[15px] font-black text-[#0B1215] mb-0.5">Role</h4>
-              <p className="text-[13px] text-gray-500 font-medium">Field Agent</p>
-            </div>
-          </div>
+      {/* ── Right column ────────────────────────────────── */}
+      <div className="flex flex-col gap-5 w-full xl:w-90 xl:shrink-0">
 
-          {/* Avatar Card */}
-          <div className="w-full sm:w-[180px] flex flex-row sm:flex-col gap-4 items-center">
-            <div className="bg-white rounded-[32px] sm:rounded-[40px] p-4 pb-5 sm:pb-6 shadow-sm border border-gray-100 flex-1 sm:w-full flex flex-row sm:flex-col items-center gap-4 sm:gap-0">
-              <div className="w-20 h-20 sm:w-full aspect-square bg-[#EED58D] rounded-[24px] sm:rounded-[32px] overflow-hidden sm:mb-4 relative flex items-end justify-center shrink-0">
-                 <img src="https://i.pravatar.cc/150?u=25" className="w-[90%] h-[90%] object-cover object-bottom rounded-b-[32px]" alt="Lane Wade" />
+        {/* Agent info (no card — page background) */}
+        <div>
+          <div className="flex flex-col sm:flex-row items-start gap-6">
+            {/* Details */}
+            <div className="flex-1 space-y-4 min-w-0">
+              <div>
+                <h3 className="text-[17px] font-bold text-dash-dark">Lane Wade</h3>
+                <p className="text-[12px] text-gray-400 mt-1 leading-relaxed">
+                  Visit the Ikeja Computer village, and promote...
+                </p>
               </div>
-              <div className="flex-1 sm:text-center w-full min-w-0">
-                <h4 className="text-[15px] sm:text-[16px] font-black text-[#0B1215] mb-0.5 truncate">Lane Wade</h4>
-                <p className="text-[11px] sm:text-[12px] text-gray-400 font-black mb-3">Ikeja LGA</p>
-                <div className="bg-[#1A452C] text-[#4ADE80] text-[10px] px-3.5 py-1.5 rounded-full font-black uppercase tracking-wider inline-flex items-center justify-center">
-                  Present
+              <div>
+                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Zone</p>
+                <p className="text-[13px] text-gray-400">Ikeja LGA</p>
+              </div>
+              <div>
+                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Phone Number</p>
+                <p className="text-[13px] text-gray-400">+234 803 4567890</p>
+              </div>
+              <div>
+                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Role</p>
+                <p className="text-[13px] text-gray-400">Field Agent</p>
+              </div>
+            </div>
+
+            {/* Photo card */}
+            <div className="shrink-0 w-36">
+              <div className="w-36 h-44 rounded-3xl overflow-hidden shadow-lg bg-[#C9A84C]">
+                <img src="https://i.pravatar.cc/150?u=25" className="w-full h-full object-cover" alt="Lane Wade" />
+              </div>
+              <div className="mt-2 text-center">
+                <p className="text-[12px] font-bold text-dash-dark">Lane Wade</p>
+                <div className="flex items-center justify-center gap-2 mt-0.5">
+                  <span className="text-[11px] text-gray-400">Ikeja LGA</span>
+                  <span className="px-2 py-0.5 bg-[#1A452C] text-[#4ADE80] rounded-full text-[9px] font-bold">Present</span>
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Actions */}
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gray-200/50 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-[#0B1215] transition-all shrink-0">
-                <MessageCircle size={18} strokeWidth={2.5} />
-              </button>
-              <button className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gray-200/50 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-[#0B1215] transition-all shrink-0">
-                <MapIcon size={18} strokeWidth={2.5} />
-              </button>
-              <button className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gray-200/50 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-[#0B1215] transition-all shrink-0">
-                <Plus size={18} strokeWidth={2.5} />
-              </button>
-            </div>
+          {/* Action buttons */}
+          <div className="flex justify-end gap-3 mt-4">
+            <button className="w-10 h-10 bg-white text-gray-400 rounded-full flex items-center justify-center hover:bg-gray-50 transition-all border border-gray-100 shadow-sm">
+              <MessageSquare size={15} />
+            </button>
+            <button className="w-10 h-10 bg-white text-gray-400 rounded-full flex items-center justify-center hover:bg-gray-50 transition-all border border-gray-100 shadow-sm">
+              <MapIcon size={15} />
+            </button>
+            <button className="w-10 h-10 bg-white text-gray-400 rounded-full flex items-center justify-center hover:bg-gray-50 transition-all border border-gray-100 shadow-sm">
+              <Plus size={15} />
+            </button>
           </div>
         </div>
 
-        {/* Tracking Card */}
-        <div className="bg-[#0B1215] rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 shadow-xl relative overflow-hidden mt-2 h-[340px] flex flex-col">
-          
-          {/* Top Times */}
-          <div className="flex items-start justify-between mb-8 relative z-10 gap-3">
-            <div className="min-w-0">
-              <p className="text-[12px] sm:text-[13px] font-bold text-gray-400 mb-1 truncate">Check-In</p>
-              <p className="text-[14px] sm:text-[15px] font-black text-white">8:25AM</p>
+        {/* Tracking / Check-in card */}
+        <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
+          {/* Times row */}
+          <div className="flex items-start gap-4 mb-5">
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-In Time</p>
+              <p className="text-[15px] font-bold text-white">8:25AM</p>
             </div>
-            <div className="min-w-0">
-              <p className="text-[12px] sm:text-[13px] font-bold text-gray-400 mb-1 truncate">Check-Out</p>
-              <p className="text-[14px] sm:text-[15px] font-black text-white">Still Active</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-Out Time</p>
+              <p className="text-[13px] font-medium text-white/70">Still Active</p>
             </div>
-            <div className="bg-[#1A452C] text-[#4ADE80] text-[9px] sm:text-[11px] px-3.5 py-1.5 rounded-full font-black uppercase tracking-widest shrink-0 shadow-sm border border-[#2B6D45]/50">
+            <div className="px-3 py-1.5 bg-[#1A452C] text-[#4ADE80] rounded-full text-[10px] font-bold shrink-0 self-start">
               On-Time
             </div>
           </div>
 
           {/* Location */}
-          <div className="mb-6 relative z-10">
-            <h4 className="text-[15px] sm:text-[16px] font-black text-white flex items-center gap-2 mb-1">Location (Check-In)</h4>
-            <p className="text-[12px] sm:text-[13px] text-gray-400 font-medium line-clamp-1">12 Oba Akran Avenue, Ikeja, Lagos</p>
+          <div className="mb-4">
+            <p className="text-[15px] font-bold text-white mb-0.5">Location (Check-In)</p>
+            <p className="text-[12px] text-gray-400">12 Oba Akran Avenue, Ikeja, Lagos</p>
           </div>
 
-          {/* Map Area */}
-          <div className="absolute bottom-0 left-0 right-0 h-[170px] bg-[#E8EAED] rounded-b-[32px] sm:rounded-b-[40px] overflow-hidden">
-            {/* Mock Map Image / Background */}
-            <div className="w-full h-full relative" style={{
-              backgroundImage: 'radial-gradient(#CBD5E1 1px, transparent 1px)',
-              backgroundSize: '24px 24px',
-              backgroundColor: '#F1F5F9'
-            }}>
-               {/* Map graphic lines abstract */}
-               <svg className="absolute inset-0 w-full h-full text-white/80" fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round">
-                 <path d="M-20,100 Q40,120 100,80 T250,90 T350,150 T500,100" />
-                 <path d="M120,-20 Q140,50 180,180" />
-                 <path d="M220,-20 Q200,80 300,120 T500,50" />
-                 <path d="M380,-20 Q350,60 250,80" />
-                 <path d="M-20,40 Q50,50 100,-20" />
-               </svg>
+          {/* Map preview */}
+          <div className="relative h-44 w-full rounded-[18px] bg-[#e8ecef] overflow-hidden">
+            {/* Grid */}
+            <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-50">
+              <defs>
+                <pattern id="attgrid" width="36" height="36" patternUnits="userSpaceOnUse">
+                  <path d="M 36 0 L 0 0 0 36" fill="none" stroke="#CBD5E1" strokeWidth="0.8" />
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill="url(#attgrid)" />
+            </svg>
 
-               <div className="absolute top-12 right-6 text-[#0B1215] font-black text-[12px] sm:text-[14px] leading-tight">
-                 McDow<br/>ell Street
-               </div>
-               
-               <div className="absolute bottom-4 left-[65%] text-[#0B1215] font-black text-[12px] sm:text-[14px] transform -rotate-[20deg] opacity-70">
-                 Br<span className="opacity-0">..</span>o
-               </div>
-               <div className="absolute top-8 left-[45%] text-[#0B1215] font-black text-[12px] sm:text-[14px] transform rotate-90 opacity-70">
-                 Dresde<span className="opacity-0">...</span>n\nStree
-               </div>
+            {/* Street stripes */}
+            <div className="absolute left-[30%] top-0 bottom-0 w-9 bg-white/60 pointer-events-none" />
+            <div className="absolute top-[48%] left-0 right-0 h-8 bg-white/60 pointer-events-none" />
+            <div className="absolute right-0 top-[28%] w-10 h-14 bg-[#A8D5B5]/60 pointer-events-none" />
 
-               {/* Target Pin Purple */}
-               <div className="absolute top-8 right-24 sm:right-32 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#EADDFF] flex items-center justify-center opacity-80 shadow-md">
-                 <div className="w-3 h-3 sm:w-4 sm:h-4 bg-[#D0BCFF] rounded-full border-2 border-white pointer-events-none" />
-               </div>
+            {/* Labels */}
+            <div className="absolute pointer-events-none" style={{ left: '28%', top: 6 }}>
+              <span className="text-[8px] font-semibold text-gray-600 block leading-tight">Dresd</span>
+              <span className="text-[8px] font-semibold text-gray-600 block leading-tight">Street</span>
+            </div>
+            <div className="absolute right-1 top-[16%] pointer-events-none">
+              <span className="text-[7px] font-semibold text-gray-500 block leading-tight">McDow</span>
+              <span className="text-[7px] font-semibold text-gray-500 block leading-tight">ell Str</span>
+            </div>
 
-               {/* Current Location Red Pin */}
-               <div className="absolute top-16 sm:top-20 left-1/3 drop-shadow-md">
-                 <svg 
-                   viewBox="0 0 24 24" 
-                   fill="none" 
-                   xmlns="http://www.w3.org/2000/svg"
-                   className="w-6 h-6 sm:w-7 sm:h-7"
-                 >
-                    <path d="M12 21.5C16.5 17.5 20.5 13 20.5 8.5C20.5 3.80558 16.6944 0 12 0C7.30558 0 3.5 3.80558 3.5 8.5C3.5 13 7.5 17.5 12 21.5Z" fill="#F04438" stroke="white" strokeWidth="2.5"/>
-                    <circle cx="12" cy="8.5" r="3.5" fill="white"/>
-                 </svg>
-               </div>
+            {/* Red pin */}
+            <div className="absolute" style={{ left: '32%', top: '25%' }}>
+              <MapPin size={20} className="text-red-500 fill-red-500 drop-shadow-md" />
+            </div>
 
-               {/* Active Status Badge on Map */}
-               <div className="absolute bottom-4 left-4 sm:left-6 bg-white/90 backdrop-blur-md rounded-full p-1.5 pr-3 sm:pr-4 flex items-center gap-2 sm:gap-2.5 shadow-lg border border-white max-w-[160px] sm:max-w-none">
-                 <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#EED58D] shrink-0 overflow-hidden relative border border-gray-100">
-                    <img src="https://i.pravatar.cc/150?u=25" className="w-[110%] h-[110%] object-cover object-bottom" alt="Map avatar" />
-                 </div>
-                 <div className="leading-tight min-w-0">
-                   <p className="text-[9px] sm:text-[11px] font-black text-[#0B1215] uppercase tracking-wider truncate">
-                     Lane Wade
-                   </p>
-                   <p className="font-bold text-gray-500 capitalize text-[8px] sm:text-[9px] mt-0.5 truncate">
-                     Active at Eamil Street
-                   </p>
-                 </div>
-               </div>
-               
-               {/* Translucent overlay at bottom edge of map area in dark card */}
-               <div className="absolute inset-0 bg-gradient-to-t from-[#82BDBE]/40 via-transparent to-transparent pointer-events-none" />
+            {/* Agent marker */}
+            <div className="absolute flex flex-col items-center" style={{ left: 'calc(32% - 14px)', top: '48%' }}>
+              <div className="w-7 h-7 rounded-full border-2 border-white shadow-md overflow-hidden">
+                <img src="https://i.pravatar.cc/150?u=25" className="w-full h-full object-cover" alt="Agent" />
+              </div>
+              <div className="bg-white px-2 py-0.5 rounded-lg mt-1 whitespace-nowrap shadow-md">
+                <p className="text-[8px] font-bold text-dash-dark">Lane Wade</p>
+                <p className="text-[7px] text-gray-400">Active at Kemsi Street</p>
+              </div>
+            </div>
+
+            {/* Destination */}
+            <div className="absolute" style={{ left: '60%', top: '28%' }}>
+              <div className="w-8 h-8 rounded-full bg-white/30 flex items-center justify-center border-4 border-[#C77DFF]/50 shadow-md">
+                <div className="w-3 h-3 bg-[#9D4EDD] rounded-full" />
+              </div>
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );

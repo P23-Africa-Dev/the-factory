@@ -1,10 +1,14 @@
-import React from 'react';
+'use client';
+
+import dynamic from 'next/dynamic';
+
+// Mapbox GL JS uses browser-only APIs and dynamic imports internally.
+// ssr:false prevents Turbopack from bundling it during the server pass.
+const MapView = dynamic(
+  () => import('@/components/map/map-view').then((m) => m.MapView),
+  { ssr: false, loading: () => <div style={{ height: 'calc(100vh - 64px)' }} className="bg-[#e8ecef] animate-pulse" /> }
+);
 
 export default function MapPage() {
-  return (
-    <div className="p-12 h-screen flex flex-col items-center justify-center text-white/40">
-      <h1 className="text-4xl font-bold mb-4 text-white">Global Agent Map</h1>
-      <p className="text-xl">The map view is currently unavailable.</p>
-    </div>
-  );
+  return <MapView />;
 }

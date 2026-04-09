@@ -175,7 +175,7 @@ function OperationsContent() {
                 </div>
 
                 {/* Search Bar (Only for Agent View) */}
-                {/* {activeTab === 'agent' && (
+                {activeTab === 'agent' && (
                   <div className="relative flex-1 sm:min-w-[420px] group">
                     <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-dash-teal" size={18} />
                     <input
@@ -184,7 +184,7 @@ function OperationsContent() {
                       className="w-full bg-white border border-gray-100 rounded-full py-4 pl-14 pr-6 text-[14px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
                     />
                   </div>
-                )} */}
+                )}
               </div>
 
               {/* Actions */}
