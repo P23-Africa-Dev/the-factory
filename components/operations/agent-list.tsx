@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 const agents = [
   {
     id: '1',
@@ -44,9 +46,9 @@ export function AgentList() {
     <div className="bg-white rounded-4xl p-5 sm:p-8 shadow-sm flex-1 min-w-0">
       {/* Header */}
       <div className="flex justify-end mb-5">
-        <button className="px-5 py-2 bg-dash-dark text-white rounded-full text-[12px] font-semibold hover:opacity-90 transition-colors">
+        <Link href="/operations/agents" className="px-5 py-2 bg-dash-dark text-white rounded-full text-[12px] font-semibold hover:opacity-90 transition-colors">
           View all Agents
-        </button>
+        </Link>
       </div>
 
       {/* Agent Rows */}

@@ -10,6 +10,7 @@ import { CreateTaskModal } from '@/components/operations/create-task-modal';
 import { TaskDetailModal } from '@/components/operations/task-detail-modal';
 import { AgentView } from '@/components/operations/agent-view';
 import { AttendanceView } from '@/components/operations/attendance-view';
+import { AddAgentModal } from '@/components/operations/add-agent-modal';
 import { useDragAndDrop } from '@/lib/hooks/use-tasks-dnd';
 import type { DndContainer, DndItem, TaskCategory } from '@/types/operations';
 
@@ -112,6 +113,7 @@ function OperationsContent() {
   const activeTab = (searchParams.get('tab') as TaskCategory) || 'all';
 
   const [showModal, setShowModal] = useState(false);
+  const [showAddAgent, setShowAddAgent] = useState(false);
   const [selectedTask, setSelectedTask] = useState<{item: DndItem, containerId: string} | null>(null);
 
   const handleTabChange = (tab: TaskCategory) => {
@@ -155,46 +157,48 @@ function OperationsContent() {
           <div className="flex-1 min-w-0 flex flex-col gap-5">
 
             {/* Top Bar */}
-            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
-              <div className="flex flex-col sm:flex-row items-center gap-4 w-full xl:w-auto">
-                {/* Tabs */}
-                <div className="flex gap-1 bg-white rounded-full p-1.5 border border-gray-100 shadow-sm shrink-0">
-                  {TABS.map((tab) => (
-                    <button
-                      key={tab.value}
-                      onClick={() => handleTabChange(tab.value)}
-                      className={`px-5 py-2.5 rounded-full text-[13px] font-bold transition-all cursor-pointer ${
-                        activeTab === tab.value
-                          ? 'bg-[#0B1215] text-white shadow-lg'
-                          : 'text-gray-400 hover:text-gray-600'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Search Bar (Only for Agent View) */}
-                {activeTab === 'agent' && (
-                  <div className="relative flex-1 sm:min-w-[420px] group">
-                    <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-dash-teal" size={18} />
-                    <input
-                      type="text"
-                      placeholder="Search for Agents"
-                      className="w-full bg-white border border-gray-100 rounded-full py-4 pl-14 pr-6 text-[14px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
-                    />
-                  </div>
-                )}
+            <div className="flex items-center gap-4 w-full">
+              {/* Tabs */}
+              <div className="flex gap-1 bg-white rounded-full p-1.5 border border-gray-100 shadow-sm shrink-0">
+                {TABS.map((tab) => (
+                  <button
+                    key={tab.value}
+                    onClick={() => handleTabChange(tab.value)}
+                    className={`px-5 py-2.5 rounded-full text-[13px] font-bold transition-all cursor-pointer ${
+                      activeTab === tab.value
+                        ? 'bg-[#0B1215] text-white shadow-lg'
+                        : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
 
+              {/* Search — grows to fill center space */}
+              {activeTab === 'agent' && (
+                <div className="relative flex-1 group">
+                  <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-teal transition-colors" size={17} />
+                  <input
+                    type="text"
+                    placeholder="Search for Agents"
+                    className="w-full bg-white border border-gray-100 rounded-full py-3.5 pl-12 pr-5 text-[13px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
+                  />
+                </div>
+              )}
+              {activeTab !== 'agent' && <div className="flex-1" />}
+
               {/* Actions */}
-              <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+              <div className="flex items-center gap-3 shrink-0">
                 <button className="flex items-center gap-2.5 px-6 py-3.5 bg-white border border-gray-100 rounded-full text-[13px] font-bold text-gray-500 hover:bg-gray-50 transition-all shadow-sm">
                   <span className="opacity-70">Filter</span>
                   <SlidersHorizontal size={14} className="opacity-70" />
                 </button>
                 {activeTab === 'agent' ? (
-                  <button className="flex items-center gap-2.5 px-7 py-3.5 bg-[#0B1215] text-white rounded-full text-[13px] font-bold hover:opacity-90 transition-all shadow-lg">
+                  <button
+                    onClick={() => setShowAddAgent(true)}
+                    className="flex items-center gap-2.5 px-7 py-3.5 bg-[#0B1215] text-white rounded-full text-[13px] font-bold hover:opacity-90 transition-all shadow-lg"
+                  >
                     <span>Add New Agent</span>
                     <BookmarkPlus size={16} />
                   </button>
@@ -229,11 +233,8 @@ function OperationsContent() {
 
                 {/* Right Sidebar (Only for All Task tab) */}
                 <div className="w-full xl:w-[360px] 2xl:w-[420px] flex flex-col gap-6 shrink-0">
-                  {/* Calendar */}
-                  <OperationsCalendar />
-
                   {/* Task Stats */}
-                  <div className="bg-[#0A1A22] rounded-[32px] p-7 shadow-xl relative overflow-hidden">
+                  <div className="bg-[#0A1A22] rounded-[32px] px-4 py-4 shadow-xl relative overflow-hidden">
                     <h3 className="text-gray-400 font-medium text-[15px] mb-6">Task Stats</h3>
                     <div className="flex items-center gap-3">
                       {/* Donut Chart */}
@@ -274,6 +275,10 @@ function OperationsContent() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Calendar */}
+                  <OperationsCalendar />
+
                 </div>
               </div>
             ) : activeTab === 'agent' ? (
@@ -291,6 +296,9 @@ function OperationsContent() {
         onClose={() => setShowModal(false)}
         onCreateTask={handleCreateTask}
       />
+
+      {/* Add Agent Modal */}
+      {showAddAgent && <AddAgentModal onClose={() => setShowAddAgent(false)} />}
 
       {/* Task Detail Modal */}
       <TaskDetailModal

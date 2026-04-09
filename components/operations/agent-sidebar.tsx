@@ -34,18 +34,17 @@ export function AgentSidebar() {
           </div>
 
           {/* Right: photo card */}
-          <div className="shrink-0 relative w-36">
-            <div className="w-36 h-44 rounded-3xl overflow-hidden shadow-lg bg-[#C9A84C]">
+          <div className="shrink-0 w-36">
+            <div className="w-36 h-36 rounded-3xl overflow-hidden shadow-lg bg-[#C9A84C]">
               <img
                 src="https://i.pravatar.cc/150?u=lane"
                 className="w-full h-full object-cover"
                 alt="Lane Wade"
               />
             </div>
-            {/* Name + status overlay */}
             <div className="mt-2 text-center">
               <p className="text-[12px] font-bold text-dash-dark">Lane Wade</p>
-              <div className="flex items-center justify-center gap-2 mt-0.5">
+              <div className="flex items-center justify-center gap-1.5 mt-0.5">
                 <span className="text-[11px] text-gray-400">Ikeja LGA</span>
                 <span className="px-2 py-0.5 bg-[#9D4EDD] text-white rounded-full text-[9px] font-bold">Online</span>
               </div>
@@ -53,8 +52,8 @@ export function AgentSidebar() {
           </div>
         </div>
 
-        {/* Action buttons — right-aligned under photo */}
-        <div className="flex justify-end gap-3 mt-4">
+        {/* Action buttons */}
+        <div className="flex justify-center gap-3 mt-5">
           <button className="w-10 h-10 bg-white text-gray-400 rounded-full flex items-center justify-center hover:bg-gray-50 transition-all border border-gray-100 shadow-sm">
             <MessageSquare size={15} />
           </button>
