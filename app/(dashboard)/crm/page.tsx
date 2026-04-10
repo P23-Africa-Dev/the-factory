@@ -20,8 +20,6 @@ import {
   YAxis,
 } from "recharts";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
 type LeadStatus = "new" | "proposal-sent" | "contacted" | "qualified" | "lost";
 
 interface Lead {
@@ -45,8 +43,6 @@ interface LeadColumn {
   count: number;
   leads: Lead[];
 }
-
-// ─── Mock Data ───────────────────────────────────────────────────────────────
 
 const chartData = [
   { day: "Mon", value: 180 },
@@ -112,8 +108,6 @@ const makeLead = (id: string): Lead => ({
 //     leads: [makeLead("lead-5"), makeLead("lead-10")],
 //   },
 // ];
-
-// ─── Sub-components ──────────────────────────────────────────────────────────
 
 function TotalLeadsCard() {
   return (
@@ -255,7 +249,42 @@ function LeadsChart() {
   );
 }
 
-// ─── Page ────────────────────────────────────────────────────────────────────
+function AgentCard() {
+  return (
+    <div className="bg-white rounded-[20px] py-9 px-2.25 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] w-full sm:max-w-85 flex justify-center items-center gap-4 mt-4">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="https://i.pravatar.cc/150?u=agent1"
+        alt="Agent Avatar"
+        className="w-[90.43px] h-[90.43px] rounded-full object-cover"
+      />
+      <div className="flex flex-col justify-between h-full">
+        <div>
+          <p className="text-[#34373C] text-[12px] font-semibold">
+            Customer metric
+          </p>
+          <p className="text-[10px] text-[#616263] ">Overall Insight</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-[#616263] font-medium">
+            Promising Lead
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CRMPipeline() {
+  return (
+    <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100">
+      <h3 className="text-[#34373C] text-sm font-medium mb-4">CRM Pipeline</h3>
+      <p className="text-gray-500 text-[13px]">
+        Pipeline details will go here...
+      </p>
+    </div>
+  );
+}
 
 export default function CRMPage() {
   return (
@@ -303,6 +332,7 @@ export default function CRMPage() {
         <div className="flex flex-col lg:flex-row gap-4 items-stretch">
           <TotalLeadsCard />
           <LeadsChart />
+          <AgentCard />
         </div>
       </div>
     </div>
