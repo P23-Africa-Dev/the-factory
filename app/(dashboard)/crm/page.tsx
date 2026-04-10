@@ -1,5 +1,6 @@
 "use client";
 
+import { TinyButton } from "@/components/ui/tiny-button";
 import {
   BookmarkPlus,
   ChevronDown,
@@ -65,49 +66,6 @@ const makeLead = (id: string): Lead => ({
   time: "12 hours ago",
   avatar: `https://i.pravatar.cc/150?u=${id}`,
 });
-
-// const PIPELINE_COLUMNS: LeadColumn[] = [
-//   {
-//     id: "new",
-//     title: "New",
-//     headerColor: "#22C55E",
-//     value: "N 342,000",
-//     count: 89,
-//     leads: [makeLead("lead-1"), makeLead("lead-6")],
-//   },
-//   {
-//     id: "proposal-sent",
-//     title: "Proposal Sent",
-//     headerColor: "#F59E0B",
-//     value: "N 342,000",
-//     count: 56,
-//     leads: [makeLead("lead-2"), makeLead("lead-7")],
-//   },
-//   {
-//     id: "contacted",
-//     title: "Contacted",
-//     headerColor: "#3B82F6",
-//     value: "N 342,000",
-//     count: 42,
-//     leads: [makeLead("lead-3"), makeLead("lead-8")],
-//   },
-//   {
-//     id: "qualified",
-//     title: "Qualified",
-//     headerColor: "#A3E635",
-//     value: "N 342,000",
-//     count: 31,
-//     leads: [makeLead("lead-4"), makeLead("lead-9")],
-//   },
-//   {
-//     id: "lost",
-//     title: "Lost",
-//     headerColor: "#EF4444",
-//     value: "N 342,000",
-//     count: 12,
-//     leads: [makeLead("lead-5"), makeLead("lead-10")],
-//   },
-// ];
 
 function TotalLeadsCard() {
   return (
@@ -277,11 +235,9 @@ function AgentCard() {
 
 function CRMPipeline() {
   return (
-    <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100">
-      <h3 className="text-[#34373C] text-sm font-medium mb-4">CRM Pipeline</h3>
-      <p className="text-gray-500 text-[13px]">
-        Pipeline details will go here...
-      </p>
+    <div className="rounded-t-[20px] p-6 pt-4 border border-gray-400 h-full border-b-0 mt-10 flex items-center justify-between mx-11">
+      <h3 className="text-[#34373C] text-sm font-medium">CRM Pipeline</h3>
+      <TinyButton>View all</TinyButton>
     </div>
   );
 }
@@ -334,6 +290,8 @@ export default function CRMPage() {
           <LeadsChart />
           <AgentCard />
         </div>
+
+        <CRMPipeline />
       </div>
     </div>
   );
