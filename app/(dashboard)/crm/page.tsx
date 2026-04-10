@@ -81,11 +81,11 @@ function TotalLeadsCard() {
 
       <div className="flex items-center gap-6 mt-4 justify-between">
         <div>
-          <div>
+          <div className="flex gap-1.5 items-end">
             <span className="text-[50px] font-medium text-[#0B1215] leading-none tracking-tight">
               4,100
             </span>
-            <span className="text-[#34373C] text-[15px] font-semibold mt-1">
+            <span className="text-[#34373C] text-[15px] font-semibold mb-1">
               Leads
             </span>
           </div>
