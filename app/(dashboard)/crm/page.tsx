@@ -235,9 +235,10 @@ function AgentCard() {
 
 function CRMPipeline() {
   return (
-    <div className="rounded-t-[20px] p-6 pt-4 border border-gray-400 h-full border-b-0 mt-10 flex items-center justify-between mx-11">
-      <h3 className="text-[#34373C] text-sm font-medium">CRM Pipeline</h3>
-      <TinyButton>View all</TinyButton>
+    <div className="shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] p-6 pt-4 h-full border-b-0 mt-10 max-w-349.75 min-h-102.5">
+      <div className="flex items-center justify-end">
+        <TinyButton>View All Leads</TinyButton>
+      </div>
     </div>
   );
 }
