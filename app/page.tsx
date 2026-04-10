@@ -48,7 +48,6 @@ export default function Home() {
             />
             Deploy Now
           </a> */}
-
         </div>
       </main>
     </div>
