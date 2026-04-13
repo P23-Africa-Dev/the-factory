@@ -1,11 +1,12 @@
 "use client";
 
 import AIIcon from "@/assets/images/ai-icon.png";
+import ArrowUp from "@/assets/images/arrow-57deg.png";
 import happyIcon from "@/assets/images/happy.png";
 import SearchListIcon from "@/assets/images/search-list-icon.png";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { cn } from "@/lib/utils/sample";
-import { ArrowUpRight, ChevronRight, MoreHorizontal } from "lucide-react";
+import { ChevronRight, MoreHorizontal } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 
@@ -27,7 +28,7 @@ export function TopCustomers() {
   ];
 
   return (
-    <div className="bg-dash-dark rounded-[32px] p-8 text-white h-full flex flex-col shadow-2xl relative overflow-hidden ring-1 ring-white/5">
+    <div className="bg-dash-dark rounded-4xl p-8 text-white h-full flex flex-col shadow-2xl relative overflow-hidden ring-1 ring-white/5">
       <div className="flex justify-between items-start mb-10">
         <h3 className="text-white font-bold text-lg tracking-tight">
           Top Customers
@@ -151,10 +152,13 @@ export function TopCustomers() {
                     : "border-dash-teal/20 group-hover:border-dash-teal",
                 )}
               >
-                <img
+                <Image
                   src={c.avatar}
                   alt={c.name}
+                  width={48}
+                  height={48}
                   className="w-full h-full rounded-full object-cover"
+                  unoptimized
                 />
               </div>
               <div>
@@ -201,7 +205,7 @@ export function WeeklyTasks() {
 
   return (
     <div className="drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)]">
-      <div className="ticket-cutout max-w-89 rounded-[20px] py-4 px-7 text-dash-dark h-fit flex flex-col relative border border-dash-dark/5 bg-white mt-20">
+      <div className="ticket-cutout w-full lg:max-w-89 rounded-[20px] py-4 px-4 sm:px-7 text-dash-dark h-fit flex flex-col relative border border-dash-dark/5 bg-white mt-4 lg:mt-20">
         <div className="flex justify-between items-start mb-3 px-[11.5px]">
           <h3 className="text-dash-dark font-medium text-sm tracking-tight">
             Weekly Tasks
@@ -215,7 +219,7 @@ export function WeeklyTasks() {
 
         <div className="w-full h-px bg-[#D9D6D6] mb-5.5" />
 
-        <div className="flex items-start gap-12 mb-5.5">
+        <div className="flex items-start gap-6 sm:gap-12 mb-5.5">
           <div>
             <p className="text-[50px] font-medium text-[#34373C] tracking-tighter leading-none mb-1">
               70%
@@ -263,9 +267,12 @@ export function WeeklyTasks() {
 
         <button className="w-full bg-[#D056DC] text-white py-5 rounded-4xl mb-4 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
           View All Task
-          <ArrowUpRight
-            size={22}
-            className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+          <Image
+            src={ArrowUp}
+            alt="Arrow Up Right Icon"
+            width={18}
+            height={18}
+            className="text-white/80 self-end pb-1.5"
           />
         </button>
       </div>
