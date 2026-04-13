@@ -35,6 +35,7 @@ Each feature document must include:
 4. [Enterprise Onboarding](features/enterprise-onboarding.md)
 5. [Task Management API](features/task-management.md)
 6. [Internal User Onboarding API](features/internal-user-onboarding.md)
+7. [Authentication API](features/authentication.md)
 
 ## OpenAPI Contract
 

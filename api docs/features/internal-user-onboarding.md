@@ -12,9 +12,10 @@ Supported internal roles:
 Flow:
 
 1. Manager creates internal user profile (pending onboarding state)
-2. System sends secure invitation email with signed and expiring onboarding link
-3. Invited user completes onboarding details and password setup
-4. User becomes active and can log in using email/password
+2. Manager can optionally pre-fill phone number, gender, and avatar selection
+3. System sends secure invitation email with signed and expiring onboarding link
+4. Invited user reviews pre-filled values, optionally edits them, and sets password
+5. User becomes active and can log in using email/password
 
 This implementation is company-scoped and compatible with existing self-serve and enterprise onboarding flows.
 
@@ -63,7 +64,8 @@ New fields used for internal onboarding:
 9. invited_by_user_id
 10. phone_number
 11. gender (male, female)
-12. internal_onboarding_completed_at
+12. avatar
+13. internal_onboarding_completed_at
 
 ### companies (extended)
 
@@ -95,6 +97,9 @@ Request:
   "full_name": "Abdul Donald",
   "email": "abduldonald@factory.local",
   "role": "agent",
+  "phone_number": "+2348012345678",
+  "gender": "male",
+  "avatar_key": "male_02",
   "assigned_zone": "Lagos Mainland",
   "work_days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
   "base_salary": 150000,
@@ -121,6 +126,9 @@ Success 201:
       "salary_currency": "NGN",
       "commission_enabled": true,
       "supervisor_user_id": 14,
+      "phone_number": "+2348012345678",
+      "gender": "male",
+      "avatar_key": "male_02",
       "is_active": false
     },
     "invite_expires_at": "2026-04-11T13:00:00+00:00"
@@ -197,12 +205,33 @@ Success 200:
       "name": "Abdul Donald",
       "email": "abduldonald@factory.local",
       "internal_role": "agent",
-      "onboarding_status": "pending_onboarding"
+      "onboarding_status": "pending_onboarding",
+      "phone_number": "+2348012345678",
+      "gender": "male",
+      "avatar_key": "male_02"
     },
     "avatar_options": {
       "male_01": "<svg...>",
       "male_02": "<svg...>"
     },
+    "avatar_options_by_gender": {
+      "male": {
+        "male_01": "<svg...>",
+        "male_02": "<svg...>"
+      },
+      "female": {
+        "female_01": "<svg...>",
+        "female_02": "<svg...>"
+      }
+    },
+    "prefilled_data": {
+      "phone_number": "+2348012345678",
+      "gender": "male",
+      "avatar_key": "male_02"
+    },
+    "selected_gender": "male",
+    "selected_avatar_key": "male_02",
+    "selected_avatar_svg": "<svg...>",
     "suggested_avatar_key": "male_02",
     "expires_at": "2026-04-11T13:00:00+00:00"
   },
@@ -218,12 +247,11 @@ Request:
 {
   "invitation_id": 101,
   "token": "<64-char-token>",
-  "phone_number": "+2348012345678",
-  "gender": "female",
-  "avatar_key": "female_01",
   "password": "StrongPass!123",
   "password_confirmation": "StrongPass!123"
 }
+
+The user may also override any pre-filled value by including `phone_number`, `gender`, and `avatar_key` in the completion payload.
 
 Success 200:
 
@@ -285,16 +313,20 @@ Create user:
 6. base_salary required numeric min 0
 7. currency_code optional 3-letter ISO
 8. role=agent requires supervisor_user_id
-9. role=supervisor supports optional assign_agent_ids
+9. phone_number optional E.164 format
+10. gender optional male|female
+11. avatar_key optional but must match selected gender if provided
+12. role=supervisor supports optional assign_agent_ids
 
 Complete onboarding:
 
 1. invitation_id exists
 2. token exact 64 chars and must match hashed token
-3. phone_number E.164 format
-4. gender in male|female
-5. avatar_key must belong to selected gender catalog
-6. password must be strong and confirmed
+3. password must be strong and confirmed
+4. final merged phone_number must exist and be valid E.164
+5. final merged gender must exist and be male|female
+6. final merged avatar_key must belong to resolved gender catalog
+7. if gender exists without avatar, system auto-assigns a random avatar for that gender
 
 ## Security Design
 
@@ -304,6 +336,7 @@ Complete onboarding:
 4. One-time use enforced via accepted_at.
 5. Existing pending invitations are revoked before resend.
 6. Invalid, expired, revoked, or reused invites return validation error.
+7. Pre-filled onboarding data is stored on the invited user record and can be overridden by the invited user before activation.
 
 ## Status Codes
 
@@ -319,8 +352,10 @@ Complete onboarding:
 1. Duplicate email on create -> 422
 2. Agent without supervisor assignment -> 422
 3. Supervisor assignment outside company context -> 422
-4. Expired or reused invitation token -> 422
-5. Login for pending_onboarding or inactive user -> 401
+4. Avatar key inconsistent with selected gender -> 422
+5. Expired or reused invitation token -> 422
+6. Completion with password only succeeds when pre-filled data already satisfies required profile fields
+7. Login for pending_onboarding or inactive user -> 401
 
 ## Scalability and Future Work
 
@@ -334,10 +369,14 @@ Complete onboarding:
 Feature tests:
 
 1. Supervisor can create agent and send invite
-2. Agent creation requires supervisor
-3. Agent cannot create internal users
-4. Invited user can preview and complete onboarding once
-5. Internal login requires active onboarded user
+2. Supervisor can pre-fill phone, gender, and avatar data
+3. Gender-only prefill auto-assigns avatar
+4. Agent creation requires supervisor
+5. Agent cannot create internal users
+6. Invited user can preview and complete onboarding once
+7. Invited user can complete onboarding with password only when pre-filled data exists
+8. Invited user can override pre-filled values during completion
+9. Internal login requires active onboarded user
 
 Test file:
 
