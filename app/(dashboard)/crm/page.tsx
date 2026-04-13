@@ -1,6 +1,9 @@
 "use client";
 
 import { TinyButton } from "@/components/ui/tiny-button";
+import { TaskBoard } from "@/components/operations/task-board";
+import { useDragAndDrop } from "@/lib/hooks/use-tasks-dnd";
+import type { DndContainer, DndItem } from "@/types/operations";
 import {
   BookmarkPlus,
   ChevronDown,
@@ -66,6 +69,91 @@ const makeLead = (id: string): Lead => ({
   time: "12 hours ago",
   avatar: `https://i.pravatar.cc/150?u=${id}`,
 });
+
+const CRM_INITIAL_DATA: DndContainer[] = [
+  {
+    id: "new",
+    title: "New Leads",
+    color: "#3B82F6",
+    items: [
+      {
+        id: "lead-1",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "Lagos, Nigeria",
+        time: "12 hours ago",
+        category: "agent",
+      },
+      {
+        id: "lead-4",
+        label: "Amina Okoro",
+        description: "Vertex Holdings Ltd",
+        location: "Abuja, Nigeria",
+        time: "8 hours ago",
+        category: "agent",
+      },
+    ],
+  },
+  {
+    id: "contacted",
+    title: "Contacted",
+    color: "#BD7A22",
+    items: [
+      {
+        id: "lead-2",
+        label: "James Mwangi",
+        description: "Savannah Tech Solutions",
+        location: "Nairobi, Kenya",
+        time: "1 day ago",
+        category: "agent",
+      },
+    ],
+  },
+  {
+    id: "qualified",
+    title: "Qualified",
+    color: "#094B5C",
+    items: [
+      {
+        id: "lead-3",
+        label: "Chioma Eze",
+        description: "Greenfield Exports",
+        location: "Port Harcourt, Nigeria",
+        time: "2 days ago",
+        category: "agent",
+      },
+      {
+        id: "lead-5",
+        label: "Kwame Asante",
+        description: "Golden Gate Finance",
+        location: "Accra, Ghana",
+        time: "3 days ago",
+        category: "agent",
+      },
+    ],
+  },
+  {
+    id: "proposal-sent",
+    title: "Proposal Sent",
+    color: "#8B5CF6",
+    items: [
+      {
+        id: "lead-6",
+        label: "Fatima Diallo",
+        description: "Sahel Innovations",
+        location: "Dakar, Senegal",
+        time: "4 days ago",
+        category: "agent",
+      },
+    ],
+  },
+  {
+    id: "lost",
+    title: "Lost",
+    color: "#EF4444",
+    items: [],
+  },
+];
 
 function TotalLeadsCard() {
   return (
@@ -234,10 +322,30 @@ function AgentCard() {
 }
 
 function CRMPipeline() {
+  const {
+    containers,
+    addItem,
+    moveItem,
+    moveToContainer,
+    moveBetweenContainers,
+    findContainer,
+  } = useDragAndDrop(CRM_INITIAL_DATA);
+
   return (
-    <div className="shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] p-6 pt-4 h-full border-b-0 mt-10 max-w-349.75 min-h-102.5">
-      <div className="flex items-center justify-end">
+    <div className="shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] h-full border-b-0 mt-10 max-w-349.75 min-h-102.5">
+      <div className="flex items-center justify-end pt-3.75 pr-16.5">
         <TinyButton>View All Leads</TinyButton>
+      </div>
+      <div className="p-6">
+        <TaskBoard
+          containers={containers}
+          activeTab="all"
+          onAddCard={addItem}
+          findContainer={findContainer}
+          moveItem={moveItem}
+          moveToContainer={moveToContainer}
+          moveBetweenContainers={moveBetweenContainers}
+        />
       </div>
     </div>
   );
