@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { Search, Download, SlidersHorizontal } from "lucide-react";
 import { PaymentOverview } from "@/components/finance/payment-overview";
+import { PayrollHistory } from "@/components/finance/payroll-history";
 import { PayrollList } from "@/components/finance/payroll-list";
 import { PayrollSidebar } from "@/components/finance/payroll-sidebar";
-import { PayrollHistory } from "@/components/finance/payroll-history";
 import { SetPayrollModal } from "@/components/finance/set-payroll-modal";
+import {
+  BookmarkPlus,
+  ChevronDown,
+  Import,
+  Search,
+  SlidersHorizontal,
+  Tag,
+} from "lucide-react";
+import { useState } from "react";
 
 const agentsMap: Record<
   string,
@@ -87,14 +94,49 @@ export default function FinancePage() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>("2");
   const [showViewAll, setShowViewAll] = useState(false);
   const [isPayrollModalOpen, setIsPayrollModalOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
 
   const selectedAgent = selectedAgentId
     ? (agentsMap[selectedAgentId] ?? null)
     : null;
 
   return (
-    <div className="min-h-full bg-[#F4F7F9]">
+    <div className="h-full">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mx-[53.5px] mt-5.75">
+        <div className="relative w-full max-w-114">
+          <Search
+            className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400"
+            size={18}
+          />
+          <input
+            type="text"
+            placeholder="Search for leads"
+            className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
+          />
+        </div>
+
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] font-medium text-gray-500 transition-all">
+            All Pipeline
+            <ChevronDown size={13} />
+          </button>
+          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] font-medium text-gray-500 transition-all">
+            <Import size={13} />
+            Import
+          </button>
+          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] font-medium text-gray-500 transition-all">
+            <Tag size={13} />
+            Label
+          </button>
+          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] font-medium text-gray-500 transition-all ml-25.5">
+            Filter
+            <SlidersHorizontal size={13} />
+          </button>
+          <button className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[10px] font-medium hover:opacity-90 transition-all">
+            Add New Leads
+            <BookmarkPlus size={15} />
+          </button>
+        </div>
+      </div>
       {/* Main Content */}
       <div className="px-5 sm:px-8 lg:px-10 py-6 space-y-6">
         {/* Payment Overview Section */}

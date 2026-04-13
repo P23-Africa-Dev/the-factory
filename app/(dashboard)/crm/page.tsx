@@ -1,9 +1,9 @@
 "use client";
 
-import { TinyButton } from "@/components/ui/tiny-button";
 import { TaskBoard } from "@/components/operations/task-board";
+import { TinyButton } from "@/components/ui/tiny-button";
 import { useDragAndDrop } from "@/lib/hooks/use-tasks-dnd";
-import type { DndContainer, DndItem } from "@/types/operations";
+import type { DndContainer } from "@/types/operations";
 import {
   BookmarkPlus,
   ChevronDown,
