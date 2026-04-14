@@ -81,7 +81,7 @@ function CircularProgress({
 }
 
 function MiniChart({
-  color = "#E84040",
+  color = "#E18695",
   gradId,
 }: {
   color?: string;
@@ -95,15 +95,15 @@ function MiniChart({
       >
         <defs>
           <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={color} stopOpacity={0.25} />
-            <stop offset="95%" stopColor={color} stopOpacity={0} />
+            <stop offset="5%" stopColor={color} stopOpacity={1} />
+            <stop offset="95%" stopColor="#D9D9D9" stopOpacity={0} />
           </linearGradient>
         </defs>
         <Area
-          type="monotone"
+          type="natural"
           dataKey="v"
           stroke={color}
-          strokeWidth={1.5}
+          strokeWidth={0}
           fillOpacity={1}
           fill={`url(#${gradId})`}
           dot={false}
@@ -122,7 +122,6 @@ export function PaymentOverview() {
 
   return (
     <div className="flex flex-col lg:flex-row gap-4">
-      {/* ── Left: Payment Overview ─────────────────── */}
       <div className="bg-white rounded-3xl p-5 shadow-sm flex-1 min-w-0">
         <h2 className="text-[16px] font-bold text-[#0B1215] mb-4">
           Payment Overview
@@ -191,8 +190,7 @@ export function PaymentOverview() {
         </div>
       </div>
 
-      {/* ── Middle: Commissions + Pending ──────────── */}
-      <div className="flex-1 min-w-0 flex flex-col max-w-71.5 gap-2.5">
+      <div className="flex-1 min-w-0 flex flex-col max-w-71.5 gap-2.5 max-h-42.25">
         <div className="bg-white rounded-3xl px-5 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] h-fit">
           <p className="text-[32px] font-bold text-[#34373C] leading-13.75 tracking-tight font-[poppins]">
             &#8358;1,180,000
@@ -236,8 +234,7 @@ export function PaymentOverview() {
         </div>
       </div>
 
-      {/* ── Right: Total Payroll (dark) ─────────────── */}
-      <div className="bg-[#09232D] shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-3xl max-w-115.25 py-5 px-3.75 flex-1 min-w-0 relative overflow-hidden flex flex-col">
+      <div className="bg-[#09232D] max-h-67.25 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-3xl max-w-115.25 py-5 px-3.75 flex-1 min-w-0 relative overflow-hidden flex flex-col">
         <div className="relative z-10 flex flex-col flex-1">
           <div className="px-4.5 py-3.25 bg-[#041820] rounded-[20px] w-fit shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
             <p className="text-[48px] text-white leading-tight tracking-tight">
@@ -249,7 +246,7 @@ export function PaymentOverview() {
           </div>
 
           {/* Chart */}
-          <div className="mt-auto pt-4 h-14 flex">
+          <div className="mt-auto pt-4 h-27.75 flex items-baseline">
             {mounted ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
@@ -264,11 +261,7 @@ export function PaymentOverview() {
                       x2="0"
                       y2="1"
                     >
-                      <stop
-                        offset="5%"
-                        stopColor="#95E1C0"
-                        stopOpacity={0.35}
-                      />
+                      <stop offset="5%" stopColor="#95E1C0" />
                       <stop offset="95%" stopColor="#95E1C0" stopOpacity={0} />
                     </linearGradient>
                   </defs>
@@ -276,7 +269,7 @@ export function PaymentOverview() {
                     type="monotone"
                     dataKey="v"
                     stroke="#95E1C0"
-                    strokeWidth={2}
+                    strokeWidth={0}
                     fillOpacity={1}
                     fill="url(#payrollDarkGrad)"
                     dot={false}
