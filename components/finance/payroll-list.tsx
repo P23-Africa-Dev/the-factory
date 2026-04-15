@@ -117,7 +117,7 @@ export function PayrollList({
               key={agent.id}
               onClick={() => onSelect(agent.id)}
               className={`flex border-[#E8E5E5] border-[0.8px] items-center gap-3 sm:gap-5 rounded-[30px] pr-4 sm:pr-5 overflow-hidden cursor-pointer ${
-                isSelected ? "bg-[#0B1215]" : "bg-[#F8F9FA]"
+                isSelected ? "bg-[#09232D]" : "bg-[#F8F9FA]"
               }`}
             >
               {/* Left accent bar */}

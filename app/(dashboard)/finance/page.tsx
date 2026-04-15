@@ -1,18 +1,15 @@
 "use client";
 
+import CalendarIcon from "@/assets/images/calendar-icon.png";
+import FileExportIcon from "@/assets/images/file-export-icon.png";
+import CardValidationIcon from "@/assets/images/card-validation-icon.png";
 import { PaymentOverview } from "@/components/finance/payment-overview";
 import { PayrollHistory } from "@/components/finance/payroll-history";
 import { PayrollList } from "@/components/finance/payroll-list";
 import { PayrollSidebar } from "@/components/finance/payroll-sidebar";
 import { SetPayrollModal } from "@/components/finance/set-payroll-modal";
-import {
-  BookmarkPlus,
-  ChevronDown,
-  Import,
-  Search,
-  SlidersHorizontal,
-  Tag,
-} from "lucide-react";
+import { Search, SlidersHorizontal } from "lucide-react";
+import Image from "next/image";
 import { useState } from "react";
 
 const agentsMap: Record<
@@ -121,37 +118,48 @@ export default function FinancePage() {
           />
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] font-medium text-gray-500 transition-all">
-            All Pipeline
-            <ChevronDown size={13} />
-          </button>
-          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] font-medium text-gray-500 transition-all">
-            <Import size={13} />
-            Import
-          </button>
-          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] font-medium text-gray-500 transition-all">
-            <Tag size={13} />
+        <div className="flex items-center gap-4.25 flex-wrap">
+          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
             Label
+            <Image
+              src={CalendarIcon}
+              alt="Calendar Icon"
+              width={13}
+              height={13}
+            />
           </button>
-          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] font-medium text-gray-500 transition-all ml-25.5">
+          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
+            Export
+            <Image
+              src={FileExportIcon}
+              alt="Export Icon"
+              width={13}
+              height={13}
+              style={{ filter: "invert(40%) sepia(0%) grayscale(100%)" }}
+            />
+          </button>
+          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
             Filter
             <SlidersHorizontal size={13} />
           </button>
-          <button className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[10px] font-medium hover:opacity-90 transition-all">
-            Add New Leads
-            <BookmarkPlus size={15} />
+          <button className="flex items-center gap-2.5 px-2.5 py-[8.5px] font-medium bg-[#09232D] text-white rounded-[10px] text-[10px] hover:opacity-90 transition-all">
+            Set Payroll
+            <Image
+              src={CardValidationIcon}
+              alt="Set Payroll Icon"
+              width={13}
+              height={13}
+              onClick={() => setIsPayrollModalOpen(true)}
+            />
           </button>
         </div>
       </div>
       {/* Main Content */}
       <div className="px-5 sm:px-8 lg:px-10 py-6 space-y-6">
-        {/* Payment Overview Section */}
         {!showViewAll && <PaymentOverview />}
 
         {/* Payroll List + Sidebar */}
         <div className="flex flex-col xl:flex-row gap-6">
-          {/* List */}
           <div className="flex-1 min-w-0">
             <PayrollList
               selectedId={selectedAgentId}
@@ -161,13 +169,11 @@ export default function FinancePage() {
             />
           </div>
 
-          {/* Sidebar */}
           <div className="w-full xl:w-85 xl:shrink-0 min-w-131.25">
             <div className="drop-shadow-[0px_1px_3px_#0000004D,0px_4px_8px_#00000026]">
               <PayrollSidebar agent={selectedAgent} />
             </div>
 
-            {/* Payroll History - shown when a user is selected */}
             {showViewAll && selectedAgent && <PayrollHistory />}
           </div>
         </div>

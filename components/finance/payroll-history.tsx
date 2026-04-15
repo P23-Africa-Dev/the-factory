@@ -45,38 +45,41 @@ export function PayrollHistory() {
 
       <div className="space-y-3">
         {historyData.map((entry) => (
-          <div key={entry.id} className="bg-[#F8F9FA] rounded-[16px] px-5 py-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div
+            key={entry.id}
+            className="bg-[#E3F4FB] rounded-full px-7.25 py-4 border-t border-[#CDCDCD]"
+          >
+            <div className="flex gap-4.5">
               <div>
-                <p className="text-[10px] font-bold text-gray-400 mb-0.5">
+                <p className="text-[14px] font-bold text-[#7A7A7A] mb-1">
                   Month
                 </p>
-                <p className="text-[12px] font-semibold text-[#0B1215]">
+                <p className="text-[10px] font-light text-[#616263]">
                   {entry.month}
                 </p>
               </div>
               <div>
-                <p className="text-[10px] font-bold text-gray-400 mb-0.5">
+                <p className="text-[14px] font-bold text-[#7A7A7A] mb-1">
                   Base Salary
                 </p>
-                <p className="text-[12px] font-semibold text-[#0B1215]">
+                <p className="text-[10px] font-light text-[#616263]">
                   {entry.baseSalary}
                 </p>
               </div>
               <div>
-                <p className="text-[10px] font-bold text-gray-400 mb-0.5">
+                <p className="text-[14px] font-bold text-[#7A7A7A] mb-1">
                   Net Pay
                 </p>
-                <p className="text-[12px] font-semibold text-[#0B1215]">
+                <p className="text-[10px] font-light text-[#616263]">
                   {entry.netPay}
                 </p>
               </div>
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-[10px] font-bold text-gray-400 mb-0.5">
+                  <p className="text-[14px] font-bold text-[#7A7A7A] mb-1">
                     Due Date
                   </p>
-                  <p className="text-[12px] font-semibold text-[#0B1215]">
+                  <p className="text-[10px] font-light text-[#616263]">
                     {entry.dueDate}
                   </p>
                 </div>
