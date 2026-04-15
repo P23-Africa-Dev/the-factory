@@ -189,7 +189,7 @@ function OperationsContent() {
                   onClick={() => handleTabChange(tab.value)}
                   className={`px-5 py-2.5 rounded-full text-[13px] font-bold transition-all cursor-pointer ${
                     activeTab === tab.value
-                      ? "bg-[#0B1215] text-white shadow-lg"
+                      ? "bg-[#09232D] text-white shadow-lg"
                       : "text-gray-400 hover:text-gray-600"
                   }`}
                 >
