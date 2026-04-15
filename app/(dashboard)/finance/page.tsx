@@ -21,6 +21,7 @@ const agentsMap: Record<
     id: string;
     name: string;
     address: string;
+    lga: string;
     avatar: string;
     baseSalary: string;
     netPay: string;
@@ -32,6 +33,7 @@ const agentsMap: Record<
     id: "1",
     name: "Francis Nasyomba",
     address: "13 Oloo Akron Avenue, Ikeja, Nairobi",
+    lga: "Ikeja",
     avatar: "https://i.pravatar.cc/150?u=francis1",
     baseSalary: "₦65,000",
     netPay: "₦15,000",
@@ -42,6 +44,7 @@ const agentsMap: Record<
     id: "2",
     name: "Lane Wade",
     address: "13 Oloo Akron Avenue, Ikeja, Nairobi",
+    lga: "Ikeja",
     avatar: "https://i.pravatar.cc/150?u=lane2",
     baseSalary: "₦65,000",
     netPay: "₦15,000",
@@ -52,6 +55,7 @@ const agentsMap: Record<
     id: "3",
     name: "Francis Nasyomba",
     address: "13 Oloo Akron Avenue, Ikeja, Nairobi",
+    lga: "Ikeja",
     avatar: "https://i.pravatar.cc/150?u=francis3",
     baseSalary: "₦65,000",
     netPay: "₦15,000",
@@ -62,6 +66,7 @@ const agentsMap: Record<
     id: "4",
     name: "Francis Nasyomba",
     address: "13 Oloo Akron Avenue, Ikeja, Nairobi",
+    lga: "Ikeja",
     avatar: "https://i.pravatar.cc/150?u=francis4",
     baseSalary: "₦65,000",
     netPay: "₦15,000",
@@ -72,6 +77,7 @@ const agentsMap: Record<
     id: "5",
     name: "Francis Nasyomba",
     address: "13 Oloo Akron Avenue, Ikeja, Nairobi",
+    lga: "Ikeja",
     avatar: "https://i.pravatar.cc/150?u=francis5",
     baseSalary: "₦65,000",
     netPay: "₦15,000",
@@ -82,6 +88,7 @@ const agentsMap: Record<
     id: "6",
     name: "Francis Nasyomba",
     address: "13 Oloo Akron Avenue, Ikeja, Nairobi",
+    lga: "Ikeja",
     avatar: "https://i.pravatar.cc/150?u=francis6",
     baseSalary: "₦65,000",
     netPay: "₦15,000",
@@ -179,7 +186,7 @@ export default function FinancePage() {
           </div>
 
           {/* Sidebar */}
-          <div className="w-full xl:w-85 xl:shrink-0">
+          <div className="w-full xl:w-85 xl:shrink-0 min-w-131.25">
             <PayrollSidebar agent={selectedAgent} />
 
             {/* Payroll History - shown when a user is selected */}

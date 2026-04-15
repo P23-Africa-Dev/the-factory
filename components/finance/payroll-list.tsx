@@ -6,6 +6,7 @@ export interface PayrollAgent {
   id: string;
   name: string;
   address: string;
+  lga: string;
   avatar: string;
   baseSalary: string;
   netPay: string;
@@ -18,6 +19,7 @@ const agents: PayrollAgent[] = [
     id: "1",
     name: "Francis Nasyomba",
     address: "13 Oloo Akron Avenue, Ikeja, Nairobi",
+    lga: "Ikeja",
     avatar: "https://i.pravatar.cc/150?u=francis1",
     baseSalary: "₦65,000",
     netPay: "₦15,000",
@@ -28,6 +30,7 @@ const agents: PayrollAgent[] = [
     id: "2",
     name: "Lane Wade",
     address: "13 Oloo Akron Avenue, Ikeja, Nairobi",
+    lga: "Ikeja",
     avatar: "https://i.pravatar.cc/150?u=lane2",
     baseSalary: "₦65,000",
     netPay: "₦15,000",
@@ -38,6 +41,7 @@ const agents: PayrollAgent[] = [
     id: "3",
     name: "Francis Nasyomba",
     address: "13 Oloo Akron Avenue, Ikeja, Nairobi",
+    lga: "Ikeja",
     avatar: "https://i.pravatar.cc/150?u=francis3",
     baseSalary: "₦65,000",
     netPay: "₦15,000",
@@ -48,6 +52,7 @@ const agents: PayrollAgent[] = [
     id: "4",
     name: "Francis Nasyomba",
     address: "13 Oloo Akron Avenue, Ikeja, Nairobi",
+    lga: "Ikeja",
     avatar: "https://i.pravatar.cc/150?u=francis4",
     baseSalary: "₦65,000",
     netPay: "₦15,000",
@@ -58,6 +63,7 @@ const agents: PayrollAgent[] = [
     id: "5",
     name: "Francis Nasyomba",
     address: "13 Oloo Akron Avenue, Ikeja, Nairobi",
+    lga: "Ikeja",
     avatar: "https://i.pravatar.cc/150?u=francis5",
     baseSalary: "₦65,000",
     netPay: "₦15,000",
@@ -68,6 +74,7 @@ const agents: PayrollAgent[] = [
     id: "6",
     name: "Francis Nasyomba",
     address: "13 Oloo Akron Avenue, Ikeja, Nairobi",
+    lga: "Ikeja",
     avatar: "https://i.pravatar.cc/150?u=francis6",
     baseSalary: "₦65,000",
     netPay: "₦15,000",
