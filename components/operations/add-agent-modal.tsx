@@ -1,354 +1,302 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { X, Upload, User, Phone, Mail, MapPin, Briefcase, DollarSign, ChevronDown } from 'lucide-react';
+import { X, ChevronDown, ImagePlus, Plus } from 'lucide-react';
 
 const ZONE_OPTIONS = ['Ikeja LGA', 'Surulere LGA', 'Lekki LGA', 'Victoria Island', 'Yaba LGA', 'Oshodi LGA'];
-const SUPERVISOR_OPTIONS = ['Tunde Balogun', 'Ridwan Thomson', 'Amaka Osei'];
-const WORK_DAYS_OPTIONS = ['Mon–Fri', 'Mon–Sat', 'Tue–Sat', 'Wed–Sun', 'Custom'];
+const ROLE_OPTIONS = ['Supervisor', 'Field Agent', 'Staff'];
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+// Preset avatar colours + initials (placeholder until real assets exist)
+const PRESET_AVATARS = [
+  { bg: '#C9A96E', initials: 'AA' },
+  { bg: '#3D2B1F', initials: 'BB' },
+  { bg: '#8B72BE', initials: 'CC' },
+  { bg: '#5BBFB5', initials: 'DD' },
+];
 
 const EMPTY_FORM = {
   name: '',
-  gender: '' as 'Male' | 'Female' | '',
-  phone: '',
   email: '',
-  role: '' as 'Supervisor' | 'Field Agent' | '',
-  supervisor: '',
+  role: '',
   zone: '',
-  workDays: 'Mon–Fri',
-  customDays: [] as string[],
-  baseSalary: '',
+  salary: '',
   commissionEnabled: false,
+  fillForAgent: false,
+  phone: '',
+  gender: '' as 'Male' | 'Female' | '',
+  avatarIndex: -1,
+  avatarCustom: null as string | null,
 };
 
 type FormState = typeof EMPTY_FORM;
 
-const BASE_INPUT = 'w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-[13px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-teal/20 focus:border-dash-teal/40 transition-all placeholder:text-gray-300';
-const WITH_ICON = 'pl-9';
+const INPUT_CLS =
+  'w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-[13px] text-[#0B1215] outline-none focus:border-[#094B5C] transition-colors placeholder:text-gray-300 appearance-none';
 
-function Label({ children }: { children: React.ReactNode }) {
-  return <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide block mb-1.5">{children}</label>;
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 my-1">
+      <div className="flex-1 h-px bg-gray-200" />
+      <span className="text-[12px] text-gray-400 font-medium shrink-0">{label}</span>
+      <div className="flex-1 h-px bg-gray-200" />
+    </div>
+  );
 }
 
-function InputIcon({ children }: { children: React.ReactNode }) {
-  return <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">{children}</div>;
+function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-[120px_1fr] items-center gap-3">
+      <span className="text-[13px] text-gray-500">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${on ? 'bg-green-500' : 'bg-gray-300'}`}
+    >
+      <div
+        className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${on ? 'left-6' : 'left-0.5'}`}
+      />
+      {on && (
+        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-white">I</span>
+      )}
+    </button>
+  );
 }
 
 export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const set = <K extends keyof FormState>(key: K, val: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: val }));
 
-  const toggleCustomDay = (day: string) => {
-    setForm((f) => ({
-      ...f,
-      customDays: f.customDays.includes(day)
-        ? f.customDays.filter((d) => d !== day)
-        : [...f.customDays, day],
-    }));
-  };
-
-  const handleAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCustomAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setAvatarPreview(URL.createObjectURL(file));
+    set('avatarCustom', URL.createObjectURL(file));
+    set('avatarIndex', -1);
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // wire up to real API here
     onClose();
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl z-10 flex flex-col max-h-[90vh] animate-in slide-in-from-bottom-4 duration-300">
+    <div className="fixed inset-0 z-50">
+      <div
+        className="absolute inset-0 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
+        onClick={onClose}
+      />
+      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-110 bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
 
-        {/* Header — fixed */}
-        <div className="flex items-center justify-between px-7 pt-6 pb-5 border-b border-gray-100 shrink-0">
-          <div>
-            <h2 className="text-[18px] font-bold text-dash-dark">Add New Agent</h2>
-            <p className="text-[12px] text-gray-400 mt-0.5">Fill in the details below to onboard an agent</p>
-          </div>
+        {/* Close button */}
+        <div className="flex justify-end px-6 pt-5 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+            className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors"
           >
-            <X size={16} className="text-gray-500" />
+            <X size={14} />
           </button>
         </div>
 
-        {/* Body — scrollable */}
-        <form onSubmit={handleSubmit} id="add-agent-form" className="px-7 py-6 space-y-5 overflow-y-auto flex-1 min-h-0">
+        {/* Heading */}
+        <div className="px-6 pb-4 shrink-0">
+          <h2 className="text-[22px] font-extrabold text-[#0B1215] leading-tight">
+            Enter Appropriate<br />Agent Details
+          </h2>
+        </div>
 
-          {/* ── Profile Photo ─────────────────────────── */}
-          <div className="flex items-center gap-5">
-            <div className="relative shrink-0">
-              <div className="w-16 h-16 rounded-full bg-gray-100 border-2 border-dashed border-gray-300 overflow-hidden flex items-center justify-center">
-                {avatarPreview ? (
-                  <img src={avatarPreview} className="w-full h-full object-cover" alt="preview" />
-                ) : (
-                  <User size={20} className="text-gray-300" />
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="absolute -bottom-1 -right-1 w-6 h-6 bg-[#09232d] rounded-full flex items-center justify-center shadow"
-              >
-                <Upload size={11} className="text-white" />
-              </button>
-            </div>
-            <div>
-              <p className="text-[13px] font-bold text-dash-dark">Profile Photo</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">Auto-generated avatar set. You can upload a custom photo.</p>
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="mt-2 px-3 py-1.5 rounded-full border border-gray-200 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
-              >
-                Upload Photo
-              </button>
-            </div>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatar} />
-          </div>
+        {/* Scrollable body */}
+        <form id="add-agent-form" onSubmit={handleSubmit} className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 space-y-4">
 
-          {/* ── Full Name ─────────────────────────────── */}
-          <div>
-            <Label>Full Name</Label>
-            <div className="relative">
-              <InputIcon><User size={13} /></InputIcon>
+          <SectionDivider label="Add New Agent" />
+
+          <div className="space-y-3">
+            {/* Fullname */}
+            <FieldRow label="Fullname">
               <input
                 required
                 type="text"
                 value={form.name}
                 onChange={(e) => set('name', e.target.value)}
-                placeholder="e.g. Abdul Kareem Lawal"
-                className={`${BASE_INPUT} ${WITH_ICON}`}
+                placeholder="E.g Alison Thomson"
+                className={INPUT_CLS}
               />
-            </div>
-          </div>
+            </FieldRow>
 
-          {/* ── Gender ────────────────────────────────── */}
-          <div>
-            <Label>Gender</Label>
-            <div className="flex gap-2">
-              {(['Male', 'Female'] as const).map((g) => (
-                <button
-                  key={g}
-                  type="button"
-                  onClick={() => set('gender', g)}
-                  className={`flex-1 py-3 rounded-xl text-[13px] font-bold transition-all border-2 ${
-                    form.gender === g
-                      ? 'bg-[#09232d] text-white border-dash-dark'
-                      : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  {g}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Phone + Email ─────────────────────────── */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Phone Number</Label>
-              <div className="relative">
-                <InputIcon><Phone size={13} /></InputIcon>
-                <input
-                  required
-                  type="tel"
-                  value={form.phone}
-                  onChange={(e) => set('phone', e.target.value)}
-                  placeholder="+234 803 000 0000"
-                  className={`${BASE_INPUT} ${WITH_ICON}`}
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Email Address</Label>
-              <div className="relative">
-                <InputIcon><Mail size={13} /></InputIcon>
-                <input
-                  required
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => set('email', e.target.value)}
-                  placeholder="e.g. name@company.com"
-                  className={`${BASE_INPUT} ${WITH_ICON}`}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* ── Role ──────────────────────────────────── */}
-          <div>
-            <Label>Role</Label>
-            <div className="relative">
-              <InputIcon><Briefcase size={13} /></InputIcon>
-              <select
+            {/* Email */}
+            <FieldRow label="Email">
+              <input
                 required
-                value={form.role}
-                onChange={(e) => set('role', e.target.value as FormState['role'])}
-                className={`${BASE_INPUT} ${WITH_ICON} pr-9 appearance-none cursor-pointer`}
-              >
-                <option value="" disabled>Select role</option>
-                <option>Supervisor</option>
-                <option>Field Agent</option>
-              </select>
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                <ChevronDown size={13} />
-              </div>
-            </div>
-          </div>
+                type="email"
+                value={form.email}
+                onChange={(e) => set('email', e.target.value)}
+                placeholder="E.g alison@company.com"
+                className={INPUT_CLS}
+              />
+            </FieldRow>
 
-          {/* ── Supervisor (Field Agent only) ─────────── */}
-          {form.role === 'Field Agent' && (
-            <div className="animate-in fade-in slide-in-from-top-2 duration-200">
-              <Label>Supervisor</Label>
+            {/* Role */}
+            <FieldRow label="Role">
               <div className="relative">
-                <InputIcon><User size={13} /></InputIcon>
                 <select
                   required
-                  value={form.supervisor}
-                  onChange={(e) => set('supervisor', e.target.value)}
-                  className={`${BASE_INPUT} ${WITH_ICON} pr-9 appearance-none cursor-pointer`}
+                  value={form.role}
+                  onChange={(e) => set('role', e.target.value)}
+                  className={`${INPUT_CLS} pr-9 cursor-pointer`}
                 >
-                  <option value="" disabled>Select supervisor</option>
-                  {SUPERVISOR_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+                  <option value="" disabled>E.g Staff</option>
+                  {ROLE_OPTIONS.map((r) => <option key={r}>{r}</option>)}
                 </select>
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                  <ChevronDown size={13} />
-                </div>
+                <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
               </div>
-            </div>
-          )}
+            </FieldRow>
 
-          {/* ── Assigned Zone ─────────────────────────── */}
-          <div>
-            <Label>Assigned Zone</Label>
-            <div className="relative">
-              <InputIcon><MapPin size={13} /></InputIcon>
-              <select
-                required
-                value={form.zone}
-                onChange={(e) => set('zone', e.target.value)}
-                className={`${BASE_INPUT} ${WITH_ICON} pr-9 appearance-none cursor-pointer`}
-              >
-                <option value="" disabled>Select zone</option>
-                {ZONE_OPTIONS.map((z) => <option key={z}>{z}</option>)}
-              </select>
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                <ChevronDown size={13} />
-              </div>
-            </div>
-          </div>
-
-          {/* ── Work Days ─────────────────────────────── */}
-          <div>
-            <Label>Work Days</Label>
-            <div className="flex flex-wrap gap-2">
-              {WORK_DAYS_OPTIONS.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => set('workDays', d)}
-                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all border ${
-                    form.workDays === d
-                      ? 'bg-[#09232d] text-white border-dash-dark'
-                      : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
-            {form.workDays === 'Custom' && (
-              <div className="flex gap-2 mt-3 flex-wrap animate-in fade-in duration-200">
-                {DAYS.map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => toggleCustomDay(d)}
-                    className={`w-10 h-10 rounded-full text-[12px] font-bold transition-all border ${
-                      form.customDays.includes(d)
-                        ? 'bg-[#09232d] text-white border-dash-dark'
-                        : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    {d}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* ── Base Salary + Commission ───────────────── */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Base Salary</Label>
+            {/* Zone */}
+            <FieldRow label="Zone">
               <div className="relative">
-                <InputIcon><DollarSign size={13} /></InputIcon>
+                <select
+                  required
+                  value={form.zone}
+                  onChange={(e) => set('zone', e.target.value)}
+                  className={`${INPUT_CLS} pr-9 cursor-pointer`}
+                >
+                  <option value="" disabled>E.g Ikeja LGA</option>
+                  {ZONE_OPTIONS.map((z) => <option key={z}>{z}</option>)}
+                </select>
+                <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
+            </FieldRow>
+
+            {/* Salary */}
+            <FieldRow label="Salary">
+              <div className="relative">
                 <input
                   type="text"
-                  value={form.baseSalary}
-                  onChange={(e) => set('baseSalary', e.target.value.replace(/[^0-9,]/g, ''))}
-                  placeholder="e.g. 120,000"
-                  className={`${BASE_INPUT} ${WITH_ICON}`}
+                  value={form.salary}
+                  onChange={(e) => set('salary', e.target.value.replace(/[^0-9,]/g, ''))}
+                  placeholder="E.g ₦120,000"
+                  className={INPUT_CLS}
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-gray-400">₦</span>
               </div>
-            </div>
+            </FieldRow>
 
-            <div>
-              <Label>Commission Enabled</Label>
-              <div
-                onClick={() => set('commissionEnabled', !form.commissionEnabled)}
-                className={`mt-0.5 flex items-center gap-3 px-4 py-3 rounded-xl border-2 cursor-pointer transition-all select-none h-11.5 ${
-                  form.commissionEnabled
-                    ? 'bg-[#09232d] border-dash-dark'
-                    : 'bg-gray-50 border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${form.commissionEnabled ? 'bg-white/20' : 'bg-gray-300'}`}>
-                  <div className={`absolute top-0.5 w-4 h-4 rounded-full shadow transition-all ${
-                    form.commissionEnabled ? 'left-4 bg-white' : 'left-0.5 bg-white'
-                  }`} />
-                </div>
-                <span className={`text-[12px] font-bold ${form.commissionEnabled ? 'text-white' : 'text-gray-500'}`}>
-                  {form.commissionEnabled ? 'ON' : 'OFF'}
-                </span>
-              </div>
-            </div>
+            {/* Commission Enable */}
+            <FieldRow label="Commission Enable">
+              <Toggle on={form.commissionEnabled} onToggle={() => set('commissionEnabled', !form.commissionEnabled)} />
+            </FieldRow>
           </div>
+
+          {/* For Agent section */}
+          <SectionDivider label="For Agent" />
+
+          <FieldRow label="Fill for Agent">
+            <Toggle on={form.fillForAgent} onToggle={() => set('fillForAgent', !form.fillForAgent)} />
+          </FieldRow>
+
+          {/* Agent Details — shown only when Fill for Agent is ON */}
+          {form.fillForAgent && (
+            <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+              <SectionDivider label="Agent Details" />
+
+              <div className="space-y-3">
+                {/* Phone */}
+                <FieldRow label="Phone Number">
+                  <input
+                    type="tel"
+                    value={form.phone}
+                    onChange={(e) => set('phone', e.target.value)}
+                    placeholder="E.g +234 9099999999"
+                    className={INPUT_CLS}
+                  />
+                </FieldRow>
+
+                {/* Gender */}
+                <FieldRow label="Gender">
+                  <div className="relative">
+                    <select
+                      value={form.gender}
+                      onChange={(e) => set('gender', e.target.value as FormState['gender'])}
+                      className={`${INPUT_CLS} pr-9 cursor-pointer`}
+                    >
+                      <option value="" disabled>E.g Male</option>
+                      <option>Male</option>
+                      <option>Female</option>
+                    </select>
+                    <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                </FieldRow>
+              </div>
+
+              {/* Avatar picker */}
+              <div className="flex items-start gap-4 pt-1">
+                {/* Custom photo upload */}
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="w-20 h-20 rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-gray-400 transition-colors shrink-0 overflow-hidden"
+                >
+                  {form.avatarCustom ? (
+                    <img src={form.avatarCustom} alt="custom" className="w-full h-full object-cover" />
+                  ) : (
+                    <>
+                      <ImagePlus size={18} />
+                      <span className="text-[10px] text-center leading-tight">Click to add<br />profile picture</span>
+                    </>
+                  )}
+                </button>
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleCustomAvatar} />
+
+                {/* Presets */}
+                <div className="flex-1">
+                  <p className="text-[11px] text-gray-500 mb-2">Or, Select any Avatar of your choice</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {PRESET_AVATARS.map((av, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => { set('avatarIndex', i); set('avatarCustom', null); }}
+                        className={`w-12 h-12 rounded-full flex items-center justify-center text-white text-[13px] font-bold transition-all shrink-0 ${
+                          form.avatarIndex === i ? 'ring-2 ring-offset-2 ring-[#094B5C]' : ''
+                        }`}
+                        style={{ backgroundColor: av.bg }}
+                      >
+                        {av.initials}
+                      </button>
+                    ))}
+                    {/* Add more */}
+                    <button
+                      type="button"
+                      onClick={() => fileRef.current?.click()}
+                      className="w-12 h-12 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center text-gray-400 hover:border-gray-400 transition-colors shrink-0"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          )}
 
         </form>
 
         {/* Footer — fixed */}
-        <div className="px-7 py-5 border-t border-gray-100 shrink-0 flex gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 py-3 rounded-full border border-gray-200 text-[13px] font-bold text-gray-500 hover:bg-gray-50 transition-colors"
-          >
-            Cancel
-          </button>
+        <div className="px-6 py-4 border-t border-gray-100 shrink-0">
           <button
             type="submit"
             form="add-agent-form"
-            className="flex-1 py-3 rounded-full bg-[#09232d] text-white text-[13px] font-bold hover:opacity-90 transition-all shadow-lg"
+            className="w-full py-3 bg-[#09232D] text-white text-[13px] font-bold rounded-2xl hover:opacity-90 transition-all shadow-lg"
           >
-            Add Agent
+            {form.fillForAgent ? 'Done' : 'Add Agent'}
           </button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { X, MapPin, User, FileText, CheckCircle, ChevronDown, Camera, Calendar, AlertCircle, Navigation } from 'lucide-react';
 import type { DndItem, TaskCategory } from '@/types/operations';
 
@@ -18,11 +18,6 @@ const STATUS_OPTIONS: { value: StatusType; label: string; color: string; short: 
   { value: 'completed', label: 'Completed', color: '#4FD1C5', short: 'Completed' },
 ];
 
-const CATEGORY_OPTIONS: { value: TaskCategory; label: string }[] = [
-  { value: 'all', label: 'General' },
-  { value: 'agent', label: 'Agent' },
-  { value: 'attendance', label: 'Attendance' },
-];
 
 const TASK_TYPES = ['Sales Visit', 'Inspection', 'Delivery', 'Collection', 'Awareness'];
 const PRIORITY_OPTIONS = ['High', 'Medium', 'Low'] as const;
@@ -61,6 +56,7 @@ const INPUT_CLS = (err?: string) =>
   `${BASE_INPUT} py-2.5 ${err ? 'border-red-300' : 'border-gray-200 focus:border-[#094B5C]'}`;
 
 export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskModalProps) {
+  const taskIdRef = useRef(0);
   const [form, setForm] = useState({
     title: '',
     taskType: '',
@@ -100,7 +96,7 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
   const handleSubmit = () => {
     if (!validate()) return;
     const newItem: DndItem = {
-      id: `task-${Date.now()}`,
+      id: `task-${++taskIdRef.current}`,
       label: form.assignTo,
       description: form.title,
       location: `${form.location}${form.address ? `, ${form.address}` : ''}`,
@@ -128,10 +124,10 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleClose} />
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200" onClick={handleClose} />
 
-      <div className="relative w-full max-w-lg bg-white rounded-[28px] shadow-2xl z-10 animate-in zoom-in-95 fade-in duration-200 flex flex-col max-h-[90vh]">
+      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-[440px] bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
 
         {/* Header — fixed */}
         <div className="px-6 py-5 flex justify-between items-center shrink-0 border-b border-gray-100">
