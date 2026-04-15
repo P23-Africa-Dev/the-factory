@@ -1,10 +1,21 @@
-'use client';
+"use client";
 
-import React, { useState, useRef } from 'react';
-import { X, MapPin, User, FileText, CheckCircle, ChevronDown, Camera, Calendar, AlertCircle, Navigation } from 'lucide-react';
-import type { DndItem, TaskCategory } from '@/types/operations';
+import React, { useState, useRef } from "react";
+import {
+  X,
+  MapPin,
+  User,
+  FileText,
+  CheckCircle,
+  ChevronDown,
+  Camera,
+  Calendar,
+  AlertCircle,
+  Navigation,
+} from "lucide-react";
+import type { DndItem, TaskCategory } from "@/types/operations";
 
-type StatusType = 'pending' | 'in-progress' | 'completed';
+type StatusType = "pending" | "in-progress" | "completed";
 
 interface CreateTaskModalProps {
   isOpen: boolean;
@@ -12,83 +23,136 @@ interface CreateTaskModalProps {
   onCreateTask: (containerId: StatusType, item: DndItem) => void;
 }
 
-const STATUS_OPTIONS: { value: StatusType; label: string; color: string; short: string }[] = [
-  { value: 'pending', label: 'Pending Task', color: '#BD7A22', short: 'Pending' },
-  { value: 'in-progress', label: 'In Progress', color: '#094B5C', short: 'In Progress' },
-  { value: 'completed', label: 'Completed', color: '#4FD1C5', short: 'Completed' },
+const STATUS_OPTIONS: {
+  value: StatusType;
+  label: string;
+  color: string;
+  short: string;
+}[] = [
+  {
+    value: "pending",
+    label: "Pending Task",
+    color: "#BD7A22",
+    short: "Pending",
+  },
+  {
+    value: "in-progress",
+    label: "In Progress",
+    color: "#094B5C",
+    short: "In Progress",
+  },
+  {
+    value: "completed",
+    label: "Completed",
+    color: "#4FD1C5",
+    short: "Completed",
+  },
 ];
 
-
-const TASK_TYPES = ['Sales Visit', 'Inspection', 'Delivery', 'Collection', 'Awareness'];
-const PRIORITY_OPTIONS = ['High', 'Medium', 'Low'] as const;
-type Priority = typeof PRIORITY_OPTIONS[number];
+const TASK_TYPES = [
+  "Sales Visit",
+  "Inspection",
+  "Delivery",
+  "Collection",
+  "Awareness",
+];
+const PRIORITY_OPTIONS = ["High", "Medium", "Low"] as const;
+type Priority = (typeof PRIORITY_OPTIONS)[number];
 
 const PRIORITY_COLORS: Record<Priority, string> = {
-  High: '#EF4444',
-  Medium: '#F59E0B',
-  Low: '#10B981',
+  High: "#EF4444",
+  Medium: "#F59E0B",
+  Low: "#10B981",
 };
 
 const AGENTS = [
-  'Abdul Kareem', 'Francis Nasyomba', 'Lade Wane', 'Amina Bello',
-  'Chidi Okonkwo', 'Ngozi Eze', 'Tunde Adeyemi', 'Fatima Sule',
+  "Abdul Kareem",
+  "Francis Nasyomba",
+  "Lade Wane",
+  "Amina Bello",
+  "Chidi Okonkwo",
+  "Ngozi Eze",
+  "Tunde Adeyemi",
+  "Fatima Sule",
 ];
 
-function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
+function FieldLabel({
+  children,
+  required,
+}: {
+  children: React.ReactNode;
+  required?: boolean;
+}) {
   return (
     <label className="text-[11px] font-bold text-[#0B1215] uppercase tracking-wide block mb-1.5">
-      {children}{required && <span className="text-red-400 ml-0.5">*</span>}
+      {children}
+      {required && <span className="text-red-400 ml-0.5">*</span>}
     </label>
   );
 }
 
-function InputWrap({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
+function InputWrap({
+  icon,
+  children,
+}: {
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div className="relative">
-      {icon && <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">{icon}</div>}
+      {icon && (
+        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+          {icon}
+        </div>
+      )}
       {children}
     </div>
   );
 }
 
-const BASE_INPUT = 'w-full bg-gray-50 rounded-xl text-sm text-[#0B1215] outline-none border transition-colors placeholder:text-gray-300';
+const BASE_INPUT =
+  "w-full bg-gray-50 rounded-xl text-sm text-[#0B1215] outline-none border transition-colors placeholder:text-gray-300";
 const INPUT_CLS = (err?: string) =>
-  `${BASE_INPUT} py-2.5 ${err ? 'border-red-300' : 'border-gray-200 focus:border-[#094B5C]'}`;
+  `${BASE_INPUT} py-2.5 ${err ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`;
 
-export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskModalProps) {
+export function CreateTaskModal({
+  isOpen,
+  onClose,
+  onCreateTask,
+}: CreateTaskModalProps) {
   const taskIdRef = useRef(0);
   const [form, setForm] = useState({
-    title: '',
-    taskType: '',
-    description: '',
-    assignTo: '',
-    location: '',
-    address: '',
-    dueDate: '',
-    requiredActions: '',
-    priority: '' as Priority | '',
-    minPhotos: '2',
+    title: "",
+    taskType: "",
+    description: "",
+    assignTo: "",
+    location: "",
+    address: "",
+    dueDate: "",
+    requiredActions: "",
+    priority: "" as Priority | "",
+    minPhotos: "2",
     visitVerification: false,
-    status: 'pending' as StatusType,
-    category: 'all' as TaskCategory,
+    status: "pending" as StatusType,
+    category: "all" as TaskCategory,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const set = <K extends keyof typeof form>(key: K, val: typeof form[K]) => {
+  const set = <K extends keyof typeof form>(key: K, val: (typeof form)[K]) => {
     setForm((p) => ({ ...p, [key]: val }));
-    setErrors((p) => ({ ...p, [key]: '' }));
+    setErrors((p) => ({ ...p, [key]: "" }));
   };
 
   const validate = () => {
     const errs: Record<string, string> = {};
-    if (!form.title.trim()) errs.title = 'Task title is required';
-    if (!form.taskType) errs.taskType = 'Task type is required';
-    if (!form.description.trim()) errs.description = 'Description is required';
-    if (!form.assignTo) errs.assignTo = 'Please assign to an agent';
-    if (!form.location.trim()) errs.location = 'Location is required';
-    if (!form.dueDate) errs.dueDate = 'Due date is required';
-    if (!form.priority) errs.priority = 'Priority is required';
+    if (!form.title.trim()) errs.title = "Task title is required";
+    if (!form.taskType) errs.taskType = "Task type is required";
+    if (!form.description.trim()) errs.description = "Description is required";
+    if (!form.assignTo) errs.assignTo = "Please assign to an agent";
+    if (!form.location.trim()) errs.location = "Location is required";
+    if (!form.dueDate) errs.dueDate = "Due date is required";
+    if (!form.priority) errs.priority = "Priority is required";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -99,8 +163,8 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
       id: `task-${++taskIdRef.current}`,
       label: form.assignTo,
       description: form.title,
-      location: `${form.location}${form.address ? `, ${form.address}` : ''}`,
-      time: 'Just now',
+      location: `${form.location}${form.address ? `, ${form.address}` : ""}`,
+      time: "Just now",
       category: form.category,
       dueDate: form.dueDate,
       addedDescription: form.description,
@@ -112,10 +176,19 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
 
   const handleClose = () => {
     setForm({
-      title: '', taskType: '', description: '', assignTo: '',
-      location: '', address: '', dueDate: '', requiredActions: '',
-      priority: '', minPhotos: '2', visitVerification: false,
-      status: 'pending', category: 'all',
+      title: "",
+      taskType: "",
+      description: "",
+      assignTo: "",
+      location: "",
+      address: "",
+      dueDate: "",
+      requiredActions: "",
+      priority: "",
+      minPhotos: "2",
+      visitVerification: false,
+      status: "pending",
+      category: "all",
     });
     setErrors({});
     onClose();
@@ -125,15 +198,21 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
 
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200" onClick={handleClose} />
+      <div
+        className="absolute inset-0 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
+        onClick={handleClose}
+      />
 
-      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-[440px] bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-
+      <div className="fixed inset-y-0 right-12 mt-17 mb-3.25 rounded-[30px] z-50 w-full max-w-110 bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         {/* Header — fixed */}
         <div className="px-6 py-5 flex justify-between items-center shrink-0 border-b border-gray-100">
           <div>
-            <h2 className="font-bold text-base text-[#0B1215]">Create New Task</h2>
-            <p className="text-gray-400 text-xs mt-0.5">Fill in the details to assign a field task</p>
+            <h2 className="font-bold text-base text-[#0B1215]">
+              Create New Task
+            </h2>
+            <p className="text-gray-400 text-xs mt-0.5">
+              Fill in the details to assign a field task
+            </p>
           </div>
           <button
             onClick={handleClose}
@@ -145,7 +224,6 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
 
         {/* Body — scrollable */}
         <div className="p-5 space-y-4 overflow-y-auto flex-1 min-h-0">
-
           {/* Task Title */}
           <div>
             <FieldLabel required>Task Title</FieldLabel>
@@ -154,11 +232,13 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
                 type="text"
                 placeholder="e.g. Visit Shoprite Lekki"
                 value={form.title}
-                onChange={(e) => set('title', e.target.value)}
+                onChange={(e) => set("title", e.target.value)}
                 className={`${INPUT_CLS(errors.title)} pl-9 pr-4`}
               />
             </InputWrap>
-            {errors.title && <p className="text-red-400 text-[11px] mt-1">{errors.title}</p>}
+            {errors.title && (
+              <p className="text-red-400 text-[11px] mt-1">{errors.title}</p>
+            )}
           </div>
 
           {/* Task Type */}
@@ -167,14 +247,20 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
             <InputWrap icon={<ChevronDown size={13} />}>
               <select
                 value={form.taskType}
-                onChange={(e) => set('taskType', e.target.value)}
+                onChange={(e) => set("taskType", e.target.value)}
                 className={`${INPUT_CLS(errors.taskType)} pl-4 pr-9 appearance-none cursor-pointer`}
               >
-                <option value="" disabled>Select task type</option>
-                {TASK_TYPES.map((t) => <option key={t}>{t}</option>)}
+                <option value="" disabled>
+                  Select task type
+                </option>
+                {TASK_TYPES.map((t) => (
+                  <option key={t}>{t}</option>
+                ))}
               </select>
             </InputWrap>
-            {errors.taskType && <p className="text-red-400 text-[11px] mt-1">{errors.taskType}</p>}
+            {errors.taskType && (
+              <p className="text-red-400 text-[11px] mt-1">{errors.taskType}</p>
+            )}
           </div>
 
           {/* Description */}
@@ -183,11 +269,15 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
             <textarea
               placeholder="e.g. Check stock and speak to manager"
               value={form.description}
-              onChange={(e) => set('description', e.target.value)}
+              onChange={(e) => set("description", e.target.value)}
               rows={2}
-              className={`${BASE_INPUT} py-2.5 px-4 resize-none ${errors.description ? 'border-red-300' : 'border-gray-200 focus:border-[#094B5C]'}`}
+              className={`${BASE_INPUT} py-2.5 px-4 resize-none ${errors.description ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`}
             />
-            {errors.description && <p className="text-red-400 text-[11px] mt-1">{errors.description}</p>}
+            {errors.description && (
+              <p className="text-red-400 text-[11px] mt-1">
+                {errors.description}
+              </p>
+            )}
           </div>
 
           {/* Assign To */}
@@ -196,14 +286,20 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
             <InputWrap icon={<User size={13} />}>
               <select
                 value={form.assignTo}
-                onChange={(e) => set('assignTo', e.target.value)}
+                onChange={(e) => set("assignTo", e.target.value)}
                 className={`${INPUT_CLS(errors.assignTo)} pl-9 pr-4 appearance-none cursor-pointer`}
               >
-                <option value="" disabled>Select agent</option>
-                {AGENTS.map((a) => <option key={a}>{a}</option>)}
+                <option value="" disabled>
+                  Select agent
+                </option>
+                {AGENTS.map((a) => (
+                  <option key={a}>{a}</option>
+                ))}
               </select>
             </InputWrap>
-            {errors.assignTo && <p className="text-red-400 text-[11px] mt-1">{errors.assignTo}</p>}
+            {errors.assignTo && (
+              <p className="text-red-400 text-[11px] mt-1">{errors.assignTo}</p>
+            )}
           </div>
 
           {/* Location + Address */}
@@ -214,21 +310,28 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
                 type="text"
                 placeholder="e.g. Lekki Phase 1"
                 value={form.location}
-                onChange={(e) => set('location', e.target.value)}
+                onChange={(e) => set("location", e.target.value)}
                 className={`${INPUT_CLS(errors.location)} pl-9 pr-4`}
               />
             </InputWrap>
-            {errors.location && <p className="text-red-400 text-[11px] mt-1">{errors.location}</p>}
+            {errors.location && (
+              <p className="text-red-400 text-[11px] mt-1">{errors.location}</p>
+            )}
           </div>
 
           <div>
-            <FieldLabel>Address <span className="text-gray-400 normal-case font-normal">(GPS Coordinate)</span></FieldLabel>
+            <FieldLabel>
+              Address{" "}
+              <span className="text-gray-400 normal-case font-normal">
+                (GPS Coordinate)
+              </span>
+            </FieldLabel>
             <InputWrap icon={<Navigation size={13} />}>
               <input
                 type="text"
                 placeholder="e.g. Admiralty Way, Lekki Phase 1, Lagos"
                 value={form.address}
-                onChange={(e) => set('address', e.target.value)}
+                onChange={(e) => set("address", e.target.value)}
                 className={`${INPUT_CLS()} pl-9 pr-4`}
               />
             </InputWrap>
@@ -242,30 +345,52 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
                 <input
                   type="date"
                   value={form.dueDate}
-                  onChange={(e) => set('dueDate', e.target.value)}
+                  onChange={(e) => set("dueDate", e.target.value)}
                   className={`${INPUT_CLS(errors.dueDate)} pl-9 pr-4`}
                 />
               </InputWrap>
-              {errors.dueDate && <p className="text-red-400 text-[11px] mt-1">{errors.dueDate}</p>}
+              {errors.dueDate && (
+                <p className="text-red-400 text-[11px] mt-1">
+                  {errors.dueDate}
+                </p>
+              )}
             </div>
 
             <div>
               <FieldLabel required>Priority</FieldLabel>
-              <InputWrap icon={
-                form.priority
-                  ? <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: PRIORITY_COLORS[form.priority as Priority] }} />
-                  : <AlertCircle size={13} />
-              }>
+              <InputWrap
+                icon={
+                  form.priority ? (
+                    <span
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{
+                        backgroundColor:
+                          PRIORITY_COLORS[form.priority as Priority],
+                      }}
+                    />
+                  ) : (
+                    <AlertCircle size={13} />
+                  )
+                }
+              >
                 <select
                   value={form.priority}
-                  onChange={(e) => set('priority', e.target.value as Priority)}
+                  onChange={(e) => set("priority", e.target.value as Priority)}
                   className={`${INPUT_CLS(errors.priority)} pl-9 pr-4 appearance-none cursor-pointer`}
                 >
-                  <option value="" disabled>Select</option>
-                  {PRIORITY_OPTIONS.map((p) => <option key={p}>{p}</option>)}
+                  <option value="" disabled>
+                    Select
+                  </option>
+                  {PRIORITY_OPTIONS.map((p) => (
+                    <option key={p}>{p}</option>
+                  ))}
                 </select>
               </InputWrap>
-              {errors.priority && <p className="text-red-400 text-[11px] mt-1">{errors.priority}</p>}
+              {errors.priority && (
+                <p className="text-red-400 text-[11px] mt-1">
+                  {errors.priority}
+                </p>
+              )}
             </div>
           </div>
 
@@ -275,7 +400,7 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
             <textarea
               placeholder="e.g. Take photos, confirm stock"
               value={form.requiredActions}
-              onChange={(e) => set('requiredActions', e.target.value)}
+              onChange={(e) => set("requiredActions", e.target.value)}
               rows={2}
               className={`${BASE_INPUT} py-2.5 px-4 resize-none border-gray-200 focus:border-[#094B5C]`}
             />
@@ -291,30 +416,42 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
                   min={0}
                   max={20}
                   value={form.minPhotos}
-                  onChange={(e) => set('minPhotos', e.target.value)}
+                  onChange={(e) => set("minPhotos", e.target.value)}
                   className={`${INPUT_CLS()} pl-9 pr-4`}
                 />
               </InputWrap>
-              <p className="text-[10px] text-gray-400 mt-1">Minimum photos required</p>
+              <p className="text-[10px] text-gray-400 mt-1">
+                Minimum photos required
+              </p>
             </div>
 
             <div>
               <FieldLabel>Visit Verification</FieldLabel>
               <div
-                onClick={() => set('visitVerification', !form.visitVerification)}
+                onClick={() =>
+                  set("visitVerification", !form.visitVerification)
+                }
                 className={`mt-1 flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all select-none ${
                   form.visitVerification
-                    ? 'bg-[#09232d] border-[#0B1215]'
-                    : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+                    ? "bg-[#09232d] border-[#0B1215]"
+                    : "bg-gray-50 border-gray-200 hover:border-gray-300"
                 }`}
               >
-                <div className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${form.visitVerification ? 'bg-white/20' : 'bg-gray-300'}`}>
-                  <div className={`absolute top-0.5 w-4 h-4 rounded-full shadow transition-all ${
-                    form.visitVerification ? 'left-4 bg-white' : 'left-0.5 bg-white'
-                  }`} />
+                <div
+                  className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${form.visitVerification ? "bg-white/20" : "bg-gray-300"}`}
+                >
+                  <div
+                    className={`absolute top-0.5 w-4 h-4 rounded-full shadow transition-all ${
+                      form.visitVerification
+                        ? "left-4 bg-white"
+                        : "left-0.5 bg-white"
+                    }`}
+                  />
                 </div>
-                <span className={`text-[12px] font-bold ${form.visitVerification ? 'text-white' : 'text-gray-500'}`}>
-                  {form.visitVerification ? 'ON' : 'OFF'}
+                <span
+                  className={`text-[12px] font-bold ${form.visitVerification ? "text-white" : "text-gray-500"}`}
+                >
+                  {form.visitVerification ? "ON" : "OFF"}
                 </span>
               </div>
             </div>
@@ -330,13 +467,17 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
                   <button
                     key={opt.value}
                     type="button"
-                    onClick={() => set('status', opt.value)}
+                    onClick={() => set("status", opt.value)}
                     className={`py-2.5 px-2 rounded-xl text-[11px] font-bold transition-all border-2 ${
                       form.status === opt.value
-                        ? 'text-white shadow-md border-transparent'
-                        : 'text-gray-500 border-gray-200 bg-gray-50 hover:border-gray-300'
+                        ? "text-white shadow-md border-transparent"
+                        : "text-gray-500 border-gray-200 bg-gray-50 hover:border-gray-300"
                     }`}
-                    style={form.status === opt.value ? { backgroundColor: opt.color, borderColor: opt.color } : {}}
+                    style={
+                      form.status === opt.value
+                        ? { backgroundColor: opt.color, borderColor: opt.color }
+                        : {}
+                    }
                   >
                     {opt.short}
                   </button>
@@ -365,7 +506,6 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
               </div>
             </div> */}
           </div>
-
         </div>
 
         {/* Footer — fixed */}
