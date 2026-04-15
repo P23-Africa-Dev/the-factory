@@ -34,9 +34,9 @@ export function ProjectsView({ projects, onViewProject }: ProjectsViewProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-[20px] font-extrabold text-[#09232D] shrink-0">All project</h1>
 
-        <div className="flex items-center gap-3 flex-1 sm:max-w-2xl">
-          {/* Search — taller with prominent shadow */}
-          <div className="relative flex-1 group min-w-0">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 md:justify-end min-w-0">
+          {/* Search */}
+          <div className="relative w-full md:w-[458px] group shrink-0">
             <Search
               className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#09232D] transition-colors"
               size={18}
@@ -47,23 +47,40 @@ export function ProjectsView({ projects, onViewProject }: ProjectsViewProps) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search for Agents"
-              className="w-full bg-white border border-gray-100 rounded-full py-4 pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-[#09232D]/10 transition-all"
-              style={{ boxShadow: '0px 4px 4px 0px #0000004D' }}
+              className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-[#09232D]/10 transition-all font-sans"
+              style={{
+                height: '46px',
+                borderRadius: '24px',
+                border: '0.7px solid #D7D7D7',
+                boxShadow: '0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026'
+              }}
             />
           </div>
 
-          {/* Filter toggle — icon before text, shorter than search */}
+          {/* Filter toggle — icon before text */}
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl text-[13px] font-bold transition-all border shrink-0 cursor-pointer ${
-              showFilters
-                ? 'bg-[#09232D] text-white border-[#09232D]'
-                : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
+              showFilters ? 'text-white' : 'text-gray-500'
             }`}
-            style={{ boxShadow: showFilters ? 'none' : '0 2px 8px rgba(0, 0, 0, 0.06)' }}
+            style={{ 
+              background: showFilters ? '#34373C' : '#F8F8F8',
+              border: showFilters ? '0.5px solid #34373C' : '0.5px solid #D1D1D1',
+              boxShadow: showFilters ? 'none' : '0 2px 8px rgba(0, 0, 0, 0.06)'
+            }}
           >
             <SlidersHorizontal size={14} strokeWidth={2} />
-            <span className="opacity-80">Filter</span>
+            <span style={{
+              fontFamily: 'Poppins, sans-serif',
+              fontWeight: 400,
+              fontStyle: 'normal',
+              fontSize: '10px',
+              lineHeight: '100%',
+              letterSpacing: '0%',
+              verticalAlign: 'middle'
+            }}>
+              Filter
+            </span>
           </button>
 
           {/* Create — shorter than search */}

@@ -141,10 +141,9 @@ function OperationsContent() {
     router.push(`${pathname}?${params.toString()}`);
   };
 
+  // Navigate to dedicated project tasks page
   const handleViewProject = (id: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("projectId", id);
-    router.push(`${pathname}?${params.toString()}`);
+    router.push(`/operations/${id}`);
   };
 
   return (
@@ -169,7 +168,7 @@ function OperationsContent() {
           </div>
         </div>
 
-        {/* ── View ─────────────────────────────────────────────── */}
+        {/* ── View ── */}
         {activeTab === "all" ? (
           <ProjectsView
             projects={MOCK_PROJECTS}
