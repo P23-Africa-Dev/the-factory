@@ -34,43 +34,63 @@ export function ProjectsView({ projects, onViewProject }: ProjectsViewProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-[20px] font-extrabold text-[#09232D] shrink-0">All project</h1>
 
-        <div className="flex items-center gap-2 sm:gap-3 flex-1 sm:max-w-2xl">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 md:justify-end min-w-0">
           {/* Search */}
-          <div className="relative flex-1 group min-w-0">
+          <div className="relative w-full md:w-[458px] group shrink-0">
             <Search
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-teal transition-colors"
-              size={16}
-              strokeWidth={1.5}
+              className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#09232D] transition-colors"
+              size={18}
+              strokeWidth={2}
             />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search for Projects"
-              className="w-full bg-white border border-gray-100 rounded-full py-3 pl-10 pr-4 text-[13px] placeholder:font-medium outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
+              placeholder="Search for Agents"
+              className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-[#09232D]/10 transition-all font-sans"
+              style={{
+                height: '46px',
+                borderRadius: '24px',
+                border: '0.7px solid #D7D7D7',
+                boxShadow: '0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026'
+              }}
             />
           </div>
 
-          {/* Filter toggle */}
+          {/* Filter toggle — icon before text */}
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-4 py-3 rounded-xl text-[13px] font-bold transition-all shadow-sm border shrink-0 ${
-              showFilters
-                ? 'bg-[#09232D] text-white border-[#09232D]'
-                : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
+              showFilters ? 'text-white' : 'text-gray-500'
             }`}
+            style={{ 
+              background: showFilters ? '#34373C' : '#F8F8F8',
+              border: showFilters ? '0.5px solid #34373C' : '0.5px solid #D1D1D1',
+              boxShadow: showFilters ? 'none' : '0 2px 8px rgba(0, 0, 0, 0.06)'
+            }}
           >
-            <SlidersHorizontal size={15} strokeWidth={1.5} />
-            <span className="hidden sm:inline opacity-70">Filter</span>
+            <SlidersHorizontal size={14} strokeWidth={2} />
+            <span style={{
+              fontFamily: 'Poppins, sans-serif',
+              fontWeight: 400,
+              fontStyle: 'normal',
+              fontSize: '10px',
+              lineHeight: '100%',
+              letterSpacing: '0%',
+              verticalAlign: 'middle'
+            }}>
+              Filter
+            </span>
           </button>
 
-          {/* Create */}
+          {/* Create — shorter than search */}
           <button
             onClick={() => setShowDrawer(true)}
-            className="flex items-center gap-2 px-4 sm:px-6 py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shadow-lg shrink-0 cursor-pointer"
+            className="flex items-center gap-2 px-5 py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
+            style={{ boxShadow: '0 4px 14px rgba(9, 35, 45, 0.3)' }}
           >
-            <BookmarkPlus size={16} strokeWidth={1.5} />
-            <span className="hidden sm:inline">Create New Project</span>
+            <BookmarkPlus size={15} strokeWidth={2} />
+            <span className="hidden sm:inline whitespace-nowrap">Create New Project</span>
             <span className="sm:hidden">New</span>
           </button>
         </div>
@@ -130,20 +150,25 @@ export function ProjectsView({ projects, onViewProject }: ProjectsViewProps) {
         </div>
       )}
 
-      {/* ── Grid ─────────────────────────────────────────────── */}
+      {/* ── Grid — wrapped in a thick-shadow container ─────── */}
       {filtered.length === 0 ? (
         <div className="py-20 text-center text-gray-400 text-[14px] font-medium">
           No projects match your search.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-4 gap-x-5 gap-y-10">
-          {filtered.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              onClick={() => onViewProject(project.id)}
-            />
-          ))}
+        <div
+          className="bg-white rounded-3xl p-5 sm:p-7 border border-gray-100/60"
+          style={{ boxShadow: '0px 8px 12px 6px #00000026' }}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-4 gap-x-5 gap-y-10">
+            {filtered.map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                onClick={() => onViewProject(project.id)}
+              />
+            ))}
+          </div>
         </div>
       )}
 
@@ -173,7 +198,9 @@ function ProjectCard({ project, onClick }: { project: Project; onClick: () => vo
 
   return (
     <div className="relative pb-5">
-      <div className="bg-white rounded-3xl p-5 pt-6 shadow-sm border border-gray-100/80 hover:shadow-md transition-all">
+      <div className="bg-white rounded-3xl p-5 pt-6 border border-gray-100/80 transition-all"
+        style={{ boxShadow: '0px 1px 2px 2px #00000026' }}
+      >
         <div className="flex items-start justify-between gap-2">
           <h3 className="text-[15px] font-bold text-[#09232D] leading-snug">{project.name}</h3>
           <button className="text-gray-300 hover:text-gray-500 transition-colors mt-0.5 shrink-0">

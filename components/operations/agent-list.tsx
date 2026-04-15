@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from './ops-table';
 
 export type AgentItem = {
   id: string;
@@ -46,7 +47,7 @@ interface AgentListProps {
 
 export function AgentList({ selectedId, onSelect }: AgentListProps) {
   return (
-    <div className="bg-white rounded-4xl p-5 sm:p-8 shadow-sm flex-1 min-w-0">
+    <OpsTableContainer>
       {/* Header */}
       <div className="flex justify-end mb-5">
         <Link
@@ -62,70 +63,27 @@ export function AgentList({ selectedId, onSelect }: AgentListProps) {
         {AGENT_LIST_DATA.map((agent) => {
           const isSelected = selectedId === agent.id;
           return (
-            <div
+            <OpsTableRow
               key={agent.id}
+              isSelected={isSelected}
               onClick={() => onSelect?.(agent)}
-              className={`flex items-center rounded-[20px] overflow-hidden cursor-pointer transition-all hover:shadow-md ${
-                isSelected ? 'bg-dash-dark' : 'bg-gray-50/60'
-              }`}
+              avatar={agent.avatar}
+              avatarAlt={agent.name}
             >
-              {/* Accent bar */}
-              <div className={`w-2 self-stretch shrink-0 ${isSelected ? 'bg-[#3B82F6]' : 'bg-[#93C5FD]/60'}`} />
-
-              {/* Avatar */}
-              <div className="w-12 h-12 rounded-full border-2 border-white shadow-sm overflow-hidden shrink-0 my-4 mx-3 sm:mx-4">
-                <img src={agent.avatar} className="w-full h-full object-cover" alt={agent.name} />
-              </div>
-
-              {/* Name — fixed width */}
-              <div className="w-32.5 sm:w-40 shrink-0 py-4 pr-3 min-w-0">
-                <p className={`text-[13px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'}`}>
-                  {agent.name}
-                </p>
-                <p className={`text-[11px] mt-0.5 truncate ${isSelected ? 'text-white/50' : 'text-gray-400'}`}>
-                  {agent.description}
-                </p>
-              </div>
-
-              {/* Zone — fixed width */}
-              <div className="hidden sm:block w-27.5 shrink-0 py-4 pr-3">
-                <p className={`text-[11px] font-bold mb-0.5 ${isSelected ? 'text-white/40' : 'text-gray-400'}`}>Zone</p>
-                <p className={`text-[13px] font-medium truncate ${isSelected ? 'text-white/80' : 'text-gray-600'}`}>
-                  {agent.zone}
-                </p>
-              </div>
-
-              {/* Phone — fixed width */}
-              <div className="hidden md:block w-37.5 shrink-0 py-4 pr-3">
-                <p className={`text-[11px] font-bold mb-0.5 ${isSelected ? 'text-white/40' : 'text-gray-400'}`}>Phone Number</p>
-                <p className={`text-[13px] font-medium truncate ${isSelected ? 'text-white/80' : 'text-gray-600'}`}>
-                  {agent.phone}
-                </p>
-              </div>
-
-              {/* Role — fixed width */}
-              <div className="hidden lg:block w-27.5 shrink-0 py-4 pr-3">
-                <p className={`text-[11px] font-bold mb-0.5 ${isSelected ? 'text-white/40' : 'text-gray-400'}`}>Role</p>
-                <p className={`text-[13px] font-medium truncate ${isSelected ? 'text-white/80' : 'text-gray-600'}`}>
-                  {agent.role}
-                </p>
-              </div>
-
-              {/* Status — push to right */}
-              <div className="ml-auto shrink-0 text-right py-4 pr-4 sm:pr-5">
-                <div className={`inline-block px-2.5 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap ${
-                  agent.active ? 'bg-[#D63384] text-white' : 'bg-[#FF9F6A] text-white'
-                }`}>
-                  {agent.status}
-                </div>
-                <p className={`text-[11px] mt-1 ${isSelected ? 'text-white/40' : 'text-gray-400'}`}>
-                  {agent.time}
-                </p>
-              </div>
-            </div>
+              <OpsTableNameCol name={agent.name} subText={agent.description} isSelected={isSelected} />
+              <OpsTableCol label="Zone" value={agent.zone} isSelected={isSelected} className="hidden sm:block w-28 sm:w-32" />
+              <OpsTableCol label="Phone Number" value={agent.phone} isSelected={isSelected} className="hidden md:block w-36 sm:w-40" />
+              <OpsTableCol label="Role" value={agent.role} isSelected={isSelected} className="hidden lg:block w-28 sm:w-32" />
+              <OpsTableStatus
+                label={agent.status}
+                subText={agent.time}
+                isSelected={isSelected}
+                badgeClass={agent.active ? 'bg-[#2F6C0E] text-white' : 'bg-[#EF7129] text-white'}
+              />
+            </OpsTableRow>
           );
         })}
       </div>
-    </div>
+    </OpsTableContainer>
   );
 }
