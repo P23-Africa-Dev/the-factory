@@ -162,8 +162,10 @@ export default function FinancePage() {
           </div>
 
           {/* Sidebar */}
-          <div className="w-full xl:w-85 xl:shrink-0 min-w-131.25 drop-shadow-[0px_1px_3px_#0000004D,0px_4px_8px_#00000026]">
-            <PayrollSidebar agent={selectedAgent} />
+          <div className="w-full xl:w-85 xl:shrink-0 min-w-131.25">
+            <div className="drop-shadow-[0px_1px_3px_#0000004D,0px_4px_8px_#00000026]">
+              <PayrollSidebar agent={selectedAgent} />
+            </div>
 
             {/* Payroll History - shown when a user is selected */}
             {showViewAll && selectedAgent && <PayrollHistory />}
