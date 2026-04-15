@@ -36,6 +36,7 @@ Each feature document must include:
 5. [Task Management API](features/task-management.md)
 6. [Internal User Onboarding API](features/internal-user-onboarding.md)
 7. [Authentication API](features/authentication.md)
+8. [Project Management API](features/project-management.md)
 
 ## OpenAPI Contract
 
@@ -46,3 +47,9 @@ Current API contract:
 ## Update Rule
 
 If backend logic changes and the API contract, validation, status codes, or payloads change, documentation must be updated in the same change set.
+
+For every new API, always:
+
+1. Update `openapi/openapi.yaml`
+2. Add or update the corresponding `docs/features/*.md` file
+3. Update this `docs/README.md` feature index
