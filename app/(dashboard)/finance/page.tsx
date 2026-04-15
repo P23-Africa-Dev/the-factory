@@ -117,7 +117,7 @@ export default function FinancePage() {
           <input
             type="text"
             placeholder="Search for leads"
-            className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
+            className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]"
           />
         </div>
 
@@ -153,20 +153,6 @@ export default function FinancePage() {
         <div className="flex flex-col xl:flex-row gap-6">
           {/* List */}
           <div className="flex-1 min-w-0">
-            {showViewAll && (
-              <div className="flex justify-between items-center mb-4">
-                <button
-                  onClick={() => setShowViewAll(false)}
-                  className="text-[12px] font-semibold text-gray-500 hover:text-[#0B1215] transition-colors cursor-pointer"
-                >
-                  &larr; Back
-                </button>
-                <button className="px-5 py-2 bg-[#0B1215] text-white rounded-full text-[11px] font-semibold hover:opacity-90 transition-colors cursor-pointer">
-                  View Payroll
-                </button>
-              </div>
-            )}
-
             <PayrollList
               selectedId={selectedAgentId}
               onSelect={setSelectedAgentId}
@@ -176,7 +162,7 @@ export default function FinancePage() {
           </div>
 
           {/* Sidebar */}
-          <div className="w-full xl:w-85 xl:shrink-0 min-w-131.25 drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)]">
+          <div className="w-full xl:w-85 xl:shrink-0 min-w-131.25 drop-shadow-[0px_1px_3px_#0000004D,0px_4px_8px_#00000026]">
             <PayrollSidebar agent={selectedAgent} />
 
             {/* Payroll History - shown when a user is selected */}

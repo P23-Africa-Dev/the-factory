@@ -128,7 +128,7 @@ export function PayrollList({
               />
 
               {/* Avatar */}
-              <div className="w-14.75 h-14.75 mt-3.5 mb-3 sm:w-14 sm:h-14 rounded-full shadow-sm overflow-hidden shrink-0">
+              <div className="w-14.75 h-14.75 mt-3.5 mb-3 sm:w-14 sm:h-14 rounded-full overflow-hidden shrink-0">
                 <Image
                   src={agent.avatar}
                   width={56}
