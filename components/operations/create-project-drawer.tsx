@@ -111,7 +111,7 @@ export function CreateProjectDrawer({ onClose }: { onClose: () => void }) {
       />
 
       {/* Drawer */}
-      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-110 bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+      <div className="fixed inset-y-0 right-12 mt-17 mb-3.25 rounded-[30px] z-50 w-full max-w-110 bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         {/* ── Decorative header ─────────────────────────────── */}
         <div className="relative px-7 pt-8 pb-6 shrink-0 overflow-hidden">
           {/* Dark blob top-right */}
