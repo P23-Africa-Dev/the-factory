@@ -22,3 +22,13 @@ export interface DndContainer {
   color: string;
   items: DndItem[];
 }
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  deadline: string;
+  status: 'In progress' | 'Completed' | 'Pending';
+  priority: 'High' | 'Medium' | 'Low';
+  completedPercent: number;
+  pendingPercent: number;
+}
