@@ -26,11 +26,11 @@ import Logo from '@/assets/images/logo.png';
 
 const navItems = [
   { name: 'Dashboard', href: '/dashboard', icon: DashboardIcon },
-  { name: 'Sales Engine', href: '/sales-engine', icon: SalesEngineIcon },
+  // { name: 'Sales Engine', href: '/sales-engine', icon: SalesEngineIcon },
   { name: 'Map', href: '/map', icon: MapIconAsset },
   { name: 'Operations', href: '/operations', icon: OperationsIcon, hasDropdown: true },
   { name: 'CRM', href: '/crm', icon: CRMIcon },
-  { name: 'Insight', href: '/insight', icon: InsightIcon },
+  // { name: 'Insight', href: '/insight', icon: InsightIcon },
   { name: 'Finance', href: '/finance', icon: FinanceIcon, hasDropdown: true },
 ];
 

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Poppins, Montserrat } from "next/font/google";
 import "./globals.css";
+import QueryProvider from "@/components/providers/query-provider";
 
 const poppins = Poppins({
   subsets: ["latin", "latin-ext"],
@@ -30,7 +31,9 @@ export default function RootLayout({
       className={`${poppins.variable} ${montserrat.variable} ${poppins.className} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>{children}</body>
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        <QueryProvider>{children}</QueryProvider>
+      </body>
     </html>
   );
 }
