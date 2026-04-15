@@ -1,65 +1,164 @@
 "use client";
 
-import { Suspense } from 'react';
-import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { ProjectsView }   from '@/components/operations/projects-view';
-import { AllTasksView }   from '@/components/operations/all-tasks-view';
-import { AgentView }      from '@/components/operations/agent-view';
-import { AttendanceView } from '@/components/operations/attendance-view';
-import type { TaskCategory, Project } from '@/types/operations';
+import { Suspense } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { ProjectsView } from "@/components/operations/projects-view";
+import { AllTasksView } from "@/components/operations/all-tasks-view";
+import { AgentView } from "@/components/operations/agent-view";
+import { AttendanceView } from "@/components/operations/attendance-view";
+import type { TaskCategory, Project } from "@/types/operations";
 
 // ─── Mock data (swap for API call later) ─────────────────────────────────────
 const MOCK_PROJECTS: Project[] = [
-  { id: 'project-1', name: 'Product Outreach', description: 'Physical outreach and transforms executive networking from casual connections to strategic growth...', deadline: '2 days to Deadline', status: 'In progress', priority: 'High', completedPercent: 35, pendingPercent: 75 },
-  { id: 'project-2', name: 'Product Outreach', description: 'Physical outreach and transforms executive networking from casual connections to strategic growth...', deadline: '2 days to Deadline', status: 'In progress', priority: 'High', completedPercent: 35, pendingPercent: 75 },
-  { id: 'project-3', name: 'Product Outreach', description: 'Physical outreach and transforms executive networking from casual connections to strategic growth...', deadline: '2 days to Deadline', status: 'In progress', priority: 'High', completedPercent: 35, pendingPercent: 75 },
-  { id: 'project-4', name: 'Product Outreach', description: 'Physical outreach and transforms executive networking from casual connections to strategic growth...', deadline: '2 days to Deadline', status: 'In progress', priority: 'High', completedPercent: 35, pendingPercent: 75 },
-  { id: 'project-5', name: 'Product Outreach', description: 'Physical outreach and transforms executive networking from casual connections to strategic growth...', deadline: '2 days to Deadline', status: 'In progress', priority: 'High', completedPercent: 35, pendingPercent: 75 },
-  { id: 'project-6', name: 'Product Outreach', description: 'Physical outreach and transforms executive networking from casual connections to strategic growth...', deadline: '2 days to Deadline', status: 'In progress', priority: 'High', completedPercent: 35, pendingPercent: 75 },
-  { id: 'project-7', name: 'Product Outreach', description: 'Physical outreach and transforms executive networking from casual connections to strategic growth...', deadline: '2 days to Deadline', status: 'In progress', priority: 'High', completedPercent: 35, pendingPercent: 75 },
-  { id: 'project-8', name: 'Product Outreach', description: 'Physical outreach and transforms executive networking from casual connections to strategic growth...', deadline: '2 days to Deadline', status: 'In progress', priority: 'High', completedPercent: 35, pendingPercent: 75 },
-  { id: 'project-9', name: 'Product Outreach', description: 'Physical outreach and transforms executive networking from casual connections to strategic growth...', deadline: '2 days to Deadline', status: 'In progress', priority: 'High', completedPercent: 35, pendingPercent: 75 },
-  { id: 'project-10', name: 'Product Outreach', description: 'Physical outreach and transforms executive networking from casual connections to strategic growth...', deadline: '2 days to Deadline', status: 'In progress', priority: 'High', completedPercent: 35, pendingPercent: 75 },
+  {
+    id: "project-1",
+    name: "Product Outreach",
+    description:
+      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
+    deadline: "2 days to Deadline",
+    status: "In progress",
+    priority: "High",
+    completedPercent: 35,
+    pendingPercent: 75,
+  },
+  {
+    id: "project-2",
+    name: "Product Outreach",
+    description:
+      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
+    deadline: "2 days to Deadline",
+    status: "In progress",
+    priority: "High",
+    completedPercent: 35,
+    pendingPercent: 75,
+  },
+  {
+    id: "project-3",
+    name: "Product Outreach",
+    description:
+      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
+    deadline: "2 days to Deadline",
+    status: "In progress",
+    priority: "High",
+    completedPercent: 35,
+    pendingPercent: 75,
+  },
+  {
+    id: "project-4",
+    name: "Product Outreach",
+    description:
+      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
+    deadline: "2 days to Deadline",
+    status: "In progress",
+    priority: "High",
+    completedPercent: 35,
+    pendingPercent: 75,
+  },
+  {
+    id: "project-5",
+    name: "Product Outreach",
+    description:
+      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
+    deadline: "2 days to Deadline",
+    status: "In progress",
+    priority: "High",
+    completedPercent: 35,
+    pendingPercent: 75,
+  },
+  {
+    id: "project-6",
+    name: "Product Outreach",
+    description:
+      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
+    deadline: "2 days to Deadline",
+    status: "In progress",
+    priority: "High",
+    completedPercent: 35,
+    pendingPercent: 75,
+  },
+  {
+    id: "project-7",
+    name: "Product Outreach",
+    description:
+      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
+    deadline: "2 days to Deadline",
+    status: "In progress",
+    priority: "High",
+    completedPercent: 35,
+    pendingPercent: 75,
+  },
+  {
+    id: "project-8",
+    name: "Product Outreach",
+    description:
+      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
+    deadline: "2 days to Deadline",
+    status: "In progress",
+    priority: "High",
+    completedPercent: 35,
+    pendingPercent: 75,
+  },
+  {
+    id: "project-9",
+    name: "Product Outreach",
+    description:
+      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
+    deadline: "2 days to Deadline",
+    status: "In progress",
+    priority: "High",
+    completedPercent: 35,
+    pendingPercent: 75,
+  },
+  {
+    id: "project-10",
+    name: "Product Outreach",
+    description:
+      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
+    deadline: "2 days to Deadline",
+    status: "In progress",
+    priority: "High",
+    completedPercent: 35,
+    pendingPercent: 75,
+  },
 ];
 
 const TABS: { value: TaskCategory; label: string }[] = [
-  { value: 'all',        label: 'All Task'   },
-  { value: 'agent',      label: 'Agents'     },
-  { value: 'attendance', label: 'Attendance' },
+  { value: "all", label: "All Task" },
+  { value: "agent", label: "Agents" },
+  { value: "attendance", label: "Attendance" },
 ];
 
 // ─── Page content ─────────────────────────────────────────────────────────────
 function OperationsContent() {
-  const router       = useRouter();
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const pathname     = usePathname();
+  const pathname = usePathname();
 
-  const activeTab = (searchParams.get('tab') as TaskCategory) || 'all';
-  const projectId = searchParams.get('projectId');
+  const activeTab = (searchParams.get("tab") as TaskCategory) || "all";
+  const projectId = searchParams.get("projectId");
 
   const handleTabChange = (tab: TaskCategory) => {
     const params = new URLSearchParams(searchParams.toString());
-    tab === 'all' ? params.delete('tab') : params.set('tab', tab);
+    tab === "all" ? params.delete("tab") : params.set("tab", tab);
     router.push(`${pathname}?${params.toString()}`);
   };
 
   const handleViewProject = (id: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    params.set('projectId', id);
+    params.set("projectId", id);
     router.push(`${pathname}?${params.toString()}`);
   };
 
   const handleBackToProjects = () => {
     const params = new URLSearchParams(searchParams.toString());
-    params.delete('projectId');
-    params.delete('tab');
+    params.delete("projectId");
+    params.delete("tab");
     router.push(`${pathname}?${params.toString()}`);
   };
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
       <div className="max-w-[1600px] mx-auto flex flex-col gap-5">
-
         {/* ── Back button + tabs (only when inside a project) ── */}
         {projectId && (
           <div className="flex items-center gap-4">
@@ -68,7 +167,17 @@ function OperationsContent() {
               className="p-2 hover:bg-gray-100 rounded-full transition-colors group"
               title="Back to Projects"
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 group-hover:text-[#0B1215]">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-gray-400 group-hover:text-[#0B1215]"
+              >
                 <path d="M19 12H5M12 19l-7-7 7-7" />
               </svg>
             </button>
@@ -93,10 +202,13 @@ function OperationsContent() {
 
         {/* ── View ─────────────────────────────────────────────── */}
         {!projectId ? (
-          <ProjectsView projects={MOCK_PROJECTS} onViewProject={handleViewProject} />
-        ) : activeTab === 'agent' ? (
+          <ProjectsView
+            projects={MOCK_PROJECTS}
+            onViewProject={handleViewProject}
+          />
+        ) : activeTab === "agent" ? (
           <AgentView />
-        ) : activeTab === 'attendance' ? (
+        ) : activeTab === "attendance" ? (
           <AttendanceView />
         ) : (
           <AllTasksView />
@@ -108,11 +220,13 @@ function OperationsContent() {
 
 export default function OperationsPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-[#F4F7F9] p-8 flex items-center justify-center font-bold text-gray-400">
-        Loading Operations...
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#F4F7F9] p-8 flex items-center justify-center font-bold text-gray-400">
+          Loading Operations...
+        </div>
+      }
+    >
       <OperationsContent />
     </Suspense>
   );

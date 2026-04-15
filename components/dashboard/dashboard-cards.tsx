@@ -1,11 +1,12 @@
 "use client";
 
 import AIIcon from "@/assets/images/ai-icon.png";
+import ArrowUp from "@/assets/images/arrow-57deg.png";
 import happyIcon from "@/assets/images/happy.png";
 import SearchListIcon from "@/assets/images/search-list-icon.png";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { cn } from "@/lib/utils/sample";
-import { ArrowUpRight, ChevronRight, MoreHorizontal } from "lucide-react";
+import { ChevronRight, MoreHorizontal } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 
@@ -266,9 +267,12 @@ export function WeeklyTasks() {
 
         <button className="w-full bg-[#D056DC] text-white py-5 rounded-4xl mb-4 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
           View All Task
-          <ArrowUpRight
-            size={22}
-            className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+          <Image
+            src={ArrowUp}
+            alt="Arrow Up Right Icon"
+            width={18}
+            height={18}
+            className="text-white/80 self-end pb-1.5"
           />
         </button>
       </div>

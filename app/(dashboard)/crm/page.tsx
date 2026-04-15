@@ -1,5 +1,9 @@
 "use client";
 
+import { TaskBoard } from "@/components/operations/task-board";
+import { TinyButton } from "@/components/ui/tiny-button";
+import { useDragAndDrop } from "@/lib/hooks/use-tasks-dnd";
+import type { DndContainer } from "@/types/operations";
 import {
   BookmarkPlus,
   ChevronDown,
@@ -19,8 +23,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
 
 type LeadStatus = "new" | "proposal-sent" | "contacted" | "qualified" | "lost";
 
@@ -46,8 +48,6 @@ interface LeadColumn {
   leads: Lead[];
 }
 
-// ─── Mock Data ───────────────────────────────────────────────────────────────
-
 const chartData = [
   { day: "Mon", value: 180 },
   { day: "Tues", value: 250 },
@@ -70,50 +70,90 @@ const makeLead = (id: string): Lead => ({
   avatar: `https://i.pravatar.cc/150?u=${id}`,
 });
 
-// const PIPELINE_COLUMNS: LeadColumn[] = [
-//   {
-//     id: "new",
-//     title: "New",
-//     headerColor: "#22C55E",
-//     value: "N 342,000",
-//     count: 89,
-//     leads: [makeLead("lead-1"), makeLead("lead-6")],
-//   },
-//   {
-//     id: "proposal-sent",
-//     title: "Proposal Sent",
-//     headerColor: "#F59E0B",
-//     value: "N 342,000",
-//     count: 56,
-//     leads: [makeLead("lead-2"), makeLead("lead-7")],
-//   },
-//   {
-//     id: "contacted",
-//     title: "Contacted",
-//     headerColor: "#3B82F6",
-//     value: "N 342,000",
-//     count: 42,
-//     leads: [makeLead("lead-3"), makeLead("lead-8")],
-//   },
-//   {
-//     id: "qualified",
-//     title: "Qualified",
-//     headerColor: "#A3E635",
-//     value: "N 342,000",
-//     count: 31,
-//     leads: [makeLead("lead-4"), makeLead("lead-9")],
-//   },
-//   {
-//     id: "lost",
-//     title: "Lost",
-//     headerColor: "#EF4444",
-//     value: "N 342,000",
-//     count: 12,
-//     leads: [makeLead("lead-5"), makeLead("lead-10")],
-//   },
-// ];
-
-// ─── Sub-components ──────────────────────────────────────────────────────────
+const CRM_INITIAL_DATA: DndContainer[] = [
+  {
+    id: "new",
+    title: "New Leads",
+    color: "#3B82F6",
+    items: [
+      {
+        id: "lead-1",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "Lagos, Nigeria",
+        time: "12 hours ago",
+        category: "agent",
+      },
+      {
+        id: "lead-4",
+        label: "Amina Okoro",
+        description: "Vertex Holdings Ltd",
+        location: "Abuja, Nigeria",
+        time: "8 hours ago",
+        category: "agent",
+      },
+    ],
+  },
+  {
+    id: "contacted",
+    title: "Contacted",
+    color: "#BD7A22",
+    items: [
+      {
+        id: "lead-2",
+        label: "James Mwangi",
+        description: "Savannah Tech Solutions",
+        location: "Nairobi, Kenya",
+        time: "1 day ago",
+        category: "agent",
+      },
+    ],
+  },
+  {
+    id: "qualified",
+    title: "Qualified",
+    color: "#094B5C",
+    items: [
+      {
+        id: "lead-3",
+        label: "Chioma Eze",
+        description: "Greenfield Exports",
+        location: "Port Harcourt, Nigeria",
+        time: "2 days ago",
+        category: "agent",
+      },
+      {
+        id: "lead-5",
+        label: "Kwame Asante",
+        description: "Golden Gate Finance",
+        location: "Accra, Ghana",
+        time: "3 days ago",
+        category: "agent",
+      },
+    ],
+  },
+  {
+    id: "proposal-sent",
+    title: "Proposal Sent",
+    color: "#8B5CF6",
+    items: [
+      {
+        id: "lead-6",
+        label: "Fatima Diallo",
+        description: "Sahel Innovations",
+        location: "Dakar, Senegal",
+        time: "4 days ago",
+        category: "agent",
+      },
+    ],
+  },
+  {
+    id: "lost",
+    title: "Lost",
+    color: "#EF4444",
+    items: [],
+  },
+];
 
 function TotalLeadsCard() {
   return (
@@ -129,11 +169,11 @@ function TotalLeadsCard() {
 
       <div className="flex items-center gap-6 mt-4 justify-between">
         <div>
-          <div>
+          <div className="flex gap-1.5 items-end">
             <span className="text-[50px] font-medium text-[#0B1215] leading-none tracking-tight">
               4,100
             </span>
-            <span className="text-[#34373C] text-[15px] font-semibold mt-1">
+            <span className="text-[#34373C] text-[15px] font-semibold mb-1">
               Leads
             </span>
           </div>
@@ -255,7 +295,61 @@ function LeadsChart() {
   );
 }
 
-// ─── Page ────────────────────────────────────────────────────────────────────
+function AgentCard() {
+  return (
+    <div className="bg-white rounded-[20px] py-9 px-2.25 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] w-full sm:max-w-85 flex justify-center items-center gap-4 mt-4">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="https://i.pravatar.cc/150?u=agent1"
+        alt="Agent Avatar"
+        className="w-[90.43px] h-[90.43px] rounded-full object-cover"
+      />
+      <div className="flex flex-col justify-between h-full">
+        <div>
+          <p className="text-[#34373C] text-[12px] font-semibold">
+            Customer metric
+          </p>
+          <p className="text-[10px] text-[#616263] ">Overall Insight</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-[#616263] font-medium">
+            Promising Lead
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CRMPipeline() {
+  const {
+    containers,
+    addItem,
+    moveItem,
+    moveToContainer,
+    moveBetweenContainers,
+    findContainer,
+  } = useDragAndDrop(CRM_INITIAL_DATA);
+
+  return (
+    <div className="shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] h-full border-b-0 mt-10 max-w-349.75 min-h-102.5">
+      <div className="flex items-center justify-end pt-3.75 pr-16.5">
+        <TinyButton>View All Leads</TinyButton>
+      </div>
+      <div className="p-6">
+        <TaskBoard
+          containers={containers}
+          activeTab="all"
+          onAddCard={addItem}
+          findContainer={findContainer}
+          moveItem={moveItem}
+          moveToContainer={moveToContainer}
+          moveBetweenContainers={moveBetweenContainers}
+        />
+      </div>
+    </div>
+  );
+}
 
 export default function CRMPage() {
   return (
@@ -303,7 +397,10 @@ export default function CRMPage() {
         <div className="flex flex-col lg:flex-row gap-4 items-stretch">
           <TotalLeadsCard />
           <LeadsChart />
+          <AgentCard />
         </div>
+
+        <CRMPipeline />
       </div>
     </div>
   );
