@@ -1,11 +1,14 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { useDroppable } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import type { DndItem } from '@/types/operations';
-import { TaskCard } from './task-card';
-import { Plus, Check, X } from 'lucide-react';
+import React, { useState } from "react";
+import { useDroppable } from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import type { DndItem } from "@/types/operations";
+import { TaskCard } from "./task-card";
+import { Plus, Check, X } from "lucide-react";
 
 interface TaskColumnProps {
   id: string;
@@ -16,29 +19,43 @@ interface TaskColumnProps {
   onTaskClick?: (item: DndItem) => void;
 }
 
-export function TaskColumn({ id, title, color, items, onAddCard, onTaskClick }: TaskColumnProps) {
+export function TaskColumn({
+  id,
+  title,
+  color,
+  items,
+  onAddCard,
+  onTaskClick,
+}: TaskColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ label: '', description: '', location: '' });
-  const [error, setError] = useState('');
+  const [form, setForm] = useState({
+    label: "",
+    description: "",
+    location: "",
+  });
+  const [error, setError] = useState("");
 
   const handleSave = () => {
-    if (!form.label.trim()) { setError('Name is required'); return; }
+    if (!form.label.trim()) {
+      setError("Name is required");
+      return;
+    }
     onAddCard({
       id: `task-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       label: form.label.trim(),
-      description: form.description.trim() || 'No description',
-      location: form.location.trim() || 'Location not set',
-      time: 'Just now',
+      description: form.description.trim() || "No description",
+      location: form.location.trim() || "Location not set",
+      time: "Just now",
     });
-    setForm({ label: '', description: '', location: '' });
-    setError('');
+    setForm({ label: "", description: "", location: "" });
+    setError("");
     setShowForm(false);
   };
 
   const handleCancel = () => {
-    setForm({ label: '', description: '', location: '' });
-    setError('');
+    setForm({ label: "", description: "", location: "" });
+    setError("");
     setShowForm(false);
   };
 
@@ -46,10 +63,10 @@ export function TaskColumn({ id, title, color, items, onAddCard, onTaskClick }: 
     <div className="flex flex-col relative h-full">
       {/* Column Header */}
       <div
-        className="rounded-t-[32px] px-6 pt-6 pb-10 flex gap-3 items-center"
+        className="rounded-t-[30px] px-7.5 pt-3.25 pb-8 flex gap-3 items-center"
         style={{ backgroundColor: color }}
       >
-        <h3 className="text-white font-medium text-lg">{title}</h3>
+        <h3 className="text-white font-medium text-sm">{title}</h3>
         <div
           className="rounded-full min-w-[28px] h-7 px-2 flex items-center justify-center font-bold text-xs bg-white"
           style={{ color }}
@@ -61,11 +78,16 @@ export function TaskColumn({ id, title, color, items, onAddCard, onTaskClick }: 
       {/* Droppable Body */}
       <div
         ref={setNodeRef}
-        className={`flex-1 relative z-10 -mt-6 transition-colors duration-200 min-h-[300px] flex flex-col ${
-          isOver ? 'bg-gray-100/50 rounded-[32px] ring-2 ring-inset ring-gray-200' : ''
+        className={`flex-1 relative z-10 -mt-8 transition-colors duration-200 min-h-[300px] flex flex-col ${
+          isOver
+            ? "bg-gray-100/50 rounded-[32px] ring-2 ring-inset ring-gray-200"
+            : ""
         }`}
       >
-        <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+        <SortableContext
+          items={items.map((i) => i.id)}
+          strategy={verticalListSortingStrategy}
+        >
           <div className="pt-2">
             {items.map((item) => (
               <TaskCard key={item.id} item={item} onClick={onTaskClick} />
@@ -83,23 +105,32 @@ export function TaskColumn({ id, title, color, items, onAddCard, onTaskClick }: 
                   placeholder="Agent name *"
                   value={form.label}
                   autoFocus
-                  onChange={(e) => { setForm((p) => ({ ...p, label: e.target.value })); setError(''); }}
+                  onChange={(e) => {
+                    setForm((p) => ({ ...p, label: e.target.value }));
+                    setError("");
+                  }}
                   className="w-full text-sm font-semibold text-[#0B1215] placeholder:text-gray-300 outline-none bg-transparent border-b border-gray-200 pb-1.5"
                 />
-                {error && <p className="text-red-400 text-[11px] mt-1">{error}</p>}
+                {error && (
+                  <p className="text-red-400 text-[11px] mt-1">{error}</p>
+                )}
               </div>
               <input
                 type="text"
                 placeholder="Task description"
                 value={form.description}
-                onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, description: e.target.value }))
+                }
                 className="w-full text-xs text-gray-500 placeholder:text-gray-300 outline-none bg-transparent border-b border-gray-100 pb-1.5"
               />
               <input
                 type="text"
                 placeholder="Location"
                 value={form.location}
-                onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, location: e.target.value }))
+                }
                 className="w-full text-xs text-gray-500 placeholder:text-gray-300 outline-none bg-transparent"
               />
               <div className="flex gap-2 pt-1">

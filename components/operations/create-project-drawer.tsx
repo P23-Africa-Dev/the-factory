@@ -115,14 +115,6 @@ export function CreateProjectDrawer({ onClose }: { onClose: () => void }) {
         {/* ── Decorative header ─────────────────────────────── */}
         <div className="relative px-7 pt-8 pb-6 shrink-0 overflow-hidden">
           {/* Dark blob top-right */}
-          {/* <div
-            className="absolute -top-6 -right-6 w-36 h-36 bg-[#09232D] rounded-full opacity-90"
-            style={{ borderRadius: '40% 60% 55% 45% / 45% 40% 60% 55%' }}
-          /> */}
-          {/* <div
-            className="absolute top-0 right-8 w-20 h-20 bg-[#09232D]/70 rounded-full"
-            style={{ borderRadius: '55% 45% 40% 60% / 60% 55% 45% 40%' }}
-          /> */}
 
           <div className="relative z-10 flex items-start justify-between">
             <div>
