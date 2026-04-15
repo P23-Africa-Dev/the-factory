@@ -67,7 +67,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Main Content Area (White background) */}
-      <div className="bg-dash-bg min-h-screen pt-6 md:pt-4.25 pb-16 relative z-10 shadow-inner">
+      <div className="bg-dash-bg pb-2 pt-6 md:pt-4.25 relative z-10 shadow-inner">
         <div className="max-w-340 mx-auto gap-4.25 flex flex-col lg:flex-row px-4 md:px-6 lg:px-0">
           <TopCustomers />
           <WeeklyTasks />

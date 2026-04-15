@@ -282,7 +282,7 @@ export function WeeklyTasks() {
 
 export function CRMPipeline() {
   return (
-    <div className="py-3.75 px-2.75 pb-10 bg-[#D056DC] h-fit rounded-[20px] text-white relative overflow-hidden mb-2.5">
+    <div className="py-3.75 px-2.75 pb-10 bg-[#D056DC] h-fit rounded-[20px] text-white relative overflow-hidden mb-2.5 shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
       <div className="z-20 relative">
         <div className="w-12.75 h-12.75 rounded-[50px] bg-[#D056DC] backdrop-blur-xl flex items-center justify-center mb-2.25 drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)]">
           <Image
@@ -309,7 +309,7 @@ export function CRMPipeline() {
 
 export function AIWorkspace() {
   return (
-    <div className="py-3.75 px-2.75 bg-[#7BB6B8] h-fit rounded-[20px] text-white relative overflow-hidden">
+    <div className="py-3.75 px-2.75 bg-[#7BB6B8] h-fit rounded-[20px] text-white relative overflow-hidden shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
       <div className="z-20 relative text-[#09232D]">
         <div className="w-12.75 h-12.75 rounded-[50px] bg-[#09232D] backdrop-blur-xl flex items-center justify-center mb-2.25 drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)]">
           <Image

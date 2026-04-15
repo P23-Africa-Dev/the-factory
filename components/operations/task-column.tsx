@@ -68,7 +68,7 @@ export function TaskColumn({
       >
         <h3 className="text-white font-medium text-sm">{title}</h3>
         <div
-          className="rounded-full min-w-[28px] h-7 px-2 flex items-center justify-center font-bold text-xs bg-white"
+          className="rounded-full min-w-7 h-7 px-2 flex items-center justify-center font-bold text-xs bg-white"
           style={{ color }}
         >
           {items.length}
