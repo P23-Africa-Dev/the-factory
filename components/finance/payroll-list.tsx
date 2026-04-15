@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { TinyButton } from "../ui/tiny-button";
 
 export interface PayrollAgent {
   id: string;
@@ -87,65 +88,47 @@ interface PayrollListProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   showViewAll?: boolean;
+  onShowViewAll?: () => void;
 }
 
 export function PayrollList({
   selectedId,
   onSelect,
   showViewAll = false,
+  onShowViewAll,
 }: PayrollListProps) {
   const displayedAgents = showViewAll ? agents : agents.slice(0, 3);
 
   return (
-    <div className="bg-white rounded-[30px] p-5 sm:p-6 shadow-sm flex-1 min-w-0">
+    <div className="bg-white rounded-[30px] pt-5.75 px-10 pb-6 flex-1 min-w-0 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
       {/* Header */}
       {!showViewAll && (
-        <div className="flex justify-end mb-4">
-          <button className="px-5 py-2 bg-[#0B1215] text-white rounded-full text-[11px] font-semibold hover:opacity-90 transition-colors">
-            All Payroll List
-          </button>
+        <div className="flex justify-end mb-7">
+          <TinyButton onClick={onShowViewAll}>All Payroll List</TinyButton>
         </div>
       )}
 
-      {/* Column Headers */}
-      <div className="hidden sm:flex items-center gap-3 sm:gap-5 px-3 sm:px-5 mb-2">
-        <div className="w-11 sm:w-14 shrink-0" />
-        <div className="flex-1 min-w-0 sm:w-40 lg:w-44">
-          {/* Name column - no header */}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-[11px] font-bold text-gray-400">Base Salary</p>
-        </div>
-        <div className="flex-1 min-w-0 hidden md:block">
-          <p className="text-[11px] font-bold text-gray-400">Net Pay</p>
-        </div>
-        <div className="flex-1 min-w-0 hidden lg:block">
-          <p className="text-[11px] font-bold text-gray-400">Role</p>
-        </div>
-        <div className="w-[90px] shrink-0" />
-      </div>
-
       {/* Agent Rows */}
-      <div className="space-y-3">
+      <div className="space-y-3.5">
         {displayedAgents.map((agent) => {
           const isSelected = selectedId === agent.id;
           return (
             <div
               key={agent.id}
               onClick={() => onSelect(agent.id)}
-              className={`flex items-center gap-3 sm:gap-5 rounded-[30px] pr-4 sm:pr-5 overflow-hidden cursor-pointer transition-all hover:shadow-md ${
+              className={`flex border-[#E8E5E5] border-[0.8px] items-center gap-3 sm:gap-5 rounded-[30px] pr-4 sm:pr-5 overflow-hidden cursor-pointer ${
                 isSelected ? "bg-[#0B1215]" : "bg-[#F8F9FA]"
               }`}
             >
               {/* Left accent bar */}
               <div
                 className={`w-5 self-stretch shrink-0 rounded-l-[30px] ${
-                  isSelected ? "bg-[#3B82F6]" : "bg-[#E5E7EB]"
+                  isSelected ? "" : "bg-[#83C4F8]"
                 }`}
               />
 
               {/* Avatar */}
-              <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-full border-2 border-white shadow-sm overflow-hidden shrink-0 my-3">
+              <div className="w-14.75 h-14.75 mt-3.5 mb-3 sm:w-14 sm:h-14 rounded-full shadow-sm overflow-hidden shrink-0">
                 <Image
                   src={agent.avatar}
                   width={56}
@@ -156,53 +139,68 @@ export function PayrollList({
               </div>
 
               {/* Name + address */}
-              <div className="min-w-0 flex-1 sm:flex-none sm:w-40 lg:w-44 py-3">
+              <div className="min-w-0 max-w-35 flex-1 sm:flex-none sm:w-40 lg:w-44 py-3">
                 <p
                   className={`text-[13px] sm:text-[14px] font-bold truncate ${isSelected ? "text-white" : "text-[#0B1215]"}`}
                 >
                   {agent.name}
                 </p>
                 <p
-                  className={`text-[9px] sm:text-[10px] mt-0.5 truncate ${isSelected ? "text-white/40" : "text-gray-400"}`}
+                  className={`text-[9px] sm:text-[10px] mt-0.5 ${isSelected ? "text-white" : "text-[#616263]"}`}
                 >
                   {agent.address}
                 </p>
               </div>
 
               {/* Base Salary */}
-              <div className="hidden sm:block flex-1 min-w-0 py-3">
+              <div className="hidden sm:block flex-1 min-w-0 py-3 self-baseline">
                 <p
-                  className={`text-[13px] font-semibold ${isSelected ? "text-white" : "text-[#0B1215]"}`}
+                  className={`text-[14px] font-bold ${isSelected ? "text-white" : "text-[#34373C]"}`}
+                >
+                  Base Salary
+                </p>
+                <p
+                  className={`text-[10px] font-light ${isSelected ? "text-[#E8E8E8]" : "text-[#616263]"}`}
                 >
                   {agent.baseSalary}
                 </p>
               </div>
 
               {/* Net Pay */}
-              <div className="hidden md:block flex-1 min-w-0 py-3">
+              <div className="hidden md:block flex-1 min-w-0 py-3 self-baseline">
                 <p
-                  className={`text-[13px] font-semibold ${isSelected ? "text-white" : "text-[#0B1215]"}`}
+                  className={`text-[14px] font-bold ${isSelected ? "text-white" : "text-[#34373C]"}`}
+                >
+                  Net Pay
+                </p>
+                <p
+                  className={`text-[10px] font-light ${isSelected ? "text-[#E8E8E8]" : "text-[#616263]"}`}
                 >
                   {agent.netPay}
                 </p>
               </div>
 
               {/* Role */}
-              <div className="hidden lg:block flex-1 min-w-0 py-3">
+              <div className="hidden lg:block flex-1 min-w-0 py-3 self-baseline">
                 <p
-                  className={`text-[13px] font-semibold ${isSelected ? "text-white" : "text-[#0B1215]"}`}
+                  className={`text-[14px] font-bold ${isSelected ? "text-white" : "text-[#34373C]"}`}
+                >
+                  Role
+                </p>
+                <p
+                  className={`text-[10px] font-light ${isSelected ? "text-[#E8E8E8]" : "text-[#616263]"}`}
                 >
                   {agent.role}
                 </p>
               </div>
 
               {/* Status Badge */}
-              <div className="shrink-0 py-3">
+              <div className="shrink-0 py-3 self-baseline">
                 <span
-                  className={`inline-block px-3 py-1.5 rounded-full text-[10px] font-bold whitespace-nowrap ${
+                  className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] text-white font-medium whitespace-nowrap ${
                     agent.status === "Approved"
-                      ? "bg-[#4CAF50]/15 text-[#4CAF50]"
-                      : "bg-[#FF9800]/15 text-[#FF9800]"
+                      ? "bg-[#2F6C0E]"
+                      : "bg-[#EF7129]"
                   }`}
                 >
                   {agent.status}

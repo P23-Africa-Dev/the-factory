@@ -74,4 +74,56 @@
     -webkit-mask-repeat: no-repeat;
     -webkit-mask-composite: source-in;
   }
+
+  .payroll-cutout {
+    --notch-size: 18px;
+    mask-image:
+      radial-gradient(
+        circle var(--notch-size) at 0% 14%,
+        transparent 98%,
+        black 100%
+      ),
+      radial-gradient(
+        circle var(--notch-size) at 0% 75%,
+        transparent 98%,
+        black 100%
+      ),
+      radial-gradient(
+        circle var(--notch-size) at 100% 14%,
+        transparent 98%,
+        black 100%
+      ),
+      radial-gradient(
+        circle var(--notch-size) at 100% 75%,
+        transparent 98%,
+        black 100%
+      );
+    mask-size: 100% 100%;
+    mask-repeat: no-repeat;
+    mask-composite: intersect;
+    -webkit-mask-image:
+      radial-gradient(
+        circle var(--notch-size) at 0% 14%,
+        transparent 98%,
+        black 100%
+      ),
+      radial-gradient(
+        circle var(--notch-size) at 0% 75%,
+        transparent 98%,
+        black 100%
+      ),
+      radial-gradient(
+        circle var(--notch-size) at 100% 14%,
+        transparent 98%,
+        black 100%
+      ),
+      radial-gradient(
+        circle var(--notch-size) at 100% 75%,
+        transparent 98%,
+        black 100%
+      );
+    -webkit-mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-composite: source-in;
+  }
 }

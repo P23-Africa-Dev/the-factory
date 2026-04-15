@@ -171,22 +171,12 @@ export default function FinancePage() {
               selectedId={selectedAgentId}
               onSelect={setSelectedAgentId}
               showViewAll={showViewAll}
+              onShowViewAll={() => setShowViewAll(true)}
             />
-
-            {!showViewAll && (
-              <div className="flex justify-center mt-4">
-                <button
-                  onClick={() => setShowViewAll(true)}
-                  className="text-[11px] font-semibold text-gray-400 hover:text-[#0B1215] transition-colors cursor-pointer"
-                >
-                  View All
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Sidebar */}
-          <div className="w-full xl:w-85 xl:shrink-0 min-w-131.25">
+          <div className="w-full xl:w-85 xl:shrink-0 min-w-131.25 drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)]">
             <PayrollSidebar agent={selectedAgent} />
 
             {/* Payroll History - shown when a user is selected */}
