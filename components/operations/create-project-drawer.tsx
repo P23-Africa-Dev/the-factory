@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { X, ChevronDown, Upload, User } from 'lucide-react';
+import { useState } from 'react';
+import { X, ChevronDown, User } from 'lucide-react';
 
 const PRIORITY_OPTIONS  = ['High', 'Medium', 'Low'] as const;
 const STATUS_OPTIONS    = ['In progress', 'Pending', 'Completed'] as const;
@@ -63,16 +63,8 @@ function Divider({ label }: { label: string }) {
 
 export function CreateProjectDrawer({ onClose }: { onClose: () => void }) {
   const [form, setForm]       = useState(EMPTY);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const fileRef               = useRef<HTMLInputElement>(null);
-
   const set = <K extends keyof typeof EMPTY>(key: K, val: (typeof EMPTY)[K]) =>
     setForm((f) => ({ ...f, [key]: val }));
-
-  const handleAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) setAvatarPreview(URL.createObjectURL(file));
-  };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -232,6 +224,16 @@ export function CreateProjectDrawer({ onClose }: { onClose: () => void }) {
               </select>
               <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             </div>
+          </Row>
+
+          <Divider label="Settings" />
+
+          <Row label="Track Attendance">
+            <Toggle checked={form.trackAttendance} onChange={() => set('trackAttendance', !form.trackAttendance)} />
+          </Row>
+
+          <Row label="Commission">
+            <Toggle checked={form.commissionEnabled} onChange={() => set('commissionEnabled', !form.commissionEnabled)} />
           </Row>
         </form>
 

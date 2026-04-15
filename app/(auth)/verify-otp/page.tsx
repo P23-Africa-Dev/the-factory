@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import OtpForm from "@/components/forms/otp-form";
 
 export default function VerifyOtpPage() {
@@ -15,7 +16,9 @@ export default function VerifyOtpPage() {
         </p>
       </div>
 
-      <OtpForm />
+      <Suspense>
+        <OtpForm />
+      </Suspense>
     </div>
   );
 }

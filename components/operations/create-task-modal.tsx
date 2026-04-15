@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { X, MapPin, User, FileText, CheckCircle, ChevronDown, Camera, Calendar, AlertCircle, Navigation } from 'lucide-react';
 import type { DndItem, TaskCategory } from '@/types/operations';
 
@@ -18,11 +18,6 @@ const STATUS_OPTIONS: { value: StatusType; label: string; color: string; short: 
   { value: 'completed', label: 'Completed', color: '#4FD1C5', short: 'Completed' },
 ];
 
-const CATEGORY_OPTIONS: { value: TaskCategory; label: string }[] = [
-  { value: 'all', label: 'General' },
-  { value: 'agent', label: 'Agent' },
-  { value: 'attendance', label: 'Attendance' },
-];
 
 const TASK_TYPES = ['Sales Visit', 'Inspection', 'Delivery', 'Collection', 'Awareness'];
 const PRIORITY_OPTIONS = ['High', 'Medium', 'Low'] as const;
@@ -61,6 +56,7 @@ const INPUT_CLS = (err?: string) =>
   `${BASE_INPUT} py-2.5 ${err ? 'border-red-300' : 'border-gray-200 focus:border-[#094B5C]'}`;
 
 export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskModalProps) {
+  const taskIdRef = useRef(0);
   const [form, setForm] = useState({
     title: '',
     taskType: '',
@@ -100,7 +96,7 @@ export function CreateTaskModal({ isOpen, onClose, onCreateTask }: CreateTaskMod
   const handleSubmit = () => {
     if (!validate()) return;
     const newItem: DndItem = {
-      id: `task-${Date.now()}`,
+      id: `task-${++taskIdRef.current}`,
       label: form.assignTo,
       description: form.title,
       location: `${form.location}${form.address ? `, ${form.address}` : ''}`,

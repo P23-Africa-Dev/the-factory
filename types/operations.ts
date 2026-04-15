@@ -13,7 +13,7 @@ export interface DndItem {
   assignedBy?: string;
   addedDescription?: string;
   statusLabel?: string;
-  routeData?: any;
+  routeData?: Record<string, unknown>;
 }
 
 export interface DndContainer {
