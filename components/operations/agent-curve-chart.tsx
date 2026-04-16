@@ -1,9 +1,67 @@
 'use client';
 
+import { useState, useRef, useEffect } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
 } from 'recharts';
+
+const SORT_OPTIONS = ['Day', 'Week', 'Month'] as const;
+type SortOption = typeof SORT_OPTIONS[number];
+
+function SortDropdown() {
+  const [selected, setSelected] = useState<SortOption>('Day');
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 bg-white border border-gray-200 rounded-full px-4 py-2 text-[13px] font-semibold text-dash-dark shadow-sm hover:bg-gray-50 transition-colors"
+      >
+        {selected}
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+          className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        >
+          <path d="M2 4l4 4 4-4" stroke="#94A3B8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-2 w-32 bg-white rounded-2xl shadow-lg border border-gray-100 py-1.5 z-20">
+          {SORT_OPTIONS.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => { setSelected(opt); setOpen(false); }}
+              className={`w-full text-left px-4 py-2 text-[13px] font-medium transition-colors hover:bg-gray-50 ${
+                selected === opt ? 'text-dash-teal font-semibold' : 'text-dash-dark'
+              }`}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const data = [
   { name: 'Apr 01', online: 45, offline: 30 },
@@ -39,11 +97,7 @@ export function AgentCurveChart() {
 
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-[12px] text-gray-400">Sort by:</span>
-          <select className="bg-white border border-gray-200 rounded-full px-4 py-2 text-[13px] font-semibold text-dash-dark outline-none shadow-sm cursor-pointer hover:bg-gray-50 transition-colors">
-            <option>Day</option>
-            <option>Week</option>
-            <option>Month</option>
-          </select>
+          <SortDropdown />
         </div>
       </div>
 

@@ -18,40 +18,68 @@ export function AgentView() {
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center gap-3 w-full justify-between">
-        <div></div>
-        {/* ── Toolbar ──────────────────────────────────────────── */}
-        <div className="flex items-center gap-3 min-w-[800px]">
-          <div className="relative flex-1 group">
+      {/* ── Toolbar ──────────────────────────────────────────── */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-[20px] font-extrabold text-[#09232D] shrink-0"></h1>
+
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 md:justify-end min-w-0">
+          {/* Search */}
+          <div className="relative w-full md:w-[458px] group shrink-0">
             <Search
-              className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-teal transition-colors"
-              size={17}
+              className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#09232D] transition-colors"
+              size={18}
+              strokeWidth={2}
             />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search for Agents"
-              className="w-full bg-white border border-gray-100 rounded-full py-3.5 pl-12 pr-5 text-[13px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
+              className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-[#09232D]/10 transition-all font-sans"
+              style={{
+                height: '46px',
+                borderRadius: '24px',
+                border: '0.7px solid #D7D7D7',
+                boxShadow: '0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026'
+              }}
             />
           </div>
+
+          {/* Filter toggle — icon before text */}
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full text-[13px] font-bold transition-all shadow-sm border shrink-0 ${
-              showFilters
-                ? "bg-[#0B1215] text-white border-[#0B1215]"
-                : "bg-white text-gray-500 border-gray-100 hover:bg-gray-50"
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
+              showFilters ? 'text-white' : 'text-gray-500'
             }`}
+            style={{ 
+              background: showFilters ? '#34373C' : '#F8F8F8',
+              border: showFilters ? '0.5px solid #34373C' : '0.5px solid #D1D1D1',
+              boxShadow: showFilters ? 'none' : '0 2px 8px rgba(0, 0, 0, 0.06)'
+            }}
           >
-            <span className="opacity-70">Filter</span>
-            <SlidersHorizontal size={14} className="opacity-70" />
+            <SlidersHorizontal size={14} strokeWidth={2} />
+            <span style={{
+              fontFamily: 'Poppins, sans-serif',
+              fontWeight: 400,
+              fontStyle: 'normal',
+              fontSize: '10px',
+              lineHeight: '100%',
+              letterSpacing: '0%',
+              verticalAlign: 'middle'
+            }}>
+              Filter
+            </span>
           </button>
+
+          {/* Create — shorter than search */}
           <button
             onClick={() => setShowAddAgent(true)}
-            className="flex items-center gap-2 px-4 sm:px-6 py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shadow-lg shrink-0 cursor-pointer"
+            className="flex items-center gap-2 px-5 py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
+            style={{ boxShadow: '0 4px 14px rgba(9, 35, 45, 0.3)' }}
           >
-            <span>Add New Agent</span>
-            <BookmarkPlus size={16} />
+            <BookmarkPlus size={15} strokeWidth={2} />
+            <span className="hidden sm:inline whitespace-nowrap">Add New Agent</span>
+            <span className="sm:hidden">New</span>
           </button>
         </div>
       </div>

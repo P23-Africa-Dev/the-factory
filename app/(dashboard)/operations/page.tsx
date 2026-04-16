@@ -3,7 +3,6 @@
 import { Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { ProjectsView } from "@/components/operations/projects-view";
-import { AllTasksView } from "@/components/operations/all-tasks-view";
 import { AgentView } from "@/components/operations/agent-view";
 import { AttendanceView } from "@/components/operations/attendance-view";
 import type { TaskCategory, Project } from "@/types/operations";
@@ -123,7 +122,7 @@ const MOCK_PROJECTS: Project[] = [
 ];
 
 const TABS: { value: TaskCategory; label: string }[] = [
-  { value: "all", label: "All Task" },
+  { value: "all", label: "All Project" },
   { value: "agent", label: "Agents" },
   { value: "attendance", label: "Attendance" },
 ];
@@ -135,7 +134,6 @@ function OperationsContent() {
   const pathname = usePathname();
 
   const activeTab = (searchParams.get("tab") as TaskCategory) || "all";
-  const projectId = searchParams.get("projectId");
 
   const handleTabChange = (tab: TaskCategory) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -143,75 +141,43 @@ function OperationsContent() {
     router.push(`${pathname}?${params.toString()}`);
   };
 
+  // Navigate to dedicated project tasks page
   const handleViewProject = (id: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("projectId", id);
-    router.push(`${pathname}?${params.toString()}`);
-  };
-
-  const handleBackToProjects = () => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("projectId");
-    params.delete("tab");
-    router.push(`${pathname}?${params.toString()}`);
+    router.push(`/operations/${id}`);
   };
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
       <div className="max-w-400 mx-auto flex flex-col gap-5">
-        {/* ── Back button + tabs (only when inside a project) ── */}
-        {projectId && (
-          <div className="flex items-center gap-4">
-            <button
-              onClick={handleBackToProjects}
-              className="p-2 hover:bg-gray-100 rounded-full transition-colors group"
-              title="Back to Projects"
-            >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-gray-400 group-hover:text-[#0B1215]"
+        {/* ── Tabs ── */}
+        <div className="flex items-center gap-4">
+          <div className="flex gap-1 bg-white rounded-full p-1.5 border border-gray-100 shadow-sm">
+            {TABS.map((tab) => (
+              <button
+                key={tab.value}
+                onClick={() => handleTabChange(tab.value)}
+                className={`px-5 py-2.5 rounded-full transition-all cursor-pointer ${
+                  activeTab === tab.value
+                    ? "bg-[#09232D] text-white shadow-lg text-[14px] font-extrabold"
+                    : "text-gray-400 hover:text-gray-600 text-[13px] font-medium"
+                }`}
               >
-                <path d="M19 12H5M12 19l-7-7 7-7" />
-              </svg>
-            </button>
-
-            <div className="flex gap-1 bg-white rounded-full p-1.5 border border-gray-100 shadow-sm">
-              {TABS.map((tab) => (
-                <button
-                  key={tab.value}
-                  onClick={() => handleTabChange(tab.value)}
-                  className={`px-5 py-2.5 rounded-full text-[13px] font-bold transition-all cursor-pointer ${
-                    activeTab === tab.value
-                      ? "bg-[#0B1215] text-white shadow-lg"
-                      : "text-gray-400 hover:text-gray-600"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+                {tab.label}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
 
-        {/* ── View ─────────────────────────────────────────────── */}
-        {!projectId ? (
+        {/* ── View ── */}
+        {activeTab === "all" ? (
           <ProjectsView
             projects={MOCK_PROJECTS}
             onViewProject={handleViewProject}
           />
         ) : activeTab === "agent" ? (
           <AgentView />
-        ) : activeTab === "attendance" ? (
-          <AttendanceView />
         ) : (
-          <AllTasksView />
+          <AttendanceView />
         )}
       </div>
     </div>
