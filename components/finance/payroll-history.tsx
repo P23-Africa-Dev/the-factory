@@ -26,7 +26,7 @@ const historyData: PayrollHistoryEntry[] = [
     baseSalary: "₦65,000",
     netPay: "₦85,000",
     dueDate: "Tue 5th May, 2026",
-    status: "Pending",
+    status: "Approved",
   },
   {
     id: "3",
@@ -49,7 +49,9 @@ export function PayrollHistory() {
         {historyData.map((entry) => (
           <div
             key={entry.id}
-            className="bg-[#E3F4FB] rounded-full px-7.25 py-4 border-t border-[#CDCDCD]"
+            className={`rounded-full px-7.25 py-4 border-t border-[#CDCDCD] ${
+              entry.status === "Pending" ? "bg-[#FFFFEF]" : "bg-[#E3F4FB]"
+            }`}
           >
             <div className="flex gap-4.5">
               <div>
@@ -76,7 +78,7 @@ export function PayrollHistory() {
                   {entry.netPay}
                 </p>
               </div>
-              <div className="flex items-start justify-between">
+              <div className="flex flex-1 items-start justify-between">
                 <div>
                   <p className="text-[14px] font-bold text-[#7A7A7A] mb-1">
                     Due Date
@@ -85,7 +87,7 @@ export function PayrollHistory() {
                     {entry.dueDate}
                   </p>
                 </div>
-                <StatusBadge status={entry.status} />
+                <StatusBadge className="self-center" status={entry.status} />
               </div>
             </div>
           </div>
