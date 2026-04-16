@@ -32,7 +32,7 @@ export class ApiRequestError extends Error {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://104.131.166.92:8080/api/v1";
 
-async function apiRequest<TData>({
+export async function apiRequest<TData>({
   method,
   path,
   body,
