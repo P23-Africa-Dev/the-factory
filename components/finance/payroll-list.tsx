@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { TinyButton } from "../ui/tiny-button";
+import { StatusBadge } from "../ui/status-badge";
 
 export interface PayrollAgent {
   id: string;
@@ -196,15 +197,7 @@ export function PayrollList({
 
               {/* Status Badge */}
               <div className="shrink-0 py-3 self-baseline">
-                <span
-                  className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] text-white font-medium whitespace-nowrap ${
-                    agent.status === "Approved"
-                      ? "bg-[#2F6C0E]"
-                      : "bg-[#EF7129]"
-                  }`}
-                >
-                  {agent.status}
-                </span>
+                <StatusBadge status={agent.status} />
               </div>
             </div>
           );

@@ -1,5 +1,7 @@
 "use client";
 
+import { StatusBadge } from "../ui/status-badge";
+
 interface PayrollHistoryEntry {
   id: string;
   month: string;
@@ -83,15 +85,7 @@ export function PayrollHistory() {
                     {entry.dueDate}
                   </p>
                 </div>
-                <span
-                  className={`inline-block px-2.5 py-1 rounded-full text-[9px] font-bold whitespace-nowrap ${
-                    entry.status === "Approved"
-                      ? "bg-[#4CAF50]/15 text-[#4CAF50]"
-                      : "bg-[#FF9800]/15 text-[#FF9800]"
-                  }`}
-                >
-                  {entry.status}
-                </span>
+                <StatusBadge status={entry.status} />
               </div>
             </div>
           </div>
