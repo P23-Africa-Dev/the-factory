@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { X } from "lucide-react";
 
@@ -179,7 +177,7 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
     <>
       <div className="fixed inset-0 z-50">
         {/* Backdrop */}
-        <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+        <div className="absolute inset-0 bg-white/40" onClick={onClose} />
 
         {/* Modal */}
         <div className="absolute right-12 bottom-3.25 bg-white rounded-[28px] w-full max-w-100 shadow-2xl overflow-hidden">
