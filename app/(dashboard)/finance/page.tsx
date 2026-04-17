@@ -120,16 +120,15 @@ export default function FinancePage() {
 
         <div className="flex items-center gap-4.25 flex-wrap">
           <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
-            Label
             <Image
               src={CalendarIcon}
               alt="Calendar Icon"
               width={13}
               height={13}
             />
+            April 16, 2026
           </button>
           <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
-            Export
             <Image
               src={FileExportIcon}
               alt="Export Icon"
@@ -137,10 +136,11 @@ export default function FinancePage() {
               height={13}
               style={{ filter: "invert(40%) sepia(0%) grayscale(100%)" }}
             />
+            Export
           </button>
           <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
-            Filter
             <SlidersHorizontal size={13} />
+            Filter
           </button>
           <button className="flex items-center gap-2.5 px-2.5 py-[8.5px] font-medium bg-[#09232D] text-white rounded-[10px] text-[10px] hover:opacity-90 transition-all">
             Set Payroll
