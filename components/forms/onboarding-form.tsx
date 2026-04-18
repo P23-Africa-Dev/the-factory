@@ -13,47 +13,47 @@ import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Select from "@/components/ui/select";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { toast } from "sonner";
 
 const workspaceSchema = z.object({
-  company_name: z
-    .string()
-    .min(2, "Company name must be at least 2 characters long."),
-  country: z
-    .string()
-    .length(2, "Country must be a 2-letter country code.")
-    .transform((value) => value.toUpperCase()),
+  company_name: z.string().min(2, "Company name must be at least 2 characters."),
+  country: z.string().min(1, "Please select a country."),
   team_size: z.enum(["solo", "2-10", "11-50", "51-200", "201-500", "500+"]),
   purpose: z.enum([
-    "personal",
-    "startup",
-    "enterprise",
-    "freelancing",
-    "education",
-    "non_profit",
-    "other",
+    "personal", "startup", "enterprise", "freelancing",
+    "education", "non_profit", "other",
   ]),
   user_type: z.enum([
-    "developer",
-    "designer",
-    "product_manager",
-    "marketing",
-    "sales",
-    "operations",
-    "founder",
-    "student",
-    "other",
+    "developer", "designer", "product_manager", "marketing",
+    "sales", "operations", "founder", "student", "other",
   ]),
 });
 
+type Country = { name: { common: string }; cca2: string };
+
 export default function OnboardingForm() {
   const router = useRouter();
+
+  const { data: countryOptions = [] } = useQuery({
+    queryKey: ["countries"],
+    queryFn: async () => {
+      const res = await fetch("https://restcountries.com/v3.1/all?fields=name,cca2");
+      const data: Country[] = await res.json();
+      return data
+        .map((c) => ({ label: c.name.common, value: c.cca2 }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+    },
+    staleTime: Infinity,
+  });
+
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<WorkspacePayload>({
     resolver: zodResolver(workspaceSchema),
@@ -66,50 +66,51 @@ export default function OnboardingForm() {
     },
   });
 
+  const companyNameValue = watch("company_name");
+  const countryValue = watch("country");
+  const isFilled = companyNameValue?.trim() !== "" && countryValue?.trim() !== "";
+
   const workspaceMutation = useMutation({
     mutationFn: (values: WorkspacePayload) => {
       const token = getAuthTokenFromDocument();
-
-      if (!token) {
-        throw new Error("Your session has expired. Please verify your email again.");
-      }
-
+      if (!token) throw new Error("Your session has expired. Please verify your email again.");
       return createWorkspace(values, token);
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       setOnboardingCompletedCookie();
-      router.push("/dashboard");
+      toast.success(res.message);
+      router.push("/login");
+    },
+    onError: (err: ApiRequestError | Error) => {
+      toast.error(err.message);
     },
   });
-
-  const onSubmit = (values: WorkspacePayload) => {
-    workspaceMutation.mutate(values);
-  };
 
   const apiError = workspaceMutation.error as ApiRequestError | Error | null;
 
   return (
-    <form className="flex flex-col" onSubmit={handleSubmit(onSubmit)}>
-      <h3 className="text-center text-[#34373C] font-bold text-sm sm:text-[15px] mb-6 mt-[-10px] md:mt-[-16px]">
-        Create a Workspace
-      </h3>
-
+    <form className="flex flex-col" onSubmit={handleSubmit((v) => workspaceMutation.mutate(v))}>
       <Input
         type="text"
         placeholder="Company Name"
         className="mb-2"
         {...register("company_name")}
       />
-      {errors.company_name ? (
-        <p className="text-xs text-red-500 mb-4 px-4">
-          {errors.company_name.message}
-        </p>
-      ) : null}
+      {errors.company_name && (
+        <p className="text-xs text-red-500 mb-4 px-4">{errors.company_name.message}</p>
+      )}
 
-      <Input type="text" placeholder="Country (e.g. NG)" className="mb-2" {...register("country")} />
-      {errors.country ? (
+      <div className="mb-2">
+        <Select
+          placeholder={countryOptions.length ? "Select Country" : "Loading countries..."}
+          disabled={!countryOptions.length}
+          {...register("country")}
+          options={countryOptions}
+        />
+      </div>
+      {errors.country && (
         <p className="text-xs text-red-500 mb-4 px-4">{errors.country.message}</p>
-      ) : null}
+      )}
 
       <div className="mb-6">
         <Select
@@ -160,13 +161,11 @@ export default function OnboardingForm() {
         />
       </div>
 
-      {apiError ? (
-        <p className="text-xs text-red-500 text-center mb-4">
-          {apiError.message}
-        </p>
-      ) : null}
+      {apiError && (
+        <p className="text-xs text-red-500 text-center mb-4">{apiError.message}</p>
+      )}
 
-      <Button type="submit" disabled={workspaceMutation.isPending}>
+      <Button type="submit" disabled={!isFilled || workspaceMutation.isPending}>
         {workspaceMutation.isPending ? "Finishing..." : "Continue"}
       </Button>
     </form>

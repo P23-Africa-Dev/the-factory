@@ -4,11 +4,11 @@
 
 This feature supports the 3-step self-serve onboarding flow:
 
-1. Register with full name + email
+1. Register with full name + email + password
 2. Verify email with 6-digit OTP
 3. Create workspace profile
 
-The flow is passwordless during onboarding and uses short-lived OTP verification.
+Users now set their login password during registration. OTP verification remains required for email ownership validation and token issuance.
 
 ## Endpoints
 
@@ -41,7 +41,9 @@ Request:
 ```json
 {
   "name": "Ridwon Elijah",
-  "email": "ridwanelijah@example.com"
+  "email": "ridwanelijah@example.com",
+  "password": "Secure123",
+  "password_confirmation": "Secure123"
 }
 ```
 
@@ -107,6 +109,36 @@ Failure (`422`, invalid or expired OTP):
   "errors": {
     "otp_code": [
       "The verification code is incorrect or has expired. Please request a new one."
+    ]
+  }
+}
+```
+
+Failure (`422`, weak or invalid password):
+
+```json
+{
+  "success": false,
+  "message": "The given data was invalid.",
+  "data": null,
+  "errors": {
+    "password": [
+      "Password must contain at least one number."
+    ]
+  }
+}
+```
+
+Failure (`422`, password confirmation mismatch):
+
+```json
+{
+  "success": false,
+  "message": "The given data was invalid.",
+  "data": null,
+  "errors": {
+    "password_confirmation": [
+      "Password confirmation does not match."
     ]
   }
 }
@@ -252,6 +284,8 @@ Conflict (`409`, onboarding already completed):
 - Register:
   - `name`: required, string, min 2, max 255
   - `email`: required, valid RFC email, max 255
+  - `password`: required, string, min 8, must contain at least one letter and one number
+  - `password_confirmation`: required, must match `password`
 - Verify email:
   - `email`: required, exists in users
   - `otp_code`: required, exactly 6 digits
@@ -278,7 +312,7 @@ Register:
 ```bash
 curl -X POST http://localhost:8080/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"name":"Ridwan Elijah","email":"ridwanelijah@example.com"}'
+  -d '{"name":"Ridwan Elijah","email":"ridwanelijah@example.com","password":"Secure123","password_confirmation":"Secure123"}'
 ```
 
 Verify:
@@ -297,3 +331,11 @@ curl -X POST http://localhost:8080/api/v1/onboarding/workspace \
   -H "Content-Type: application/json" \
   -d '{"company_name":"The Factory Labs","country":"NG","team_size":"2-10","purpose":"startup","user_type":"founder"}'
 ```
+
+## Authentication Impact
+
+- Registration now stores a hashed password immediately.
+- After the user completes onboarding (`verify-email` + `onboarding/workspace`), they can log in right away using:
+  - `POST /api/v1/auth/login`
+  - `email` + `password` (set during registration)
+- Existing OTP verification logic is unchanged and still required for email ownership confirmation.
