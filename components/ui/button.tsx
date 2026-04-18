@@ -21,7 +21,7 @@ export default function Button({
 }: ButtonProps) {
   return (
     <button
-      className={`w-full h-[51px] rounded-full text-xs font-medium transition-colors cursor-pointer flex items-center justify-center ${variantStyles[variant]} ${className}`}
+      className={`w-full h-[51px] rounded-full text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${variantStyles[variant]} ${className}`}
       {...props}
     >
       {children}

@@ -6,37 +6,85 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { loginUser } from "@/lib/api/auth";
-import { ApiRequestError } from "@/lib/api/onboarding";
+import { ApiRequestError, getMe } from "@/lib/api/onboarding";
 import { setAuthSession } from "@/lib/auth/session";
+import { useAuthStore } from "@/store/auth";
+import { toast } from "sonner";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+
+const loginSchema = z.object({
+  terms: z.boolean().refine((val) => val === true, "You must agree to the terms."),
+  email: z.string().email("Please enter a valid email address."),
+  password: z.string().min(1, "Password is required."),
+  remember: z.boolean().optional(),
+});
+
+type LoginFormValues = z.infer<typeof loginSchema>;
 
 export default function LoginForm() {
   const router = useRouter();
+  const setUser = useAuthStore((s) => s.setUser);
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [globalError, setGlobalError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setFieldErrors({});
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setError,
+    formState: { errors },
+  } = useForm<LoginFormValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      terms: false,
+      email: "",
+      password: "",
+      remember: false,
+    },
+  });
+
+  const terms = watch("terms");
+  const email = watch("email");
+  const password = watch("password");
+  const isFilled = terms && email.trim() !== "" && password.trim() !== "";
+
+  async function onSubmit(values: LoginFormValues) {
     setGlobalError("");
     setLoading(true);
 
     try {
-      const res = await loginUser({ email, password });
-      setAuthSession(res.data.token, true);
+      const res = await loginUser({ email: values.email, password: values.password });
+      const token = res.data.token;
+      setAuthSession(token, values.remember ?? true);
+
+      const me = await getMe(token);
+      setUser({
+        id: me.data.id,
+        name: me.data.name,
+        email: me.data.email,
+        avatar: me.data.avatar,
+        user_type: res.data.user_type,
+        access_role: res.data.access_role,
+      });
+
+      toast.success(res.message);
       router.push("/dashboard");
     } catch (err) {
       if (err instanceof ApiRequestError) {
         if (err.errors) {
-          setFieldErrors(err.errors);
+          if (err.errors.email) setError("email", { type: "server", message: err.errors.email[0] });
+          if (err.errors.password) setError("password", { type: "server", message: err.errors.password[0] });
         } else {
           setGlobalError(err.message);
         }
+        toast.error(err.message);
       } else {
-        setGlobalError("An unexpected error occurred. Please try again.");
+        const msg = "An unexpected error occurred. Please try again.";
+        setGlobalError(msg);
+        toast.error(msg);
       }
     } finally {
       setLoading(false);
@@ -44,13 +92,14 @@ export default function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col" noValidate>
+    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col" noValidate>
       <div className="flex items-start gap-4 mb-9 px-2 md:px-7">
         <div className="relative flex items-center justify-center mt-0.5">
           <input
             type="checkbox"
             id="terms"
-            className="peer w-[20px] h-[20px] shrink-0 appearance-none rounded-[6px] border-[1.5px] border-[#A9AAAB] bg-white checked:bg-[#6FA8A6] checked:border-[#6FA8A6] cursor-pointer transition-colors"
+            {...register("terms")}
+            className="peer w-5 h-5 shrink-0 appearance-none rounded-md border-[1.5px] border-[#A9AAAB] bg-white checked:bg-[#6FA8A6] checked:border-[#6FA8A6] cursor-pointer transition-colors"
           />
           <svg
             className="absolute text-white pointer-events-none opacity-0 peer-checked:opacity-100 w-3 h-3"
@@ -67,33 +116,34 @@ export default function LoginForm() {
             />
           </svg>
         </div>
-        <label
-          htmlFor="terms"
-          className="text-[13px] md:text-sm text-[#A9AAAB] leading-5.5 cursor-pointer"
-        >
-          By using Factory 23, you agree to our{" "}
-          <Link
-            href="#"
-            className="text-[#6FA8A6] font-bold underline decoration-[#6FA8A6] underline-offset-2 hover:text-[#5e9795] transition-colors"
+        <div className="flex flex-col">
+          <label
+            htmlFor="terms"
+            className="text-[13px] md:text-sm text-[#A9AAAB] leading-5.5 cursor-pointer"
           >
-            Terms, conditions and Privacy Policy.
-          </Link>
-        </label>
+            By using Factory 23, you agree to our{" "}
+            <Link
+              href="#"
+              className="text-[#6FA8A6] font-bold underline decoration-[#6FA8A6] underline-offset-2 hover:text-[#5e9795] transition-colors"
+            >
+              Terms, conditions and Privacy Policy.
+            </Link>
+          </label>
+          {errors.terms && (
+            <p className="mt-1 px-1 text-xs text-red-500">{errors.terms.message}</p>
+          )}
+        </div>
       </div>
-
-      <Input type="text" placeholder="Company ID" className="mb-6" />
 
       <div className="mb-6">
         <Input
           type="email"
           placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
+          {...register("email")}
         />
-        {fieldErrors.email && (
+        {errors.email && (
           <p className="mt-1.5 px-1 text-xs text-red-500">
-            {fieldErrors.email[0]}
+            {errors.email.message}
           </p>
         )}
       </div>
@@ -103,9 +153,7 @@ export default function LoginForm() {
           type={showPassword ? "text" : "password"}
           placeholder="Password"
           className="w-full pr-12"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
+          {...register("password")}
         />
         <button
           type="button"
@@ -145,9 +193,9 @@ export default function LoginForm() {
             </svg>
           )}
         </button>
-        {fieldErrors.password && (
+        {errors.password && (
           <p className="mt-1.5 px-1 text-xs text-red-500">
-            {fieldErrors.password[0]}
+            {errors.password.message}
           </p>
         )}
       </div>
@@ -164,7 +212,8 @@ export default function LoginForm() {
             <input
               type="checkbox"
               id="remember"
-              className="peer w-[20px] h-[20px] shrink-0 appearance-none rounded-[6px] border-[1.5px] border-[#A9AAAB] bg-white checked:bg-[#6FA8A6] checked:border-[#6FA8A6] cursor-pointer transition-colors"
+              {...register("remember")}
+              className="peer w-5 h-5 shrink-0 appearance-none rounded-md border-[1.5px] border-[#A9AAAB] bg-white checked:bg-[#6FA8A6] checked:border-[#6FA8A6] cursor-pointer transition-colors"
             />
             <svg
               className="absolute text-white pointer-events-none opacity-0 peer-checked:opacity-100 w-3 h-3"
@@ -196,7 +245,7 @@ export default function LoginForm() {
         </Link>
       </div>
 
-      <Button type="submit" disabled={loading}>
+      <Button type="submit" disabled={!isFilled || loading}>
         {loading ? "Logging in…" : "Log In"}
       </Button>
 

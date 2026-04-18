@@ -1,15 +1,16 @@
 # Onboarding and Registration Frontend Guide
 
 ## Feature Overview
-This flow handles new self-serve user onboarding using email OTP and workspace setup.
+This flow handles new self-serve user onboarding using password setup, email OTP verification, and workspace setup.
 
 ## User Flow
-1. User enters name and email.
+1. User enters name, email, password, and password confirmation.
 2. Frontend calls register endpoint.
 3. User enters OTP from email.
 4. Frontend verifies OTP and receives bearer token.
 5. Frontend stores token and loads user profile.
 6. User submits workspace form to complete onboarding.
+7. User can immediately sign in from login screen using the same email and password.
 
 ## API Endpoints
 - POST /api/v1/auth/register
@@ -23,7 +24,9 @@ This flow handles new self-serve user onboarding using email OTP and workspace s
 ```json
 {
   "name": "Ridwan Elijah",
-  "email": "ridwanelijah@example.com"
+  "email": "ridwanelijah@example.com",
+  "password": "Secure123",
+  "password_confirmation": "Secure123"
 }
 ```
 
@@ -83,7 +86,36 @@ This flow handles new self-serve user onboarding using email OTP and workspace s
 }
 ```
 
+### Weak Password 422
+```json
+{
+  "success": false,
+  "message": "The given data was invalid.",
+  "data": null,
+  "errors": {
+    "password": [
+      "Password must contain at least one number."
+    ]
+  }
+}
+```
+
+### Password Mismatch 422
+```json
+{
+  "success": false,
+  "message": "The given data was invalid.",
+  "data": null,
+  "errors": {
+    "password_confirmation": [
+      "Password confirmation does not match."
+    ]
+  }
+}
+```
+
 ## Error Handling
+- 422 on register password validation: show inline field errors under `password`/`password_confirmation`.
 - 422 on OTP validation: show inline field error.
 - 429 on resend: disable resend button and show cooldown.
 - 409 on workspace completion conflict: route user to dashboard.
@@ -92,11 +124,16 @@ This flow handles new self-serve user onboarding using email OTP and workspace s
 ```javascript
 const API = '/api/v1';
 
-export async function register(name, email) {
+export async function register(name, email, password, passwordConfirmation) {
   const res = await fetch(`${API}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ name, email }),
+    body: JSON.stringify({
+      name,
+      email,
+      password,
+      password_confirmation: passwordConfirmation,
+    }),
   });
   return res.json();
 }
@@ -127,6 +164,18 @@ export async function createWorkspace(payload) {
   });
   return res.json();
 }
+
+export async function login(email, password) {
+  const res = await fetch(`${API}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+
+  const body = await res.json();
+  if (!res.ok || !body.success) throw body;
+  return body.data;
+}
 ```
 
 ## Notes & Edge Cases
@@ -134,3 +183,5 @@ export async function createWorkspace(payload) {
 - OTP is 6 digits and time-limited.
 - Resend is rate-limited plus cooldown.
 - Token is required before workspace creation.
+- Password is created at registration and should never be stored in frontend state longer than needed.
+- Existing OTP/email verification logic remains the same; password setup does not bypass verification.
