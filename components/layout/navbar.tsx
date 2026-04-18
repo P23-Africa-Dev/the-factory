@@ -18,11 +18,11 @@ import { cn } from '@/lib/utils/sample';
 
 // Import local SVG assets
 import DashboardIcon from '@/assets/nav-icons/dashboard.svg';
-import SalesEngineIcon from '@/assets/nav-icons/sales-engine.svg';
 import MapIconAsset from '@/assets/nav-icons/map.svg';
-import OperationsIcon from '@/assets/nav-icons/operations.svg';
+import ProjectsIcon from '@/assets/nav-icons/projects.svg';
+import WorkforceIcon from '@/assets/nav-icons/workforce.svg';
 import CRMIcon from '@/assets/nav-icons/crm.svg';
-import InsightIcon from '@/assets/nav-icons/insight.svg';
+
 import FinanceIcon from '@/assets/nav-icons/finance.svg';
 import NotificationIcon from '@/assets/nav-icons/notification.svg';
 import SettingsIcon from '@/assets/nav-icons/settings.svg';
@@ -32,7 +32,8 @@ const navItems = [
   { name: 'Dashboard', href: '/dashboard', icon: DashboardIcon },
   // { name: 'Sales Engine', href: '/sales-engine', icon: SalesEngineIcon },
   { name: 'Map', href: '/map', icon: MapIconAsset },
-  { name: 'Operations', href: '/operations', icon: OperationsIcon, hasDropdown: true },
+  { name: 'Projects', href: '/projects', icon: ProjectsIcon, hasDropdown: true },
+  { name: 'Workforce', href: '/operations', icon: WorkforceIcon, hasDropdown: true },
   { name: 'CRM', href: '/crm', icon: CRMIcon },
   // { name: 'Insight', href: '/insight', icon: InsightIcon },
   { name: 'Finance', href: '/finance', icon: FinanceIcon, hasDropdown: true },
