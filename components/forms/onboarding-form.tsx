@@ -15,7 +15,7 @@ import Select from "@/components/ui/select";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { toast } from "sonner";
 
@@ -53,7 +53,7 @@ export default function OnboardingForm() {
   const {
     register,
     handleSubmit,
-    watch,
+    control,
     formState: { errors },
   } = useForm<WorkspacePayload>({
     resolver: zodResolver(workspaceSchema),
@@ -66,8 +66,10 @@ export default function OnboardingForm() {
     },
   });
 
-  const companyNameValue = watch("company_name");
-  const countryValue = watch("country");
+  const [companyNameValue, countryValue] = useWatch({
+    control,
+    name: ["company_name", "country"],
+  });
   const isFilled = companyNameValue?.trim() !== "" && countryValue?.trim() !== "";
 
   const workspaceMutation = useMutation({

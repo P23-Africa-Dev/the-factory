@@ -12,7 +12,7 @@ import { format } from "date-fns";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import OtpInput from "@/components/ui/otp-input";
 import Button from "@/components/ui/button";
@@ -33,14 +33,14 @@ export default function OtpForm() {
   const {
     handleSubmit,
     setValue,
-    watch,
+    control,
     formState: { errors },
   } = useForm<OtpFormValues>({
     resolver: zodResolver(otpSchema),
     defaultValues: { otp_code: "" },
   });
 
-  const otpCodeValue = watch("otp_code");
+  const otpCodeValue = useWatch({ control, name: "otp_code" });
   const isFilled = otpCodeValue?.length === 6;
 
   const verifyMutation = useMutation({

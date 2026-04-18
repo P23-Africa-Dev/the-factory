@@ -10,7 +10,7 @@ import { useMutation } from "@tanstack/react-query";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { toast } from "sonner";
 
@@ -56,16 +56,21 @@ export default function SignupForm() {
   const {
     register,
     handleSubmit,
-    watch,
+    control,
     formState: { errors },
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
   });
 
-  const nameValue = watch("name");
-  const emailValue = watch("email");
-  const passwordValue = watch("password");
-  const passwordConfirmationValue = watch("password_confirmation");
+  const [
+    nameValue,
+    emailValue,
+    passwordValue,
+    passwordConfirmationValue
+  ] = useWatch({
+    control,
+    name: ["name", "email", "password", "password_confirmation"],
+  });
 
   const isFilled =
     nameValue?.trim() !== "" &&
