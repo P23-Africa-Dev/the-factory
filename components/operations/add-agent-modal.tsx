@@ -22,6 +22,21 @@ const ZONE_OPTIONS = [
 ];
 const ROLE_OPTIONS = ["Supervisor", "Field Agent", "Staff"];
 
+type FormErrors = Partial<{
+  name: string;
+  email: string;
+  role: string;
+  zone: string;
+  salary: string;
+  phone: string;
+  gender: string;
+}>;
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="text-[11px] text-red-500 mt-0.5 text-right">{message}</p>;
+}
+
 export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -37,16 +52,49 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
     avatarIndex: -1,
     avatarCustom: null,
   });
+  const [errors, setErrors] = useState<FormErrors>({});
 
-  // Toggle opens/closes the secondary modal — same pattern as commission toggle
   const handleFillForAgentToggle = () => {
     const newEnabled = !fillForAgent;
     setFillForAgent(newEnabled);
     setAgentDetailsModalOpen(newEnabled);
   };
 
+  const clearError = (field: keyof FormErrors) =>
+    setErrors((prev) => ({ ...prev, [field]: undefined }));
+
+  const validate = (): FormErrors => {
+    const e: FormErrors = {};
+    if (!name.trim()) e.name = "Full name is required.";
+    if (!email.trim()) {
+      e.email = "Email is required.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      e.email = "Enter a valid email address.";
+    }
+    if (!role) e.role = "Role is required.";
+    if (!zone) e.zone = "Zone is required.";
+    if (salary) {
+      const numeric = salary.replace(/,/g, "");
+      if (isNaN(Number(numeric)) || Number(numeric) < 0)
+        e.salary = "Enter a valid salary amount.";
+    }
+    if (fillForAgent) {
+      if (!agentDetails.phone.trim()) e.phone = "Phone number is required.";
+      if (!agentDetails.gender) e.gender = "Gender is required.";
+    }
+    return e;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const errs = validate();
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      if ((errs.phone || errs.gender) && !agentDetailsModalOpen) {
+        setAgentDetailsModalOpen(true);
+      }
+      return;
+    }
     onClose();
   };
 
@@ -56,7 +104,6 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
         <div className="absolute inset-0 bg-white/40" onClick={onClose} />
 
         <div className="absolute right-12 bottom-3.25 bg-white rounded-[28px] w-full max-w-100 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
-          {/* Header — matches payroll modal */}
           <div className="bg-transparent h-18 relative overflow-hidden flex items-center px-7 shrink-0">
             <div className="absolute top-0 right-0 w-[50%] h-full pointer-events-none">
               <svg
@@ -84,77 +131,88 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
             </button>
           </div>
 
-          {/* Scrollable body */}
           <form
             id="add-agent-form"
             onSubmit={handleSubmit}
             className="flex-1 min-h-0 overflow-y-auto px-7 pb-6"
           >
-            {/* Add New Agent section */}
             <div className="space-y-4 mb-5">
               <SectionDivider label="Add New Agent" />
 
-              <FormRow label="Fullname">
-                <InlineInput
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="E.g Alison Thomson"
-                  className="col-span-2"
-                />
-              </FormRow>
+              <div>
+                <FormRow label="Fullname">
+                  <InlineInput
+                    value={name}
+                    onChange={(e) => { setName(e.target.value); clearError("name"); }}
+                    placeholder="E.g Alison Thomson"
+                    className="col-span-2"
+                  />
+                </FormRow>
+                <FieldError message={errors.name} />
+              </div>
 
-              <FormRow label="Email">
-                <InlineInput
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="E.g alison@company.com"
-                  className="col-span-2"
-                />
-              </FormRow>
+              <div>
+                <FormRow label="Email">
+                  <InlineInput
+                    value={email}
+                    onChange={(e) => { setEmail(e.target.value); clearError("email"); }}
+                    placeholder="E.g alison@company.com"
+                    className="col-span-2"
+                  />
+                </FormRow>
+                <FieldError message={errors.email} />
+              </div>
 
-              <FormRow label="Role">
-                <InlineSelect
-                  required
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="col-span-2"
-                >
-                  <option value="" disabled>
-                    E.g Staff
-                  </option>
-                  {ROLE_OPTIONS.map((r) => (
-                    <option key={r}>{r}</option>
-                  ))}
-                </InlineSelect>
-              </FormRow>
+              <div>
+                <FormRow label="Role">
+                  <InlineSelect
+                    value={role}
+                    onChange={(e) => { setRole(e.target.value); clearError("role"); }}
+                    className="col-span-2"
+                  >
+                    <option value="" disabled>
+                      E.g Staff
+                    </option>
+                    {ROLE_OPTIONS.map((r) => (
+                      <option key={r}>{r}</option>
+                    ))}
+                  </InlineSelect>
+                </FormRow>
+                <FieldError message={errors.role} />
+              </div>
 
-              <FormRow label="Zone">
-                <InlineSelect
-                  required
-                  value={zone}
-                  onChange={(e) => setZone(e.target.value)}
-                  className="col-span-2"
-                >
-                  <option value="" disabled>
-                    E.g Ikeja LGA
-                  </option>
-                  {ZONE_OPTIONS.map((z) => (
-                    <option key={z}>{z}</option>
-                  ))}
-                </InlineSelect>
-              </FormRow>
+              <div>
+                <FormRow label="Zone">
+                  <InlineSelect
+                    value={zone}
+                    onChange={(e) => { setZone(e.target.value); clearError("zone"); }}
+                    className="col-span-2"
+                  >
+                    <option value="" disabled>
+                      E.g Ikeja LGA
+                    </option>
+                    {ZONE_OPTIONS.map((z) => (
+                      <option key={z}>{z}</option>
+                    ))}
+                  </InlineSelect>
+                </FormRow>
+                <FieldError message={errors.zone} />
+              </div>
 
-              <FormRow label="Salary">
-                <InlineInput
-                  value={salary}
-                  onChange={(e) =>
-                    setSalary(e.target.value.replace(/[^0-9,]/g, ""))
-                  }
-                  placeholder="E.g ₦120,000"
-                  className="col-span-2"
-                />
-              </FormRow>
+              <div>
+                <FormRow label="Salary">
+                  <InlineInput
+                    value={salary}
+                    onChange={(e) => {
+                      setSalary(e.target.value.replace(/[^0-9,]/g, ""));
+                      clearError("salary");
+                    }}
+                    placeholder="E.g ₦120,000"
+                    className="col-span-2"
+                  />
+                </FormRow>
+                <FieldError message={errors.salary} />
+              </div>
 
               <div className="space-y-2">
                 <FormRow label="Commission Enable">
@@ -172,25 +230,27 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
               </div>
             </div>
 
-            <div className="flex items-center justify-start">
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-fit px-9.25 py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer"
-              >
-                Done
-              </button>
-            </div>
+            {!fillForAgent && (
+              <div className="flex items-center justify-start">
+                <button
+                  type="submit"
+                  className="w-fit px-9.25 py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            )}
           </form>
         </div>
       </div>
 
-      {/* Agent Details — secondary floating modal, same as CommissionModal */}
       <AgentDetailsModal
         isOpen={agentDetailsModalOpen}
         onClose={() => setAgentDetailsModalOpen(false)}
         details={agentDetails}
         onDetailsChange={setAgentDetails}
+        errors={{ phone: errors.phone, gender: errors.gender }}
+        onClearError={(field) => clearError(field)}
       />
     </>
   );

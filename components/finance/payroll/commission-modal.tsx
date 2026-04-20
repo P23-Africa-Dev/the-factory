@@ -21,6 +21,8 @@ interface CommissionModalProps {
   onPreferenceChange: (p: CommissionPreference) => void;
   products: ProductEntry[];
   onProductsChange: (p: ProductEntry[]) => void;
+  productErrors?: { name?: string; rate?: string }[];
+  onProductErrorClear?: (index: number, field: "name" | "rate") => void;
 }
 
 const PREFERENCE_OPTIONS: {
@@ -36,11 +38,12 @@ const PREFERENCE_OPTIONS: {
 
 export function CommissionModal({
   isOpen,
-  onClose,
   preference,
   onPreferenceChange,
   products,
   onProductsChange,
+  productErrors = [],
+  onProductErrorClear,
 }: CommissionModalProps) {
   if (!isOpen) return null;
 
@@ -48,14 +51,11 @@ export function CommissionModal({
     onProductsChange([...products, { name: "", rate: "" }]);
   };
 
-  const updateProduct = (
-    index: number,
-    field: "name" | "rate",
-    value: string,
-  ) => {
+  const updateProduct = (index: number, field: "name" | "rate", value: string) => {
     const updated = [...products];
     updated[index] = { ...updated[index], [field]: value };
     onProductsChange(updated);
+    onProductErrorClear?.(index, field);
   };
 
   return (
@@ -102,19 +102,27 @@ export function CommissionModal({
 
         <div className="space-y-3 mb-5">
           {products.map((product, i) => (
-            <div key={i} className="grid grid-cols-2 gap-3">
-              <InlineInput
-                placeholder="Product Name"
-                value={product.name}
-                onChange={(e) => updateProduct(i, "name", e.target.value)}
-                className="h-12 px-5 rounded-2xl border border-gray-200 text-[13px] text-[#0B1215] outline-none placeholder:text-gray-400 focus:border-gray-400 transition-colors"
-              />
-              <InlineInput
-                placeholder="Commission Rate"
-                value={product.rate}
-                onChange={(e) => updateProduct(i, "rate", e.target.value)}
-                className="h-12 px-5 rounded-2xl border border-gray-200 text-[13px] text-[#0B1215] outline-none placeholder:text-gray-400 focus:border-gray-400 transition-colors"
-              />
+            <div key={i}>
+              <div className="grid grid-cols-2 gap-3">
+                <InlineInput
+                  placeholder="Product Name"
+                  value={product.name}
+                  onChange={(e) => updateProduct(i, "name", e.target.value)}
+                  className="h-12 px-5 rounded-2xl border border-gray-200 text-[13px] text-[#0B1215] outline-none placeholder:text-gray-400 focus:border-gray-400 transition-colors"
+                />
+                <InlineInput
+                  placeholder="Commission Rate"
+                  value={product.rate}
+                  onChange={(e) => updateProduct(i, "rate", e.target.value)}
+                  className="h-12 px-5 rounded-2xl border border-gray-200 text-[13px] text-[#0B1215] outline-none placeholder:text-gray-400 focus:border-gray-400 transition-colors"
+                />
+              </div>
+              {(productErrors[i]?.name || productErrors[i]?.rate) && (
+                <div className="grid grid-cols-2 gap-3 mt-0.5">
+                  <p className="text-[11px] text-red-500">{productErrors[i]?.name}</p>
+                  <p className="text-[11px] text-red-500">{productErrors[i]?.rate}</p>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -133,8 +141,8 @@ export function CommissionModal({
             />
           </button>
           <button
-            type="button"
-            onClick={onClose}
+            type="submit"
+            form="set-payroll-form"
             className="w-fit px-9.25 py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer"
           >
             Done
