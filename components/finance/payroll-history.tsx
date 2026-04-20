@@ -45,7 +45,7 @@ export function PayrollHistory() {
         Payroll History
       </h3>
 
-      <div className="space-y-3">
+      <div className="max-h-[420px] overflow-y-auto pr-1 space-y-3">
         {historyData.map((entry) => (
           <div
             key={entry.id}

@@ -110,7 +110,7 @@ export function PayrollList({
       )}
 
       {/* Agent Rows */}
-      <div className="space-y-3.5">
+      <div className="max-h-[520px] overflow-y-auto pr-1 space-y-3.5">
         {displayedAgents.map((agent) => {
           const isSelected = selectedId === agent.id;
           return (
