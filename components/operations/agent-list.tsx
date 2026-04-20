@@ -22,21 +22,21 @@ export const AGENT_LIST_DATA: AgentItem[] = [
     description: 'Visit the Ikeja Computer village, and promote...',
     zone: 'Ikeja LGA', phone: '+234 803 4567890', role: 'Field Agent',
     status: 'Offline', time: '12 hours ago',
-    avatar: 'https://i.pravatar.cc/150?u=1', active: false,
+    avatar: '/avatars/male-avatar.png', active: false,
   },
   {
     id: '2', name: 'Lade Wane',
     description: 'Visit the Ikeja Computer village, and promote...',
     zone: 'Ikeja LGA', phone: '+234 803 4567890', role: 'Field Agent',
     status: 'Active (View on Map)', time: 'Online',
-    avatar: 'https://i.pravatar.cc/150?u=2', active: true,
+    avatar: '/avatars/female-avatar.png', active: true,
   },
   {
     id: '3', name: 'Francis Nasyomba',
     description: 'Visit the Ikeja Computer village, and promote...',
     zone: 'Ikeja LGA', phone: '+234 803 4567890', role: 'Field Agent',
     status: 'Offline', time: '12 hours ago',
-    avatar: 'https://i.pravatar.cc/150?u=3', active: false,
+    avatar: '/avatars/male-avatar.png', active: false,
   },
 ];
 

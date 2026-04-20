@@ -78,7 +78,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
           <div className="absolute flex flex-col items-center left-[15%] top-[55%]">
             <div className="w-8 h-8 rounded-full border-[3px] border-white shadow-lg overflow-hidden">
               <img
-                src={task.avatar || 'https://i.pravatar.cc/150?u=lane'}
+                src={task.avatar || '/avatars/female-avatar.png'}
                 className="w-full h-full object-cover"
                 alt="Agent"
               />
