@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { MapPin, Search, SlidersHorizontal, BookmarkPlus } from "lucide-react";
+import { MapPin, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight } from "lucide-react";
 import { AddAgentModal } from "./add-agent-modal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
 
@@ -21,46 +21,60 @@ type AttendanceItem = {
 
 const attendanceList: AttendanceItem[] = [
   { id: 1, name: "Francis Nasyomba", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "Since Yesterday", active: false, avatar: "/avatars/male-avatar.png" },
-  { id: 2, name: "Francis Nasyomba", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "8:25AM", checkOut: "Still Active", role: "Field Agent", status: "Present", subText: "Active", active: true, avatar: "/avatars/male-avatar.png" },
-  { id: 3, name: "Francis Nasyomba", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "Since Yesterday", active: false, avatar: "/avatars/male-avatar.png" },
-  { id: 4, name: "Francis Nasyomba", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "Since Yesterday", active: false, avatar: "/avatars/male-avatar.png" },
-  { id: 5, name: "Francis Nasyomba", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "8:25AM", checkOut: "Still Active", role: "Field Agent", status: "Present", subText: "Active", active: true, avatar: "/avatars/male-avatar.png" },
-  { id: 6, name: "Francis Nasyomba", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "Since Yesterday", active: false, avatar: "/avatars/male-avatar.png" },
-  { id: 7, name: "Francis Nasyomba", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "Since Yesterday", active: false, avatar: "/avatars/male-avatar.png" },
-  { id: 8, name: "Francis Nasyomba", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "8:25AM", checkOut: "Still Active", role: "Field Agent", status: "Present", subText: "Active", active: true, avatar: "/avatars/male-avatar.png" },
-  { id: 9, name: "Francis Nasyomba", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "Since Yesterday", active: false, avatar: "/avatars/male-avatar.png" },
-  { id: 10, name: "Francis Nasyomba", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "Since Yesterday", active: false, avatar: "/avatars/male-avatar.png" },
-  { id: 11, name: "Francis Nasyomba", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "8:25AM", checkOut: "Still Active", role: "Field Agent", status: "Present", subText: "Active", active: true, avatar: "/avatars/male-avatar.png" },
+  { id: 2, name: "Lade Wane", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "8:25AM", checkOut: "Still Active", role: "Field Agent", status: "Present", subText: "Active", active: true, avatar: "/avatars/female-avatar.png" },
+  { id: 3, name: "Amina Bello", address: "45 Adeniran Ogunsanya, Surulere, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "Since Yesterday", active: false, avatar: "/avatars/female-avatar.png" },
+  { id: 4, name: "Chidi Okonkwo", address: "3 Admiralty Way, Lekki Phase 1, Lagos", checkIn: "9:10AM", checkOut: "5:00PM", role: "Senior Agent", status: "Present", subText: "Checked Out", active: false, avatar: "/avatars/male-avatar.png" },
+  { id: 5, name: "Ngozi Eze", address: "7 Ozumba Mbadiwe, Victoria Island, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "1 day ago", active: false, avatar: "/avatars/female-avatar.png" },
+  { id: 6, name: "Tunde Adeyemi", address: "22 Herbert Macaulay Way, Yaba, Lagos", checkIn: "7:58AM", checkOut: "Still Active", role: "Senior Agent", status: "Present", subText: "Active", active: true, avatar: "/avatars/male-avatar.png" },
+  { id: 7, name: "Fatima Sule", address: "45 Adeniran Ogunsanya, Surulere, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "5 hours ago", active: false, avatar: "/avatars/female-avatar.png" },
+  { id: 8, name: "Emeka Obi", address: "Oshodi Market Road, Oshodi, Lagos", checkIn: "8:45AM", checkOut: "4:30PM", role: "Field Agent", status: "Present", subText: "Checked Out", active: false, avatar: "/avatars/male-avatar.png" },
+  { id: 9, name: "Blessing Okafor", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "8:00AM", checkOut: "Still Active", role: "Senior Agent", status: "Present", subText: "Active", active: true, avatar: "/avatars/female-avatar.png" },
+  { id: 10, name: "Abdul Kareem", address: "3 Admiralty Way, Lekki Phase 1, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "Since Yesterday", active: false, avatar: "/avatars/male-avatar.png" },
+  { id: 11, name: "Seun Martins", address: "5 Allen Avenue, Ikeja, Lagos", checkIn: "8:30AM", checkOut: "Still Active", role: "Field Agent", status: "Present", subText: "Active", active: true, avatar: "/avatars/male-avatar.png" },
 ];
+
+const PAGE_SIZE = 5;
 
 export function AttendanceView() {
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [selectedId, setSelectedId] = useState<number>(attendanceList[0].id);
+  const [page, setPage] = useState(1);
+
+  const filtered = attendanceList.filter((i) =>
+    i.name.toLowerCase().includes(search.toLowerCase()) ||
+    i.address.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const selected = attendanceList.find((i) => i.id === selectedId) ?? attendanceList[0];
+
+  const handleSearch = (val: string) => { setSearch(val); setPage(1); };
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* ── Toolbar ──────────────────────────────────────────── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-[20px] font-extrabold text-[#09232D] shrink-0"></h1>
+        <h1 className="text-[20px] font-extrabold text-dash-dark shrink-0"></h1>
 
         <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 md:justify-end min-w-0">
           {/* Search */}
-          <div className="relative w-full md:w-[458px] group shrink-0">
+          <div className="relative w-full md:w-114.5 group shrink-0">
             <Search
-              className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#09232D] transition-colors"
+              className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-dark transition-colors"
               size={18}
               strokeWidth={2}
             />
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => handleSearch(e.target.value)}
               placeholder="Search by agent name..."
-              className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-[#09232D]/10 transition-all font-sans"
+              className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-dash-dark/10 transition-all font-sans"
               style={{
                 height: '46px',
                 borderRadius: '24px',
@@ -70,36 +84,26 @@ export function AttendanceView() {
             />
           </div>
 
-          {/* Filter toggle — icon before text */}
           <button
             onClick={() => setShowFilters((v) => !v)}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
               showFilters ? 'text-white' : 'text-gray-500'
             }`}
-            style={{ 
+            style={{
               background: showFilters ? '#34373C' : '#F8F8F8',
               border: showFilters ? '0.5px solid #34373C' : '0.5px solid #D1D1D1',
               boxShadow: showFilters ? 'none' : '0 2px 8px rgba(0, 0, 0, 0.06)'
             }}
           >
             <SlidersHorizontal size={14} strokeWidth={2} />
-            <span style={{
-              fontFamily: 'Poppins, sans-serif',
-              fontWeight: 400,
-              fontStyle: 'normal',
-              fontSize: '10px',
-              lineHeight: '100%',
-              letterSpacing: '0%',
-              verticalAlign: 'middle'
-            }}>
+            <span style={{ fontFamily: 'Poppins, sans-serif', fontWeight: 400, fontSize: '10px', lineHeight: '100%' }}>
               Filter
             </span>
           </button>
 
-          {/* Create — shorter than search */}
           <button
             onClick={() => setShowAddAgent(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
+            className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
             style={{ boxShadow: '0 4px 14px rgba(9, 35, 45, 0.3)' }}
           >
             <BookmarkPlus size={15} strokeWidth={2} />
@@ -114,8 +118,9 @@ export function AttendanceView() {
 
         {/* ── Left: attendance list ──────────────────────────── */}
         <div className="flex-1 min-w-0 flex flex-col gap-5">
-          <OpsTableContainer>
-            <div className="flex justify-end mb-5">
+          <OpsTableContainer className="grow-0 flex flex-col h-140">
+            {/* Header */}
+            <div className="flex justify-end mb-5 shrink-0">
               <Link
                 href="/operations/attendance"
                 className="px-5 py-2 bg-dash-dark text-white rounded-full text-[12px] font-semibold hover:opacity-90 transition-colors"
@@ -124,30 +129,65 @@ export function AttendanceView() {
               </Link>
             </div>
 
-            <div className="space-y-3">
-              {attendanceList.map((item) => {
-                const isSelected = item.id === selectedId;
-                return (
-                  <OpsTableRow
-                    key={item.id}
-                    isSelected={isSelected}
-                    onClick={() => setSelectedId(item.id)}
-                    avatar={item.avatar}
-                    avatarAlt={item.name}
-                  >
-                    <OpsTableNameCol name={item.name} subText={item.address} isSelected={isSelected} />
-                    <OpsTableCol label="Check-In" value={item.checkIn} isSelected={isSelected} className="hidden sm:block w-28 sm:w-32" />
-                    <OpsTableCol label="Check-Out" value={item.checkOut} isSelected={isSelected} className="hidden md:block w-36 sm:w-40" />
-                    <OpsTableCol label="Role" value={item.role} isSelected={isSelected} className="hidden lg:block w-28 sm:w-32" />
-                    <OpsTableStatus
-                      label={item.status}
-                      subText={item.subText}
+            {/* Scrollable rows */}
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="space-y-3">
+                {paginated.map((item) => {
+                  const isSelected = item.id === selectedId;
+                  return (
+                    <OpsTableRow
+                      key={item.id}
                       isSelected={isSelected}
-                      badgeClass={item.active ? 'bg-[#2F6C0E] text-white' : 'bg-[#EF7129] text-white'}
-                    />
-                  </OpsTableRow>
-                );
-              })}
+                      onClick={() => setSelectedId(item.id)}
+                      avatar={item.avatar}
+                      avatarAlt={item.name}
+                    >
+                      <OpsTableNameCol name={item.name} subText={item.address} isSelected={isSelected} />
+                      <OpsTableCol label="Check-In" value={item.checkIn} isSelected={isSelected} className="hidden sm:block w-28 sm:w-32" />
+                      <OpsTableCol label="Check-Out" value={item.checkOut} isSelected={isSelected} className="hidden md:block w-36 sm:w-40" />
+                      <OpsTableCol label="Role" value={item.role} isSelected={isSelected} className="hidden lg:block w-28 sm:w-32" />
+                      <OpsTableStatus
+                        label={item.status}
+                        subText={item.subText}
+                        isSelected={isSelected}
+                        badgeClass={item.active ? 'bg-[#2F6C0E] text-white' : 'bg-[#EF7129] text-white'}
+                      />
+                    </OpsTableRow>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Pagination */}
+            <div className="shrink-0 flex items-center justify-between pt-5 mt-4 border-t border-gray-100">
+              <p className="text-[12px] text-gray-400">
+                Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="flex items-center justify-center w-9 h-9 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                >
+                  <ChevronLeft size={15} />
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`w-9 h-9 rounded-full text-[13px] font-bold transition-all ${p === currentPage ? 'bg-dash-dark text-white shadow-sm' : 'text-gray-400 hover:bg-gray-100'}`}
+                  >
+                    {p}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="flex items-center justify-center w-9 h-9 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
             </div>
           </OpsTableContainer>
         </div>
