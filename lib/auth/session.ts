@@ -20,6 +20,12 @@ export function setOnboardingCompletedCookie() {
   document.cookie = `${ONBOARDING_DONE_COOKIE}=1; Path=/; Max-Age=${THIRTY_DAYS_IN_SECONDS}; SameSite=Lax`;
 }
 
+export function clearAuthSession() {
+  if (typeof document === "undefined") return;
+  document.cookie = `${AUTH_TOKEN_COOKIE}=; Path=/; Max-Age=0`;
+  document.cookie = `${ONBOARDING_DONE_COOKIE}=; Path=/; Max-Age=0`;
+}
+
 export function getAuthTokenFromDocument() {
   if (typeof document === "undefined") {
     return "";

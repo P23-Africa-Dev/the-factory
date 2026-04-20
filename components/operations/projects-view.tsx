@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { MoreVertical, Search, SlidersHorizontal, BookmarkPlus } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { MoreVertical, Search, SlidersHorizontal, BookmarkPlus, ArrowUpRight, User } from 'lucide-react';
+import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { Project } from '@/types/operations';
 import { CreateProjectDrawer } from './create-project-drawer';
 
@@ -95,6 +96,9 @@ export function ProjectsView({ projects, onViewProject }: ProjectsViewProps) {
           </button>
         </div>
       </div>
+
+      {/* ── Summary Cards ────────────────────────────────────── */}
+      <SummaryCards projects={projects} />
 
       {/* ── Filter panel ─────────────────────────────────────── */}
       {showFilters && (
@@ -250,6 +254,175 @@ function ProjectCard({ project, onClick }: { project: Project; onClick: () => vo
           View Project
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─── Chart data ───────────────────────────────────────────────────────────────
+const TOTAL_PROJECTS_DATA = [
+  { value: 30 }, { value: 18 }, { value: 28 }, { value: 28 },
+  { value: 20 }, { value: 26 }, { value: 8 }, { value: 32 },
+];
+
+const PENDING_PROJECTS_DATA = [
+  { value: 34 }, { value: 22 }, { value: 30 }, { value: 30 },
+  { value: 32 }, { value: 24 }, { value: 12 }, { value: 34 },
+];
+
+// ─── Summary Cards ─────────────────────────────────────────────────────────────
+// Full 270° arc → circumference segment = (270/360) × 2π×40 = 188.5
+const ARC_LENGTH = 188.5;
+const CIRCUMFERENCE = 251.3;
+
+function performanceLabel(pct: number) {
+  if (pct >= 80) return 'Excellent';
+  if (pct >= 60) return 'Good';
+  if (pct >= 40) return 'Fair';
+  return 'Poor';
+}
+
+function SummaryCards({ projects }: { projects: Project[] }) {
+  const total = projects.length;
+  const completed = projects.filter((p) => p.status === 'Completed').length;
+  const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+
+  // Single JS animation loop — drives both arc and dot together
+  const [animatedPct, setAnimatedPct] = useState(0);
+  useEffect(() => {
+    const duration = 1200;
+    const start = performance.now();
+    const target = percent;
+    // ease-in-out cubic
+    const ease = (t: number) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    let raf: number;
+    function frame(now: number) {
+      const t = Math.min((now - start) / duration, 1);
+      setAnimatedPct(ease(t) * target);
+      if (t < 1) raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [percent]);
+
+  const animatedDash = (animatedPct / 100) * ARC_LENGTH;
+  const dotAngle = (animatedPct / 100) * 270 * (Math.PI / 180);
+  const dotX = 50 + 40 * Math.cos(dotAngle);
+  const dotY = 50 + 40 * Math.sin(dotAngle);
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-4 w-full animate-in fade-in slide-in-from-bottom-2 duration-500">
+
+      {/* 1. Overall Project Performance */}
+      <div className="xl:col-span-4 bg-[#0B1C25] rounded-[20px] p-6 sm:p-8 relative shadow-sm flex items-center gap-6 lg:gap-10 overflow-hidden min-h-45">
+        {/* Donut chart */}
+        <div className="relative w-30 h-30 shrink-0">
+          <svg viewBox="0 0 100 100" className="w-full h-full" style={{ transform: 'rotate(135deg)' }}>
+            {/* Dim track */}
+            <circle cx="50" cy="50" r="40" fill="none" stroke="#6B9A9A" strokeOpacity="0.3" strokeWidth="10" strokeLinecap="round" strokeDasharray={`${ARC_LENGTH} ${CIRCUMFERENCE}`} />
+            {/* White full-track */}
+            <circle cx="50" cy="50" r="40" fill="none" stroke="white" strokeWidth="10" strokeLinecap="round" strokeDasharray={`${ARC_LENGTH} ${CIRCUMFERENCE}`} />
+            {/* Animated teal progress arc */}
+            <circle
+              cx="50" cy="50" r="40" fill="none"
+              stroke="#6B9A9A" strokeWidth="10" strokeLinecap="round"
+              strokeDasharray={`${animatedDash} ${CIRCUMFERENCE}`}
+            />
+            {/* Valve dot — tracks the live end of the progress arc */}
+            <circle cx={dotX} cy={dotY} r="6" fill="#8AB8B8" stroke="#0B1C25" strokeWidth="2.5" />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+            <div className="w-10 h-10 rounded-full bg-[#EF6C55] flex items-center justify-center shadow-lg">
+              <User size={18} className="text-white fill-current" />
+            </div>
+            <span className="text-white font-extrabold text-[15px] leading-none">{percent}%</span>
+          </div>
+        </div>
+        <div className="flex flex-col z-10 text-white min-w-0">
+          <p className="text-white/60 font-normal text-[14px] sm:text-[16px] leading-tight mb-0.5">Overall Project</p>
+          <h2 className="text-[28px] sm:text-[34px] font-extrabold leading-[1.1] mb-3 tracking-tight">Performance</h2>
+          <p className="text-[13px] font-medium text-white/60">Status: <span className="text-white font-semibold">{performanceLabel(percent)}</span></p>
+        </div>
+      </div>
+
+      {/* 2. Total Projects */}
+      <div className="xl:col-span-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45">
+        <div className="flex items-start justify-between px-5 sm:px-6 pt-5 sm:pt-6">
+          <div>
+            <p className="text-[16px] font-semibold text-[#2D2D2D] mb-1">Total Projects</p>
+            <h2 className="text-[52px] font-extrabold text-[#1A1A1A] leading-none tracking-[-0.04em]">045</h2>
+          </div>
+          <button className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#2ECC71] text-white rounded-full text-[10px] font-bold hover:bg-[#27ae60] transition-colors shadow-sm mt-1">
+            View All <ArrowUpRight size={11} strokeWidth={3} />
+          </button>
+        </div>
+        <div className="w-full h-20 mt-auto">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={TOTAL_PROJECTS_DATA} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gradGreen" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#2ECC71" stopOpacity={1} />
+                  <stop offset="95%" stopColor="#D9D9D9" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Area type="natural" dataKey="value" stroke="#2ECC71" strokeWidth={0} fillOpacity={1} fill="url(#gradGreen)" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* 3. Pending Projects */}
+      <div className="xl:col-span-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45">
+        <div className="flex items-start justify-between px-5 sm:px-6 pt-5 sm:pt-6">
+          <div>
+            <p className="text-[16px] font-semibold text-[#2D2D2D] mb-1">Pending Projects</p>
+            <h2 className="text-[52px] font-extrabold text-[#1A1A1A] leading-none tracking-[-0.04em]">015</h2>
+          </div>
+          <button className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#E8875B] text-white rounded-full text-[10px] font-bold hover:bg-[#d57848] transition-colors shadow-sm mt-1">
+            View All <ArrowUpRight size={11} strokeWidth={3} />
+          </button>
+        </div>
+        <div className="w-full h-20 mt-auto">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={PENDING_PROJECTS_DATA} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gradOrange" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#E8875B" stopOpacity={1} />
+                  <stop offset="95%" stopColor="#D9D9D9" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Area type="natural" dataKey="value" stroke="#E8875B" strokeWidth={0} fillOpacity={1} fill="url(#gradOrange)" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* 4. Agents — View Agent who hasn't commenced task */}
+      <div className="xl:col-span-2 bg-[#7BA9A4] rounded-[20px] p-5 shadow-sm relative flex flex-col items-center min-h-[180px] text-center justify-between">
+        <p className="text-white text-[13px] font-medium leading-[1.4] max-w-[140px] mx-auto mt-1">
+          View Agent who hasn&apos;t commenced task
+        </p>
+        <button className="flex items-center gap-1.5 px-4 py-1.5 bg-[#0E2A33] text-white rounded-full text-[10px] font-bold hover:bg-[#061820] transition-colors">
+          View All <ArrowUpRight size={11} strokeWidth={3} />
+        </button>
+
+        <div className="w-[72px] h-[72px] relative flex items-center justify-center mt-2 mb-1">
+          <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full" style={{ transform: 'rotate(135deg)' }}>
+            {/* Background track — faded white */}
+            <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="7" strokeLinecap="round" strokeDasharray="188.5 251.3" />
+            {/* White progress arc */}
+            <circle cx="50" cy="50" r="40" fill="none" stroke="white" strokeWidth="7" strokeLinecap="round" strokeDasharray="81 251.3" />
+            {/* Dark accent at the top */}
+            <circle cx="50" cy="50" r="40" fill="none" stroke="#0E2A33" strokeWidth="7" strokeLinecap="round" strokeDasharray="30 251.3" strokeDashoffset="-81" />
+            {/* Endpoint dot */}
+            <circle cx="32.4" cy="85.9" r="4.5" fill="white" stroke="#7BA9A4" strokeWidth="2" />
+          </svg>
+          <div className="relative w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-sm">
+            <User size={14} className="text-[#09232D] fill-current" />
+          </div>
+        </div>
+        <span className="text-white text-[14px] font-extrabold">43%</span>
+      </div>
+
     </div>
   );
 }

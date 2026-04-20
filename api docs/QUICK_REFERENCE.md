@@ -1,312 +1,115 @@
-# Role-Aware Authentication - Quick Reference
+# API Quick Reference (Current v1)
 
-## 🚀 One-Minute Overview
+## One-Minute Overview
 
-**Two login endpoints, one for each user type:**
+Authentication entry points:
 
-| User | Endpoint | Response |
-|------|----------|----------|
-| Self-serve + Enterprise (Admins) | `POST /api/auth/login` | `{token, user_type}` |
-| Agents + Supervisors (Internal) | `POST /api/internal/login` | `{token, internal_role}` |
+| User group | Endpoint | Role metadata in response |
+|---|---|---|
+| Self-serve Admin + Enterprise Admin + Supervisor | POST /api/v1/auth/login | access_role, user_type, internal_role |
+| Agent | POST /api/v1/agent/login | access_role=agent, internal_role=agent |
 
-**Key Principle**: Users can ONLY login via their designated endpoint - no cross-role access allowed.
+Compatibility endpoints:
 
----
+1. POST /api/v1/internal/login (deprecated, agent-only)
+2. POST /api/v1/enterprise/login (deprecated)
 
-## 📋 For Frontend Developers
+## Endpoint Choice Guide
 
-### Login Request
+1. internal_role = agent -> /api/v1/agent/login
+2. internal_role = supervisor -> /api/v1/auth/login
+3. internal_role = null (self-serve/enterprise admin) -> /api/v1/auth/login
+
+## Login cURL Examples
 
 ```bash
-# Admin Login
-curl -X POST http://localhost:8000/api/auth/login \
+# Shared auth (admin/supervisor)
+curl -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"user@example.com","password":"password123"}'
+  -d '{"email":"supervisor@example.com","password":"password123"}'
 
-# Internal Login  
-curl -X POST http://localhost:8000/api/internal/login \
+# Agent login
+curl -X POST http://localhost:8080/api/v1/agent/login \
   -H "Content-Type: application/json" \
   -d '{"email":"agent@example.com","password":"password123"}'
 ```
 
-### Success Response (200)
+## Typical Authenticated Endpoints
 
-```json
-{
-  "success": true,
-  "message": "Login successful.",
-  "data": {
-    "token": "1|aB3C4D5E6F7G8H9I0J1K2L3M4N5O6P7Q8R9S1T2",
-    "token_type": "Bearer",
-    "user_type": "self-serve|enterprise",  // Admin only
-    "internal_role": "agent|supervisor",   // Internal only
-    "user": { "id": 1, "email": "...", "name": "..." }
-  }
-}
-```
+1. GET /api/v1/user/me
+2. GET /api/v1/projects
+3. POST /api/v1/projects
+4. GET /api/v1/tasks
+5. POST /api/v1/tasks
+6. POST /api/v1/agent/tasks/self
 
-### Error Response (401)
+## Project and Task Quick Rules
 
-```json
-{
-  "success": false,
-  "message": "Invalid credentials or account not activated.",
-  "errors": {
-    "email": ["Credentials are invalid or onboarding is not complete."]
-  }
-}
-```
+Projects:
 
-### Use Token
+1. Manager roles only: owner/admin/supervisor
+2. Include progress summary in project responses
+3. Attachments accepted via multipart attachments[]
 
-```bash
-Authorization: Bearer <token>
-```
+Tasks:
 
----
+1. Management create endpoint: POST /api/v1/tasks
+2. Optional project_id links task to project
+3. project_id omitted/null means standalone task
+4. Agent self-task endpoint: POST /api/v1/agent/tasks/self
 
-## 🔍 Endpoint Choosing Guide
+## Project Progress Formula
 
-**Ask yourself**: What is the user's `internal_role` field in the database?
+1. completed_percentage = (completed_tasks / total_tasks) * 100
+2. pending_percentage = (pending_tasks / total_tasks) * 100
+3. If total_tasks = 0, both values are 0
 
-```
-internal_role = NULL
-├─ USER IS ADMIN-LEVEL
-├─ Use: POST /api/auth/login
-└─ Response includes: user_type (self-serve|enterprise)
+## Status/Behavior Cheatsheet
 
-internal_role = 'agent' or 'supervisor'  
-├─ USER IS INTERNAL
-├─ Use: POST /api/internal/login
-└─ Response includes: internal_role (agent|supervisor)
-```
+| Area | Rule |
+|---|---|
+| Shared auth | Admin + Supervisor only |
+| Agent auth | Agent only |
+| Agent on shared endpoint | 401 |
+| Supervisor on agent endpoint | 401 |
+| Task status transitions | pending -> in_progress -> completed |
+| Completed task mutation | blocked |
 
----
+## Common Error Codes
 
-## 🧪 Test Credentials
+1. 200 success
+2. 201 created
+3. 401 unauthorized/auth failure
+4. 422 validation/authorization context failure
+5. 429 throttled
 
-**Admin Users**: (internal_role = NULL)
-```
-Email: selfserve@example.com
-Password: password123
-Endpoint: POST /api/auth/login
+## Troubleshooting
 
-Email: enterprise@example.com
-Password: password123
-Endpoint: POST /api/auth/login
-```
+Login 401 on valid password:
 
-**Internal Users**: (internal_role set)
-```
-Email: agent@example.com
-Password: password123
-Endpoint: POST /api/internal/login
+1. confirm correct endpoint for role
+2. confirm is_active=true
+3. confirm onboarding completion state
 
-Email: supervisor@example.com
-Password: password123
-Endpoint: POST /api/internal/login
-```
+Project access denied:
 
----
+1. confirm user role is owner/admin/supervisor in company_users
+2. confirm company_id context is valid and active
 
-## 🐛 Troubleshooting Quick Guide
+Task update denied for agent:
 
-### Problem: "Invalid credentials" on valid login?
+1. confirm task is assigned to current agent
+2. confirm company context and assignment match
 
-1. **Check password** - ensure it's correct
-2. **Check account active** - is `is_active = true`?
-3. **Check onboarding** - did user complete onboarding?
-4. **Check endpoint** - are you using the correct endpoint?
+## Source Docs
 
-### Problem: User can't login via internal endpoint?
+1. docs/features/authentication.md
+2. docs/features/internal-user-onboarding.md
+3. docs/features/task-management.md
+4. docs/features/project-management.md
+5. docs/frontend-guide/authentication.md
+6. docs/frontend-guide/task-management.md
+7. docs/frontend-guide/project-management.md
 
-**✅ Use `/api/internal/login` ONLY if** `internal_role` is set to 'agent' or 'supervisor'
-
-**❌ If `internal_role = NULL`** → Use `/api/auth/login` instead
-
-### Problem: "Too Many Requests" (429)?
-
-Max 10 login attempts per 1 minute per IP address. **Wait 1 minute** before retrying.
-
-### Problem: Token doesn't work on next day?
-
-Token expires after 30 days. User must **login again** to get new token.
-
----
-
-## 📚 Documentation Files
-
-All in `backend/docs/`:
-
-| File | For Whom | Purpose |
-|------|----------|---------|
-| `features/authentication.md` | Frontend/Mobile devs | API endpoints & examples |
-| `authentication-architecture.md` | Backend devs & architects | System design & internals |
-| `frontend-integration-guide.md` | Frontend team | React hooks & implementation |
-| `ARCHITECTURE_DIAGRAMS.md` | Everyone | Visual flowcharts |
-| `IMPLEMENTATION_SUMMARY.md` | All devs | What was built & checklist |
-
----
-
-## 🛠️ Backend Quick Reference
-
-### Service Classes
-
-```php
-// Handle admin login (self-serve + enterprise)
-AdminAuthService::login($email, $password): ?array
-
-// Handle internal login (agents + supervisors)  
-InternalAuthService::login($email, $password): ?array
-
-// Utility methods
-RoleAwareAuthService::getUserAuthRole($user): ?string
-RoleAwareAuthService::canAuthenticateAsAdmin($user): bool
-RoleAwareAuthService::canAuthenticateAsInternal($user): bool
-```
-
-### Controllers
-
-```php
-// New unified endpoint
-POST /api/auth/login
-→ AdminLoginController
-
-// Internal users
-POST /api/internal/login
-→ InternalLoginController
-
-// Deprecated (still works)
-POST /api/enterprise/login
-→ EnterpriseLoginController
-```
-
-### Test File
-
-```bash
-tests/Feature/Auth/RoleAwareAuthenticationTest.php
-# 20+ test cases covering all scenarios
-```
-
----
-
-## 🔐 Security Checklist
-
-- ✅ Passwords hashed with bcrypt
-- ✅ Rate limiting: 10 requests/minute
-- ✅ Generic error messages (no user enumeration)
-- ✅ Bearer token authentication
-- ✅ 30-day token expiration
-- ✅ CSRF protection
-- ✅ Input validation
-- ✅ SQL injection prevention (ORM)
-
----
-
-## 📊 API Status Codes
-
-| Code | Meaning | When |
-|------|---------|------|
-| 200 | Login successful | Valid credentials + right role |
-| 401 | Unauthorized | Invalid credentials, wrong role, or inactive |
-| 422 | Validation error | Missing/invalid fields |
-| 429 | Rate limited | > 10 requests/minute |
-
----
-
-## 🎯 Common Use Cases
-
-### React App Login Flow
-
-```typescript
-const [email, setEmail] = useState('');
-const [password, setPassword] = useState('');
-const [userType, setUserType] = useState('admin');
-
-const handleLogin = async () => {
-  const endpoint = userType === 'admin' 
-    ? '/api/auth/login' 
-    : '/api/internal/login';
-    
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    body: JSON.stringify({ email, password }),
-  });
-  
-  const data = await res.json();
-  if (data.success) {
-    localStorage.setItem('token', data.data.token);
-    redirect(userType === 'admin' ? '/dashboard' : '/agent-dashboard');
-  }
-};
-```
-
-### Next.js Authenticated Fetch
-
-```typescript
-const fetchData = async (url: string, token: string) => {
-  const res = await fetch(`${API_BASE}/api${url}`, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  return res.json();
-};
-
-// Usage
-const data = await fetchData('/tasks', token);
-```
-
----
-
-## 📞 Need Help?
-
-### For Technical Questions
-
-1. Check [authentication-architecture.md](./authentication-architecture.md) for design details
-2. Check [features/authentication.md](./features/authentication.md) for endpoint details
-3. Read test file at `tests/Feature/Auth/RoleAwareAuthenticationTest.php`
-4. Check code comments in service classes
-
-### For Implementation Help
-
-1. Use [frontend-integration-guide.md](./frontend-integration-guide.md) for React/Next.js
-2. Use code examples in [features/authentication.md](./features/authentication.md)
-3. Reference [ARCHITECTURE_DIAGRAMS.md](./ARCHITECTURE_DIAGRAMS.md) for flows
-
-### For Bug Reports
-
-Include:
-1. Which endpoint used (`/api/auth/login` or `/api/internal/login`)
-2. Error message received
-3. User's `internal_role` value in database
-4. Steps to reproduce
-
----
-
-## ✨ Key Takeaways
-
-1. **Two endpoints, two user types** - no mixing
-2. **Role determined by `internal_role` field** - NULL for admin, set for internal
-3. **Generic error messages** - security feature, not a bug
-4. **30-day token expiration** - intentional design
-5. **Rate limiting** - prevents brute force
-6. **Backward compatible** - old endpoint still works
-
----
-
-## 🚀 What's Next?
-
-- **Phase 1** ✅ Role-based login separation
-- **Phase 2** 🗺️ Multi-factor authentication
-- **Phase 3** 🗺️ OAuth/OpenID Connect
-- **Phase 4** 🗺️ Token refresh mechanism
-- **Phase 5** 🗺️ Enterprise SSO (SAML/LDAP)
-
----
-
-**Last Updated**: April 13, 2026  
-**Status**: Production Ready  
-**Version**: 1.0
-
+Last Updated: April 15, 2026
+Status: Current

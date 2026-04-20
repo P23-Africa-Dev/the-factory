@@ -2,127 +2,12 @@
 
 import { Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { ProjectsView } from "@/components/operations/projects-view";
 import { AgentView } from "@/components/operations/agent-view";
 import { AttendanceView } from "@/components/operations/attendance-view";
-import type { TaskCategory, Project } from "@/types/operations";
 
-// ─── Mock data (swap for API call later) ─────────────────────────────────────
-const MOCK_PROJECTS: Project[] = [
-  {
-    id: "project-1",
-    name: "Product Outreach",
-    description:
-      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
-    deadline: "2 days to Deadline",
-    status: "In progress",
-    priority: "High",
-    completedPercent: 35,
-    pendingPercent: 75,
-  },
-  {
-    id: "project-2",
-    name: "Product Outreach",
-    description:
-      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
-    deadline: "2 days to Deadline",
-    status: "In progress",
-    priority: "High",
-    completedPercent: 35,
-    pendingPercent: 75,
-  },
-  {
-    id: "project-3",
-    name: "Product Outreach",
-    description:
-      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
-    deadline: "2 days to Deadline",
-    status: "In progress",
-    priority: "High",
-    completedPercent: 35,
-    pendingPercent: 75,
-  },
-  {
-    id: "project-4",
-    name: "Product Outreach",
-    description:
-      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
-    deadline: "2 days to Deadline",
-    status: "In progress",
-    priority: "High",
-    completedPercent: 35,
-    pendingPercent: 75,
-  },
-  {
-    id: "project-5",
-    name: "Product Outreach",
-    description:
-      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
-    deadline: "2 days to Deadline",
-    status: "In progress",
-    priority: "High",
-    completedPercent: 35,
-    pendingPercent: 75,
-  },
-  {
-    id: "project-6",
-    name: "Product Outreach",
-    description:
-      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
-    deadline: "2 days to Deadline",
-    status: "In progress",
-    priority: "High",
-    completedPercent: 35,
-    pendingPercent: 75,
-  },
-  {
-    id: "project-7",
-    name: "Product Outreach",
-    description:
-      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
-    deadline: "2 days to Deadline",
-    status: "In progress",
-    priority: "High",
-    completedPercent: 35,
-    pendingPercent: 75,
-  },
-  {
-    id: "project-8",
-    name: "Product Outreach",
-    description:
-      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
-    deadline: "2 days to Deadline",
-    status: "In progress",
-    priority: "High",
-    completedPercent: 35,
-    pendingPercent: 75,
-  },
-  {
-    id: "project-9",
-    name: "Product Outreach",
-    description:
-      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
-    deadline: "2 days to Deadline",
-    status: "In progress",
-    priority: "High",
-    completedPercent: 35,
-    pendingPercent: 75,
-  },
-  {
-    id: "project-10",
-    name: "Product Outreach",
-    description:
-      "Physical outreach and transforms executive networking from casual connections to strategic growth...",
-    deadline: "2 days to Deadline",
-    status: "In progress",
-    priority: "High",
-    completedPercent: 35,
-    pendingPercent: 75,
-  },
-];
+type WorkforceTab = "agent" | "attendance";
 
-const TABS: { value: TaskCategory; label: string }[] = [
-  { value: "all", label: "All Project" },
+const TABS: { value: WorkforceTab; label: string }[] = [
   { value: "agent", label: "Agents" },
   { value: "attendance", label: "Attendance" },
 ];
@@ -133,17 +18,12 @@ function OperationsContent() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
-  const activeTab = (searchParams.get("tab") as TaskCategory) || "all";
+  const activeTab = (searchParams.get("tab") as WorkforceTab) || "agent";
 
-  const handleTabChange = (tab: TaskCategory) => {
+  const handleTabChange = (tab: WorkforceTab) => {
     const params = new URLSearchParams(searchParams.toString());
-    tab === "all" ? params.delete("tab") : params.set("tab", tab);
+    tab === "agent" ? params.delete("tab") : params.set("tab", tab);
     router.push(`${pathname}?${params.toString()}`);
-  };
-
-  // Navigate to dedicated project tasks page
-  const handleViewProject = (id: string) => {
-    router.push(`/operations/${id}`);
   };
 
   return (
@@ -169,16 +49,7 @@ function OperationsContent() {
         </div>
 
         {/* ── View ── */}
-        {activeTab === "all" ? (
-          <ProjectsView
-            projects={MOCK_PROJECTS}
-            onViewProject={handleViewProject}
-          />
-        ) : activeTab === "agent" ? (
-          <AgentView />
-        ) : (
-          <AttendanceView />
-        )}
+        {activeTab === "agent" ? <AgentView /> : <AttendanceView />}
       </div>
     </div>
   );

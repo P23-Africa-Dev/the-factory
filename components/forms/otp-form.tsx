@@ -12,7 +12,7 @@ import { format } from "date-fns";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import OtpInput from "@/components/ui/otp-input";
 import Button from "@/components/ui/button";
@@ -33,11 +33,15 @@ export default function OtpForm() {
   const {
     handleSubmit,
     setValue,
+    control,
     formState: { errors },
   } = useForm<OtpFormValues>({
     resolver: zodResolver(otpSchema),
     defaultValues: { otp_code: "" },
   });
+
+  const otpCodeValue = useWatch({ control, name: "otp_code" });
+  const isFilled = otpCodeValue?.length === 6;
 
   const verifyMutation = useMutation({
     mutationFn: verifyEmailOtp,
@@ -112,7 +116,7 @@ export default function OtpForm() {
       </p>
 
       <div className="flex flex-col md:gap-3 gap-3 mt-2 w-full px-[27px] md:px-0">
-        <Button type="submit" disabled={verifyMutation.isPending || !email}>
+        <Button type="submit" disabled={!isFilled || verifyMutation.isPending || !email}>
           {verifyMutation.isPending ? "Verifying..." : "Verify"}
         </Button>
         <Button

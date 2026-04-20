@@ -42,6 +42,7 @@ export async function apiRequest<TData>({
     method,
     headers: {
       "Content-Type": "application/json",
+      "Accept": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -63,6 +64,8 @@ export async function apiRequest<TData>({
 export type RegisterPayload = {
   name: string;
   email: string;
+  password: string;
+  password_confirmation: string;
 };
 
 export type VerifyEmailPayload = {
@@ -146,6 +149,25 @@ export function createWorkspace(payload: WorkspacePayload, token: string) {
     method: "POST",
     path: "/onboarding/workspace",
     body: payload,
+    token,
+  });
+}
+
+export type MeResponse = {
+  id: number;
+  name: string;
+  email: string;
+  avatar: string | null;
+  email_verified: boolean;
+  onboarding_completed: boolean;
+  onboarding_completed_at: string | null;
+  created_at: string;
+};
+
+export function getMe(token: string) {
+  return apiRequest<MeResponse>({
+    method: "GET",
+    path: "/user/me",
     token,
   });
 }
