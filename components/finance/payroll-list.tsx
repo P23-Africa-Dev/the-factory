@@ -101,7 +101,7 @@ export function PayrollList({
   const displayedAgents = showViewAll ? agents : agents.slice(0, 3);
 
   return (
-    <div className="bg-white rounded-[30px] pt-5.75 px-10 pb-6 flex-1 min-w-0 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+    <div className="bg-white rounded-[30px] pt-5.75 px-4 sm:px-10 pb-6 flex-1 min-w-0 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
       {/* Header */}
       {!showViewAll && (
         <div className="flex justify-end mb-7">

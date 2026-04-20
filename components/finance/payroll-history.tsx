@@ -49,11 +49,11 @@ export function PayrollHistory() {
         {historyData.map((entry) => (
           <div
             key={entry.id}
-            className={`rounded-full px-7.25 py-4 border-t border-[#CDCDCD] ${
+            className={`rounded-[30px] sm:rounded-full px-5 sm:px-7.25 py-4 border-t border-[#CDCDCD] ${
               entry.status === "Pending" ? "bg-[#FFFFEF]" : "bg-[#E3F4FB]"
             }`}
           >
-            <div className="flex gap-4.5">
+            <div className="flex flex-wrap gap-4.5">
               <div>
                 <p className="text-[14px] font-bold text-[#7A7A7A] mb-1">
                   Month

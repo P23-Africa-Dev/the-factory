@@ -23,7 +23,7 @@ export default function FinancePage() {
 
   return (
     <div className="h-full">
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mx-[53.5px] mt-5.75">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mx-5 sm:mx-8 lg:mx-[53.5px] mt-5.75">
         <div className="relative w-full max-w-114">
           <Search
             className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400"
@@ -88,7 +88,7 @@ export default function FinancePage() {
             />
           </div>
 
-          <div className="w-full xl:w-85 xl:shrink-0 min-w-131.25">
+          <div className="w-full xl:w-85 xl:shrink-0 xl:min-w-131.25">
             <div className="drop-shadow-[0px_1px_3px_#0000004D,0px_4px_8px_#00000026]">
               <PayrollSidebar agent={selectedAgent} />
             </div>
