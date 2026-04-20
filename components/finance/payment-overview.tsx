@@ -39,15 +39,7 @@ function PillBar(props: {
   const r = Math.min(width, height) / 2;
   const fill = payload?.highlighted ? "#6366F1" : "#EEF0F4";
   return (
-    <rect
-      x={x}
-      y={y}
-      width={width}
-      height={height}
-      rx={r}
-      ry={r}
-      fill={fill}
-    />
+    <rect x={x} y={y} width={width} height={height} rx={r} ry={r} fill={fill} />
   );
 }
 
@@ -115,7 +107,7 @@ export function PaymentOverview() {
 
   return (
     <div className="flex flex-col lg:flex-row gap-4">
-      <div className="bg-white rounded-3xl p-5 shadow-sm flex-1 min-w-0 flex flex-col">
+      <div className="p-5 flex-1 min-w-0 flex flex-col">
         <div className="flex items-start justify-between gap-4">
           <h2 className="text-[20px] font-bold text-[#0B1215] font-[poppins] pt-1.5">
             Payment Overview
