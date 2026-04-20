@@ -1,20 +1,55 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
-import { AreaChart, Area, ResponsiveContainer } from "recharts";
+import {
+  AreaChart,
+  Area,
+  ResponsiveContainer,
+  ComposedChart,
+  Bar,
+  Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+} from "recharts";
+import ArrowDown from "@/assets/images/arrow-down.png";
 
-const overviewChartData = [
-  { v: 28 },
-  { v: 45 },
-  { v: 32 },
-  { v: 50 },
-  { v: 36 },
-  { v: 58 },
-  { v: 42 },
-  { v: 62 },
-  { v: 38 },
-  { v: 55 },
+const paymentOverviewData = [
+  { bar: 78, line: 74 },
+  { bar: 52, line: 38 },
+  { bar: 30, line: 32 },
+  { bar: 70, line: 55 },
+  { bar: 74, line: 48 },
+  { bar: 56, line: 52 },
+  { bar: 50, line: 42 },
+  { bar: 44, line: 40 },
+  { bar: 86, line: 44, highlighted: true },
+  { bar: 32, line: 30 },
 ];
+
+function PillBar(props: {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  payload?: { highlighted?: boolean };
+}) {
+  const { x = 0, y = 0, width = 0, height = 0, payload } = props;
+  const r = Math.min(width, height) / 2;
+  const fill = payload?.highlighted ? "#6366F1" : "#EEF0F4";
+  return (
+    <rect
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      rx={r}
+      ry={r}
+      fill={fill}
+    />
+  );
+}
 
 const miniChartData = [
   { v: 30 },
@@ -37,48 +72,6 @@ const darkChartData = [
   { v: 48 },
   { v: 75 },
 ];
-
-function CircularProgress({
-  percentage,
-  size = 88,
-  strokeWidth = 8,
-  color = "#E8612D",
-  bgColor = "#F0F0F0",
-}: {
-  percentage: number;
-  size?: number;
-  strokeWidth?: number;
-  color?: string;
-  bgColor?: string;
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (percentage / 100) * circumference;
-
-  return (
-    <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke={bgColor}
-        strokeWidth={strokeWidth}
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
 
 function MiniChart({
   color = "#E18695",
@@ -122,67 +115,74 @@ export function PaymentOverview() {
 
   return (
     <div className="flex flex-col lg:flex-row gap-4">
-      <div className="bg-white rounded-3xl p-5 shadow-sm flex-1 min-w-0">
-        <h2 className="text-[16px] font-bold text-[#0B1215] mb-4">
-          Payment Overview
-        </h2>
+      <div className="bg-white rounded-3xl p-5 shadow-sm flex-1 min-w-0 flex flex-col">
+        <div className="flex items-start justify-between gap-4">
+          <h2 className="text-[20px] font-bold text-[#0B1215] font-[poppins] pt-1.5">
+            Payment Overview
+          </h2>
 
-        {/* Donut + label row */}
-        <div className="flex items-center gap-4">
-          <div className="relative shrink-0">
-            <CircularProgress
-              percentage={68}
-              size={88}
-              strokeWidth={8}
-              color="#E8612D"
-            />
-            {/* Face emoji placeholder */}
-            <div
-              className="absolute inset-0 flex items-center justify-center"
-              style={{ transform: "rotate(0deg)" }}
-            >
-              <span className="text-[22px] leading-none select-none">🙂</span>
+          <div className="flex items-center gap-2.5 bg-white rounded-2xl pl-1.5 pr-4 py-1.5 shadow-[0px_2px_10px_rgba(0,0,0,0.08)]">
+            <div className="w-11 h-11 rounded-full bg-[#E8612D] flex items-center justify-center shrink-0">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <circle cx="8.5" cy="9.5" r="1.6" fill="white" />
+                <circle cx="15.5" cy="9.5" r="1.6" fill="white" />
+                <path
+                  d="M7.5 13.5 C 8.5 17, 15.5 17, 16.5 13.5 C 16.5 16.5, 13.5 17.5, 12 17.5 C 10.5 17.5, 7.5 16.5, 7.5 13.5 Z"
+                  fill="white"
+                />
+              </svg>
             </div>
-          </div>
-
-          <div>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#EBFAF3] rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E]" />
-              <span className="text-[11px] font-bold text-[#22C55E]">
+            <div className="leading-tight">
+              <p className="text-[15px] font-bold text-[#E8612D]">
                 As at Today
-              </span>
-            </span>
-            <p className="text-[10px] text-gray-400 mt-1.5 ml-0.5">
-              Monday, April 6th
-            </p>
+              </p>
+              <p className="text-[12px] text-[#8B95A1] mt-0.5">
+                Monday, April 16th
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Full-width area chart */}
-        <div className="mt-4 h-16">
+        {/* Combined bar + line chart */}
+        <div className="mt-4 flex-1 min-h-40">
           {mounted ? (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={overviewChartData}
-                margin={{ top: 4, right: 4, left: 4, bottom: 0 }}
+              <ComposedChart
+                data={paymentOverviewData}
+                margin={{ top: 10, right: 10, left: 10, bottom: 6 }}
               >
-                <defs>
-                  <linearGradient id="overviewGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#64A8E8" stopOpacity={0.18} />
-                    <stop offset="95%" stopColor="#64A8E8" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <Area
-                  type="monotone"
-                  dataKey="v"
-                  stroke="#64A8E8"
-                  strokeWidth={2}
-                  fillOpacity={1}
-                  fill="url(#overviewGrad)"
-                  dot={{ r: 3, fill: "#64A8E8", strokeWidth: 0 }}
-                  activeDot={{ r: 4, fill: "#64A8E8", strokeWidth: 0 }}
+                <CartesianGrid
+                  vertical={false}
+                  strokeDasharray="5 5"
+                  stroke="#E5E7EB"
                 />
-              </AreaChart>
+                <XAxis hide />
+                <YAxis hide domain={[0, 100]} />
+                <Bar
+                  dataKey="bar"
+                  barSize={22}
+                  shape={(props: object) => <PillBar {...props} />}
+                  isAnimationActive={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="line"
+                  stroke="#6366F1"
+                  strokeWidth={2}
+                  dot={{
+                    r: 5,
+                    fill: "white",
+                    stroke: "#6366F1",
+                    strokeWidth: 2,
+                  }}
+                  activeDot={{
+                    r: 6,
+                    fill: "white",
+                    stroke: "#6366F1",
+                    strokeWidth: 2,
+                  }}
+                />
+              </ComposedChart>
             </ResponsiveContainer>
           ) : (
             <div className="h-full w-full" />
@@ -207,7 +207,7 @@ export function PaymentOverview() {
               )}
             </div>
             <div className="inline-flex items-center gap-1 text-[15px] font-medium">
-              20%
+              20% <Image src={ArrowDown} alt="" width={7} />
             </div>
           </div>
         </div>
@@ -229,7 +229,7 @@ export function PaymentOverview() {
             )}
           </div>
           <div className="inline-flex items-center gap-1 text-[15px] font-medium ml-3.5">
-            20%
+            20% <Image src={ArrowDown} alt="" width={7} />
           </div>
         </div>
       </div>
