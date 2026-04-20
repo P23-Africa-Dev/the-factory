@@ -250,7 +250,7 @@ export function WeeklyTasks() {
             <div className="w-[20%] h-full bg-[#FD6046] rounded-full shadow-lg relative">
               <div className="absolute -top-6 -right-1.5 flex items-center gap-1.5  text-white rounded-full text-[9px] font-medium whitespace-nowrap -translate-y-1">
                 <Image
-                  src="https://i.pravatar.cc/150?u=attendee"
+                  src="/avatars/male-avatar.png"
                   alt="Attendee"
                   width={16}
                   height={16}
