@@ -1,5 +1,7 @@
 "use client";
 
+import { StatusBadge } from "../ui/status-badge";
+
 interface PayrollHistoryEntry {
   id: string;
   month: string;
@@ -24,7 +26,7 @@ const historyData: PayrollHistoryEntry[] = [
     baseSalary: "₦65,000",
     netPay: "₦85,000",
     dueDate: "Tue 5th May, 2026",
-    status: "Pending",
+    status: "Approved",
   },
   {
     id: "3",
@@ -43,13 +45,15 @@ export function PayrollHistory() {
         Payroll History
       </h3>
 
-      <div className="space-y-3">
+      <div className="max-h-[420px] overflow-y-auto pr-1 space-y-3">
         {historyData.map((entry) => (
           <div
             key={entry.id}
-            className="bg-[#E3F4FB] rounded-full px-7.25 py-4 border-t border-[#CDCDCD]"
+            className={`rounded-[30px] sm:rounded-full px-5 sm:px-7.25 py-4 border-t border-[#CDCDCD] ${
+              entry.status === "Pending" ? "bg-[#FFFFEF]" : "bg-[#E3F4FB]"
+            }`}
           >
-            <div className="flex gap-4.5">
+            <div className="flex flex-wrap gap-4.5">
               <div>
                 <p className="text-[14px] font-bold text-[#7A7A7A] mb-1">
                   Month
@@ -74,7 +78,7 @@ export function PayrollHistory() {
                   {entry.netPay}
                 </p>
               </div>
-              <div className="flex items-start justify-between">
+              <div className="flex flex-1 items-start justify-between">
                 <div>
                   <p className="text-[14px] font-bold text-[#7A7A7A] mb-1">
                     Due Date
@@ -83,15 +87,7 @@ export function PayrollHistory() {
                     {entry.dueDate}
                   </p>
                 </div>
-                <span
-                  className={`inline-block px-2.5 py-1 rounded-full text-[9px] font-bold whitespace-nowrap ${
-                    entry.status === "Approved"
-                      ? "bg-[#4CAF50]/15 text-[#4CAF50]"
-                      : "bg-[#FF9800]/15 text-[#FF9800]"
-                  }`}
-                >
-                  {entry.status}
-                </span>
+                <StatusBadge className="self-center" status={entry.status} />
               </div>
             </div>
           </div>

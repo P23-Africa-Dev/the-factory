@@ -26,7 +26,10 @@ export default function DashboardPage() {
           <DashboardGreeting />
 
           <div className="flex items-center gap-2 text-right self-start md:self-auto">
-            <span className="text-[48px] md:text-[64px] font-bold leading-none align-middle font-(--font-montserrat) text-white">
+            <span
+              style={{ fontFamily: "var(--font-montserrat)" }}
+              className="text-[48px] md:text-[64px] font-bold leading-none align-middle font-(--font-montserrat) text-white"
+            >
               {day}
             </span>
             <div className="flex flex-col items-start leading-none justify-center">

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { TinyButton } from "../ui/tiny-button";
+import { StatusBadge } from "../ui/status-badge";
 
 export interface PayrollAgent {
   id: string;
@@ -15,7 +16,7 @@ export interface PayrollAgent {
   status: "Pending" | "Approved";
 }
 
-const agents: PayrollAgent[] = [
+export const agents: PayrollAgent[] = [
   {
     id: "1",
     name: "Francis Nasyomba",
@@ -100,7 +101,7 @@ export function PayrollList({
   const displayedAgents = showViewAll ? agents : agents.slice(0, 3);
 
   return (
-    <div className="bg-white rounded-[30px] pt-5.75 px-10 pb-6 flex-1 min-w-0 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+    <div className="bg-white rounded-[30px] pt-5.75 px-4 sm:px-10 pb-6 flex-1 min-w-0 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
       {/* Header */}
       {!showViewAll && (
         <div className="flex justify-end mb-7">
@@ -109,7 +110,7 @@ export function PayrollList({
       )}
 
       {/* Agent Rows */}
-      <div className="space-y-3.5">
+      <div className="max-h-155.75 overflow-y-auto pr-1 space-y-3.5">
         {displayedAgents.map((agent) => {
           const isSelected = selectedId === agent.id;
           return (
@@ -196,15 +197,7 @@ export function PayrollList({
 
               {/* Status Badge */}
               <div className="shrink-0 py-3 self-baseline">
-                <span
-                  className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] text-white font-medium whitespace-nowrap ${
-                    agent.status === "Approved"
-                      ? "bg-[#2F6C0E]"
-                      : "bg-[#EF7129]"
-                  }`}
-                >
-                  {agent.status}
-                </span>
+                <StatusBadge status={agent.status} />
               </div>
             </div>
           );
