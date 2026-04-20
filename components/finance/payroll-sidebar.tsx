@@ -26,13 +26,13 @@ export function PayrollSidebar({ agent }: PayrollSidebarProps) {
   if (!agent) return null;
 
   return (
-    <div className="payroll-cutout w-full text-dash-dark h-fit border-dash-dark/5 bg-white p-[55px_42px_46.52px] relative rounded-2xl shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] ">
+    <div className="payroll-cutout w-full text-dash-dark h-fit border-dash-dark/5 bg-white p-8 sm:p-[55px_42px_46.52px] relative rounded-2xl shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] ">
       <div className="absolute right-11 top-3.25">
         <TinyButton>View Payroll</TinyButton>
       </div>
 
       {/* Info grid + photo side by side */}
-      <div className="grid grid-cols-[280px_160px]">
+      <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,280px)_160px] gap-6 sm:gap-0">
         {/* Detail grid */}
         <div className="flex-1 min-w-0 grid grid-cols-2 gap-x-6 gap-y-4">
           <div>
