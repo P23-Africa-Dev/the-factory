@@ -1,303 +1,234 @@
-"use client";
+'use client';
 
-import { useState, useMemo } from "react";
-import { SlidersHorizontal, BookmarkPlus } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
-import { TaskBoard } from "./task-board";
-import { OperationsCalendar } from "./operations-calendar";
-import { CreateTaskModal } from "./create-task-modal";
-import { TaskDetailModal } from "./task-detail-modal";
-import { useDragAndDrop } from "@/lib/hooks/use-tasks-dnd";
-import type { DndContainer, DndItem } from "@/types/operations";
+import { useState, useMemo } from 'react';
+import { Search, SlidersHorizontal } from 'lucide-react';
+import type { DndItem } from '@/types/operations';
 
-// ─── Seed data ────────────────────────────────────────────────────────────────
-const INITIAL_DATA: DndContainer[] = [
+export interface FlatTask extends DndItem {
+  projectId: string;
+  projectName: string;
+  status: 'Pending' | 'In Progress' | 'Completed';
+}
+
+// Mock: all tasks across all projects (swap for API later)
+const ALL_TASKS: FlatTask[] = [
   {
-    id: "pending",
-    title: "Pending Task",
-    color: "#BD7A22",
-    items: [
-      {
-        id: "task-1",
-        label: "Francis Nasyomba",
-        description: "Cover the entirety of Ikeja CV",
-        location: "Computer Village, Ikeja, Otigba, Ikeja, Lagos",
-        time: "12 hours ago",
-        category: "agent",
-        dueDate: "Tomorrow (Friday, 3rd April. 2026)",
-        assignedBy: "Ridwan Thomson (Supervisor)",
-        addedDescription:
-          "Visit the Ikeja Computer village, and promote (product name) to the target audience there.\n\nSpeak with the business owner and note:\n- Contact Details\n- Prospect brief\n- Any other usable details.",
-        statusLabel: "Pending",
-      },
-      {
-        id: "task-4",
-        label: "Francis Nasyomba",
-        description: "Cover the entirety of Ikeja CV",
-        location: "Computer Village, Ikeja, Otigba, Ikeja, Lagos",
-        time: "12 hours ago",
-        category: "attendance",
-      },
-      {
-        id: "task-7",
-        label: "Francis Nasyomba",
-        description: "Cover the entirety of Ikeja CV",
-        location: "Computer Village, Ikeja, Otigba, Ikeja, Lagos",
-        time: "12 hours ago",
-        category: "agent",
-      },
-    ],
+    id: 'p1-task-1', projectId: 'project-1', projectName: 'Product Outreach',
+    label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV',
+    location: 'Computer Village, Ikeja, Lagos', time: '12 hours ago',
+    category: 'agent', status: 'Pending',
+    dueDate: 'Friday, 3rd April 2026', assignedBy: 'Ridwan Thomson (Supervisor)',
   },
   {
-    id: "in-progress",
-    title: "Task In-Progress",
-    color: "#094B5C",
-    items: [
-      {
-        id: "task-2",
-        label: "Francis Nasyomba",
-        description: "Cover the entirety of Ikeja CV",
-        location: "Computer Village, Ikeja, Otigba, Ikeja, Lagos",
-        time: "12 hours ago",
-        category: "attendance",
-        dueDate: "Tomorrow (Friday, 3rd April. 2026)",
-        assignedBy: "Ridwan Thomson (Supervisor)",
-        addedDescription:
-          "Visit the Ikeja Computer village, and promote (product name) to the target audience there.\n\nSpeak with the business owner and note:\n- Contact Details\n- Prospect brief\n- Any other usable details.",
-        statusLabel: "In Progress",
-      },
-      {
-        id: "task-5",
-        label: "Francis Nasyomba",
-        description: "Cover the entirety of Ikeja CV",
-        location: "Computer Village, Ikeja, Otigba, Ikeja, Lagos",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "task-8",
-        label: "Francis Nasyomba",
-        description: "Cover the entirety of Ikeja CV",
-        location: "Computer Village, Ikeja, Otigba, Ikeja, Lagos",
-        time: "12 hours ago",
-        category: "attendance",
-      },
-    ],
+    id: 'p1-task-2', projectId: 'project-1', projectName: 'Product Outreach',
+    label: 'Amara Okafor', description: 'Visit Lekki Phase 1 market',
+    location: 'Lekki Phase 1, Lagos', time: '1 day ago',
+    category: 'attendance', status: 'In Progress',
+    dueDate: 'Saturday, 4th April 2026', assignedBy: 'Ridwan Thomson (Supervisor)',
   },
   {
-    id: "completed",
-    title: "Completed Task",
-    color: "#4FD1C5",
-    items: [
-      {
-        id: "task-3",
-        label: "Francis Nasyomba",
-        description: "Cover the entirety of Ikeja CV",
-        location: "Computer Village, Ikeja, Otigba, Ikeja, Lagos",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "task-6",
-        label: "Francis Nasyomba",
-        description: "Cover the entirety of Ikeja CV",
-        location: "Computer Village, Ikeja, Otigba, Ikeja, Lagos",
-        time: "12 hours ago",
-        category: "attendance",
-      },
-    ],
+    id: 'p1-task-3', projectId: 'project-1', projectName: 'Product Outreach',
+    label: 'Chidi Okonkwo', description: 'Document all contacts from Surulere',
+    location: 'Surulere, Lagos', time: '2 days ago',
+    category: 'agent', status: 'Completed',
+    dueDate: 'Wednesday, 1st April 2026', assignedBy: 'Ridwan Thomson (Supervisor)',
+  },
+  {
+    id: 'p2-task-1', projectId: 'project-2', projectName: 'Product Outreach',
+    label: 'Ngozi Eze', description: 'Survey Oshodi market vendors',
+    location: 'Oshodi, Lagos', time: '3 hours ago',
+    category: 'agent', status: 'Pending',
+    dueDate: 'Monday, 7th April 2026', assignedBy: 'Aisha Bello (Supervisor)',
+  },
+  {
+    id: 'p2-task-2', projectId: 'project-2', projectName: 'Product Outreach',
+    label: 'Emeka Nwosu', description: 'Follow up with Alaba contacts',
+    location: "Alaba Int'l Market, Lagos", time: '5 hours ago',
+    category: 'attendance', status: 'In Progress',
+    dueDate: 'Tuesday, 8th April 2026', assignedBy: 'Aisha Bello (Supervisor)',
+  },
+  {
+    id: 'p3-task-1', projectId: 'project-3', projectName: 'Product Outreach',
+    label: 'Tunde Adeyemi', description: 'Collect feedback from Yaba tech hub',
+    location: 'Yaba, Lagos', time: '6 hours ago',
+    category: 'agent', status: 'Pending',
+    dueDate: 'Thursday, 10th April 2026', assignedBy: 'Chukwuma Eze (Supervisor)',
+  },
+  {
+    id: 'p3-task-2', projectId: 'project-3', projectName: 'Product Outreach',
+    label: 'Blessing Okoro', description: 'Complete Victoria Island zone report',
+    location: 'Victoria Island, Lagos', time: '1 day ago',
+    category: 'attendance', status: 'Completed',
+    dueDate: 'Wednesday, 9th April 2026', assignedBy: 'Chukwuma Eze (Supervisor)',
+  },
+  {
+    id: 'p4-task-1', projectId: 'project-4', projectName: 'Product Outreach',
+    label: 'Kelechi Obi', description: 'Map all retail outlets in Ikorodu',
+    location: 'Ikorodu, Lagos', time: '30 minutes ago',
+    category: 'agent', status: 'Pending',
+    dueDate: 'Friday, 11th April 2026', assignedBy: 'Ridwan Thomson (Supervisor)',
   },
 ];
 
-// ─── Pie chart label ──────────────────────────────────────────────────────────
-function CustomLabel({
-  cx = 0,
-  cy = 0,
-  midAngle = 0,
-  innerRadius = 0,
-  outerRadius = 0,
-  value = 0,
-}: {
-  cx?: number;
-  cy?: number;
-  midAngle?: number;
-  innerRadius?: number;
-  outerRadius?: number;
-  value?: number;
-}) {
-  const RADIAN = Math.PI / 180;
-  const r = innerRadius + (outerRadius - innerRadius) / 2;
-  const x = cx + r * Math.cos(-midAngle * RADIAN);
-  const y = cy + r * Math.sin(-midAngle * RADIAN);
-  return (
-    <g>
-      <circle cx={x} cy={y} r={22} fill="white" />
-      <text
-        x={x}
-        y={y}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill="#0B1215"
-        fontSize={12}
-        fontWeight={800}
-      >
-        {value}%
-      </text>
-    </g>
-  );
-}
+const STATUS_OPTIONS = ['All', 'Pending', 'In Progress', 'Completed'];
 
-// ─── Component ────────────────────────────────────────────────────────────────
+const STATUS_COLORS: Record<string, string> = {
+  Pending: 'bg-[#BD7A22] text-white',
+  'In Progress': 'bg-[#0E5D5D] text-white',
+  Completed: 'bg-[#4FD1C5] text-[#0B1215]',
+};
+
 export function AllTasksView() {
-  const {
-    containers,
-    addItem,
-    moveItem,
-    moveToContainer,
-    moveBetweenContainers,
-    findContainer,
-  } = useDragAndDrop(INITIAL_DATA);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [showFilters, setShowFilters] = useState(false);
 
-  const [showModal, setShowModal] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<{
-    item: DndItem;
-    containerId: string;
-  } | null>(null);
-
-  const stats = useMemo(() => {
-    const total = containers.reduce(
-      (s: number, c: DndContainer) => s + c.items.length,
-      0,
-    );
-    if (total === 0)
-      return [
-        { name: "Pending", value: 0, color: "#BD7A22" },
-        { name: "In Progress", value: 0, color: "#094B5C" },
-        { name: "Complete", value: 0, color: "#4FD1C5" },
-      ];
-    const pending =
-      containers.find((c: DndContainer) => c.id === "pending")?.items.length ??
-      0;
-    const inProgress =
-      containers.find((c: DndContainer) => c.id === "in-progress")?.items
-        .length ?? 0;
-    const completed =
-      containers.find((c: DndContainer) => c.id === "completed")?.items
-        .length ?? 0;
-    return [
-      {
-        name: "Pending",
-        value: Math.round((pending / total) * 100),
-        color: "#BD7A22",
-      },
-      {
-        name: "In Progress",
-        value: Math.round((inProgress / total) * 100),
-        color: "#094B5C",
-      },
-      {
-        name: "Complete",
-        value: Math.round((completed / total) * 100),
-        color: "#4FD1C5",
-      },
-    ];
-  }, [containers]);
+  const filtered = useMemo(() => ALL_TASKS.filter((t) => {
+    const q = search.toLowerCase();
+    const matchesSearch =
+      t.label.toLowerCase().includes(q) ||
+      t.description.toLowerCase().includes(q) ||
+      t.projectName.toLowerCase().includes(q) ||
+      t.location.toLowerCase().includes(q);
+    const matchesStatus = statusFilter === 'All' || t.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  }), [search, statusFilter]);
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* ── Toolbar ───────────────────────────────────────────── */}
-      <div className="flex items-center justify-end gap-3">
-        <button className="flex items-center gap-2.5 px-6 py-3.5 bg-white border border-gray-100 rounded-full text-[13px] font-bold text-gray-500 hover:bg-gray-50 transition-all shadow-sm">
-          <span className="opacity-70">Filter</span>
-          <SlidersHorizontal size={14} className="opacity-70" />
-        </button>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 px-4 sm:px-6 py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shadow-lg shrink-0 cursor-pointer"
-        >
-          <span>Create New Task</span>
-          <BookmarkPlus size={16} />
-        </button>
+
+      {/* Toolbar */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-[20px] font-extrabold text-[#09232D] shrink-0">All Tasks</h1>
+
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 md:justify-end min-w-0">
+          <div className="relative w-full md:w-[458px] group shrink-0">
+            <Search
+              className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#09232D] transition-colors"
+              size={18}
+              strokeWidth={2}
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search tasks, agents, projects…"
+              className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-[#09232D]/10 transition-all font-sans"
+              style={{
+                height: '46px',
+                borderRadius: '24px',
+                border: '0.7px solid #D7D7D7',
+                boxShadow: '0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026',
+              }}
+            />
+          </div>
+
+          <button
+            onClick={() => setShowFilters((v) => !v)}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
+              showFilters ? 'text-white' : 'text-gray-500'
+            }`}
+            style={{
+              background: showFilters ? '#34373C' : '#F8F8F8',
+              border: showFilters ? '0.5px solid #34373C' : '0.5px solid #D1D1D1',
+              boxShadow: showFilters ? 'none' : '0 2px 8px rgba(0,0,0,0.06)',
+            }}
+          >
+            <SlidersHorizontal size={14} strokeWidth={2} />
+            <span style={{ fontSize: '10px', fontWeight: 400 }}>Filter</span>
+          </button>
+        </div>
       </div>
 
-      {/* ── Board + sidebar ───────────────────────────────────── */}
-      <div className="flex flex-col xl:flex-row gap-6">
-        {/* Kanban */}
-        <div className="flex-1 min-w-0">
-          <TaskBoard
-            containers={containers}
-            activeTab="all"
-            onAddCard={addItem}
-            findContainer={findContainer}
-            moveItem={moveItem}
-            moveToContainer={moveToContainer}
-            moveBetweenContainers={moveBetweenContainers}
-            onTaskClick={(item, containerId) =>
-              setSelectedTask({ item, containerId })
-            }
-          />
-        </div>
-
-        {/* Stats sidebar */}
-        <div className="w-full xl:w-[360px] 2xl:w-[420px] flex flex-col gap-6 shrink-0">
-          <div className="bg-[#0A1A22] rounded-[32px] px-4 py-4 shadow-xl relative overflow-hidden">
-            <h3 className="text-gray-400 font-medium text-[15px] mb-6">
-              Task Stats
-            </h3>
-            <div className="flex items-center gap-3">
-              <div className="w-48 h-48 shrink-0 relative -left-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={stats}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={48}
-                      outerRadius={78}
-                      paddingAngle={0}
-                      dataKey="value"
-                      stroke="none"
-                      labelLine={false}
-                      label={(props) => <CustomLabel {...props} />}
-                    >
-                      {stats.map((entry, i) => (
-                        <Cell key={`cell-${i}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="space-y-4">
-                {stats.map((stat, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <div
-                      className="w-4 h-4 rounded-full shrink-0"
-                      style={{ backgroundColor: stat.color }}
-                    />
-                    <span className="text-[13px] text-gray-400 font-medium">
-                      {stat.name}
-                    </span>
-                  </div>
-                ))}
-              </div>
+      {/* Filter panel */}
+      {showFilters && (
+        <div className="flex flex-wrap gap-3 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-gray-400 px-1">Status</label>
+            <div className="flex gap-1 flex-wrap">
+              {STATUS_OPTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${
+                    statusFilter === s
+                      ? 'bg-[#0B1215] text-white'
+                      : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
             </div>
           </div>
-          <OperationsCalendar />
+          {statusFilter !== 'All' && (
+            <div className="flex flex-col justify-end">
+              <button
+                onClick={() => setStatusFilter('All')}
+                className="px-4 py-2 rounded-full text-[12px] font-bold text-red-400 hover:bg-red-50 transition-all border border-red-200"
+              >
+                Clear filter
+              </button>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
-      {/* ── Modals ────────────────────────────────────────────── */}
-      <CreateTaskModal
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        onCreateTask={(containerId, item) => addItem(containerId, item)}
-      />
-      <TaskDetailModal
-        isOpen={!!selectedTask}
-        onClose={() => setSelectedTask(null)}
-        task={selectedTask?.item ?? null}
-        status={selectedTask?.containerId ?? ""}
-      />
+      {/* Task list */}
+      {filtered.length === 0 ? (
+        <div className="py-20 text-center text-gray-400 text-[14px] font-medium">
+          No tasks match your search.
+        </div>
+      ) : (
+        <div
+          className="bg-white rounded-3xl border border-gray-100/60 overflow-hidden"
+          style={{ boxShadow: '0px 8px 12px 6px #00000026' }}
+        >
+          <div className="grid grid-cols-[1fr_1fr_1fr_120px] gap-4 px-6 py-3 bg-gray-50 border-b border-gray-100 text-[11px] font-bold text-gray-400 uppercase tracking-wide">
+            <span>Task</span>
+            <span>Project</span>
+            <span className="hidden md:block">Location</span>
+            <span>Status</span>
+          </div>
+
+          {filtered.map((task, idx) => (
+            <div
+              key={task.id}
+              className={`grid grid-cols-[1fr_1fr_1fr_120px] gap-4 items-center px-6 py-4 ${
+                idx < filtered.length - 1 ? 'border-b border-gray-50' : ''
+              } hover:bg-gray-50/60 transition-colors`}
+            >
+              <div className="flex flex-col min-w-0">
+                <span className="text-[13px] font-bold text-[#09232D] truncate">{task.label}</span>
+                <span className="text-[11px] text-gray-400 truncate">{task.description}</span>
+                {task.dueDate && (
+                  <span className="text-[10px] text-gray-300 mt-0.5">Due: {task.dueDate}</span>
+                )}
+              </div>
+
+              <div className="min-w-0">
+                <span className="text-[12px] font-semibold text-[#09232D] truncate block">
+                  {task.projectName}
+                </span>
+                <span className="text-[10px] text-gray-400 truncate block">ID: {task.projectId}</span>
+              </div>
+
+              <div className="hidden md:block min-w-0">
+                <span className="text-[11px] text-gray-500 truncate block">{task.location}</span>
+                {task.assignedBy && (
+                  <span className="text-[10px] text-gray-300 truncate block">{task.assignedBy}</span>
+                )}
+              </div>
+
+              <div>
+                <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-bold ${STATUS_COLORS[task.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                  {task.status}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
