@@ -142,14 +142,16 @@ export default function FinancePage() {
             <SlidersHorizontal size={13} />
             Filter
           </button>
-          <button className="flex items-center gap-2.5 px-2.5 py-[8.5px] font-medium bg-[#09232D] text-white rounded-[10px] text-[10px] hover:opacity-90 transition-all">
+          <button
+            onClick={() => setIsPayrollModalOpen(true)}
+            className="flex items-center gap-2.5 px-2.5 py-[8.5px] font-medium bg-[#09232D] text-white rounded-[10px] text-[10px] hover:opacity-90 transition-all"
+          >
             Set Payroll
             <Image
               src={CardValidationIcon}
               alt="Set Payroll Icon"
               width={13}
               height={13}
-              onClick={() => setIsPayrollModalOpen(true)}
             />
           </button>
         </div>

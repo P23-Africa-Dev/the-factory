@@ -1,3 +1,8 @@
+import { InlineInput } from "./inline-input";
+import { SectionDivider } from "./section-divider";
+import Image from "next/image";
+import AddCircle from "@/assets/images/add-circle.png";
+
 export type CommissionPreference =
   | "per-unit"
   | "percentage"
@@ -18,11 +23,15 @@ interface CommissionModalProps {
   onProductsChange: (p: ProductEntry[]) => void;
 }
 
-const PREFERENCE_OPTIONS: { value: CommissionPreference; label: string }[] = [
-  { value: "per-unit", label: "Per Unit Calculation" },
-  { value: "percentage", label: "Percentage" },
-  { value: "per-pack", label: "Per Pack Calculation" },
-  { value: "flat", label: "Flat" },
+const PREFERENCE_OPTIONS: {
+  value: CommissionPreference;
+  label: string;
+  color: "blue" | "tan";
+}[] = [
+  { value: "per-unit", label: "Per Unit Calculation", color: "blue" },
+  { value: "percentage", label: "Percentage", color: "tan" },
+  { value: "per-pack", label: "Per Pack Calculation", color: "blue" },
+  { value: "flat", label: "Flat", color: "tan" },
 ];
 
 export function CommissionModal({
@@ -52,100 +61,85 @@ export function CommissionModal({
   return (
     <div className="fixed right-119.75 bottom-3.25 z-60">
       <div className="relative bg-white rounded-3xl w-full max-w-105 p-7 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026]">
-        <h3 className="text-[16px] font-bold text-[#0B1215] mb-5">
+        <h3 className="text-[20px] font-bold text-[#0B1215] mb-6">
           Commission
         </h3>
 
-        {/* Preference Selection */}
-        <div className="mb-5">
-          <p className="text-[12px] font-semibold text-gray-500 mb-3">
-            Choose Preference
-          </p>
-          <div className="grid grid-cols-2 gap-2.5">
-            {PREFERENCE_OPTIONS.map((opt) => {
-              const isSelected = preference === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => onPreferenceChange(opt.value)}
-                  className={`flex items-center gap-2 px-3 py-2.5 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
-                    isSelected
-                      ? "bg-[#0B1215] text-white"
-                      : "bg-[#F3F4F6] text-gray-500 hover:bg-gray-200"
+        <SectionDivider label="Choose Preference" />
+
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 mb-6">
+          {PREFERENCE_OPTIONS.map((opt) => {
+            const isSelected = preference === opt.value;
+            const pillBg =
+              opt.color === "blue" ? "bg-[#D9E8F5]" : "bg-[#E8D5B0]";
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onPreferenceChange(opt.value)}
+                className="flex items-center gap-2.5 cursor-pointer"
+              >
+                <span
+                  className={`shrink-0 w-[17px] h-[17px] rounded-full border-2 flex items-center justify-center transition-colors ${
+                    isSelected ? "border-[#0B1215]" : "border-gray-300"
                   }`}
                 >
-                  <span
-                    className={`shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                      isSelected ? "border-white" : "border-gray-400"
-                    }`}
-                  >
-                    {isSelected && (
-                      <span className="w-2 h-2 rounded-full bg-white" />
-                    )}
-                  </span>
+                  {isSelected && (
+                    <span className="w-2.25 h-2.25 rounded-full bg-[#0B1215]" />
+                  )}
+                </span>
+                <span
+                  className={`flex-1 h-8 px-4 rounded-full flex items-center text-[10px] font-semibold text-[#0B1215] ${pillBg}`}
+                >
                   {opt.label}
-                </button>
-              );
-            })}
-          </div>
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Add Product */}
-        <div className="mb-5">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-[12px] font-semibold text-gray-500">
-              Add Product
-            </p>
-            <button
-              type="button"
-              onClick={addProduct}
-              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-            </button>
-          </div>
+        <SectionDivider label="Add Product" />
 
-          <div className="space-y-2.5">
-            {products.map((product, i) => (
-              <div key={i} className="flex gap-2.5">
-                <input
-                  type="text"
-                  placeholder="Product Name"
-                  value={product.name}
-                  onChange={(e) => updateProduct(i, "name", e.target.value)}
-                  className="flex-1 h-[42px] px-4 rounded-full border border-gray-200 text-[11px] text-[#0B1215] outline-none placeholder:text-gray-400 focus:border-gray-400 transition-colors"
-                />
-                <input
-                  type="text"
-                  placeholder="Commission Rate"
-                  value={product.rate}
-                  onChange={(e) => updateProduct(i, "rate", e.target.value)}
-                  className="flex-1 h-[42px] px-4 rounded-full border border-gray-200 text-[11px] text-[#0B1215] outline-none placeholder:text-gray-400 focus:border-gray-400 transition-colors"
-                />
-              </div>
-            ))}
-          </div>
+        <div className="space-y-3 mb-5">
+          {products.map((product, i) => (
+            <div key={i} className="grid grid-cols-2 gap-3">
+              <InlineInput
+                placeholder="Product Name"
+                value={product.name}
+                onChange={(e) => updateProduct(i, "name", e.target.value)}
+                className="h-12 px-5 rounded-2xl border border-gray-200 text-[13px] text-[#0B1215] outline-none placeholder:text-gray-400 focus:border-gray-400 transition-colors"
+              />
+              <InlineInput
+                placeholder="Commission Rate"
+                value={product.rate}
+                onChange={(e) => updateProduct(i, "rate", e.target.value)}
+                className="h-12 px-5 rounded-2xl border border-gray-200 text-[13px] text-[#0B1215] outline-none placeholder:text-gray-400 focus:border-gray-400 transition-colors"
+              />
+            </div>
+          ))}
         </div>
 
-        <button
-          type="button"
-          onClick={onClose}
-          className="w-full h-[44px] bg-[#0B1215] text-white rounded-full text-[12px] font-semibold hover:opacity-90 transition-colors cursor-pointer"
-        >
-          Done
-        </button>
+        <div className="flex items-center gap-3 justify-end">
+          <button
+            type="button"
+            onClick={addProduct}
+            className="w-9.5 h-8 bg-[#F8F8F8] shrink-0 rounded-[10px] border-[0.5px] border-[#D1D1D1] flex items-center justify-center text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+          >
+            <Image
+              src={AddCircle}
+              alt="Add Product Icon"
+              width={13}
+              height={13}
+            />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-fit px-9.25 py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer"
+          >
+            Done
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -142,7 +142,7 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="w-full h-[44px] bg-[#0B1215] text-white rounded-full text-[13px] font-semibold hover:opacity-90 transition-colors cursor-pointer"
+              className="w-full h-11 bg-[#0B1215] text-white rounded-full text-[13px] font-semibold hover:opacity-90 transition-colors cursor-pointer"
             >
               Done
             </button>
