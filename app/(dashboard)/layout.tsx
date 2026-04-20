@@ -12,9 +12,9 @@ export default async function DashboardLayout({
   const token = cookieStore.get(AUTH_TOKEN_COOKIE)?.value;
   const onboardingDone = cookieStore.get(ONBOARDING_DONE_COOKIE)?.value === "1";
 
-  // if (!token) {
-  //   redirect("/register");
-  // }
+  if (!token) {
+    redirect("/login");
+  }
 
   // if (!onboardingDone) {
   //   redirect("/complete-onboarding");
