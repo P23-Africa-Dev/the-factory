@@ -174,9 +174,13 @@ export function Navbar() {
                   className="w-full h-full object-cover rounded-full"
                 />
               ) : (
-                <span className="text-sm font-bold text-white">
-                  {user?.name?.[0]?.toUpperCase() ?? "?"}
-                </span>
+                <Image
+                  src="/avatars/male-avatar.png"
+                  alt="Profile"
+                  width={44}
+                  height={44}
+                  className="w-full h-full object-cover rounded-full"
+                />
               )}
             </div>
             <ChevronDown
@@ -210,9 +214,13 @@ export function Navbar() {
                         className="w-full h-full object-cover rounded-full"
                       />
                     ) : (
-                      <span className="text-xs font-bold text-white">
-                        {user?.name?.[0]?.toUpperCase() ?? "?"}
-                      </span>
+                      <Image
+                        src="/avatars/male-avatar.png"
+                        alt="Profile"
+                        width={36}
+                        height={36}
+                        className="w-full h-full object-cover rounded-full"
+                      />
                     )}
                   </div>
                   <div className="min-w-0">
@@ -340,9 +348,13 @@ export function Navbar() {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <span className="text-base font-bold text-white">
-                          {user?.name?.[0]?.toUpperCase() ?? "?"}
-                        </span>
+                        <Image
+                          src="/avatars/male-avatar.png"
+                          alt="Profile"
+                          width={48}
+                          height={48}
+                          className="w-full h-full object-cover"
+                        />
                       )}
                     </div>
                     <div>
