@@ -16,7 +16,7 @@ export interface PayrollAgent {
   status: "Pending" | "Approved";
 }
 
-const agents: PayrollAgent[] = [
+export const agents: PayrollAgent[] = [
   {
     id: "1",
     name: "Francis Nasyomba",
