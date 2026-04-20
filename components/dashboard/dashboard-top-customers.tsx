@@ -26,8 +26,8 @@ const datasets = {
 const filterOptions = Object.keys(datasets) as FilterOption[];
 
 const customers = [
-  { name: "Lane Wade", category: "E-commerce", avatarBg: "#EAEAEA" },
-  { name: "Lane Wade", category: "E-commerce", avatarBg: "#B29D8B" },
+  { name: "Lane Wade", category: "E-commerce", avatarBg: "#EAEAEA", avatar: "/avatars/female-avatar.png" },
+  { name: "Lane Wade", category: "E-commerce", avatarBg: "#B29D8B", avatar: "/avatars/male-avatar.png" },
 ];
 
 type FilterOption = keyof typeof datasets;
@@ -109,7 +109,7 @@ export function TopCustomers() {
                 style={{ backgroundColor: customer.avatarBg }}
               >
                 <Image
-                  src="/placeholder.svg"
+                  src={customer.avatar}
                   width={40}
                   height={40}
                   className="w-full h-full object-cover"

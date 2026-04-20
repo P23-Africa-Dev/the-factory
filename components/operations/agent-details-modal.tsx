@@ -27,13 +27,16 @@ interface AgentDetailsModalProps {
   onClose: () => void;
   details: AgentDetails;
   onDetailsChange: (details: AgentDetails) => void;
+  errors?: { phone?: string; gender?: string };
+  onClearError?: (field: "phone" | "gender") => void;
 }
 
 export function AgentDetailsModal({
   isOpen,
-  onClose,
   details,
   onDetailsChange,
+  errors = {},
+  onClearError,
 }: AgentDetailsModalProps) {
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -59,30 +62,34 @@ export function AgentDetailsModal({
         <SectionDivider label="Personal Information" />
 
         <div className="space-y-4 mb-6">
-          <FormRow label="Phone Number">
-            <InlineInput
-              value={details.phone}
-              onChange={(e) => set("phone", e.target.value)}
-              placeholder="E.g +234 9099999999"
-              className="col-span-2"
-            />
-          </FormRow>
+          <div>
+            <FormRow label="Phone Number">
+              <InlineInput
+                value={details.phone}
+                onChange={(e) => { set("phone", e.target.value); onClearError?.("phone"); }}
+                placeholder="E.g +234 9099999999"
+                className="col-span-2"
+              />
+            </FormRow>
+            {errors.phone && <p className="text-[11px] text-red-500 mt-0.5 text-right">{errors.phone}</p>}
+          </div>
 
-          <FormRow label="Gender">
-            <InlineSelect
-              value={details.gender}
-              onChange={(e) =>
-                set("gender", e.target.value as AgentDetails["gender"])
-              }
-              className="col-span-2"
-            >
-              <option value="" disabled>
-                E.g Male
-              </option>
-              <option>Male</option>
-              <option>Female</option>
-            </InlineSelect>
-          </FormRow>
+          <div>
+            <FormRow label="Gender">
+              <InlineSelect
+                value={details.gender}
+                onChange={(e) => { set("gender", e.target.value as AgentDetails["gender"]); onClearError?.("gender"); }}
+                className="col-span-2"
+              >
+                <option value="" disabled>
+                  E.g Male
+                </option>
+                <option>Male</option>
+                <option>Female</option>
+              </InlineSelect>
+            </FormRow>
+            {errors.gender && <p className="text-[11px] text-red-500 mt-0.5 text-right">{errors.gender}</p>}
+          </div>
         </div>
 
         <SectionDivider label="Profile Picture" />
@@ -150,8 +157,8 @@ export function AgentDetailsModal({
 
         <div className="flex items-center justify-start">
           <button
-            type="button"
-            onClick={onClose}
+            type="submit"
+            form="add-agent-form"
             className="w-fit px-9.25 py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer"
           >
             Done
