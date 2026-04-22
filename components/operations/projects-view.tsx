@@ -12,6 +12,7 @@ import {
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { Project } from "@/types/operations";
 import { CreateProjectDrawer } from "./create-project-drawer";
+import { ProjectCardSkeleton } from "./skeletons/project-card-skeleton";
 
 const STATUS_FILTERS = ["All", "In progress", "Completed", "Pending"];
 const PRIORITY_FILTERS = ["All", "High", "Medium", "Low"];
@@ -19,9 +20,10 @@ const PRIORITY_FILTERS = ["All", "High", "Medium", "Low"];
 interface ProjectsViewProps {
   projects: Project[];
   onViewProject: (projectId: string) => void;
+  isLoading?: boolean;
 }
 
-export function ProjectsView({ projects, onViewProject }: ProjectsViewProps) {
+export function ProjectsView({ projects, onViewProject, isLoading = false }: ProjectsViewProps) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [priorityFilter, setPriorityFilter] = useState("All");
@@ -121,7 +123,7 @@ export function ProjectsView({ projects, onViewProject }: ProjectsViewProps) {
       </div>
 
       {/* ── Summary Cards ────────────────────────────────────── */}
-      <SummaryCards projects={projects} />
+      <SummaryCards projects={projects} isLoading={isLoading} />
 
       {/* ── Filter panel ─────────────────────────────────────── */}
       {showFilters && (
@@ -185,7 +187,18 @@ export function ProjectsView({ projects, onViewProject }: ProjectsViewProps) {
       )}
 
       {/* ── Grid — wrapped in a thick-shadow container ─────── */}
-      {filtered.length === 0 ? (
+      {isLoading ? (
+        <div
+          className="bg-white rounded-3xl p-5 sm:p-7 border border-gray-100/60"
+          style={{ boxShadow: "0px 8px 12px 6px #00000026" }}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-4 gap-x-5 gap-y-10">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <ProjectCardSkeleton key={i} />
+            ))}
+          </div>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="py-20 text-center text-gray-400 text-[14px] font-medium">
           No projects match your search.
         </div>
@@ -358,8 +371,9 @@ function performanceLabel(pct: number) {
   return "Poor";
 }
 
-function SummaryCards({ projects }: { projects: Project[] }) {
+function SummaryCards({ projects, isLoading }: { projects: Project[]; isLoading: boolean }) {
   const total = projects.length;
+  const pending = projects.filter((p) => p.status === "Pending").length;
   const completed = projects.filter((p) => p.status === "Completed").length;
   const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
 
@@ -476,9 +490,13 @@ function SummaryCards({ projects }: { projects: Project[] }) {
               <p className="text-[16px] font-semibold text-[#2D2D2D] mb-1">
                 Total Projects
               </p>
-              <h2 className="text-[52px] font-extrabold text-[#1A1A1A] leading-none tracking-[-0.04em]">
-                045
-              </h2>
+              {isLoading ? (
+                <div className="h-12 w-24 bg-gray-200 rounded-lg animate-pulse mt-1" />
+              ) : (
+                <h2 className="text-[52px] font-extrabold text-[#1A1A1A] leading-none tracking-[-0.04em]">
+                  {String(total).padStart(3, "0")}
+                </h2>
+              )}
             </div>
             <button className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#2ECC71] text-white rounded-full text-[10px] font-bold hover:bg-[#27ae60] transition-colors shadow-sm mt-1">
               View All <ArrowUpRight size={11} strokeWidth={3} />
@@ -517,9 +535,13 @@ function SummaryCards({ projects }: { projects: Project[] }) {
               <p className="text-[16px] font-semibold text-[#2D2D2D] mb-1">
                 Pending Projects
               </p>
-              <h2 className="text-[52px] font-extrabold text-[#1A1A1A] leading-none tracking-[-0.04em]">
-                015
-              </h2>
+              {isLoading ? (
+                <div className="h-12 w-24 bg-gray-200 rounded-lg animate-pulse mt-1" />
+              ) : (
+                <h2 className="text-[52px] font-extrabold text-[#1A1A1A] leading-none tracking-[-0.04em]">
+                  {String(pending).padStart(3, "0")}
+                </h2>
+              )}
             </div>
             <button className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#E8875B] text-white rounded-full text-[10px] font-bold hover:bg-[#d57848] transition-colors shadow-sm mt-1">
               View All <ArrowUpRight size={11} strokeWidth={3} />
