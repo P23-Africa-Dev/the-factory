@@ -21,21 +21,22 @@ Backward compatibility:
 
 Allowed users:
 
-1. Self-serve admin users (`internal_role = null`, onboarding complete)
-2. Enterprise admin users (`internal_role = null`, enterprise onboarding complete)
-3. Supervisors (`internal_role = supervisor`, `onboarding_status = active`)
+1. Self-serve admin users (`internal_role = null`, onboarding complete, active company membership with role `owner|admin`)
+2. Enterprise admin users (`internal_role = null`, enterprise onboarding complete, active company membership with role `owner|admin`)
+3. Supervisors (`internal_role = supervisor`, `onboarding_status = active`, active company membership with role `owner|admin|supervisor`)
 
 ### Agent Endpoint (`POST /api/v1/agent/login`)
 
 Allowed users:
 
-1. Agents only (`internal_role = agent`, `onboarding_status = active`)
+1. Agents only (`internal_role = agent`, `onboarding_status = active`, active company membership with role `agent`)
 
 ## Endpoints
 
 1. `POST /api/v1/auth/login`
-2. `POST /api/v1/agent/login`
-3. `POST /api/v1/internal/login` (deprecated alias for agents only)
+2. `POST /api/v1/auth/logout` (authenticated, revokes current token)
+3. `POST /api/v1/agent/login`
+4. `POST /api/v1/internal/login` (deprecated alias for agents only)
 
 ## Request Structure
 
@@ -164,9 +165,42 @@ Validation rules for both login requests:
 ## Security Considerations
 
 1. Passwords are hashed and verified securely.
-2. Bearer tokens are generated with expiration.
+2. Bearer tokens are generated with 30-day expiration.
 3. Error responses remain generic and do not leak sensitive account state.
 4. Endpoint-level role gating prevents cross-role login entry misuse.
+5. Logout endpoint (`POST /api/v1/auth/logout`) revokes only the current token, leaving other sessions active.
+
+## Logout
+
+### Request
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/logout \
+  -H "Accept: application/json" \
+  -H "Authorization: Bearer <token>"
+```
+
+### Success Response (200)
+
+```json
+{
+  "success": true,
+  "message": "Logged out successfully.",
+  "data": null,
+  "errors": null
+}
+```
+
+### Unauthenticated (401)
+
+```json
+{
+  "success": false,
+  "message": "Unauthenticated.",
+  "data": null,
+  "errors": null
+}
+```
 
 ## Example Usage
 

@@ -53,11 +53,19 @@ JSON shape:
   "start_date": "2026-04-15",
   "end_date": "2026-04-17",
   "project_manager_user_id": 14,
+  "project_manager": 14,
   "assigned_team": [25, 31],
   "territory_zone": "Lagos Mainland",
   "notes": "Launch before weekend campaign window."
 }
 ```
+
+Request rules:
+
+1. `company_id` is required on create.
+2. `project_manager_user_id` is required and must be a same-company `owner|admin|supervisor` member.
+3. `project_manager` is accepted as a backward-compatible alias and maps to `project_manager_user_id`.
+4. `assigned_team` members must all belong to the same company.
 
 Multipart file fields:
 
@@ -215,6 +223,145 @@ export async function updateProject(projectId, payload, files = []) {
 }
 ```
 
+## Fetching Internal Users for Project Manager Selection
+
+Before creating or updating a project, fetch available supervisors to populate the project manager selection dropdown.
+
+### API Endpoint
+
+`GET /api/v1/internal-users?role=supervisor`
+
+**Parameters:**
+
+- `role` (optional): `supervisor` or `agent` to filter by role. Omit to fetch all internal users.
+- `company_id` (optional): specific company ID. Omits this to use authenticated user's company context.
+
+### Code Example
+
+```javascript
+export async function getInternalUsers(role = 'supervisor', companyId = null) {
+  const params = new URLSearchParams();
+  if (role) params.append('role', role);
+  if (companyId) params.append('company_id', companyId);
+
+  const query = params.toString();
+  const response = await fetch(`${API_BASE}/internal-users${query ? `?${query}` : ''}`, {
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch internal users: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+```
+
+### Project Manager Selection Flow
+
+1. On component mount or when opening the project creation form, call `getInternalUsers('supervisor')`.
+2. Handle empty supervisor list gracefully:
+
+```javascript
+async function initializeProjectForm() {
+  try {
+    const response = await getInternalUsers('supervisor');
+    
+    if (!response.success) {
+      showError('Failed to fetch supervisors');
+      return;
+    }
+
+    if (response.data.length === 0) {
+      showError('No supervisors available in your company. Create supervisors before assigning project managers.');
+      disableProjectCreation();
+      return;
+    }
+
+    // Populate dropdown with supervisors
+    supervisorSelect.innerHTML = response.data.map(user => 
+      `<option value="${user.id}">${user.name} (${user.email})</option>`
+    ).join('');
+
+  } catch (error) {
+    console.error('Error fetching supervisors:', error);
+    showError('Failed to load supervisors');
+  }
+}
+```
+
+3. On form submission, include the selected supervisor ID:
+
+```javascript
+async function submitProjectForm(formData) {
+  const payload = {
+    company_id: parseInt(formData.company_id),
+    name: formData.name,
+    description: formData.description,
+    type: formData.type,
+    status: formData.status,
+    priority: formData.priority,
+    start_date: formData.start_date,
+    end_date: formData.end_date,
+    project_manager_user_id: parseInt(supervisorSelect.value), // From the dropdown
+    assigned_team: selectedTeamIds.map(id => parseInt(id)),
+    territory_zone: formData.territory_zone,
+    notes: formData.notes,
+  };
+
+  try {
+    const response = await createProject(payload, attachmentFiles);
+    
+    if (response.success) {
+      showSuccess('Project created successfully');
+      navigateToProjectList();
+    } else {
+      showError(response.message || 'Failed to create project');
+    }
+  } catch (error) {
+    console.error('Error creating project:', error);
+    showError('An unexpected error occurred');
+  }
+}
+```
+
+### Response Format
+
+Success response with supervisors:
+
+```json
+{
+  "success": true,
+  "message": "Internal users retrieved successfully",
+  "data": [
+    {
+      "id": 14,
+      "name": "Chukwu Okonkwo",
+      "email": "chukwu@factory23.com",
+      "role": "supervisor"
+    },
+    {
+      "id": 22,
+      "name": "Ada Nwabueze",
+      "email": "ada@factory23.com",
+      "role": "supervisor"
+    }
+  ],
+  "errors": null
+}
+```
+
+Empty response:
+
+```json
+{
+  "success": true,
+  "message": "Internal users retrieved successfully",
+  "data": [],
+  "errors": null
+}
+```
+
 ## UI Integration Notes
 
 1. The project list card can map directly to `name`, `description`, `status`, `priority`, and `task_summary`.
@@ -237,3 +384,5 @@ export async function updateProject(projectId, payload, files = []) {
 3. Attachments are additive on update; uploading new files does not remove old files.
 4. `assigned_team` is optional and may be empty.
 5. `end_date` is optional; if omitted, `duration_days` may be `null`.
+6. Cross-company manager or team IDs are rejected with `422`.
+7. If your UI still submits `project_manager`, backend normalization now supports it, but new clients should use `project_manager_user_id`.

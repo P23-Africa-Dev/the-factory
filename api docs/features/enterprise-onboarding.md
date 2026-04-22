@@ -8,9 +8,10 @@ Core stages:
 1. Prospect submits demo request via public API.
 2. Admin reviews request in the admin dashboard (Blade).
 3. Admin registers details and either saves as draft or activates immediately (Blade form → API update).
-4. On activation: company & user accounts are created, activation email is sent with a frontend link.
+4. On activation: company & user accounts are created, owner membership is created in `company_users`, activation email is sent with a frontend link.
 5. User opens the frontend first-time setup page, calls API to validate token and get prefill data, then sets password.
-6. User logs in via shared auth endpoint thereafter.
+6. On completion, owner membership is re-ensured transactionally before issuing token.
+7. User logs in via shared auth endpoint thereafter.
 
 ## Architecture Boundary
 

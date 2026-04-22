@@ -115,6 +115,8 @@ Proof uploads and verification metadata:
 9. `notes`
 10. `metadata`
 
+> **Note:** `disk` and `file_path` are internal storage fields and are not exposed in API responses. The API returns `file_url` instead.
+
 ## Lifecycle Rules
 
 Allowed transitions:

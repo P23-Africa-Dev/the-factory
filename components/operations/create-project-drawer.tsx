@@ -81,7 +81,7 @@ function Toggle({
       )}
     </div>
   );
-}
+} 
 
 function Divider({ label }: { label: string }) {
   return (
