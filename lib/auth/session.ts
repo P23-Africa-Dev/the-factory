@@ -1,5 +1,6 @@
 export const AUTH_TOKEN_COOKIE = "factory_auth_token";
 export const ONBOARDING_DONE_COOKIE = "factory_onboarding_done";
+export const COMPANY_ID_KEY = "factory_company_id";
 
 const THIRTY_DAYS_IN_SECONDS = 60 * 60 * 24 * 30;
 
@@ -24,6 +25,16 @@ export function clearAuthSession() {
   if (typeof document === "undefined") return;
   document.cookie = `${AUTH_TOKEN_COOKIE}=; Path=/; Max-Age=0`;
   document.cookie = `${ONBOARDING_DONE_COOKIE}=; Path=/; Max-Age=0`;
+}
+
+export function setCompanyId(id: number | string) {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(COMPANY_ID_KEY, String(id));
+}
+
+export function getCompanyId(): string | null {
+  if (typeof localStorage === "undefined") return null;
+  return localStorage.getItem(COMPANY_ID_KEY);
 }
 
 export function getAuthTokenFromDocument() {

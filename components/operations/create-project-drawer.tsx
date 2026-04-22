@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import { X, ChevronDown, User } from "lucide-react";
+import { toast } from "sonner";
+import { useCreateProject } from "@/hooks/use-projects";
+import { getCompanyId } from "@/lib/auth/session";
+import type { ApiProjectType, ApiProjectStatus, ApiProjectPriority } from "@/lib/api/projects";
 
 const PRIORITY_OPTIONS = ["High", "Medium", "Low"] as const;
 const STATUS_OPTIONS = ["In progress", "Pending", "Completed"] as const;
@@ -77,7 +81,7 @@ function Toggle({
       )}
     </div>
   );
-}
+} 
 
 function Divider({ label }: { label: string }) {
   return (
@@ -91,15 +95,66 @@ function Divider({ label }: { label: string }) {
   );
 }
 
+const TYPE_MAP: Record<string, ApiProjectType | undefined> = {
+  Sales: "sales",
+  Inspection: "inspection",
+  Deployment: "deployment",
+};
+
+const STATUS_MAP: Record<string, ApiProjectStatus> = {
+  "In progress": "active",
+  Pending: "planning",
+  Completed: "completed",
+};
+
+const PRIORITY_MAP: Record<string, ApiProjectPriority> = {
+  High: "high",
+  Medium: "medium",
+  Low: "low",
+};
+
 export function CreateProjectDrawer({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState(EMPTY);
   const set = <K extends keyof typeof EMPTY>(key: K, val: (typeof EMPTY)[K]) =>
     setForm((f) => ({ ...f, [key]: val }));
 
+  const { mutate, isPending } = useCreateProject({
+    onSuccess: () => {
+      toast.success("Project created successfully.");
+      onClose();
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // wire up to real API here
-    onClose();
+
+    const companyId = getCompanyId();
+    if (!companyId) {
+      toast.error("Company context not found. Please log in again.");
+      return;
+    }
+
+    mutate(
+      {
+        company_id: companyId,
+        name: form.name,
+        description: form.description || undefined,
+        type: TYPE_MAP[form.category] ?? null,
+        status: STATUS_MAP[form.status] ?? "active",
+        priority: form.priority ? PRIORITY_MAP[form.priority] ?? null : null,
+        start_date: form.startDate,
+        end_date: form.deadline || null,
+        // TODO: replace with real user ID from company members lookup
+        project_manager_user_id: 0,
+      },
+      {
+        onError: (err: unknown) => {
+          const message =
+            err instanceof Error ? err.message : "Failed to create project.";
+          toast.error(message);
+        },
+      }
+    );
   };
 
   return (
@@ -301,9 +356,10 @@ export function CreateProjectDrawer({ onClose }: { onClose: () => void }) {
           <button
             type="submit"
             form="create-project-form"
-            className="w-full py-3.5 bg-[#09232D] text-white rounded-2xl text-[13px] font-bold hover:opacity-90 transition-all"
+            disabled={isPending}
+            className="w-full py-3.5 bg-[#09232D] text-white rounded-2xl text-[13px] font-bold hover:opacity-90 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Create Project
+            {isPending ? "Creating…" : "Create Project"}
           </button>
         </div>
       </div>

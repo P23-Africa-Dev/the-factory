@@ -1,18 +1,41 @@
 "use client";
 
-import { TaskBoard } from "@/components/operations/task-board";
-import { TinyButton } from "@/components/ui/tiny-button";
 import { useDragAndDrop } from "@/lib/hooks/use-tasks-dnd";
-import type { DndContainer } from "@/types/operations";
+import type { DndContainer, DndItem } from "@/types/operations";
+import { useDroppable } from "@dnd-kit/core";
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverEvent,
+  DragOverlay,
+  DragStartEvent,
+  KeyboardSensor,
+  PointerSensor,
+  closestCorners,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   BookmarkPlus,
   ChevronDown,
+  ChevronRight,
   Import,
+  LayoutGrid,
+  List,
   MoreHorizontal,
+  Plus,
   Search,
   SlidersHorizontal,
   Tag,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Area,
@@ -24,30 +47,6 @@ import {
   YAxis,
 } from "recharts";
 
-type LeadStatus = "new" | "proposal-sent" | "contacted" | "qualified" | "lost";
-
-interface Lead {
-  id: string;
-  name: string;
-  company: string;
-  amount: number;
-  badge: string;
-  badgeColor: string;
-  badgeTextColor: string;
-  assignment: string;
-  time: string;
-  avatar: string;
-}
-
-interface LeadColumn {
-  id: LeadStatus;
-  title: string;
-  headerColor: string;
-  value: string;
-  count: number;
-  leads: Lead[];
-}
-
 const chartData = [
   { day: "Mon", value: 180 },
   { day: "Tues", value: 250 },
@@ -57,77 +56,37 @@ const chartData = [
   { day: "Sat", value: 420 },
 ];
 
-const makeLead = (id: string): Lead => ({
-  id,
-  name: "Francis Nasyomba",
-  company: "Raisin Capital Limited",
-  amount: 40010,
-  badge: "Medium",
-  badgeColor: "#E8F5E9",
-  badgeTextColor: "#22C55E",
-  assignment: "Unassigned",
-  time: "12 hours ago",
-  avatar: `https://i.pravatar.cc/150?u=${id}`,
-});
-
 const CRM_INITIAL_DATA: DndContainer[] = [
   {
     id: "new",
     title: "New Leads",
-    color: "#3B82F6",
+    color: "#2563EB",
     items: [
       {
         id: "lead-1",
         label: "Francis Nasyomba",
         description: "Raisin Capital Limited",
-        location: "Lagos, Nigeria",
+        location: "40010",
+        assignedBy: "Unassigned",
         time: "12 hours ago",
         category: "agent",
       },
       {
-        id: "lead-4",
-        label: "Amina Okoro",
-        description: "Vertex Holdings Ltd",
-        location: "Abuja, Nigeria",
-        time: "8 hours ago",
-        category: "agent",
-      },
-    ],
-  },
-  {
-    id: "contacted",
-    title: "Contacted",
-    color: "#BD7A22",
-    items: [
-      {
-        id: "lead-2",
-        label: "James Mwangi",
-        description: "Savannah Tech Solutions",
-        location: "Nairobi, Kenya",
-        time: "1 day ago",
-        category: "agent",
-      },
-    ],
-  },
-  {
-    id: "qualified",
-    title: "Qualified",
-    color: "#094B5C",
-    items: [
-      {
-        id: "lead-3",
-        label: "Chioma Eze",
-        description: "Greenfield Exports",
-        location: "Port Harcourt, Nigeria",
-        time: "2 days ago",
+        id: "lead-8",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
         category: "agent",
       },
       {
-        id: "lead-5",
-        label: "Kwame Asante",
-        description: "Golden Gate Finance",
-        location: "Accra, Ghana",
-        time: "3 days ago",
+        id: "lead-9",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
         category: "agent",
       },
     ],
@@ -135,14 +94,135 @@ const CRM_INITIAL_DATA: DndContainer[] = [
   {
     id: "proposal-sent",
     title: "Proposal Sent",
-    color: "#8B5CF6",
+    color: "#F59E0B",
     items: [
       {
-        id: "lead-6",
-        label: "Fatima Diallo",
-        description: "Sahel Innovations",
-        location: "Dakar, Senegal",
-        time: "4 days ago",
+        id: "lead-2",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+      {
+        id: "lead-10",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+      {
+        id: "lead-11",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+    ],
+  },
+  {
+    id: "contacted",
+    title: "Contacted",
+    color: "#E879A0",
+    items: [
+      {
+        id: "lead-3",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+      {
+        id: "lead-12",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+      {
+        id: "lead-13",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+    ],
+  },
+  {
+    id: "unqualified",
+    title: "Unqualified",
+    color: "#1A1F2C",
+    items: [
+      {
+        id: "lead-4",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+      {
+        id: "lead-14",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+      {
+        id: "lead-15",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+    ],
+  },
+  {
+    id: "qualified",
+    title: "Qualified",
+    color: "#10B981",
+    items: [
+      {
+        id: "lead-5",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+      {
+        id: "lead-16",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+      {
+        id: "lead-17",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
         category: "agent",
       },
     ],
@@ -151,17 +231,461 @@ const CRM_INITIAL_DATA: DndContainer[] = [
     id: "lost",
     title: "Lost",
     color: "#EF4444",
-    items: [],
+    items: [
+      {
+        id: "lead-6",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+      {
+        id: "lead-18",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+      {
+        id: "lead-19",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+    ],
+  },
+  {
+    id: "won",
+    title: "Won",
+    color: "#166534",
+    items: [
+      {
+        id: "lead-7",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+      {
+        id: "lead-20",
+        label: "Francis Nasyomba",
+        description: "Raisin Capital Limited",
+        location: "40010",
+        assignedBy: "Unassigned",
+        time: "12 hours ago",
+        category: "agent",
+      },
+    ],
   },
 ];
 
+/* ─── Lead Card ─────────────────────────────────────────── */
+
+function LeadCard({
+  item,
+  isDragOverlay,
+}: {
+  item: DndItem;
+  isDragOverlay?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const amount = item.location ? Number(item.location).toLocaleString() : "0";
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`bg-white rounded-[20px] p-4 shadow-[0px_2px_8px_rgba(0,0,0,0.06)] border border-gray-100 cursor-grab select-none mb-3 transition-all duration-200
+        ${isDragging && !isDragOverlay ? "opacity-40 scale-95" : ""}
+        ${isDragOverlay ? "shadow-2xl scale-105 cursor-grabbing" : "hover:shadow-md"}
+      `}
+    >
+      <p className="text-[#0B1215] font-bold text-[14px] leading-tight">{item.label}</p>
+      <p className="text-[#9CA3AF] text-[12px] mt-0.5">{item.description}</p>
+
+      <div className="flex items-center justify-between mt-3">
+        <span className="text-[#0B1215] font-bold text-[13px]">
+          ₦ {amount}
+        </span>
+        <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-3 py-0.5 rounded-full">
+          Medium
+        </span>
+      </div>
+
+      <div className="flex items-center justify-between mt-2">
+        <span className="text-[#9CA3AF] text-[11px]">{item.assignedBy ?? "Unassigned"}</span>
+        <span className="text-[#9CA3AF] text-[11px]">{item.time}</span>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Lead Column ────────────────────────────────────────── */
+
+function LeadColumn({
+  id,
+  title,
+  color,
+  items,
+  onAddCard,
+}: {
+  id: string;
+  title: string;
+  color: string;
+  items: DndItem[];
+  onAddCard: (item: DndItem) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+
+  return (
+    <div className="flex flex-col w-55 shrink-0">
+      {/* Header */}
+      <div
+        className="rounded-t-[20px] px-4 pt-3 pb-8 flex items-center justify-between"
+        style={{ backgroundColor: color }}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-white font-semibold text-[13px]">{title}</span>
+          <div
+            className="rounded-full min-w-5.5 h-5.5 px-1.5 flex items-center justify-center font-bold text-[11px] bg-white"
+            style={{ color }}
+          >
+            {items.length < 10 ? `0${items.length}` : items.length}
+          </div>
+        </div>
+        <span className="text-white text-[12px] font-medium">₦ 342,000</span>
+      </div>
+
+      {/* Cards */}
+      <div
+        ref={setNodeRef}
+        className={`flex-1 relative z-10 -mt-6 transition-colors duration-200 min-h-50 flex flex-col ${
+          isOver ? "bg-gray-100/60 rounded-[20px] ring-2 ring-inset ring-gray-200" : ""
+        }`}
+      >
+        <SortableContext
+          items={items.map((i) => i.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <div className="pt-2">
+            {items.map((item) => (
+              <LeadCard key={item.id} item={item} />
+            ))}
+          </div>
+        </SortableContext>
+
+        <button
+          onClick={() =>
+            onAddCard({
+              id: `lead-${Date.now()}`,
+              label: "New Lead",
+              description: "Company Name",
+              location: "0",
+              assignedBy: "Unassigned",
+              time: "Just now",
+            })
+          }
+          className="w-full flex items-center justify-between px-3 py-2.5 text-gray-400 hover:text-[#0B1215] transition-colors group mt-1"
+        >
+          <span className="text-[11px] font-medium">Add Leads</span>
+          <div className="w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center group-hover:border-[#0B1215] transition-colors">
+            <Plus size={11} />
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── List View ─────────────────────────────────────────── */
+
+function LeadListView({ containers }: { containers: DndContainer[] }) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const toggle = (id: string) =>
+    setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  const allLeads = containers.flatMap((c) =>
+    c.items.map((item) => ({ ...item, stageId: c.id, stageTitle: c.title, stageColor: c.color }))
+  );
+
+  return (
+    <div className="px-4 pb-6">
+      {/* Table header */}
+      <div className="grid grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 mb-1">
+        {["Lead", "Company", "Stage", "Amount", "Priority", "Assigned", ""].map((h) => (
+          <span key={h} className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
+            {h}
+          </span>
+        ))}
+      </div>
+
+      {containers.map((container) => {
+        const isOpen = !collapsed[container.id];
+        const total = container.items.reduce((s) => s + 40010, 0);
+
+        return (
+          <div key={container.id} className="mb-2">
+            {/* Stage group header */}
+            <button
+              onClick={() => toggle(container.id)}
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl hover:bg-gray-50 transition-colors group"
+            >
+              <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: container.color }} />
+              <span className="text-[13px] font-bold text-[#0B1215] flex-1 text-left">{container.title}</span>
+              <span
+                className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: `${container.color}20`, color: container.color }}
+              >
+                {container.items.length} leads
+              </span>
+              <span className="text-[12px] font-semibold text-gray-500 mr-2">
+                ₦ {(total).toLocaleString()}
+              </span>
+              <ChevronRight
+                size={14}
+                className={`text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+              />
+            </button>
+
+            {/* Rows */}
+            {isOpen && (
+              <div className="mt-0.5 overflow-hidden">
+                {container.items.map((item, idx) => (
+                  <div
+                    key={item.id}
+                    className={`grid grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-4 items-center px-4 py-3 rounded-xl transition-colors cursor-pointer hover:bg-gray-50 group/row ${
+                      idx % 2 === 0 ? "" : "bg-gray-50/50"
+                    }`}
+                  >
+                    {/* Lead name */}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div
+                        className="w-1 h-7 rounded-full shrink-0"
+                        style={{ backgroundColor: container.color }}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-bold text-[#0B1215] truncate">{item.label}</p>
+                        <p className="text-[11px] text-gray-400 truncate">{item.time}</p>
+                      </div>
+                    </div>
+
+                    {/* Company */}
+                    <span className="text-[12px] text-gray-500 truncate">{item.description}</span>
+
+                    {/* Stage pill */}
+                    <span
+                      className="text-[11px] font-semibold px-2.5 py-1 rounded-full w-fit"
+                      style={{ backgroundColor: `${container.color}18`, color: container.color }}
+                    >
+                      {container.title}
+                    </span>
+
+                    {/* Amount */}
+                    <span className="text-[13px] font-bold text-[#0B1215]">
+                      ₦ {Number(item.location).toLocaleString()}
+                    </span>
+
+                    {/* Priority badge */}
+                    <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-2.5 py-0.5 rounded-full w-fit">
+                      Medium
+                    </span>
+
+                    {/* Assigned */}
+                    <span className="text-[12px] text-gray-400">{item.assignedBy ?? "Unassigned"}</span>
+
+                    {/* Actions */}
+                    <button className="opacity-0 group-hover/row:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-gray-100">
+                      <MoreHorizontal size={14} className="text-gray-400" />
+                    </button>
+                  </div>
+                ))}
+
+                {/* Add row */}
+                <button className="flex items-center gap-2 px-4 py-2.5 text-gray-400 hover:text-[#0B1215] transition-colors group/add w-full">
+                  <div className="w-5 h-5 rounded-full border border-dashed border-gray-300 flex items-center justify-center group-hover/add:border-[#0B1215] transition-colors">
+                    <Plus size={11} />
+                  </div>
+                  <span className="text-[11px] font-medium">Add lead</span>
+                </button>
+              </div>
+            )}
+
+            {/* Divider */}
+            <div className="h-px bg-gray-100 mx-4 mt-1" />
+          </div>
+        );
+      })}
+
+      {/* Summary footer */}
+      <div className="mt-4 flex items-center justify-between px-4 py-3 bg-gray-50 rounded-xl">
+        <span className="text-[12px] font-semibold text-gray-500">
+          {allLeads.length} total leads across {containers.length} stages
+        </span>
+        <span className="text-[13px] font-bold text-[#0B1215]">
+          ₦ {(allLeads.length * 40010).toLocaleString()} pipeline value
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Lead Board ─────────────────────────────────────────── */
+
+function LeadBoard() {
+  const router = useRouter();
+  const {
+    containers,
+    addItem,
+    moveItem,
+    moveToContainer,
+    moveBetweenContainers,
+    findContainer,
+  } = useDragAndDrop(CRM_INITIAL_DATA);
+
+  const [activeItem, setActiveItem] = useState<DndItem | null>(null);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  function handleDragStart(event: DragStartEvent) {
+    const container = findContainer(event.active.id as string);
+    const item = container?.items.find((i) => i.id === event.active.id);
+    setActiveItem(item ?? null);
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const { active, over } = event;
+    if (!over) return;
+    const activeId = active.id as string;
+    const overId = over.id as string;
+    const activeContainer = findContainer(activeId);
+    const overIsContainer = containers.some((c) => c.id === overId);
+    const overContainer = overIsContainer
+      ? containers.find((c) => c.id === overId)
+      : findContainer(overId);
+    if (!activeContainer || !overContainer) return;
+    if (activeContainer.id === overContainer.id) return;
+    if (overIsContainer) {
+      moveToContainer(activeId, overId);
+    } else {
+      moveBetweenContainers(activeId, overId, activeContainer.id, overContainer.id);
+    }
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    setActiveItem(null);
+    if (!over) return;
+    const activeId = active.id as string;
+    const overId = over.id as string;
+    const activeContainer = findContainer(activeId);
+    const overIsContainer = containers.some((c) => c.id === overId);
+    const overContainer = overIsContainer
+      ? containers.find((c) => c.id === overId)
+      : findContainer(overId);
+    if (!activeContainer || !overContainer) return;
+    if (activeId !== overId && activeContainer.id === overContainer.id) {
+      moveItem(activeId, overId, activeContainer.id);
+    }
+  }
+
+  return (
+    <div className="bg-white shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] mt-6 overflow-hidden flex flex-col h-[calc(100vh-360px)] min-h-[70vh]">
+      {/* Board toolbar */}
+      <div className="flex items-center justify-end gap-3 px-6 pt-4 pb-2">
+        <button
+          onClick={() => router.push("/crm/leads")}
+          className="text-[11px] font-medium bg-[#0B1215] text-white px-4 py-1.5 rounded-lg hover:opacity-90 transition-all"
+        >
+          View All Leads
+        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setViewMode("grid")}
+            className={`p-1.5 rounded-md transition-colors ${
+              viewMode === "grid" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
+            }`}
+          >
+            <LayoutGrid size={16} />
+          </button>
+          <button
+            onClick={() => setViewMode("list")}
+            className={`p-1.5 rounded-md transition-colors ${
+              viewMode === "list" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
+            }`}
+          >
+            <List size={16} />
+          </button>
+        </div>
+      </div>
+
+      {viewMode === "list" ? (
+        <div className="flex-1 overflow-y-auto">
+          <LeadListView containers={containers} />
+        </div>
+      ) : (
+        /* Kanban columns */
+        <div className="flex-1 overflow-x-auto overflow-y-auto pb-6">
+          <DndContext
+            id="crm-board"
+            sensors={sensors}
+            collisionDetection={closestCorners}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="flex gap-3 px-4 min-w-max">
+              {containers.map((container) => (
+                <LeadColumn
+                  key={container.id}
+                  id={container.id}
+                  title={container.title}
+                  color={container.color}
+                  items={container.items}
+                  onAddCard={(item) => addItem(container.id, item)}
+                />
+              ))}
+            </div>
+
+            <DragOverlay>
+              {activeItem ? <LeadCard item={activeItem} isDragOverlay /> : null}
+            </DragOverlay>
+          </DndContext>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Summary Cards ──────────────────────────────────────── */
+
 function TotalLeadsCard() {
   return (
-    <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex flex-col justify-between min-w-0 sm:min-w-[451px]">
+    <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex flex-col justify-between min-w-0 sm:min-w-85">
       <div className="flex justify-between items-start">
-        <h3 className="text-[#34373C] text-sm font-medium">
-          Total Leads in Pipeline
-        </h3>
+        <h3 className="text-[#34373C] text-sm font-medium">Total Leads in Pipeline</h3>
         <button className="text-gray-400 hover:text-gray-600">
           <MoreHorizontal size={18} />
         </button>
@@ -173,26 +697,14 @@ function TotalLeadsCard() {
             <span className="text-[50px] font-medium text-[#0B1215] leading-none tracking-tight">
               4,100
             </span>
-            <span className="text-[#34373C] text-[15px] font-semibold mb-1">
-              Leads
-            </span>
+            <span className="text-[#34373C] text-[15px] font-semibold mb-1">Leads</span>
           </div>
-          <p className="text-[#34373C] text-[14px] mt-1.5">
-            73% increase this week
-          </p>
+          <p className="text-[#34373C] text-[14px] mt-1.5">73% increase this week</p>
         </div>
 
-        {/* Donut / Ring Chart */}
-        <div className="relative w-[100px] h-[100px] shrink-0">
+        <div className="relative w-25 h-25 shrink-0">
           <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-            <circle
-              cx="50"
-              cy="50"
-              r="38"
-              stroke="#F3F4F6"
-              strokeWidth="9"
-              fill="transparent"
-            />
+            <circle cx="50" cy="50" r="38" stroke="#F3F4F6" strokeWidth="9" fill="transparent" />
             <circle
               cx="50"
               cy="50"
@@ -221,11 +733,10 @@ function LeadsChart() {
     setMounted(true);
   }, []);
 
-  if (!mounted) return <div className="h-full w-full min-h-[180px]" />;
+  if (!mounted) return <div className="h-full w-full min-h-45" />;
 
   return (
-    <div className="rounded-3xl p-6 border-gray-100 flex-1 min-w-0 sm:min-w-[340px]">
-      {/* Day labels */}
+    <div className="rounded-3xl p-6 border-gray-100 flex-1 min-w-0 sm:min-w-75">
       <div className="flex items-center justify-between mb-1 px-2">
         {["Mon", "Tues", "Weds", "Thurs", "Fri", "Sat"].map((d) => (
           <span key={d} className="text-[11px] text-gray-400 font-medium">
@@ -234,13 +745,9 @@ function LeadsChart() {
         ))}
       </div>
 
-      {/* Chart with annotation */}
-      <div className="h-[130px] w-full relative">
+      <div className="h-32.5 w-full relative">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart
-            data={chartData}
-            margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
-          >
+          <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
             <defs>
               <linearGradient id="crmGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.2} />
@@ -259,13 +766,7 @@ function LeadsChart() {
               }}
               formatter={(value) => [`${value}`, "Leads"]}
             />
-            {/* Highlighted vertical reference line on Fri */}
-            <ReferenceLine
-              x="Fri"
-              stroke="#94A3B8"
-              strokeDasharray="4 4"
-              strokeWidth={1}
-            />
+            <ReferenceLine x="Fri" stroke="#94A3B8" strokeDasharray="4 4" strokeWidth={1} />
             <Area
               type="monotone"
               dataKey="value"
@@ -274,20 +775,14 @@ function LeadsChart() {
               fillOpacity={1}
               fill="url(#crmGradient)"
               dot={false}
-              activeDot={{
-                r: 5,
-                fill: "#3B82F6",
-                strokeWidth: 2,
-                stroke: "white",
-              }}
+              activeDot={{ r: 5, fill: "#3B82F6", strokeWidth: 2, stroke: "white" }}
             />
           </AreaChart>
         </ResponsiveContainer>
 
-        {/* Static annotation label */}
         <div className="absolute top-2 right-[28%] flex flex-col items-center pointer-events-none">
           <span className="text-[9px] text-gray-400 bg-white/90 px-1.5 py-0.5 rounded whitespace-nowrap">
-            300 New leads in June
+            300 New Leads in June
           </span>
         </div>
       </div>
@@ -295,112 +790,102 @@ function LeadsChart() {
   );
 }
 
-function AgentCard() {
+function AgentUploadsCard() {
   return (
-    <div className="bg-white rounded-[20px] py-9 px-2.25 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] w-full sm:max-w-85 flex justify-center items-center gap-4 mt-4">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="https://i.pravatar.cc/150?u=agent1"
-        alt="Agent Avatar"
-        className="w-[90.43px] h-[90.43px] rounded-full object-cover"
-      />
-      <div className="flex flex-col justify-between h-full">
-        <div>
-          <p className="text-[#34373C] text-[12px] font-semibold">
-            Customer metric
-          </p>
-          <p className="text-[10px] text-[#616263] ">Overall Insight</p>
+    <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex items-center gap-5 min-w-0 sm:min-w-70">
+      {/* Avatar with ring */}
+      <div className="relative shrink-0">
+        <div
+          className="w-20 h-20 rounded-full"
+          style={{
+            background: "conic-gradient(#FD6046 0% 60%, #F3F4F6 60% 100%)",
+            padding: "3px",
+          }}
+        >
+          <div className="w-full h-full rounded-full overflow-hidden bg-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/images/avatar/agent.png"
+              alt="Agent"
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src =
+                  "https://i.pravatar.cc/150?u=agent-crm";
+              }}
+            />
+          </div>
         </div>
-        <div>
-          <p className="text-[10px] text-[#616263] font-medium">
-            Promising Lead
-          </p>
+      </div>
+
+      {/* Stats */}
+      <div className="flex flex-col gap-1">
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-[36px] font-bold text-[#0B1215] leading-none">1,430</span>
+          <span className="text-[#9CA3AF] text-[13px] font-medium">Leads</span>
         </div>
+        <p className="text-[#6B7280] text-[12px]">Uploaded by your Agents</p>
+        <button className="flex items-center gap-1 text-[12px] font-semibold text-[#0B1215] mt-1 hover:opacity-70 transition-opacity">
+          View Leads
+          <ChevronRight size={14} />
+        </button>
       </div>
     </div>
   );
 }
 
-function CRMPipeline() {
-  const {
-    containers,
-    addItem,
-    moveItem,
-    moveToContainer,
-    moveBetweenContainers,
-    findContainer,
-  } = useDragAndDrop(CRM_INITIAL_DATA);
-
-  return (
-    <div className="shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] h-full border-b-0 mt-10 max-w-349.75 min-h-102.5">
-      <div className="flex items-center justify-end pt-3.75 pr-16.5">
-        <TinyButton>View All Leads</TinyButton>
-      </div>
-      <div className="p-6">
-        <TaskBoard
-          containers={containers}
-          activeTab="all"
-          onAddCard={addItem}
-          findContainer={findContainer}
-          moveItem={moveItem}
-          moveToContainer={moveToContainer}
-          moveBetweenContainers={moveBetweenContainers}
-        />
-      </div>
-    </div>
-  );
-}
+/* ─── Page ───────────────────────────────────────────────── */
 
 export default function CRMPage() {
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
-      <div className="max-w-400 mx-auto flex flex-col gap-5">
+      <div className="max-w-350 mx-auto flex flex-col gap-5">
+        {/* Top bar */}
         <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-          <div className="relative w-full max-w-114 group">
+          <div className="relative w-full max-w-110 group">
             <Search
               className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400"
               size={18}
             />
             <input
               type="text"
-              placeholder="Search for leads"
-              className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
+              placeholder="Search for Leads"
+              className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
             />
           </div>
 
-          {/* Right Actions */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] font-medium text-gray-500 transition-all">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               All Pipeline
               <ChevronDown size={13} />
             </button>
-            <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] font-medium text-gray-500 transition-all">
-              <Import size={13} />
-              Import
-            </button>
-            <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] font-medium text-gray-500 transition-all">
+            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <Tag size={13} />
               Label
             </button>
-            <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] font-medium text-gray-500 transition-all ml-25.5">
-              Filter
+            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <SlidersHorizontal size={13} />
+              Filter
             </button>
-            <button className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[10px] font-medium hover:opacity-90 transition-all">
+            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+              <Import size={13} />
+              Import
+            </button>
+            <button className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all">
               Add New Leads
               <BookmarkPlus size={15} />
             </button>
           </div>
         </div>
 
-        {/* Summary Cards Row */}
+        {/* Summary cards */}
         <div className="flex flex-col lg:flex-row gap-4 items-stretch">
           <TotalLeadsCard />
           <LeadsChart />
-          <AgentCard />
+          <AgentUploadsCard />
         </div>
 
-        <CRMPipeline />
+        {/* Pipeline board */}
+        <LeadBoard />
       </div>
     </div>
   );
