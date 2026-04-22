@@ -43,6 +43,7 @@ export interface Project {
   startDate?: string;
   endDate?: string | null;
   type?: string | null;
+  manager?: { id: number; name: string; email: string } | null;
 }
 
 function formatDeadline(endDate: string | null | undefined): string {
@@ -79,6 +80,7 @@ export function mapApiProject(item: {
   start_date?: string;
   end_date?: string | null;
   type?: string | null;
+  manager?: { id: number; name: string; email: string } | null;
   task_summary: {
     total_tasks: number;
     completed_tasks: number;
@@ -106,5 +108,6 @@ export function mapApiProject(item: {
     startDate: item.start_date,
     endDate: item.end_date,
     type: item.type,
+    manager: item.manager ?? null,
   };
 }

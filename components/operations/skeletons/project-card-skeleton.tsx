@@ -1,8 +1,8 @@
 export function ProjectCardSkeleton() {
   return (
-    <div className="relative pb-5">
+    <div className="relative pb-5 h-full">
       <div
-        className="bg-white rounded-3xl p-5 pt-6 border border-gray-100/80 animate-pulse"
+        className="bg-white rounded-3xl p-5 pt-6 border border-gray-100/80 animate-pulse h-full flex flex-col"
         style={{ boxShadow: "0px 1px 2px 2px #00000026" }}
       >
         {/* Title row */}
@@ -19,7 +19,7 @@ export function ProjectCardSkeleton() {
         </div>
 
         {/* Deadline */}
-        <div className="h-2.5 w-1/3 bg-gray-100 rounded-full mt-3" />
+        <div className="h-2.5 w-1/3 bg-gray-100 rounded-full mt-auto pt-4" />
 
         {/* Badges */}
         <div className="flex items-center gap-2 mt-3">

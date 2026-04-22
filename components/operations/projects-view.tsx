@@ -8,11 +8,16 @@ import {
   BookmarkPlus,
   ArrowUpRight,
   User,
+  ChevronLeft,
+  ChevronRight,
+  Edit2,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { Project } from "@/types/operations";
 import { CreateProjectDrawer } from "./create-project-drawer";
 import { ProjectCardSkeleton } from "./skeletons/project-card-skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import type { PaginationData } from "@/lib/api/projects";
 
 const STATUS_FILTERS = ["All", "In progress", "Completed", "Pending"];
 const PRIORITY_FILTERS = ["All", "High", "Medium", "Low"];
@@ -21,14 +26,25 @@ interface ProjectsViewProps {
   projects: Project[];
   onViewProject: (projectId: string) => void;
   isLoading?: boolean;
+  pagination?: PaginationData | null;
+  currentPage?: number;
+  onPageChange?: (page: number) => void;
 }
 
-export function ProjectsView({ projects, onViewProject, isLoading = false }: ProjectsViewProps) {
+export function ProjectsView({
+  projects,
+  onViewProject,
+  isLoading = false,
+  pagination = null,
+  currentPage = 1,
+  onPageChange,
+}: ProjectsViewProps) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [priorityFilter, setPriorityFilter] = useState("All");
   const [showFilters, setShowFilters] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
 
   const filtered = useMemo(
     () =>
@@ -109,7 +125,10 @@ export function ProjectsView({ projects, onViewProject, isLoading = false }: Pro
 
           {/* Create — shorter than search */}
           <button
-            onClick={() => setShowDrawer(true)}
+            onClick={() => {
+              setEditingProject(null);
+              setShowDrawer(true);
+            }}
             className="flex items-center gap-2 px-5 py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
             style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
           >
@@ -199,8 +218,31 @@ export function ProjectsView({ projects, onViewProject, isLoading = false }: Pro
           </div>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="py-20 text-center text-gray-400 text-[14px] font-medium">
-          No projects match your search.
+        <div className="py-10 bg-white rounded-3xl border border-gray-100/60" style={{ boxShadow: "0px 8px 12px 6px #00000026" }}>
+          <EmptyState
+            icon={Search}
+            title="No projects found"
+            description={
+              search || statusFilter !== "All" || priorityFilter !== "All"
+                ? "We couldn't find any projects matching your current filters. Try adjusting your search criteria."
+                : "You don't have any projects yet. Create a new project to get started."
+            }
+            actionLabel={
+              search || statusFilter !== "All" || priorityFilter !== "All"
+                ? "Clear filters"
+                : "Create Project"
+            }
+            onAction={() => {
+              if (search || statusFilter !== "All" || priorityFilter !== "All") {
+                setSearch("");
+                setStatusFilter("All");
+                setPriorityFilter("All");
+              } else {
+                setEditingProject(null);
+                setShowDrawer(true);
+              }
+            }}
+          />
         </div>
       ) : (
         <div
@@ -213,6 +255,10 @@ export function ProjectsView({ projects, onViewProject, isLoading = false }: Pro
                 key={project.id}
                 project={project}
                 onClick={() => onViewProject(project.id)}
+                onEdit={() => {
+                  setEditingProject(project);
+                  setShowDrawer(true);
+                }}
               />
             ))}
           </div>
@@ -220,7 +266,41 @@ export function ProjectsView({ projects, onViewProject, isLoading = false }: Pro
       )}
 
       {showDrawer && (
-        <CreateProjectDrawer onClose={() => setShowDrawer(false)} />
+        <CreateProjectDrawer 
+          onClose={() => {
+            setShowDrawer(false);
+            setEditingProject(null);
+          }} 
+          projectToEdit={editingProject || undefined}
+        />
+      )}
+
+      {/* ── Pagination ────────────────────────────────────────── */}
+      {pagination && (pagination.next_page_url || pagination.prev_page_url) && (
+        <div className="flex items-center justify-center gap-3 pt-2 pb-4">
+          <button
+            disabled={!pagination.prev_page_url}
+            onClick={() => onPageChange?.(currentPage - 1)}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 shadow-sm"
+          >
+            <ChevronLeft size={14} strokeWidth={2.5} />
+            Previous
+          </button>
+
+          <span className="text-[13px] font-bold text-[#09232D] px-3">
+            Page {currentPage}
+            {pagination.last_page ? ` of ${pagination.last_page}` : ""}
+          </span>
+
+          <button
+            disabled={!pagination.next_page_url}
+            onClick={() => onPageChange?.(currentPage + 1)}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-[#09232D] text-white hover:opacity-90 shadow-sm"
+          >
+            Next
+            <ChevronRight size={14} strokeWidth={2.5} />
+          </button>
+        </div>
       )}
     </div>
   );
@@ -230,10 +310,22 @@ export function ProjectsView({ projects, onViewProject, isLoading = false }: Pro
 function ProjectCard({
   project,
   onClick,
+  onEdit,
 }: {
   project: Project;
   onClick: () => void;
+  onEdit: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClick = () => setMenuOpen(false);
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [menuOpen]);
+
   const statusCls = (s: string) => {
     switch (s) {
       case "In progress":
@@ -260,25 +352,49 @@ function ProjectCard({
   };
 
   return (
-    <div className="relative pb-5">
+    <div className="relative pb-5 h-full">
       <div
-        className="bg-white rounded-3xl p-5 pt-6 border border-gray-100/80 transition-all"
+        className="bg-white rounded-3xl p-5 pt-6 border border-gray-100/80 transition-all h-full flex flex-col"
         style={{ boxShadow: "0px 1px 2px 2px #00000026" }}
       >
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="text-[15px] font-bold text-[#09232D] leading-snug">
+        <div className="flex items-start justify-between gap-2 relative">
+          <h3 className="text-[15px] font-bold text-[#09232D] leading-snug line-clamp-2 pr-6">
             {project.name}
           </h3>
-          <button className="text-gray-300 hover:text-gray-500 transition-colors mt-0.5 shrink-0">
-            <MoreVertical size={18} />
-          </button>
+          <div className="absolute right-0 top-0">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(!menuOpen);
+              }}
+              className="text-gray-500 hover:text-gray-700 hover:bg-gray-100 p-1 rounded-full transition-colors mt-0.5"
+            >
+              <MoreVertical size={18} />
+            </button>
+            
+            {menuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-36 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-10 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen(false);
+                    onEdit();
+                  }}
+                  className="flex items-center gap-2 w-full px-4 py-2 text-left text-[13px] font-medium text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+                >
+                  <Edit2 size={14} />
+                  Edit Project
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <p className="text-[11px] text-gray-400 leading-relaxed line-clamp-3 mt-1.5">
           {project.description}
         </p>
 
-        <p className="text-[11px] font-semibold text-gray-400 mt-3">
+        <p className="text-[11px] font-semibold text-gray-400 mt-auto pt-4">
           {project.deadline}
         </p>
 
@@ -327,7 +443,7 @@ function ProjectCard({
       <div className="absolute bottom-0 left-0 right-0 flex justify-center">
         <button
           onClick={onClick}
-          className="px-10 py-3 bg-[#09232D] text-white rounded-full text-[12px] font-bold hover:opacity-90 active:scale-[0.98] transition-all shadow-md"
+          className="px-10 py-3 bg-[#09232D] text-white rounded-full text-[12px] font-bold hover:opacity-90 active:scale-[0.98] transition-all shadow-md cursor-pointer"
         >
           View Project
         </button>

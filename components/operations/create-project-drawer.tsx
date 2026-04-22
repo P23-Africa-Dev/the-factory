@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { X, ChevronDown, User } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, ChevronDown, User, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useCreateProject } from "@/hooks/use-projects";
-import { getCompanyId } from "@/lib/auth/session";
+import { useCreateProject, useUpdateProject, useInternalUsers } from "@/hooks/use-projects";
+import type { Project } from "@/types/operations";
+import { useAuthStore } from "@/store/auth";
 import type { ApiProjectType, ApiProjectStatus, ApiProjectPriority } from "@/lib/api/projects";
 
 const PRIORITY_OPTIONS = ["High", "Medium", "Low"] as const;
@@ -17,12 +18,6 @@ const CATEGORY_OPTIONS = [
   "Awareness",
   "Other",
 ];
-const LEAD_OPTIONS = [
-  "Tunde Balogun",
-  "Ridwan Thomson",
-  "Amaka Osei",
-  "Abdul Kareem",
-];
 
 type Priority = (typeof PRIORITY_OPTIONS)[number];
 type Status = (typeof STATUS_OPTIONS)[number];
@@ -31,7 +26,7 @@ const EMPTY = {
   name: "",
   description: "",
   category: "",
-  lead: "",
+  lead: "",        // will store user ID as string
   startDate: "",
   deadline: "",
   priority: "" as Priority | "",
@@ -113,48 +108,119 @@ const PRIORITY_MAP: Record<string, ApiProjectPriority> = {
   Low: "low",
 };
 
-export function CreateProjectDrawer({ onClose }: { onClose: () => void }) {
+export function CreateProjectDrawer({ 
+  onClose,
+  projectToEdit
+}: { 
+  onClose: () => void;
+  projectToEdit?: Project;
+}) {
   const [form, setForm] = useState(EMPTY);
+  
+  useEffect(() => {
+    if (projectToEdit) {
+      const category = Object.entries(TYPE_MAP).find(([_, v]) => v === projectToEdit.type)?.[0] || "";
+      const statusStr = projectToEdit.status as Status;
+      const priorityStr = (projectToEdit.priority || "") as Priority | "";
+      
+      setForm({
+        name: projectToEdit.name,
+        description: projectToEdit.description || "",
+        category,
+        lead: projectToEdit.manager?.id ? String(projectToEdit.manager.id) : "",
+        startDate: projectToEdit.startDate?.split('T')[0] || "",
+        deadline: projectToEdit.endDate?.split('T')[0] || "",
+        priority: priorityStr,
+        status: statusStr,
+        trackAttendance: true, // Assuming default or fetch from project if available
+        commissionEnabled: false, // Assuming default
+      });
+    } else {
+      setForm(EMPTY);
+    }
+  }, [projectToEdit]);
+
   const set = <K extends keyof typeof EMPTY>(key: K, val: (typeof EMPTY)[K]) =>
     setForm((f) => ({ ...f, [key]: val }));
 
-  const { mutate, isPending } = useCreateProject({
+  // Get company_id from auth store (populated by /me endpoint)
+  const user = useAuthStore((s) => s.user);
+  const companyId = user?.active_company?.id;
+
+  // Fetch supervisors for the project lead dropdown
+  const { data: supervisors = [], isLoading: loadingSupervisors } = useInternalUsers({
+    role: "supervisor",
+  });
+
+  const { mutate: createMutate, isPending: isCreating } = useCreateProject({
     onSuccess: () => {
       toast.success("Project created successfully.");
       onClose();
     },
   });
 
+  const { mutate: updateMutate, isPending: isUpdating } = useUpdateProject(
+    projectToEdit?.id || "",
+    {
+      onSuccess: () => {
+        toast.success("Project updated successfully.");
+        onClose();
+      },
+    }
+  );
+
+  const isPending = isCreating || isUpdating;
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    const companyId = getCompanyId();
     if (!companyId) {
       toast.error("Company context not found. Please log in again.");
       return;
     }
 
-    mutate(
-      {
-        company_id: companyId,
-        name: form.name,
-        description: form.description || undefined,
-        type: TYPE_MAP[form.category] ?? null,
-        status: STATUS_MAP[form.status] ?? "active",
-        priority: form.priority ? PRIORITY_MAP[form.priority] ?? null : null,
-        start_date: form.startDate,
-        end_date: form.deadline || null,
-        // TODO: replace with real user ID from company members lookup
-        project_manager_user_id: 0,
-      },
-      {
-        onError: (err: unknown) => {
-          const message =
-            err instanceof Error ? err.message : "Failed to create project.";
-          toast.error(message);
-        },
-      }
-    );
+    if (!form.lead) {
+      toast.error("Please assign a project lead.");
+      return;
+    }
+
+    if (!form.startDate) {
+      toast.error("Please select a start date.");
+      return;
+    }
+
+    const payload = {
+      name: form.name,
+      description: form.description || undefined,
+      type: TYPE_MAP[form.category] ?? null,
+      status: STATUS_MAP[form.status] ?? "active",
+      priority: form.priority ? PRIORITY_MAP[form.priority] ?? null : null,
+      start_date: form.startDate,
+      end_date: form.deadline || null,
+      project_manager_user_id: Number(form.lead),
+    };
+
+    if (projectToEdit) {
+      updateMutate(
+        payload,
+        {
+          onError: (err: unknown) => {
+            const message = err instanceof Error ? err.message : "Failed to update project.";
+            toast.error(message);
+          },
+        }
+      );
+    } else {
+      createMutate(
+        { ...payload, company_id: companyId },
+        {
+          onError: (err: unknown) => {
+            const message = err instanceof Error ? err.message : "Failed to create project.";
+            toast.error(message);
+          },
+        }
+      );
+    }
   };
 
   return (
@@ -174,10 +240,10 @@ export function CreateProjectDrawer({ onClose }: { onClose: () => void }) {
           <div className="relative z-10 flex items-start justify-between">
             <div>
               <h2 className="text-[20px] font-bold text-[#09232D]">
-                Create New Project
+                {projectToEdit ? "Edit Project" : "Create New Project"}
               </h2>
               <p className="text-[12px] text-gray-400 mt-0.5">
-                Fill in the details below
+                {projectToEdit ? "Update project details below" : "Fill in the details below"}
               </p>
             </div>
             <button
@@ -243,29 +309,42 @@ export function CreateProjectDrawer({ onClose }: { onClose: () => void }) {
             </div>
           </Row>
 
-          {/* Project Lead */}
+          {/* Project Lead — populated from internal-users API */}
           <Row label="Project Lead">
             <div className="relative">
               <User
                 size={13}
                 className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
               />
-              <select
-                value={form.lead}
-                onChange={(e) => set("lead", e.target.value)}
-                className={`${FIELD} appearance-none pl-9 pr-9 cursor-pointer`}
-              >
-                <option value="" disabled>
-                  Assign a lead
-                </option>
-                {LEAD_OPTIONS.map((l) => (
-                  <option key={l}>{l}</option>
-                ))}
-              </select>
-              <ChevronDown
-                size={14}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              />
+              {loadingSupervisors ? (
+                <div className={`${FIELD} flex items-center gap-2 pl-9`}>
+                  <Loader2 size={14} className="animate-spin text-gray-400" />
+                  <span className="text-gray-400 text-[13px]">Loading leads...</span>
+                </div>
+              ) : (
+                <select
+                  value={form.lead}
+                  onChange={(e) => set("lead", e.target.value)}
+                  className={`${FIELD} appearance-none pl-9 pr-9 cursor-pointer`}
+                >
+                  <option value="" disabled>
+                    {supervisors.length === 0
+                      ? "No supervisors available"
+                      : "Assign a lead"}
+                  </option>
+                  {supervisors.map((s) => (
+                    <option key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {!loadingSupervisors && (
+                <ChevronDown
+                  size={14}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                />
+              )}
             </div>
           </Row>
 
@@ -284,10 +363,10 @@ export function CreateProjectDrawer({ onClose }: { onClose: () => void }) {
           {/* Deadline */}
           <Row label="Deadline">
             <input
-              required
               type="date"
               value={form.deadline}
               onChange={(e) => set("deadline", e.target.value)}
+              min={form.startDate || undefined}
               className={FIELD}
             />
           </Row>
@@ -359,7 +438,7 @@ export function CreateProjectDrawer({ onClose }: { onClose: () => void }) {
             disabled={isPending}
             className="w-full py-3.5 bg-[#09232D] text-white rounded-2xl text-[13px] font-bold hover:opacity-90 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {isPending ? "Creating…" : "Create Project"}
+            {isPending ? (projectToEdit ? "Updating…" : "Creating…") : (projectToEdit ? "Save Changes" : "Create Project")}
           </button>
         </div>
       </div>
