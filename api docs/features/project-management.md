@@ -32,6 +32,100 @@ Related task endpoints:
 1. `POST /api/v1/tasks` for management-created tasks
 2. `POST /api/v1/agent/tasks/self` for standalone agent self-tasks only
 
+### Helper Endpoint: Fetch Internal Users for Project Management
+
+`GET /api/v1/internal-users?role=supervisor&company_id=1`
+
+Used by frontend to fetch and populate the project manager selection dropdown when creating or updating projects.
+
+**Throttle:** 30 requests per minute
+
+**Authentication:** Bearer token required (Sanctum)
+
+**Query Parameters:**
+
+1. `role` (optional, string): Filter by internal user role. Allowed values: `supervisor` or `agent`. If omitted, returns all internal users.
+2. `company_id` (optional, integer): Filter by specific company. If omitted, uses the authenticated user's company context.
+
+**Request Example:**
+
+```bash
+GET /api/v1/internal-users?role=supervisor HTTP/1.1
+Authorization: Bearer {sanctum-token}
+```
+
+**Success Response (200):**
+
+```json
+{
+  "success": true,
+  "message": "Internal users retrieved successfully",
+  "data": [
+    {
+      "id": 14,
+      "name": "Chukwu Okonkwo",
+      "email": "chukwu@factory23.com",
+      "role": "supervisor"
+    },
+    {
+      "id": 22,
+      "name": "Ada Nwabueze",
+      "email": "ada@factory23.com",
+      "role": "supervisor"
+    }
+  ],
+  "errors": null
+}
+```
+
+**Empty List Response (200):**
+
+```json
+{
+  "success": true,
+  "message": "Internal users retrieved successfully",
+  "data": [],
+  "errors": null
+}
+```
+
+**Authorization Rules:**
+
+1. Authenticated user must be active (`is_active = true`)
+2. Authenticated user must have an active company membership (`company_users.is_active = true`)
+3. Only returns users from the authenticated user's company (company isolation enforced)
+4. Returned users are filtered to:
+   - Active status (`is_active = true`)
+   - Have an internal role assigned (`internal_role != null`)
+   - If `role` filter provided, must match the specified role
+
+**Error Responses:**
+
+- `401 Unauthorized` - No authentication token or invalid token
+- `400 Bad Request` - Invalid `role` filter (not 'supervisor' or 'agent')
+- `400 Bad Request` - `company_id` does not exist
+- `403 Forbidden` - User has no company context or company is inactive
+
+**Frontend Usage:**
+
+When creating or updating a project, the frontend should:
+
+1. Fetch supervisors for project manager selection:
+   ```bash
+   GET /api/v1/internal-users?role=supervisor
+   ```
+
+2. Handle empty response (no supervisors available):
+   ```javascript
+   if (response.data.length === 0) {
+     showError('No supervisors available in your company');
+   }
+   ```
+
+3. Populate dropdown with returned users using `id` as value and `name` as display text
+
+4. On form submission, send selected `id` as `project_manager_user_id` in the create/update project request
+
 ## Authentication and Authorization
 
 All project endpoints require Sanctum bearer token.
@@ -40,9 +134,10 @@ Authorization is resolved from `company_users` membership:
 
 1. `owner|admin|supervisor` can manage projects.
 2. `agent` cannot access project endpoints.
-3. The active company context must exist and the company must be active.
+3. `company_id` is required on project creation and must resolve to an active company context for the authenticated user.
 4. `project_manager_user_id` must belong to the same company and must have `owner|admin|supervisor` role.
 5. `assigned_team` users must belong to the same company.
+6. Cross-company manager or team assignment is rejected with validation errors.
 
 ## Data Model
 
@@ -117,11 +212,17 @@ Request is multipart when sending attachments:
   "start_date": "2026-04-15",
   "end_date": "2026-04-17",
   "project_manager_user_id": 14,
+  "project_manager": 14,
   "assigned_team": [25, 31],
   "territory_zone": "Lagos Mainland",
   "notes": "Launch before weekend campaign window."
 }
 ```
+
+Notes:
+
+1. `project_manager_user_id` is the canonical field.
+2. `project_manager` is accepted as a backward-compatible alias and normalized server-side.
 
 Attachment fields when multipart:
 
@@ -227,7 +328,8 @@ Common update fields:
 
 Create project:
 
-1. `name` required, string, min 3, max 255
+1. `company_id` required, integer, existing company ID
+2. `name` required, string, min 3, max 255
 2. `description` nullable, string, max 5000
 3. `type` nullable, enum `sales|inspection|deployment`
 4. `status` required, enum `active|planning|completed`
@@ -235,6 +337,7 @@ Create project:
 6. `start_date` required, valid date
 7. `end_date` nullable, valid date, must be same as or after `start_date`
 8. `project_manager_user_id` required, existing user ID
+9. `project_manager` optional alias for `project_manager_user_id`
 9. `assigned_team` nullable array, max 100
 10. `assigned_team.*` distinct existing user IDs
 11. `territory_zone` nullable, string, max 255

@@ -13,7 +13,7 @@ Authentication is role-aware and now uses two entry points:
 ## User Flow
 1. User selects login type in UI.
 2. Frontend sends credentials to the corresponding endpoint.
-3. Backend validates role and onboarding/account status.
+3. Backend validates role, onboarding/account status, and active company membership.
 4. Frontend stores bearer token and role metadata.
 5. Frontend routes user to the correct dashboard.
 

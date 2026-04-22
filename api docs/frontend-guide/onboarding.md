@@ -10,7 +10,8 @@ This flow handles new self-serve user onboarding using password setup, email OTP
 4. Frontend verifies OTP and receives bearer token.
 5. Frontend stores token and loads user profile.
 6. User submits workspace form to complete onboarding.
-7. User can immediately sign in from login screen using the same email and password.
+7. Backend creates both workspace and company membership (`company_users.role=owner`) in the same transaction.
+8. User can immediately sign in from login screen using the same email and password.
 
 ## API Endpoints
 - POST /api/v1/auth/register
