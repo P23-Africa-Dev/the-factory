@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Poppins, Montserrat } from "next/font/google";
 import "./globals.css";
 import QueryProvider from "@/components/providers/query-provider";
+import AuthInitializer from "@/components/providers/auth-initializer";
 import { Toaster } from "sonner";
 
 const poppins = Poppins({
@@ -33,7 +34,11 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
-        <QueryProvider>{children}</QueryProvider>
+        <QueryProvider>
+          <AuthInitializer>
+            {children}
+          </AuthInitializer>
+        </QueryProvider>
         <Toaster position="top-center" richColors />
       </body>
     </html>

@@ -68,6 +68,7 @@ export default function LoginForm() {
         avatar: me.data.avatar,
         user_type: res.data.user_type,
         access_role: res.data.access_role,
+        active_company: me.data.active_company,
       });
 
       toast.success(res.message);

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { ProjectsView } from "@/components/operations/projects-view";
 import { AllTasksView } from "@/components/operations/all-tasks-view";
@@ -22,7 +22,8 @@ function ProjectsContent() {
 
   const activeTab = (searchParams.get("tab") as ProjectsTab) || "projects";
 
-  const companyId = typeof window !== "undefined" ? getCompanyId() : null;
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  useEffect(() => { setCompanyId(getCompanyId()); }, []);
   const { data: projects = [], isLoading } = useProjects(
     companyId ? { company_id: companyId } : {}
   );
