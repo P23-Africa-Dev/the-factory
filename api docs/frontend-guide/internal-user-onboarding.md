@@ -16,8 +16,9 @@ This feature allows managers to create and onboard internal users while preservi
 ## API Endpoints
 Public:
 1. `POST /api/v1/agent/login`
-2. `POST /api/v1/internal/onboarding/preview`
-3. `POST /api/v1/internal/onboarding/complete`
+2. `GET /api/v1/avatars?gender=male|female`
+3. `POST /api/v1/internal/onboarding/preview`
+4. `POST /api/v1/internal/onboarding/complete`
 
 Authenticated:
 1. `POST /api/v1/internal-users`
@@ -83,8 +84,27 @@ Invitation preview success:
       "gender": "male",
       "avatar_key": "male_02"
     },
+    "avatar_options": [
+      {
+        "key": "avatar_1",
+        "url": "http://localhost/storage/avatar/male/avatar_1.png",
+        "svg": null
+      }
+    ],
     "expires_at": "2026-04-11T13:00:00+00:00"
   }
+}
+```
+
+Avatar list success:
+
+```json
+{
+  "success": true,
+  "data": [
+    "http://localhost/storage/avatar/male/avatar_1.png",
+    "http://localhost/storage/avatar/male/avatar_2.png"
+  ]
 }
 ```
 
@@ -158,4 +178,5 @@ export async function loginAgent(email, password) {
 1. Use preview payload to prefill UI form fields.
 2. Allow users to override prefilled phone/gender/avatar before completion.
 3. Supervisors should not use agent login endpoint.
-4. For new integrations, avoid deprecated `/api/v1/internal/login` and use role-specific current endpoints.
+4. Avatar URL list is gender-specific and publicly accessible through storage link.
+5. For new integrations, avoid deprecated `/api/v1/internal/login` and use role-specific current endpoints.
