@@ -78,7 +78,7 @@ function PerformanceCard({
 }) {
   return (
     <div className="bg-[#0B1C25] rounded-[20px] p-6 sm:p-8 relative shadow-sm flex items-center gap-6 lg:gap-10 overflow-hidden min-h-45 max-h-52 shrink-0">
-      <div className="relative w-30 h-30 shrink-0">
+      <div className="relative w-41.5 h-41.5 shrink-0">
         <svg
           viewBox="0 0 100 100"
           className="w-full h-full"
@@ -92,7 +92,7 @@ function PerformanceCard({
             fill="none"
             stroke="#6B9A9A"
             strokeOpacity="0.3"
-            strokeWidth="10"
+            strokeWidth="6"
             strokeLinecap="round"
             strokeDasharray={`${ARC_LENGTH} ${CIRCUMFERENCE}`}
           />
@@ -103,7 +103,7 @@ function PerformanceCard({
             r="40"
             fill="none"
             stroke="white"
-            strokeWidth="10"
+            strokeWidth="6"
             strokeLinecap="round"
             strokeDasharray={`${ARC_LENGTH} ${CIRCUMFERENCE}`}
           />
@@ -114,7 +114,7 @@ function PerformanceCard({
             r="40"
             fill="none"
             stroke="#6B9A9A"
-            strokeWidth="10"
+            strokeWidth="6"
             strokeLinecap="round"
             strokeDasharray={`${animatedDash} ${CIRCUMFERENCE}`}
           />
@@ -122,17 +122,17 @@ function PerformanceCard({
           <circle
             cx={dotX}
             cy={dotY}
-            r="6"
-            fill="#8AB8B8"
-            stroke="#0B1C25"
-            strokeWidth="2.5"
+            r="3"
+            fill="#fff"
+            stroke="#7BB6B8"
+            strokeWidth="4px"
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
           <div className="w-10 h-10 rounded-full bg-[#EF6C55] flex items-center justify-center shadow-lg">
             <User size={18} className="text-white fill-current" />
           </div>
-          <span className="text-white font-extrabold text-[15px] leading-none">
+          <span className="text-white font-semibold text-[40px] leading-none">
             {percent}%
           </span>
         </div>
