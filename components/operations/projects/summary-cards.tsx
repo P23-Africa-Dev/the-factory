@@ -47,8 +47,7 @@ export function SummaryCards({ projects }: SummaryCardsProps) {
   const dotY = 50 + 40 * Math.sin(dotAngle);
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-4 w-full animate-in fade-in slide-in-from-bottom-2 duration-500 h-49">
-      {/* 1. Overall Project Performance */}
+    <div className="flex justify-between w-full px-8 animate-in fade-in slide-in-from-bottom-2 duration-500 h-49">
       <PerformanceCard
         percent={percent}
         animatedDash={animatedDash}
@@ -56,14 +55,11 @@ export function SummaryCards({ projects }: SummaryCardsProps) {
         dotY={dotY}
       />
 
-      {/* 2. Total Projects */}
-      <TotalProjectsCard />
-
-      {/* 3. Pending Projects */}
-      <PendingProjectsCard />
-
-      {/* 4. Agents View */}
-      <AgentsCard />
+      <div className="flex gap-6.25">
+        <TotalProjectsCard />
+        <PendingProjectsCard />
+        <AgentsCard />
+      </div>
     </div>
   );
 }
@@ -81,7 +77,7 @@ function PerformanceCard({
   dotY: number;
 }) {
   return (
-    <div className="xl:col-span-4 bg-[#0B1C25] rounded-[20px] p-6 sm:p-8 relative shadow-sm flex items-center gap-6 lg:gap-10 overflow-hidden min-h-45">
+    <div className="bg-[#0B1C25] rounded-[20px] p-6 sm:p-8 relative shadow-sm flex items-center gap-6 lg:gap-10 overflow-hidden min-h-45 max-h-52 shrink-0">
       <div className="relative w-30 h-30 shrink-0">
         <svg
           viewBox="0 0 100 100"
@@ -142,17 +138,14 @@ function PerformanceCard({
         </div>
       </div>
       <div className="flex flex-col z-10 text-white min-w-0">
-        <p className="text-white/60 font-normal text-[14px] sm:text-[16px] leading-tight mb-0.5">
+        <p className="text-[#E8E8E8] font-normal text-[14px] sm:text-[16px] leading-tight mb-0.5">
           Overall Project
         </p>
-        <h2 className="text-[28px] sm:text-[34px] font-extrabold leading-[1.1] mb-3 tracking-tight">
+        <h2 className="text-[28px] sm:text-[36px] font-semibold leading-[1.1] mb-7 tracking-tight">
           Performance
         </h2>
-        <p className="text-[13px] font-medium text-white/60">
-          Status:{" "}
-          <span className="text-white font-semibold">
-            {getPerformanceLabel(percent)}
-          </span>
+        <p className="text-[14px] font-medium text-[#E8E8E8]">
+          Status: <span>{getPerformanceLabel(percent)}</span>
         </p>
       </div>
     </div>
@@ -162,7 +155,7 @@ function PerformanceCard({
 // ─── Total Projects Card ──────────────────────────────────────────────────────
 function TotalProjectsCard() {
   return (
-    <div className="xl:col-span-3 px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 max-w-[279px]">
+    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-69.75 shrink-0">
       <div className="flex items-start justify-between pt-5 sm:pt-6">
         <div>
           <p className="text-[14px] font-medium text-[#2D2D2D]">
@@ -208,7 +201,7 @@ function TotalProjectsCard() {
 // ─── Pending Projects Card ────────────────────────────────────────────────────
 function PendingProjectsCard() {
   return (
-    <div className="xl:col-span-3 px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 max-w-[279px]">
+    <div className="xl:col-span-3 px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-69.75 shrink-0">
       <div className="flex items-start justify-between pt-5 sm:pt-6">
         <div>
           <p className="text-[14px] font-medium text-[#2D2D2D]">

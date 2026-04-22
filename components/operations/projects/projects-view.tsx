@@ -1,12 +1,10 @@
-"use client";
-
-import { useState, useMemo } from "react";
-import { Search, SlidersHorizontal, BookmarkPlus } from "lucide-react";
 import { Project } from "@/types/operations";
+import { BookmarkPlus, Search, SlidersHorizontal } from "lucide-react";
+import { useMemo, useState } from "react";
+import { CreateProjectDrawer } from "../create-project-drawer";
+import { PRIORITY_FILTERS, STATUS_FILTERS } from "./constants";
 import { ProjectCard } from "./project-card";
 import { SummaryCards } from "./summary-cards";
-import { CreateProjectDrawer } from "../create-project-drawer";
-import { STATUS_FILTERS, PRIORITY_FILTERS } from "./constants";
 
 interface ProjectsViewProps {
   projects: Project[];
@@ -98,7 +96,7 @@ function Toolbar({
 }: ToolbarProps) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <h1 className="text-[20px] font-extrabold text-[#09232D] shrink-0">
+      <h1 className="text-[20px] font-extrabold text-dash-dark shrink-0">
         All project
       </h1>
 
@@ -123,11 +121,10 @@ interface SearchInputProps {
 }
 
 function SearchInput({ value, onChange }: SearchInputProps) {
-  const { Search: SearchIcon } = require("lucide-react");
   return (
-    <div className="relative w-full md:w-[458px] group shrink-0">
-      <SearchIcon
-        className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#09232D] transition-colors"
+    <div className="relative w-full md:w-114.5 group shrink-0">
+      <Search
+        className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-dark transition-colors"
         size={18}
         strokeWidth={2}
       />
@@ -136,7 +133,7 @@ function SearchInput({ value, onChange }: SearchInputProps) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search for Agents"
-        className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-[#09232D]/10 transition-all font-sans"
+        className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-dash-dark/10 transition-all font-sans"
         style={{
           height: "46px",
           borderRadius: "24px",
@@ -191,7 +188,7 @@ function CreateButton({ onClick }: CreateButtonProps) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2 px-5 py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
+      className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
       style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
     >
       <BookmarkPlus size={15} strokeWidth={2} />
