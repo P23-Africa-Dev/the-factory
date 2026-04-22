@@ -140,7 +140,7 @@ export default function ScheduleDemoPage() {
               Scale your <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#6FA8A6] to-[#A3E635]">workflow</span>
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-white/50">
-              Transform your team's productivity with Factory 23. Tell us about your goals and we'll design a custom onboarding experience.
+              Transform your team&apos;s productivity with Factory 23. Tell us about your goals and we&apos;ll design a custom onboarding experience.
             </p>
           </div>
 
@@ -293,7 +293,7 @@ export default function ScheduleDemoPage() {
 
                 <div className="mt-10 rounded-[32px] border border-white/10 bg-gradient-to-br from-white/[0.05] to-transparent p-8">
                   <p className="italic text-white/60 text-sm leading-relaxed">
-                    "The Factory has revolutionized how we manage our global remote workforce. The schedule demo flow was the first step in a very professional partnership."
+                    &quot;The Factory has revolutionized how we manage our global remote workforce. The schedule demo flow was the first step in a very professional partnership.&quot;
                   </p>
                   <div className="mt-6 flex items-center gap-4">
                     <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-[#6FA8A6] to-[#A3E635]" />

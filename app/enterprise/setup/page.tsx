@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -34,7 +34,7 @@ const setupSchema = z
 
 type SetupFormValues = z.infer<typeof setupSchema>;
 
-export default function EnterpriseSetupPage() {
+function EnterpriseSetupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [globalError, setGlobalError] = useState("");
@@ -188,5 +188,13 @@ export default function EnterpriseSetupPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function EnterpriseSetupPage() {
+  return (
+    <Suspense>
+      <EnterpriseSetupContent />
+    </Suspense>
   );
 }
