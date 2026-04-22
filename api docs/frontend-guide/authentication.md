@@ -21,6 +21,7 @@ Authentication is role-aware and now uses two entry points:
 1. `POST /api/v1/auth/login`
 2. `POST /api/v1/agent/login`
 3. `POST /api/v1/internal/login` only for temporary backward compatibility with older agent clients
+4. `GET /api/v1/user/me` to fetch authenticated user and active company context
 
 ## Request Examples
 Shared auth login:
@@ -174,6 +175,25 @@ export async function loginAgent(email, password) {
 
   return body.data;
 }
+
+export async function getMe() {
+  const response = await fetch(`${API_BASE}/user/me`, {
+    headers: authHeaders(),
+  });
+
+  const body = await response.json();
+  if (!response.ok || !body.success) throw body;
+
+  // Always bind active company context from backend response
+  const activeCompany = body.data.active_company;
+  if (activeCompany?.id) {
+    localStorage.setItem('active_company_id', String(activeCompany.id));
+    localStorage.setItem('active_company_code', activeCompany.company_id);
+    localStorage.setItem('active_company_role', activeCompany.role);
+  }
+
+  return body.data;
+}
 ```
 
 ## Notes & Edge Cases
@@ -181,3 +201,5 @@ export async function loginAgent(email, password) {
 2. Agents must use agent login, not shared auth login.
 3. Use role metadata (`access_role`, `user_type`, `internal_role`) to route UI after login.
 4. Legacy `/api/v1/internal/login` may still exist for compatibility, but new frontend integrations should use `/api/v1/agent/login`.
+5. For company-scoped APIs, prefer omitting `company_id` unless user explicitly switches company context.
+6. If sending `company_id`, use `active_company.id` from `/api/v1/user/me`; do not use `user.id`.
