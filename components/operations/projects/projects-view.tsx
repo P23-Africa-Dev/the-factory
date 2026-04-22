@@ -96,18 +96,13 @@ function Toolbar({
 }: ToolbarProps) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <h1 className="text-[20px] font-extrabold text-dash-dark shrink-0">
+      <h1 className="text-[20px] font-extrabold text-dash-dark shrink-0 ml-10.25">
         All project
       </h1>
 
       <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 md:justify-end min-w-0">
-        {/* Search Input */}
         <SearchInput value={search} onChange={onSearchChange} />
-
-        {/* Filter Button */}
         <FilterButton active={showFilters} onClick={onFilterToggle} />
-
-        {/* Create Button */}
         <CreateButton onClick={onCreateClick} />
       </div>
     </div>
