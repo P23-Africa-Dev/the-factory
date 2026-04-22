@@ -169,42 +169,64 @@ function ProjectTasksContent() {
         <div className="flex-1 xl:flex-3 min-w-0 flex flex-col gap-5 w-full">
 
           {/* Header row */}
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4 md:mb-8">
-            <div className="flex items-start gap-3">
+          <div className="flex flex-col gap-6 mb-8">
+            <div className="flex flex-col md:flex-row items-start gap-4 md:gap-12">
               <button
                 onClick={() => router.push("/projects")}
-                className="mt-1 flex items-center justify-center w-8 h-8 rounded-full bg-white border border-gray-100 shadow-sm hover:shadow-md hover:text-[#09232D] text-gray-400 transition-all shrink-0 cursor-pointer"
+                className="mt-1 text-[#092635] hover:opacity-70 transition-all shrink-0 cursor-pointer"
               >
-                <ChevronLeft size={18} strokeWidth={2.5} />
+                <ChevronLeft size={24} strokeWidth={2} />
               </button>
-              <div>
-                <h1 className="text-[18px] font-extrabold text-[#09232D] leading-tight">
-                  Product Outreach
-                </h1>
-                <p className="text-[11px] text-gray-400 mt-0.5 max-w-xs leading-relaxed">
-                  Physical outreach and transforms executive networking from
-                  casual connections to strategic growth
-                </p>
+              
+              <div className="flex-1">
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                  <div>
+                    <h1 className="text-[20px] font-extrabold text-[#092635] leading-tight">
+                      Product Outreach
+                    </h1>
+                    <p className="text-[16px] text-[#717171] mt-1 max-w-2xl font-light">
+                      Physical outreach and transforms executive networking from
+                      casual connections to strategic growth
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      className="flex items-center gap-2 px-4 md:px-5 py-2.5 md:py-3 rounded-xl transition-all cursor-pointer bg-white border border-[#D1D1D1] shadow-sm hover:bg-gray-50 flex-1 sm:flex-initial justify-center"
+                    >
+                      <SlidersHorizontal size={16} strokeWidth={2} className="text-gray-400" />
+                      <span className="text-gray-500 text-[12px] font-medium">Filter</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowModal(true)}
+                      className="flex items-center gap-2 px-4 md:px-5 py-2.5 md:py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shadow-md cursor-pointer whitespace-nowrap flex-1 sm:flex-initial justify-center"
+                    >
+                      <BookmarkPlus size={16} strokeWidth={2} />
+                      <span>Create New Task</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 md:gap-8 mt-6 md:mt-8">
+                  <div className="space-y-1">
+                    <h3 className="text-[14px] md:text-[16px] font-bold text-[#092635]">Created By</h3>
+                    <p className="text-[14px] md:text-[16px] text-[#717171] font-light">Ridwan Thomson (Supervisor)</p>
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-[14px] md:text-[16px] font-bold text-[#092635]">Due Date</h3>
+                    <p className="text-[14px] md:text-[16px] text-[#717171] font-light">Tomorrow (Friday, 3rd April. 2026)</p>
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-[14px] md:text-[16px] font-bold text-[#092635]">Emphasis</h3>
+                    <div className="mt-1">
+                      <span className="px-6 py-1 bg-[#C241B4] text-white rounded-full text-[12px] font-bold inline-flex items-center justify-center min-w-[100px]">
+                        Medium
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-
-            <div className="flex items-center gap-2 sm:shrink-0">
-              <button
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] font-medium transition-all cursor-pointer"
-                style={{ background: "#F8F8F8", border: "0.5px solid #D1D1D1" }}
-              >
-                <SlidersHorizontal size={13} strokeWidth={2} className="text-gray-400" />
-                <span className="text-gray-500 text-[10px]">Filter</span>
-              </button>
-
-              <button
-                onClick={() => setShowModal(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-[#09232D] text-white rounded-xl text-[12px] font-bold hover:opacity-90 transition-all shadow-md cursor-pointer whitespace-nowrap"
-              >
-                <BookmarkPlus size={14} strokeWidth={2} />
-                <span className="hidden sm:inline">Create New Task</span>
-                <span className="sm:hidden">New Task</span>
-              </button>
             </div>
           </div>
 

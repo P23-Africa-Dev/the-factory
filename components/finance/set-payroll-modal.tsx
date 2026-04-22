@@ -16,6 +16,20 @@ interface SetPayrollModalProps {
   onClose: () => void;
 }
 
+type FormErrors = Partial<{
+  baseSalary: string;
+  payBasis: string;
+  workDays: string;
+  workHours: string;
+}>;
+
+type ProductErrors = { name?: string; rate?: string }[];
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="text-[11px] text-red-500 mt-0.5 text-right">{message}</p>;
+}
+
 export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
   const [salaryType, setSalaryType] = useState("Monthly");
   const [baseSalary, setBaseSalary] = useState("₦30,000");
@@ -30,6 +44,8 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
   const [products, setProducts] = useState<ProductEntry[]>([
     { name: "", rate: "" },
   ]);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [productErrors, setProductErrors] = useState<ProductErrors>([]);
 
   if (!isOpen) return null;
 
@@ -37,6 +53,74 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
     const newEnabled = !commissionEnabled;
     setCommissionEnabled(newEnabled);
     setCommissionModalOpen(newEnabled);
+  };
+
+  const clearError = (field: keyof FormErrors) =>
+    setErrors((prev) => ({ ...prev, [field]: undefined }));
+
+  const clearProductError = (index: number, field: "name" | "rate") =>
+    setProductErrors((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: undefined };
+      return next;
+    });
+
+  const validate = (): { formErrors: FormErrors; productErrors: ProductErrors } => {
+    const formErrors: FormErrors = {};
+    const prodErrs: ProductErrors = [];
+
+    const salaryNumeric = baseSalary.replace(/[₦,\s]/g, "");
+    if (!baseSalary.trim()) {
+      formErrors.baseSalary = "Base salary is required.";
+    } else if (isNaN(Number(salaryNumeric)) || Number(salaryNumeric) <= 0) {
+      formErrors.baseSalary = "Enter a valid salary amount.";
+    }
+
+    if (!payBasis.trim()) formErrors.payBasis = "Pay basis is required.";
+
+    const daysNumeric = workDays.replace(/[^0-9.]/g, "");
+    if (!workDays.trim()) {
+      formErrors.workDays = "Work days is required.";
+    } else if (!daysNumeric || isNaN(Number(daysNumeric)) || Number(daysNumeric) <= 0) {
+      formErrors.workDays = "Enter a valid number of days.";
+    }
+
+    const hoursNumeric = workHours.replace(/[^0-9.]/g, "");
+    if (!workHours.trim()) {
+      formErrors.workHours = "Work hours is required.";
+    } else if (!hoursNumeric || isNaN(Number(hoursNumeric)) || Number(hoursNumeric) <= 0) {
+      formErrors.workHours = "Enter a valid number of hours.";
+    }
+
+    if (commissionEnabled) {
+      products.forEach((p) => {
+        const e: { name?: string; rate?: string } = {};
+        if (!p.name.trim()) e.name = "Required.";
+        if (!p.rate.trim()) {
+          e.rate = "Required.";
+        } else if (isNaN(Number(p.rate)) || Number(p.rate) <= 0) {
+          e.rate = "Must be a positive number.";
+        }
+        prodErrs.push(e);
+      });
+    }
+
+    return { formErrors, productErrors: prodErrs };
+  };
+
+  const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const { formErrors: fe, productErrors: pe } = validate();
+    const hasFormErrors = Object.keys(fe).length > 0;
+    const hasProdErrors = pe.some((e) => e.name || e.rate);
+
+    if (hasFormErrors || hasProdErrors) {
+      setErrors(fe);
+      setProductErrors(pe);
+      if (hasProdErrors) setCommissionModalOpen(true);
+      return;
+    }
+    onClose();
   };
 
   return (
@@ -72,7 +156,11 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
           </div>
 
           {/* Body */}
-          <div className="px-7 pb-6 max-h-[calc(100vh-200px)] overflow-y-auto">
+          <form
+            id="set-payroll-form"
+            onSubmit={handleSubmit}
+            className="px-7 pb-6 max-h-[calc(100vh-200px)] overflow-y-auto"
+          >
             {/* Salary */}
             <div className="space-y-4 mb-5">
               <SectionDivider label="Salary" />
@@ -87,47 +175,57 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
                   <option>Daily</option>
                 </InlineSelect>
               </FormRow>
-              <FormRow label="Base Salary">
-                <InlineInput
-                  value={baseSalary}
-                  onChange={(e) => setBaseSalary(e.target.value)}
-                  className="col-span-2"
-                />
-              </FormRow>
-              <FormRow label="Pay Basis">
-                <InlineInput
-                  value={payBasis}
-                  onChange={(e) => setPayBasis(e.target.value)}
-                  className="col-span-2"
-                />
-              </FormRow>
+              <div>
+                <FormRow label="Base Salary">
+                  <InlineInput
+                    value={baseSalary}
+                    onChange={(e) => { setBaseSalary(e.target.value); clearError("baseSalary"); }}
+                    className="col-span-2"
+                  />
+                </FormRow>
+                <FieldError message={errors.baseSalary} />
+              </div>
+              <div>
+                <FormRow label="Pay Basis">
+                  <InlineInput
+                    value={payBasis}
+                    onChange={(e) => { setPayBasis(e.target.value); clearError("payBasis"); }}
+                    className="col-span-2"
+                  />
+                </FormRow>
+                <FieldError message={errors.payBasis} />
+              </div>
             </div>
 
             {/* Attendance */}
             <div className="space-y-4 mb-5">
               <SectionDivider label="Attendance" />
-              <FormRow label="Work Days">
-                <InlineInput
-                  value={workDays}
-                  onChange={(e) => setWorkDays(e.target.value)}
-                  className="col-span-2"
-                />
-              </FormRow>
-              <FormRow label="Work Hours">
-                <InlineInput
-                  value={workHours}
-                  onChange={(e) => setWorkHours(e.target.value)}
-                  className="col-span-2"
-                />
-              </FormRow>
-
               <div>
+                <FormRow label="Work Days">
+                  <InlineInput
+                    value={workDays}
+                    onChange={(e) => { setWorkDays(e.target.value); clearError("workDays"); }}
+                    className="col-span-2"
+                  />
+                </FormRow>
+                <FieldError message={errors.workDays} />
+              </div>
+              <div>
+                <FormRow label="Work Hours">
+                  <InlineInput
+                    value={workHours}
+                    onChange={(e) => { setWorkHours(e.target.value); clearError("workHours"); }}
+                    className="col-span-2"
+                  />
+                </FormRow>
+                <FieldError message={errors.workHours} />
+              </div>
+
+              <div className="space-y-2">
                 <FormRow label="Attendance Affect Pay">
                   <Toggle
                     enabled={attendanceAffectPay}
-                    onToggle={() =>
-                      setAttendanceAffectPay(!attendanceAffectPay)
-                    }
+                    onToggle={() => setAttendanceAffectPay(!attendanceAffectPay)}
                   />
                 </FormRow>
                 <FormRow label="Commission Enable">
@@ -139,14 +237,15 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-full h-11 bg-[#0B1215] text-white rounded-full text-[13px] font-semibold hover:opacity-90 transition-colors cursor-pointer"
-            >
-              Done
-            </button>
-          </div>
+            {!commissionEnabled && (
+              <button
+                type="submit"
+                className="w-full h-11 bg-[#0B1215] text-white rounded-full text-[13px] font-semibold hover:opacity-90 transition-colors cursor-pointer"
+              >
+                Done
+              </button>
+            )}
+          </form>
         </div>
       </div>
 
@@ -157,6 +256,8 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
         onPreferenceChange={setCommissionPreference}
         products={products}
         onProductsChange={setProducts}
+        productErrors={productErrors}
+        onProductErrorClear={clearProductError}
       />
     </>
   );

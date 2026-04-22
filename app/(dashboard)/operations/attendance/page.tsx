@@ -310,25 +310,28 @@ export default function AttendanceListPage() {
         <div className="flex flex-col xl:flex-row gap-6">
 
           {/* List */}
-          <OpsTableContainer className="flex-1 min-w-0">
-            {paginated.length === 0 ? (
-              <div className="py-16 text-center text-gray-400 text-[14px] font-medium">No records match your search.</div>
-            ) : (
-              <div className="space-y-3">
-                {paginated.map((item) => (
-                  <AttendanceRow
-                    key={item.id}
-                    item={item}
-                    isSelected={selectedId === item.id}
-                    onClick={() => setSelectedId(item.id)}
-                  />
-                ))}
-              </div>
-            )}
+          <OpsTableContainer className="flex-1 min-w-0 flex flex-col h-140">
+            {/* Scrollable rows */}
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {paginated.length === 0 ? (
+                <div className="py-16 text-center text-gray-400 text-[14px] font-medium">No records match your search.</div>
+              ) : (
+                <div className="space-y-3">
+                  {paginated.map((item) => (
+                    <AttendanceRow
+                      key={item.id}
+                      item={item}
+                      isSelected={selectedId === item.id}
+                      onClick={() => setSelectedId(item.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between mt-6 pt-5 border-t border-gray-100">
+              <div className="shrink-0 flex items-center justify-between mt-4 pt-5 border-t border-gray-100">
                 <p className="text-[12px] text-gray-400">
                   Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
                 </p>

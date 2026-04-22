@@ -16,11 +16,11 @@ interface Agent {
 }
 
 const INITIAL_AGENTS: Agent[] = [
-  { id: '1', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.6018, lng: 3.3515, avatar: 'https://i.pravatar.cc/150?u=lane1', status: 'active', zone: 'Ikeja LGA' },
-  { id: '2', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.5841, lng: 3.3705, avatar: 'https://i.pravatar.cc/150?u=lane2', status: 'idle',   zone: 'Agege LGA' },
-  { id: '3', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.5622, lng: 3.3210, avatar: 'https://i.pravatar.cc/150?u=lane3', status: 'idle',   zone: 'Alimosho LGA' },
-  { id: '4', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.6205, lng: 3.3850, avatar: 'https://i.pravatar.cc/150?u=lane4', status: 'idle',   zone: 'Kosofe LGA' },
-  { id: '5', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.5980, lng: 3.3120, avatar: 'https://i.pravatar.cc/150?u=lane5', status: 'active', zone: 'Ikeja LGA' },
+  { id: '1', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.6018, lng: 3.3515, avatar: '/avatars/female-avatar.png', status: 'active', zone: 'Ikeja LGA' },
+  { id: '2', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.5841, lng: 3.3705, avatar: '/avatars/female-avatar.png', status: 'idle',   zone: 'Agege LGA' },
+  { id: '3', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.5622, lng: 3.3210, avatar: '/avatars/female-avatar.png', status: 'idle',   zone: 'Alimosho LGA' },
+  { id: '4', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.6205, lng: 3.3850, avatar: '/avatars/female-avatar.png', status: 'idle',   zone: 'Kosofe LGA' },
+  { id: '5', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.5980, lng: 3.3120, avatar: '/avatars/female-avatar.png', status: 'active', zone: 'Ikeja LGA' },
 ];
 
 const ROUTE_COORDS: [number, number][] = [

@@ -1,147 +1,218 @@
-# Company / Enterprise Onboarding Flow
+# Enterprise Onboarding (Demo-Based, Admin-Controlled)
 
 ## Overview
 
-This flow supports enterprise onboarding through an admin-controlled lifecycle:
+A production-ready, API-first enterprise onboarding lifecycle where admins control registration and activation. All user-facing flows (first-time setup, login) are handled by the Next.js frontend via API calls. Blade is used exclusively for the admin dashboard.
 
-1. Book demo request submitted by prospect
-2. Admin review and approval
-3. Activation email with secure first-time setup link
-4. First-time setup (company ID verification + password creation)
-5. Subsequent logins with email/password only
+Core stages:
+1. Prospect submits demo request via public API.
+2. Admin reviews request in the admin dashboard (Blade).
+3. Admin registers details and either saves as draft or activates immediately (Blade form → API update).
+4. On activation: company & user accounts are created, owner membership is created in `company_users`, activation email is sent with a frontend link.
+5. User opens the frontend first-time setup page, calls API to validate token and get prefill data, then sets password.
+6. On completion, owner membership is re-ensured transactionally before issuing token.
+7. User logs in via shared auth endpoint thereafter.
 
-This flow is separate from self-serve onboarding.
+## Architecture Boundary
 
-## State Machine
+```
+Frontend (Next.js)      Backend (Laravel)       Admin (Blade)
+─────────────────       ─────────────────       ─────────────
+Demo request form  ──►  POST /enterprise/demo-requests
+Setup page         ──►  GET  /enterprise/onboarding/setup-info
+                        POST /enterprise/onboarding/complete
+Login page         ──►  POST /auth/login
+                                                Admin detail ──► PATCH /admin/enterprise/demo-requests/{id}/activate
+```
 
-`pending -> approved -> activated`
+## Lifecycle States
 
-- `pending`: request submitted and awaiting admin review
-- `approved`: admin has approved request and activation link was issued
-- `activated`: user completed first-time setup and account is active
+`pending → draft → approved → activated`
+
+- `pending`: Public demo request submitted.
+- `draft`: Admin prepared registration payload but has not activated.
+- `approved`: Admin activated; setup link issued, user has not completed setup.
+- `activated`: User completed first-time setup; token invalidated.
 
 ## Data Model
 
-### companies
-
-- `company_id` (unique business identifier shown to users)
-- `name`, `country`, `team_size`, `use_case`
-- `status`, `activated_at`
-
 ### company_demo_requests
 
-- submission payload fields:
-  - `full_name`, `email`, `company_name`, `country`, `team_size`, `use_case`
-- lifecycle fields:
-  - `status`, `requested_at`, `reviewed_at`, `approved_at`, `activated_at`
-- review references:
-  - `reviewed_by_admin_id`, `admin_notes`
-- activation security fields:
-  - `activation_token_hash`, `activation_link_expires_at`, `last_activation_sent_at`
-- output references:
-  - `company_id`, `user_id`
+Public request fields (set by prospect):
+- `full_name`, `email`, `company_name`, `country`, `team_size`, `use_case`
 
-### company_users
+Admin registration fields:
+- `registration_purpose` (workspace purpose enum)
+- `registration_user_type` (user type enum)
+- `admin_notes`
 
-- tenant membership bridge
-- `company_id`, `user_id`, `role`, `joined_at`
+Lifecycle / security fields:
+- `status`, `reviewed_by_admin_id`
+- `requested_at`, `reviewed_at`, `approved_at`, `activated_at`
+- `activation_token_hash` (SHA-256 of plaintext token)
+- `activation_link_expires_at`, `last_activation_sent_at`
+- `company_id`, `user_id`
 
-### users updates
+### companies
+- `company_id` (e.g. `FAC-XXXX1234`)
+- `name`, `country`, `team_size`, `use_case`, `status`
 
-- `enterprise_onboarding_completed_at`
+### users
+- Standard user record; `is_active`, `enterprise_onboarding_completed_at`
 
-## API Endpoints
+## Public API Endpoints
 
-### Public Enterprise Endpoints
+### Submit Demo Request
 
-1. `POST /api/v1/enterprise/demo-requests`
-- Submit book-demo request
-- Sends user confirmation email + admin notification email
+`POST /api/v1/enterprise/demo-requests`
 
-2. `POST /api/v1/enterprise/onboarding/verify-company-id`
-- Verifies `company_id` for an approved request token
-- Returns locked email payload for first-time setup
+```json
+{
+  "full_name": "Ada Afolabi",
+  "email": "ada@acme.com",
+  "company_name": "Acme Logistics",
+  "country": "NG",
+  "team_size": "11-50",
+  "use_case": "Need enterprise coordination workflows"
+}
+```
 
-3. `POST /api/v1/enterprise/onboarding/complete`
-- Completes first-time setup
-- Sets password, activates user, marks request as activated
-- Returns bearer token
+Response `201`:
+```json
+{ "success": true, "message": "Demo request submitted successfully.", "data": { "id": 12 }, "errors": null }
+```
 
-4. `POST /api/v1/enterprise/login`
-- Standard subsequent login with email/password
-- `company_id` not required
+### Get First-Time Setup Info (Token Validation + Prefill)
 
-### Admin Endpoints (Web)
+`GET /api/v1/enterprise/onboarding/setup-info?request_id=12&token=<64-char-token>`
 
-1. `GET /admin/enterprise/demo-requests`
-2. `GET /admin/enterprise/demo-requests/{demoRequest}`
-3. `PATCH /admin/enterprise/demo-requests/{demoRequest}/activate`
+Called by the frontend immediately on the setup page load to validate the token and retrieve prefill data.
 
-## Web Routes for Setup UI
+Response `200`:
+```json
+{
+  "success": true,
+  "message": "Setup info retrieved successfully.",
+  "data": {
+    "request_id": 12,
+    "email": "ada@acme.com",
+    "company_id": "FAC-ABCD1234",
+    "company_name": "Acme Logistics"
+  },
+  "errors": null
+}
+```
 
-1. `GET /onboarding/enterprise/first-time/{request}/{token}` (signed route)
-2. `GET /login` (enterprise login page)
+Error `422` — invalid or expired token:
+```json
+{ "success": false, "message": "Unprocessable Content.", "data": null, "errors": { "token": ["Onboarding token is invalid."] } }
+```
 
-## Security Design
+### Complete First-Time Setup
 
-1. Signed onboarding links
-- `URL::temporarySignedRoute(...)`
-- Tamper protection and expiry at URL-signature level
+`POST /api/v1/enterprise/onboarding/complete`
 
-2. Token hashing at rest
-- Plain token is never stored
-- `activation_token_hash = sha256(token)`
+```json
+{
+  "request_id": 12,
+  "token": "<64-char-token>",
+  "company_id": "FAC-ABCD1234",
+  "password": "StrongPass!123",
+  "password_confirmation": "StrongPass!123"
+}
+```
 
-3. TTL enforcement
-- `activation_link_expires_at` checked before verify/complete
+Response `200`:
+```json
+{
+  "success": true,
+  "message": "Account setup completed successfully.",
+  "data": {
+    "token": "1|...",
+    "token_type": "Bearer",
+    "user": { "id": 7, "email": "ada@acme.com", "user_type": "enterprise" }
+  },
+  "errors": null
+}
+```
 
-4. One-time completion
-- On success, token hash and expiry are cleared
+### Login (Recurring)
 
-5. Strict status checks
-- verify/complete only allowed for `approved` requests
+`POST /api/v1/auth/login`
 
-6. Duplicate protection
-- prevents new pending/approved demo request for same email
+```json
+{ "email": "ada@acme.com", "password": "StrongPass!123" }
+```
 
-## Email Flow
+Response `200`:
+```json
+{
+  "success": true,
+  "data": {
+    "token": "1|...",
+    "token_type": "Bearer",
+    "access_role": "admin",
+    "user_type": "enterprise",
+    "user": { ... }
+  }
+}
+```
 
-1. User confirmation email on request submission
-2. Admin notification email on request submission
-3. Activation email on admin approval with:
-- onboarding link
-- company_id
-- setup instructions
+## Admin Web Endpoints (Blade — admin only)
 
-All enterprise notifications implement `ShouldQueue`.
+`PATCH /admin/enterprise/demo-requests/{id}/activate`
 
-## Edge Cases and Handling
+Form fields (all nullable; fallback to existing demo request values):
+- `action` — `"draft"` or `"activate"` (default: activate)
+- `full_name`, `email`, `company_name`, `country`, `team_size`
+- `purpose`, `user_type`, `admin_notes`
 
-1. Duplicate pending request email
-- returns `409`
+Behaviour:
+- `draft`: Updates fields, sets status to `draft`. No email, no company/user created.
+- `activate`: Creates company + user, sends activation email, sets status to `approved`.
 
-2. Approve already activated request
-- idempotent behavior, no duplicate account generation
+## Activation Email
 
-3. Invalid company ID during setup
-- returns `422`
+Sent to the enterprise user on activation. Contains:
+- Company ID
+- Email address
+- A link to the frontend setup page: `{ENTERPRISE_ONBOARDING_SETUP_URL}?request_id={id}&token={token}`
 
-4. Expired/invalid token
-- returns `422`
+The token is a 64-character random string, stored in the database as a SHA-256 hash. It expires after `ENTERPRISE_ACTIVATION_LINK_TTL_MINUTES` (default 7 days).
 
-5. Login before activation
-- returns `401`
+## Environment Variables
 
-## Scalability Notes
+| Variable | Description | Default |
+|---|---|---|
+| `ENTERPRISE_ACTIVATION_LINK_TTL_MINUTES` | Token lifetime in minutes | `10080` (7 days) |
+| `ENTERPRISE_DEMO_NOTIFICATION_EMAIL` | Admin notification address | — |
+| `ENTERPRISE_COMPANY_ID_PREFIX` | Company ID prefix | `FAC` |
+| `ENTERPRISE_ONBOARDING_SETUP_URL` | Frontend first-time setup page URL | `http://localhost:3000/enterprise/setup` |
 
-1. Company model and membership table support multi-tenant growth
-2. Separate service layer (`App\\Services\\Enterprise`) isolates business rules
-3. Admin enterprise module sits under dedicated route namespace for future modules
-4. Flow is additive and does not modify self-serve onboarding contracts
+## Security Guarantees
 
-## Tests Added
+1. Token is 64 random bytes; stored only as SHA-256 hash — plaintext never persisted.
+2. Token validated with `hash_equals` to prevent timing attacks.
+3. Token carries its own expiry (`activation_link_expires_at`) checked server-side.
+4. After setup completes, `activation_token_hash` is set to `null` — link cannot be reused.
+5. Internal-role email addresses are blocked from enterprise activation (`assertEnterpriseEmailEligible`).
+6. Activation email points to the frontend URL, not a backend Blade page — no server-side HTML rendering for user flows.
+7. Admin panel protected by `auth:admin` + `admin.active` middleware.
 
-1. `tests/Feature/Enterprise/BookDemoRequestTest.php`
-2. `tests/Feature/Enterprise/AdminActivationTest.php`
-3. `tests/Feature/Enterprise/FirstTimeSetupTest.php`
-4. `tests/Feature/Enterprise/EnterpriseLoginTest.php`
+## Edge Cases
+
+| Scenario | Behaviour |
+|---|---|
+| Duplicate pending/draft/approved email | `DomainException` — request rejected at submission |
+| Admin saves draft without activating | Status = `draft`; no side effects |
+| Token expired | `GET setup-info` returns 422 |
+| Wrong token submitted | `GET setup-info` returns 422 |
+| Setup attempted after completion | `POST complete` returns 422 (status is `activated`, not `approved`) |
+| Internal-role email used in activation | Service throws 422 before company/user creation |
+
+## Test Coverage
+
+- `AdminActivationTest`: draft save, activate, payload override
+- `FirstTimeSetupTest`: setup-info valid/invalid/expired token, complete flow, link reuse prevention
+- `EnterpriseLoginTest`: post-activation login, suspended user, shared auth endpoint
+- `BookDemoRequestTest`: submission, duplicate prevention

@@ -10,6 +10,11 @@ This feature supports the 3-step self-serve onboarding flow:
 
 Users now set their login password during registration. OTP verification remains required for email ownership validation and token issuance.
 
+Company context guarantee:
+- `POST /api/v1/onboarding/workspace` creates the workspace and also provisions an active company record.
+- The onboarding user is attached to that company in `company_users` with role `owner`.
+- This guarantees downstream multi-tenant APIs (projects/tasks/internal users) can always resolve tenant context for self-serve admins.
+
 ## Endpoints
 
 1. `POST /api/v1/auth/register`

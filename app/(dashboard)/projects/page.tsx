@@ -4,19 +4,8 @@ import { Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { ProjectsView } from "@/components/operations/projects-view";
 import { AllTasksView } from "@/components/operations/all-tasks-view";
-import type { Project } from "@/types/operations";
-
-// ─── Mock data (swap for API call later) ─────────────────────────────────────
-const MOCK_PROJECTS: Project[] = [
-  { id: "project-1",  name: "Product Outreach", description: "Physical outreach and transforms executive networking from casual connections to strategic growth...", deadline: "2 days to Deadline",  status: "Completed",   priority: "High",   completedPercent: 100, pendingPercent: 0  },
-  { id: "project-2",  name: "Product Outreach", description: "Physical outreach and transforms executive networking from casual connections to strategic growth...", deadline: "2 days to Deadline",  status: "Completed",   priority: "High",   completedPercent: 100, pendingPercent: 0  },
-  { id: "project-3",  name: "Product Outreach", description: "Physical outreach and transforms executive networking from casual connections to strategic growth...", deadline: "4 days to Deadline",  status: "Completed",   priority: "Medium", completedPercent: 100, pendingPercent: 0  },
-  { id: "project-4",  name: "Product Outreach", description: "Physical outreach and transforms executive networking from casual connections to strategic growth...", deadline: "1 week to Deadline",  status: "Completed",   priority: "Low",    completedPercent: 100, pendingPercent: 0  },
-  { id: "project-5",  name: "Product Outreach", description: "Physical outreach and transforms executive networking from casual connections to strategic growth...", deadline: "3 days to Deadline",  status: "Completed",   priority: "High",   completedPercent: 100, pendingPercent: 0  },
-  { id: "project-6",  name: "Product Outreach", description: "Physical outreach and transforms executive networking from casual connections to strategic growth...", deadline: "5 days to Deadline",  status: "Completed",   priority: "Medium", completedPercent: 100, pendingPercent: 0  },
-  { id: "project-7",  name: "Product Outreach", description: "Physical outreach and transforms executive networking from casual connections to strategic growth...", deadline: "Overdue",             status: "In progress", priority: "High",   completedPercent: 60,  pendingPercent: 40 },
-  { id: "project-8",  name: "Product Outreach", description: "Physical outreach and transforms executive networking from casual connections to strategic growth...", deadline: "2 days to Deadline",  status: "In progress", priority: "Medium", completedPercent: 35,  pendingPercent: 65 },
-];
+import { useProjects } from "@/hooks/use-projects";
+import { getCompanyId } from "@/lib/auth/session";
 
 type ProjectsTab = "projects" | "tasks";
 
@@ -32,6 +21,11 @@ function ProjectsContent() {
   const pathname = usePathname();
 
   const activeTab = (searchParams.get("tab") as ProjectsTab) || "projects";
+
+  const companyId = typeof window !== "undefined" ? getCompanyId() : null;
+  const { data: projects = [], isLoading } = useProjects(
+    companyId ? { company_id: companyId } : {}
+  );
 
   const handleTabChange = (tab: ProjectsTab) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -68,8 +62,9 @@ function ProjectsContent() {
         {/* ── View ── */}
         {activeTab === "projects" ? (
           <ProjectsView
-            projects={MOCK_PROJECTS}
+            projects={projects}
             onViewProject={handleViewProject}
+            isLoading={isLoading}
           />
         ) : (
           <AllTasksView />

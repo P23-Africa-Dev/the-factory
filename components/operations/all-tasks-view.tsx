@@ -1,105 +1,202 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Search, SlidersHorizontal } from 'lucide-react';
-import type { DndItem } from '@/types/operations';
+import { TaskBoard } from './task-board';
+import { TaskDetailModal } from './task-detail-modal';
+import { useDragAndDrop } from '@/lib/hooks/use-tasks-dnd';
+import type { DndContainer, DndItem } from '@/types/operations';
 
-export interface FlatTask extends DndItem {
-  projectId: string;
-  projectName: string;
-  status: 'Pending' | 'In Progress' | 'Completed';
-}
-
-// Mock: all tasks across all projects (swap for API later)
-const ALL_TASKS: FlatTask[] = [
+// ─── Seed data: all tasks across all projects ─────────────────────────────────
+const INITIAL_DATA: DndContainer[] = [
   {
-    id: 'p1-task-1', projectId: 'project-1', projectName: 'Product Outreach',
-    label: 'Francis Nasyomba', description: 'Cover the entirety of Ikeja CV',
-    location: 'Computer Village, Ikeja, Lagos', time: '12 hours ago',
-    category: 'agent', status: 'Pending',
-    dueDate: 'Friday, 3rd April 2026', assignedBy: 'Ridwan Thomson (Supervisor)',
+    id: 'pending',
+    title: 'Pending Task',
+    color: '#BD7A22',
+    items: [
+      {
+        id: 'p1-task-1',
+        label: 'Francis Nasyomba',
+        description: 'Cover the entirety of Ikeja CV',
+        location: 'Computer Village, Ikeja, Lagos',
+        time: '12 hours ago',
+        category: 'agent',
+        dueDate: 'Friday, 3rd April 2026',
+        assignedBy: 'Ridwan Thomson (Supervisor)',
+        addedDescription:
+          'Visit the Ikeja Computer village, and promote (product name) to the target audience there.\n\nSpeak with the business owner and note:\n- Contact Details\n- Prospect brief\n- Any other usable details.',
+        statusLabel: 'Pending',
+      },
+      {
+        id: 'p2-task-1',
+        label: 'Ngozi Eze',
+        description: 'Survey Oshodi market vendors',
+        location: 'Oshodi, Lagos',
+        time: '3 hours ago',
+        category: 'agent',
+        dueDate: 'Monday, 7th April 2026',
+        assignedBy: 'Aisha Bello (Supervisor)',
+        statusLabel: 'Pending',
+      },
+      {
+        id: 'p3-task-1',
+        label: 'Tunde Adeyemi',
+        description: 'Collect feedback from Yaba tech hub',
+        location: 'Yaba, Lagos',
+        time: '6 hours ago',
+        category: 'agent',
+        dueDate: 'Thursday, 10th April 2026',
+        assignedBy: 'Chukwuma Eze (Supervisor)',
+        statusLabel: 'Pending',
+      },
+      {
+        id: 'p4-task-1',
+        label: 'Kelechi Obi',
+        description: 'Map all retail outlets in Ikorodu',
+        location: 'Ikorodu, Lagos',
+        time: '30 minutes ago',
+        category: 'attendance',
+        dueDate: 'Friday, 11th April 2026',
+        assignedBy: 'Ridwan Thomson (Supervisor)',
+        statusLabel: 'Pending',
+      },
+    ],
   },
   {
-    id: 'p1-task-2', projectId: 'project-1', projectName: 'Product Outreach',
-    label: 'Amara Okafor', description: 'Visit Lekki Phase 1 market',
-    location: 'Lekki Phase 1, Lagos', time: '1 day ago',
-    category: 'attendance', status: 'In Progress',
-    dueDate: 'Saturday, 4th April 2026', assignedBy: 'Ridwan Thomson (Supervisor)',
+    id: 'in-progress',
+    title: 'Task In-Progress',
+    color: '#094B5C',
+    items: [
+      {
+        id: 'p1-task-2',
+        label: 'Amara Okafor',
+        description: 'Visit Lekki Phase 1 market',
+        location: 'Lekki Phase 1, Lagos',
+        time: '1 day ago',
+        category: 'attendance',
+        dueDate: 'Saturday, 4th April 2026',
+        assignedBy: 'Ridwan Thomson (Supervisor)',
+        addedDescription:
+          'Visit Lekki Phase 1 market and speak with vendors about our product.\n\nCollect:\n- Business cards\n- Contact info\n- Feedback on product interest.',
+        statusLabel: 'In Progress',
+      },
+      {
+        id: 'p2-task-2',
+        label: 'Emeka Nwosu',
+        description: 'Follow up with Alaba contacts',
+        location: "Alaba Int'l Market, Lagos",
+        time: '5 hours ago',
+        category: 'agent',
+        dueDate: 'Tuesday, 8th April 2026',
+        assignedBy: 'Aisha Bello (Supervisor)',
+        statusLabel: 'In Progress',
+      },
+    ],
   },
   {
-    id: 'p1-task-3', projectId: 'project-1', projectName: 'Product Outreach',
-    label: 'Chidi Okonkwo', description: 'Document all contacts from Surulere',
-    location: 'Surulere, Lagos', time: '2 days ago',
-    category: 'agent', status: 'Completed',
-    dueDate: 'Wednesday, 1st April 2026', assignedBy: 'Ridwan Thomson (Supervisor)',
-  },
-  {
-    id: 'p2-task-1', projectId: 'project-2', projectName: 'Product Outreach',
-    label: 'Ngozi Eze', description: 'Survey Oshodi market vendors',
-    location: 'Oshodi, Lagos', time: '3 hours ago',
-    category: 'agent', status: 'Pending',
-    dueDate: 'Monday, 7th April 2026', assignedBy: 'Aisha Bello (Supervisor)',
-  },
-  {
-    id: 'p2-task-2', projectId: 'project-2', projectName: 'Product Outreach',
-    label: 'Emeka Nwosu', description: 'Follow up with Alaba contacts',
-    location: "Alaba Int'l Market, Lagos", time: '5 hours ago',
-    category: 'attendance', status: 'In Progress',
-    dueDate: 'Tuesday, 8th April 2026', assignedBy: 'Aisha Bello (Supervisor)',
-  },
-  {
-    id: 'p3-task-1', projectId: 'project-3', projectName: 'Product Outreach',
-    label: 'Tunde Adeyemi', description: 'Collect feedback from Yaba tech hub',
-    location: 'Yaba, Lagos', time: '6 hours ago',
-    category: 'agent', status: 'Pending',
-    dueDate: 'Thursday, 10th April 2026', assignedBy: 'Chukwuma Eze (Supervisor)',
-  },
-  {
-    id: 'p3-task-2', projectId: 'project-3', projectName: 'Product Outreach',
-    label: 'Blessing Okoro', description: 'Complete Victoria Island zone report',
-    location: 'Victoria Island, Lagos', time: '1 day ago',
-    category: 'attendance', status: 'Completed',
-    dueDate: 'Wednesday, 9th April 2026', assignedBy: 'Chukwuma Eze (Supervisor)',
-  },
-  {
-    id: 'p4-task-1', projectId: 'project-4', projectName: 'Product Outreach',
-    label: 'Kelechi Obi', description: 'Map all retail outlets in Ikorodu',
-    location: 'Ikorodu, Lagos', time: '30 minutes ago',
-    category: 'agent', status: 'Pending',
-    dueDate: 'Friday, 11th April 2026', assignedBy: 'Ridwan Thomson (Supervisor)',
+    id: 'completed',
+    title: 'Completed Task',
+    color: '#4FD1C5',
+    items: [
+      {
+        id: 'p1-task-3',
+        label: 'Chidi Okonkwo',
+        description: 'Document all contacts from Surulere',
+        location: 'Surulere, Lagos',
+        time: '2 days ago',
+        category: 'agent',
+        dueDate: 'Wednesday, 1st April 2026',
+        assignedBy: 'Ridwan Thomson (Supervisor)',
+        statusLabel: 'Completed',
+      },
+      {
+        id: 'p3-task-2',
+        label: 'Blessing Okoro',
+        description: 'Complete Victoria Island zone report',
+        location: 'Victoria Island, Lagos',
+        time: '1 day ago',
+        category: 'attendance',
+        dueDate: 'Wednesday, 9th April 2026',
+        assignedBy: 'Chukwuma Eze (Supervisor)',
+        statusLabel: 'Completed',
+      },
+    ],
   },
 ];
 
-const STATUS_OPTIONS = ['All', 'Pending', 'In Progress', 'Completed'];
-
-const STATUS_COLORS: Record<string, string> = {
-  Pending: 'bg-[#BD7A22] text-white',
-  'In Progress': 'bg-[#0E5D5D] text-white',
-  Completed: 'bg-[#4FD1C5] text-[#0B1215]',
-};
-
 export function AllTasksView() {
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
   const [showFilters, setShowFilters] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [selectedTask, setSelectedTask] = useState<{
+    item: DndItem;
+    containerId: string;
+  } | null>(null);
 
-  const filtered = useMemo(() => ALL_TASKS.filter((t) => {
-    const q = search.toLowerCase();
-    const matchesSearch =
-      t.label.toLowerCase().includes(q) ||
-      t.description.toLowerCase().includes(q) ||
-      t.projectName.toLowerCase().includes(q) ||
-      t.location.toLowerCase().includes(q);
-    const matchesStatus = statusFilter === 'All' || t.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  }), [search, statusFilter]);
+  const {
+    containers,
+    addItem,
+    moveItem,
+    moveToContainer,
+    moveBetweenContainers,
+    findContainer,
+  } = useDragAndDrop(INITIAL_DATA);
+
+  // Apply search + status filtering
+  const filteredContainers: DndContainer[] = containers
+    .filter((c) => statusFilter === 'All' || c.id === statusFilter.toLowerCase().replace(' ', '-').replace('in progress', 'in-progress'))
+    .map((c) => {
+      if (!search.trim()) return c;
+      const q = search.toLowerCase();
+      return {
+        ...c,
+        items: c.items.filter(
+          (item) =>
+            item.label.toLowerCase().includes(q) ||
+            item.description.toLowerCase().includes(q) ||
+            (item.location && item.location.toLowerCase().includes(q))
+        ),
+      };
+    });
+
+  // Derive the status filter key from readable name
+  const statusFilterToContainerId = (s: string) => {
+    if (s === 'Pending') return 'pending';
+    if (s === 'In Progress') return 'in-progress';
+    if (s === 'Completed') return 'completed';
+    return null;
+  };
+
+  const STATUS_OPTIONS = ['All', 'Pending', 'In Progress', 'Completed'];
+
+  // Apply proper filtering
+  const displayContainers: DndContainer[] = containers
+    .filter((c) => {
+      if (statusFilter === 'All') return true;
+      const mappedId = statusFilterToContainerId(statusFilter);
+      return c.id === mappedId;
+    })
+    .map((c) => {
+      if (!search.trim()) return c;
+      const q = search.toLowerCase();
+      return {
+        ...c,
+        items: c.items.filter(
+          (item) =>
+            item.label.toLowerCase().includes(q) ||
+            item.description.toLowerCase().includes(q) ||
+            (item.location && item.location.toLowerCase().includes(q))
+        ),
+      };
+    });
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
-
       {/* Toolbar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-[20px] font-extrabold text-[#09232D] shrink-0">All Tasks</h1>
+        <h1 className="text-[20px] font-extrabold text-[#09232D] shrink-0">
+          All Tasks
+        </h1>
 
         <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 md:justify-end min-w-0">
           <div className="relative w-full md:w-[458px] group shrink-0">
@@ -118,7 +215,8 @@ export function AllTasksView() {
                 height: '46px',
                 borderRadius: '24px',
                 border: '0.7px solid #D7D7D7',
-                boxShadow: '0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026',
+                boxShadow:
+                  '0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026',
               }}
             />
           </div>
@@ -130,8 +228,12 @@ export function AllTasksView() {
             }`}
             style={{
               background: showFilters ? '#34373C' : '#F8F8F8',
-              border: showFilters ? '0.5px solid #34373C' : '0.5px solid #D1D1D1',
-              boxShadow: showFilters ? 'none' : '0 2px 8px rgba(0,0,0,0.06)',
+              border: showFilters
+                ? '0.5px solid #34373C'
+                : '0.5px solid #D1D1D1',
+              boxShadow: showFilters
+                ? 'none'
+                : '0 2px 8px rgba(0,0,0,0.06)',
             }}
           >
             <SlidersHorizontal size={14} strokeWidth={2} />
@@ -144,7 +246,9 @@ export function AllTasksView() {
       {showFilters && (
         <div className="flex flex-wrap gap-3 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-bold text-gray-400 px-1">Status</label>
+            <label className="text-[11px] font-bold text-gray-400 px-1">
+              Status
+            </label>
             <div className="flex gap-1 flex-wrap">
               {STATUS_OPTIONS.map((s) => (
                 <button
@@ -174,61 +278,27 @@ export function AllTasksView() {
         </div>
       )}
 
-      {/* Task list */}
-      {filtered.length === 0 ? (
-        <div className="py-20 text-center text-gray-400 text-[14px] font-medium">
-          No tasks match your search.
-        </div>
-      ) : (
-        <div
-          className="bg-white rounded-3xl border border-gray-100/60 overflow-hidden"
-          style={{ boxShadow: '0px 8px 12px 6px #00000026' }}
-        >
-          <div className="grid grid-cols-[1fr_1fr_1fr_120px] gap-4 px-6 py-3 bg-gray-50 border-b border-gray-100 text-[11px] font-bold text-gray-400 uppercase tracking-wide">
-            <span>Task</span>
-            <span>Project</span>
-            <span className="hidden md:block">Location</span>
-            <span>Status</span>
-          </div>
+      {/* Task Board */}
+      <TaskBoard
+        containers={displayContainers}
+        activeTab="all"
+        onAddCard={addItem}
+        findContainer={findContainer}
+        moveItem={moveItem}
+        moveToContainer={moveToContainer}
+        moveBetweenContainers={moveBetweenContainers}
+        onTaskClick={(item, containerId) =>
+          setSelectedTask({ item, containerId })
+        }
+      />
 
-          {filtered.map((task, idx) => (
-            <div
-              key={task.id}
-              className={`grid grid-cols-[1fr_1fr_1fr_120px] gap-4 items-center px-6 py-4 ${
-                idx < filtered.length - 1 ? 'border-b border-gray-50' : ''
-              } hover:bg-gray-50/60 transition-colors`}
-            >
-              <div className="flex flex-col min-w-0">
-                <span className="text-[13px] font-bold text-[#09232D] truncate">{task.label}</span>
-                <span className="text-[11px] text-gray-400 truncate">{task.description}</span>
-                {task.dueDate && (
-                  <span className="text-[10px] text-gray-300 mt-0.5">Due: {task.dueDate}</span>
-                )}
-              </div>
-
-              <div className="min-w-0">
-                <span className="text-[12px] font-semibold text-[#09232D] truncate block">
-                  {task.projectName}
-                </span>
-                <span className="text-[10px] text-gray-400 truncate block">ID: {task.projectId}</span>
-              </div>
-
-              <div className="hidden md:block min-w-0">
-                <span className="text-[11px] text-gray-500 truncate block">{task.location}</span>
-                {task.assignedBy && (
-                  <span className="text-[10px] text-gray-300 truncate block">{task.assignedBy}</span>
-                )}
-              </div>
-
-              <div>
-                <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-bold ${STATUS_COLORS[task.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                  {task.status}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Task Detail Modal */}
+      <TaskDetailModal
+        isOpen={!!selectedTask}
+        onClose={() => setSelectedTask(null)}
+        task={selectedTask?.item ?? null}
+        status={selectedTask?.containerId ?? ''}
+      />
     </div>
   );
 }

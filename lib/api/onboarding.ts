@@ -8,7 +8,7 @@ export type ApiEnvelope<TData> = {
 };
 
 type ApiRequestOptions = {
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "PATCH";
   path: string;
   body?: unknown;
   token?: string;
@@ -30,7 +30,7 @@ export class ApiRequestError extends Error {
 }
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://104.131.166.92:8080/api/v1";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
 
 export async function apiRequest<TData>({
   method,
