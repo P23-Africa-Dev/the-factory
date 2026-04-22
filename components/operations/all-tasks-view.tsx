@@ -1,128 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { Search, SlidersHorizontal } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Search, SlidersHorizontal, Loader2 } from 'lucide-react';
 import { TaskBoard } from './task-board';
 import { TaskDetailModal } from './task-detail-modal';
-import { useDragAndDrop } from '@/lib/hooks/use-tasks-dnd';
+import { useAuthStore } from '@/store/auth';
+import { useTasks } from '@/hooks/use-tasks';
 import type { DndContainer, DndItem } from '@/types/operations';
-
-// ─── Seed data: all tasks across all projects ─────────────────────────────────
-const INITIAL_DATA: DndContainer[] = [
-  {
-    id: 'pending',
-    title: 'Pending Task',
-    color: '#BD7A22',
-    items: [
-      {
-        id: 'p1-task-1',
-        label: 'Francis Nasyomba',
-        description: 'Cover the entirety of Ikeja CV',
-        location: 'Computer Village, Ikeja, Lagos',
-        time: '12 hours ago',
-        category: 'agent',
-        dueDate: 'Friday, 3rd April 2026',
-        assignedBy: 'Ridwan Thomson (Supervisor)',
-        addedDescription:
-          'Visit the Ikeja Computer village, and promote (product name) to the target audience there.\n\nSpeak with the business owner and note:\n- Contact Details\n- Prospect brief\n- Any other usable details.',
-        statusLabel: 'Pending',
-      },
-      {
-        id: 'p2-task-1',
-        label: 'Ngozi Eze',
-        description: 'Survey Oshodi market vendors',
-        location: 'Oshodi, Lagos',
-        time: '3 hours ago',
-        category: 'agent',
-        dueDate: 'Monday, 7th April 2026',
-        assignedBy: 'Aisha Bello (Supervisor)',
-        statusLabel: 'Pending',
-      },
-      {
-        id: 'p3-task-1',
-        label: 'Tunde Adeyemi',
-        description: 'Collect feedback from Yaba tech hub',
-        location: 'Yaba, Lagos',
-        time: '6 hours ago',
-        category: 'agent',
-        dueDate: 'Thursday, 10th April 2026',
-        assignedBy: 'Chukwuma Eze (Supervisor)',
-        statusLabel: 'Pending',
-      },
-      {
-        id: 'p4-task-1',
-        label: 'Kelechi Obi',
-        description: 'Map all retail outlets in Ikorodu',
-        location: 'Ikorodu, Lagos',
-        time: '30 minutes ago',
-        category: 'attendance',
-        dueDate: 'Friday, 11th April 2026',
-        assignedBy: 'Ridwan Thomson (Supervisor)',
-        statusLabel: 'Pending',
-      },
-    ],
-  },
-  {
-    id: 'in-progress',
-    title: 'Task In-Progress',
-    color: '#094B5C',
-    items: [
-      {
-        id: 'p1-task-2',
-        label: 'Amara Okafor',
-        description: 'Visit Lekki Phase 1 market',
-        location: 'Lekki Phase 1, Lagos',
-        time: '1 day ago',
-        category: 'attendance',
-        dueDate: 'Saturday, 4th April 2026',
-        assignedBy: 'Ridwan Thomson (Supervisor)',
-        addedDescription:
-          'Visit Lekki Phase 1 market and speak with vendors about our product.\n\nCollect:\n- Business cards\n- Contact info\n- Feedback on product interest.',
-        statusLabel: 'In Progress',
-      },
-      {
-        id: 'p2-task-2',
-        label: 'Emeka Nwosu',
-        description: 'Follow up with Alaba contacts',
-        location: "Alaba Int'l Market, Lagos",
-        time: '5 hours ago',
-        category: 'agent',
-        dueDate: 'Tuesday, 8th April 2026',
-        assignedBy: 'Aisha Bello (Supervisor)',
-        statusLabel: 'In Progress',
-      },
-    ],
-  },
-  {
-    id: 'completed',
-    title: 'Completed Task',
-    color: '#4FD1C5',
-    items: [
-      {
-        id: 'p1-task-3',
-        label: 'Chidi Okonkwo',
-        description: 'Document all contacts from Surulere',
-        location: 'Surulere, Lagos',
-        time: '2 days ago',
-        category: 'agent',
-        dueDate: 'Wednesday, 1st April 2026',
-        assignedBy: 'Ridwan Thomson (Supervisor)',
-        statusLabel: 'Completed',
-      },
-      {
-        id: 'p3-task-2',
-        label: 'Blessing Okoro',
-        description: 'Complete Victoria Island zone report',
-        location: 'Victoria Island, Lagos',
-        time: '1 day ago',
-        category: 'attendance',
-        dueDate: 'Wednesday, 9th April 2026',
-        assignedBy: 'Chukwuma Eze (Supervisor)',
-        statusLabel: 'Completed',
-      },
-    ],
-  },
-];
+import type { TaskApiItem } from '@/lib/api/tasks';
 
 export function AllTasksView() {
   const [search, setSearch] = useState('');
@@ -133,14 +18,41 @@ export function AllTasksView() {
     containerId: string;
   } | null>(null);
 
-  const {
-    containers,
-    addItem,
-    moveItem,
-    moveToContainer,
-    moveBetweenContainers,
-    findContainer,
-  } = useDragAndDrop(INITIAL_DATA);
+  const user = useAuthStore((s) => s.user);
+  const companyId = user?.active_company?.id;
+
+  const { data: tasksData, isPending } = useTasks({
+    company_id: companyId,
+  });
+
+  const containers: DndContainer[] = useMemo(() => {
+    const items = tasksData?.tasks || [];
+    
+    const pendingItems = items.filter(t => t.status === "pending").map(mapTaskToDnd);
+    const inProgressItems = items.filter(t => t.status === "in_progress").map(mapTaskToDnd);
+    const completedItems = items.filter(t => t.status === "completed").map(mapTaskToDnd);
+
+    return [
+      {
+        id: "pending",
+        title: "Pending Task",
+        color: "#BD7A22",
+        items: pendingItems,
+      },
+      {
+        id: "in-progress",
+        title: "Task In-Progress",
+        color: "#094B5C",
+        items: inProgressItems,
+      },
+      {
+        id: "completed",
+        title: "Completed Task",
+        color: "#4FD1C5",
+        items: completedItems,
+      },
+    ];
+  }, [tasksData]);
 
   // Apply search + status filtering
   const filteredContainers: DndContainer[] = containers
@@ -279,18 +191,27 @@ export function AllTasksView() {
       )}
 
       {/* Task Board */}
-      <TaskBoard
-        containers={displayContainers}
-        activeTab="all"
-        onAddCard={addItem}
-        findContainer={findContainer}
-        moveItem={moveItem}
-        moveToContainer={moveToContainer}
-        moveBetweenContainers={moveBetweenContainers}
-        onTaskClick={(item, containerId) =>
-          setSelectedTask({ item, containerId })
-        }
-      />
+      {isPending ? (
+        <div className="py-32 flex flex-col items-center justify-center gap-4 text-gray-400">
+          <Loader2 className="w-8 h-8 animate-spin text-[#092635]" />
+          <span className="font-bold text-lg">Loading Tasks...</span>
+        </div>
+      ) : (
+        <div className="mt-2">
+          <TaskBoard
+            containers={displayContainers}
+            activeTab="all"
+            onAddCard={() => {}}
+            findContainer={() => undefined}
+            moveItem={() => {}}
+            moveToContainer={() => {}}
+            moveBetweenContainers={() => {}}
+            onTaskClick={(item, containerId) =>
+              setSelectedTask({ item, containerId })
+            }
+          />
+        </div>
+      )}
 
       {/* Task Detail Modal */}
       <TaskDetailModal
@@ -301,4 +222,23 @@ export function AllTasksView() {
       />
     </div>
   );
+}
+
+function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
+  let statusLabel = "Pending";
+  if (apiTask.status === "in_progress") statusLabel = "In Progress";
+  if (apiTask.status === "completed") statusLabel = "Completed";
+
+  return {
+    id: String(apiTask.id),
+    label: `Agent ID: ${apiTask.assigned_agent_id}`, 
+    description: apiTask.title,
+    location: apiTask.location || "No location",
+    time: "Just now",
+    category: (apiTask.type || "agent") as any,
+    dueDate: apiTask.due_date ? new Date(apiTask.due_date).toLocaleDateString() : undefined,
+    assignedBy: `User ID: ${apiTask.created_by_user_id}`,
+    addedDescription: apiTask.description,
+    statusLabel,
+  };
 }
