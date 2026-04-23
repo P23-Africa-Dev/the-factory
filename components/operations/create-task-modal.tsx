@@ -13,14 +13,21 @@ import {
   AlertCircle,
   Navigation,
 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { useAuthStore } from "@/store/auth";
+import { useInternalUsers } from "@/hooks/use-projects";
+import { useCreateTask } from "@/hooks/use-tasks";
 import type { DndItem, TaskCategory } from "@/types/operations";
+import type { ApiTaskPriority, ApiTaskStatus } from "@/lib/api/tasks";
 
 type StatusType = "pending" | "in-progress" | "completed";
 
 interface CreateTaskModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateTask: (containerId: StatusType, item: DndItem) => void;
+  onCreateTask?: (containerId: StatusType, item: DndItem) => void;
+  projectId?: number | string;
 }
 
 const STATUS_OPTIONS: {
@@ -49,13 +56,14 @@ const STATUS_OPTIONS: {
   },
 ];
 
-const TASK_TYPES = [
-  "Sales Visit",
-  "Inspection",
-  "Delivery",
-  "Collection",
-  "Awareness",
-];
+const TASK_TYPES: Record<string, string> = {
+  "Sales Visit": "sales_visit",
+  "Inspection": "inspection",
+  "Delivery": "delivery",
+  "Collection": "collection",
+  "Awareness": "awareness",
+};
+
 const PRIORITY_OPTIONS = ["High", "Medium", "Low"] as const;
 type Priority = (typeof PRIORITY_OPTIONS)[number];
 
@@ -64,17 +72,6 @@ const PRIORITY_COLORS: Record<Priority, string> = {
   Medium: "#F59E0B",
   Low: "#10B981",
 };
-
-const AGENTS = [
-  "Abdul Kareem",
-  "Francis Nasyomba",
-  "Lade Wane",
-  "Amina Bello",
-  "Chidi Okonkwo",
-  "Ngozi Eze",
-  "Tunde Adeyemi",
-  "Fatima Sule",
-];
 
 function FieldLabel({
   children,
@@ -119,7 +116,21 @@ export function CreateTaskModal({
   isOpen,
   onClose,
   onCreateTask,
+  projectId,
 }: CreateTaskModalProps) {
+  const user = useAuthStore((s) => s.user);
+  const companyId = user?.active_company?.id;
+
+  const { data: agents = [], isLoading: loadingAgents } = useInternalUsers({
+    role: "agent",
+  });
+
+  const { mutate, isPending } = useCreateTask({
+    onSuccess: (task) => {
+      toast.success("Task created successfully.");
+      handleClose();
+    },
+  });
   const taskIdRef = useRef(0);
   const [form, setForm] = useState({
     title: "",
@@ -159,19 +170,71 @@ export function CreateTaskModal({
 
   const handleSubmit = () => {
     if (!validate()) return;
-    const newItem: DndItem = {
-      id: `task-${++taskIdRef.current}`,
-      label: form.assignTo,
-      description: form.title,
-      location: `${form.location}${form.address ? `, ${form.address}` : ""}`,
-      time: "Just now",
-      category: form.category,
-      dueDate: form.dueDate,
-      addedDescription: form.description,
-      statusLabel: STATUS_OPTIONS.find((s) => s.value === form.status)?.short,
-    };
-    onCreateTask(form.status, newItem);
-    handleClose();
+    
+    // If real API mode is requested
+    if (projectId && companyId) {
+      const typeKey = TASK_TYPES[form.taskType] || "general";
+      const priorityVal = form.priority.toLowerCase() as ApiTaskPriority;
+      
+      mutate({
+        company_id: companyId,
+        project_id: projectId,
+        title: form.title,
+        type: typeKey,
+        description: form.description,
+        assigned_agent_id: Number(form.assignTo),
+        location: form.location,
+        address: form.address || undefined,
+        due_date: new Date(form.dueDate).toISOString(),
+        required_actions: form.requiredActions ? form.requiredActions.split(',').map(s => s.trim()) : undefined,
+        priority: priorityVal,
+        minimum_photos_required: Number(form.minPhotos),
+        visit_verification_required: form.visitVerification,
+      }, {
+        onError: (err: any) => {
+          if (err.errors) {
+            const backendErrors = err.errors as Record<string, string[]>;
+            const mappedErrors: Record<string, string> = {};
+            const ERROR_MAP: Record<string, string> = {
+              type: "taskType",
+              assigned_agent_id: "assignTo",
+              due_date: "dueDate",
+              required_actions: "requiredActions",
+              minimum_photos_required: "minPhotos",
+              visit_verification_required: "visitVerification"
+            };
+            
+            for (const key in backendErrors) {
+              const formKey = ERROR_MAP[key] || key;
+              mappedErrors[formKey] = backendErrors[key][0];
+            }
+            setErrors(mappedErrors);
+            toast.error(err.message || "Please fix the validation errors");
+          } else {
+            toast.error(err.message || "Failed to create task");
+          }
+        }
+      });
+      return;
+    }
+
+    // Fallback to local DnD mock mode
+    if (onCreateTask) {
+      const agentName = agents.find((a) => a.id.toString() === form.assignTo)?.name || form.assignTo;
+      const newItem: DndItem = {
+        id: `task-${++taskIdRef.current}`,
+        label: agentName,
+        description: form.title,
+        location: `${form.location}${form.address ? `, ${form.address}` : ""}`,
+        time: "Just now",
+        category: form.category,
+        dueDate: form.dueDate,
+        addedDescription: form.description,
+        statusLabel: STATUS_OPTIONS.find((s) => s.value === form.status)?.short,
+      };
+      onCreateTask(form.status, newItem);
+      handleClose();
+    }
   };
 
   const handleClose = () => {
@@ -253,8 +316,8 @@ export function CreateTaskModal({
                 <option value="" disabled>
                   Select task type
                 </option>
-                {TASK_TYPES.map((t) => (
-                  <option key={t}>{t}</option>
+                {Object.keys(TASK_TYPES).map((t) => (
+                  <option key={t} value={t}>{t}</option>
                 ))}
               </select>
             </InputWrap>
@@ -292,9 +355,15 @@ export function CreateTaskModal({
                 <option value="" disabled>
                   Select agent
                 </option>
-                {AGENTS.map((a) => (
-                  <option key={a}>{a}</option>
-                ))}
+                {loadingAgents ? (
+                  <option disabled>Loading...</option>
+                ) : (
+                  agents.map((a) => (
+                    <option key={a.id} value={a.id.toString()}>
+                      {a.name}
+                    </option>
+                  ))
+                )}
               </select>
             </InputWrap>
             {errors.assignTo && (
@@ -512,10 +581,15 @@ export function CreateTaskModal({
         <div className="px-5 py-4 shrink-0 border-t border-gray-100">
           <button
             onClick={handleSubmit}
-            className="w-full py-3 bg-[#09232d] text-white rounded-2xl text-sm font-bold hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-lg"
+            disabled={isPending}
+            className="w-full py-3 bg-[#09232d] text-white rounded-2xl text-sm font-bold hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-60"
           >
-            <CheckCircle size={15} />
-            Create Task
+            {isPending ? (
+              <Loader2 className="animate-spin" size={15} />
+            ) : (
+              <CheckCircle size={15} />
+            )}
+            {isPending ? "Creating..." : "Create Task"}
           </button>
         </div>
       </div>

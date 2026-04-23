@@ -155,7 +155,7 @@ export function TaskColumn({
         {!showForm && (
           <button
             onClick={() => setShowForm(true)}
-            className="w-full flex items-center justify-between px-2 py-3 text-gray-400 hover:text-[#0B1215] transition-colors group mt-1"
+            className="w-full flex items-center justify-between px-2 py-3 text-gray-400 hover:text-[#0B1215] transition-colors group mt-6"
           >
             <span className="text-xs font-medium">Add Card Manually</span>
             <div className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center group-hover:border-[#0B1215] transition-colors">

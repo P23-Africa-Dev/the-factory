@@ -1,11 +1,11 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { ProjectsView } from "@/components/operations/projects-view";
 import { AllTasksView } from "@/components/operations/all-tasks-view";
 import { useProjects } from "@/hooks/use-projects";
-import { getCompanyId } from "@/lib/auth/session";
+import { useAuthStore } from "@/store/auth";
 
 type ProjectsTab = "projects" | "tasks";
 
@@ -22,10 +22,17 @@ function ProjectsContent() {
 
   const activeTab = (searchParams.get("tab") as ProjectsTab) || "projects";
 
-  const companyId = typeof window !== "undefined" ? getCompanyId() : null;
-  const { data: projects = [], isLoading } = useProjects(
-    companyId ? { company_id: companyId } : {}
+  // Pull company_id from the auth store (populated by /me)
+  const companyId = useAuthStore((s) => s.user?.active_company?.id);
+
+  const [page, setPage] = useState(1);
+
+  const { data, isPending: isLoading } = useProjects(
+    companyId ? { company_id: companyId, page } : {}
   );
+
+  const projects = data?.projects ?? [];
+  const pagination = data?.pagination ?? null;
 
   const handleTabChange = (tab: ProjectsTab) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -65,6 +72,9 @@ function ProjectsContent() {
             projects={projects}
             onViewProject={handleViewProject}
             isLoading={isLoading}
+            pagination={pagination}
+            currentPage={page}
+            onPageChange={setPage}
           />
         ) : (
           <AllTasksView />

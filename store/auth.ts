@@ -1,13 +1,16 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { ActiveCompany } from "@/lib/api/onboarding";
+
 export type AuthUser = {
   id: number;
   name: string;
   email: string;
   avatar: string | null;
-  user_type: string;
-  access_role: string;
+  user_type?: string;
+  access_role?: string;
+  active_company: ActiveCompany | null;
 };
 
 type AuthState = {

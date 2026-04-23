@@ -153,6 +153,14 @@ export function createWorkspace(payload: WorkspacePayload, token: string) {
   });
 }
 
+export type ActiveCompany = {
+  id: number;
+  company_id: string;
+  name: string;
+  status: string;
+  role: string;
+};
+
 export type MeResponse = {
   id: number;
   name: string;
@@ -161,6 +169,7 @@ export type MeResponse = {
   email_verified: boolean;
   onboarding_completed: boolean;
   onboarding_completed_at: string | null;
+  active_company: ActiveCompany | null;
   created_at: string;
 };
 

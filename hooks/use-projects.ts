@@ -11,11 +11,15 @@ import {
   getProject,
   createProject,
   updateProject,
+  fetchInternalUsers,
   type ListProjectsParams,
   type CreateProjectPayload,
   type UpdateProjectPayload,
   type ProjectsListData,
   type ProjectDetailData,
+  type PaginationData,
+  type InternalUser,
+  type InternalUsersParams,
 } from "@/lib/api/projects";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { mapApiProject } from "@/types/operations";
@@ -27,16 +31,29 @@ export const PROJECT_KEYS = {
   detail: (id: number | string) => ["project", id] as const,
 };
 
+export const INTERNAL_USER_KEYS = {
+  all: ["internal-users"] as const,
+  list: (params: InternalUsersParams) => ["internal-users", params] as const,
+};
+
 // ─── List ─────────────────────────────────────────────────────────────────────
+
+export type ProjectsResult = {
+  projects: Project[];
+  pagination: PaginationData;
+};
 
 export function useProjects(params: ListProjectsParams = {}) {
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
   return useQuery({
     queryKey: PROJECT_KEYS.list(params),
-    queryFn: async (): Promise<Project[]> => {
+    queryFn: async (): Promise<ProjectsResult> => {
       const res = await listProjects(params, token);
-      return res.data.items.map(mapApiProject);
+      return {
+        projects: res.data.items.map(mapApiProject),
+        pagination: res.data.pagination,
+      };
     },
     enabled: !!token,
     staleTime: 1000 * 60 * 2,
@@ -92,3 +109,20 @@ export function useUpdateProject(
     },
   });
 }
+
+// ─── Internal Users (supervisors for project lead) ────────────────────────────
+
+export function useInternalUsers(params: InternalUsersParams = { role: "supervisor" }) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useQuery({
+    queryKey: INTERNAL_USER_KEYS.list(params),
+    queryFn: async (): Promise<InternalUser[]> => {
+      const res = await fetchInternalUsers(params, token);
+      return res.data;
+    },
+    enabled: !!token,
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
