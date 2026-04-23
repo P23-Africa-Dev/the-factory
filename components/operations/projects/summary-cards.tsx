@@ -77,7 +77,7 @@ function PerformanceCard({
   dotY: number;
 }) {
   return (
-    <div className="bg-[#0B1C25] rounded-[20px] p-6 sm:p-8 relative shadow-sm flex items-center gap-6 lg:gap-10 overflow-hidden min-h-45 max-h-52 shrink-0">
+    <div className="bg-[#0B1C25] rounded-[20px] p-6 sm:p-8 relative flex items-center gap-6 lg:gap-10 overflow-hidden min-h-45 max-h-52 shrink-0 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
       <div className="relative w-41.5 h-41.5 shrink-0">
         <svg
           viewBox="0 0 100 100"

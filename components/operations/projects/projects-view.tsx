@@ -1,11 +1,12 @@
+import WorkIcon from "@/assets/images/work.png";
 import { Project } from "@/types/operations";
-import { BookmarkPlus, Search, SlidersHorizontal } from "lucide-react";
+import { Search, SlidersHorizontal } from "lucide-react";
+import Image from "next/image";
 import { useMemo, useState } from "react";
 import { CreateProjectDrawer } from "../create-project-drawer";
 import { PRIORITY_FILTERS, STATUS_FILTERS } from "./constants";
 import { ProjectCard } from "./project-card";
 import { SummaryCards } from "./summary-cards";
-
 interface ProjectsViewProps {
   projects: Project[];
   onViewProject: (projectId: string) => void;
@@ -150,7 +151,7 @@ function FilterButton({ active, onClick }: FilterButtonProps) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
+      className={`flex items-center gap-2 px-2.5 py-1.75 rounded-[10px] transition-all shrink-0 cursor-pointer ${
         active ? "text-white" : "text-gray-500"
       }`}
       style={{
@@ -183,10 +184,9 @@ function CreateButton({ onClick }: CreateButtonProps) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
-      style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
+      className="flex items-center gap-2 px-2.5 py-1.75 bg-dash-dark text-white rounded-[10px] text-[10px] font-medium hover:opacity-90 transition-all shrink-0 cursor-pointer"
     >
-      <BookmarkPlus size={15} strokeWidth={2} />
+      <Image src={WorkIcon} alt="plus" width={15} height={15} />
       <span className="hidden sm:inline whitespace-nowrap">
         Create New Project
       </span>
