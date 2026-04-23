@@ -22,13 +22,13 @@ export default function DashboardPage() {
     <div className="min-h-full bg-[#09232D] text-white overflow-x-hidden">
       {/* Header Section with Grid Texture */}
       <div className="px-6 md:px-12 pt-24 md:pt-16 pb-20 md:pb-32 relative hero-grid">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:justify-between md:items-end gap-10 md:gap-0 relative z-10">
+        <div className="mx-25 flex flex-col md:flex-row md:justify-between md:items-end gap-10 md:gap-0 relative z-10">
           <DashboardGreeting />
 
           <div className="flex items-center gap-2 text-right self-start md:self-auto">
             <span
               style={{ fontFamily: "var(--font-montserrat)" }}
-              className="text-[48px] md:text-[64px] font-bold leading-none align-middle font-(--font-montserrat) text-white"
+              className="text-[48px] md:text-[64px] leading-none align-middle font-(--font-montserrat) text-white"
             >
               {day}
             </span>
