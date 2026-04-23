@@ -5,14 +5,16 @@ import Input from "@/components/ui/input";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { loginUser } from "@/lib/api/auth";
+import { loginUser, loginAgent } from "@/lib/api/auth";
 import { ApiRequestError, getMe } from "@/lib/api/onboarding";
-import { setAuthSession } from "@/lib/auth/session";
+import { setAuthSession, setActiveCompanyId } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+
+type LoginType = "shared" | "agent";
 
 const loginSchema = z.object({
   terms: z.boolean().refine((val) => val === true, "You must agree to the terms."),
@@ -26,6 +28,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export default function LoginForm() {
   const router = useRouter();
   const setUser = useAuthStore((s) => s.setUser);
+  const [loginType, setLoginType] = useState<LoginType>("shared");
   const [showPassword, setShowPassword] = useState(false);
   const [globalError, setGlobalError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -56,22 +59,46 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      const res = await loginUser({ email: values.email, password: values.password });
-      const token = res.data.token;
-      setAuthSession(token, values.remember ?? true);
+      const credentials = { email: values.email, password: values.password };
+
+      let token: string;
+      let userType: string | undefined;
+      let accessRole: string | undefined;
+      let internalRole: string | null | undefined;
+
+      if (loginType === "agent") {
+        const res = await loginAgent(credentials);
+        token = res.data.token;
+        accessRole = res.data.access_role;
+        internalRole = res.data.internal_role;
+        setAuthSession(token, values.remember ?? true);
+      } else {
+        const res = await loginUser(credentials);
+        token = res.data.token;
+        userType = res.data.user_type;
+        accessRole = res.data.access_role;
+        internalRole = res.data.internal_role;
+        setAuthSession(token, values.remember ?? true);
+      }
 
       const me = await getMe(token);
+
+      if (me.data.active_company?.id) {
+        setActiveCompanyId(me.data.active_company.id);
+      }
+
       setUser({
         id: me.data.id,
         name: me.data.name,
         email: me.data.email,
         avatar: me.data.avatar,
-        user_type: res.data.user_type,
-        access_role: res.data.access_role,
+        user_type: userType,
+        access_role: accessRole,
+        internal_role: internalRole,
         active_company: me.data.active_company,
       });
 
-      toast.success(res.message);
+      toast.success("Login successful.");
       router.push("/dashboard");
     } catch (err) {
       if (err instanceof ApiRequestError) {
@@ -94,6 +121,25 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col" noValidate>
+      {/* ── Login type toggle ─────────────────────────────────── */}
+      <div className="flex gap-1 bg-gray-100 rounded-full p-1 mb-8 mx-2 md:mx-7">
+        {(["shared", "agent"] as LoginType[]).map((type) => (
+          <button
+            key={type}
+            type="button"
+            onClick={() => { setLoginType(type); setGlobalError(""); }}
+            className={`flex-1 py-2.5 rounded-full text-xs font-semibold transition-all ${
+              loginType === type
+                ? "bg-white text-[#34373C] shadow-sm"
+                : "text-[#A9AAAB] hover:text-[#34373C]"
+            }`}
+          >
+            {type === "shared" ? "Admin / Supervisor" : "Agent"}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Terms ─────────────────────────────────────────────── */}
       <div className="flex items-start gap-4 mb-9 px-2 md:px-7">
         <div className="relative flex items-center justify-center mt-0.5">
           <input
@@ -136,6 +182,7 @@ export default function LoginForm() {
         </div>
       </div>
 
+      {/* ── Email ─────────────────────────────────────────────── */}
       <div className="mb-6">
         <Input
           type="email"
@@ -143,12 +190,11 @@ export default function LoginForm() {
           {...register("email")}
         />
         {errors.email && (
-          <p className="mt-1.5 px-1 text-xs text-red-500">
-            {errors.email.message}
-          </p>
+          <p className="mt-1.5 px-1 text-xs text-red-500">{errors.email.message}</p>
         )}
       </div>
 
+      {/* ── Password ──────────────────────────────────────────── */}
       <div className="relative mb-6">
         <Input
           type={showPassword ? "text" : "password"}
@@ -163,30 +209,12 @@ export default function LoginForm() {
           tabIndex={-1}
         >
           {showPassword ? (
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
               <circle cx="12" cy="12" r="3" />
             </svg>
           ) : (
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 10a13.35 13.35 0 0 0 9 4 13.35 13.35 0 0 0 9-4" />
               <path d="M12 14v4" />
               <path d="M8.5 13.5l-2 3" />
@@ -195,18 +223,15 @@ export default function LoginForm() {
           )}
         </button>
         {errors.password && (
-          <p className="mt-1.5 px-1 text-xs text-red-500">
-            {errors.password.message}
-          </p>
+          <p className="mt-1.5 px-1 text-xs text-red-500">{errors.password.message}</p>
         )}
       </div>
 
       {globalError && (
-        <p className="mb-4 px-1 text-sm text-red-500 text-center">
-          {globalError}
-        </p>
+        <p className="mb-4 px-1 text-sm text-red-500 text-center">{globalError}</p>
       )}
 
+      {/* ── Remember / Forgot ─────────────────────────────────── */}
       <div className="flex items-center justify-between mb-16 px-2 md:px-7">
         <div className="flex items-center gap-3">
           <div className="relative flex items-center justify-center">
@@ -222,26 +247,14 @@ export default function LoginForm() {
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
             >
-              <path
-                d="M1 4L3.5 6.5L9 1"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+              <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <label
-            htmlFor="remember"
-            className="text-sm text-[#A9AAAB] cursor-pointer"
-          >
+          <label htmlFor="remember" className="text-sm text-[#A9AAAB] cursor-pointer">
             Remember Me
           </label>
         </div>
-        <Link
-          href="/forgot-password"
-          className="text-sm font-bold text-[#34373C] hover:underline"
-        >
+        <Link href="/forgot-password" className="text-sm font-bold text-[#34373C] hover:underline">
           Forgot Password?
         </Link>
       </div>
@@ -252,10 +265,7 @@ export default function LoginForm() {
 
       <p className="text-center text-xs mt-4 text-[#A9AAAB]">
         Don&apos;t have an account?{" "}
-        <Link
-          href="/register"
-          className="font-bold text-[#34373C] cursor-pointer hover:underline"
-        >
+        <Link href="/register" className="font-bold text-[#34373C] cursor-pointer hover:underline">
           Contact Us.
         </Link>
       </p>

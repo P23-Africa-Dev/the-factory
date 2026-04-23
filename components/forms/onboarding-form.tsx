@@ -2,12 +2,14 @@
 
 import {
   createWorkspace,
+  getMe,
   type ApiRequestError,
   type WorkspacePayload,
 } from "@/lib/api/onboarding";
 import {
   getAuthTokenFromDocument,
   setOnboardingCompletedCookie,
+  setActiveCompanyId,
 } from "@/lib/auth/session";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
@@ -73,10 +75,15 @@ export default function OnboardingForm() {
   const isFilled = companyNameValue?.trim() !== "" && countryValue?.trim() !== "";
 
   const workspaceMutation = useMutation({
-    mutationFn: (values: WorkspacePayload) => {
+    mutationFn: async (values: WorkspacePayload) => {
       const token = getAuthTokenFromDocument();
       if (!token) throw new Error("Your session has expired. Please verify your email again.");
-      return createWorkspace(values, token);
+      const res = await createWorkspace(values, token);
+      const me = await getMe(token);
+      if (me.data.active_company?.id) {
+        setActiveCompanyId(me.data.active_company.id);
+      }
+      return res;
     },
     onSuccess: (res) => {
       setOnboardingCompletedCookie();
@@ -84,6 +91,10 @@ export default function OnboardingForm() {
       router.push("/login");
     },
     onError: (err: ApiRequestError | Error) => {
+      if ("status" in err && (err as ApiRequestError).status === 409) {
+        router.push("/dashboard");
+        return;
+      }
       toast.error(err.message);
     },
   });

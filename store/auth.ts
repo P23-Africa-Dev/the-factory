@@ -10,6 +10,7 @@ export type AuthUser = {
   avatar: string | null;
   user_type?: string;
   access_role?: string;
+  internal_role?: string | null;
   active_company: ActiveCompany | null;
 };
 

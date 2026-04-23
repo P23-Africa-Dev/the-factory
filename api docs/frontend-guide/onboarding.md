@@ -11,7 +11,8 @@ This flow handles new self-serve user onboarding using password setup, email OTP
 5. Frontend stores token and loads user profile.
 6. User submits workspace form to complete onboarding.
 7. Backend creates both workspace and company membership (`company_users.role=owner`) in the same transaction.
-8. User can immediately sign in from login screen using the same email and password.
+8. Frontend calls `GET /api/v1/user/me` and stores `active_company.id` as the canonical tenant context.
+9. User can immediately sign in from login screen using the same email and password.
 
 ## API Endpoints
 - POST /api/v1/auth/register
@@ -177,6 +178,25 @@ export async function login(email, password) {
   if (!res.ok || !body.success) throw body;
   return body.data;
 }
+
+export async function getMe() {
+  const token = localStorage.getItem('auth_token');
+  const res = await fetch(`${API}/user/me`, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const body = await res.json();
+  if (!res.ok || !body.success) throw body;
+
+  if (body.data.active_company?.id) {
+    localStorage.setItem('active_company_id', String(body.data.active_company.id));
+  }
+
+  return body.data;
+}
 ```
 
 ## Notes & Edge Cases
@@ -184,5 +204,7 @@ export async function login(email, password) {
 - OTP is 6 digits and time-limited.
 - Resend is rate-limited plus cooldown.
 - Token is required before workspace creation.
+- Use `active_company.id` from `/api/v1/user/me` for company-scoped requests that require `company_id`.
+- Never send `user.id` as `company_id`; they are different entities.
 - Password is created at registration and should never be stored in frontend state longer than needed.
 - Existing OTP/email verification logic remains the same; password setup does not bypass verification.

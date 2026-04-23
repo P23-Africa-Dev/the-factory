@@ -37,6 +37,7 @@ Allowed users:
 2. `POST /api/v1/auth/logout` (authenticated, revokes current token)
 3. `POST /api/v1/agent/login`
 4. `POST /api/v1/internal/login` (deprecated alias for agents only)
+5. `GET /api/v1/user/me` (authenticated profile including active company context)
 
 ## Request Structure
 
@@ -64,6 +65,40 @@ Headers:
 - `Accept: application/json`
 
 ## Response Structure
+
+### Authenticated user profile (`GET /api/v1/user/me`)
+
+```json
+{
+  "success": true,
+  "message": "User profile fetched successfully.",
+  "data": {
+    "id": 397,
+    "name": "Muyiwa Moses",
+    "email": "muyi@yopmail.com",
+    "avatar": null,
+    "email_verified": true,
+    "onboarding_completed": true,
+    "onboarding_completed_at": "2026-04-18T16:29:36+00:00",
+    "active_company": {
+      "id": 322,
+      "company_id": "FAC-GZZLGAUP",
+      "name": "Acme Manufacturing",
+      "status": "active",
+      "role": "owner"
+    },
+    "created_at": "2026-04-18T16:14:51+00:00"
+  },
+  "errors": null
+}
+```
+
+Company context rules:
+
+1. Company-scoped APIs use active membership in `company_users`.
+2. If request sends `company_id`, user must belong to that exact active company.
+3. If request omits `company_id`, backend resolves latest active membership automatically.
+4. Frontend should use `data.active_company.id` from `/api/v1/user/me` when explicitly sending `company_id`.
 
 ### Shared auth success (200)
 
