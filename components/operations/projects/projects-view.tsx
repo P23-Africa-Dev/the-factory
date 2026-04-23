@@ -10,6 +10,7 @@ import { SummaryCards } from "./summary-cards";
 interface ProjectsViewProps {
   projects: Project[];
   onViewProject: (projectId: string) => void;
+  isLoading?: boolean;
 }
 
 export function ProjectsView({ projects, onViewProject }: ProjectsViewProps) {

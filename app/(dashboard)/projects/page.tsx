@@ -11,7 +11,7 @@ type ProjectsTab = "projects" | "tasks";
 
 const TABS: { value: ProjectsTab; label: string }[] = [
   { value: "projects", label: "All Projects" },
-  { value: "tasks", label: "All Tasks" },
+  { value: "tasks", label: "Tasks" },
 ];
 
 // ─── Page content ─────────────────────────────────────────────────────────────
@@ -24,11 +24,12 @@ function ProjectsContent() {
 
   const companyId = typeof window !== "undefined" ? getCompanyId() : null;
   const { data: projects = [], isLoading } = useProjects(
-    companyId ? { company_id: companyId } : {}
+    companyId ? { company_id: companyId } : {},
   );
 
   const handleTabChange = (tab: ProjectsTab) => {
     const params = new URLSearchParams(searchParams.toString());
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     tab === "projects" ? params.delete("tab") : params.set("tab", tab);
     router.push(`${pathname}?${params.toString()}`);
   };
