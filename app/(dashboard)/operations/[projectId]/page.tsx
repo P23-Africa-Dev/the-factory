@@ -112,11 +112,19 @@ const INITIAL_DATA: DndContainer[] = [
 
 // ─── Pie chart label ──────────────────────────────────────────────────────────
 function CustomLabel({
-  cx = 0, cy = 0, midAngle = 0,
-  innerRadius = 0, outerRadius = 0, value = 0,
+  cx = 0,
+  cy = 0,
+  midAngle = 0,
+  innerRadius = 0,
+  outerRadius = 0,
+  value = 0,
 }: {
-  cx?: number; cy?: number; midAngle?: number;
-  innerRadius?: number; outerRadius?: number; value?: number;
+  cx?: number;
+  cy?: number;
+  midAngle?: number;
+  innerRadius?: number;
+  outerRadius?: number;
+  value?: number;
 }) {
   if (value === 0) return null;
   const RADIAN = Math.PI / 180;
@@ -127,8 +135,15 @@ function CustomLabel({
   return (
     <g>
       <circle cx={x} cy={y} r={22} fill="white" />
-      <text x={x} y={y} textAnchor="middle" dominantBaseline="central"
-        fill="#0B1215" fontSize={13} fontWeight={800}>
+      <text
+        x={x}
+        y={y}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill="#0B1215"
+        fontSize={13}
+        fontWeight={800}
+      >
         {value}%
       </text>
     </g>
@@ -139,36 +154,65 @@ function CustomLabel({
 function ProjectTasksContent() {
   const router = useRouter();
 
-  const { containers, addItem, moveItem, moveToContainer, moveBetweenContainers, findContainer } =
-    useDragAndDrop(INITIAL_DATA);
+  const {
+    containers,
+    addItem,
+    moveItem,
+    moveToContainer,
+    moveBetweenContainers,
+    findContainer,
+  } = useDragAndDrop(INITIAL_DATA);
 
   const [showModal, setShowModal] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<{ item: DndItem; containerId: string } | null>(null);
+  const [selectedTask, setSelectedTask] = useState<{
+    item: DndItem;
+    containerId: string;
+  } | null>(null);
 
   const stats = useMemo(() => {
-    const total = containers.reduce((s: number, c: DndContainer) => s + c.items.length, 0);
-    if (total === 0) return [
-      { name: "Pending", value: 0, color: "#BD7A22" },
-      { name: "In Progress", value: 0, color: "#094B5C" },
-      { name: "Complete", value: 0, color: "#4FD1C5" },
-    ];
-    const pending = containers.find((c: DndContainer) => c.id === "pending")?.items.length ?? 0;
-    const inProgress = containers.find((c: DndContainer) => c.id === "in-progress")?.items.length ?? 0;
-    const completed = containers.find((c: DndContainer) => c.id === "completed")?.items.length ?? 0;
+    const total = containers.reduce(
+      (s: number, c: DndContainer) => s + c.items.length,
+      0,
+    );
+    if (total === 0)
+      return [
+        { name: "Pending", value: 0, color: "#BD7A22" },
+        { name: "In Progress", value: 0, color: "#094B5C" },
+        { name: "Complete", value: 0, color: "#4FD1C5" },
+      ];
+    const pending =
+      containers.find((c: DndContainer) => c.id === "pending")?.items.length ??
+      0;
+    const inProgress =
+      containers.find((c: DndContainer) => c.id === "in-progress")?.items
+        .length ?? 0;
+    const completed =
+      containers.find((c: DndContainer) => c.id === "completed")?.items
+        .length ?? 0;
     return [
-      { name: "Pending", value: Math.round((pending / total) * 100), color: "#BD7A22" },
-      { name: "In Progress", value: Math.round((inProgress / total) * 100), color: "#094B5C" },
-      { name: "Complete", value: Math.round((completed / total) * 100), color: "#4FD1C5" },
+      {
+        name: "Pending",
+        value: Math.round((pending / total) * 100),
+        color: "#BD7A22",
+      },
+      {
+        name: "In Progress",
+        value: Math.round((inProgress / total) * 100),
+        color: "#094B5C",
+      },
+      {
+        name: "Complete",
+        value: Math.round((completed / total) * 100),
+        color: "#4FD1C5",
+      },
     ];
   }, [containers]);
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
       <div className="flex flex-col xl:flex-row gap-6 items-start animate-in fade-in slide-in-from-bottom-4 duration-500">
-
         {/* ── LEFT: header + kanban ─────────────────────────── */}
         <div className="flex-1 xl:flex-3 min-w-0 flex flex-col gap-5 w-full">
-
           {/* Header row */}
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4 md:mb-8">
             {/* Back + project info */}
@@ -183,7 +227,7 @@ function ProjectTasksContent() {
                 <h1 className="text-[18px] font-extrabold text-[#09232D] leading-tight">
                   Product Outreach
                 </h1>
-                <p className="text-[11px] text-gray-400 mt-0.5 max-w-xs leading-relaxed">
+                <p className="text-[10px] text-gray-400 mt-0.5 max-w-xs leading-relaxed">
                   Physical outreach and transforms executive networking from
                   casual connections to strategic growth
                 </p>
@@ -196,7 +240,11 @@ function ProjectTasksContent() {
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] font-medium transition-all cursor-pointer"
                 style={{ background: "#F8F8F8", border: "0.5px solid #D1D1D1" }}
               >
-                <SlidersHorizontal size={13} strokeWidth={2} className="text-gray-400" />
+                <SlidersHorizontal
+                  size={13}
+                  strokeWidth={2}
+                  className="text-gray-400"
+                />
                 <span className="text-gray-500 text-[10px]">Filter</span>
               </button>
 
@@ -220,20 +268,26 @@ function ProjectTasksContent() {
             moveItem={moveItem}
             moveToContainer={moveToContainer}
             moveBetweenContainers={moveBetweenContainers}
-            onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
+            onTaskClick={(item, containerId) =>
+              setSelectedTask({ item, containerId })
+            }
           />
         </div>
 
         {/* ── RIGHT: stats + calendar ───────────────────────── */}
         <div className="w-full sm:max-w-sm xl:max-w-85 xl:flex-1 xl:min-w-70 flex flex-col gap-5 xl:shrink-0">
-
           {/* Task Stats */}
           <div className="bg-[#0A1A22] rounded-[28px] px-5 pt-5 pb-4 shadow-xl overflow-visible">
-            <h3 className="text-gray-400 font-medium text-[13px] mb-1">Task Stats</h3>
+            <h3 className="text-gray-400 font-medium text-[13px] mb-1">
+              Task Stats
+            </h3>
             <div className="flex items-center justify-between gap-2">
               <div className="w-44 h-44 shrink-0 -ml-4">
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }} style={{ overflow: 'visible' }}>
+                  <PieChart
+                    margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+                    style={{ overflow: "visible" }}
+                  >
                     <Pie
                       data={stats}
                       cx="50%"
