@@ -30,7 +30,7 @@ function OperationsContent() {
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
       <div className="max-w-400 mx-auto flex flex-col gap-5">
         {/* ── Tabs ── */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 relative z-20">
           <div className="flex gap-1 bg-white rounded-full p-1.5 border border-gray-100 shadow-sm">
             {TABS.map((tab) => (
               <button

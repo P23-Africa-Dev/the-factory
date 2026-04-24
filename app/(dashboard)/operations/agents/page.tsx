@@ -234,8 +234,8 @@ export default function AllAgentsPage() {
             onClick={() => setShowAddModal(true)}
             className="flex items-center gap-2 px-4 sm:px-6 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shadow-lg shrink-0 cursor-pointer"
           >
-            <span>Add New Agent</span>
             <BookmarkPlus size={16} />
+            <span>Add New Agent</span>
           </button>
         </div>
 
