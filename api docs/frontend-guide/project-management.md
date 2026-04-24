@@ -63,9 +63,10 @@ JSON shape:
 Request rules:
 
 1. `company_id` is required on create.
-2. `project_manager_user_id` is required and must be a same-company `owner|admin|supervisor` member.
+2. `project_manager_user_id` is optional. If provided, the user must be a same-company `owner|admin|supervisor` member. Pass `null` or omit entirely to create a project without a designated manager.
 3. `project_manager` is accepted as a backward-compatible alias and maps to `project_manager_user_id`.
 4. `assigned_team` members must all belong to the same company.
+5. `status` defaults to `planning` if omitted.
 
 Multipart file fields:
 

@@ -15,6 +15,9 @@ Core domain endpoints:
 1. Projects: /api/v1/projects
 2. Tasks: /api/v1/tasks
 3. Agent self-task: /api/v1/agent/tasks/self
+4. User profile: /api/v1/user/me
+5. Logout: /api/v1/auth/logout
+6. Avatar catalog: /api/v1/avatars?gender=male|female
 
 ## Recommended Client Auth Model
 
@@ -113,6 +116,79 @@ export async function loginAgent(email: string, password: string) {
 }
 ```
 
+## Logout
+
+```typescript
+export async function logout() {
+  await fetch(`${API_BASE}/auth/logout`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('access_role');
+  localStorage.removeItem('user_type');
+  localStorage.removeItem('internal_role');
+}
+```
+
+## User Profile
+
+```typescript
+export async function fetchMe() {
+  const response = await fetch(`${API_BASE}/user/me`, {
+    headers: authHeaders(),
+  });
+  const body = await response.json();
+  if (!response.ok || !body.success) throw body;
+  return body.data; // UserResource object
+}
+```
+
+## Internal Onboarding Avatar Integration
+
+Avatar loading flow:
+
+1. Fetch invitation preview from POST /api/v1/internal/onboarding/preview
+2. Read prefilled_data.gender when available
+3. Call GET /api/v1/avatars?gender={gender} to load storage-backed PNGs
+4. Render key/url list and persist selected avatar_key
+5. Submit selected avatar_key to POST /api/v1/internal/onboarding/complete
+
+Avatar API response shape:
+
+```json
+{
+  "success": true,
+  "data": [
+    "http://localhost/storage/avatar/female/avatar_1.png",
+    "http://localhost/storage/avatar/female/avatar_2.png"
+  ]
+}
+```
+
+Preview response notes:
+
+1. avatar_options returns selected-gender options as key/url/svg
+2. avatar_options_by_gender returns male/female grouped options
+3. selected_avatar_svg is provided for backward compatibility
+4. suggested_avatar_key is safe default for first render
+
+Completion response notes:
+
+1. avatar_url is returned when selected avatar exists in public storage
+2. avatar_svg remains available as compatibility fallback
+
+Validation behavior:
+
+1. avatar_key must belong to selected gender
+2. invitation token must match hashed invitation token
+3. expired, revoked, or previously accepted invitations return 422
+
+## Date Format Convention
+
+All API date-time fields use ISO 8601 format (`2025-01-15T10:30:00.000000Z`).
+Date-only fields (e.g. project `start_date`, `end_date`) use `YYYY-MM-DD` format.
+
 ## Task Integration Notes
 
 Management task create:
@@ -157,8 +233,14 @@ Progress UI rendering:
 ## Error Handling
 
 1. 401: token expired/invalid or login failure
-2. 422: validation or role/company access issue
-3. 429: throttling
+2. 403: role-based access violation
+3. 422: validation or role/company access issue
+4. 429: throttling
+
+Company context notes:
+1. All tenant-bound APIs resolve company context from `company_users`.
+2. Shared auth and agent auth require users to have active company membership.
+3. Frontend should always pass explicit `company_id` when available for deterministic context selection.
 
 Examples:
 

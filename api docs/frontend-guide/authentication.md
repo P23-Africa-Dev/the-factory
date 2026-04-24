@@ -19,8 +19,14 @@ Authentication is role-aware and now uses two entry points:
 
 ## API Endpoints
 1. `POST /api/v1/auth/login`
+2. `POST /api/v1/auth/register`
+3. `POST /api/v1/auth/verify-email`
+4. `POST /api/v1/onboarding/workspace` (authenticated)
+5. `POST /api/v1/enterprise/onboarding/complete`
+6. `POST /api/v1/auth/logout` (authenticated)
 2. `POST /api/v1/agent/login`
-3. `POST /api/v1/internal/login` only for temporary backward compatibility with older agent clients
+7. `POST /api/v1/internal/login` only for temporary backward compatibility with older agent clients
+8. `GET /api/v1/user/me` to fetch authenticated user and active company context
 
 ## Request Examples
 Shared auth login:
@@ -63,6 +69,28 @@ Shared auth success:
       "id": 1,
       "name": "Jane Doe",
       "email": "supervisor@example.com"
+    }
+  }
+}
+```
+
+Authenticated profile response (dashboard bootstrap):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "email": "owner@example.com",
+    "onboarding_completed": true,
+    "enterprise_onboarding_completed": true,
+    "user_type": "enterprise",
+    "active_company": {
+      "id": 10,
+      "company_id": "FAC-ABCD1234",
+      "name": "Acme Co",
+      "status": "active",
+      "role": "owner"
     }
   }
 }
@@ -158,6 +186,51 @@ export async function loginSharedAuth(email, password) {
   return body.data;
 }
 
+export async function verifyEmailOtp(email, otpCode) {
+  const response = await fetch(`${API_BASE}/auth/verify-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ email, otp_code: otpCode }),
+  });
+
+  const body = await response.json();
+  if (!response.ok || !body.success) throw body;
+
+  // Critical: persist token before redirecting to onboarding/dashboard
+  localStorage.setItem('auth_token', body.data.token);
+
+  return body.data;
+}
+
+export async function completeEnterpriseOnboarding(payload) {
+  const response = await fetch(`${API_BASE}/enterprise/onboarding/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await response.json();
+  if (!response.ok || !body.success) throw body;
+
+  // Critical: persist token before redirecting to dashboard
+  localStorage.setItem('auth_token', body.data.token);
+
+  return body.data;
+}
+
+export async function createWorkspace(payload) {
+  const response = await fetch(`${API_BASE}/onboarding/workspace`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await response.json();
+  if (!response.ok || !body.success) throw body;
+
+  return body.data;
+}
+
 export async function loginAgent(email, password) {
   const response = await fetch(`${API_BASE}/agent/login`, {
     method: 'POST',
@@ -174,6 +247,45 @@ export async function loginAgent(email, password) {
 
   return body.data;
 }
+
+export async function getMe() {
+  const response = await fetch(`${API_BASE}/user/me`, {
+    headers: authHeaders(),
+  });
+
+  const body = await response.json();
+  if (!response.ok || !body.success) throw body;
+
+  // Always bind active company context from backend response
+  const activeCompany = body.data.active_company;
+  if (activeCompany?.id) {
+    localStorage.setItem('active_company_id', String(activeCompany.id));
+    localStorage.setItem('active_company_code', activeCompany.company_id);
+    localStorage.setItem('active_company_role', activeCompany.role);
+  }
+
+  return body.data;
+}
+
+export async function logout() {
+  const response = await fetch(`${API_BASE}/auth/logout`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+
+  const body = await response.json();
+
+  // Always clear local auth state regardless of response body
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('user_type');
+  localStorage.removeItem('access_role');
+  localStorage.removeItem('internal_role');
+  localStorage.removeItem('active_company_id');
+  localStorage.removeItem('active_company_code');
+  localStorage.removeItem('active_company_role');
+
+  return { ok: response.ok, body };
+}
 ```
 
 ## Notes & Edge Cases
@@ -181,3 +293,8 @@ export async function loginAgent(email, password) {
 2. Agents must use agent login, not shared auth login.
 3. Use role metadata (`access_role`, `user_type`, `internal_role`) to route UI after login.
 4. Legacy `/api/v1/internal/login` may still exist for compatibility, but new frontend integrations should use `/api/v1/agent/login`.
+5. For company-scoped APIs, prefer omitting `company_id` unless user explicitly switches company context.
+6. If sending `company_id`, use `active_company.id` from `/api/v1/user/me`; do not use `user.id`.
+7. Do not redirect to dashboard until token is persisted and `GET /api/v1/user/me` succeeds.
+8. Use `data.onboarding_completed` from `/api/v1/user/me` as canonical dashboard gate across self-serve and enterprise users.
+9. If `GET /api/v1/user/me` returns `401`, clear local auth state and route to login.

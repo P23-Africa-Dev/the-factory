@@ -4,11 +4,11 @@ import GoogleLogo from "@/assets/images/google-logo.png";
 import { registerUser, type ApiRequestError } from "@/lib/api/onboarding";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
-import OtpModal from "@/components/ui/otp-modal";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
@@ -49,9 +49,9 @@ const EyeOff = () => (
 );
 
 export default function SignupForm() {
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [otpState, setOtpState] = useState<{ realEmail: string; maskedEmail: string } | null>(null);
 
   const {
     register,
@@ -82,8 +82,8 @@ export default function SignupForm() {
     mutationFn: registerUser,
     onSuccess: (res, values) => {
       sessionStorage.setItem("onboarding_name", values.name);
-      setOtpState({ realEmail: values.email, maskedEmail: res.data.email });
       toast.success(res.message);
+      router.push(`/verify-otp?email=${encodeURIComponent(values.email)}`);
     },
     onError: (err: ApiRequestError) => {
       toast.error(err.message || "Registration failed. Please try again.");
@@ -98,14 +98,6 @@ export default function SignupForm() {
 
   return (
     <>
-      {otpState && (
-        <OtpModal
-          email={otpState.realEmail}
-          maskedEmail={otpState.maskedEmail}
-          onClose={() => setOtpState(null)}
-        />
-      )}
-
       <form className="flex flex-col" onSubmit={handleSubmit(onSubmit)}>
         <Input
           type="text"

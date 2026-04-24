@@ -17,8 +17,9 @@ import {
   getSetupInfo,
   type SetupInfoResponse,
 } from "@/lib/api/enterprise";
-import { ApiRequestError } from "@/lib/api/onboarding";
-import { setAuthSession } from "@/lib/auth/session";
+import { ApiRequestError, getMe } from "@/lib/api/onboarding";
+import { setAuthSession, setCompanyId } from "@/lib/auth/session";
+import { useAuthStore } from "@/store/auth";
 import { toast } from "sonner";
 
 /* ─── Validation schema ──────────────────────────────────────────────────────── */
@@ -153,6 +154,7 @@ function EyeToggle({
 function EnterpriseSetupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const setUser = useAuthStore((s) => s.setUser);
   const [globalError, setGlobalError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -207,10 +209,28 @@ function EnterpriseSetupContent() {
         password_confirmation: values.password_confirmation,
       });
     },
-    onSuccess: (response) => {
-      // setAuthSession(response.data.token, true);
+    onSuccess: async (response) => {
+      const token = response.data.token;
+      setAuthSession(token, true);
       toast.success(response.message);
-      router.push("/login");
+
+      try {
+        const meRes = await getMe(token);
+        if (meRes.data.active_company?.id) {
+          setCompanyId(meRes.data.active_company.id);
+        }
+        setUser({
+          id: meRes.data.id,
+          name: meRes.data.name,
+          email: meRes.data.email,
+          avatar: meRes.data.avatar,
+          active_company: meRes.data.active_company,
+        });
+      } catch {
+        // /me failure is non-fatal — session is saved, dashboard will re-fetch
+      }
+
+      router.push("/dashboard");
     },
     onError: (error: ApiRequestError | Error) => {
       setGlobalError(error.message || "Unable to complete setup.");
