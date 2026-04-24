@@ -40,7 +40,7 @@ const navItems = [
   },
   { name: "CRM", href: "/crm", icon: CRMIcon },
   // { name: 'Insight', href: '/insight', icon: InsightIcon },
-  { name: "Finance", href: "/finance", icon: FinanceIcon, hasDropdown: true },
+  { name: "Payroll", href: "/payroll", icon: FinanceIcon, hasDropdown: true },
 ];
 
 export function Navbar() {

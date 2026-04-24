@@ -2,10 +2,10 @@
 
 import { useRef } from "react";
 import { ImagePlus, Plus } from "lucide-react";
-import { SectionDivider } from "@/components/finance/payroll/section-divider";
-import { FormRow } from "@/components/finance/payroll/form-row";
-import { InlineInput } from "@/components/finance/payroll/inline-input";
-import { InlineSelect } from "@/components/finance/payroll/inline-select";
+import { SectionDivider } from "@/components/payroll/payroll/section-divider";
+import { FormRow } from "@/components/payroll/payroll/form-row";
+import { InlineInput } from "@/components/payroll/payroll/inline-input";
+import { InlineSelect } from "@/components/payroll/payroll/inline-select";
 
 // Preset avatar colours + initials (placeholder until real assets exist)
 const PRESET_AVATARS = [

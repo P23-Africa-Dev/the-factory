@@ -405,9 +405,9 @@ export function CreateProjectDrawer({
             </div>
           </Row>
 
-          <Divider label="Settings" />
+          {/* <Divider label="Settings" /> */}
 
-          <Row label="Track Attendance">
+          {/* <Row label="Track Attendance">
             <Toggle
               checked={form.trackAttendance}
               onChange={() => set("trackAttendance", !form.trackAttendance)}
@@ -419,7 +419,7 @@ export function CreateProjectDrawer({
               checked={form.commissionEnabled}
               onChange={() => set("commissionEnabled", !form.commissionEnabled)}
             />
-          </Row>
+          </Row> */}
         </form>
 
         <div className="px-7 py-5 shrink-0">
