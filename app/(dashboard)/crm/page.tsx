@@ -36,7 +36,7 @@ import {
   Tag,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -297,8 +297,10 @@ function LeadCard({
   item: DndItem;
   isDragOverlay?: boolean;
 }) {
+  const router = useRouter();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
+  const pointerStart = React.useRef<{ x: number; y: number } | null>(null);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -307,15 +309,35 @@ function LeadCard({
 
   const amount = item.location ? Number(item.location).toLocaleString() : "0";
 
+  const handlePointerDown = (e: React.PointerEvent) => {
+    pointerStart.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (pointerStart.current) {
+      const dx = Math.abs(e.clientX - pointerStart.current.x);
+      const dy = Math.abs(e.clientY - pointerStart.current.y);
+      if (dx < 5 && dy < 5) {
+        router.push(`/crm/leads/${item.id}`);
+      }
+    }
+    pointerStart.current = null;
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
-      className={`bg-white rounded-[20px] p-4 shadow-[0px_2px_8px_rgba(0,0,0,0.06)] border border-gray-100 cursor-grab select-none mb-3 transition-all duration-200
+      onPointerDown={(e) => {
+        handlePointerDown(e);
+        listeners?.onPointerDown?.(e as any);
+      }}
+      onPointerUp={handlePointerUp}
+      className={`bg-white rounded-[20px] p-5 shadow-[0px_4px_4px_0px_rgba(0,0,0,0.05),0px_8px_12px_rgba(0,0,0,0.03)] border border-gray-100 cursor-grab select-none mb-4 transition-all duration-300 hover:-translate-y-1
         ${isDragging && !isDragOverlay ? "opacity-40 scale-95" : ""}
-        ${isDragOverlay ? "shadow-2xl scale-105 cursor-grabbing" : "hover:shadow-md"}
+        ${isDragOverlay ? "shadow-2xl scale-105 cursor-grabbing" : "hover:shadow-lg"}
       `}
     >
       <p className="text-[#0B1215] font-bold text-[14px] leading-tight">{item.label}</p>
@@ -418,6 +440,7 @@ function LeadColumn({
 /* ─── List View ─────────────────────────────────────────── */
 
 function LeadListView({ containers }: { containers: DndContainer[] }) {
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const toggle = (id: string) =>
@@ -472,6 +495,7 @@ function LeadListView({ containers }: { containers: DndContainer[] }) {
                 {container.items.map((item, idx) => (
                   <div
                     key={item.id}
+                    onClick={() => router.push(`/crm/leads/${item.id}`)}
                     className={`grid grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-4 items-center px-4 py-3 rounded-xl transition-colors cursor-pointer hover:bg-gray-50 group/row ${
                       idx % 2 === 0 ? "" : "bg-gray-50/50"
                     }`}
@@ -736,7 +760,7 @@ function LeadsChart() {
   if (!mounted) return <div className="h-full w-full min-h-45" />;
 
   return (
-    <div className="rounded-3xl p-6 border-gray-100 flex-1 min-w-0 sm:min-w-75">
+    <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex-1 min-w-0 sm:min-w-75">
       <div className="flex items-center justify-between mb-1 px-2">
         {["Mon", "Tues", "Weds", "Thurs", "Fri", "Sat"].map((d) => (
           <span key={d} className="text-[11px] text-gray-400 font-medium">
@@ -802,17 +826,19 @@ function AgentUploadsCard() {
             padding: "3px",
           }}
         >
-          <div className="w-full h-full rounded-full overflow-hidden bg-white">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/images/avatar/agent.png"
-              alt="Agent"
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).src =
-                  "https://i.pravatar.cc/150?u=agent-crm";
-              }}
-            />
+          <div className="relative w-full h-full rounded-full bg-white shadow-[0px_10px_20px_-5px_rgba(0,0,0,0.3)]">
+            <div className="w-full h-full rounded-full overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/avatar/agent.png"
+                alt="Agent"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src =
+                    "https://i.pravatar.cc/150?u=agent-crm";
+                }}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -870,9 +896,9 @@ export default function CRMPage() {
               <Import size={13} />
               Import
             </button>
-            <button className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all">
+            <button className="flex items-center gap-2 px-6 py-3 bg-[#0B1215] text-white rounded-[14px] text-[13px] font-black hover:opacity-90 transition-all shadow-lg">
               Add New Leads
-              <BookmarkPlus size={15} />
+              <BookmarkPlus size={16} />
             </button>
           </div>
         </div>

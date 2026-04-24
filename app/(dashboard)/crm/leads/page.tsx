@@ -407,6 +407,7 @@ export default function AllLeadsPage() {
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button
+                      onClick={() => router.push(`/crm/leads/${lead.id}`)}
                       className={`p-1 rounded-md transition-colors ${
                         isSelected ? "hover:bg-white/10" : "hover:bg-gray-100"
                       }`}
