@@ -16,6 +16,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import OtpInput from "@/components/ui/otp-input";
 import Button from "@/components/ui/button";
+import { toast } from "sonner";
 
 const otpSchema = z.object({
   otp_code: z.string().length(6, "Enter a 6-digit verification code."),
@@ -27,6 +28,7 @@ export default function OtpForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const email = searchParams.get("email") ?? "";
+  const maskedEmail = searchParams.get("masked") ?? "";
   const [timeLeft, setTimeLeft] = useState(60);
   const [otpCode, setOtpCode] = useState("");
 
@@ -46,21 +48,29 @@ export default function OtpForm() {
   const verifyMutation = useMutation({
     mutationFn: verifyEmailOtp,
     onSuccess: (response) => {
+      toast.success(response.message);
+      sessionStorage.setItem("onboarding_name", response.data.user.name);
       setAuthSession(
         response.data.token,
         response.data.onboarding_completed ?? false
       );
-
       router.push(
         response.data.onboarding_completed ? "/dashboard" : "/complete-onboarding"
       );
+    },
+    onError: (err: ApiRequestError) => {
+      toast.error(err.message);
     },
   });
 
   const resendMutation = useMutation({
     mutationFn: resendEmailOtp,
-    onSuccess: () => {
+    onSuccess: (response) => {
       setTimeLeft(60);
+      toast.success(response.message);
+    },
+    onError: (err: ApiRequestError) => {
+      toast.error(err.message);
     },
   });
 
@@ -89,6 +99,9 @@ export default function OtpForm() {
 
   return (
     <form className="flex flex-col items-center" onSubmit={handleSubmit(onSubmit)}>
+      {maskedEmail && (
+        <p className="text-sm font-semibold text-dash-teal mb-4">{maskedEmail}</p>
+      )}
       <p className="text-xs text-gray-400 mb-[9px]">Enter the 6-digit OTP here!</p>
 
       <OtpInput
