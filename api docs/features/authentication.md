@@ -80,6 +80,9 @@ Headers:
     "email_verified": true,
     "onboarding_completed": true,
     "onboarding_completed_at": "2026-04-18T16:29:36+00:00",
+    "enterprise_onboarding_completed": false,
+    "enterprise_onboarding_completed_at": null,
+    "user_type": "self-serve",
     "active_company": {
       "id": 322,
       "company_id": "FAC-GZZLGAUP",
@@ -92,6 +95,16 @@ Headers:
   "errors": null
 }
 ```
+
+Onboarding completion semantics:
+
+1. `onboarding_completed` is a normalized boolean for dashboard gating.
+2. `onboarding_completed=true` when any of these is complete:
+  - Self-serve onboarding (`onboarding_completed_at` set)
+  - Enterprise onboarding (`enterprise_onboarding_completed_at` set)
+  - Internal onboarding (`internal_onboarding_completed_at` set)
+3. `user_type` identifies which onboarding path completed first (`self-serve|enterprise|internal`).
+4. Frontend should gate dashboard access using token validity + `/api/v1/user/me` success, not redirection alone.
 
 Company context rules:
 
@@ -236,6 +249,41 @@ curl -X POST http://localhost:8080/api/v1/auth/logout \
   "errors": null
 }
 ```
+
+## End-to-End Authentication Lifecycle
+
+### Self-serve onboarding flow
+
+1. `POST /api/v1/auth/register` creates pending user and sends OTP.
+2. `POST /api/v1/auth/verify-email` verifies OTP and returns bearer token.
+3. Frontend stores token immediately and sets `Authorization: Bearer <token>`.
+4. `POST /api/v1/onboarding/workspace` completes workspace onboarding.
+5. `GET /api/v1/user/me` returns normalized onboarding state and active company context.
+
+### Enterprise onboarding flow
+
+1. `POST /api/v1/enterprise/onboarding/complete` validates request token, activates account, and returns bearer token.
+2. Frontend stores token immediately and sets `Authorization: Bearer <token>`.
+3. `GET /api/v1/user/me` returns:
+  - `onboarding_completed=true`
+  - `enterprise_onboarding_completed=true`
+  - `user_type=enterprise`
+  - `active_company` payload
+
+### Login/logout flow
+
+1. `POST /api/v1/auth/login` or `POST /api/v1/agent/login` returns bearer token.
+2. `GET /api/v1/user/me` confirms authenticated dashboard context.
+3. `POST /api/v1/auth/logout` revokes only the current token.
+4. Requests with missing/invalid token receive `401`.
+
+## Stabilization and Security Notes
+
+1. Never treat frontend route navigation as authentication proof.
+2. Protected APIs (`/api/v1/user/me`, `/api/v1/onboarding/workspace`, projects/tasks endpoints) are enforced by `auth:sanctum` middleware.
+3. Tokens are long-lived (30 days) but revocable per-device/session.
+4. Active company context is resolved server-side and returned in `user.me` payload.
+5. Notification delivery (OTP/welcome/admin alerts) is server-side and independent of token lifecycle; auth changes do not mutate notification records.
 
 ## Example Usage
 
