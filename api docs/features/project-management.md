@@ -135,9 +135,10 @@ Authorization is resolved from `company_users` membership:
 1. `owner|admin|supervisor` can manage projects.
 2. `agent` cannot access project endpoints.
 3. `company_id` is required on project creation and must resolve to an active company context for the authenticated user.
-4. `project_manager_user_id` must belong to the same company and must have `owner|admin|supervisor` role.
-5. `assigned_team` users must belong to the same company.
-6. Cross-company manager or team assignment is rejected with validation errors.
+4. `project_manager_user_id` is nullable; projects can be created without a designated manager.
+5. If `project_manager_user_id` is provided, the user must belong to the same company and hold `owner|admin|supervisor` role.
+6. `assigned_team` users must belong to the same company.
+7. Cross-company manager or team assignment is rejected with validation errors.
 
 ## Data Model
 
@@ -332,11 +333,11 @@ Create project:
 2. `name` required, string, min 3, max 255
 2. `description` nullable, string, max 5000
 3. `type` nullable, enum `sales|inspection|deployment`
-4. `status` required, enum `active|planning|completed`
+4. `status` nullable, enum `active|planning|completed` (defaults to `planning` if omitted)
 5. `priority` nullable, enum `high|medium|low`
 6. `start_date` required, valid date
 7. `end_date` nullable, valid date, must be same as or after `start_date`
-8. `project_manager_user_id` required, existing user ID
+8. `project_manager_user_id` nullable, existing user ID; when provided, must belong to same company with `owner|admin|supervisor` role
 9. `project_manager` optional alias for `project_manager_user_id`
 9. `assigned_team` nullable array, max 100
 10. `assigned_team.*` distinct existing user IDs
@@ -367,6 +368,7 @@ Update project:
 1. Agents receive authorization failure when calling project endpoints
 2. `end_date < start_date` returns validation error
 3. If no tasks are linked, all progress values return `0`
-4. `project_manager_user_id` must be admin/supervisor-level in the current company
+4. `project_manager_user_id` is optional; if provided, must be owner/admin/supervisor-level in the current company
 5. `assigned_team` users outside the company are rejected
 6. A task linked to another company's project is rejected at task creation time
+7. A project without a manager is valid; `project_manager_user_id` returns `null` in the response

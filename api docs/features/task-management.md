@@ -13,9 +13,11 @@ Supported roles in company context:
 
 Current enforced behavior:
 
-1. Owner, Admin, and Supervisor can create tasks for agents and optionally attach them to same-company projects.
-2. Agents can list only tasks assigned to them, upload proof for assigned tasks, move assigned tasks through the allowed lifecycle, and create standalone self-tasks for themselves only.
+1. Owner, Admin, and Supervisor can create tasks for agents and optionally attach them to same-company projects. Only `title` is required — all other fields are optional.
+2. Agents can list only tasks assigned to them (including tasks assigned via multi-agent assignment), upload proof for assigned tasks, move assigned tasks through the allowed lifecycle, and create standalone self-tasks for themselves only.
 3. Tasks always belong to a resolved active company context and must keep creator, assignee, and project aligned to that same tenant.
+4. Tasks may be unassigned (no `assigned_agent_id`) and may be standalone (no `project_id`).
+5. Multiple agents can be assigned to a single task via `assigned_agent_ids` array. All task responses include `assigned_users: [{id, name}]` reflecting current active assignments.
 
 ## Endpoints
 
@@ -155,7 +157,7 @@ Completion constraints:
 
 `POST /api/v1/tasks`
 
-Request:
+Request (only `title` is required; all other fields are optional):
 
 ```json
 {
@@ -177,6 +179,15 @@ Request:
   "priority": "high",
   "minimum_photos_required": 2,
   "visit_verification_required": true
+}
+```
+
+Minimal valid request:
+
+```json
+{
+  "company_id": 1,
+  "title": "Follow up on client site"
 }
 ```
 
@@ -211,7 +222,13 @@ Success 201:
         "id": 25,
         "name": "Agent Jane",
         "email": "agent@example.com"
-      }
+      },
+      "assigned_users": [
+        {
+          "id": 25,
+          "name": "Agent Jane"
+        }
+      ]
     }
   },
   "errors": null
@@ -222,7 +239,7 @@ Success 201:
 
 `POST /api/v1/agent/tasks/self`
 
-Request:
+Request (only `title` is required):
 
 ```json
 {
@@ -303,7 +320,13 @@ Success 200:
           "id": 25,
           "name": "Agent Jane",
           "email": "agent@example.com"
-        }
+        },
+        "assigned_users": [
+          {
+            "id": 25,
+            "name": "Agent Jane"
+          }
+        ]
       }
     ],
     "pagination": {
@@ -320,7 +343,9 @@ Success 200:
 
 `PATCH /api/v1/tasks/101/assign`
 
-Request:
+Supports single-agent (legacy) or multi-agent assignment.
+
+Single-agent request (backward-compatible):
 
 ```json
 {
@@ -328,6 +353,23 @@ Request:
   "assigned_agent_id": 31
 }
 ```
+
+Multi-agent request:
+
+```json
+{
+  "company_id": 1,
+  "assigned_agent_ids": [31, 42, 55]
+}
+```
+
+Notes:
+
+1. When `assigned_agent_id` is provided (single integer), it is normalized server-side into `assigned_agent_ids: [id]`.
+2. `assigned_agent_ids` accepts 1 to 20 agent user IDs.
+3. All provided agents must belong to the same active company with `agent` role.
+4. The first ID in the array becomes the primary `assigned_agent_id` on the task record.
+5. All assigned agents appear in the `assigned_users` array in subsequent task responses.
 
 Failure 422 example:
 
@@ -398,28 +440,34 @@ Behavior:
 
 Create management task:
 
-1. `project_id` nullable, exists in `projects`
-2. `title` required, string, min 3, max 255
-3. `type` required, enum `sales_visit|inspection|delivery|collection|awareness`
-4. `description` required, string, min 10, max 5000
-5. `assigned_agent_id` required, exists in `users`
-6. `location` required, string, min 2, max 255
-7. `address` required, string, min 5, max 1000
-8. `latitude` nullable, numeric, between -90 and 90
-9. `longitude` nullable, numeric, between -180 and 180
-10. `due_date` required, date, after now
-11. `required_actions` nullable array, max 20 entries
-12. `priority` required, enum `high|medium|low`
-13. `minimum_photos_required` nullable integer, 0 to 20
-14. `visit_verification_required` nullable boolean
-15. `assigned_agent_id` must belong to the active company with `agent` role
-16. `project_id` must belong to the active company when present
+1. `title` required, string, min 3, max 255
+2. `project_id` nullable, exists in `projects`, must belong to the same active company
+3. `type` nullable, enum `sales_visit|inspection|delivery|collection|awareness`
+4. `description` nullable, string, min 10, max 5000
+5. `assigned_agent_id` nullable, exists in `users`, must belong to the active company with `agent` role
+6. `assigned_agent_ids` nullable array of integers, min 1, max 20 entries (alternative to `assigned_agent_id`)
+7. `location` nullable, string, min 2, max 255
+8. `address` nullable, string, min 5, max 1000
+9. `latitude` nullable, numeric, between -90 and 90
+10. `longitude` nullable, numeric, between -180 and 180
+11. `due_date` nullable, date, after now
+12. `required_actions` nullable array, max 20 entries
+13. `priority` nullable, enum `high|medium|low` (defaults to `medium` if omitted)
+14. `minimum_photos_required` nullable integer, 0 to 20
+15. `visit_verification_required` nullable boolean
 
 Create self-task:
 
-1. Same validation as management task except no `assigned_agent_id` or `project_id`
-2. `project_id` is always stored as `null`
-3. `created_by_user_id` and `assigned_agent_id` are both set to the authenticated agent
+1. `title` required, string, min 3, max 255
+2. `project_id` nullable, exists in `projects`, must belong to the same active company
+3. `type` nullable, enum `sales_visit|inspection|delivery|collection|awareness`
+4. `description` nullable, string, min 10, max 5000
+5. `location` nullable, string, min 2, max 255
+6. `address` nullable, string, min 5, max 1000
+7. `due_date` nullable, date, after now
+8. `priority` nullable, enum `high|medium|low`
+9. `created_by_user_id` and `assigned_agent_id` are both set to the authenticated agent
+10. No `assigned_agent_id` input is accepted (agent always self-assigned)
 
 Upload proof:
 
@@ -439,13 +487,14 @@ Upload proof:
 ## Edge Cases
 
 1. Agent cannot use `POST /api/v1/tasks`
-2. Agent self-task creation cannot attach a project
-3. `project_id` must belong to the active company context
-4. Cross-company assignment is rejected
-5. Agents cannot view, update, or upload proof on tasks assigned to another agent
-6. `completed` and `cancelled` tasks cannot change status again
-7. Terminal tasks cannot be reassigned
-8. Proof download is denied for non-owner/admin roles
+2. `project_id` must belong to the active company context (applies to both management tasks and self-tasks)
+3. Cross-company assignment is rejected
+4. Agents cannot view, update, or upload proof on tasks they are not assigned to
+5. `completed` and `cancelled` tasks cannot change status again
+6. Terminal tasks cannot be reassigned
+7. Proof download is denied for non-owner/admin roles
+8. Tasks may be created with no assignee; unassigned tasks are still valid
+9. Tasks may be created with no project; standalone tasks are not required to belong to a project
 
 ## Scalability Notes
 

@@ -4,14 +4,15 @@
 Task APIs support management-created tasks, project-linked tasks, standalone tasks, agent self-tasks, status updates, protected proof uploads/downloads, and strict company-scoped access for field operations.
 
 ## User Flow
-1. Manager creates a task and assigns an agent.
+1. Manager creates a task — only `title` is required. All other fields are optional.
 2. Manager may attach the task to an existing same-company project by sending `project_id`.
-3. Agents see only tasks assigned to them in their task list.
-4. Agents may create standalone self-tasks through the dedicated self-task endpoint.
-5. Agents move tasks to `in_progress`, then either `completed` or `cancelled`.
-6. Agents upload proof images with optional GPS metadata before completion when required.
-7. Owner/Admin may download proof files through the protected proof endpoint.
-8. Managers can reassign only non-terminal tasks.
+3. Manager may assign one or more agents via `assigned_agent_ids` or the legacy `assigned_agent_id` field.
+4. Agents see only tasks where they are an active assignee in their task list.
+5. Agents may create standalone self-tasks through the dedicated self-task endpoint. Self-tasks can optionally include a `project_id`.
+6. Agents move tasks to `in_progress`, then either `completed` or `cancelled`.
+7. Agents upload proof images with optional GPS metadata before completion when required.
+8. Owner/Admin may download proof files through the protected proof endpoint.
+9. Managers can reassign only non-terminal tasks.
 
 ## API Endpoints
 Management and shared task APIs:
@@ -36,15 +37,19 @@ Auth for all endpoints:
 ## Frontend Rules
 
 1. Always send `company_id` when the user can switch tenants.
-2. Treat `project_id` as optional for management-created tasks and forbidden for self-tasks.
-3. Render related `project`, `creator`, and `assignee` data directly from task payloads.
-4. Treat `file_url` as a protected API endpoint, not as a CDN/public storage URL.
-5. Hide proof-download actions unless the current role is `owner` or `admin`.
-6. Disable reassignment and status actions when task status is `completed` or `cancelled`.
+2. Treat `project_id` as optional for both management-created and agent self-tasks.
+3. Render related `project`, `creator`, `assignee`, and `assigned_users` data directly from task payloads.
+4. Use `assigned_users: [{id, name}]` to show all current assignees in the UI (replaces relying on `assignee` alone for multi-agent tasks).
+5. Treat `file_url` as a protected API endpoint, not as a CDN/public storage URL.
+6. Hide proof-download actions unless the current role is `owner` or `admin`.
+7. Disable reassignment and status actions when task status is `completed` or `cancelled`.
+8. For multi-agent assignment, send `assigned_agent_ids: [id1, id2, ...]` in the reassign request. Legacy `assigned_agent_id` (single integer) is still accepted.
 
 ## Request Examples
 
 ### Create Management Task
+
+Only `title` is required. Send any subset of optional fields:
 
 ```json
 {
@@ -63,6 +68,33 @@ Auth for all endpoints:
   "priority": "high",
   "minimum_photos_required": 2,
   "visit_verification_required": true
+}
+```
+
+Minimal valid request:
+
+```json
+{
+  "company_id": 1,
+  "title": "Check warehouse access"
+}
+```
+
+### Reassign Task (Multi-Agent)
+
+```json
+{
+  "company_id": 1,
+  "assigned_agent_ids": [25, 31, 42]
+}
+```
+
+Legacy single-agent form (still supported):
+
+```json
+{
+  "company_id": 1,
+  "assigned_agent_id": 31
 }
 ```
 
@@ -131,7 +163,13 @@ Auth for all endpoints:
         "id": 25,
         "name": "Agent Jane",
         "email": "agent@example.com"
-      }
+      },
+      "assigned_users": [
+        {
+          "id": 25,
+          "name": "Agent Jane"
+        }
+      ]
     }
   },
   "errors": null
