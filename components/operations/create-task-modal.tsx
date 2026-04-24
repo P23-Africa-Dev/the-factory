@@ -191,9 +191,10 @@ export function CreateTaskModal({
         minimum_photos_required: Number(form.minPhotos),
         visit_verification_required: form.visitVerification,
       }, {
-        onError: (err: any) => {
-          if (err.errors) {
-            const backendErrors = err.errors as Record<string, string[]>;
+        onError: (err: unknown) => {
+          const apiErr = err as { errors?: Record<string, string[]>; message?: string };
+          if (apiErr.errors) {
+            const backendErrors = apiErr.errors as Record<string, string[]>;
             const mappedErrors: Record<string, string> = {};
             const ERROR_MAP: Record<string, string> = {
               type: "taskType",
@@ -209,9 +210,9 @@ export function CreateTaskModal({
               mappedErrors[formKey] = backendErrors[key][0];
             }
             setErrors(mappedErrors);
-            toast.error(err.message || "Please fix the validation errors");
+            toast.error(apiErr.message || "Please fix the validation errors");
           } else {
-            toast.error(err.message || "Failed to create task");
+            toast.error(apiErr.message || "Failed to create task");
           }
         }
       });
@@ -261,27 +262,33 @@ export function CreateTaskModal({
 
   return (
     <div className="fixed inset-0 z-50">
-      <div
-        className="absolute inset-0 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
-        onClick={handleClose}
-      />
+      <div className="absolute inset-0 bg-white/40" onClick={handleClose} />
 
-      <div className="fixed inset-y-0 right-12 mt-17 mb-3.25 rounded-[30px] z-50 w-full max-w-110 bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-        {/* Header — fixed */}
-        <div className="px-6 py-5 flex justify-between items-center shrink-0 border-b border-gray-100">
-          <div>
-            <h2 className="font-bold text-base text-[#0B1215]">
-              Create New Task
-            </h2>
-            <p className="text-gray-400 text-xs mt-0.5">
-              Fill in the details to assign a field task
-            </p>
+      <div className="absolute right-12 bottom-3.25 bg-white rounded-[28px] w-full max-w-100 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
+        <div className="bg-transparent h-18 relative overflow-hidden flex items-center px-7 shrink-0">
+          <div className="absolute top-0 right-0 w-[50%] h-full pointer-events-none">
+            <svg
+              viewBox="0 0 200 72"
+              fill="none"
+              className="w-full h-full"
+              preserveAspectRatio="none"
+            >
+              <path
+                d="M0 0 C60 24, 20 48, 190 72 L200 92 L200 0 Z"
+                fill="#09232D"
+              />
+            </svg>
           </div>
+          <h2 className="text-[18px] font-bold text-dash-dark relative z-10 leading-tight">
+            Create New
+            <br />
+            Task
+          </h2>
           <button
             onClick={handleClose}
-            className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors"
+            className="absolute right-5 top-1/2 -translate-y-1/2 text-white/60 hover:text-white transition-colors z-10 cursor-pointer"
           >
-            <X size={15} />
+            <X size={20} />
           </button>
         </div>
 
@@ -577,12 +584,11 @@ export function CreateTaskModal({
           </div>
         </div>
 
-        {/* Footer — fixed */}
-        <div className="px-5 py-4 shrink-0 border-t border-gray-100">
+        <div className="px-7 py-5 shrink-0">
           <button
             onClick={handleSubmit}
             disabled={isPending}
-            className="w-full py-3 bg-[#09232d] text-white rounded-2xl text-sm font-bold hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-60"
+            className="w-fit px-9.25 py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {isPending ? (
               <Loader2 className="animate-spin" size={15} />

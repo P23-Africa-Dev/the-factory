@@ -19,10 +19,12 @@ export function AgentView() {
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* ── Toolbar ──────────────────────────────────────────── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-[20px] font-extrabold text-[#09232D] shrink-0"></h1>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <h1 className="text-[20px] font-extrabold text-[#09232D] shrink-0">
+          <span className="lg:hidden">Agents Overview</span>
+        </h1>
 
-        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 md:justify-end min-w-0">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:justify-end min-w-0 mt-2 lg:mt-0 lg:-mt-16 xl:-mt-20 transition-all duration-300 relative z-10">
           {/* Search */}
           <div className="relative w-full md:w-[458px] group shrink-0">
             <Search

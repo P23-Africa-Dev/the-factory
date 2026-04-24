@@ -105,12 +105,12 @@ export function AllTasksView() {
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Toolbar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <h1 className="text-[20px] font-extrabold text-[#09232D] shrink-0">
-          All Tasks
+          <span className="lg:hidden">Tasks Overview</span>
         </h1>
 
-        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 md:justify-end min-w-0">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:justify-end min-w-0 mt-2 lg:mt-0 lg:-mt-16 xl:-mt-20 transition-all duration-300 relative z-10">
           <div className="relative w-full md:w-[458px] group shrink-0">
             <Search
               className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#09232D] transition-colors"
@@ -235,7 +235,7 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     description: apiTask.title,
     location: apiTask.location || "No location",
     time: "Just now",
-    category: (apiTask.type || "agent") as any,
+    category: (apiTask.type || "agent") as DndItem["category"],
     dueDate: apiTask.due_date ? new Date(apiTask.due_date).toLocaleDateString() : undefined,
     assignedBy: `User ID: ${apiTask.created_by_user_id}`,
     addedDescription: apiTask.description,

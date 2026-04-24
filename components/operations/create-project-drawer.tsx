@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { X, ChevronDown, User, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCreateProject, useUpdateProject, useInternalUsers } from "@/hooks/use-projects";
@@ -115,30 +115,22 @@ export function CreateProjectDrawer({
   onClose: () => void;
   projectToEdit?: Project;
 }) {
-  const [form, setForm] = useState(EMPTY);
-  
-  useEffect(() => {
-    if (projectToEdit) {
-      const category = Object.entries(TYPE_MAP).find(([_, v]) => v === projectToEdit.type)?.[0] || "";
-      const statusStr = projectToEdit.status as Status;
-      const priorityStr = (projectToEdit.priority || "") as Priority | "";
-      
-      setForm({
-        name: projectToEdit.name,
-        description: projectToEdit.description || "",
-        category,
-        lead: projectToEdit.manager?.id ? String(projectToEdit.manager.id) : "",
-        startDate: projectToEdit.startDate?.split('T')[0] || "",
-        deadline: projectToEdit.endDate?.split('T')[0] || "",
-        priority: priorityStr,
-        status: statusStr,
-        trackAttendance: true, // Assuming default or fetch from project if available
-        commissionEnabled: false, // Assuming default
-      });
-    } else {
-      setForm(EMPTY);
-    }
-  }, [projectToEdit]);
+  const [form, setForm] = useState(() => {
+    if (!projectToEdit) return EMPTY;
+    const category = Object.entries(TYPE_MAP).find(([, v]) => v === projectToEdit.type)?.[0] || "";
+    return {
+      name: projectToEdit.name,
+      description: projectToEdit.description || "",
+      category,
+      lead: projectToEdit.manager?.id ? String(projectToEdit.manager.id) : "",
+      startDate: projectToEdit.startDate?.split("T")[0] || "",
+      deadline: projectToEdit.endDate?.split("T")[0] || "",
+      priority: (projectToEdit.priority || "") as Priority | "",
+      status: projectToEdit.status as Status,
+      trackAttendance: true,
+      commissionEnabled: false,
+    };
+  });
 
   const set = <K extends keyof typeof EMPTY>(key: K, val: (typeof EMPTY)[K]) =>
     setForm((f) => ({ ...f, [key]: val }));
@@ -224,36 +216,36 @@ export function CreateProjectDrawer({
   };
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
-        onClick={onClose}
-      />
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-white/40" onClick={onClose} />
 
-      {/* Drawer */}
-      <div className="fixed inset-y-0 right-12 mt-17 mb-3.25 rounded-[30px] z-50 w-full max-w-110 bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-        {/* ── Decorative header ─────────────────────────────── */}
-        <div className="relative px-7 pt-8 pb-6 shrink-0 overflow-hidden">
-          {/* Dark blob top-right */}
-
-          <div className="relative z-10 flex items-start justify-between">
-            <div>
-              <h2 className="text-[20px] font-bold text-[#09232D]">
-                {projectToEdit ? "Edit Project" : "Create New Project"}
-              </h2>
-              <p className="text-[12px] text-gray-400 mt-0.5">
-                {projectToEdit ? "Update project details below" : "Fill in the details below"}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors mt-1 shrink-0"
+      <div className="absolute right-12 bottom-3.25 bg-white rounded-[28px] w-full max-w-100 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
+        <div className="bg-transparent h-18 relative overflow-hidden flex items-center px-7 shrink-0">
+          <div className="absolute top-0 right-0 w-[50%] h-full pointer-events-none">
+            <svg
+              viewBox="0 0 200 72"
+              fill="none"
+              className="w-full h-full"
+              preserveAspectRatio="none"
             >
-              <X size={15} className="text-gray-500" />
-            </button>
+              <path
+                d="M0 0 C60 24, 20 48, 190 72 L200 92 L200 0 Z"
+                fill="#09232D"
+              />
+            </svg>
           </div>
+          <h2 className="text-[18px] font-bold text-dash-dark relative z-10 leading-tight">
+            {projectToEdit ? "Edit" : "Create New"}
+            <br />
+            Project
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-5 top-1/2 -translate-y-1/2 text-white/60 hover:text-white transition-colors z-10 cursor-pointer"
+          >
+            <X size={20} />
+          </button>
         </div>
 
         {/* ── Form body ─────────────────────────────────────── */}
@@ -430,18 +422,17 @@ export function CreateProjectDrawer({
           </Row>
         </form>
 
-        {/* ── Footer ────────────────────────────────────────── */}
-        <div className="px-7 py-5 border-t border-gray-100 shrink-0">
+        <div className="px-7 py-5 shrink-0">
           <button
             type="submit"
             form="create-project-form"
             disabled={isPending}
-            className="w-full py-3.5 bg-[#09232D] text-white rounded-2xl text-[13px] font-bold hover:opacity-90 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-fit px-9.25 py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isPending ? (projectToEdit ? "Updating…" : "Creating…") : (projectToEdit ? "Save Changes" : "Create Project")}
           </button>
         </div>
       </div>
-    </>
+    </div>
   );
 }

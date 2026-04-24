@@ -6,14 +6,15 @@ import {
   Search,
   SlidersHorizontal,
   BookmarkPlus,
-  ArrowUpRight,
   User,
   ChevronLeft,
   ChevronRight,
   Edit2,
 } from "lucide-react";
+import Image from "next/image";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { Project } from "@/types/operations";
+import Arrow57Deg from "@/assets/images/arrow-57deg.png";
 import { CreateProjectDrawer } from "./create-project-drawer";
 import { ProjectCardSkeleton } from "./skeletons/project-card-skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -64,12 +65,12 @@ export function ProjectsView({
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* ── Toolbar ──────────────────────────────────────────── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <h1 className="text-[20px] font-extrabold text-[#09232D] shrink-0">
-          All project
+          <span className="lg:hidden">Projects Overview</span>
         </h1>
 
-        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 md:justify-end min-w-0">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:justify-end min-w-0 mt-2 lg:mt-0 lg:-mt-16 xl:-mt-20 transition-all duration-300 relative z-10">
           {/* Search */}
           <div className="relative w-full md:w-[458px] group shrink-0">
             <Search
@@ -142,7 +143,7 @@ export function ProjectsView({
       </div>
 
       {/* ── Summary Cards ────────────────────────────────────── */}
-      <SummaryCards projects={projects} isLoading={isLoading} />
+      <SummaryCards projects={projects} />
 
       {/* ── Filter panel ─────────────────────────────────────── */}
       {showFilters && (
@@ -476,7 +477,6 @@ const PENDING_PROJECTS_DATA = [
 ];
 
 // ─── Summary Cards ─────────────────────────────────────────────────────────────
-// Full 270° arc → circumference segment = (270/360) × 2π×40 = 188.5
 const ARC_LENGTH = 188.5;
 const CIRCUMFERENCE = 251.3;
 
@@ -487,19 +487,16 @@ function performanceLabel(pct: number) {
   return "Poor";
 }
 
-function SummaryCards({ projects, isLoading }: { projects: Project[]; isLoading: boolean }) {
+function SummaryCards({ projects }: { projects: Project[] }) {
   const total = projects.length;
-  const pending = projects.filter((p) => p.status === "Pending").length;
   const completed = projects.filter((p) => p.status === "Completed").length;
   const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
 
-  // Single JS animation loop — drives both arc and dot together
   const [animatedPct, setAnimatedPct] = useState(0);
   useEffect(() => {
     const duration = 1200;
     const start = performance.now();
     const target = percent;
-    // ease-in-out cubic
     const ease = (t: number) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t);
     let raf: number;
     function frame(now: number) {
@@ -517,243 +514,263 @@ function SummaryCards({ projects, isLoading }: { projects: Project[]; isLoading:
   const dotY = 50 + 40 * Math.sin(dotAngle);
 
   return (
-    <div className="grid grid-cols-12 gap-4 w-full animate-in fade-in slide-in-from-bottom-2 duration-500">
-      {/* 1. Overall Project Performance */}
-      <div className="col-span-12 xl:col-span-4 bg-[#0B1C25] rounded-[20px] p-6 sm:p-8 relative shadow-sm flex items-center gap-6 lg:gap-10 overflow-hidden min-h-[208px]">
-        {/* Donut chart */}
-        <div className="relative w-30 h-30 shrink-0">
-          <svg
-            viewBox="0 0 100 100"
-            className="w-full h-full"
-            style={{ transform: "rotate(135deg)" }}
-          >
-            {/* Dim track */}
-            <circle
-              cx="50"
-              cy="50"
-              r="40"
-              fill="none"
-              stroke="#6B9A9A"
-              strokeOpacity="0.3"
-              strokeWidth="10"
-              strokeLinecap="round"
-              strokeDasharray={`${ARC_LENGTH} ${CIRCUMFERENCE}`}
-            />
-            {/* White full-track */}
-            <circle
-              cx="50"
-              cy="50"
-              r="40"
-              fill="none"
-              stroke="white"
-              strokeWidth="10"
-              strokeLinecap="round"
-              strokeDasharray={`${ARC_LENGTH} ${CIRCUMFERENCE}`}
-            />
-            {/* Animated teal progress arc */}
-            <circle
-              cx="50"
-              cy="50"
-              r="40"
-              fill="none"
-              stroke="#6B9A9A"
-              strokeWidth="10"
-              strokeLinecap="round"
-              strokeDasharray={`${animatedDash} ${CIRCUMFERENCE}`}
-            />
-            {/* Valve dot — tracks the live end of the progress arc */}
-            <circle
-              cx={dotX}
-              cy={dotY}
-              r="6"
-              fill="#8AB8B8"
-              stroke="#0B1C25"
-              strokeWidth="2.5"
-            />
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
-            <div className="w-10 h-10 rounded-full bg-[#EF6C55] flex items-center justify-center shadow-lg">
-              <User size={18} className="text-white fill-current" />
-            </div>
-            <span className="text-white font-extrabold text-[15px] leading-none">
-              {percent}%
-            </span>
+    <div className="flex justify-between w-full px-8 animate-in fade-in slide-in-from-bottom-2 duration-500 h-49">
+      <PerformanceCard
+        percent={percent}
+        animatedDash={animatedDash}
+        dotX={dotX}
+        dotY={dotY}
+      />
+      <div className="flex gap-6.25">
+        <TotalProjectsCard />
+        <PendingProjectsCard />
+        <AgentsCard />
+      </div>
+    </div>
+  );
+}
+
+// ─── Performance Card ─────────────────────────────────────────────────────────
+function PerformanceCard({
+  percent,
+  animatedDash,
+  dotX,
+  dotY,
+}: {
+  percent: number;
+  animatedDash: number;
+  dotX: number;
+  dotY: number;
+}) {
+  return (
+    <div className="bg-[#0B1C25] rounded-[20px] p-6 sm:p-8 relative flex items-center gap-6 lg:gap-10 overflow-hidden min-h-45 max-h-52 shrink-0 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+      <div className="relative w-41.5 h-41.5 shrink-0">
+        <svg
+          viewBox="0 0 100 100"
+          className="w-full h-full"
+          style={{ transform: "rotate(135deg)" }}
+        >
+          <circle
+            cx="50"
+            cy="50"
+            r="40"
+            fill="none"
+            stroke="#6B9A9A"
+            strokeOpacity="0.3"
+            strokeWidth="6"
+            strokeLinecap="round"
+            strokeDasharray={`${ARC_LENGTH} ${CIRCUMFERENCE}`}
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r="40"
+            fill="none"
+            stroke="white"
+            strokeWidth="6"
+            strokeLinecap="round"
+            strokeDasharray={`${ARC_LENGTH} ${CIRCUMFERENCE}`}
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r="40"
+            fill="none"
+            stroke="#6B9A9A"
+            strokeWidth="6"
+            strokeLinecap="round"
+            strokeDasharray={`${animatedDash} ${CIRCUMFERENCE}`}
+          />
+          <circle
+            cx={dotX}
+            cy={dotY}
+            r="3"
+            fill="#fff"
+            stroke="#7BB6B8"
+            strokeWidth="4px"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+          <div className="w-10 h-10 rounded-full bg-[#EF6C55] flex items-center justify-center shadow-lg">
+            <User size={18} className="text-white fill-current" />
           </div>
-        </div>
-        <div className="flex flex-col z-10 text-white min-w-0">
-          <p className="text-white/60 font-normal text-[14px] sm:text-[16px] leading-tight mb-0.5">
-            Overall Project
-          </p>
-          <h2 className="text-[28px] sm:text-[34px] font-extrabold leading-[1.1] mb-3 tracking-tight">
-            Performance
-          </h2>
-          <p className="text-[13px] font-medium text-white/60">
-            Status:{" "}
-            <span className="text-white font-semibold">
-              {performanceLabel(percent)}
-            </span>
-          </p>
+          <span className="text-white font-semibold text-[40px] leading-none">
+            {percent}%
+          </span>
         </div>
       </div>
+      <div className="flex flex-col z-10 text-white min-w-0">
+        <p className="text-[#E8E8E8] font-normal text-[14px] sm:text-[16px] leading-tight mb-0.5">
+          Overall Project
+        </p>
+        <h2 className="text-[28px] sm:text-[36px] font-semibold leading-[1.1] mb-7 tracking-tight">
+          Performance
+        </h2>
+        <p className="text-[14px] font-medium text-[#E8E8E8]">
+          Status: <span>{performanceLabel(percent)}</span>
+        </p>
+      </div>
+    </div>
+  );
+}
 
-      {/* spacer — xl only */}
-      {/* <div className="hidden xl:block xl:col-span-1" /> */}
-
-        {/* 2. Total Projects */}
-        <div className="col-span-12 md:col-span-4 xl:col-span-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-[196px]">
-          <div className="flex items-start justify-between px-5 sm:px-6 pt-5 sm:pt-6">
-            <div>
-              <p className="text-[16px] font-semibold text-[#2D2D2D] mb-1">
-                Total Projects
-              </p>
-              {isLoading ? (
-                <div className="h-12 w-24 bg-gray-200 rounded-lg animate-pulse mt-1" />
-              ) : (
-                <h2 className="text-[52px] font-extrabold text-[#1A1A1A] leading-none tracking-[-0.04em]">
-                  {String(total).padStart(3, "0")}
-                </h2>
-              )}
-            </div>
-            <button className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#2ECC71] text-white rounded-full text-[10px] font-bold hover:bg-[#27ae60] transition-colors shadow-sm mt-1">
-              View All <ArrowUpRight size={11} strokeWidth={3} />
-            </button>
-          </div>
-          <div className="w-full h-20 mt-auto">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={TOTAL_PROJECTS_DATA}
-                margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="gradGreen" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2ECC71" stopOpacity={1} />
-                    <stop offset="95%" stopColor="#D9D9D9" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <Area
-                  type="natural"
-                  dataKey="value"
-                  stroke="#2ECC71"
-                  strokeWidth={0}
-                  fillOpacity={1}
-                  fill="url(#gradGreen)"
-                  dot={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* 3. Pending Projects */}
-        <div className="col-span-12 md:col-span-4 xl:col-span-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-[196px]">
-          <div className="flex items-start justify-between px-5 sm:px-6 pt-5 sm:pt-6">
-            <div>
-              <p className="text-[16px] font-semibold text-[#2D2D2D] mb-1">
-                Pending Projects
-              </p>
-              {isLoading ? (
-                <div className="h-12 w-24 bg-gray-200 rounded-lg animate-pulse mt-1" />
-              ) : (
-                <h2 className="text-[52px] font-extrabold text-[#1A1A1A] leading-none tracking-[-0.04em]">
-                  {String(pending).padStart(3, "0")}
-                </h2>
-              )}
-            </div>
-            <button className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#E8875B] text-white rounded-full text-[10px] font-bold hover:bg-[#d57848] transition-colors shadow-sm mt-1">
-              View All <ArrowUpRight size={11} strokeWidth={3} />
-            </button>
-          </div>
-          <div className="w-full h-20 mt-auto">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={PENDING_PROJECTS_DATA}
-                margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="gradOrange" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#E8875B" stopOpacity={1} />
-                    <stop offset="95%" stopColor="#D9D9D9" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <Area
-                  type="natural"
-                  dataKey="value"
-                  stroke="#E8875B"
-                  strokeWidth={0}
-                  fillOpacity={1}
-                  fill="url(#gradOrange)"
-                  dot={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* 4. Agents — View Agent who hasn't commenced task */}
-        <div className="col-span-12 md:col-span-4 xl:col-span-2 bg-[#7BA9A4] rounded-[20px] p-4 shadow-sm relative flex flex-col items-center min-h-[196px] text-center justify-between">
-          <p className="text-white text-[13px] font-medium leading-[1.4] max-w-[140px] mx-auto mt-1">
-            View Agent who hasn&apos;t commenced task
+// ─── Total Projects Card ──────────────────────────────────────────────────────
+function TotalProjectsCard() {
+  return (
+    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-69.75 shrink-0">
+      <div className="flex items-start justify-between pt-5 sm:pt-6">
+        <div>
+          <p className="text-[14px] font-medium text-[#2D2D2D]">
+            Total Projects
           </p>
-          <button className="flex items-center gap-1.5 px-4 py-1.5 bg-[#0E2A33] text-white rounded-full text-[10px] font-bold hover:bg-[#061820] transition-colors">
-            View All <ArrowUpRight size={11} strokeWidth={3} />
-          </button>
-
-          <div className="w-[72px] h-[72px] relative flex items-center justify-center mt-2 mb-1">
-            <svg
-              viewBox="0 0 100 100"
-              className="absolute inset-0 w-full h-full"
-              style={{ transform: "rotate(135deg)" }}
-            >
-              {/* Background track — faded white */}
-              <circle
-                cx="50"
-                cy="50"
-                r="40"
-                fill="none"
-                stroke="rgba(255,255,255,0.25)"
-                strokeWidth="7"
-                strokeLinecap="round"
-                strokeDasharray="188.5 251.3"
-              />
-              {/* White progress arc */}
-              <circle
-                cx="50"
-                cy="50"
-                r="40"
-                fill="none"
-                stroke="white"
-                strokeWidth="7"
-                strokeLinecap="round"
-                strokeDasharray="81 251.3"
-              />
-              {/* Dark accent at the top */}
-              <circle
-                cx="50"
-                cy="50"
-                r="40"
-                fill="none"
-                stroke="#0E2A33"
-                strokeWidth="7"
-                strokeLinecap="round"
-                strokeDasharray="30 251.3"
-                strokeDashoffset="-81"
-              />
-              {/* Endpoint dot */}
-              <circle
-                cx="32.4"
-                cy="85.9"
-                r="4.5"
-                fill="white"
-                stroke="#7BA9A4"
-                strokeWidth="2"
-              />
-            </svg>
-            <div className="relative w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-sm">
-              <User size={14} className="text-[#09232D] fill-current" />
-            </div>
-          </div>
-          <span className="text-white text-[14px] font-extrabold">43%</span>
+          <h2 className="text-[64px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
+            045
+          </h2>
         </div>
+        <button className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#3AB37E] text-white rounded-full text-[7px] hover:bg-[#27ae60] transition-colors mt-1">
+          View All
+          <Image src={Arrow57Deg} alt="View All" width={7.5} height={7.5} />
+        </button>
+      </div>
+      <div className="w-full h-14.5 mt-auto">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart
+            data={TOTAL_PROJECTS_DATA}
+            margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+          >
+            <defs>
+              <linearGradient id="gradGreen" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#3AB37E" stopOpacity={1} />
+                <stop offset="95%" stopColor="#D9D9D9" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke="#3AB37E"
+              strokeWidth={3}
+              fillOpacity={1}
+              fill="url(#gradGreen)"
+              dot={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ─── Pending Projects Card ────────────────────────────────────────────────────
+function PendingProjectsCard() {
+  return (
+    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-69.75 shrink-0">
+      <div className="flex items-start justify-between pt-5 sm:pt-6">
+        <div>
+          <p className="text-[14px] font-medium text-[#2D2D2D]">
+            Pending Projects
+          </p>
+          <h2 className="text-[64px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
+            015
+          </h2>
+        </div>
+        <button className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#EF8E5B] text-white rounded-full text-[7px] hover:bg-[#d57848] transition-colors mt-1">
+          View All
+          <Image src={Arrow57Deg} alt="View All" width={7.5} height={7.5} />
+        </button>
+      </div>
+      <div className="w-full h-14.5 mt-auto">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart
+            data={PENDING_PROJECTS_DATA}
+            margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+          >
+            <defs>
+              <linearGradient id="gradOrange" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#E8875B" stopOpacity={1} />
+                <stop offset="95%" stopColor="#D9D9D9" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke="#E8875B"
+              strokeWidth={3}
+              fillOpacity={1}
+              fill="url(#gradOrange)"
+              dot={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ─── Agents Card ──────────────────────────────────────────────────────────────
+function AgentsCard() {
+  return (
+    <div className="bg-[#7BA9A4] rounded-[20px] gap-4 p-5 shadow-sm relative flex flex-col items-center h-full w-29.75 text-center justify-between">
+      <p className="text-white font-light text-[8px] leading-[1.4] max-w-20 mx-auto">
+        View Agent who hasn&apos;t commenced task
+      </p>
+      <button className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#08393A] text-white rounded-full text-[7px] hover:bg-[#d57848] transition-colors">
+        View All
+        <Image src={Arrow57Deg} alt="View All" width={7.5} height={7.5} />
+      </button>
+
+      <div className="w-18 h-18 relative flex items-center justify-center">
+        <svg
+          viewBox="0 0 100 100"
+          className="absolute inset-0 w-full h-full"
+          style={{ transform: "rotate(135deg)" }}
+        >
+          <circle
+            cx="50"
+            cy="50"
+            r="40"
+            fill="none"
+            stroke="rgba(255,255,255,0.25)"
+            strokeWidth="7"
+            strokeLinecap="round"
+            strokeDasharray="188.5 251.3"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r="40"
+            fill="none"
+            stroke="white"
+            strokeWidth="7"
+            strokeLinecap="round"
+            strokeDasharray="81 251.3"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r="40"
+            fill="none"
+            stroke="#0E2A33"
+            strokeWidth="7"
+            strokeLinecap="round"
+            strokeDasharray="30 251.3"
+            strokeDashoffset="-81"
+          />
+          <circle
+            cx="32.4"
+            cy="85.9"
+            r="4.5"
+            fill="white"
+            stroke="#7BA9A4"
+            strokeWidth="2"
+          />
+        </svg>
+        <div className="relative w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-sm">
+          <User size={14} className="text-[#09232D] fill-current" />
+        </div>
+        <span className="text-white text-[10px] font-bold absolute bottom-0">
+          43%
+        </span>
+      </div>
     </div>
   );
 }
