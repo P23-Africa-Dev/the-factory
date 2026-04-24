@@ -191,9 +191,10 @@ export function CreateTaskModal({
         minimum_photos_required: Number(form.minPhotos),
         visit_verification_required: form.visitVerification,
       }, {
-        onError: (err: any) => {
-          if (err.errors) {
-            const backendErrors = err.errors as Record<string, string[]>;
+        onError: (err: unknown) => {
+          const apiErr = err as { errors?: Record<string, string[]>; message?: string };
+          if (apiErr.errors) {
+            const backendErrors = apiErr.errors as Record<string, string[]>;
             const mappedErrors: Record<string, string> = {};
             const ERROR_MAP: Record<string, string> = {
               type: "taskType",
@@ -209,9 +210,9 @@ export function CreateTaskModal({
               mappedErrors[formKey] = backendErrors[key][0];
             }
             setErrors(mappedErrors);
-            toast.error(err.message || "Please fix the validation errors");
+            toast.error(apiErr.message || "Please fix the validation errors");
           } else {
-            toast.error(err.message || "Failed to create task");
+            toast.error(apiErr.message || "Failed to create task");
           }
         }
       });

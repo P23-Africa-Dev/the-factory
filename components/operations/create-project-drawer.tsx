@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { X, ChevronDown, User, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCreateProject, useUpdateProject, useInternalUsers } from "@/hooks/use-projects";
@@ -115,30 +115,22 @@ export function CreateProjectDrawer({
   onClose: () => void;
   projectToEdit?: Project;
 }) {
-  const [form, setForm] = useState(EMPTY);
-  
-  useEffect(() => {
-    if (projectToEdit) {
-      const category = Object.entries(TYPE_MAP).find(([_, v]) => v === projectToEdit.type)?.[0] || "";
-      const statusStr = projectToEdit.status as Status;
-      const priorityStr = (projectToEdit.priority || "") as Priority | "";
-      
-      setForm({
-        name: projectToEdit.name,
-        description: projectToEdit.description || "",
-        category,
-        lead: projectToEdit.manager?.id ? String(projectToEdit.manager.id) : "",
-        startDate: projectToEdit.startDate?.split('T')[0] || "",
-        deadline: projectToEdit.endDate?.split('T')[0] || "",
-        priority: priorityStr,
-        status: statusStr,
-        trackAttendance: true, // Assuming default or fetch from project if available
-        commissionEnabled: false, // Assuming default
-      });
-    } else {
-      setForm(EMPTY);
-    }
-  }, [projectToEdit]);
+  const [form, setForm] = useState(() => {
+    if (!projectToEdit) return EMPTY;
+    const category = Object.entries(TYPE_MAP).find(([, v]) => v === projectToEdit.type)?.[0] || "";
+    return {
+      name: projectToEdit.name,
+      description: projectToEdit.description || "",
+      category,
+      lead: projectToEdit.manager?.id ? String(projectToEdit.manager.id) : "",
+      startDate: projectToEdit.startDate?.split("T")[0] || "",
+      deadline: projectToEdit.endDate?.split("T")[0] || "",
+      priority: (projectToEdit.priority || "") as Priority | "",
+      status: projectToEdit.status as Status,
+      trackAttendance: true,
+      commissionEnabled: false,
+    };
+  });
 
   const set = <K extends keyof typeof EMPTY>(key: K, val: (typeof EMPTY)[K]) =>
     setForm((f) => ({ ...f, [key]: val }));

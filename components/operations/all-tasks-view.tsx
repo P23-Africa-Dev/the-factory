@@ -235,7 +235,7 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     description: apiTask.title,
     location: apiTask.location || "No location",
     time: "Just now",
-    category: (apiTask.type || "agent") as any,
+    category: (apiTask.type || "agent") as DndItem["category"],
     dueDate: apiTask.due_date ? new Date(apiTask.due_date).toLocaleDateString() : undefined,
     assignedBy: `User ID: ${apiTask.created_by_user_id}`,
     addedDescription: apiTask.description,
