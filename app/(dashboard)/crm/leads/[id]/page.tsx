@@ -228,7 +228,7 @@ function ComposeEmailPanel({
     <div className="flex flex-col h-full animate-in slide-in-from-bottom-4 duration-300">
       {/* Compose header */}
       <div className="flex items-center justify-between px-0 pb-4 border-b border-gray-100">
-        <h3 className="text-[14px] sm:text-[15px] font-bold text-[#0B1215]">New Message</h3>
+        <h3 className="text-[14px] sm:text-[15px] font-semibold text-[#0B1215]">New Message</h3>
         <button
           onClick={onClose}
           className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center hover:bg-gray-100 transition-colors border border-gray-100"
@@ -244,7 +244,7 @@ function ComposeEmailPanel({
             To
           </label>
           <div className="flex-1 flex items-center gap-2">
-            <div className="flex items-center gap-2 bg-[#0B1215] text-white px-3 py-1.5 rounded-full text-[11px] font-semibold">
+            <div className="flex items-center gap-2 bg-[#0B1215] text-white px-3 py-1.5 rounded-full text-[11px] font-medium">
               {leadName}
               <X size={10} className="opacity-50 cursor-pointer hover:opacity-100" />
             </div>
@@ -267,7 +267,7 @@ function ComposeEmailPanel({
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             placeholder="What's this about?"
-            className="flex-1 outline-none text-[14px] font-semibold text-[#0B1215] placeholder:text-gray-300 bg-transparent"
+            className="flex-1 outline-none text-[14px] font-medium text-[#0B1215] placeholder:text-gray-300 bg-transparent"
           />
         </div>
       </div>
@@ -294,7 +294,7 @@ function ComposeEmailPanel({
         <button
           onClick={handleSend}
           disabled={!subject.trim() || !body.trim() || isSending}
-          className={`w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-2.5 rounded-[12px] sm:rounded-[14px] text-[13px] font-bold transition-all shadow-md ${
+          className={`w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-2.5 rounded-[12px] sm:rounded-[14px] text-[13px] font-semibold transition-all shadow-md ${
             subject.trim() && body.trim() && !isSending
               ? "bg-[#0B1215] text-white hover:opacity-90"
               : "bg-gray-100 text-gray-300 cursor-not-allowed"
@@ -331,9 +331,9 @@ function EmailThreadItem({
   const isSent = email.direction === "sent";
 
   return (
-    <button
+    <div
       onClick={onClick}
-      className={`w-full flex items-start gap-2.5 sm:gap-3.5 p-3 sm:p-4 rounded-[16px] sm:rounded-[18px] transition-all duration-200 text-left group relative ${
+      className={`w-full flex items-start gap-2.5 sm:gap-3.5 p-3 sm:p-4 rounded-[16px] sm:rounded-[18px] transition-all duration-200 text-left group relative cursor-pointer ${
         !email.isRead
           ? "bg-blue-50/60 hover:bg-blue-50/90 border border-blue-100/50"
           : "hover:bg-gray-50 border border-transparent hover:border-gray-100"
@@ -363,8 +363,8 @@ function EmailThreadItem({
             <span
               className={`text-[13px] truncate ${
                 !email.isRead
-                  ? "font-bold text-[#0B1215]"
-                  : "font-semibold text-[#374151]"
+                  ? "font-semibold text-[#0B1215]"
+                  : "font-medium text-[#374151]"
               }`}
             >
               {isSent ? `To: ${email.to}` : email.from}
@@ -373,7 +373,7 @@ function EmailThreadItem({
               <CheckCheck size={13} className="text-[#10B981] shrink-0" />
             )}
           </div>
-          <span className="text-[10px] text-gray-400 font-medium shrink-0 whitespace-nowrap">
+          <span className="text-[10px] text-gray-400 font-normal shrink-0 whitespace-nowrap">
             {email.timeAgo}
           </span>
         </div>
@@ -381,8 +381,8 @@ function EmailThreadItem({
         <p
           className={`text-[12px] truncate mb-1 ${
             !email.isRead
-              ? "font-semibold text-[#0B1215]"
-              : "font-medium text-gray-600"
+              ? "font-medium text-[#0B1215]"
+              : "font-normal text-gray-600"
           }`}
         >
           {email.subject}
@@ -396,7 +396,7 @@ function EmailThreadItem({
         {email.attachments && email.attachments.length > 0 && (
           <div className="flex items-center gap-1.5 mt-2">
             <Paperclip size={11} className="text-gray-300" />
-            <span className="text-[10px] text-gray-400 font-medium">
+            <span className="text-[10px] text-gray-400 font-normal">
               {email.attachments.length} attachment
               {email.attachments.length > 1 ? "s" : ""}
             </span>
@@ -427,7 +427,7 @@ function EmailThreadItem({
           <div className="w-2.5 h-2.5 rounded-full bg-[#3B82F6] shadow-[0_0_6px_rgba(59,130,246,0.4)]" />
         )}
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -452,7 +452,7 @@ function EmailDetailView({
       <div className="flex items-center justify-between pb-4 border-b border-gray-100">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 text-[12px] font-semibold text-gray-500 hover:text-[#0B1215] transition-colors"
+          className="flex items-center gap-2 text-[12px] font-medium text-gray-500 hover:text-[#0B1215] transition-colors"
         >
           <ArrowLeft size={16} />
           Back to inbox
@@ -478,7 +478,7 @@ function EmailDetailView({
 
       {/* Subject */}
       <div className="py-4 sm:py-5 border-b border-gray-50">
-        <h3 className="text-[15px] sm:text-[17px] font-bold text-[#0B1215] leading-tight">
+        <h3 className="text-[15px] sm:text-[17px] font-semibold text-[#0B1215] leading-tight">
           {email.subject}
         </h3>
       </div>
@@ -496,7 +496,7 @@ function EmailDetailView({
             {isSent ? (
               <Send size={14} className="rotate-[-30deg]" />
             ) : (
-              <span className="text-[13px] sm:text-[14px] font-bold">
+              <span className="text-[13px] sm:text-[14px] font-semibold">
                 {email.from.charAt(0)}
               </span>
             )}
@@ -507,7 +507,7 @@ function EmailDetailView({
                 {email.from}
               </span>
               {isSent && (
-                <span className="text-[10px] font-semibold text-[#10B981] bg-emerald-50 px-2 py-0.5 rounded-full">
+                <span className="text-[10px] font-medium text-[#10B981] bg-emerald-50 px-2 py-0.5 rounded-full">
                   Sent
                 </span>
               )}
@@ -520,7 +520,7 @@ function EmailDetailView({
         <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 text-gray-400">
           <div className="flex items-center gap-1.5">
             <Clock size={12} />
-            <span className="text-[11px] font-medium">{email.timestamp}</span>
+            <span className="text-[11px] font-normal">{email.timestamp}</span>
           </div>
         </div>
       </div>
@@ -534,7 +534,7 @@ function EmailDetailView({
         {/* Attachments */}
         {email.attachments && email.attachments.length > 0 && (
           <div className="mt-6 pt-5 border-t border-gray-100">
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-3">
+            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider mb-3">
               Attachments ({email.attachments.length})
             </p>
             <div className="flex flex-wrap gap-2">
@@ -547,7 +547,7 @@ function EmailDetailView({
                     <Paperclip size={14} className="text-red-400" />
                   </div>
                   <div>
-                    <p className="text-[12px] font-semibold text-[#0B1215] group-hover:text-[#3B82F6] transition-colors">
+                    <p className="text-[12px] font-medium text-[#0B1215] group-hover:text-[#3B82F6] transition-colors">
                       {att.name}
                     </p>
                     <p className="text-[10px] text-gray-400">{att.size}</p>
@@ -634,16 +634,16 @@ function EmailCommunicationPanel({ leadName }: { leadName: string }) {
           <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gray-50 flex items-center justify-center border border-gray-100 shadow-sm relative shrink-0">
             <Mail size={18} className="text-[#0B1215]" />
             {unreadCount > 0 && (
-              <div className="absolute -top-1 -right-1 w-4.5 h-4.5 sm:w-5 sm:h-5 bg-[#3B82F6] text-white text-[8px] sm:text-[9px] font-bold rounded-full flex items-center justify-center shadow-sm">
+              <div className="absolute -top-1 -right-1 w-4.5 h-4.5 sm:w-5 sm:h-5 bg-[#3B82F6] text-white text-[8px] sm:text-[9px] font-semibold rounded-full flex items-center justify-center shadow-sm">
                 {unreadCount}
               </div>
             )}
           </div>
           <div className="min-w-0">
-            <h2 className="text-[16px] sm:text-[18px] font-bold text-[#0B1215] truncate">
+            <h2 className="text-[16px] sm:text-[18px] font-semibold text-[#0B1215] truncate">
               Email communication
             </h2>
-            <p className="text-[10px] sm:text-[11px] text-gray-400 font-medium truncate">
+            <p className="text-[10px] sm:text-[11px] text-gray-400 font-normal truncate">
               {emails.length} message{emails.length !== 1 ? "s" : ""} with{" "}
               {leadName}
             </p>
@@ -654,7 +654,7 @@ function EmailCommunicationPanel({ leadName }: { leadName: string }) {
             setReplyTo(null);
             setView("compose");
           }}
-          className="flex items-center justify-center gap-2.5 px-5 sm:px-6 py-2.5 sm:py-3 bg-[#0B1215] text-white rounded-[12px] sm:rounded-[14px] text-[13px] font-bold hover:opacity-90 transition-all shadow-md whitespace-nowrap"
+          className="flex items-center justify-center gap-2.5 px-5 sm:px-6 py-2.5 sm:py-3 bg-[#0B1215] text-white rounded-[12px] sm:rounded-[14px] text-[13px] font-semibold hover:opacity-90 transition-all shadow-md whitespace-nowrap"
           id="compose-email-btn"
         >
           <Pencil size={16} />
@@ -761,7 +761,7 @@ function PillDropdown({
                   className="w-2.5 h-2.5 rounded-full shrink-0"
                   style={{ backgroundColor: opt.color }}
                 />
-                <span className="text-[12px] text-[#0B1215] font-medium">
+                <span className="text-[12px] text-[#0B1215] font-normal">
                   {opt.label}
                 </span>
               </button>
@@ -892,8 +892,8 @@ function MapPreview({ name }: { name: string }) {
           />
         </div>
         <div className="bg-white/90 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm">
-          <p className="text-[9px] font-bold text-[#0B1215]">{name}</p>
-          <p className="text-[7px] text-gray-500">
+          <p className="text-[9px] font-semibold text-[#0B1215]">{name}</p>
+          <p className="text-[7px] text-gray-500 font-normal">
             14, Adeola Road, Ikeja GRA
           </p>
         </div>
@@ -939,7 +939,7 @@ export default function LeadDetailsPage() {
             >
               <ArrowLeft size={22} className="text-[#0B1215]" />
             </button>
-            <h1 className="text-[20px] sm:text-[22px] font-bold text-[#0B1215] tracking-tight truncate">
+            <h1 className="text-[20px] sm:text-[22px] font-semibold text-[#0B1215] tracking-tight truncate">
               Lead Details
             </h1>
           </div>
@@ -999,13 +999,13 @@ export default function LeadDetailsPage() {
                       />
                     </div>
                   </div>
-                  <h3 className="text-[#0B1215] text-[18px] font-bold text-center leading-none mb-1.5 tracking-tight">
+                  <h3 className="text-[#0B1215] text-[18px] font-semibold text-center leading-none mb-1.5 tracking-tight">
                     {lead.name}
                   </h3>
-                  <p className="text-gray-400 text-[12px] font-medium text-center mb-3">
+                  <p className="text-gray-400 text-[12px] font-normal text-center mb-3">
                     {lead.time}
                   </p>
-                  <span className="bg-[#0EA5E9] text-white text-[10px] font-bold px-4 py-1 rounded-full uppercase tracking-tighter shadow-sm">
+                  <span className="bg-[#0EA5E9] text-white text-[10px] font-semibold px-4 py-1 rounded-full uppercase tracking-tighter shadow-sm">
                     {lead.priority}
                   </span>
                 </div>
@@ -1024,7 +1024,7 @@ export default function LeadDetailsPage() {
               <div className="flex-1 flex flex-col gap-6 w-full min-w-0">
                 <div className="grid grid-cols-1 min-[480px]:grid-cols-2 gap-x-6 sm:gap-x-8 gap-y-4">
                   <div className="flex flex-col">
-                    <label className="text-gray-400 text-[11px] font-semibold mb-1">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Name
                     </label>
                     {isEditing ? (
@@ -1032,16 +1032,16 @@ export default function LeadDetailsPage() {
                         type="text"
                         value={lead.name}
                         onChange={(e) => updateField("name", e.target.value)}
-                        className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-bold w-full outline-none focus:border-blue-500"
+                        className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
                       />
                     ) : (
-                      <p className="text-white text-[16px] font-bold">
+                      <p className="text-white text-[16px] font-semibold">
                         {lead.name}
                       </p>
                     )}
                   </div>
                   <div className="flex flex-col">
-                    <label className="text-gray-400 text-[11px] font-semibold mb-1">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Phone Number
                     </label>
                     {isEditing ? (
@@ -1049,16 +1049,16 @@ export default function LeadDetailsPage() {
                         type="text"
                         value={lead.phone}
                         onChange={(e) => updateField("phone", e.target.value)}
-                        className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-bold w-full outline-none focus:border-blue-500"
+                        className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
                       />
                     ) : (
-                      <p className="text-white text-[16px] font-bold">
+                      <p className="text-white text-[16px] font-semibold">
                         {lead.phone}
                       </p>
                     )}
                   </div>
                   <div className="flex flex-col">
-                    <label className="text-gray-400 text-[11px] font-semibold mb-1">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Location
                     </label>
                     {isEditing ? (
@@ -1066,19 +1066,19 @@ export default function LeadDetailsPage() {
                         type="text"
                         value={lead.location}
                         onChange={(e) => updateField("location", e.target.value)}
-                        className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-bold w-full outline-none focus:border-blue-500"
+                        className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
                       />
                     ) : (
-                      <p className="text-white text-[16px] font-bold">
+                      <p className="text-white text-[16px] font-semibold">
                         {lead.location}
                       </p>
                     )}
                   </div>
                   <div className="flex flex-col">
-                    <label className="text-gray-400 text-[11px] font-semibold mb-1">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Status Tag
                     </label>
-                    <p className="text-white text-[16px] font-bold">
+                    <p className="text-white text-[16px] font-semibold">
                       {lead.statusTag}
                     </p>
                   </div>
@@ -1096,14 +1096,14 @@ export default function LeadDetailsPage() {
                 <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center border border-gray-100 shadow-sm">
                   <Info size={20} className="text-[#0B1215]" />
                 </div>
-                <h2 className="text-[18px] font-bold text-[#0B1215]">
+                <h2 className="text-[18px] font-semibold text-[#0B1215]">
                   Lead Details
                 </h2>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 sm:gap-x-12 gap-y-6 sm:gap-y-8">
                 <div className="flex flex-col gap-2">
-                  <label className="text-gray-400 text-[12px] font-semibold uppercase tracking-widest">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Status
                   </label>
                   <PillDropdown
@@ -1117,7 +1117,7 @@ export default function LeadDetailsPage() {
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-gray-400 text-[12px] font-semibold uppercase tracking-widest">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Uploaded By
                   </label>
                   {isEditing ? (
@@ -1125,16 +1125,16 @@ export default function LeadDetailsPage() {
                       type="text"
                       value={lead.uploadedBy}
                       onChange={(e) => updateField("uploadedBy", e.target.value)}
-                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-semibold w-full outline-none focus:border-blue-500 shadow-sm"
+                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-medium w-full outline-none focus:border-blue-500 shadow-sm"
                     />
                   ) : (
-                    <p className="text-[#0B1215] text-[16px] font-bold">
+                    <p className="text-[#0B1215] text-[16px] font-semibold">
                       {lead.uploadedBy}
                     </p>
                   )}
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-gray-400 text-[12px] font-semibold uppercase tracking-widest">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Last Interaction
                   </label>
                   {isEditing ? (
@@ -1142,16 +1142,16 @@ export default function LeadDetailsPage() {
                       type="text"
                       value={lead.lastInteraction}
                       onChange={(e) => updateField("lastInteraction", e.target.value)}
-                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-semibold w-full outline-none focus:border-blue-500 shadow-sm"
+                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-medium w-full outline-none focus:border-blue-500 shadow-sm"
                     />
                   ) : (
-                    <p className="text-[#0B1215] text-[16px] font-bold">
+                    <p className="text-[#0B1215] text-[16px] font-semibold">
                       {lead.lastInteraction}
                     </p>
                   )}
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-gray-400 text-[12px] font-semibold uppercase tracking-widest">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Source
                   </label>
                   {isEditing ? (
@@ -1159,16 +1159,16 @@ export default function LeadDetailsPage() {
                       type="text"
                       value={lead.source}
                       onChange={(e) => updateField("source", e.target.value)}
-                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-semibold w-full outline-none focus:border-blue-500 shadow-sm"
+                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-medium w-full outline-none focus:border-blue-500 shadow-sm"
                     />
                   ) : (
-                    <p className="text-[#0B1215] text-[16px] font-bold">
+                    <p className="text-[#0B1215] text-[16px] font-semibold">
                       {lead.source}
                     </p>
                   )}
                 </div>
                 <div className="flex flex-col gap-2">
-                  <label className="text-gray-400 text-[12px] font-semibold uppercase tracking-widest">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Assign to
                   </label>
                   <PillDropdown
@@ -1182,7 +1182,7 @@ export default function LeadDetailsPage() {
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-gray-400 text-[12px] font-semibold uppercase tracking-widest">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Next Action
                   </label>
                   {isEditing ? (
@@ -1190,16 +1190,16 @@ export default function LeadDetailsPage() {
                       type="text"
                       value={lead.nextAction}
                       onChange={(e) => updateField("nextAction", e.target.value)}
-                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-semibold w-full outline-none focus:border-blue-500 shadow-sm"
+                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-medium w-full outline-none focus:border-blue-500 shadow-sm"
                     />
                   ) : (
-                    <p className="text-[#0B1215] text-[16px] font-bold">
+                    <p className="text-[#0B1215] text-[16px] font-semibold">
                       {lead.nextAction}
                     </p>
                   )}
                 </div>
                 <div className="flex flex-col gap-2">
-                  <label className="text-gray-400 text-[12px] font-semibold uppercase tracking-widest">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Priority
                   </label>
                   <PillDropdown
@@ -1213,7 +1213,7 @@ export default function LeadDetailsPage() {
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-gray-400 text-[12px] font-semibold uppercase tracking-widest">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Created
                   </label>
                   {isEditing ? (
@@ -1221,10 +1221,10 @@ export default function LeadDetailsPage() {
                       type="text"
                       value={lead.created}
                       onChange={(e) => updateField("created", e.target.value)}
-                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-semibold w-full outline-none focus:border-blue-500 shadow-sm"
+                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-medium w-full outline-none focus:border-blue-500 shadow-sm"
                     />
                   ) : (
-                    <p className="text-[#0B1215] text-[16px] font-bold">
+                    <p className="text-[#0B1215] text-[16px] font-semibold">
                       {lead.created}
                     </p>
                   )}
