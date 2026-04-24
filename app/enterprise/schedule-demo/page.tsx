@@ -108,14 +108,14 @@ export default function ScheduleDemoPage() {
     <div className="relative min-h-screen w-full overflow-hidden bg-[#0A1618] selection:bg-[#6FA8A6]/30">
       {/* Background Image with Overlay */}
       <div className="absolute inset-0 z-0">
-        <Image
+        {/* <Image
           src="/enterprise/demo-bg.png"
           alt="Enterprise Background"
           fill
           className="object-cover opacity-40 mix-blend-overlay"
           priority
-        />
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0A1618] via-[#0A1618]/80 to-transparent" />
+        /> */}
+        {/* <div className="absolute inset-0 bg-gradient-to-br from-[#0A1618] via-[#0A1618]/80 to-transparent" /> */}
       </div>
 
       <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-6 py-12 md:px-12">
@@ -140,7 +140,8 @@ export default function ScheduleDemoPage() {
               Scale your <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#6FA8A6] to-[#A3E635]">workflow</span>
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-white/50">
-              Transform your team&apos;s productivity with Factory 23. Tell us about your goals and we&apos;ll design a custom onboarding experience.
+              Transform your team&apos;s productivity with Factory 23. Tell us about your goals 
+              {/* and we&apos;ll design a custom onboarding experience. */}
             </p>
           </div>
 
