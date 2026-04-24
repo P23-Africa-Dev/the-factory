@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
-import { SectionDivider } from "@/components/finance/payroll/section-divider";
-import { FormRow } from "@/components/finance/payroll/form-row";
-import { InlineInput } from "@/components/finance/payroll/inline-input";
-import { InlineSelect } from "@/components/finance/payroll/inline-select";
+import { SectionDivider } from "@/components/payroll/payroll/section-divider";
+import { FormRow } from "@/components/payroll/payroll/form-row";
+import { InlineInput } from "@/components/payroll/payroll/inline-input";
+import { InlineSelect } from "@/components/payroll/payroll/inline-select";
 import {
   CommissionModal,
   type CommissionPreference,
   type ProductEntry,
-} from "@/components/finance/payroll/commission-modal";
+} from "@/components/payroll/payroll/commission-modal";
 
 interface SetPayrollModalProps {
   isOpen: boolean;
