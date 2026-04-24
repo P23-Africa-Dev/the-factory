@@ -103,7 +103,7 @@ export default function OnboardingForm() {
         // /me failure is non-fatal — session is saved, dashboard will re-fetch
       }
 
-      router.push("/login");
+      router.push("/dashboard");
     },
     onError: (err: ApiRequestError | Error) => {
       toast.error(err.message);
