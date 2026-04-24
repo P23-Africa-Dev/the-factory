@@ -2,13 +2,16 @@
 
 import {
   createWorkspace,
+  getMe,
   type ApiRequestError,
   type WorkspacePayload,
 } from "@/lib/api/onboarding";
 import {
   getAuthTokenFromDocument,
-  setOnboardingCompletedCookie,
+  setAuthSession,
+  setCompanyId,
 } from "@/lib/auth/session";
+import { useAuthStore } from "@/store/auth";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Select from "@/components/ui/select";
@@ -37,6 +40,7 @@ type Country = { name: { common: string }; cca2: string };
 
 export default function OnboardingForm() {
   const router = useRouter();
+  const setUser = useAuthStore((s) => s.setUser);
 
   const { data: countryOptions = [] } = useQuery({
     queryKey: ["countries"],
@@ -78,9 +82,27 @@ export default function OnboardingForm() {
       if (!token) throw new Error("Your session has expired. Please verify your email again.");
       return createWorkspace(values, token);
     },
-    onSuccess: (res) => {
-      setOnboardingCompletedCookie();
+    onSuccess: async (res) => {
+      const token = res.data.token;
+      setAuthSession(token, true);
       toast.success(res.message);
+
+      try {
+        const meRes = await getMe(token);
+        if (meRes.data.active_company?.id) {
+          setCompanyId(meRes.data.active_company.id);
+        }
+        setUser({
+          id: meRes.data.id,
+          name: meRes.data.name,
+          email: meRes.data.email,
+          avatar: meRes.data.avatar,
+          active_company: meRes.data.active_company,
+        });
+      } catch {
+        // /me failure is non-fatal — session is saved, dashboard will re-fetch
+      }
+
       router.push("/login");
     },
     onError: (err: ApiRequestError | Error) => {

@@ -213,11 +213,30 @@ Success (`200`):
     "email_verified": true,
     "onboarding_completed": false,
     "onboarding_completed_at": null,
+    "active_company": null,
     "created_at": "2026-04-03T14:30:00+00:00"
   },
   "errors": null
 }
 ```
+
+After workspace completion, `active_company` is populated and should be used as the canonical company context for subsequent API calls:
+
+```json
+"active_company": {
+  "id": 322,
+  "company_id": "FAC-GZZLGAUP",
+  "name": "Acme Manufacturing",
+  "status": "active",
+  "role": "owner"
+}
+```
+
+Important:
+
+1. Do not infer `company_id` from `user.id`.
+2. For company-scoped endpoints, use `active_company.id` when explicitly sending `company_id`.
+3. If client omits `company_id`, backend resolves most recent active company membership.
 
 ### 5) Create Workspace
 

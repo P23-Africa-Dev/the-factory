@@ -144,8 +144,33 @@ export function resendEmailOtp(payload: ResendOtpPayload) {
   });
 }
 
+export type WorkspaceResponse = {
+  token: string;
+  token_type: "Bearer";
+  workspace: {
+    id: string;
+    name: string;
+    slug: string;
+    country: string;
+    team_size: string;
+    purpose: string;
+    user_type: string;
+    created_at: string;
+  };
+  user: {
+    id: number;
+    name: string;
+    email: string;
+    avatar: string | null;
+    email_verified: boolean;
+    onboarding_completed: boolean;
+    onboarding_completed_at: string | null;
+    created_at: string;
+  };
+};
+
 export function createWorkspace(payload: WorkspacePayload, token: string) {
-  return apiRequest({
+  return apiRequest<WorkspaceResponse>({
     method: "POST",
     path: "/onboarding/workspace",
     body: payload,
