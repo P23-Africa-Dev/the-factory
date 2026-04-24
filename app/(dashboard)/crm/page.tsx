@@ -332,7 +332,7 @@ function LeadCard({
       {...listeners}
       onPointerDown={(e) => {
         handlePointerDown(e);
-        listeners?.onPointerDown?.(e as any);
+        listeners?.onPointerDown?.(e);
       }}
       onPointerUp={handlePointerUp}
       className={`bg-white rounded-[20px] p-5 shadow-[0px_4px_4px_0px_rgba(0,0,0,0.05),0px_8px_12px_rgba(0,0,0,0.03)] border border-gray-100 cursor-grab select-none mb-4 transition-all duration-300 hover:-translate-y-1
