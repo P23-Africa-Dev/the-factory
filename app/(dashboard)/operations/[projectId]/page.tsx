@@ -143,7 +143,7 @@ function ProjectTasksContent() {
     useDragAndDrop(INITIAL_DATA);
 
   const [showModal, setShowModal] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<{ item: DndItem; containerId: string } | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const stats = useMemo(() => {
     const total = containers.reduce((s: number, c: DndContainer) => s + c.items.length, 0);
@@ -220,7 +220,7 @@ function ProjectTasksContent() {
             moveItem={moveItem}
             moveToContainer={moveToContainer}
             moveBetweenContainers={moveBetweenContainers}
-            onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
+            onTaskClick={(item) => setSelectedTaskId(item.id)}
           />
         </div>
 
@@ -282,10 +282,9 @@ function ProjectTasksContent() {
         onCreateTask={(containerId, item) => addItem(containerId, item)}
       />
       <TaskDetailModal
-        isOpen={!!selectedTask}
-        onClose={() => setSelectedTask(null)}
-        task={selectedTask?.item ?? null}
-        status={selectedTask?.containerId ?? ""}
+        isOpen={!!selectedTaskId}
+        onClose={() => setSelectedTaskId(null)}
+        taskId={selectedTaskId}
       />
     </div>
   );

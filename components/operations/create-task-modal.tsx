@@ -11,8 +11,8 @@ import {
   Camera,
   Calendar,
   AlertCircle,
-  Navigation,
 } from "lucide-react";
+import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth";
@@ -139,6 +139,8 @@ export function CreateTaskModal({
     assignTo: "",
     location: "",
     address: "",
+    latitude: undefined as number | undefined,
+    longitude: undefined as number | undefined,
     dueDate: "",
     requiredActions: "",
     priority: "" as Priority | "",
@@ -171,20 +173,22 @@ export function CreateTaskModal({
   const handleSubmit = () => {
     if (!validate()) return;
     
-    // If real API mode is requested
-    if (projectId && companyId) {
+    // API mode — always use real API when companyId is available
+    if (companyId) {
       const typeKey = TASK_TYPES[form.taskType] || "general";
       const priorityVal = form.priority.toLowerCase() as ApiTaskPriority;
-      
+
       mutate({
         company_id: companyId,
-        project_id: projectId,
+        project_id: projectId ?? undefined,
         title: form.title,
         type: typeKey,
         description: form.description,
         assigned_agent_id: Number(form.assignTo),
         location: form.location,
         address: form.address || undefined,
+        latitude: form.latitude,
+        longitude: form.longitude,
         due_date: new Date(form.dueDate).toISOString(),
         required_actions: form.requiredActions ? form.requiredActions.split(',').map(s => s.trim()) : undefined,
         priority: priorityVal,
@@ -245,6 +249,8 @@ export function CreateTaskModal({
       assignTo: "",
       location: "",
       address: "",
+      latitude: undefined,
+      longitude: undefined,
       dueDate: "",
       requiredActions: "",
       priority: "",
@@ -392,18 +398,30 @@ export function CreateTaskModal({
             <FieldLabel>
               Address{" "}
               <span className="text-gray-400 normal-case font-normal">
-                (GPS Coordinate)
+                (optional)
               </span>
             </FieldLabel>
-            <InputWrap icon={<Navigation size={13} />}>
-              <input
-                type="text"
-                placeholder="e.g. Admiralty Way, Lekki Phase 1, Lagos"
-                value={form.address}
-                onChange={(e) => set("address", e.target.value)}
-                className={`${INPUT_CLS()} pl-9 pr-4`}
-              />
-            </InputWrap>
+            <AddressAutocomplete
+              value={form.address}
+              onChange={(val) => {
+                setForm((p) => ({ ...p, address: val, latitude: undefined, longitude: undefined }));
+                setErrors((p) => ({ ...p, address: "" }));
+              }}
+              onSelect={(s) => {
+                setForm((p) => ({
+                  ...p,
+                  address: s.place_name,
+                  longitude: s.center[0],
+                  latitude: s.center[1],
+                }));
+              }}
+              placeholder="e.g. Admiralty Way, Lekki Phase 1, Lagos"
+            />
+            {form.latitude != null && (
+              <p className="text-[10px] text-[#3A8C88] font-semibold mt-1">
+                📍 {form.latitude.toFixed(5)}, {form.longitude?.toFixed(5)}
+              </p>
+            )}
           </div>
 
           {/* Due Date + Priority */}

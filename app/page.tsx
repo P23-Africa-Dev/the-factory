@@ -82,10 +82,11 @@ export default function Home() {
 
             {/* Main Headline */}
             <h2 className="text-5xl font-black tracking-tighter text-white sm:text-7xl md:text-8xl lg:text-9xl">
-              Precision <br />
+              Factory 23
+              {/* Precision <br />
               <span className="bg-gradient-to-r from-white via-[#6FA8A6] to-[#A3E635] bg-clip-text text-transparent italic">
                 Engineering.
-              </span>
+              </span> */}
             </h2>
             
             <p className="mt-10 max-w-2xl text-lg font-medium leading-relaxed text-white/40 md:text-xl">

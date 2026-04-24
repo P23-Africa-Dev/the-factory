@@ -45,7 +45,7 @@ export function ProjectDetailsView({ projectId }: { projectId: string }) {
   const { data: tasksData, isPending: loadingTasks } = useTasks({ project_id: projectId });
 
   const [showModal, setShowModal] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<{ item: DndItem; containerId: string } | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   // Map API Tasks to DndContainer structure
   const containers: DndContainer[] = useMemo(() => {
@@ -193,7 +193,7 @@ export function ProjectDetailsView({ projectId }: { projectId: string }) {
               moveItem={() => {}}
               moveToContainer={() => {}}
               moveBetweenContainers={() => {}}
-              onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
+              onTaskClick={(item) => setSelectedTaskId(item.id)}
             />
           )}
         </div>
@@ -252,10 +252,9 @@ export function ProjectDetailsView({ projectId }: { projectId: string }) {
         projectId={projectId}
       />
       <TaskDetailModal
-        isOpen={!!selectedTask}
-        onClose={() => setSelectedTask(null)}
-        task={selectedTask?.item ?? null}
-        status={selectedTask?.containerId ?? ""}
+        isOpen={!!selectedTaskId}
+        onClose={() => setSelectedTaskId(null)}
+        taskId={selectedTaskId}
       />
     </div>
   );
