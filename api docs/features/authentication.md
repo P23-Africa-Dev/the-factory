@@ -257,8 +257,33 @@ curl -X POST http://localhost:8080/api/v1/auth/logout \
 1. `POST /api/v1/auth/register` creates pending user and sends OTP.
 2. `POST /api/v1/auth/verify-email` verifies OTP and returns bearer token.
 3. Frontend stores token immediately and sets `Authorization: Bearer <token>`.
-4. `POST /api/v1/onboarding/workspace` completes workspace onboarding.
-5. `GET /api/v1/user/me` returns normalized onboarding state and active company context.
+4. `POST /api/v1/onboarding/workspace` completes workspace onboarding and rotates auth token.
+5. Frontend replaces previously stored token with `data.token` from workspace completion response.
+6. `GET /api/v1/user/me` returns normalized onboarding state and active company context.
+
+Self-serve onboarding completion success payload (`201`):
+
+```json
+{
+  "success": true,
+  "message": "Workspace created successfully. Welcome aboard!",
+  "data": {
+    "token": "1|...",
+    "token_type": "Bearer",
+    "workspace": {
+      "id": 10,
+      "name": "Acme Corp"
+    },
+    "user": {
+      "id": 1,
+      "email": "owner@example.com",
+      "onboarding_completed": true,
+      "user_type": "self-serve"
+    },
+    "onboarding_completed": true
+  }
+}
+```
 
 ### Enterprise onboarding flow
 
@@ -276,6 +301,12 @@ curl -X POST http://localhost:8080/api/v1/auth/logout \
 2. `GET /api/v1/user/me` confirms authenticated dashboard context.
 3. `POST /api/v1/auth/logout` revokes only the current token.
 4. Requests with missing/invalid token receive `401`.
+
+Unified onboarding auth contract:
+
+1. Both completion endpoints return `data.token` and `data.token_type=Bearer`.
+2. Frontend must treat completion response token as source of truth and persist before redirect.
+3. Dashboard bootstrap must call `/api/v1/user/me`; redirect alone is not authentication state.
 
 ## Stabilization and Security Notes
 
