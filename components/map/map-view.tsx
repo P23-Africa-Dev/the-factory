@@ -64,7 +64,7 @@ export function MapView({ compact = false }: MapViewProps) {
   const [searchQuery, setSearchQuery]     = useState('');
   const [mapReady, setMapReady]           = useState(false);
 
-  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "pk.eyJ1IjoiZWxpamFoc2NyaXB0ZGV2IiwiYSI6ImNtbnIzcHhvOTAwM2MycHF3b2JvZG1haG4ifQ.iu2J-8w1siVnexyejD7rjQ";
 
   // ── Init map ────────────────────────────────────────────────────────────────
   useEffect(() => {
