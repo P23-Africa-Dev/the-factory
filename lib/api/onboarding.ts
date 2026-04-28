@@ -8,7 +8,7 @@ export type ApiEnvelope<TData> = {
 };
 
 type ApiRequestOptions = {
-  method: "GET" | "POST" | "PATCH";
+  method: "GET" | "POST" | "PATCH" | "PUT";
   path: string;
   body?: unknown;
   token?: string;

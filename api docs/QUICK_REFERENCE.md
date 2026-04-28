@@ -42,6 +42,9 @@ curl -X POST http://localhost:8080/api/v1/agent/login \
 4. GET /api/v1/tasks
 5. POST /api/v1/tasks
 6. POST /api/v1/agent/tasks/self
+7. GET /api/v1/payroll
+8. POST /api/v1/payroll
+9. PUT /api/v1/payroll/{id}
 
 ## Project and Task Quick Rules
 
@@ -57,6 +60,13 @@ Tasks:
 2. Optional project_id links task to project
 3. project_id omitted/null means standalone task
 4. Agent self-task endpoint: POST /api/v1/agent/tasks/self
+
+Payroll:
+
+1. One payroll settings record per company
+2. Only admin/supervisor can create or update payroll settings
+3. Agents inherit payroll settings and can fetch read-only
+4. Daily pay is auto-derived as base_salary / work_days
 
 ## Project Progress Formula
 
@@ -107,9 +117,11 @@ Task update denied for agent:
 2. docs/features/internal-user-onboarding.md
 3. docs/features/task-management.md
 4. docs/features/project-management.md
-5. docs/frontend-guide/authentication.md
-6. docs/frontend-guide/task-management.md
-7. docs/frontend-guide/project-management.md
+5. docs/features/payroll-management.md
+6. docs/frontend-guide/authentication.md
+7. docs/frontend-guide/task-management.md
+8. docs/frontend-guide/project-management.md
+9. docs/frontend-guide/payroll-management.md
 
 Last Updated: April 15, 2026
 Status: Current

@@ -24,9 +24,9 @@ Authentication is role-aware and now uses two entry points:
 4. `POST /api/v1/onboarding/workspace` (authenticated)
 5. `POST /api/v1/enterprise/onboarding/complete`
 6. `POST /api/v1/auth/logout` (authenticated)
-2. `POST /api/v1/agent/login`
-7. `POST /api/v1/internal/login` only for temporary backward compatibility with older agent clients
-8. `GET /api/v1/user/me` to fetch authenticated user and active company context
+7. `POST /api/v1/agent/login`
+8. `POST /api/v1/internal/login` only for temporary backward compatibility with older agent clients
+9. `GET /api/v1/user/me` to fetch authenticated user and active company context
 
 ## Request Examples
 Shared auth login:
@@ -228,6 +228,10 @@ export async function createWorkspace(payload) {
   const body = await response.json();
   if (!response.ok || !body.success) throw body;
 
+  // Self-serve onboarding completion now rotates token.
+  // Persist the returned token before dashboard redirect.
+  localStorage.setItem('auth_token', body.data.token);
+
   return body.data;
 }
 
@@ -298,3 +302,4 @@ export async function logout() {
 7. Do not redirect to dashboard until token is persisted and `GET /api/v1/user/me` succeeds.
 8. Use `data.onboarding_completed` from `/api/v1/user/me` as canonical dashboard gate across self-serve and enterprise users.
 9. If `GET /api/v1/user/me` returns `401`, clear local auth state and route to login.
+10. After self-serve workspace completion, replace pre-onboarding token with `data.token` from `/api/v1/onboarding/workspace` response.
