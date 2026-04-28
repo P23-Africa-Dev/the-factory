@@ -6,7 +6,7 @@ This feature provides company-level payroll configuration with strict tenant iso
 
 Design goals:
 
-1. Admins and supervisors define a single payroll policy per company.
+1. Owners, admins, and supervisors define a single payroll policy per company.
 2. Agents inherit the company payroll policy through company membership.
 3. Daily pay is automatically derived from base salary and work days.
 4. Attendance and commission toggles are persisted for future payroll extensions.
@@ -32,16 +32,16 @@ Headers:
 
 Role permissions in company context:
 
-1. `admin|supervisor`
+1. `owner|admin|supervisor`
    - Can create payroll settings
    - Can update payroll settings
    - Can fetch payroll settings
 2. `agent`
    - Can fetch payroll settings (inherited view)
    - Cannot create or update payroll settings
-3. `owner` or unknown non-manager roles
-   - Read access is allowed for owner
-   - Write access is denied unless role is `admin|supervisor`
+3. Unknown non-manager roles
+  - Read access is denied
+  - Write access is denied
 
 ## Data Model
 

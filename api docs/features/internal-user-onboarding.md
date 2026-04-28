@@ -31,9 +31,11 @@ Public:
 
 Authenticated (auth:sanctum):
 
-1. POST /api/v1/internal-users
-2. POST /api/v1/internal-users/{user}/invite
-3. PATCH /api/v1/internal-users/{user}/supervisor
+1. GET /api/v1/internal-users
+2. GET /api/v1/internal-users/onboarding-status
+3. POST /api/v1/internal-users
+4. POST /api/v1/internal-users/{user}/invite
+5. PATCH /api/v1/internal-users/{user}/supervisor
 
 Web signed route:
 
@@ -83,7 +85,20 @@ POST /api/v1/internal-users/{user}/invite
 
 PATCH /api/v1/internal-users/{user}/supervisor
 
-### 4) Invitation Preview
+### 4) Internal User Tracking (Manager Follow-up)
+
+Use these endpoints to follow onboarding progress for supervisors and agents.
+
+1. `GET /api/v1/internal-users`
+  - Returns active internal users by default.
+  - Supports filters: `role`, `onboarding_status`, `include_inactive`, `company_id`.
+  - To track pending invites, call with `include_inactive=1` or `onboarding_status=pending_onboarding`.
+2. `GET /api/v1/internal-users/onboarding-status`
+  - Always includes pending/inactive users.
+  - Returns summary counts: `total`, `active`, `pending_onboarding`, `inactive`.
+  - Includes invite lifecycle fields per user: `invite_sent_at`, `invite_expires_at`, `invite_accepted_at`, `invite_revoked_at`.
+
+### 5) Invitation Preview
 
 POST /api/v1/internal/onboarding/preview
 
@@ -95,7 +110,7 @@ Success payload includes:
 4. selected_avatar_svg for backward compatibility
 5. suggested_avatar_key resolved from profile or random assignment
 
-### 5) List Avatars
+### 6) List Avatars
 
 GET /api/v1/avatars?gender=male
 
@@ -116,7 +131,7 @@ Validation errors:
 1. Missing gender -> 422 with errors.gender
 2. Invalid gender -> 422 with errors.gender
 
-### 6) Complete Onboarding
+### 7) Complete Onboarding
 
 POST /api/v1/internal/onboarding/complete
 
@@ -127,7 +142,7 @@ Success payload includes:
 3. avatar_url when storage-backed avatar exists
 4. avatar_svg for fallback compatibility
 
-### 7) Agent Login
+### 8) Agent Login
 
 POST /api/v1/agent/login
 

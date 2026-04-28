@@ -28,6 +28,7 @@ Related task APIs:
 
 1. `POST /api/v1/tasks` to create a task under a project or as standalone
 2. `POST /api/v1/agent/tasks/self` for standalone agent self-tasks only
+3. Task creation with assignees triggers assignment notification emails via Resend
 
 Authentication:
 
@@ -235,7 +236,7 @@ Before creating or updating a project, fetch available supervisors to populate t
 **Parameters:**
 
 - `role` (optional): `supervisor` or `agent` to filter by role. Omit to fetch all internal users.
-- `company_id` (optional): specific company ID. Omits this to use authenticated user's company context.
+- `company_id` (optional): specific company ID (internal numeric ID or public FAC-style key). Omit this to use authenticated user's company context.
 
 ### Code Example
 
