@@ -1,9 +1,13 @@
 # Task Management Frontend Guide
 
 ## Feature Overview
+
 Task APIs support management-created tasks, project-linked tasks, standalone tasks, agent self-tasks, status updates, protected proof uploads/downloads, and strict company-scoped access for field operations.
 
+For live map tracking integration, see [Task Tracking Realtime Frontend Guide](task-tracking-realtime.md).
+
 ## User Flow
+
 1. Manager creates a task — only `title` is required. All other fields are optional.
 2. Manager may attach the task to an existing same-company project by sending `project_id`.
 3. Manager may assign one or more agents via `assigned_agent_ids` or the legacy `assigned_agent_id` field.
@@ -16,6 +20,7 @@ Task APIs support management-created tasks, project-linked tasks, standalone tas
 10. Managers can reassign only non-terminal tasks.
 
 ## API Endpoints
+
 Management and shared task APIs:
 
 1. `GET /api/v1/tasks`
@@ -256,35 +261,38 @@ Legacy single-agent form (still supported):
 ## Frontend Integration Example (Axios/fetch)
 
 ```javascript
-const API = '/api/v1';
+const API = "/api/v1";
 
 function authHeaders() {
-  const token = localStorage.getItem('auth_token');
+  const token = localStorage.getItem("auth_token");
   return {
-    Accept: 'application/json',
+    Accept: "application/json",
     Authorization: `Bearer ${token}`,
   };
 }
 
 export async function getTasks(params = {}) {
   const query = new URLSearchParams(params).toString();
-  const response = await fetch(`${API}/tasks${query ? `?${query}` : ''}`, {
+  const response = await fetch(`${API}/tasks${query ? `?${query}` : ""}`, {
     headers: authHeaders(),
   });
   return response.json();
 }
 
 export async function getTask(taskId, companyId) {
-  const response = await fetch(`${API}/tasks/${taskId}?company_id=${companyId}`, {
-    headers: authHeaders(),
-  });
+  const response = await fetch(
+    `${API}/tasks/${taskId}?company_id=${companyId}`,
+    {
+      headers: authHeaders(),
+    },
+  );
   return response.json();
 }
 
 export async function createTask(payload) {
   const response = await fetch(`${API}/tasks`, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   return response.json();
@@ -292,8 +300,8 @@ export async function createTask(payload) {
 
 export async function createSelfTask(payload) {
   const response = await fetch(`${API}/agent/tasks/self`, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   return response.json();
@@ -301,8 +309,8 @@ export async function createSelfTask(payload) {
 
 export async function updateTaskStatus(taskId, payload) {
   const response = await fetch(`${API}/tasks/${taskId}/status`, {
-    method: 'PATCH',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    method: "PATCH",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   return response.json();
@@ -310,7 +318,7 @@ export async function updateTaskStatus(taskId, payload) {
 
 export async function uploadTaskProof(taskId, formData) {
   const response = await fetch(`${API}/tasks/${taskId}/proofs`, {
-    method: 'POST',
+    method: "POST",
     headers: authHeaders(),
     body: formData,
   });
@@ -320,7 +328,7 @@ export async function uploadTaskProof(taskId, formData) {
 export async function downloadProof(fileUrl, token) {
   const response = await fetch(fileUrl, {
     headers: {
-      Accept: '*/*',
+      Accept: "*/*",
       Authorization: `Bearer ${token}`,
     },
   });
@@ -338,4 +346,3 @@ export async function downloadProof(fileUrl, token) {
 6. Preserve `company_id` when required by multi-company flows.
 7. `file_url` may be `null` for roles that cannot download proof files.
 8. Show a non-blocking success toast such as "Task created and assignment emails sent" after successful creation with assignees.
-

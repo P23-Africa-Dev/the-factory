@@ -127,7 +127,7 @@ Invitation preview success:
     "avatar_options": [
       {
         "key": "avatar_1",
-        "url": "http://localhost/storage/avatar/male/avatar_1.png",
+        "url": "https://api.thefactory23.com/storage/avatar/male/avatar_1.png",
         "svg": null
       }
     ],
@@ -142,11 +142,19 @@ Avatar list success:
 {
   "success": true,
   "data": [
-    "http://localhost/storage/avatar/male/avatar_1.png",
-    "http://localhost/storage/avatar/male/avatar_2.png"
+    "https://api.thefactory23.com/storage/avatar/male/avatar_1.png",
+    "https://api.thefactory23.com/storage/avatar/male/avatar_2.png"
   ]
 }
 ```
+
+Avatar rendering contract:
+
+1. Treat `avatar_options[].url` and `/api/v1/avatars` results as final render URLs.
+2. Do not prepend frontend origin or rewrite the host.
+3. Backend resolves host by environment configuration (`APP_URL`/storage URL config).
+4. Production expected host: `https://api.thefactory23.com`.
+5. Local environments may return local API host URLs.
 
 Agent login success:
 
@@ -220,3 +228,4 @@ export async function loginAgent(email, password) {
 3. Supervisors should not use agent login endpoint.
 4. Avatar URL list is gender-specific and publicly accessible through storage link.
 5. For new integrations, avoid deprecated `/api/v1/internal/login` and use role-specific current endpoints.
+6. If avatar images fail to render, verify storage symlink and that API URL env values are correct for the running environment.

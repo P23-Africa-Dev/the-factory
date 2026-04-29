@@ -37,9 +37,11 @@ Authenticated (auth:sanctum):
 4. POST /api/v1/internal-users/{user}/invite
 5. PATCH /api/v1/internal-users/{user}/supervisor
 
-Web signed route:
+Invitation delivery URL:
 
-1. GET /onboarding/internal/{invitation}/{token}
+1. Email action links point to the configured frontend onboarding URL (`INTERNAL_ONBOARDING_FRONTEND_URL`).
+2. Query params included: `invitation_id`, `token`.
+3. Backend validates token and invitation expiry during preview and completion APIs.
 
 ## Authentication and Authorization
 
@@ -120,11 +122,19 @@ Success 200:
 {
   "success": true,
   "data": [
-    "http://localhost/storage/avatar/male/avatar_1.png",
-    "http://localhost/storage/avatar/male/avatar_2.png"
+    "https://api.thefactory23.com/storage/avatar/male/avatar_1.png",
+    "https://api.thefactory23.com/storage/avatar/male/avatar_2.png"
   ]
 }
 ```
+
+Avatar URL generation contract:
+
+1. API returns fully qualified, browser-ready URLs.
+2. URL host is environment-aware and resolved from Laravel URL/storage helpers.
+3. Production must set `APP_URL=https://api.thefactory23.com` (optionally `ASSET_URL`).
+4. Local environments can use local domains (for example `http://localhost:8080`).
+5. No frontend URL transformation is required before rendering.
 
 Validation errors:
 
@@ -205,6 +215,13 @@ Complete onboarding:
 6. final merged avatar_key must belong to resolved gender catalog
 7. if gender exists without avatar, system auto-assigns a random avatar for that gender
 8. avatar catalog is resolved from storage/app/public/avatar/{gender} with config fallback
+9. avatar image URLs are generated via storage URL helpers and follow the configured application base URL
+
+Storage checklist:
+
+1. Ensure the storage symlink exists: `public/storage` -> `storage/app/public`.
+2. Avatar files should exist under `storage/app/public/avatar/male` and `storage/app/public/avatar/female`.
+3. Use `php artisan storage:link` when symlink is missing.
 
 ## Status Codes
 

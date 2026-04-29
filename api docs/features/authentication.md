@@ -2,14 +2,19 @@
 
 ## System Overview
 
-The authentication system now uses two role-based entry points:
+The authentication system uses one Sanctum-based token infrastructure with two role-based entry points:
 
-- Shared auth endpoint: `/api/v1/auth/login`
-  - Self-serve admin users
-  - Enterprise admin users
-  - Supervisor users
+- Shared management endpoint: `/api/v1/auth/login`
+  - Owner
+  - Admin
+  - Supervisor
 - Agent endpoint: `/api/v1/agent/login`
   - Agent users only
+
+Dashboard contract:
+
+1. Management users receive `dashboard_path=/dashboard`.
+2. Agents receive `dashboard_path=/agent/dashboard`.
 
 Backward compatibility:
 
@@ -17,7 +22,7 @@ Backward compatibility:
 
 ## Authentication Roles
 
-### Shared Auth Endpoint (`POST /api/v1/auth/login`)
+### Shared Management Auth Endpoint (`POST /api/v1/auth/login`)
 
 Allowed users:
 
@@ -38,6 +43,13 @@ Allowed users:
 3. `POST /api/v1/agent/login`
 4. `POST /api/v1/internal/login` (deprecated alias for agents only)
 5. `GET /api/v1/user/me` (authenticated profile including active company context)
+6. `GET|POST|PATCH /api/v1/admin/*` (management scope only)
+7. `GET|POST|PATCH /api/v1/agent/*` (agent scope only)
+
+Canonical protected namespaces:
+
+1. Management: `/api/v1/admin/tasks`, `/api/v1/admin/projects`, `/api/v1/admin/payroll`, `/api/v1/admin/internal-users`
+2. Agent: `/api/v1/agent/tasks`, `/api/v1/agent/tasks/self`, `/api/v1/agent/tasks/{task}/status`, `/api/v1/agent/tasks/{task}/proofs`
 
 ## Request Structure
 
@@ -100,9 +112,11 @@ Onboarding completion semantics:
 
 1. `onboarding_completed` is a normalized boolean for dashboard gating.
 2. `onboarding_completed=true` when any of these is complete:
-  - Self-serve onboarding (`onboarding_completed_at` set)
-  - Enterprise onboarding (`enterprise_onboarding_completed_at` set)
-  - Internal onboarding (`internal_onboarding_completed_at` set)
+
+- Self-serve onboarding (`onboarding_completed_at` set)
+- Enterprise onboarding (`enterprise_onboarding_completed_at` set)
+- Internal onboarding (`internal_onboarding_completed_at` set)
+
 3. `user_type` identifies which onboarding path completed first (`self-serve|enterprise|internal`).
 4. Frontend should gate dashboard access using token validity + `/api/v1/user/me` success, not redirection alone.
 
@@ -122,6 +136,7 @@ Company context rules:
   "data": {
     "token": "1|...",
     "token_type": "Bearer",
+    "dashboard_path": "/dashboard",
     "user_type": "self-serve|enterprise|supervisor",
     "access_role": "admin|supervisor",
     "internal_role": "supervisor|null",
@@ -144,6 +159,7 @@ Company context rules:
   "data": {
     "token": "1|...",
     "token_type": "Bearer",
+    "dashboard_path": "/agent/dashboard",
     "internal_role": "agent",
     "access_role": "agent",
     "user": {
@@ -180,21 +196,26 @@ Company context rules:
   "message": "Invalid credentials or onboarding not completed.",
   "data": null,
   "errors": {
-    "email": [
-      "Credentials are invalid or onboarding is not complete."
-    ]
+    "email": ["Credentials are invalid or onboarding is not complete."]
   }
 }
 ```
 
 ## Role Validation Matrix
 
-| User type | `/api/v1/auth/login` | `/api/v1/agent/login` |
-| --- | --- | --- |
-| Self-serve admin | ✅ | ❌ |
-| Enterprise admin | ✅ | ❌ |
-| Supervisor | ✅ | ❌ |
-| Agent | ❌ | ✅ |
+| User type        | `/api/v1/auth/login` | `/api/v1/agent/login` |
+| ---------------- | -------------------- | --------------------- |
+| Self-serve admin | ✅                   | ❌                    |
+| Enterprise admin | ✅                   | ❌                    |
+| Supervisor       | ✅                   | ❌                    |
+| Agent            | ❌                   | ✅                    |
+
+## Route Access Matrix
+
+| Endpoint Namespace | Owner/Admin/Supervisor | Agent    |
+| ------------------ | ---------------------- | -------- |
+| `/api/v1/admin/*`  | ✅                     | ❌ (403) |
+| `/api/v1/agent/*`  | ❌ (403)               | ✅       |
 
 ## Error Handling
 
@@ -290,10 +311,11 @@ Self-serve onboarding completion success payload (`201`):
 1. `POST /api/v1/enterprise/onboarding/complete` validates request token, activates account, and returns bearer token.
 2. Frontend stores token immediately and sets `Authorization: Bearer <token>`.
 3. `GET /api/v1/user/me` returns:
-  - `onboarding_completed=true`
-  - `enterprise_onboarding_completed=true`
-  - `user_type=enterprise`
-  - `active_company` payload
+
+- `onboarding_completed=true`
+- `enterprise_onboarding_completed=true`
+- `user_type=enterprise`
+- `active_company` payload
 
 ### Login/logout flow
 
