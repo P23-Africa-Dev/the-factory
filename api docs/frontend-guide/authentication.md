@@ -12,7 +12,6 @@ Authentication is role-aware and uses one Sanctum token system with two entry po
   - Agents only
 
 ## User Flow
-
 1. User selects login type in UI.
 2. Frontend sends credentials to the corresponding endpoint.
 3. Backend validates role, onboarding/account status, and active company membership.
@@ -59,7 +58,6 @@ Headers:
 - `Accept: application/json`
 
 ## Response Examples
-
 Shared auth success:
 
 ```json
@@ -152,7 +150,6 @@ Agent endpoint error example:
 ```
 
 ## Error Handling
-
 1. `401`: show generic auth error and suggest switching endpoint type.
 2. `422`: show form validation errors.
 3. `429`: show retry delay.

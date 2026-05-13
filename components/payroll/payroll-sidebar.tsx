@@ -1,0 +1,170 @@
+"use client";
+
+import CustomizeIcon from "@/assets/images/customize-icon.png";
+import FileExportIcon from "@/assets/images/file-export-icon.png";
+import MessageIcon from "@/assets/images/message-icon.png";
+import Image from "next/image";
+import { TinyButton } from "../ui/tiny-button";
+import type { PayrollAgent } from "./payroll-list";
+import type { PayrollSettings } from "@/lib/api/payroll";
+
+interface PayrollSidebarProps {
+  agent: PayrollAgent | null;
+  payrollSettings?: PayrollSettings | null;
+}
+
+function formatMoney(amount: number, currency: string) {
+  const formatted = amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  if (currency === "NGN") return `₦${formatted}`;
+  if (currency === "USD") return `$${formatted}`;
+  return `${formatted} ${currency}`;
+}
+
+export function PayrollSidebar({ agent, payrollSettings }: PayrollSidebarProps) {
+  if (!agent) return null;
+
+  const baseSalary = payrollSettings
+    ? formatMoney(payrollSettings.base_salary, payrollSettings.currency)
+    : "—";
+
+  const dailyPay = payrollSettings
+    ? formatMoney(payrollSettings.daily_pay, payrollSettings.currency)
+    : "—";
+
+  const workDays = payrollSettings ? `${payrollSettings.work_days}` : "—";
+  const workHours = payrollSettings ? `${payrollSettings.work_hours} hrs` : "—";
+  const salaryType = payrollSettings
+    ? payrollSettings.salary_type.charAt(0).toUpperCase() + payrollSettings.salary_type.slice(1)
+    : "—";
+
+  return (
+    <div className="payroll-cutout w-full text-dash-dark h-140 overflow-y-auto border-dash-dark/5 bg-white p-8 sm:p-[55px_42px_46.52px] relative rounded-2xl shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+      <div className="absolute right-11 top-3.25">
+        <TinyButton>View Payroll</TinyButton>
+      </div>
+
+      {/* Info grid + photo side by side */}
+      <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,280px)_160px] gap-6 sm:gap-0">
+        {/* Detail grid */}
+        <div className="flex-1 min-w-0 grid grid-cols-2 gap-x-6 gap-y-4">
+          <div>
+            <p className="text-[14px] leading-4.5 font-bold text-[#34373C] mb-1">
+              Salary Type
+            </p>
+            <p className="text-[10px] leading-2.5 font-light text-[#616263]">
+              {salaryType}
+            </p>
+          </div>
+          <div>
+            <p className="text-[14px] leading-4.5 font-bold text-[#34373C] mb-1">
+              Base Salary
+            </p>
+            <p className="text-[10px] leading-2.5 font-light text-[#616263]">
+              {baseSalary}
+            </p>
+          </div>
+          <div>
+            <p className="text-[14px] leading-4.5 font-bold text-[#34373C] mb-1">
+              Daily Pay
+            </p>
+            <p className="text-[10px] leading-2.5 font-light text-[#616263]">
+              {dailyPay}
+            </p>
+          </div>
+          <div>
+            <p className="text-[14px] leading-4.5 font-bold text-[#34373C] mb-1">
+              Work Days
+            </p>
+            <p className="text-[10px] leading-2.5 font-light text-[#616263]">
+              {workDays}
+            </p>
+          </div>
+          <div>
+            <p className="text-[14px] font-bold text-[#34373C] mb-1">
+              Work Hours
+            </p>
+            <p className="text-[10px] leading-2.5 font-light text-[#616263]">
+              {workHours}
+            </p>
+          </div>
+          <div>
+            <p className="text-[14px] font-bold text-[#34373C] mb-1">
+              Attendance Pay
+            </p>
+            <p className="text-[10px] leading-2.5 font-light text-[#616263]">
+              {payrollSettings ? (payrollSettings.attendance_affects_pay ? "Yes" : "No") : "—"}
+            </p>
+          </div>
+          <div>
+            <p className="text-[14px] font-bold text-[#34373C] mb-1">
+              Role
+            </p>
+            <p className="text-[10px] leading-2.5 font-light text-[#616263]">
+              {agent.role}
+            </p>
+          </div>
+          <div>
+            <p className="text-[14px] font-bold text-[#34373C] mb-1">
+              Commission
+            </p>
+            <p className="text-[10px] leading-2.5 font-light text-[#616263]">
+              {payrollSettings ? (payrollSettings.commission_enabled ? "Enabled" : "Disabled") : "—"}
+            </p>
+          </div>
+        </div>
+
+        {/* Photo card */}
+        <div className="shrink-0 hidden sm:flex flex-col items-center">
+          <div className="w-39.75 h-32.5 rounded-[20px] overflow-hidden shadow-lg bg-[#C9A84C]">
+            <Image
+              src={agent.avatar}
+              width={116}
+              height={144}
+              className="w-full h-full object-cover"
+              alt={agent.name}
+            />
+          </div>
+          <div className="flex items-end gap-3 mt-0">
+            <div>
+              <p className="text-[11px] font-bold text-[#0B1215] mt-2 text-center">
+                {agent.name}
+              </p>
+              <p className="text-[10px] font-light text-dash-dark text-left">
+                {agent.lga} LGA
+              </p>
+            </div>
+            <div className="px-[4.5px] rounded-full py-0.5 text-[6px] h-fit font-medium bg-[#2F6C0E] text-white">
+              {agent.status}
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex justify-end gap-1.75 mt-6.5">
+            <button className="w-[32.48px] h-[32.48px] rounded-full bg-[#EAEAEA] flex items-center justify-center cursor-pointer">
+              <Image src={MessageIcon} alt="Message" width={14} height={14} />
+            </button>
+            <button className="w-[32.48px] h-[32.48px] rounded-full bg-[#EAEAEA] flex items-center justify-center cursor-pointer">
+              <Image
+                src={CustomizeIcon}
+                alt="Customize"
+                width={14}
+                height={14}
+              />
+            </button>
+            <button className="w-[32.48px] h-[32.48px] rounded-full bg-[#EAEAEA] flex items-center justify-center cursor-pointer">
+              <Image
+                src={FileExportIcon}
+                alt="File Export"
+                width={14}
+                height={14}
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
