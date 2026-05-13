@@ -4,7 +4,7 @@ import OnboardingForm from "@/components/forms/onboarding-form";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-export default function CompleteOnboardingPage() {
+export default function InternalOnboardingClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [invitationId] = useState(() => searchParams.get("invitation_id") ?? "");
@@ -12,9 +12,9 @@ export default function CompleteOnboardingPage() {
 
   useEffect(() => {
     if (!invitationId || !token) return;
-    // Reduce URL token exposure while preserving in-memory values.
-    router.replace("/complete-onboarding");
-  }, [invitationId, token, router]);
+    if (!searchParams.get("invitation_id") && !searchParams.get("token")) return;
+    router.replace("/onboarding/internal");
+  }, [invitationId, token, router, searchParams]);
 
   return (
     <div className="w-full max-w-115 flex flex-col gap-8 md:mt-0 lg:-mt-12">

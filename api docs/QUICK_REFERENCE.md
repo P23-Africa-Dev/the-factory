@@ -59,12 +59,13 @@ Tasks:
 1. Management create endpoint: POST /api/v1/tasks
 2. Optional project_id links task to project
 3. project_id omitted/null means standalone task
-4. Agent self-task endpoint: POST /api/v1/agent/tasks/self
+4. Agent self-task endpoint: POST /api/v1/agent/tasks/self (standalone only)
+5. Task creation with assignees sends assignment emails via Resend
 
 Payroll:
 
 1. One payroll settings record per company
-2. Only admin/supervisor can create or update payroll settings
+2. Only owner/admin/supervisor can create or update payroll settings
 3. Agents inherit payroll settings and can fetch read-only
 4. Daily pay is auto-derived as base_salary / work_days
 

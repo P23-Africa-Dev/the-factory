@@ -9,6 +9,7 @@ import { PayrollSidebar } from "@/components/payroll/payroll-sidebar";
 import { SetPayrollModal } from "@/components/payroll/set-payroll-modal";
 import { usePayroll } from "@/hooks/use-payroll";
 import { useAuthStore } from "@/store/auth";
+import { getActiveCompanyContext } from "@/lib/company-context";
 import { Search, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -20,14 +21,24 @@ export default function FinancePage() {
   const [isPayrollModalOpen, setIsPayrollModalOpen] = useState(false);
 
   const user = useAuthStore((s) => s.user);
-  const companyId = user?.active_company?.company_id ?? null;
-  const isAgent = user?.active_company?.role === "agent";
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const isAgent = role === "agent";
 
   const { data: existingPayroll } = usePayroll(companyId);
 
   const selectedAgent = selectedAgentId
     ? (agents.find((a) => a.id === selectedAgentId) ?? null)
     : null;
+
+  if (!companyId) {
+    return (
+      <div className="h-full p-8">
+        <div className="max-w-3xl mx-auto bg-white border border-gray-100 rounded-2xl p-8 text-center text-gray-500">
+          No active company context was found for this account.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full">
@@ -86,6 +97,11 @@ export default function FinancePage() {
       </div>
       {/* Main Content */}
       <div className="px-5 sm:px-8 lg:px-10 py-6 space-y-6">
+        {isAgent ? (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700">
+            You have read-only payroll access. Contact your manager to update payroll settings.
+          </div>
+        ) : null}
         <PaymentOverview />
 
         {/* Payroll List + Sidebar */}

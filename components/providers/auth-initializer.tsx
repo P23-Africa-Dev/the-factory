@@ -30,7 +30,12 @@ export default function AuthInitializer({
           }
         })
         .catch((err) => {
-          console.error("Failed to fetch user profile:", err);
+          if (process.env.NODE_ENV !== "production") {
+            console.warn("Failed to fetch user profile", {
+              status: err?.status,
+              message: err?.message,
+            });
+          }
           // If token is invalid (401), clear session
           if (err.status === 401) {
             clearUser();

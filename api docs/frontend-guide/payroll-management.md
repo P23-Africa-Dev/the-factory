@@ -6,7 +6,7 @@ Payroll settings are company-level configuration records used to standardize com
 
 Key behavior:
 
-1. Admins and supervisors can create and update payroll settings.
+1. Owners, admins, and supervisors can create and update payroll settings.
 2. Agents inherit the configured payroll policy and can only fetch it.
 3. `daily_pay` is auto-calculated by backend from `base_salary` and `work_days`.
 4. Attendance/commission flags are persisted for future logic but not yet applied to payout computation.

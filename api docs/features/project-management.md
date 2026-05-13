@@ -31,6 +31,7 @@ Related task endpoints:
 
 1. `POST /api/v1/tasks` for management-created tasks
 2. `POST /api/v1/agent/tasks/self` for standalone agent self-tasks only
+3. When task creation includes assignees, assigned users receive notification emails via Resend
 
 ### Helper Endpoint: Fetch Internal Users for Project Management
 
@@ -45,7 +46,7 @@ Used by frontend to fetch and populate the project manager selection dropdown wh
 **Query Parameters:**
 
 1. `role` (optional, string): Filter by internal user role. Allowed values: `supervisor` or `agent`. If omitted, returns all internal users.
-2. `company_id` (optional, integer): Filter by specific company. If omitted, uses the authenticated user's company context.
+2. `company_id` (optional, integer|string): Filter by specific company using internal numeric ID or public FAC-style key. If omitted, uses the authenticated user's company context.
 
 **Request Example:**
 

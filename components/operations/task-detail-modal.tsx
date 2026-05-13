@@ -1,8 +1,17 @@
 'use client';
 
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { X, MapPin, Share2, RefreshCw, CheckCircle } from 'lucide-react';
 import type { DndItem } from '@/types/operations';
+import {
+  useTaskDetail,
+  useAssignTask,
+  useUpdateTaskStatus,
+  useUploadTaskProof,
+} from '@/hooks/use-tasks';
+import { useAuthStore } from '@/store/auth';
+import { getActiveCompanyContext } from '@/lib/company-context';
+import { toast } from 'sonner';
 
 interface TaskDetailModalProps {
   isOpen: boolean;
@@ -12,11 +21,29 @@ interface TaskDetailModalProps {
 }
 
 export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailModalProps) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const authUser = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(authUser);
+  const taskId = Number(task?.id ?? 0);
+  const detailQuery = useTaskDetail(taskId, companyId ?? undefined);
+  const [assignmentInput, setAssignmentInput] = useState('');
+  const updateStatusMutation = useUpdateTaskStatus({
+    onSuccess: (updatedTask) => {
+      toast.success(`Task moved to ${updatedTask.status.replace('_', ' ')}`);
+    },
+  });
+  const uploadProofMutation = useUploadTaskProof({
+    onSuccess: () => toast.success('Proof uploaded successfully.'),
+  });
+  const assignTaskMutation = useAssignTask({
+    onSuccess: () => toast.success('Task assignment updated.'),
+  });
   if (!isOpen || !task) return null;
 
   const isPending = status === 'pending';
   const isInProgress = status === 'in-progress';
   const isCompleted = status === 'completed';
+  const canDownloadProofs = role === 'owner' || role === 'admin';
 
   const statusConfig = {
     pending: { bg: '#FF9F6A', text: 'white', label: 'Pending' },
@@ -28,6 +55,59 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
 
   // Format addedDescription: split by newline, render each line
   const descriptionLines = (task.addedDescription || '').split('\n').filter(Boolean);
+
+  const updateTaskStatus = (nextStatus: 'in_progress' | 'completed' | 'cancelled') => {
+    if (!companyId) {
+      toast.error('Company context is required.');
+      return;
+    }
+    updateStatusMutation.mutate({
+      taskId,
+      payload: {
+        company_id: companyId,
+        status: nextStatus,
+      },
+    });
+  };
+
+  const onProofSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!companyId) {
+      toast.error('Company context is required.');
+      return;
+    }
+    const formData = new FormData();
+    formData.append('company_id', String(companyId));
+    formData.append('file', file);
+    uploadProofMutation.mutate({ taskId, formData });
+    event.currentTarget.value = '';
+  };
+
+  const updateAssignment = () => {
+    if (!companyId) {
+      toast.error('Company context is required.');
+      return;
+    }
+
+    const assignedAgentIds = assignmentInput
+      .split(',')
+      .map((value) => Number(value.trim()))
+      .filter((value) => !Number.isNaN(value));
+
+    if (assignedAgentIds.length === 0) {
+      toast.error('Enter at least one agent ID.');
+      return;
+    }
+
+    assignTaskMutation.mutate({
+      taskId,
+      payload: {
+        company_id: companyId,
+        assigned_agent_ids: assignedAgentIds,
+      },
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -208,24 +288,45 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                     </div>
                   </section>
                   <div className="flex gap-3">
-                    <button className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 bg-white border-2 border-gray-100 rounded-[18px] text-[13px] font-semibold text-gray-400 hover:bg-gray-50 transition-all">
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 bg-white border-2 border-gray-100 rounded-[18px] text-[13px] font-semibold text-gray-400 hover:bg-gray-50 transition-all"
+                    >
                       Upload Photo
                       <div className="w-7 h-7 rounded-full border-2 border-gray-200 flex items-center justify-center ml-1">
                         <RefreshCw size={12} className="text-gray-400" />
                       </div>
                     </button>
-                    <button className="flex-1 flex items-center justify-center px-5 py-3.5 bg-[#7EB5AE] text-white rounded-[18px] text-[13px] font-semibold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all">
+                    <button
+                      onClick={() => updateTaskStatus('completed')}
+                      className="flex-1 flex items-center justify-center px-5 py-3.5 bg-[#7EB5AE] text-white rounded-[18px] text-[13px] font-semibold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all"
+                    >
                       Task Done
                     </button>
                   </div>
+                  <button
+                    onClick={() => updateTaskStatus('cancelled')}
+                    className="w-full px-4 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50"
+                  >
+                    Cancel Task
+                  </button>
                 </div>
               )}
 
               {/* Pending: commence button */}
               {isPending && (
                 <div className="mt-auto pt-6">
-                  <button className="w-full flex items-center justify-center px-8 py-4 bg-[#7EB5AE] text-white rounded-[20px] text-[15px] font-semibold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all">
+                  <button
+                    onClick={() => updateTaskStatus('in_progress')}
+                    className="w-full flex items-center justify-center px-8 py-4 bg-[#7EB5AE] text-white rounded-[20px] text-[15px] font-semibold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all"
+                  >
                     Commence Task
+                  </button>
+                  <button
+                    onClick={() => updateTaskStatus('cancelled')}
+                    className="w-full mt-2 px-4 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50"
+                  >
+                    Cancel Task
                   </button>
                 </div>
               )}
@@ -239,10 +340,52 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                   </div>
                 </div>
               )}
+              {detailQuery.data?.proofs?.length ? (
+                <div className="mt-4 space-y-2">
+                  <h4 className="text-[13px] font-bold text-dash-dark">Proofs</h4>
+                  {detailQuery.data.proofs.map((proof) => (
+                    <div
+                      key={proof.id}
+                      className="flex items-center justify-between text-[11px] text-gray-500 border border-gray-100 rounded-lg px-3 py-2"
+                    >
+                      <span>Proof #{proof.id}</span>
+                      {canDownloadProofs && proof.file_url ? (
+                        <a href={proof.file_url} className="text-dash-teal font-semibold">
+                          Download
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">Restricted</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className="mt-4 p-3 border border-gray-100 rounded-lg space-y-2">
+                <p className="text-[12px] font-bold text-dash-dark">Reassign Task</p>
+                <input
+                  value={assignmentInput}
+                  onChange={(event) => setAssignmentInput(event.target.value)}
+                  placeholder="Agent IDs e.g 31,42"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs"
+                />
+                <button
+                  onClick={updateAssignment}
+                  className="w-full px-4 py-2 rounded-lg bg-dash-dark text-white text-xs font-semibold"
+                >
+                  Update Assignment
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/jpg"
+        className="hidden"
+        onChange={onProofSelected}
+      />
     </div>
   );
 }

@@ -22,6 +22,22 @@ import NotificationIcon from "@/assets/nav-icons/notification.svg";
 import SettingsIcon from "@/assets/nav-icons/settings.svg";
 import Logo from "@/assets/images/logo.png";
 
+function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
+  if (!rawAvatar) return null;
+  const trimmed = rawAvatar.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("/")) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 const navItems = [
   { name: "Dashboard", href: "/dashboard", icon: DashboardIcon },
   // { name: 'Sales Engine', href: '/sales-engine', icon: SalesEngineIcon },
@@ -165,23 +181,19 @@ export function Navbar() {
             className="flex items-center gap-1.5 focus:outline-none group"
           >
             <div className="w-10 h-10 lg:w-11 lg:h-11 rounded-full overflow-hidden border-2 border-white/10 p-0.5 bg-white/10 flex items-center justify-center">
-              {user?.avatar ? (
-                <Image
-                  src={user.avatar}
-                  alt="Profile"
-                  width={44}
-                  height={44}
-                  className="w-full h-full object-cover rounded-full"
-                />
-              ) : (
-                <Image
-                  src="/avatars/male-avatar.png"
-                  alt="Profile"
-                  width={44}
-                  height={44}
-                  className="w-full h-full object-cover rounded-full"
-                />
-              )}
+              {(() => {
+                const avatarSrc = getSafeAvatarSrc(user?.avatar) ?? "/avatars/male-avatar.png";
+                return (
+                  <Image
+                    src={avatarSrc}
+                    alt="Profile"
+                    width={44}
+                    height={44}
+                    className="w-full h-full object-cover rounded-full"
+                    unoptimized={avatarSrc.startsWith("http")}
+                  />
+                );
+              })()}
             </div>
             <ChevronDown
               size={14}
@@ -205,23 +217,19 @@ export function Navbar() {
                 {/* Profile header */}
                 <div className="px-4 py-3.5 border-b border-white/10 flex items-center gap-3">
                   <div className="w-9 h-9 rounded-full bg-white/10 border border-white/10 flex items-center justify-center shrink-0">
-                    {user?.avatar ? (
-                      <Image
-                        src={user.avatar}
-                        alt="Profile"
-                        width={36}
-                        height={36}
-                        className="w-full h-full object-cover rounded-full"
-                      />
-                    ) : (
-                      <Image
-                        src="/avatars/male-avatar.png"
-                        alt="Profile"
-                        width={36}
-                        height={36}
-                        className="w-full h-full object-cover rounded-full"
-                      />
-                    )}
+                    {(() => {
+                      const avatarSrc = getSafeAvatarSrc(user?.avatar) ?? "/avatars/male-avatar.png";
+                      return (
+                        <Image
+                          src={avatarSrc}
+                          alt="Profile"
+                          width={36}
+                          height={36}
+                          className="w-full h-full object-cover rounded-full"
+                          unoptimized={avatarSrc.startsWith("http")}
+                        />
+                      );
+                    })()}
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-white truncate">
@@ -339,23 +347,19 @@ export function Navbar() {
                 <div className="flex flex-col gap-4 p-4 bg-white/5 rounded-2xl">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-full border border-white/20 bg-white/10 flex items-center justify-center overflow-hidden shrink-0">
-                      {user?.avatar ? (
-                        <Image
-                          src={user.avatar}
-                          alt="Profile"
-                          width={48}
-                          height={48}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <Image
-                          src="/avatars/male-avatar.png"
-                          alt="Profile"
-                          width={48}
-                          height={48}
-                          className="w-full h-full object-cover"
-                        />
-                      )}
+                      {(() => {
+                        const avatarSrc = getSafeAvatarSrc(user?.avatar) ?? "/avatars/male-avatar.png";
+                        return (
+                          <Image
+                            src={avatarSrc}
+                            alt="Profile"
+                            width={48}
+                            height={48}
+                            className="w-full h-full object-cover"
+                            unoptimized={avatarSrc.startsWith("http")}
+                          />
+                        );
+                      })()}
                     </div>
                     <div>
                       <p className="text-base font-bold">{user?.name ?? "—"}</p>

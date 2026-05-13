@@ -6,6 +6,7 @@ import { ProjectsView } from "@/components/operations/projects-view";
 import { AllTasksView } from "@/components/operations/all-tasks-view";
 import { useProjects } from "@/hooks/use-projects";
 import { useAuthStore } from "@/store/auth";
+import { getActiveCompanyContext } from "@/lib/company-context";
 
 type ProjectsTab = "projects" | "tasks";
 
@@ -22,8 +23,9 @@ function ProjectsContent() {
 
   const activeTab = (searchParams.get("tab") as ProjectsTab) || "projects";
 
-  // Pull company_id from the auth store (populated by /me)
-  const companyId = useAuthStore((s) => s.user?.active_company?.id);
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const canManageProjects = role === "owner" || role === "admin" || role === "supervisor";
 
   const [page, setPage] = useState(1);
 
@@ -68,6 +70,11 @@ function ProjectsContent() {
 
         {/* ── View ── */}
         {activeTab === "projects" ? (
+          !canManageProjects ? (
+            <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-500">
+              Project management is available to owner, admin, and supervisor roles only.
+            </div>
+          ) : (
           <ProjectsView
             projects={projects}
             onViewProject={handleViewProject}
@@ -76,6 +83,7 @@ function ProjectsContent() {
             currentPage={page}
             onPageChange={setPage}
           />
+          )
         ) : (
           <AllTasksView />
         )}

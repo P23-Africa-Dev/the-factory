@@ -1,6 +1,6 @@
 "use client";
 
-import { apiRequest, ApiEnvelope } from "./onboarding";
+import { apiRequest, ApiEnvelope, ApiRequestError } from "./onboarding";
 
 export type TaskSummary = {
   total_tasks: number;
@@ -63,19 +63,47 @@ export type CreateProjectPayload = {
   name: string;
   description?: string;
   type?: ApiProjectType | null;
-  status: ApiProjectStatus;
+  status?: ApiProjectStatus;
   priority?: ApiProjectPriority | null;
   start_date: string;
   end_date?: string | null;
-  project_manager_user_id: number;
+  project_manager_user_id?: number | null;
+  project_manager?: number | null;
   assigned_team?: number[];
   territory_zone?: string | null;
   notes?: string | null;
+  attachments?: File[];
 };
 
 export type UpdateProjectPayload = Partial<
-  Omit<CreateProjectPayload, "company_id">
->;
+  Omit<CreateProjectPayload, "company_id" | "attachments">
+> & {
+  attachments?: File[];
+};
+
+function toFormData(
+  payload: CreateProjectPayload | UpdateProjectPayload
+): FormData {
+  const formData = new FormData();
+
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+
+    if (key === "attachments" && Array.isArray(value)) {
+      value.forEach((file) => formData.append("attachments[]", file));
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((item) => formData.append(`${key}[]`, String(item)));
+      return;
+    }
+
+    formData.append(key, String(value));
+  });
+
+  return formData;
+}
 
 export type PaginationData = {
   next_page_url: string | null;
@@ -128,11 +156,23 @@ export function createProject(
   payload: CreateProjectPayload,
   token: string
 ): Promise<ApiEnvelope<ProjectDetailData>> {
-  return apiRequest<ProjectDetailData>({
+  return fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1"}/projects`, {
     method: "POST",
-    path: "/projects",
-    body: payload,
-    token,
+    headers: {
+      Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: toFormData(payload),
+  }).then(async (response) => {
+    const payloadData = (await response.json()) as ApiEnvelope<ProjectDetailData>;
+    if (!response.ok || !payloadData.success) {
+      throw new ApiRequestError(
+        payloadData.message || "Request failed.",
+        response.status,
+        payloadData.errors
+      );
+    }
+    return payloadData;
   });
 }
 
@@ -141,11 +181,26 @@ export function updateProject(
   payload: UpdateProjectPayload,
   token: string
 ): Promise<ApiEnvelope<ProjectDetailData>> {
-  return apiRequest<ProjectDetailData>({
-    method: "PATCH",
-    path: `/projects/${id}`,
-    body: payload,
-    token,
+  return fetch(
+    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1"}/projects/${id}`,
+    {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: toFormData(payload),
+    }
+  ).then(async (response) => {
+    const payloadData = (await response.json()) as ApiEnvelope<ProjectDetailData>;
+    if (!response.ok || !payloadData.success) {
+      throw new ApiRequestError(
+        payloadData.message || "Request failed.",
+        response.status,
+        payloadData.errors
+      );
+    }
+    return payloadData;
   });
 }
 

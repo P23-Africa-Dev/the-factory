@@ -19,7 +19,8 @@ import { useAuthStore } from "@/store/auth";
 import { useInternalUsers } from "@/hooks/use-projects";
 import { useCreateTask } from "@/hooks/use-tasks";
 import type { DndItem, TaskCategory } from "@/types/operations";
-import type { ApiTaskPriority, ApiTaskStatus } from "@/lib/api/tasks";
+import type { ApiTaskPriority } from "@/lib/api/tasks";
+import { getActiveCompanyContext } from "@/lib/company-context";
 
 type StatusType = "pending" | "in-progress" | "completed";
 
@@ -119,7 +120,8 @@ export function CreateTaskModal({
   projectId,
 }: CreateTaskModalProps) {
   const user = useAuthStore((s) => s.user);
-  const companyId = user?.active_company?.id;
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const canManageTasks = role === "owner" || role === "admin" || role === "supervisor";
 
   const { data: agents = [], isLoading: loadingAgents } = useInternalUsers({
     role: "agent",
@@ -158,37 +160,36 @@ export function CreateTaskModal({
   const validate = () => {
     const errs: Record<string, string> = {};
     if (!form.title.trim()) errs.title = "Task title is required";
-    if (!form.taskType) errs.taskType = "Task type is required";
-    if (!form.description.trim()) errs.description = "Description is required";
-    if (!form.assignTo) errs.assignTo = "Please assign to an agent";
-    if (!form.location.trim()) errs.location = "Location is required";
-    if (!form.dueDate) errs.dueDate = "Due date is required";
-    if (!form.priority) errs.priority = "Priority is required";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
   const handleSubmit = () => {
     if (!validate()) return;
+
+    if (!canManageTasks) {
+      toast.error("You are not allowed to create management tasks.");
+      return;
+    }
     
     // If real API mode is requested
-    if (projectId && companyId) {
+    if (companyId) {
       const typeKey = TASK_TYPES[form.taskType] || "general";
       const priorityVal = form.priority.toLowerCase() as ApiTaskPriority;
       
       mutate({
         company_id: companyId,
-        project_id: projectId,
+        project_id: projectId ?? undefined,
         title: form.title,
-        type: typeKey,
-        description: form.description,
-        assigned_agent_id: Number(form.assignTo),
-        location: form.location,
+        type: form.taskType ? typeKey : undefined,
+        description: form.description || undefined,
+        assigned_agent_id: form.assignTo ? Number(form.assignTo) : undefined,
+        location: form.location || undefined,
         address: form.address || undefined,
-        due_date: new Date(form.dueDate).toISOString(),
+        due_date: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
         required_actions: form.requiredActions ? form.requiredActions.split(',').map(s => s.trim()) : undefined,
-        priority: priorityVal,
-        minimum_photos_required: Number(form.minPhotos),
+        priority: form.priority ? priorityVal : undefined,
+        minimum_photos_required: form.minPhotos ? Number(form.minPhotos) : undefined,
         visit_verification_required: form.visitVerification,
       }, {
         onError: (err: unknown) => {

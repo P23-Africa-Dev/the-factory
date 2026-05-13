@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import PhoneNumberInput from "@/components/ui/phone-number-input";
 
 /* ─── Mock Lead Data ────────────────────────────────────── */
 
@@ -1045,11 +1046,10 @@ export default function LeadDetailsPage() {
                       Phone Number
                     </label>
                     {isEditing ? (
-                      <input
-                        type="text"
+                      <PhoneNumberInput
+                        variant="dark"
                         value={lead.phone}
-                        onChange={(e) => updateField("phone", e.target.value)}
-                        className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
+                        onChange={(value) => updateField("phone", value)}
                       />
                     ) : (
                       <p className="text-white text-[16px] font-semibold">

@@ -21,9 +21,16 @@ Public:
 4. `POST /api/v1/internal/onboarding/complete`
 
 Authenticated:
-1. `POST /api/v1/internal-users`
-2. `POST /api/v1/internal-users/{user}/invite`
-3. `PATCH /api/v1/internal-users/{user}/supervisor`
+1. `GET /api/v1/internal-users`
+2. `GET /api/v1/internal-users/onboarding-status`
+3. `POST /api/v1/internal-users`
+4. `POST /api/v1/internal-users/{user}/invite`
+5. `PATCH /api/v1/internal-users/{user}/supervisor`
+
+Manager follow-up query examples:
+1. `GET /api/v1/internal-users?include_inactive=1&company_id=FAC-ABCD1234`
+2. `GET /api/v1/internal-users?onboarding_status=pending_onboarding&company_id=FAC-ABCD1234`
+3. `GET /api/v1/internal-users/onboarding-status?company_id=FAC-ABCD1234`
 
 ## Request Examples
 Create user:
@@ -67,6 +74,39 @@ Agent login:
 ```
 
 ## Response Examples
+Onboarding status dashboard success:
+
+```json
+{
+  "success": true,
+  "message": "Internal onboarding status retrieved successfully",
+  "data": {
+    "summary": {
+      "total": 12,
+      "active": 9,
+      "pending_onboarding": 3,
+      "inactive": 3
+    },
+    "items": [
+      {
+        "id": 55,
+        "name": "Abdul Donald",
+        "email": "abduldonald@factory.local",
+        "role": "agent",
+        "onboarding_status": "pending_onboarding",
+        "is_active": false,
+        "internal_onboarding_completed_at": null,
+        "invite_sent_at": "2026-04-28T07:05:00+00:00",
+        "invite_expires_at": "2026-05-01T07:05:00+00:00",
+        "invite_accepted_at": null,
+        "invite_revoked_at": null
+      }
+    ]
+  },
+  "errors": null
+}
+```
+
 Invitation preview success:
 
 ```json

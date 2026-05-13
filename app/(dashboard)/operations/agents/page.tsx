@@ -5,6 +5,13 @@ import { ArrowLeft, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, Chevro
 import { useState, useMemo } from 'react';
 import { AddAgentModal } from '@/components/operations/add-agent-modal';
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from '@/components/operations/ops-table';
+import { useAuthStore } from '@/store/auth';
+import { getActiveCompanyContext } from '@/lib/company-context';
+import {
+  useInternalOnboardingStatus,
+  useResendInternalInvite,
+} from '@/hooks/use-internal-user-onboarding';
+import { toast } from 'sonner';
 
 type Agent = {
   id: string;
@@ -186,6 +193,10 @@ export default function AllAgentsPage() {
   const [page, setPage]               = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent>(ALL_AGENTS[0]);
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const onboardingStatusQuery = useInternalOnboardingStatus(companyId ?? undefined);
+  const resendInviteMutation = useResendInternalInvite();
 
   const filtered = useMemo(() => {
     return ALL_AGENTS.filter((a) => {
@@ -260,6 +271,59 @@ export default function AllAgentsPage() {
             <SlidersHorizontal size={14} />
             <span>Filter</span>
           </button>
+        </div>
+
+        {/* Internal onboarding status summary */}
+        <div className="mb-4 p-4 bg-white rounded-2xl shadow-sm border border-gray-100">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+            <h2 className="text-[14px] font-bold text-dash-dark">Internal Onboarding</h2>
+            {onboardingStatusQuery.isPending && (
+              <p className="text-[11px] text-gray-400">Loading onboarding status...</p>
+            )}
+          </div>
+          {onboardingStatusQuery.data?.summary ? (
+            <div className="flex flex-wrap gap-2 mb-3 text-[11px]">
+              <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                Total: {onboardingStatusQuery.data.summary.total}
+              </span>
+              <span className="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
+                Active: {onboardingStatusQuery.data.summary.active}
+              </span>
+              <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                Pending: {onboardingStatusQuery.data.summary.pending_onboarding}
+              </span>
+              <span className="px-2 py-1 rounded-full bg-rose-100 text-rose-700">
+                Inactive: {onboardingStatusQuery.data.summary.inactive}
+              </span>
+            </div>
+          ) : null}
+          {onboardingStatusQuery.data?.items?.some((item) => item.onboarding_status === 'pending_onboarding') ? (
+            <div className="flex flex-wrap gap-2">
+              {onboardingStatusQuery.data.items
+                .filter((item) => item.onboarding_status === 'pending_onboarding')
+                .slice(0, 3)
+                .map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() =>
+                      resendInviteMutation.mutate(
+                        { userId: item.id, companyId: companyId ?? undefined },
+                        {
+                          onSuccess: () => toast.success(`Invite resent to ${item.email}`),
+                          onError: (error: unknown) =>
+                            toast.error(error instanceof Error ? error.message : 'Failed to resend invite'),
+                        }
+                      )
+                    }
+                    className="px-3 py-1.5 rounded-full text-[11px] font-medium bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100"
+                  >
+                    Resend invite: {item.name}
+                  </button>
+                ))}
+            </div>
+          ) : (
+            <p className="text-[11px] text-gray-400">No pending internal invitations.</p>
+          )}
         </div>
 
         {/* Filter Panel */}

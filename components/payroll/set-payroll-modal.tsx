@@ -14,10 +14,10 @@ import {
 } from "@/components/payroll/payroll/commission-modal";
 import { useCreatePayroll, useUpdatePayroll } from "@/hooks/use-payroll";
 import { useAuthStore } from "@/store/auth";
-import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import type { PayrollSettings } from "@/lib/api/payroll";
 import type { ApiRequestError } from "@/lib/api/onboarding";
 import { toast } from "sonner";
+import { getActiveCompanyContext } from "@/lib/company-context";
 
 interface SetPayrollModalProps {
   isOpen: boolean;
@@ -46,7 +46,7 @@ function capitalize(s: string) {
 
 export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayrollModalProps) {
   const user = useAuthStore((s) => s.user);
-  const companyId = user?.active_company?.company_id ?? null;
+  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
 
   const [salaryType, setSalaryType] = useState(
     existingPayroll ? capitalize(existingPayroll.salary_type) : "Monthly"
@@ -82,6 +82,12 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
   const updateMutation = useUpdatePayroll(existingPayroll?.id);
 
   const isPending = createMutation.isPending || updateMutation.isPending;
+  const salaryNumericPreview = Number(baseSalary.replace(/[₦,\s]/g, ""));
+  const workDaysNumericPreview = Number(workDays.replace(/[^0-9.]/g, ""));
+  const derivedDailyPay =
+    salaryNumericPreview > 0 && workDaysNumericPreview > 0
+      ? (salaryNumericPreview / workDaysNumericPreview).toFixed(2)
+      : null;
 
   if (!isOpen) return null;
 
@@ -286,6 +292,9 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
                   />
                 </FormRow>
                 <FieldError message={errors.payBasis} />
+              </div>
+              <div className="text-[11px] text-gray-500 text-right">
+                Daily pay (derived by backend): {derivedDailyPay ? `₦${derivedDailyPay}` : "—"}
               </div>
             </div>
 

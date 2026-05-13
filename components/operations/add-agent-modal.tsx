@@ -16,6 +16,7 @@ import { useCreateInternalUser } from "@/hooks/use-internal-users";
 import { useInternalUsers } from "@/hooks/use-projects";
 import { useAuthStore } from "@/store/auth";
 import type { ApiRequestError } from "@/lib/api/onboarding";
+import { getActiveCompanyContext } from "@/lib/company-context";
 
 const ZONE_OPTIONS = [
   "Ikeja LGA",
@@ -60,7 +61,7 @@ function FieldError({ message }: { message?: string }) {
 
 export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const user = useAuthStore((s) => s.user);
-  const companyId = user?.active_company?.company_id ?? null;
+  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
