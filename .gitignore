@@ -34,6 +34,9 @@ yarn-error.log*
 .env*
 /backend/.env*
 /frontend/.env*
+/backend/src/.env*
+/backend/src/config/.env*
+/backend/src/vendor
 
 # vercel
 .vercel
