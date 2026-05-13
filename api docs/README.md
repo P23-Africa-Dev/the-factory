@@ -38,6 +38,7 @@ Each feature document must include:
 7. [Authentication API](features/authentication.md)
 8. [Project Management API](features/project-management.md)
 9. [Payroll Management API](features/payroll-management.md)
+10. [Task Tracking Realtime API](features/task-tracking-realtime.md)
 
 ## OpenAPI Contract
 

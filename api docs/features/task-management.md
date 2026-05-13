@@ -4,6 +4,8 @@
 
 This feature powers company-scoped field task operations and supports both standalone tasks and project-linked tasks.
 
+For live GPS lifecycle tracking (start/location/arrival/complete/route + websocket fanout), see [Task Tracking Realtime API](task-tracking-realtime.md).
+
 Supported roles in company context:
 
 1. Owner
@@ -53,11 +55,12 @@ Company role is resolved from `company_users` membership.
    - Can attach tasks to an existing same-company project via `project_id`
 
 2. Agent:
-  - Can list and view only tasks where they are a current assignee
-   - Can upload proof for assigned tasks only
-   - Can update status for assigned tasks only
-   - Can create self-tasks only through `POST /api/v1/agent/tasks/self`
-   - Cannot create management tasks or assign tasks to other users
+
+- Can list and view only tasks where they are a current assignee
+- Can upload proof for assigned tasks only
+- Can update status for assigned tasks only
+- Can create self-tasks only through `POST /api/v1/agent/tasks/self`
+- Cannot create management tasks or assign tasks to other users
 
 3. Proof access:
    - Proof metadata is returned on task detail responses
@@ -66,10 +69,11 @@ Company role is resolved from `company_users` membership.
 
 4. Company context:
    - `company_id` may be provided explicitly
-  - `company_id` accepts internal numeric ID or public FAC-style key
-   - If omitted, latest active company membership context is used
-   - Company must be active
-   - Task creator, task assignee, and project must all belong to the same company as the task
+
+- `company_id` accepts internal numeric ID or public FAC-style key
+- If omitted, latest active company membership context is used
+- Company must be active
+- Task creator, task assignee, and project must all belong to the same company as the task
 
 ## Data Model
 
@@ -174,10 +178,7 @@ Request (only `title` is required; all other fields are optional):
   "latitude": 6.4281,
   "longitude": 3.4219,
   "due_date": "2026-04-10T10:00:00+00:00",
-  "required_actions": [
-    "Take storefront photos",
-    "Capture competitor pricing"
-  ],
+  "required_actions": ["Take storefront photos", "Capture competitor pricing"],
   "priority": "high",
   "minimum_photos_required": 2,
   "visit_verification_required": true
@@ -386,9 +387,7 @@ Failure 422 example:
   "message": "The given data was invalid.",
   "data": null,
   "errors": {
-    "assigned_agent_id": [
-      "Selected agent is not a member of this company."
-    ]
+    "assigned_agent_id": ["Selected agent is not a member of this company."]
   }
 }
 ```
@@ -414,9 +413,7 @@ Validation failure 422 example:
   "message": "The given data was invalid.",
   "data": null,
   "errors": {
-    "status": [
-      "Minimum 2 proof image(s) required before completion."
-    ]
+    "status": ["Minimum 2 proof image(s) required before completion."]
   }
 }
 ```
