@@ -1,0 +1,3918 @@
+openapi: 3.1.0
+info:
+  title: The Factory Backend API
+  version: 1.0.0
+  description: |
+    OpenAPI contract for the Laravel backend API used by the Next.js frontend.
+servers:
+  - url: http://localhost:8080
+    description: Local Docker environment
+tags:
+  - name: System
+    description: Operational and system-level endpoints
+  - name: Auth
+    description: Registration and OTP email verification
+  - name: User
+    description: Authenticated user profile endpoints
+  - name: Onboarding
+    description: Workspace setup endpoints
+  - name: Enterprise
+    description: Company onboarding, activation, and enterprise login endpoints
+  - name: Tasks
+    description: Role-based task management for admin/supervisor/agent workflows
+  - name: Internal
+    description: Internal supervisor and field-agent invitation onboarding endpoints
+  - name: Payroll
+    description: Company-scoped payroll settings for admin/supervisor management and agent inheritance
+paths:
+  /api/v1/health:
+    get:
+      tags:
+        - System
+      summary: Get API health status
+      description: Returns a public health payload for connectivity and uptime checks.
+      operationId: getApiHealth
+      security: []
+      responses:
+        "200":
+          description: API is reachable and healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthSuccessResponse"
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: API is healthy
+                    data:
+                      service: Factory API
+                      environment: local
+                      timestamp: "2026-04-03T12:00:00+00:00"
+                    errors: null
+        "500":
+          description: Unexpected server failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                serverError:
+                  value:
+                    success: false
+                    message: Server error
+                    data: null
+                    errors:
+                      server:
+                        - An unexpected error occurred.
+
+  /api/v1/avatars:
+    get:
+      tags:
+        - Internal
+      summary: List available avatar image URLs for a gender
+      description: Returns storage-backed PNG avatar URLs for the selected gender.
+      operationId: listAvatars
+      security: []
+      parameters:
+        - in: query
+          name: gender
+          required: true
+          schema:
+            type: string
+            enum: [male, female]
+      responses:
+        "200":
+          description: Avatar list retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvatarListResponse"
+        "422":
+          description: Validation error (missing or invalid gender)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/auth/register:
+    post:
+      tags:
+        - Auth
+      summary: Register user and send OTP
+      description: Create or update a user account by email and send a 6-digit registration OTP.
+      operationId: registerAndSendOtp
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: OTP sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/auth/verify-email:
+    post:
+      tags:
+        - Auth
+      summary: Verify OTP and authenticate
+      description: Verify registration OTP and return Sanctum bearer token.
+      operationId: verifyEmailOtp
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyEmailRequest"
+      responses:
+        "200":
+          description: Email verified and authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyEmailResponse"
+        "422":
+          description: Invalid OTP or request payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/auth/resend-otp:
+    post:
+      tags:
+        - Auth
+      summary: Resend registration OTP
+      description: Generate and send a new OTP for registration verification.
+      operationId: resendRegistrationOtp
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResendOtpRequest"
+      responses:
+        "200":
+          description: OTP resent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResendOtpResponse"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Cooldown or rate-limit reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/user/me:
+    get:
+      tags:
+        - User
+      summary: Get current authenticated user
+      operationId: getCurrentUser
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authenticated user payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserMeResponse"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/onboarding/workspace:
+    post:
+      tags:
+        - Onboarding
+      summary: Create workspace and complete onboarding
+      operationId: createWorkspace
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkspaceRequest"
+      responses:
+        "201":
+          description: Workspace created and onboarding completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateWorkspaceResponse"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Onboarding already completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/enterprise/demo-requests:
+    post:
+      tags:
+        - Enterprise
+      summary: Submit enterprise demo request
+      description: Submit a company demo request for admin review and activation.
+      operationId: submitEnterpriseDemoRequest
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookDemoRequest"
+      responses:
+        "201":
+          description: Demo request submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookDemoResponse"
+        "409":
+          description: Existing pending or approved request for this email
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/enterprise/onboarding/verify-company-id:
+    post:
+      tags:
+        - Enterprise
+      summary: Verify company ID for first-time setup
+      description: Validate activation token and company ID before password setup.
+      operationId: verifyEnterpriseCompanyId
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyCompanyIdRequest"
+      responses:
+        "200":
+          description: Company ID verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyCompanyIdResponse"
+        "422":
+          description: Invalid or expired activation request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/enterprise/onboarding/complete:
+    post:
+      tags:
+        - Enterprise
+      summary: Complete enterprise first-time setup
+      description: Set password, activate account, and issue auth token.
+      operationId: completeEnterpriseFirstTimeSetup
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteFirstTimeSetupRequest"
+      responses:
+        "200":
+          description: First-time setup completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnterpriseLoginResponse"
+        "422":
+          description: Invalid request, token, or setup payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/enterprise/login:
+    post:
+      tags:
+        - Enterprise
+      summary: Login enterprise user
+      description: Authenticate activated enterprise user with email and password.
+      operationId: enterpriseLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnterpriseLoginRequest"
+      responses:
+        "200":
+          description: Authenticated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnterpriseLoginResponse"
+        "401":
+          description: Invalid credentials or account inactive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/projects:
+    get:
+      tags:
+        - Projects
+      summary: List projects for active company context
+      description: Returns company-scoped projects for owner/admin/supervisor users.
+      operationId: listProjects
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: company_id
+          required: false
+          schema:
+            oneOf:
+              - type: integer
+              - type: string
+                maxLength: 32
+                example: FAC-ABCD1234
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [planning, active, completed]
+        - in: query
+          name: priority
+          required: false
+          schema:
+            type: string
+            enum: [high, medium, low]
+        - in: query
+          name: type
+          required: false
+          schema:
+            type: string
+            enum: [sales, inspection, deployment]
+        - in: query
+          name: search
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Projects fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectListResponse"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Projects
+      summary: Create a project
+      description: Creates a company-scoped project for owner/admin/supervisor users.
+      operationId: createProject
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/projects/{project}:
+    get:
+      tags:
+        - Projects
+      summary: Get project details
+      operationId: getProject
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: project
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: company_id
+          required: false
+          schema:
+            oneOf:
+              - type: integer
+              - type: string
+                maxLength: 32
+                example: FAC-ABCD1234
+      responses:
+        "200":
+          description: Project fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      tags:
+        - Projects
+      summary: Update project
+      operationId: updateProject
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: project
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: Project updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/agent/tasks/self:
+    post:
+      tags:
+        - Tasks
+      summary: Create standalone self-task (agent)
+      description: Creates a standalone task assigned to the authenticated agent.
+      operationId: createAgentSelfTask
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSelfTaskRequest"
+      responses:
+        "201":
+          description: Self task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tasks:
+    get:
+      tags:
+        - Tasks
+      summary: List tasks for current user
+      description: |
+        Returns company-scoped tasks with project, creator, and assignee data.
+        Agents receive only tasks assigned to them, while owner/admin/supervisor
+        users receive all valid tasks in the active company context.
+      operationId: listTasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: company_id
+          schema:
+            oneOf:
+              - type: integer
+              - type: string
+                maxLength: 32
+                example: FAC-ABCD1234
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, in_progress, completed, cancelled]
+        - in: query
+          name: priority
+          schema:
+            type: string
+            enum: [high, medium, low]
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [sales_visit, inspection, delivery, collection, awareness]
+      responses:
+        "200":
+          description: Task list fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskListResponse"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Invalid company context or filters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Tasks
+      summary: Create task
+      description: |
+        Creates a company-scoped task that can be standalone or linked to a same-company project.
+        If one or more agents are assigned at creation time, assignment notification emails are sent.
+      operationId: createTask
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+      responses:
+        "201":
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tasks/{task}:
+    get:
+      tags:
+        - Tasks
+      summary: Get task details
+      description: Returns task detail with proof metadata and related project, creator, and assignee data.
+      operationId: getTask
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: company_id
+          schema:
+            oneOf:
+              - type: integer
+              - type: string
+                maxLength: 32
+                example: FAC-ABCD1234
+      responses:
+        "200":
+          description: Task fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "422":
+          description: Unauthorized or invalid company context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tasks/{task}/start:
+    post:
+      tags:
+        - Tasks
+      summary: Start realtime task tracking
+      description: Starts tracking for an assigned task, creates session, and records initial checkpoint.
+      operationId: startTaskTracking
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartTaskTrackingRequest"
+      responses:
+        "200":
+          description: Task tracking started successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskTrackingActionResponse"
+        "422":
+          description: Validation, assignment, or state failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tasks/{task}/location:
+    post:
+      tags:
+        - Tasks
+      summary: Record realtime task location
+      description: Accepts a single location or a batch of points for an active tracking session.
+      operationId: recordTaskTrackingLocation
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordTaskLocationRequest"
+      responses:
+        "200":
+          description: Task location recorded successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskTrackingLocationResponse"
+        "422":
+          description: Validation, assignment, or lifecycle failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tasks/{task}/complete:
+    post:
+      tags:
+        - Tasks
+      summary: Complete tracked task with proof
+      description: Completes an in-progress tracked task and records final checkpoint with proof files.
+      operationId: completeTrackedTask
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/CompleteTrackedTaskRequest"
+      responses:
+        "200":
+          description: Task completed with tracking data successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskTrackingCompletionResponse"
+        "422":
+          description: Validation, assignment, or completion failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tasks/{task}/route:
+    get:
+      tags:
+        - Tasks
+      summary: Fetch tracked task route
+      description: Returns tracking checkpoints, point history, and polyline-ready coordinates.
+      operationId: getTrackedTaskRoute
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: company_id
+          schema:
+            oneOf:
+              - type: integer
+              - type: string
+                maxLength: 32
+                example: FAC-ABCD1234
+        - in: query
+          name: include_points
+          schema:
+            type: boolean
+            default: true
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+      responses:
+        "200":
+          description: Task route fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskTrackingRouteResponse"
+        "422":
+          description: Validation, assignment, or tenant context failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tasks/{task}/assign:
+    patch:
+      tags:
+        - Tasks
+      summary: Reassign task to one or more agents
+      description: Reassigns a non-terminal task to one or more agents in the same company context.
+      operationId: reassignTask
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignTaskRequest"
+      responses:
+        "200":
+          description: Task reassigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tasks/{task}/status:
+    patch:
+      tags:
+        - Tasks
+      summary: Update task status (agent)
+      description: Assigned agents can move tasks through the allowed lifecycle, including cancellation.
+      operationId: updateTaskStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskStatusRequest"
+      responses:
+        "200":
+          description: Task status updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "422":
+          description: Invalid status transition or proof requirements not met
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tasks/{task}/proofs:
+    post:
+      tags:
+        - Tasks
+      summary: Upload proof for assigned task
+      description: Uploads proof metadata and stores the file on a private disk for the assigned agent's task.
+      operationId: uploadTaskProof
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UploadTaskProofRequest"
+      responses:
+        "201":
+          description: Proof uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskProofResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tasks/{task}/proofs/{proof}:
+    get:
+      tags:
+        - Tasks
+      summary: Download proof file
+      description: Returns the stored proof file for authorized owner/admin users in the active company context.
+      operationId: downloadTaskProof
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: proof
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: company_id
+          schema:
+            oneOf:
+              - type: integer
+              - type: string
+                maxLength: 32
+                example: FAC-ABCD1234
+      responses:
+        "200":
+          description: Proof file stream
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Invalid company context or unauthorized proof access
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/internal/login:
+    post:
+      tags:
+        - Internal
+      summary: Login internal onboarded user
+      operationId: internalLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InternalLoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalLoginResponse"
+        "401":
+          description: Invalid credentials or onboarding incomplete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/internal/onboarding/preview:
+    post:
+      tags:
+        - Internal
+      summary: Validate invitation token and fetch onboarding context
+      operationId: previewInternalOnboarding
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PreviewInternalOnboardingRequest"
+      responses:
+        "200":
+          description: Invitation context fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreviewInternalOnboardingResponse"
+        "422":
+          description: Invalid, expired, or used invitation token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/internal/onboarding/complete:
+    post:
+      tags:
+        - Internal
+      summary: Complete invited internal user onboarding
+      operationId: completeInternalOnboarding
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteInternalOnboardingRequest"
+      responses:
+        "200":
+          description: Onboarding completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompleteInternalOnboardingResponse"
+        "422":
+          description: Invalid payload, token, or invitation state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/internal-users:
+    get:
+      tags:
+        - Internal
+      summary: Fetch internal users with onboarding status
+      description: |
+        Retrieve internal users from the authenticated user's company for assignment and onboarding
+        follow-up. Supports filtering by role and onboarding state, and can optionally include inactive
+        pending users for manager tracking.
+      operationId: fetchInternalUsers
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: role
+          required: false
+          schema:
+            type: string
+            enum: [supervisor, agent]
+          description: Filter by internal user role. If omitted, returns all internal users.
+        - in: query
+          name: onboarding_status
+          required: false
+          schema:
+            type: string
+            enum: [pending_onboarding, active]
+          description: Filter users by onboarding lifecycle state.
+        - in: query
+          name: include_inactive
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Include inactive users (such as pending invitations) when true.
+        - in: query
+          name: company_id
+          required: false
+          schema:
+            oneOf:
+              - type: integer
+              - type: string
+                maxLength: 32
+                example: FAC-ABCD1234
+          description: Filter by company context. Accepts internal numeric company ID or public FAC-style company key.
+      responses:
+        "200":
+          description: Internal users retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FetchInternalUsersResponse"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation, authorization, or company-context failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Internal
+      summary: Create internal supervisor or agent and send invite
+      operationId: createInternalUser
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInternalUserRequest"
+      responses:
+        "201":
+          description: Internal user created and invite sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateInternalUserResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/internal-users/onboarding-status:
+    get:
+      tags:
+        - Internal
+      summary: Get onboarding status dashboard for internal users
+      description: |
+        Returns internal users with onboarding status details and summary counts
+        for manager follow-up (owner/admin/supervisor only).
+      operationId: fetchInternalOnboardingStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: role
+          required: false
+          schema:
+            type: string
+            enum: [supervisor, agent]
+          description: Optional role filter.
+        - in: query
+          name: onboarding_status
+          required: false
+          schema:
+            type: string
+            enum: [pending_onboarding, active]
+          description: Optional onboarding-state filter.
+        - in: query
+          name: company_id
+          required: false
+          schema:
+            oneOf:
+              - type: integer
+              - type: string
+                maxLength: 32
+                example: FAC-ABCD1234
+          description: Filter by company context. Accepts internal numeric company ID or public FAC-style company key.
+      responses:
+        "200":
+          description: Onboarding status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalOnboardingStatusResponse"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation, authorization, or company-context failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/internal-users/{user}/invite:
+    post:
+      tags:
+        - Internal
+      summary: Resend onboarding invitation
+      operationId: resendInternalUserInvite
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResendInternalInviteRequest"
+      responses:
+        "200":
+          description: Invitation sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResendInternalInviteResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/internal-users/{user}/supervisor:
+    patch:
+      tags:
+        - Internal
+      summary: Assign agent to supervisor
+      operationId: assignInternalSupervisor
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignInternalSupervisorRequest"
+      responses:
+        "200":
+          description: Supervisor assigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignInternalSupervisorResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/payroll:
+    get:
+      tags:
+        - Payroll
+      summary: Fetch payroll settings for active company context
+      description: Returns company-level payroll settings. Agents inherit this configuration as read-only.
+      operationId: getPayrollSettings
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: company_id
+          required: false
+          schema:
+            oneOf:
+              - type: integer
+              - type: string
+                maxLength: 32
+                example: FAC-ABCD1234
+          description: Optional company context override. Accepts internal numeric company ID or public FAC-style company key. If omitted, latest active company context is used.
+      responses:
+        "200":
+          description: Payroll settings fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayrollResponse"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Payroll
+      summary: Create payroll settings for active company context
+      operationId: createPayrollSettings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePayrollRequest"
+      responses:
+        "201":
+          description: Payroll settings created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayrollResponse"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/payroll/{id}:
+    put:
+      tags:
+        - Payroll
+      summary: Update payroll settings
+      operationId: updatePayrollSettings
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePayrollRequest"
+      responses:
+        "200":
+          description: Payroll settings updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayrollResponse"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation or authorization failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 255
+          example: Jane Doe
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          example: jane@example.com
+    VerifyEmailRequest:
+      type: object
+      required: [email, otp_code]
+      properties:
+        email:
+          type: string
+          format: email
+          example: jane@example.com
+        otp_code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          example: "123456"
+    ResendOtpRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: jane@example.com
+    CreateWorkspaceRequest:
+      type: object
+      required: [company_name, country, team_size, purpose, user_type]
+      properties:
+        company_name:
+          type: string
+          minLength: 2
+          maxLength: 255
+          example: The Factory Labs
+        country:
+          type: string
+          pattern: "^[A-Za-z]{2}$"
+          example: NG
+        team_size:
+          type: string
+          enum: [solo, 2-10, 11-50, 51-200, 201-500, 500+]
+          example: 2-10
+        purpose:
+          type: string
+          enum:
+            [
+              personal,
+              startup,
+              enterprise,
+              freelancing,
+              education,
+              non_profit,
+              other,
+            ]
+          example: startup
+        user_type:
+          type: string
+          enum:
+            [
+              developer,
+              designer,
+              product_manager,
+              marketing,
+              sales,
+              operations,
+              founder,
+              student,
+              other,
+            ]
+          example: founder
+
+    BookDemoRequest:
+      type: object
+      required: [full_name, email, company_name, country, team_size, use_case]
+      properties:
+        full_name:
+          type: string
+          minLength: 2
+          maxLength: 255
+          example: John Doe
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          example: john@acme.com
+        company_name:
+          type: string
+          minLength: 2
+          maxLength: 255
+          example: Acme Inc
+        country:
+          type: string
+          pattern: "^[A-Za-z]{2}$"
+          example: US
+        team_size:
+          type: string
+          maxLength: 50
+          example: 51-200
+        use_case:
+          type: string
+          maxLength: 500
+          example: Multi-team product delivery management
+
+    VerifyCompanyIdRequest:
+      type: object
+      required: [request_id, token, company_id]
+      properties:
+        request_id:
+          type: integer
+          example: 10
+        token:
+          type: string
+          minLength: 10
+          example: a3f1c2d4e5f6g7h8i9j0
+        company_id:
+          type: string
+          maxLength: 50
+          example: TF-8K29Q1
+
+    CompleteFirstTimeSetupRequest:
+      type: object
+      required: [request_id, token, company_id, password, password_confirmation]
+      properties:
+        request_id:
+          type: integer
+          example: 10
+        token:
+          type: string
+          minLength: 10
+          example: a3f1c2d4e5f6g7h8i9j0
+        company_id:
+          type: string
+          maxLength: 50
+          example: TF-8K29Q1
+        password:
+          type: string
+          minLength: 8
+          maxLength: 255
+          example: Secur3Pass!2026
+        password_confirmation:
+          type: string
+          minLength: 8
+          maxLength: 255
+          example: Secur3Pass!2026
+
+    EnterpriseLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: john@acme.com
+        password:
+          type: string
+          minLength: 8
+          maxLength: 255
+          example: Secur3Pass!2026
+
+    CreateTaskRequest:
+      type: object
+      required: [title]
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        project_id:
+          type:
+            - integer
+            - "null"
+          example: 8
+        title:
+          type: string
+          minLength: 3
+          maxLength: 255
+          example: Visit New Distributor
+        type:
+          type:
+            - string
+            - "null"
+          enum: [sales_visit, inspection, delivery, collection, awareness, null]
+        description:
+          type:
+            - string
+            - "null"
+          minLength: 10
+          maxLength: 5000
+        assigned_agent_id:
+          type:
+            - integer
+            - "null"
+          example: 25
+        location:
+          type:
+            - string
+            - "null"
+          maxLength: 255
+          example: Victoria Island
+        address:
+          type:
+            - string
+            - "null"
+          maxLength: 1000
+          example: 12 Adeola Odeku Street, Lagos
+        latitude:
+          type:
+            - number
+            - "null"
+          format: float
+          example: 6.4281
+        longitude:
+          type:
+            - number
+            - "null"
+          format: float
+          example: 3.4219
+        due_date:
+          type:
+            - string
+            - "null"
+          format: date-time
+        required_actions:
+          type: array
+          items:
+            type: string
+        priority:
+          type:
+            - string
+            - "null"
+          enum: [high, medium, low, null]
+        minimum_photos_required:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 20
+        visit_verification_required:
+          type:
+            - boolean
+            - "null"
+
+    CreateSelfTaskRequest:
+      type: object
+      required: [title]
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        title:
+          type: string
+          minLength: 3
+          maxLength: 255
+          example: Follow up route check
+        type:
+          type:
+            - string
+            - "null"
+          enum: [sales_visit, inspection, delivery, collection, awareness, null]
+        description:
+          type:
+            - string
+            - "null"
+          minLength: 10
+          maxLength: 5000
+        location:
+          type:
+            - string
+            - "null"
+          maxLength: 255
+        address:
+          type:
+            - string
+            - "null"
+          maxLength: 1000
+        latitude:
+          type:
+            - number
+            - "null"
+          format: float
+        longitude:
+          type:
+            - number
+            - "null"
+          format: float
+        due_date:
+          type:
+            - string
+            - "null"
+          format: date-time
+        required_actions:
+          type: array
+          items:
+            type: string
+        priority:
+          type:
+            - string
+            - "null"
+          enum: [high, medium, low, null]
+        minimum_photos_required:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 20
+        visit_verification_required:
+          type:
+            - boolean
+            - "null"
+
+    AssignTaskRequest:
+      type: object
+      anyOf:
+        - required: [assigned_agent_id]
+        - required: [assigned_agent_ids]
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        assigned_agent_id:
+          type:
+            - integer
+            - "null"
+          example: 25
+        assigned_agent_ids:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: integer
+
+    UpdateTaskStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        status:
+          type: string
+          enum: [pending, in_progress, completed, cancelled]
+
+    UploadTaskProofRequest:
+      type: object
+      required: [file]
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        file:
+          type: string
+          format: binary
+        latitude:
+          type: number
+          format: float
+        longitude:
+          type: number
+          format: float
+        captured_at:
+          type: string
+          format: date-time
+        notes:
+          type: string
+          maxLength: 500
+
+    StartTaskTrackingRequest:
+      type: object
+      required: [location_permission_granted, latitude, longitude]
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        location_permission_granted:
+          type: boolean
+          example: true
+        latitude:
+          type: number
+          format: float
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          format: float
+          minimum: -180
+          maximum: 180
+        accuracy_meters:
+          type:
+            - number
+            - "null"
+          format: float
+        recorded_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+
+    TaskTrackingPointInput:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+          format: float
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          format: float
+          minimum: -180
+          maximum: 180
+        accuracy_meters:
+          type:
+            - number
+            - "null"
+          format: float
+        speed_mps:
+          type:
+            - number
+            - "null"
+          format: float
+        heading_degrees:
+          type:
+            - number
+            - "null"
+          format: float
+        recorded_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+
+    RecordTaskLocationRequest:
+      type: object
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        latitude:
+          type:
+            - number
+            - "null"
+          format: float
+        longitude:
+          type:
+            - number
+            - "null"
+          format: float
+        accuracy_meters:
+          type:
+            - number
+            - "null"
+          format: float
+        speed_mps:
+          type:
+            - number
+            - "null"
+          format: float
+        heading_degrees:
+          type:
+            - number
+            - "null"
+          format: float
+        recorded_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        points:
+          type:
+            - array
+            - "null"
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/TaskTrackingPointInput"
+
+    CompleteTrackedTaskRequest:
+      type: object
+      required: [latitude, longitude, files]
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        latitude:
+          type: number
+          format: float
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          format: float
+          minimum: -180
+          maximum: 180
+        accuracy_meters:
+          type:
+            - number
+            - "null"
+          format: float
+        recorded_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        notes:
+          type:
+            - string
+            - "null"
+          maxLength: 500
+        files:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: string
+            format: binary
+
+    TaskTrackingCheckpoint:
+      type: object
+      properties:
+        latitude:
+          type:
+            - number
+            - "null"
+          format: float
+        longitude:
+          type:
+            - number
+            - "null"
+          format: float
+        accuracy_meters:
+          type:
+            - number
+            - "null"
+          format: float
+        recorded_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+
+    TaskTrackingSessionPayload:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        company_id:
+          type: integer
+        start:
+          $ref: "#/components/schemas/TaskTrackingCheckpoint"
+        arrival:
+          $ref: "#/components/schemas/TaskTrackingCheckpoint"
+        end:
+          $ref: "#/components/schemas/TaskTrackingCheckpoint"
+        destination:
+          type: object
+          properties:
+            latitude:
+              type:
+                - number
+                - "null"
+              format: float
+            longitude:
+              type:
+                - number
+                - "null"
+              format: float
+            radius_meters:
+              type: integer
+        updated_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+
+    TaskTrackingActionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            task:
+              $ref: "#/components/schemas/Task"
+            tracking:
+              $ref: "#/components/schemas/TaskTrackingSessionPayload"
+            arrived:
+              type: boolean
+        errors:
+          type:
+            - "null"
+
+    TaskTrackingLocationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            task:
+              $ref: "#/components/schemas/Task"
+            tracking:
+              $ref: "#/components/schemas/TaskTrackingSessionPayload"
+            received_points:
+              type: integer
+            persisted_points:
+              type: integer
+            arrived:
+              type: boolean
+        errors:
+          type:
+            - "null"
+
+    TaskTrackingCompletionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            task:
+              $ref: "#/components/schemas/Task"
+            tracking:
+              $ref: "#/components/schemas/TaskTrackingSessionPayload"
+            proofs:
+              type: array
+              items:
+                $ref: "#/components/schemas/TaskProof"
+        errors:
+          type:
+            - "null"
+
+    TaskTrackingRouteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            task_id:
+              type: integer
+            company_id:
+              type: integer
+            status:
+              type:
+                - string
+                - "null"
+            destination:
+              type: object
+              properties:
+                latitude:
+                  type:
+                    - number
+                    - "null"
+                  format: float
+                longitude:
+                  type:
+                    - number
+                    - "null"
+                  format: float
+                radius_meters:
+                  type: integer
+            start:
+              $ref: "#/components/schemas/TaskTrackingCheckpoint"
+            arrival:
+              $ref: "#/components/schemas/TaskTrackingCheckpoint"
+            end:
+              $ref: "#/components/schemas/TaskTrackingCheckpoint"
+            summary:
+              type: object
+              properties:
+                points_count:
+                  type: integer
+                total_distance_meters:
+                  type: number
+                  format: float
+            points:
+              type: array
+              items:
+                type: object
+                properties:
+                  latitude:
+                    type: number
+                    format: float
+                  longitude:
+                    type: number
+                    format: float
+                  accuracy_meters:
+                    type:
+                      - number
+                      - "null"
+                    format: float
+                  speed_mps:
+                    type:
+                      - number
+                      - "null"
+                    format: float
+                  heading_degrees:
+                    type:
+                      - number
+                      - "null"
+                    format: float
+                  event_type:
+                    type: string
+                  is_checkpoint:
+                    type: boolean
+                  recorded_at:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+            polyline:
+              type: array
+              items:
+                type: array
+                minItems: 2
+                maxItems: 2
+                items:
+                  type: number
+                  format: float
+        errors:
+          type:
+            - "null"
+
+    TaskUserSummary:
+      type:
+        - object
+        - "null"
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+
+    TaskAssignedUserSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+
+    TaskProjectSummary:
+      type:
+        - object
+        - "null"
+      properties:
+        id:
+          type: integer
+        company_id:
+          type: integer
+        name:
+          type: string
+        status:
+          type:
+            - string
+            - "null"
+        priority:
+          type:
+            - string
+            - "null"
+
+    TaskProof:
+      type: object
+      properties:
+        id:
+          type: integer
+        uploaded_by_user_id:
+          type: integer
+        file_url:
+          type:
+            - string
+            - "null"
+          description: Protected API download URL. May be null for unauthorized roles.
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+        latitude:
+          type:
+            - number
+            - "null"
+          format: float
+        longitude:
+          type:
+            - number
+            - "null"
+          format: float
+        captured_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        notes:
+          type:
+            - string
+            - "null"
+        created_at:
+          type: string
+          format: date-time
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+        company_id:
+          type: integer
+        project_id:
+          type:
+            - integer
+            - "null"
+        created_by_user_id:
+          type: integer
+        assigned_agent_id:
+          type:
+            - integer
+            - "null"
+        title:
+          type: string
+        type:
+          type:
+            - string
+            - "null"
+          enum: [sales_visit, inspection, delivery, collection, awareness, null]
+        description:
+          type:
+            - string
+            - "null"
+        location:
+          type:
+            - string
+            - "null"
+        address:
+          type:
+            - string
+            - "null"
+        latitude:
+          type:
+            - number
+            - "null"
+          format: float
+        longitude:
+          type:
+            - number
+            - "null"
+          format: float
+        due_date:
+          type:
+            - string
+            - "null"
+          format: date-time
+        required_actions:
+          type: array
+          items:
+            type: string
+        priority:
+          type:
+            - string
+            - "null"
+          enum: [high, medium, low, null]
+        minimum_photos_required:
+          type: integer
+        visit_verification_required:
+          type: boolean
+        status:
+          type: string
+          enum: [pending, in_progress, completed, cancelled]
+        started_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        completed_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        project:
+          $ref: "#/components/schemas/TaskProjectSummary"
+        creator:
+          $ref: "#/components/schemas/TaskUserSummary"
+        assignee:
+          $ref: "#/components/schemas/TaskUserSummary"
+        assigned_users:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskAssignedUserSummary"
+        proofs_count:
+          type:
+            - integer
+            - "null"
+        proofs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskProof"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TaskResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            task:
+              $ref: "#/components/schemas/Task"
+        errors:
+          type:
+            - "null"
+
+    TaskListResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Task"
+            pagination:
+              type: object
+              properties:
+                next_page_url:
+                  type:
+                    - string
+                    - "null"
+                prev_page_url:
+                  type:
+                    - string
+                    - "null"
+                per_page:
+                  type: integer
+        errors:
+          type:
+            - "null"
+
+    TaskProofResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            proof:
+              $ref: "#/components/schemas/TaskProof"
+        errors:
+          type:
+            - "null"
+
+    CreateProjectRequest:
+      type: object
+      required: [company_id, name, start_date]
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        name:
+          type: string
+          minLength: 3
+          maxLength: 255
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 5000
+        type:
+          type:
+            - string
+            - "null"
+          enum: [sales, inspection, deployment, null]
+        status:
+          type:
+            - string
+            - "null"
+          enum: [planning, active, completed, null]
+        priority:
+          type:
+            - string
+            - "null"
+          enum: [high, medium, low, null]
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type:
+            - string
+            - "null"
+          format: date
+        project_manager_user_id:
+          type:
+            - integer
+            - "null"
+        project_manager:
+          type:
+            - integer
+            - "null"
+          description: Backward-compatible alias of project_manager_user_id.
+        assigned_team:
+          type: array
+          items:
+            type: integer
+        territory_zone:
+          type:
+            - string
+            - "null"
+          maxLength: 255
+        attachments:
+          type: array
+          items:
+            type: string
+            format: binary
+        notes:
+          type:
+            - string
+            - "null"
+          maxLength: 5000
+
+    UpdateProjectRequest:
+      type: object
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        name:
+          type: string
+          minLength: 3
+          maxLength: 255
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 5000
+        type:
+          type:
+            - string
+            - "null"
+          enum: [sales, inspection, deployment, null]
+        status:
+          type:
+            - string
+            - "null"
+          enum: [planning, active, completed, null]
+        priority:
+          type:
+            - string
+            - "null"
+          enum: [high, medium, low, null]
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type:
+            - string
+            - "null"
+          format: date
+        project_manager_user_id:
+          type:
+            - integer
+            - "null"
+        project_manager:
+          type:
+            - integer
+            - "null"
+          description: Backward-compatible alias of project_manager_user_id.
+        assigned_team:
+          type: array
+          items:
+            type: integer
+        territory_zone:
+          type:
+            - string
+            - "null"
+          maxLength: 255
+        attachments:
+          type: array
+          items:
+            type: string
+            format: binary
+        notes:
+          type:
+            - string
+            - "null"
+          maxLength: 5000
+
+    ProjectUserSummary:
+      type:
+        - object
+        - "null"
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+
+    ProjectTeamMemberSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+
+    ProjectFile:
+      type: object
+      properties:
+        id:
+          type: integer
+        file_url:
+          type: string
+        original_name:
+          type: string
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    ProjectTaskSummary:
+      type: object
+      properties:
+        total_tasks:
+          type: integer
+        completed_tasks:
+          type: integer
+        pending_tasks:
+          type: integer
+        completed_percentage:
+          type: number
+        pending_percentage:
+          type: number
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: integer
+        company_id:
+          type: integer
+        created_by_user_id:
+          type: integer
+        project_manager_user_id:
+          type:
+            - integer
+            - "null"
+        name:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+        type:
+          type:
+            - string
+            - "null"
+          enum: [sales, inspection, deployment, null]
+        status:
+          type:
+            - string
+            - "null"
+          enum: [planning, active, completed, null]
+        priority:
+          type:
+            - string
+            - "null"
+          enum: [high, medium, low, null]
+        start_date:
+          type:
+            - string
+            - "null"
+          format: date
+        end_date:
+          type:
+            - string
+            - "null"
+          format: date
+        duration_days:
+          type:
+            - integer
+            - "null"
+        territory_zone:
+          type:
+            - string
+            - "null"
+        notes:
+          type:
+            - string
+            - "null"
+        manager:
+          $ref: "#/components/schemas/ProjectUserSummary"
+        assigned_team:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectTeamMemberSummary"
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectFile"
+        task_summary:
+          $ref: "#/components/schemas/ProjectTaskSummary"
+        created_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        updated_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+
+    ProjectResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            project:
+              $ref: "#/components/schemas/Project"
+        errors:
+          type:
+            - "null"
+
+    ProjectListResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Project"
+            pagination:
+              type: object
+              properties:
+                next_page_url:
+                  type:
+                    - string
+                    - "null"
+                prev_page_url:
+                  type:
+                    - string
+                    - "null"
+                per_page:
+                  type: integer
+        errors:
+          type:
+            - "null"
+
+    InternalUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        internal_role:
+          type:
+            - string
+            - "null"
+          enum: [supervisor, agent, null]
+        onboarding_status:
+          type:
+            - string
+            - "null"
+          enum: [pending_onboarding, active, null]
+        assigned_zone:
+          type:
+            - string
+            - "null"
+        work_days:
+          type: array
+          items:
+            type: string
+        base_salary:
+          type:
+            - string
+            - "null"
+        salary_currency:
+          type:
+            - string
+            - "null"
+        commission_enabled:
+          type: boolean
+        supervisor_user_id:
+          type:
+            - integer
+            - "null"
+        phone_number:
+          type:
+            - string
+            - "null"
+        gender:
+          type:
+            - string
+            - "null"
+        avatar_key:
+          type:
+            - string
+            - "null"
+        avatar_svg:
+          type:
+            - string
+            - "null"
+        internal_onboarding_completed_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        is_active:
+          type: boolean
+
+    InternalLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    PreviewInternalOnboardingRequest:
+      type: object
+      required: [invitation_id, token]
+      properties:
+        invitation_id:
+          type: integer
+        token:
+          type: string
+          minLength: 64
+          maxLength: 64
+
+    CompleteInternalOnboardingRequest:
+      type: object
+      required: [invitation_id, token, password, password_confirmation]
+      properties:
+        invitation_id:
+          type: integer
+        token:
+          type: string
+          minLength: 64
+          maxLength: 64
+        phone_number:
+          type: string
+          example: "+2348012345678"
+        gender:
+          type: string
+          enum: [male, female]
+        avatar_key:
+          type: string
+        password:
+          type: string
+        password_confirmation:
+          type: string
+
+    CreateInternalUserRequest:
+      type: object
+      required: [full_name, email, role, assigned_zone, work_days, base_salary]
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [supervisor, agent]
+        phone_number:
+          type: string
+          example: "+2348012345678"
+        gender:
+          type: string
+          enum: [male, female]
+        avatar_key:
+          type: string
+        assigned_zone:
+          type: string
+        work_days:
+          type: array
+          items:
+            type: string
+            enum:
+              [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
+        base_salary:
+          type: number
+        currency_code:
+          type: string
+          minLength: 3
+          maxLength: 3
+        commission_enabled:
+          type: boolean
+        supervisor_user_id:
+          type: integer
+        assign_agent_ids:
+          type: array
+          items:
+            type: integer
+
+    ResendInternalInviteRequest:
+      type: object
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+
+    AssignInternalSupervisorRequest:
+      type: object
+      required: [supervisor_user_id]
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        supervisor_user_id:
+          type: integer
+
+    InternalLoginResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            token:
+              type: string
+            token_type:
+              type: string
+            user:
+              $ref: "#/components/schemas/InternalUser"
+        errors:
+          type:
+            - "null"
+
+    AvatarOption:
+      type: object
+      properties:
+        key:
+          type: string
+        url:
+          type:
+            - string
+            - "null"
+        svg:
+          type:
+            - string
+            - "null"
+
+    AvatarListResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: array
+          items:
+            type: string
+
+    PreviewInternalOnboardingResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            user:
+              $ref: "#/components/schemas/InternalUser"
+            avatar_options:
+              type: array
+              items:
+                $ref: "#/components/schemas/AvatarOption"
+            avatar_options_by_gender:
+              type: object
+              properties:
+                male:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/AvatarOption"
+                female:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/AvatarOption"
+            prefilled_data:
+              type: object
+              properties:
+                phone_number:
+                  type:
+                    - string
+                    - "null"
+                gender:
+                  type:
+                    - string
+                    - "null"
+                avatar_key:
+                  type:
+                    - string
+                    - "null"
+            selected_gender:
+              type:
+                - string
+                - "null"
+            selected_avatar_key:
+              type:
+                - string
+                - "null"
+            selected_avatar_svg:
+              type:
+                - string
+                - "null"
+            suggested_avatar_key:
+              type:
+                - string
+                - "null"
+            expires_at:
+              type: string
+              format: date-time
+        errors:
+          type:
+            - "null"
+
+    CompleteInternalOnboardingResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            token:
+              type: string
+            token_type:
+              type: string
+            user:
+              $ref: "#/components/schemas/InternalUser"
+            avatar_svg:
+              type:
+                - string
+                - "null"
+            avatar_url:
+              type:
+                - string
+                - "null"
+        errors:
+          type:
+            - "null"
+
+    CreateInternalUserResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            user:
+              $ref: "#/components/schemas/InternalUser"
+            invite_expires_at:
+              type: string
+              format: date-time
+        errors:
+          type:
+            - "null"
+
+    FetchInternalUsersResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: Internal users retrieved successfully
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                example: 14
+              name:
+                type: string
+                example: Chukwu Okonkwo
+              email:
+                type: string
+                format: email
+                example: chukwu@factory23.com
+              role:
+                type: string
+                enum: [supervisor, agent]
+                example: supervisor
+              onboarding_status:
+                type: string
+                enum: [pending_onboarding, active]
+              is_active:
+                type: boolean
+              internal_onboarding_completed_at:
+                type:
+                  - string
+                  - "null"
+                format: date-time
+              invite_sent_at:
+                type:
+                  - string
+                  - "null"
+                format: date-time
+              invite_expires_at:
+                type:
+                  - string
+                  - "null"
+                format: date-time
+              invite_accepted_at:
+                type:
+                  - string
+                  - "null"
+                format: date-time
+              invite_revoked_at:
+                type:
+                  - string
+                  - "null"
+                format: date-time
+        errors:
+          type:
+            - "null"
+
+    InternalOnboardingStatusResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: Internal onboarding status retrieved successfully
+        data:
+          type: object
+          properties:
+            summary:
+              type: object
+              properties:
+                total:
+                  type: integer
+                active:
+                  type: integer
+                pending_onboarding:
+                  type: integer
+                inactive:
+                  type: integer
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+                  email:
+                    type: string
+                    format: email
+                  role:
+                    type: string
+                    enum: [supervisor, agent]
+                  onboarding_status:
+                    type: string
+                    enum: [pending_onboarding, active]
+                  is_active:
+                    type: boolean
+                  internal_onboarding_completed_at:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  invite_sent_at:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  invite_expires_at:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  invite_accepted_at:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  invite_revoked_at:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+        errors:
+          type:
+            - "null"
+
+    ResendInternalInviteResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            invite_expires_at:
+              type: string
+              format: date-time
+        errors:
+          type:
+            - "null"
+
+    AssignInternalSupervisorResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            user:
+              $ref: "#/components/schemas/InternalUser"
+        errors:
+          type:
+            - "null"
+
+    PayrollSetting:
+      type: object
+      properties:
+        id:
+          type: integer
+        company_id:
+          type: integer
+        salary_type:
+          type: string
+          enum: [monthly, weekly]
+        base_salary:
+          type: number
+          format: float
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        work_days:
+          type: integer
+          minimum: 1
+        work_hours:
+          type: integer
+          minimum: 4
+          maximum: 12
+        daily_pay:
+          type: number
+          format: float
+        attendance_affects_pay:
+          type: boolean
+        commission_enabled:
+          type: boolean
+        created_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        updated_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+
+    CreatePayrollRequest:
+      type: object
+      required: [salary_type, base_salary, work_days, work_hours]
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        salary_type:
+          type: string
+          enum: [monthly, weekly]
+        base_salary:
+          type: number
+          minimum: 0.01
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        work_days:
+          type: integer
+          minimum: 1
+        work_hours:
+          type: integer
+          minimum: 4
+          maximum: 12
+        attendance_affects_pay:
+          type: boolean
+          default: false
+        commission_enabled:
+          type: boolean
+          default: false
+
+    UpdatePayrollRequest:
+      type: object
+      required: [salary_type, base_salary, work_days, work_hours]
+      properties:
+        company_id:
+          oneOf:
+            - type: integer
+            - type: string
+              maxLength: 32
+              example: FAC-ABCD1234
+        salary_type:
+          type: string
+          enum: [monthly, weekly]
+        base_salary:
+          type: number
+          minimum: 0.01
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        work_days:
+          type: integer
+          minimum: 1
+        work_hours:
+          type: integer
+          minimum: 4
+          maximum: 12
+        attendance_affects_pay:
+          type: boolean
+          default: false
+        commission_enabled:
+          type: boolean
+          default: false
+
+    PayrollResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            payroll:
+              oneOf:
+                - $ref: "#/components/schemas/PayrollSetting"
+                - type: "null"
+        errors:
+          type:
+            - "null"
+
+    Company:
+      type: object
+      required: [id, company_id, name, country, team_size, use_case, status]
+      properties:
+        id:
+          type: integer
+          example: 4
+        company_id:
+          type: string
+          example: TF-8K29Q1
+        name:
+          type: string
+          example: Acme Inc
+        country:
+          type: string
+          example: US
+        team_size:
+          type: string
+          example: 51-200
+        use_case:
+          type: string
+          example: Multi-team product delivery management
+        status:
+          type: string
+          example: active
+        activated_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          example: null
+
+    CompanyDemoRequest:
+      type: object
+      required:
+        [
+          id,
+          full_name,
+          email,
+          company_name,
+          country,
+          team_size,
+          use_case,
+          status,
+          requested_at,
+        ]
+      properties:
+        id:
+          type: integer
+          example: 10
+        full_name:
+          type: string
+          example: John Doe
+        email:
+          type: string
+          format: email
+          example: john@acme.com
+        company_name:
+          type: string
+          example: Acme Inc
+        country:
+          type: string
+          example: US
+        team_size:
+          type: string
+          example: 51-200
+        use_case:
+          type: string
+          example: Multi-team product delivery management
+        status:
+          type: string
+          example: pending
+        requested_at:
+          type: string
+          format: date-time
+        reviewed_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          example: null
+        approved_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          example: null
+        activated_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          example: null
+
+    BookDemoResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: Demo request submitted successfully.
+        data:
+          type: object
+          required: [demo_request]
+          properties:
+            demo_request:
+              $ref: "#/components/schemas/CompanyDemoRequest"
+        errors:
+          type:
+            - "null"
+
+    VerifyCompanyIdResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: Company ID verified successfully.
+        data:
+          type: object
+          required: [email, company, demo_request_id]
+          properties:
+            email:
+              type: string
+              format: email
+              example: john@acme.com
+            company:
+              $ref: "#/components/schemas/Company"
+            demo_request_id:
+              type: integer
+              example: 10
+        errors:
+          type:
+            - "null"
+
+    EnterpriseLoginResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: Login successful.
+        data:
+          type: object
+          required: [token, token_type, expires_in_days, user]
+          properties:
+            token:
+              type: string
+              example: 1|Z7f4l4mH2c...snipped
+            token_type:
+              type: string
+              example: Bearer
+            expires_in_days:
+              type: integer
+              example: 30
+            user:
+              $ref: "#/components/schemas/User"
+        errors:
+          type:
+            - "null"
+
+    User:
+      type: object
+      required:
+        - id
+        - name
+        - email
+        - avatar
+        - email_verified
+        - onboarding_completed
+        - onboarding_completed_at
+        - active_company
+        - created_at
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Jane Doe
+        email:
+          type: string
+          format: email
+          example: jane@example.com
+        avatar:
+          type:
+            - string
+            - "null"
+          example: null
+        email_verified:
+          type: boolean
+          example: true
+        onboarding_completed:
+          type: boolean
+          example: false
+        onboarding_completed_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          example: null
+        active_company:
+          type:
+            - object
+            - "null"
+          required: [id, company_id, name, status, role]
+          properties:
+            id:
+              type: integer
+              example: 322
+            company_id:
+              type: string
+              example: FAC-GZZLGAUP
+            name:
+              type: string
+              example: Acme Manufacturing
+            status:
+              type: string
+              example: active
+            role:
+              type: string
+              enum: [owner, admin, supervisor, agent]
+              example: owner
+        created_at:
+          type: string
+          format: date-time
+
+    Workspace:
+      type: object
+      required:
+        - id
+        - name
+        - slug
+        - country
+        - team_size
+        - purpose
+        - user_type
+        - created_at
+      properties:
+        id:
+          type: string
+          example: 01JQ7MZX6R7DJ9GM5T7QKEB3DF
+        name:
+          type: string
+          example: The Factory Labs
+        slug:
+          type: string
+          example: the-factory-labs
+        country:
+          type: string
+          example: NG
+        team_size:
+          type: string
+          example: 2-10
+        purpose:
+          type: string
+          example: startup
+        user_type:
+          type: string
+          example: founder
+        created_at:
+          type: string
+          format: date-time
+
+    ErrorBag:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - message
+        - data
+        - errors
+      properties:
+        success:
+          type: boolean
+          const: false
+        message:
+          type: string
+        data:
+          type:
+            - "null"
+        errors:
+          anyOf:
+            - $ref: "#/components/schemas/ErrorBag"
+            - type: "null"
+
+    RegisterResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: Verification code sent. Please check your email.
+        data:
+          type: object
+          required: [email]
+          properties:
+            email:
+              type: string
+              example: ja**@example.com
+        errors:
+          type:
+            - "null"
+
+    VerifyEmailResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: Email verified successfully. Welcome to The Factory!
+        data:
+          type: object
+          required:
+            [token, token_type, expires_in_days, user, onboarding_completed]
+          properties:
+            token:
+              type: string
+              example: 1|Z7f4l4mH2c...snipped
+            token_type:
+              type: string
+              example: Bearer
+            expires_in_days:
+              type: integer
+              example: 30
+            user:
+              $ref: "#/components/schemas/User"
+            onboarding_completed:
+              type: boolean
+              example: false
+        errors:
+          type:
+            - "null"
+
+    ResendOtpResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: A new verification code has been sent to your email.
+        data:
+          type: object
+          required: [email]
+          properties:
+            email:
+              type: string
+              example: ja**@example.com
+        errors:
+          type:
+            - "null"
+
+    UserMeResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: User profile fetched successfully.
+        data:
+          $ref: "#/components/schemas/User"
+        errors:
+          type:
+            - "null"
+
+    CreateWorkspaceResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: Workspace created successfully. Welcome aboard!
+        data:
+          type: object
+          required: [workspace, user]
+          properties:
+            workspace:
+              $ref: "#/components/schemas/Workspace"
+            user:
+              $ref: "#/components/schemas/User"
+        errors:
+          type:
+            - "null"
+
+    HealthData:
+      type: object
+      required:
+        - service
+        - environment
+        - timestamp
+      properties:
+        service:
+          type: string
+          example: Factory API
+        environment:
+          type: string
+          example: local
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-04-03T12:00:00+00:00"
+    HealthSuccessResponse:
+      type: object
+      required:
+        - success
+        - message
+        - data
+        - errors
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: API is healthy
+        data:
+          $ref: "#/components/schemas/HealthData"
+        errors:
+          type:
+            - "null"

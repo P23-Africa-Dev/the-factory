@@ -1,0 +1,90 @@
+name: Laravel Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Container tag to build and deploy
+        required: false
+        default: latest
+      deploy_target:
+        description: Deployment target
+        required: true
+        type: choice
+        options:
+          - none
+          - ssh
+        default: none
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push-image:
+    name: Build and Push App Image
+    runs-on: ubuntu-latest
+
+    outputs:
+      image_uri: ${{ steps.meta.outputs.image_uri }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set image metadata
+        id: meta
+        run: |
+          IMAGE_URI=ghcr.io/${{ github.repository }}/laravel-api:${{ github.event.inputs.image_tag }}
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/php/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_uri }}
+
+  deploy-over-ssh:
+    name: Deploy via SSH (Optional)
+    needs: build-and-push-image
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.deploy_target == 'ssh' }}
+
+    steps:
+      - name: Validate required secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "Missing one or more required secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY"
+            exit 1
+          fi
+
+      - name: Run remote deployment commands
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_APP_PATH }}
+            docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GHCR_PAT }}
+            docker pull ${{ needs.build-and-push-image.outputs.image_uri }}
+            docker compose up -d --remove-orphans
+            docker compose exec -T app php artisan migrate --force
+            docker compose exec -T app php artisan migrate:status --no-ansi | grep "create_company_demo_requests_table" >/dev/null
+            docker compose exec -T app php artisan optimize:clear
+            docker compose exec -T app php artisan queue:restart
