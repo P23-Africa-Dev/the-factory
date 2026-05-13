@@ -90,7 +90,7 @@ function toFormData(
     if (value === undefined || value === null) return;
 
     if (key === "attachments" && Array.isArray(value)) {
-      value.forEach((file) => formData.append("attachments[]", file));
+      value.forEach((file) => formData.append("attachments[]", file as File));
       return;
     }
 

@@ -2,9 +2,9 @@
 
 import OnboardingForm from "@/components/forms/onboarding-form";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 
-export default function CompleteOnboardingPage() {
+function CompleteOnboardingInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [invitationId] = useState(() => searchParams.get("invitation_id") ?? "");
@@ -16,6 +16,10 @@ export default function CompleteOnboardingPage() {
     router.replace("/complete-onboarding");
   }, [invitationId, token, router]);
 
+  return <OnboardingForm invitationId={invitationId} token={token} />;
+}
+
+export default function CompleteOnboardingPage() {
   return (
     <div className="w-full max-w-115 flex flex-col gap-8 md:mt-0 lg:-mt-12">
       <div className="text-left md:text-center flex flex-col gap-3">
@@ -27,7 +31,9 @@ export default function CompleteOnboardingPage() {
         </p>
       </div>
 
-      <OnboardingForm invitationId={invitationId} token={token} />
+      <Suspense fallback={null}>
+        <CompleteOnboardingInner />
+      </Suspense>
     </div>
   );
 }
