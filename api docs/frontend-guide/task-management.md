@@ -1,20 +1,26 @@
 # Task Management Frontend Guide
 
 ## Feature Overview
+
 Task APIs support management-created tasks, project-linked tasks, standalone tasks, agent self-tasks, status updates, protected proof uploads/downloads, and strict company-scoped access for field operations.
 
+For live map tracking integration, see [Task Tracking Realtime Frontend Guide](task-tracking-realtime.md).
+
 ## User Flow
+
 1. Manager creates a task — only `title` is required. All other fields are optional.
 2. Manager may attach the task to an existing same-company project by sending `project_id`.
 3. Manager may assign one or more agents via `assigned_agent_ids` or the legacy `assigned_agent_id` field.
-4. Agents see only tasks where they are an active assignee in their task list.
-5. Agents may create standalone self-tasks through the dedicated self-task endpoint. Self-tasks can optionally include a `project_id`.
-6. Agents move tasks to `in_progress`, then either `completed` or `cancelled`.
-7. Agents upload proof images with optional GPS metadata before completion when required.
-8. Owner/Admin may download proof files through the protected proof endpoint.
-9. Managers can reassign only non-terminal tasks.
+4. When assignees are provided at creation, assigned users receive notification emails through Resend.
+5. Agents see only tasks where they are an active assignee in their task list.
+6. Agents may create standalone self-tasks through the dedicated self-task endpoint.
+7. Agents move tasks to `in_progress`, then either `completed` or `cancelled`.
+8. Agents upload proof images with optional GPS metadata before completion when required.
+9. Owner/Admin may download proof files through the protected proof endpoint.
+10. Managers can reassign only non-terminal tasks.
 
 ## API Endpoints
+
 Management and shared task APIs:
 
 1. `GET /api/v1/tasks`
@@ -37,13 +43,15 @@ Auth for all endpoints:
 ## Frontend Rules
 
 1. Always send `company_id` when the user can switch tenants.
-2. Treat `project_id` as optional for both management-created and agent self-tasks.
-3. Render related `project`, `creator`, `assignee`, and `assigned_users` data directly from task payloads.
-4. Use `assigned_users: [{id, name}]` to show all current assignees in the UI (replaces relying on `assignee` alone for multi-agent tasks).
-5. Treat `file_url` as a protected API endpoint, not as a CDN/public storage URL.
-6. Hide proof-download actions unless the current role is `owner` or `admin`.
-7. Disable reassignment and status actions when task status is `completed` or `cancelled`.
-8. For multi-agent assignment, send `assigned_agent_ids: [id1, id2, ...]` in the reassign request. Legacy `assigned_agent_id` (single integer) is still accepted.
+2. `company_id` can be an internal numeric ID or a public FAC-style key.
+3. Treat `project_id` as optional only for management-created tasks (`POST /api/v1/tasks`).
+4. Do not send `project_id` on `POST /api/v1/agent/tasks/self`.
+5. Render related `project`, `creator`, `assignee`, and `assigned_users` data directly from task payloads.
+6. Use `assigned_users: [{id, name}]` to show all current assignees in the UI (replaces relying on `assignee` alone for multi-agent tasks).
+7. Treat `file_url` as a protected API endpoint, not as a CDN/public storage URL.
+8. Hide proof-download actions unless the current role is `owner` or `admin`.
+9. Disable reassignment and status actions when task status is `completed` or `cancelled`.
+10. For multi-agent assignment, send `assigned_agent_ids: [id1, id2, ...]` in the reassign request. Legacy `assigned_agent_id` (single integer) is still accepted.
 
 ## Request Examples
 
@@ -253,35 +261,38 @@ Legacy single-agent form (still supported):
 ## Frontend Integration Example (Axios/fetch)
 
 ```javascript
-const API = '/api/v1';
+const API = "/api/v1";
 
 function authHeaders() {
-  const token = localStorage.getItem('auth_token');
+  const token = localStorage.getItem("auth_token");
   return {
-    Accept: 'application/json',
+    Accept: "application/json",
     Authorization: `Bearer ${token}`,
   };
 }
 
 export async function getTasks(params = {}) {
   const query = new URLSearchParams(params).toString();
-  const response = await fetch(`${API}/tasks${query ? `?${query}` : ''}`, {
+  const response = await fetch(`${API}/tasks${query ? `?${query}` : ""}`, {
     headers: authHeaders(),
   });
   return response.json();
 }
 
 export async function getTask(taskId, companyId) {
-  const response = await fetch(`${API}/tasks/${taskId}?company_id=${companyId}`, {
-    headers: authHeaders(),
-  });
+  const response = await fetch(
+    `${API}/tasks/${taskId}?company_id=${companyId}`,
+    {
+      headers: authHeaders(),
+    },
+  );
   return response.json();
 }
 
 export async function createTask(payload) {
   const response = await fetch(`${API}/tasks`, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   return response.json();
@@ -289,8 +300,8 @@ export async function createTask(payload) {
 
 export async function createSelfTask(payload) {
   const response = await fetch(`${API}/agent/tasks/self`, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   return response.json();
@@ -298,8 +309,8 @@ export async function createSelfTask(payload) {
 
 export async function updateTaskStatus(taskId, payload) {
   const response = await fetch(`${API}/tasks/${taskId}/status`, {
-    method: 'PATCH',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    method: "PATCH",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   return response.json();
@@ -307,7 +318,7 @@ export async function updateTaskStatus(taskId, payload) {
 
 export async function uploadTaskProof(taskId, formData) {
   const response = await fetch(`${API}/tasks/${taskId}/proofs`, {
-    method: 'POST',
+    method: "POST",
     headers: authHeaders(),
     body: formData,
   });
@@ -317,7 +328,7 @@ export async function uploadTaskProof(taskId, formData) {
 export async function downloadProof(fileUrl, token) {
   const response = await fetch(fileUrl, {
     headers: {
-      Accept: '*/*',
+      Accept: "*/*",
       Authorization: `Bearer ${token}`,
     },
   });
@@ -334,4 +345,4 @@ export async function downloadProof(fileUrl, token) {
 5. Management UIs may send `project_id` for project-linked tasks or omit it for standalone tasks.
 6. Preserve `company_id` when required by multi-company flows.
 7. `file_url` may be `null` for roles that cannot download proof files.
-
+8. Show a non-blocking success toast such as "Task created and assignment emails sent" after successful creation with assignees.

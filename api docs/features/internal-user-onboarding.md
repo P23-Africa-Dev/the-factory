@@ -31,13 +31,17 @@ Public:
 
 Authenticated (auth:sanctum):
 
-1. POST /api/v1/internal-users
-2. POST /api/v1/internal-users/{user}/invite
-3. PATCH /api/v1/internal-users/{user}/supervisor
+1. GET /api/v1/internal-users
+2. GET /api/v1/internal-users/onboarding-status
+3. POST /api/v1/internal-users
+4. POST /api/v1/internal-users/{user}/invite
+5. PATCH /api/v1/internal-users/{user}/supervisor
 
-Web signed route:
+Invitation delivery URL:
 
-1. GET /onboarding/internal/{invitation}/{token}
+1. Email action links point to the configured frontend onboarding URL (`INTERNAL_ONBOARDING_FRONTEND_URL`).
+2. Query params included: `invitation_id`, `token`.
+3. Backend validates token and invitation expiry during preview and completion APIs.
 
 ## Authentication and Authorization
 
@@ -83,7 +87,20 @@ POST /api/v1/internal-users/{user}/invite
 
 PATCH /api/v1/internal-users/{user}/supervisor
 
-### 4) Invitation Preview
+### 4) Internal User Tracking (Manager Follow-up)
+
+Use these endpoints to follow onboarding progress for supervisors and agents.
+
+1. `GET /api/v1/internal-users`
+  - Returns active internal users by default.
+  - Supports filters: `role`, `onboarding_status`, `include_inactive`, `company_id`.
+  - To track pending invites, call with `include_inactive=1` or `onboarding_status=pending_onboarding`.
+2. `GET /api/v1/internal-users/onboarding-status`
+  - Always includes pending/inactive users.
+  - Returns summary counts: `total`, `active`, `pending_onboarding`, `inactive`.
+  - Includes invite lifecycle fields per user: `invite_sent_at`, `invite_expires_at`, `invite_accepted_at`, `invite_revoked_at`.
+
+### 5) Invitation Preview
 
 POST /api/v1/internal/onboarding/preview
 
@@ -95,7 +112,7 @@ Success payload includes:
 4. selected_avatar_svg for backward compatibility
 5. suggested_avatar_key resolved from profile or random assignment
 
-### 5) List Avatars
+### 6) List Avatars
 
 GET /api/v1/avatars?gender=male
 
@@ -105,18 +122,26 @@ Success 200:
 {
   "success": true,
   "data": [
-    "http://localhost/storage/avatar/male/avatar_1.png",
-    "http://localhost/storage/avatar/male/avatar_2.png"
+    "https://api.thefactory23.com/storage/avatar/male/avatar_1.png",
+    "https://api.thefactory23.com/storage/avatar/male/avatar_2.png"
   ]
 }
 ```
+
+Avatar URL generation contract:
+
+1. API returns fully qualified, browser-ready URLs.
+2. URL host is environment-aware and resolved from Laravel URL/storage helpers.
+3. Production must set `APP_URL=https://api.thefactory23.com` (optionally `ASSET_URL`).
+4. Local environments can use local domains (for example `http://localhost:8080`).
+5. No frontend URL transformation is required before rendering.
 
 Validation errors:
 
 1. Missing gender -> 422 with errors.gender
 2. Invalid gender -> 422 with errors.gender
 
-### 6) Complete Onboarding
+### 7) Complete Onboarding
 
 POST /api/v1/internal/onboarding/complete
 
@@ -127,7 +152,7 @@ Success payload includes:
 3. avatar_url when storage-backed avatar exists
 4. avatar_svg for fallback compatibility
 
-### 7) Agent Login
+### 8) Agent Login
 
 POST /api/v1/agent/login
 
@@ -190,6 +215,13 @@ Complete onboarding:
 6. final merged avatar_key must belong to resolved gender catalog
 7. if gender exists without avatar, system auto-assigns a random avatar for that gender
 8. avatar catalog is resolved from storage/app/public/avatar/{gender} with config fallback
+9. avatar image URLs are generated via storage URL helpers and follow the configured application base URL
+
+Storage checklist:
+
+1. Ensure the storage symlink exists: `public/storage` -> `storage/app/public`.
+2. Avatar files should exist under `storage/app/public/avatar/male` and `storage/app/public/avatar/female`.
+3. Use `php artisan storage:link` when symlink is missing.
 
 ## Status Codes
 

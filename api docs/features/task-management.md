@@ -4,6 +4,8 @@
 
 This feature powers company-scoped field task operations and supports both standalone tasks and project-linked tasks.
 
+For live GPS lifecycle tracking (start/location/arrival/complete/route + websocket fanout), see [Task Tracking Realtime API](task-tracking-realtime.md).
+
 Supported roles in company context:
 
 1. Owner
@@ -18,6 +20,7 @@ Current enforced behavior:
 3. Tasks always belong to a resolved active company context and must keep creator, assignee, and project aligned to that same tenant.
 4. Tasks may be unassigned (no `assigned_agent_id`) and may be standalone (no `project_id`).
 5. Multiple agents can be assigned to a single task via `assigned_agent_ids` array. All task responses include `assigned_users: [{id, name}]` reflecting current active assignments.
+6. When a task is created with assignees, assigned agents receive task-assignment notification email through Resend.
 
 ## Endpoints
 
@@ -52,11 +55,12 @@ Company role is resolved from `company_users` membership.
    - Can attach tasks to an existing same-company project via `project_id`
 
 2. Agent:
-   - Can list only tasks where `assigned_agent_id = current user`
-   - Can upload proof for assigned tasks only
-   - Can update status for assigned tasks only
-   - Can create self-tasks only through `POST /api/v1/agent/tasks/self`
-   - Cannot create management tasks or assign tasks to other users
+
+- Can list and view only tasks where they are a current assignee
+- Can upload proof for assigned tasks only
+- Can update status for assigned tasks only
+- Can create self-tasks only through `POST /api/v1/agent/tasks/self`
+- Cannot create management tasks or assign tasks to other users
 
 3. Proof access:
    - Proof metadata is returned on task detail responses
@@ -65,9 +69,11 @@ Company role is resolved from `company_users` membership.
 
 4. Company context:
    - `company_id` may be provided explicitly
-   - If omitted, latest active company membership context is used
-   - Company must be active
-   - Task creator, task assignee, and project must all belong to the same company as the task
+
+- `company_id` accepts internal numeric ID or public FAC-style key
+- If omitted, latest active company membership context is used
+- Company must be active
+- Task creator, task assignee, and project must all belong to the same company as the task
 
 ## Data Model
 
@@ -172,10 +178,7 @@ Request (only `title` is required; all other fields are optional):
   "latitude": 6.4281,
   "longitude": 3.4219,
   "due_date": "2026-04-10T10:00:00+00:00",
-  "required_actions": [
-    "Take storefront photos",
-    "Capture competitor pricing"
-  ],
+  "required_actions": ["Take storefront photos", "Capture competitor pricing"],
   "priority": "high",
   "minimum_photos_required": 2,
   "visit_verification_required": true
@@ -253,6 +256,11 @@ Request (only `title` is required):
   "priority": "low"
 }
 ```
+
+Notes:
+
+1. Self tasks are always standalone.
+2. `project_id` is not accepted on this endpoint.
 
 Success 201:
 
@@ -379,9 +387,7 @@ Failure 422 example:
   "message": "The given data was invalid.",
   "data": null,
   "errors": {
-    "assigned_agent_id": [
-      "Selected agent is not a member of this company."
-    ]
+    "assigned_agent_id": ["Selected agent is not a member of this company."]
   }
 }
 ```
@@ -407,9 +413,7 @@ Validation failure 422 example:
   "message": "The given data was invalid.",
   "data": null,
   "errors": {
-    "status": [
-      "Minimum 2 proof image(s) required before completion."
-    ]
+    "status": ["Minimum 2 proof image(s) required before completion."]
   }
 }
 ```
@@ -459,7 +463,7 @@ Create management task:
 Create self-task:
 
 1. `title` required, string, min 3, max 255
-2. `project_id` nullable, exists in `projects`, must belong to the same active company
+2. `project_id` is prohibited (self-task flow is standalone only)
 3. `type` nullable, enum `sales_visit|inspection|delivery|collection|awareness`
 4. `description` nullable, string, min 10, max 5000
 5. `location` nullable, string, min 2, max 255
@@ -487,14 +491,16 @@ Upload proof:
 ## Edge Cases
 
 1. Agent cannot use `POST /api/v1/tasks`
-2. `project_id` must belong to the active company context (applies to both management tasks and self-tasks)
-3. Cross-company assignment is rejected
-4. Agents cannot view, update, or upload proof on tasks they are not assigned to
-5. `completed` and `cancelled` tasks cannot change status again
-6. Terminal tasks cannot be reassigned
-7. Proof download is denied for non-owner/admin roles
-8. Tasks may be created with no assignee; unassigned tasks are still valid
-9. Tasks may be created with no project; standalone tasks are not required to belong to a project
+2. For management task creation, `project_id` must belong to the active company context
+3. Self-task endpoint rejects `project_id`
+4. Cross-company assignment is rejected
+5. Agents cannot view, update, or upload proof on tasks they are not assigned to
+6. `completed` and `cancelled` tasks cannot change status again
+7. Terminal tasks cannot be reassigned
+8. Proof download is denied for non-owner/admin roles
+9. Tasks may be created with no assignee; unassigned tasks are still valid
+10. Tasks may be created with no project; standalone tasks are not required to belong to a project
+11. Assigned users receive notification emails when task creation includes assignees
 
 ## Scalability Notes
 
