@@ -6,24 +6,39 @@ import MessageIcon from "@/assets/images/message-icon.png";
 import Image from "next/image";
 import { TinyButton } from "../ui/tiny-button";
 import type { PayrollAgent } from "./payroll-list";
+import type { PayrollSettings } from "@/lib/api/payroll";
 
 interface PayrollSidebarProps {
   agent: PayrollAgent | null;
+  payrollSettings?: PayrollSettings | null;
 }
 
-const agentDetails = {
-  attendanceDays: "18/22",
-  baseSalary: "₦65,000",
-  zone: "₦15,000",
-  commission: "₦25,000",
-  phoneNumber: "+234 803 4567890",
-  deduction: "₦5,000",
-  role: "Field Agent",
-  netPay: "₦85,000",
-};
+function formatMoney(amount: number, currency: string) {
+  const formatted = amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  if (currency === "NGN") return `₦${formatted}`;
+  if (currency === "USD") return `$${formatted}`;
+  return `${formatted} ${currency}`;
+}
 
-export function PayrollSidebar({ agent }: PayrollSidebarProps) {
+export function PayrollSidebar({ agent, payrollSettings }: PayrollSidebarProps) {
   if (!agent) return null;
+
+  const baseSalary = payrollSettings
+    ? formatMoney(payrollSettings.base_salary, payrollSettings.currency)
+    : "—";
+
+  const dailyPay = payrollSettings
+    ? formatMoney(payrollSettings.daily_pay, payrollSettings.currency)
+    : "—";
+
+  const workDays = payrollSettings ? `${payrollSettings.work_days}` : "—";
+  const workHours = payrollSettings ? `${payrollSettings.work_hours} hrs` : "—";
+  const salaryType = payrollSettings
+    ? payrollSettings.salary_type.charAt(0).toUpperCase() + payrollSettings.salary_type.slice(1)
+    : "—";
 
   return (
     <div className="payroll-cutout w-full text-dash-dark h-140 overflow-y-auto border-dash-dark/5 bg-white p-8 sm:p-[55px_42px_46.52px] relative rounded-2xl shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
@@ -37,10 +52,10 @@ export function PayrollSidebar({ agent }: PayrollSidebarProps) {
         <div className="flex-1 min-w-0 grid grid-cols-2 gap-x-6 gap-y-4">
           <div>
             <p className="text-[14px] leading-4.5 font-bold text-[#34373C] mb-1">
-              Attendance Days
+              Salary Type
             </p>
             <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-              {agentDetails.attendanceDays}
+              {salaryType}
             </p>
           </div>
           <div>
@@ -48,55 +63,55 @@ export function PayrollSidebar({ agent }: PayrollSidebarProps) {
               Base Salary
             </p>
             <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-              {agentDetails.baseSalary}
+              {baseSalary}
             </p>
           </div>
           <div>
             <p className="text-[14px] leading-4.5 font-bold text-[#34373C] mb-1">
-              Zone
+              Daily Pay
             </p>
             <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-              {agentDetails.zone}
+              {dailyPay}
             </p>
           </div>
           <div>
             <p className="text-[14px] leading-4.5 font-bold text-[#34373C] mb-1">
-              Commission
+              Work Days
             </p>
             <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-              {agentDetails.commission}
+              {workDays}
             </p>
           </div>
           <div>
-            <p className="text-[14px] font-bold text-[#34373C] mb-[4px]">
-              Phone Number
+            <p className="text-[14px] font-bold text-[#34373C] mb-1">
+              Work Hours
             </p>
             <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-              {agentDetails.phoneNumber}
+              {workHours}
             </p>
           </div>
           <div>
-            <p className="text-[14px] font-bold text-[#34373C] mb-[4px]">
-              Deduction
+            <p className="text-[14px] font-bold text-[#34373C] mb-1">
+              Attendance Pay
             </p>
             <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-              {agentDetails.deduction}
+              {payrollSettings ? (payrollSettings.attendance_affects_pay ? "Yes" : "No") : "—"}
             </p>
           </div>
           <div>
-            <p className="text-[14px] font-bold text-[#34373C] mb-[4px]">
+            <p className="text-[14px] font-bold text-[#34373C] mb-1">
               Role
             </p>
             <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-              {agentDetails.role}
+              {agent.role}
             </p>
           </div>
           <div>
-            <p className="text-[14px] font-bold text-[#34373C] mb-[4px]">
-              Net Pay
+            <p className="text-[14px] font-bold text-[#34373C] mb-1">
+              Commission
             </p>
             <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-              {agentDetails.netPay}
+              {payrollSettings ? (payrollSettings.commission_enabled ? "Enabled" : "Disabled") : "—"}
             </p>
           </div>
         </div>
@@ -117,7 +132,7 @@ export function PayrollSidebar({ agent }: PayrollSidebarProps) {
               <p className="text-[11px] font-bold text-[#0B1215] mt-2 text-center">
                 {agent.name}
               </p>
-              <p className="text-[10px] font-light text-[#09232D] text-left">
+              <p className="text-[10px] font-light text-dash-dark text-left">
                 {agent.lga} LGA
               </p>
             </div>

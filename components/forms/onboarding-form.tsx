@@ -1,16 +1,11 @@
 "use client";
 
+import { getMe, type ApiRequestError } from "@/lib/api/onboarding";
 import {
-  createWorkspace,
-  getMe,
-  type ApiRequestError,
-  type WorkspacePayload,
-} from "@/lib/api/onboarding";
-import {
-  getAuthTokenFromDocument,
-  setAuthSession,
-  setCompanyId,
-} from "@/lib/auth/session";
+  completeInternalInvitation,
+  previewInternalInvitation,
+} from "@/lib/api/internal-onboarding";
+import { setAuthSession, setCompanyId } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
@@ -18,77 +13,160 @@ import Select from "@/components/ui/select";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
+import { useEffect, useMemo, useState } from "react";
+import PhoneNumberInput from "@/components/ui/phone-number-input";
 import { z } from "zod";
 import { toast } from "sonner";
 
-const workspaceSchema = z.object({
-  company_name: z.string().min(2, "Company name must be at least 2 characters."),
-  country: z.string().min(1, "Please select a country."),
-  team_size: z.enum(["solo", "2-10", "11-50", "51-200", "201-500", "500+"]),
-  purpose: z.enum([
-    "personal", "startup", "enterprise", "freelancing",
-    "education", "non_profit", "other",
-  ]),
-  user_type: z.enum([
-    "developer", "designer", "product_manager", "marketing",
-    "sales", "operations", "founder", "student", "other",
-  ]),
-});
+const onboardingSchema = z
+  .object({
+    phone_number: z.string().min(1, "Phone number is required."),
+    gender: z.enum(["male", "female"]),
+    avatar_key: z.string().min(1, "Avatar is required."),
+    password: z.string().min(8, "Password must be at least 8 characters."),
+    password_confirmation: z.string().min(8, "Password confirmation is required."),
+  })
+  .refine((values) => values.password === values.password_confirmation, {
+    path: ["password_confirmation"],
+    message: "Passwords do not match.",
+  });
 
-type Country = { name: { common: string }; cca2: string };
+type OnboardingFormValues = z.infer<typeof onboardingSchema>;
 
-export default function OnboardingForm() {
+const INVITATION_ID_REGEX = /^[0-9]+$/;
+const INVITE_TOKEN_REGEX = /^[A-Za-z0-9_-]{32,128}$/;
+const AVATAR_BATCH_SIZE = 4;
+
+function shuffleArray<T>(items: T[]): T[] {
+  const next = [...items];
+  for (let i = next.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [next[i], next[j]] = [next[j], next[i]];
+  }
+  return next;
+}
+
+type AvatarOption = { key: string; url: string | null; svg: string | null };
+
+function AvatarPicker({
+  avatars,
+  selectedAvatarKey,
+  onSelect,
+}: {
+  avatars: AvatarOption[];
+  selectedAvatarKey?: string;
+  onSelect: (avatarKey: string) => void;
+}) {
+  const [visibleAvatarCount, setVisibleAvatarCount] = useState(AVATAR_BATCH_SIZE);
+  const shuffledAvatars = useMemo(() => shuffleArray(avatars), [avatars]);
+  const visibleAvatars = useMemo(
+    () => shuffledAvatars.slice(0, visibleAvatarCount),
+    [shuffledAvatars, visibleAvatarCount]
+  );
+
+  if (visibleAvatars.length === 0) {
+    return <p className="text-xs text-gray-400 text-center">No avatars available for selected gender.</p>;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 justify-center">
+      {visibleAvatars.map((avatar) => {
+        const isSelected = selectedAvatarKey === avatar.key;
+        return (
+          <button
+            key={avatar.key}
+            type="button"
+            onClick={() => onSelect(avatar.key)}
+            className={`h-16 w-16 rounded-full overflow-hidden border-2 transition-all ${
+              isSelected ? "border-[#6FA8A6] ring-2 ring-[#6FA8A6]/30" : "border-gray-200"
+            }`}
+            title={avatar.key}
+          >
+            {avatar.url ? (
+              <img src={avatar.url} alt={avatar.key} className="h-full w-full object-cover" />
+            ) : avatar.svg ? (
+              <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: avatar.svg }} />
+            ) : (
+              <div className="h-full w-full bg-gray-100" />
+            )}
+          </button>
+        );
+      })}
+      {visibleAvatarCount < shuffledAvatars.length ? (
+        <button
+          type="button"
+          onClick={() =>
+            setVisibleAvatarCount((count) =>
+              Math.min(count + AVATAR_BATCH_SIZE, shuffledAvatars.length)
+            )
+          }
+          className="h-16 w-16 rounded-2xl border border-gray-300 text-3xl text-gray-400 hover:bg-gray-50"
+          aria-label="Load more avatars"
+        >
+          +
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+export default function OnboardingForm({
+  invitationId,
+  token,
+}: {
+  invitationId: string;
+  token: string;
+}) {
   const router = useRouter();
   const setUser = useAuthStore((s) => s.setUser);
 
-  const { data: countryOptions = [] } = useQuery({
-    queryKey: ["countries"],
-    queryFn: async () => {
-      const res = await fetch("https://restcountries.com/v3.1/all?fields=name,cca2");
-      const data: Country[] = await res.json();
-      return data
-        .map((c) => ({ label: c.name.common, value: c.cca2 }))
-        .sort((a, b) => a.label.localeCompare(b.label));
-    },
-    staleTime: Infinity,
+  const previewQuery = useQuery({
+    queryKey: ["internal-onboarding-preview", invitationId, token],
+    queryFn: () =>
+      previewInternalInvitation({
+        invitation_id: invitationId,
+        token,
+      }),
+    enabled: Boolean(invitationId && token),
+    retry: false,
   });
 
   const {
+    control,
     register,
     handleSubmit,
-    control,
+    setValue,
     formState: { errors },
-  } = useForm<WorkspacePayload>({
-    resolver: zodResolver(workspaceSchema),
+  } = useForm<OnboardingFormValues>({
+    resolver: zodResolver(onboardingSchema),
     defaultValues: {
-      company_name: "",
-      country: "",
-      team_size: "2-10",
-      purpose: "startup",
-      user_type: "founder",
+      phone_number: "",
+      gender: "male",
+      avatar_key: "",
+      password: "",
+      password_confirmation: "",
     },
   });
 
-  const [companyNameValue, countryValue] = useWatch({
-    control,
-    name: ["company_name", "country"],
-  });
-  const isFilled = companyNameValue?.trim() !== "" && countryValue?.trim() !== "";
-
-  const workspaceMutation = useMutation({
-    mutationFn: (values: WorkspacePayload) => {
-      const token = getAuthTokenFromDocument();
-      if (!token) throw new Error("Your session has expired. Please verify your email again.");
-      return createWorkspace(values, token);
-    },
+  const completeMutation = useMutation({
+    mutationFn: (values: OnboardingFormValues) =>
+      completeInternalInvitation({
+        invitation_id: invitationId,
+        token,
+        password: values.password,
+        password_confirmation: values.password_confirmation,
+        phone_number: values.phone_number,
+        gender: values.gender,
+        avatar_key: values.avatar_key,
+      }),
     onSuccess: async (res) => {
-      const token = res.data.token;
-      setAuthSession(token, true);
+      const authToken = res.data.token;
+      setAuthSession(authToken, true);
       toast.success(res.message);
 
       try {
-        const meRes = await getMe(token);
+        const meRes = await getMe(authToken);
         if (meRes.data.active_company?.id) {
           setCompanyId(meRes.data.active_company.id);
         }
@@ -100,7 +178,7 @@ export default function OnboardingForm() {
           active_company: meRes.data.active_company,
         });
       } catch {
-        // /me failure is non-fatal — session is saved, dashboard will re-fetch
+        // no-op: session is already saved
       }
 
       router.push("/dashboard");
@@ -110,87 +188,150 @@ export default function OnboardingForm() {
     },
   });
 
-  const apiError = workspaceMutation.error as ApiRequestError | Error | null;
+  const apiError = completeMutation.error as ApiRequestError | Error | null;
+  const selectedGender = useWatch({ control, name: "gender" });
+  const phoneNumber = useWatch({ control, name: "phone_number" });
+  const selectedAvatarKey = useWatch({ control, name: "avatar_key" });
+  const hasValidInviteParams =
+    INVITATION_ID_REGEX.test(invitationId) && INVITE_TOKEN_REGEX.test(token);
+  const preview = previewQuery.data?.data;
+  const avatarOptions = useMemo(
+    () => preview?.avatar_options_by_gender?.[selectedGender] ?? preview?.avatar_options ?? [],
+    [preview, selectedGender]
+  );
+
+  useEffect(() => {
+    if (!preview || phoneNumber || !preview.prefilled_data.phone_number) return;
+    const rawPhone = preview.prefilled_data.phone_number.replace(/\s+/g, "");
+    setValue("phone_number", rawPhone);
+  }, [phoneNumber, preview, setValue]);
+
+  useEffect(() => {
+    if (!preview || selectedAvatarKey) return;
+    const randomized = shuffleArray(avatarOptions);
+    const preferredAvatar =
+      preview.prefilled_data.avatar_key ?? preview.suggested_avatar_key ?? randomized[0]?.key;
+    if (preferredAvatar) {
+      setValue("avatar_key", preferredAvatar);
+    }
+  }, [avatarOptions, preview, selectedAvatarKey, setValue]);
+
+  if (!hasValidInviteParams) {
+    return (
+      <p className="text-xs text-red-500 text-center mb-4">
+        Invalid invitation link. Please request a fresh invite.
+      </p>
+    );
+  }
+
+  if (previewQuery.isPending) {
+    return <p className="text-sm text-gray-500 text-center">Loading invitation...</p>;
+  }
+
+  if (previewQuery.isError || !previewQuery.data?.success) {
+    return (
+      <p className="text-xs text-red-500 text-center mb-4">
+        This invitation is invalid or has expired.
+      </p>
+    );
+  }
+
+  if (!preview) {
+    return (
+      <p className="text-xs text-red-500 text-center mb-4">
+        Invitation data is unavailable. Please request a fresh invite.
+      </p>
+    );
+  }
 
   return (
-    <form className="flex flex-col" onSubmit={handleSubmit((v) => workspaceMutation.mutate(v))}>
+    <form className="flex flex-col" onSubmit={handleSubmit((v) => completeMutation.mutate(v))}>
       <Input
         type="text"
-        placeholder="Company Name"
-        className="mb-2"
-        {...register("company_name")}
+        placeholder="Full Name"
+        className="mb-2 bg-gray-50 text-gray-500"
+        value={preview.user.name ?? ""}
+        disabled
+        readOnly
       />
-      {errors.company_name && (
-        <p className="text-xs text-red-500 mb-4 px-4">{errors.company_name.message}</p>
+
+      <Input
+        type="email"
+        placeholder="Email"
+        className="mb-2 bg-gray-50 text-gray-500"
+        value={preview.user.email ?? ""}
+        disabled
+        readOnly
+      />
+
+      <div className="mb-2">
+        <Controller
+          control={control}
+          name="phone_number"
+          render={({ field }) => (
+            <PhoneNumberInput
+              variant="default"
+              value={field.value}
+              onChange={field.onChange}
+            />
+          )}
+        />
+      </div>
+      {errors.phone_number && (
+        <p className="text-xs text-red-500 mb-4 px-4">{errors.phone_number.message}</p>
       )}
 
       <div className="mb-2">
         <Select
-          placeholder={countryOptions.length ? "Select Country" : "Loading countries..."}
-          disabled={!countryOptions.length}
-          {...register("country")}
-          options={countryOptions}
+          placeholder="Select Gender"
+          {...register("gender")}
+          options={[
+            { label: "Male", value: "male" },
+            { label: "Female", value: "female" },
+          ]}
         />
       </div>
-      {errors.country && (
-        <p className="text-xs text-red-500 mb-4 px-4">{errors.country.message}</p>
+      {errors.gender && (
+        <p className="text-xs text-red-500 mb-4 px-4">{errors.gender.message}</p>
       )}
 
-      <div className="mb-6">
-        <Select
-          placeholder="Team Size"
-          {...register("team_size")}
-          options={[
-            { label: "Solo", value: "solo" },
-            { label: "2-10", value: "2-10" },
-            { label: "11-50", value: "11-50" },
-            { label: "51-200", value: "51-200" },
-            { label: "201-500", value: "201-500" },
-            { label: "500+", value: "500+" },
-          ]}
+      <div className="mb-2">
+        <input type="hidden" {...register("avatar_key")} />
+        <p className="text-sm text-gray-500 mb-2 text-center">Or, select any avatar of your choice</p>
+        <AvatarPicker
+          key={`${selectedGender}-${avatarOptions.length}`}
+          avatars={avatarOptions}
+          selectedAvatarKey={selectedAvatarKey}
+          onSelect={(avatarKey) => setValue("avatar_key", avatarKey, { shouldValidate: true })}
         />
       </div>
+      {errors.avatar_key && (
+        <p className="text-xs text-red-500 mb-4 px-4">{errors.avatar_key.message}</p>
+      )}
 
-      <div className="mb-6">
-        <Select
-          placeholder="What are you using this tool for?"
-          {...register("purpose")}
-          options={[
-            { label: "Personal Project", value: "personal" },
-            { label: "Startup", value: "startup" },
-            { label: "Enterprise", value: "enterprise" },
-            { label: "Freelancing", value: "freelancing" },
-            { label: "Education", value: "education" },
-            { label: "Non-profit", value: "non_profit" },
-            { label: "Other", value: "other" },
-          ]}
-        />
-      </div>
+      <Input type="password" placeholder="Password" className="mb-2" {...register("password")} />
+      {errors.password && (
+        <p className="text-xs text-red-500 mb-4 px-4">{errors.password.message}</p>
+      )}
 
-      <div className="mb-14">
-        <Select
-          placeholder="What best describes you"
-          {...register("user_type")}
-          options={[
-            { label: "Founder / Executive", value: "founder" },
-            { label: "Developer", value: "developer" },
-            { label: "Designer", value: "designer" },
-            { label: "Product Manager", value: "product_manager" },
-            { label: "Marketing", value: "marketing" },
-            { label: "Sales", value: "sales" },
-            { label: "Operations", value: "operations" },
-            { label: "Student", value: "student" },
-            { label: "Other", value: "other" },
-          ]}
-        />
-      </div>
+      <Input
+        type="password"
+        placeholder="Confirm Password"
+        className="mb-6"
+        {...register("password_confirmation")}
+      />
+      {errors.password_confirmation && (
+        <p className="text-xs text-red-500 mb-4 px-4">
+          {errors.password_confirmation.message}
+        </p>
+      )}
 
       {apiError && (
         <p className="text-xs text-red-500 text-center mb-4">{apiError.message}</p>
       )}
 
-      <Button type="submit" disabled={!isFilled || workspaceMutation.isPending}>
-        {workspaceMutation.isPending ? "Finishing..." : "Continue"}
+      <Button type="submit" disabled={completeMutation.isPending}>
+        {completeMutation.isPending ? "Finishing..." : "Complete Onboarding"}
       </Button>
     </form>
   );

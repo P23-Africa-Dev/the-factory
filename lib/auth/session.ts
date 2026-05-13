@@ -4,13 +4,19 @@ export const COMPANY_ID_KEY = "factory_company_id";
 
 const THIRTY_DAYS_IN_SECONDS = 60 * 60 * 24 * 30;
 
+function secureAttr() {
+  if (typeof window === "undefined") return "";
+  return window.location.protocol === "https:" ? "; Secure" : "";
+}
+
 export function setAuthSession(token: string, onboardingCompleted: boolean) {
   if (typeof document === "undefined") {
     return;
   }
 
-  document.cookie = `${AUTH_TOKEN_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=${THIRTY_DAYS_IN_SECONDS}; SameSite=Lax`;
-  document.cookie = `${ONBOARDING_DONE_COOKIE}=${onboardingCompleted ? "1" : "0"}; Path=/; Max-Age=${THIRTY_DAYS_IN_SECONDS}; SameSite=Lax`;
+  const secure = secureAttr();
+  document.cookie = `${AUTH_TOKEN_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=${THIRTY_DAYS_IN_SECONDS}; SameSite=Lax${secure}`;
+  document.cookie = `${ONBOARDING_DONE_COOKIE}=${onboardingCompleted ? "1" : "0"}; Path=/; Max-Age=${THIRTY_DAYS_IN_SECONDS}; SameSite=Lax${secure}`;
 }
 
 export function setOnboardingCompletedCookie() {
@@ -18,7 +24,7 @@ export function setOnboardingCompletedCookie() {
     return;
   }
 
-  document.cookie = `${ONBOARDING_DONE_COOKIE}=1; Path=/; Max-Age=${THIRTY_DAYS_IN_SECONDS}; SameSite=Lax`;
+  document.cookie = `${ONBOARDING_DONE_COOKIE}=1; Path=/; Max-Age=${THIRTY_DAYS_IN_SECONDS}; SameSite=Lax${secureAttr()}`;
 }
 
 export function clearAuthSession() {

@@ -2,9 +2,9 @@
 
 import OnboardingForm from "@/components/forms/onboarding-form";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState } from "react";
 
-function CompleteOnboardingInner() {
+export default function InternalOnboardingClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [invitationId] = useState(() => searchParams.get("invitation_id") ?? "");
@@ -12,14 +12,10 @@ function CompleteOnboardingInner() {
 
   useEffect(() => {
     if (!invitationId || !token) return;
-    // Reduce URL token exposure while preserving in-memory values.
-    router.replace("/complete-onboarding");
-  }, [invitationId, token, router]);
+    if (!searchParams.get("invitation_id") && !searchParams.get("token")) return;
+    router.replace("/onboarding/internal");
+  }, [invitationId, token, router, searchParams]);
 
-  return <OnboardingForm invitationId={invitationId} token={token} />;
-}
-
-export default function CompleteOnboardingPage() {
   return (
     <div className="w-full max-w-115 flex flex-col gap-8 md:mt-0 lg:-mt-12">
       <div className="text-left md:text-center flex flex-col gap-3">
@@ -31,9 +27,7 @@ export default function CompleteOnboardingPage() {
         </p>
       </div>
 
-      <Suspense fallback={null}>
-        <CompleteOnboardingInner />
-      </Suspense>
+      <OnboardingForm invitationId={invitationId} token={token} />
     </div>
   );
 }

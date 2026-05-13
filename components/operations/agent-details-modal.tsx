@@ -4,8 +4,8 @@ import { useRef } from "react";
 import { ImagePlus, Plus } from "lucide-react";
 import { SectionDivider } from "@/components/payroll/payroll/section-divider";
 import { FormRow } from "@/components/payroll/payroll/form-row";
-import { InlineInput } from "@/components/payroll/payroll/inline-input";
 import { InlineSelect } from "@/components/payroll/payroll/inline-select";
+import PhoneNumberInput from "@/components/ui/phone-number-input";
 
 // Preset avatar colours + initials (placeholder until real assets exist)
 const PRESET_AVATARS = [
@@ -64,12 +64,17 @@ export function AgentDetailsModal({
         <div className="space-y-4 mb-6">
           <div>
             <FormRow label="Phone Number">
-              <InlineInput
-                value={details.phone}
-                onChange={(e) => { set("phone", e.target.value); onClearError?.("phone"); }}
-                placeholder="E.g +234 9099999999"
-                className="col-span-2"
-              />
+              <div className="col-span-2">
+                <PhoneNumberInput
+                  variant="compact"
+                  value={details.phone}
+                  onChange={(value) => {
+                    set("phone", value);
+                    onClearError?.("phone");
+                  }}
+                  placeholder="E.g +234 9099999999"
+                />
+              </div>
             </FormRow>
             {errors.phone && <p className="text-[11px] text-red-500 mt-0.5 text-right">{errors.phone}</p>}
           </div>

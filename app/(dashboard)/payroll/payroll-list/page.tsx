@@ -7,6 +7,8 @@ import { PayrollHistory } from "@/components/payroll/payroll-history";
 import { agents, PayrollList } from "@/components/payroll/payroll-list";
 import { PayrollSidebar } from "@/components/payroll/payroll-sidebar";
 import { SetPayrollModal } from "@/components/payroll/set-payroll-modal";
+import { usePayroll } from "@/hooks/use-payroll";
+import { useAuthStore } from "@/store/auth";
 import { ArrowLeft, Search, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -16,6 +18,12 @@ export default function PayrollListPage() {
   const router = useRouter();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>("2");
   const [isPayrollModalOpen, setIsPayrollModalOpen] = useState(false);
+
+  const user = useAuthStore((s) => s.user);
+  const companyId = user?.active_company?.company_id ?? null;
+  const isAgent = user?.active_company?.role === "agent";
+
+  const { data: existingPayroll } = usePayroll(companyId);
 
   const selectedAgent = selectedAgentId
     ? (agents.find((a) => a.id === selectedAgentId) ?? null)
@@ -69,18 +77,20 @@ export default function PayrollListPage() {
             <SlidersHorizontal size={13} />
             Filter
           </button>
-          <button
-            onClick={() => setIsPayrollModalOpen(true)}
-            className="flex items-center gap-2.5 px-2.5 py-[8.5px] font-medium bg-[#09232D] text-white rounded-[10px] text-[10px] hover:opacity-90 transition-all"
-          >
-            Set Payroll
-            <Image
-              src={CardValidationIcon}
-              alt="Set Payroll Icon"
-              width={13}
-              height={13}
-            />
-          </button>
+          {!isAgent && (
+            <button
+              onClick={() => setIsPayrollModalOpen(true)}
+              className="flex items-center gap-2.5 px-2.5 py-[8.5px] font-medium bg-dash-dark text-white rounded-[10px] text-[10px] hover:opacity-90 transition-all"
+            >
+              {existingPayroll ? "Edit Payroll" : "Set Payroll"}
+              <Image
+                src={CardValidationIcon}
+                alt="Set Payroll Icon"
+                width={13}
+                height={13}
+              />
+            </button>
+          )}
         </div>
       </div>
 
@@ -96,7 +106,7 @@ export default function PayrollListPage() {
 
           <div className="w-full xl:w-85 xl:shrink-0 xl:min-w-131.25">
             <div className="drop-shadow-[0px_1px_3px_#0000004D,0px_4px_8px_#00000026]">
-              <PayrollSidebar agent={selectedAgent} />
+              <PayrollSidebar agent={selectedAgent} payrollSettings={existingPayroll} />
             </div>
 
             {selectedAgent && <PayrollHistory />}
@@ -107,6 +117,7 @@ export default function PayrollListPage() {
       <SetPayrollModal
         isOpen={isPayrollModalOpen}
         onClose={() => setIsPayrollModalOpen(false)}
+        existingPayroll={existingPayroll}
       />
     </div>
   );

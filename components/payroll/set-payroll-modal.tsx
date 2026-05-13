@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { X } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
@@ -10,10 +12,17 @@ import {
   type CommissionPreference,
   type ProductEntry,
 } from "@/components/payroll/payroll/commission-modal";
+import { useCreatePayroll, useUpdatePayroll } from "@/hooks/use-payroll";
+import { useAuthStore } from "@/store/auth";
+import type { PayrollSettings } from "@/lib/api/payroll";
+import type { ApiRequestError } from "@/lib/api/onboarding";
+import { toast } from "sonner";
+import { getActiveCompanyContext } from "@/lib/company-context";
 
 interface SetPayrollModalProps {
   isOpen: boolean;
   onClose: () => void;
+  existingPayroll?: PayrollSettings | null;
 }
 
 type FormErrors = Partial<{
@@ -21,6 +30,7 @@ type FormErrors = Partial<{
   payBasis: string;
   workDays: string;
   workHours: string;
+  salaryType: string;
 }>;
 
 type ProductErrors = { name?: string; rate?: string }[];
@@ -30,22 +40,54 @@ function FieldError({ message }: { message?: string }) {
   return <p className="text-[11px] text-red-500 mt-0.5 text-right">{message}</p>;
 }
 
-export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
-  const [salaryType, setSalaryType] = useState("Monthly");
-  const [baseSalary, setBaseSalary] = useState("₦30,000");
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayrollModalProps) {
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+
+  const [salaryType, setSalaryType] = useState(
+    existingPayroll ? capitalize(existingPayroll.salary_type) : "Monthly"
+  );
+  const [baseSalary, setBaseSalary] = useState(
+    existingPayroll ? String(existingPayroll.base_salary) : "₦30,000"
+  );
   const [payBasis, setPayBasis] = useState("Per Day");
-  const [workDays, setWorkDays] = useState("22 Days");
-  const [workHours, setWorkHours] = useState("8 Hours");
-  const [attendanceAffectPay, setAttendanceAffectPay] = useState(true);
-  const [commissionEnabled, setCommissionEnabled] = useState(false);
+  const [workDays, setWorkDays] = useState(
+    existingPayroll ? `${existingPayroll.work_days} Days` : "22 Days"
+  );
+  const [workHours, setWorkHours] = useState(
+    existingPayroll ? `${existingPayroll.work_hours} Hours` : "8 Hours"
+  );
+  const [attendanceAffectPay, setAttendanceAffectPay] = useState(
+    existingPayroll ? existingPayroll.attendance_affects_pay : true
+  );
+  const [commissionEnabled, setCommissionEnabled] = useState(
+    existingPayroll ? existingPayroll.commission_enabled : false
+  );
   const [commissionModalOpen, setCommissionModalOpen] = useState(false);
   const [commissionPreference, setCommissionPreference] =
     useState<CommissionPreference>("per-unit");
-  const [products, setProducts] = useState<ProductEntry[]>([
-    { name: "", rate: "" },
-  ]);
+  const [products, setProducts] = useState<ProductEntry[]>([{ name: "", rate: "" }]);
   const [errors, setErrors] = useState<FormErrors>({});
   const [productErrors, setProductErrors] = useState<ProductErrors>([]);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [backendFieldErrors, setBackendFieldErrors] = useState<
+    Record<string, string[]> | null
+  >(null);
+
+  const createMutation = useCreatePayroll();
+  const updateMutation = useUpdatePayroll(existingPayroll?.id);
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
+  const salaryNumericPreview = Number(baseSalary.replace(/[₦,\s]/g, ""));
+  const workDaysNumericPreview = Number(workDays.replace(/[^0-9.]/g, ""));
+  const derivedDailyPay =
+    salaryNumericPreview > 0 && workDaysNumericPreview > 0
+      ? (salaryNumericPreview / workDaysNumericPreview).toFixed(2)
+      : null;
 
   if (!isOpen) return null;
 
@@ -69,27 +111,27 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
     const formErrors: FormErrors = {};
     const prodErrs: ProductErrors = [];
 
-    const salaryNumeric = baseSalary.replace(/[₦,\s]/g, "");
+    const salaryNumeric = Number(baseSalary.replace(/[₦,\s]/g, ""));
     if (!baseSalary.trim()) {
       formErrors.baseSalary = "Base salary is required.";
-    } else if (isNaN(Number(salaryNumeric)) || Number(salaryNumeric) <= 0) {
+    } else if (isNaN(salaryNumeric) || salaryNumeric <= 0) {
       formErrors.baseSalary = "Enter a valid salary amount.";
     }
 
     if (!payBasis.trim()) formErrors.payBasis = "Pay basis is required.";
 
-    const daysNumeric = workDays.replace(/[^0-9.]/g, "");
+    const daysNumeric = Number(workDays.replace(/[^0-9.]/g, ""));
     if (!workDays.trim()) {
       formErrors.workDays = "Work days is required.";
-    } else if (!daysNumeric || isNaN(Number(daysNumeric)) || Number(daysNumeric) <= 0) {
+    } else if (isNaN(daysNumeric) || daysNumeric <= 0) {
       formErrors.workDays = "Enter a valid number of days.";
     }
 
-    const hoursNumeric = workHours.replace(/[^0-9.]/g, "");
+    const hoursNumeric = Number(workHours.replace(/[^0-9.]/g, ""));
     if (!workHours.trim()) {
       formErrors.workHours = "Work hours is required.";
-    } else if (!hoursNumeric || isNaN(Number(hoursNumeric)) || Number(hoursNumeric) <= 0) {
-      formErrors.workHours = "Enter a valid number of hours.";
+    } else if (isNaN(hoursNumeric) || hoursNumeric < 4 || hoursNumeric > 12) {
+      formErrors.workHours = "Work hours must be between 4 and 12.";
     }
 
     if (commissionEnabled) {
@@ -108,6 +150,23 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
     return { formErrors, productErrors: prodErrs };
   };
 
+  const handleError = (err: unknown) => {
+    const apiErr = err as ApiRequestError;
+    const msg = apiErr.message ?? "Something went wrong. Please try again.";
+    toast.error(msg);
+    setApiError(msg);
+    if (apiErr.errors) {
+      setBackendFieldErrors(apiErr.errors);
+      const fe: FormErrors = {};
+      if (apiErr.errors.base_salary) fe.baseSalary = apiErr.errors.base_salary[0];
+      if (apiErr.errors.work_days) fe.workDays = apiErr.errors.work_days[0];
+      if (apiErr.errors.work_hours) fe.workHours = apiErr.errors.work_hours[0];
+      if (apiErr.errors.salary_type) fe.salaryType = apiErr.errors.salary_type[0];
+      if (apiErr.errors.authorization) toast.error(apiErr.errors.authorization[0]);
+      setErrors(fe);
+    }
+  };
+
   const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     const { formErrors: fe, productErrors: pe } = validate();
@@ -120,7 +179,40 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
       if (hasProdErrors) setCommissionModalOpen(true);
       return;
     }
-    onClose();
+
+    if (!companyId) {
+      setApiError("No active company found. Please refresh and try again.");
+      return;
+    }
+
+    const salaryNumeric = Number(baseSalary.replace(/[₦,\s]/g, ""));
+    const daysNumeric = Number(workDays.replace(/[^0-9.]/g, ""));
+    const hoursNumeric = Number(workHours.replace(/[^0-9.]/g, ""));
+
+    const payload = {
+      company_id: companyId,
+      salary_type: salaryType.toLowerCase() as "monthly" | "weekly",
+      base_salary: salaryNumeric,
+      work_days: daysNumeric,
+      work_hours: hoursNumeric,
+      attendance_affects_pay: attendanceAffectPay,
+      commission_enabled: commissionEnabled,
+    };
+
+    setApiError(null);
+    setBackendFieldErrors(null);
+
+    if (existingPayroll) {
+      updateMutation.mutate(payload, {
+        onSuccess: (res) => { toast.success(res.message); onClose(); },
+        onError: handleError,
+      });
+    } else {
+      createMutation.mutate(payload, {
+        onSuccess: (res) => { toast.success(res.message); onClose(); },
+        onError: handleError,
+      });
+    }
   };
 
   return (
@@ -145,7 +237,7 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
               </svg>
             </div>
             <h2 className="text-[18px] font-bold text-dash-dark relative z-10">
-              Set Payroll
+              {existingPayroll ? "Edit Payroll" : "Set Payroll"}
             </h2>
             <button
               onClick={onClose}
@@ -161,20 +253,26 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
             onSubmit={handleSubmit}
             className="px-7 pb-6 max-h-[calc(100vh-200px)] overflow-y-auto"
           >
+            {apiError && (
+              <p className="text-[11px] text-red-500 mb-3 text-center">{apiError}</p>
+            )}
+
             {/* Salary */}
             <div className="space-y-4 mb-5">
               <SectionDivider label="Salary" />
-              <FormRow label="Salary Type">
-                <InlineSelect
-                  value={salaryType}
-                  onChange={(e) => setSalaryType(e.target.value)}
-                  className="col-span-2"
-                >
-                  <option>Monthly</option>
-                  <option>Weekly</option>
-                  <option>Daily</option>
-                </InlineSelect>
-              </FormRow>
+              <div>
+                <FormRow label="Salary Type">
+                  <InlineSelect
+                    value={salaryType}
+                    onChange={(e) => { setSalaryType(e.target.value); clearError("salaryType"); }}
+                    className="col-span-2"
+                  >
+                    <option>Monthly</option>
+                    <option>Weekly</option>
+                  </InlineSelect>
+                </FormRow>
+                <FieldError message={errors.salaryType} />
+              </div>
               <div>
                 <FormRow label="Base Salary">
                   <InlineInput
@@ -194,6 +292,9 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
                   />
                 </FormRow>
                 <FieldError message={errors.payBasis} />
+              </div>
+              <div className="text-[11px] text-gray-500 text-right">
+                Daily pay (derived by backend): {derivedDailyPay ? `₦${derivedDailyPay}` : "—"}
               </div>
             </div>
 
@@ -240,9 +341,10 @@ export function SetPayrollModal({ isOpen, onClose }: SetPayrollModalProps) {
             {!commissionEnabled && (
               <button
                 type="submit"
-                className="w-full h-11 bg-[#0B1215] text-white rounded-full text-[13px] font-semibold hover:opacity-90 transition-colors cursor-pointer"
+                disabled={isPending}
+                className="w-full h-11 bg-[#0B1215] text-white rounded-full text-[13px] font-semibold hover:opacity-90 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Done
+                {isPending ? "Saving…" : "Done"}
               </button>
             )}
           </form>

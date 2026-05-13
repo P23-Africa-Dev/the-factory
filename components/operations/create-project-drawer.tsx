@@ -7,6 +7,7 @@ import { useCreateProject, useUpdateProject, useInternalUsers } from "@/hooks/us
 import type { Project } from "@/types/operations";
 import { useAuthStore } from "@/store/auth";
 import type { ApiProjectType, ApiProjectStatus, ApiProjectPriority } from "@/lib/api/projects";
+import { getActiveCompanyContext } from "@/lib/company-context";
 
 const PRIORITY_OPTIONS = ["High", "Medium", "Low"] as const;
 const STATUS_OPTIONS = ["In progress", "Pending", "Completed"] as const;
@@ -27,6 +28,9 @@ const EMPTY = {
   description: "",
   category: "",
   lead: "",        // will store user ID as string
+  assignedTeam: "",
+  territoryZone: "",
+  notes: "",
   startDate: "",
   deadline: "",
   priority: "" as Priority | "",
@@ -53,30 +57,6 @@ function Row({
     </div>
   );
 }
-
-function Toggle({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: () => void;
-}) {
-  return (
-    <div
-      onClick={onChange}
-      className={`relative w-12 h-6 rounded-full cursor-pointer transition-colors shrink-0 ${checked ? "bg-[#22C55E]" : "bg-gray-300"}`}
-    >
-      <div
-        className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${checked ? "left-6" : "left-0.5"}`}
-      />
-      {checked && (
-        <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] font-black text-white">
-          I
-        </span>
-      )}
-    </div>
-  );
-} 
 
 function Divider({ label }: { label: string }) {
   return (
@@ -123,6 +103,9 @@ export function CreateProjectDrawer({
       description: projectToEdit.description || "",
       category,
       lead: projectToEdit.manager?.id ? String(projectToEdit.manager.id) : "",
+      assignedTeam: "",
+      territoryZone: "",
+      notes: "",
       startDate: projectToEdit.startDate?.split("T")[0] || "",
       deadline: projectToEdit.endDate?.split("T")[0] || "",
       priority: (projectToEdit.priority || "") as Priority | "",
@@ -137,7 +120,8 @@ export function CreateProjectDrawer({
 
   // Get company_id from auth store (populated by /me endpoint)
   const user = useAuthStore((s) => s.user);
-  const companyId = user?.active_company?.id;
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const canManageProjects = role === "owner" || role === "admin" || role === "supervisor";
 
   // Fetch supervisors for the project lead dropdown
   const { data: supervisors = [], isLoading: loadingSupervisors } = useInternalUsers({
@@ -162,6 +146,7 @@ export function CreateProjectDrawer({
   );
 
   const isPending = isCreating || isUpdating;
+  const [attachments, setAttachments] = useState<File[]>([]);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -170,9 +155,8 @@ export function CreateProjectDrawer({
       toast.error("Company context not found. Please log in again.");
       return;
     }
-
-    if (!form.lead) {
-      toast.error("Please assign a project lead.");
+    if (!canManageProjects) {
+      toast.error("You are not allowed to create or update projects.");
       return;
     }
 
@@ -189,12 +173,23 @@ export function CreateProjectDrawer({
       priority: form.priority ? PRIORITY_MAP[form.priority] ?? null : null,
       start_date: form.startDate,
       end_date: form.deadline || null,
-      project_manager_user_id: Number(form.lead),
+      project_manager_user_id: form.lead ? Number(form.lead) : null,
+      assigned_team: form.assignedTeam
+        ? form.assignedTeam
+            .split(",")
+            .map((item) => Number(item.trim()))
+            .filter((item) => !Number.isNaN(item))
+        : [],
+      territory_zone: form.territoryZone || null,
+      notes: form.notes || null,
     };
 
     if (projectToEdit) {
       updateMutate(
-        payload,
+        {
+          ...payload,
+          attachments,
+        },
         {
           onError: (err: unknown) => {
             const message = err instanceof Error ? err.message : "Failed to update project.";
@@ -204,7 +199,7 @@ export function CreateProjectDrawer({
       );
     } else {
       createMutate(
-        { ...payload, company_id: companyId },
+        { ...payload, company_id: companyId, attachments },
         {
           onError: (err: unknown) => {
             const message = err instanceof Error ? err.message : "Failed to create project.";
@@ -338,6 +333,42 @@ export function CreateProjectDrawer({
                 />
               )}
             </div>
+          </Row>
+
+          <Row label="Assigned Team IDs">
+            <input
+              value={form.assignedTeam}
+              onChange={(e) => set("assignedTeam", e.target.value)}
+              placeholder="Comma-separated IDs (e.g. 25,31)"
+              className={FIELD}
+            />
+          </Row>
+
+          <Row label="Territory Zone">
+            <input
+              value={form.territoryZone}
+              onChange={(e) => set("territoryZone", e.target.value)}
+              placeholder="E.g Lagos Mainland"
+              className={FIELD}
+            />
+          </Row>
+
+          <Row label="Notes">
+            <input
+              value={form.notes}
+              onChange={(e) => set("notes", e.target.value)}
+              placeholder="Optional notes"
+              className={FIELD}
+            />
+          </Row>
+
+          <Row label="Attachments">
+            <input
+              type="file"
+              multiple
+              onChange={(e) => setAttachments(Array.from(e.target.files ?? []))}
+              className="w-full text-xs text-gray-600"
+            />
           </Row>
 
           <Divider label="Timeline" />

@@ -31,6 +31,7 @@ export function AllTasksView() {
     const pendingItems = items.filter(t => t.status === "pending").map(mapTaskToDnd);
     const inProgressItems = items.filter(t => t.status === "in_progress").map(mapTaskToDnd);
     const completedItems = items.filter(t => t.status === "completed").map(mapTaskToDnd);
+    const cancelledItems = items.filter(t => t.status === "cancelled").map(mapTaskToDnd);
 
     return [
       {
@@ -50,6 +51,12 @@ export function AllTasksView() {
         title: "Completed Task",
         color: "#4FD1C5",
         items: completedItems,
+      },
+      {
+        id: "cancelled",
+        title: "Cancelled Task",
+        color: "#EF4444",
+        items: cancelledItems,
       },
     ];
   }, [tasksData]);
@@ -76,10 +83,11 @@ export function AllTasksView() {
     if (s === 'Pending') return 'pending';
     if (s === 'In Progress') return 'in-progress';
     if (s === 'Completed') return 'completed';
+    if (s === 'Cancelled') return 'cancelled';
     return null;
   };
 
-  const STATUS_OPTIONS = ['All', 'Pending', 'In Progress', 'Completed'];
+  const STATUS_OPTIONS = ['All', 'Pending', 'In Progress', 'Completed', 'Cancelled'];
 
   // Apply proper filtering
   const displayContainers: DndContainer[] = containers
@@ -228,10 +236,16 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
   let statusLabel = "Pending";
   if (apiTask.status === "in_progress") statusLabel = "In Progress";
   if (apiTask.status === "completed") statusLabel = "Completed";
+  if (apiTask.status === "cancelled") statusLabel = "Cancelled";
+
+  const assigneeLabel =
+    apiTask.assigned_users && apiTask.assigned_users.length > 0
+      ? apiTask.assigned_users.map((user) => user.name).join(", ")
+      : apiTask.assignee?.name || "Unassigned";
 
   return {
     id: String(apiTask.id),
-    label: `Agent ID: ${apiTask.assigned_agent_id}`, 
+    label: assigneeLabel,
     description: apiTask.title,
     location: apiTask.location || "No location",
     time: "Just now",

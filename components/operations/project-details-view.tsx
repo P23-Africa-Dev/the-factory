@@ -265,10 +265,16 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
   let statusLabel = "Pending";
   if (apiTask.status === "in_progress") statusLabel = "In Progress";
   if (apiTask.status === "completed") statusLabel = "Completed";
+  if (apiTask.status === "cancelled") statusLabel = "Cancelled";
+
+  const assigneeLabel =
+    apiTask.assigned_users && apiTask.assigned_users.length > 0
+      ? apiTask.assigned_users.map((user) => user.name).join(", ")
+      : apiTask.assignee?.name || "Unassigned";
 
   return {
     id: String(apiTask.id),
-    label: `Agent ID: ${apiTask.assigned_agent_id}`, // Fallback if name is missing from payload
+    label: assigneeLabel,
     description: apiTask.title,
     location: apiTask.location || "No location",
     time: "Just now",
