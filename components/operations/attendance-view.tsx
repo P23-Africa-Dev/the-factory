@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { MapPin, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight } from "lucide-react";
 import { AddAgentModal } from "./add-agent-modal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
@@ -36,6 +37,8 @@ const attendanceList: AttendanceItem[] = [
 const PAGE_SIZE = 5;
 
 export function AttendanceView() {
+  const pathname = usePathname();
+  const basePath = pathname.startsWith('/agent') ? '/agent' : '/admin';
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);
@@ -124,7 +127,7 @@ export function AttendanceView() {
             {/* Header */}
             <div className="flex justify-end mb-5 shrink-0">
               <Link
-                href="/operations/attendance"
+                href={`${basePath}/operations/attendance`}
                 className="px-5 py-2 bg-dash-dark text-white rounded-full text-[12px] font-semibold hover:opacity-90 transition-colors"
               >
                 Attendance List

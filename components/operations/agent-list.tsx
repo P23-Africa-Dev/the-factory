@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from './ops-table';
 
@@ -37,6 +38,8 @@ interface AgentListProps {
 }
 
 export function AgentList({ selectedId, onSelect }: AgentListProps) {
+  const pathname = usePathname();
+  const basePath = pathname.startsWith('/agent') ? '/agent' : '/admin';
   const [page, setPage] = useState(1);
   const totalPages = Math.ceil(AGENT_LIST_DATA.length / PAGE_SIZE);
   const currentPage = Math.min(page, totalPages);
@@ -47,7 +50,7 @@ export function AgentList({ selectedId, onSelect }: AgentListProps) {
       {/* Header */}
       <div className="flex justify-end mb-5 shrink-0">
         <Link
-          href="/operations/agents"
+          href={`${basePath}/operations/agents`}
           className="px-5 py-2 bg-dash-dark text-white rounded-full text-[12px] font-semibold hover:opacity-90 transition-colors"
         >
           View all Agents

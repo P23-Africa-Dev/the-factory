@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { ChevronLeft, SlidersHorizontal, BookmarkPlus } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { TaskBoard } from "@/components/operations/task-board";
@@ -138,6 +138,8 @@ function CustomLabel({
 // ─── Page content ─────────────────────────────────────────────────────────────
 function ProjectTasksContent() {
   const router = useRouter();
+  const pathname = usePathname();
+  const basePath = pathname.startsWith('/agent') ? '/agent' : '/admin';
 
   const { containers, addItem, moveItem, moveToContainer, moveBetweenContainers, findContainer } =
     useDragAndDrop(INITIAL_DATA);
@@ -174,7 +176,7 @@ function ProjectTasksContent() {
             {/* Back + project info */}
             <div className="flex items-start gap-3">
               <button
-                onClick={() => router.push("/operations")}
+                onClick={() => router.push(`${basePath}/operations`)}
                 className="mt-1 flex items-center justify-center w-8 h-8 rounded-full bg-white border border-gray-100 shadow-sm hover:shadow-md hover:text-[#09232D] text-gray-400 transition-all shrink-0 cursor-pointer"
               >
                 <ChevronLeft size={18} strokeWidth={2.5} />

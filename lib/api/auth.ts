@@ -10,8 +10,8 @@ export type LoginPayload = {
 export type LoginResponseData = {
   token: string;
   token_type: "Bearer";
-  user_type: "self-serve" | "enterprise" | "supervisor";
-  access_role: "admin" | "supervisor";
+  user_type: "self-serve" | "enterprise" | "supervisor" | "agent";
+  access_role: "admin" | "supervisor" | "agent";
   internal_role: "supervisor" | null;
   user: {
     id: number;

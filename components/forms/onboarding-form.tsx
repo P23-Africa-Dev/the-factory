@@ -181,7 +181,7 @@ export default function OnboardingForm({
         // no-op: session is already saved
       }
 
-      router.push("/dashboard");
+      router.push("/admin/dashboard");
     },
     onError: (err: ApiRequestError | Error) => {
       toast.error(err.message);

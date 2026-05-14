@@ -67,6 +67,7 @@ export function Navbar() {
   const profileRef = useRef<HTMLDivElement>(null);
   const user = useAuthStore((s) => s.user);
   const clearUser = useAuthStore((s) => s.clearUser);
+  const basePath = pathname.startsWith('/agent') ? '/agent' : '/admin';
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -91,7 +92,7 @@ export function Navbar() {
     <nav className="h-20 flex items-center justify-between px-6 lg:px-10 bg-dash-dark text-white sticky top-0 z-50">
       {/* Logo */}
       <div className="flex items-center">
-        <Link href="/dashboard" className="flex items-center">
+        <Link href={`${basePath}/dashboard`} className="flex items-center">
           <div className="w-10 h-10 flex items-center justify-center relative">
             <Image
               src={Logo}
@@ -106,11 +107,12 @@ export function Navbar() {
         {/* Desktop Navigation Links */}
         <div className="hidden lg:flex items-center gap-8 xl:gap-10 ml-17">
           {navItems.map((item) => {
-            const isActive = pathname.startsWith(item.href);
+            const itemHref = basePath + item.href;
+            const isActive = pathname.startsWith(itemHref);
             return (
               <Link
                 key={item.name}
-                href={item.href}
+                href={itemHref}
                 className={cn(
                   "group relative flex items-center gap-2 text-sm font-medium transition-all duration-300",
                   isActive ? "text-white" : "text-white/40 hover:text-white/70",
@@ -311,11 +313,12 @@ export function Navbar() {
 
               <div className="space-y-1">
                 {navItems.map((item) => {
-                  const isActive = pathname.startsWith(item.href);
+                  const itemHref = basePath + item.href;
+                  const isActive = pathname.startsWith(itemHref);
                   return (
                     <Link
                       key={item.name}
-                      href={item.href}
+                      href={itemHref}
                       onClick={() => setIsMobileMenuOpen(false)}
                       className={cn(
                         "flex items-center gap-4 p-4 rounded-2xl transition-all",

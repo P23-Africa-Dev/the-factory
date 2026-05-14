@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { ChevronLeft, SlidersHorizontal, BookmarkPlus, Loader2 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { TaskBoard } from "@/components/operations/task-board";
@@ -40,6 +40,8 @@ function CustomLabel({
 
 export function ProjectDetailsView({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const basePath = pathname.startsWith('/agent') ? '/agent' : '/admin';
   
   const { data: project, isPending: loadingProject } = useProject(projectId);
   const { data: tasksData, isPending: loadingTasks } = useTasks({ project_id: projectId });
@@ -103,7 +105,7 @@ export function ProjectDetailsView({ projectId }: { projectId: string }) {
     return (
       <div className="min-h-screen bg-[#F4F7F9] p-8 flex flex-col items-center justify-center text-gray-400">
         <span className="font-bold text-lg">Project not found</span>
-        <button onClick={() => router.push("/projects")} className="mt-4 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg">Go back</button>
+        <button onClick={() => router.push(`${basePath}/projects`)} className="mt-4 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg">Go back</button>
       </div>
     );
   }
@@ -119,7 +121,7 @@ export function ProjectDetailsView({ projectId }: { projectId: string }) {
           <div className="flex flex-col gap-6 mb-8">
             <div className="flex flex-col md:flex-row items-start gap-4 md:gap-12">
               <button
-                onClick={() => router.push("/projects")}
+                onClick={() => router.push(`${basePath}/projects`)}
                 className="mt-1 text-[#092635] hover:opacity-70 transition-all shrink-0 cursor-pointer"
               >
                 <ChevronLeft size={24} strokeWidth={2} />

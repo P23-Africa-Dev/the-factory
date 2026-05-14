@@ -11,7 +11,7 @@ import {
   Tag,
   Trash2,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useState } from "react";
 
 interface Lead {
@@ -139,6 +139,8 @@ function SourceDropdown({
 
 export default function AllLeadsPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const basePath = pathname.startsWith('/agent') ? '/agent' : '/admin';
   const [leads, setLeads] = useState<Lead[]>(ALL_LEADS);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -258,7 +260,7 @@ export default function AllLeadsPage() {
 
             <div className="flex items-center gap-1">
               <button
-                onClick={() => router.push("/crm")}
+                onClick={() => router.push(`${basePath}/crm`)}
                 className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 transition-colors"
               >
                 {/* Grid icon */}
@@ -407,7 +409,7 @@ export default function AllLeadsPage() {
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button
-                      onClick={() => router.push(`/crm/leads/${lead.id}`)}
+                      onClick={() => router.push(`${basePath}/crm/leads/${lead.id}`)}
                       className={`p-1 rounded-md transition-colors ${
                         isSelected ? "hover:bg-white/10" : "hover:bg-gray-100"
                       }`}
