@@ -1,8 +1,8 @@
 "use client";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { TinyButton } from "../ui/tiny-button";
+import { useAuthStore } from "@/store/auth";
 
 const MapView = dynamic(
   () => import("@/components/map/map-view").then((m) => m.MapView),
@@ -15,8 +15,8 @@ const MapView = dynamic(
 );
 
 export const DashboardMap = () => {
-  const pathname = usePathname();
-  const basePath = pathname.startsWith('/agent') ? '/agent' : '/admin';
+  const user = useAuthStore((s) => s.user);
+  const basePath = user?.active_company?.role === 'agent' ? '/agent' : '/admin';
   return (
     <div className="mt-6 lg:mt-26.5 min-w-0 lg:min-w-lg flex flex-col">
       <div className="flex items-center justify-between px-4.75 mb-4">

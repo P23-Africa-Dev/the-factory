@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useAuthStore } from "@/store/auth";
 import { ChevronLeft, SlidersHorizontal, BookmarkPlus, Loader2 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { TaskBoard } from "@/components/operations/task-board";
@@ -40,8 +41,8 @@ function CustomLabel({
 
 export function ProjectDetailsView({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const pathname = usePathname();
-  const basePath = pathname.startsWith('/agent') ? '/agent' : '/admin';
+  const user = useAuthStore((s) => s.user);
+  const basePath = user?.active_company?.role === 'agent' ? '/agent' : '/admin';
   
   const { data: project, isPending: loadingProject } = useProject(projectId);
   const { data: tasksData, isPending: loadingTasks } = useTasks({ project_id: projectId });

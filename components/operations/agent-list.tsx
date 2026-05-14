@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useAuthStore } from '@/store/auth';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from './ops-table';
 
@@ -38,8 +38,8 @@ interface AgentListProps {
 }
 
 export function AgentList({ selectedId, onSelect }: AgentListProps) {
-  const pathname = usePathname();
-  const basePath = pathname.startsWith('/agent') ? '/agent' : '/admin';
+  const user = useAuthStore((s) => s.user);
+  const basePath = user?.active_company?.role === 'agent' ? '/agent' : '/admin';
   const [page, setPage] = useState(1);
   const totalPages = Math.ceil(AGENT_LIST_DATA.length / PAGE_SIZE);
   const currentPage = Math.min(page, totalPages);

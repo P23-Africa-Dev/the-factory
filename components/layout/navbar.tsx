@@ -67,7 +67,7 @@ export function Navbar() {
   const profileRef = useRef<HTMLDivElement>(null);
   const user = useAuthStore((s) => s.user);
   const clearUser = useAuthStore((s) => s.clearUser);
-  const basePath = pathname.startsWith('/agent') ? '/agent' : '/admin';
+  const basePath = user?.active_company?.role === 'agent' ? '/agent' : '/admin';
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
