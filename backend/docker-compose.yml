@@ -1,0 +1,216 @@
+services:
+  app:
+    build:
+      context: /root/factory23
+      dockerfile: docker/php/Dockerfile
+    container_name: factory_api_app
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - /root/factory23/src:/var/www/html
+      - /root/factory23/docker/php/conf.d/custom.ini:/usr/local/etc/php/conf.d/99-custom.ini:ro
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: ${DB_DATABASE:-factory_api}
+      DB_USERNAME: ${DB_USERNAME:-factory_deen}
+      DB_PASSWORD: ${DB_PASSWORD:-factory_password@5316}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: redis
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - factory_net
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: factory_api_nginx
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - /root/factory23/src:/var/www/html:ro
+      - /root/factory23/docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    networks:
+      - factory_net
+
+  mysql:
+    image: mysql:8.4
+    container_name: factory_api_mysql
+    restart: unless-stopped
+    ports:
+      - "${MYSQL_PORT:-33060}:3306"
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-factory_api}
+      MYSQL_USER: ${DB_USERNAME:-factory_deen}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-factory_password@5316}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_password@5316}
+      TZ: ${TZ:-UTC}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max_connections=300
+      - --innodb_buffer_pool_size=256M
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-uroot",
+          "-p${DB_ROOT_PASSWORD:-root_password@5316}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - factory_net
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: factory_api_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    ports:
+      - "${REDIS_PORT_FORWARD:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - factory_net
+
+  realtime:
+    build:
+      context: /root/factory23/realtime-server
+      dockerfile: Dockerfile
+    container_name: factory_api_realtime
+    restart: unless-stopped
+    ports:
+      - "${TRACKING_WS_PORT_FORWARD:-8081}:8081"
+    environment:
+      TRACKING_WS_HOST: 0.0.0.0
+      TRACKING_WS_PORT: 8081
+      TRACKING_WS_REDIS_HOST: redis
+      TRACKING_WS_REDIS_PORT: 6379
+      TRACKING_WS_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      TRACKING_WS_REDIS_DB: ${TRACKING_WS_REDIS_DB:-0}
+      TASK_TRACKING_REDIS_CHANNEL_PREFIX: ${TASK_TRACKING_REDIS_CHANNEL_PREFIX:-factory23.tracking}
+      TRACKING_WS_AUTH_API_BASE_URL: ${TRACKING_WS_AUTH_API_BASE_URL:-http://nginx}
+      TRACKING_WS_AUTH_ME_PATH: ${TRACKING_WS_AUTH_ME_PATH:-/api/v1/user/me}
+      TRACKING_WS_HEARTBEAT_MS: ${TRACKING_WS_HEARTBEAT_MS:-30000}
+      TRACKING_WS_AUTH_TIMEOUT_MS: ${TRACKING_WS_AUTH_TIMEOUT_MS:-10000}
+      TRACKING_WS_MAX_MESSAGE_BYTES: ${TRACKING_WS_MAX_MESSAGE_BYTES:-32768}
+      TRACKING_WS_LOG_LEVEL: ${TRACKING_WS_LOG_LEVEL:-info}
+    depends_on:
+      redis:
+        condition: service_started
+      nginx:
+        condition: service_started
+    networks:
+      - factory_net
+
+  queue-worker:
+    build:
+      context: /root/factory23
+      dockerfile: docker/php/Dockerfile
+    container_name: factory_api_queue_worker
+    restart: unless-stopped
+    working_dir: /var/www/html
+    command:
+      [
+        "php",
+        "artisan",
+        "queue:work",
+        "redis",
+        "--sleep=1",
+        "--tries=3",
+        "--max-time=3600",
+        "--timeout=120",
+      ]
+    volumes:
+      - /root/factory23/src:/var/www/html
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: ${DB_DATABASE:-factory_api}
+      DB_USERNAME: ${DB_USERNAME:-factory_deen}
+      DB_PASSWORD: ${DB_PASSWORD:-factory_password@5316}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: redis
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    profiles:
+      - workers
+    networks:
+      - factory_net
+
+  scheduler:
+    build:
+      context: /root/factory23
+      dockerfile: docker/php/Dockerfile
+    container_name: factory_api_scheduler
+    restart: unless-stopped
+    working_dir: /var/www/html
+    command:
+      [
+        "sh",
+        "-c",
+        "while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done",
+      ]
+    volumes:
+      - /root/factory23/src:/var/www/html
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: ${DB_DATABASE:-factory_api}
+      DB_USERNAME: ${DB_USERNAME:-factory_deen}
+      DB_PASSWORD: ${DB_PASSWORD:-factory_password@5316}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: redis
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    profiles:
+      - workers
+    networks:
+      - factory_net
+
+networks:
+  factory_net:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:

@@ -1,0 +1,16 @@
+{
+  "name": "factory23-realtime-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Redis-backed WebSocket relay for Factory23 task tracking",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ioredis": "^5.4.1",
+    "ws": "^8.18.0"
+  }
+}

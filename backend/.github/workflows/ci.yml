@@ -1,0 +1,178 @@
+name: Laravel CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_docker_validation:
+        description: Run Docker-based CI validation job
+        type: boolean
+        default: false
+
+concurrency:
+  group: laravel-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-and-tests:
+    name: Quality and Tests (Native)
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: factory_ci
+          MYSQL_USER: factory_user
+          MYSQL_PASSWORD: factory_password
+          MYSQL_ROOT_PASSWORD: root_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+      redis:
+        image: redis:7.2-alpine
+        ports:
+          - 6379:6379
+
+    defaults:
+      run:
+        working-directory: src
+
+    env:
+      APP_ENV: testing
+      APP_DEBUG: false
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      APP_URL: http://localhost
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: factory_ci
+      DB_USERNAME: factory_user
+      DB_PASSWORD: factory_password
+      CACHE_STORE: redis
+      SESSION_DRIVER: redis
+      QUEUE_CONNECTION: redis
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      MAIL_MAILER: array
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, bcmath, pdo_mysql, pdo_sqlite, redis
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: src/vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('src/composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+
+      - name: Wait for MySQL readiness
+        run: |
+          php -r '
+            $maxAttempts = 30;
+            $attempt = 0;
+            while ($attempt < $maxAttempts) {
+                try {
+                    new PDO("mysql:host=127.0.0.1;port=3306;dbname=factory_ci", "factory_user", "factory_password");
+                    echo "MySQL is ready\n";
+                    exit(0);
+                } catch (Throwable $e) {
+                    $attempt++;
+                    echo "Waiting for MySQL... ({$attempt}/{$maxAttempts})\n";
+                    sleep(2);
+                }
+            }
+            fwrite(STDERR, "MySQL did not become ready in time.\n");
+            exit(1);
+          '
+
+      - name: Grant parallel test database privileges
+        run: |
+          mysql -h 127.0.0.1 -uroot -proot_password -e "
+            GRANT ALL PRIVILEGES ON \`factory_ci_test_%\`.* TO 'factory_user'@'%';
+            FLUSH PRIVILEGES;
+          "
+
+      - name: Run database migrations
+        run: php artisan migrate --force
+
+      - name: Run tests
+        run: php artisan test
+
+      # - name: Check coding style with Pint
+      #   run: ./vendor/bin/pint --test
+
+      - name: Run static analysis (PHPStan if installed)
+        run: |
+          if [ -x ./vendor/bin/phpstan ]; then
+            ./vendor/bin/phpstan analyse --memory-limit=1G
+          else
+            echo "PHPStan not installed; skipping static analysis step."
+          fi
+
+      # - name: Run tests
+      #   run: php artisan test
+
+      - name: Run queue and Redis-focused tests (optional)
+        run: |
+          if find tests -type f | grep -Eiq '(Queue|Job|Listener|Redis).*Test\.php$'; then
+            php artisan test --filter='Queue|Job|Listener|Redis'
+          else
+            echo "No queue/Redis-focused tests found; skipping optional step."
+          fi
+
+  docker-validation:
+    name: Docker Validation (Optional)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_docker_validation == true }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare Docker environment
+        run: |
+          cp .env.example .env
+          cp src/.env.example src/.env
+
+      - name: Start dependencies
+        run: docker compose up -d --build mysql redis
+
+      - name: Install dependencies in container
+        run: docker compose run --rm app composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Run migrations in container
+        run: docker compose run --rm app php artisan migrate --force
+
+      - name: Run tests in container
+        run: docker compose run --rm app php artisan test
+
+      - name: Tear down Docker services
+        if: always()
+        run: docker compose down -v

@@ -1,0 +1,90 @@
+<?php
+
+namespace App\Services\Onboarding;
+
+use App\Enums\CompanyUserRole;
+use App\Enums\WorkspaceMemberRole;
+use App\Models\Company;
+use App\Models\User;
+use App\Models\Workspace;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+class WorkspaceService
+{
+    /**
+     * Create a workspace for the given user, attach them as owner,
+     * create/attach an active company context, and complete onboarding.
+     */
+    public function create(User $user, array $data): Workspace
+    {
+        return DB::transaction(function () use ($user, $data): Workspace {
+            $normalizedCompanyName = trim((string) $data['company_name']);
+            $normalizedCountry = strtoupper((string) $data['country']);
+
+            /** @var Workspace $workspace */
+            $workspace = Workspace::create([
+                'owner_id' => $user->id,
+                'name' => $normalizedCompanyName,
+                'slug' => $this->generateUniqueSlug($normalizedCompanyName),
+                'country' => $normalizedCountry,
+                'team_size' => $data['team_size'],
+                'purpose' => $data['purpose'],
+                'user_type' => $data['user_type'],
+            ]);
+
+            $workspace->members()->syncWithoutDetaching([
+                $user->id => [
+                    'role' => WorkspaceMemberRole::OWNER->value,
+                    'joined_at' => now(),
+                ],
+            ]);
+
+            $company = Company::create([
+                'company_id' => $this->generateUniqueCompanyId(),
+                'name' => $normalizedCompanyName,
+                'country' => $normalizedCountry,
+                'team_size' => (string) $data['team_size'],
+                'use_case' => (string) $data['purpose'],
+                'status' => 'active',
+                'activated_at' => now(),
+            ]);
+
+            $company->users()->syncWithoutDetaching([
+                $user->id => [
+                    'role' => CompanyUserRole::OWNER->value,
+                    'joined_at' => now(),
+                ],
+            ]);
+
+            $user->update(['onboarding_completed_at' => now()]);
+
+            return $workspace->load('members');
+        });
+    }
+
+    private function generateUniqueSlug(string $name): string
+    {
+        $base = Str::slug($name);
+        $slug = $base;
+        $counter = 1;
+
+        while (Workspace::where('slug', $slug)->exists()) {
+            $slug = "{$base}-{$counter}";
+            $counter++;
+        }
+
+        return $slug;
+    }
+
+    private function generateUniqueCompanyId(): string
+    {
+        $prefix = strtoupper((string) config('enterprise.company_id_prefix', 'FAC'));
+
+        do {
+            $candidate = $prefix.'-'.strtoupper(Str::random(8));
+        } while (Company::query()->where('company_id', $candidate)->exists());
+
+        return $candidate;
+    }
+}

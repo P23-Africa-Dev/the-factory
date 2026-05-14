@@ -1,0 +1,27 @@
+$kind: http-request
+name: "{{base_url}}/api/v1/enterprise/demo-requests"
+url: "{{base_url}}/api/v1/enterprise/demo-requests"
+method: POST
+headers:
+  Content-Type: application/json
+  Accept: application/json
+body:
+  type: json
+  content: "{\r
+
+    \  \"full_name\": \"Dan Fav\",\r
+
+    \  \"email\": \"danfav@gmail.com\",\r
+
+    \  \"company_name\": \"Meta Enterprise\",\r
+
+    \  \"country\": \"NG\",\r
+
+    \  \"team_size\": \"51-200\",\r
+
+    \  \"use_case\": \"Software Development and Production\"\r
+
+    }"
+settings:
+  disabledSystemHeaders: []
+order: 3577959163754118
