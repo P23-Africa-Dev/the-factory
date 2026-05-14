@@ -6,7 +6,7 @@ import {
 import { DashboardGreeting } from "@/components/dashboard/dashboard-greeting";
 import { TopCustomers } from "@/components/dashboard/dashboard-top-customers";
 import {
-  WeeklyTasks,
+  WeeklyTasksAgents,
   CRMPipeline,
   AIWorkspace,
 } from "@/components/dashboard/dashboard-cards";
@@ -67,7 +67,7 @@ export default function DashboardPage() {
       <div className="bg-dash-bg pb-2 pt-6 md:pt-4.25 relative z-10 shadow-inner">
         <div className="max-w-340 mx-auto gap-4.25 flex flex-col lg:flex-row px-4 md:px-6 lg:px-0">
           <TopCustomers />
-          <WeeklyTasks />
+          <WeeklyTasksAgents />
           <DashboardMap />
           <div className="w-full lg:max-w-34 mt-0 lg:mt-23.75">
             <CRMPipeline />
