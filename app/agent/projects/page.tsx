@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { ProjectsView } from "@/components/operations/projects-view";
+import { ProjectsViewAgents } from "@/components/operations/projects-view-agents";
 import { AllTasksView } from "@/components/operations/all-tasks-view";
 import { useProjects } from "@/hooks/use-projects";
 import { useAuthStore } from "@/store/auth";
@@ -70,12 +70,7 @@ function ProjectsContent() {
 
         {/* ── View ── */}
         {activeTab === "projects" ? (
-          !canManageProjects ? (
-            <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-500">
-              Project management is available to owner, admin, and supervisor roles only.
-            </div>
-          ) : (
-          <ProjectsView
+          <ProjectsViewAgents
             projects={projects}
             onViewProject={handleViewProject}
             isLoading={isLoading}
@@ -83,7 +78,6 @@ function ProjectsContent() {
             currentPage={page}
             onPageChange={setPage}
           />
-          )
         ) : (
           <AllTasksView />
         )}
