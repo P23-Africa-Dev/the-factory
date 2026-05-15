@@ -1,6 +1,6 @@
 "use client";
 
-import { getMe, type ApiRequestError } from "@/lib/api/onboarding";
+import { ApiRequestError, getMe } from "@/lib/api/onboarding";
 import {
   completeInternalInvitation,
   listAvatars,
