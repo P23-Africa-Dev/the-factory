@@ -38,7 +38,7 @@ function CustomLabel({
   );
 }
 
-export function ProjectDetailsView({ projectId }: { projectId: string }) {
+export function ProjectDetailsView({ projectId, basePath }: { projectId: string; basePath: string }) {
   const router = useRouter();
   
   const { data: project, isPending: loadingProject } = useProject(projectId);
@@ -103,7 +103,7 @@ export function ProjectDetailsView({ projectId }: { projectId: string }) {
     return (
       <div className="min-h-screen bg-[#F4F7F9] p-8 flex flex-col items-center justify-center text-gray-400">
         <span className="font-bold text-lg">Project not found</span>
-        <button onClick={() => router.push("/projects")} className="mt-4 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg">Go back</button>
+        <button onClick={() => router.push(`${basePath}/projects`)} className="mt-4 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg">Go back</button>
       </div>
     );
   }
@@ -119,7 +119,7 @@ export function ProjectDetailsView({ projectId }: { projectId: string }) {
           <div className="flex flex-col gap-6 mb-8">
             <div className="flex flex-col md:flex-row items-start gap-4 md:gap-12">
               <button
-                onClick={() => router.push("/projects")}
+                onClick={() => router.push(`${basePath}/projects`)}
                 className="mt-1 text-[#092635] hover:opacity-70 transition-all shrink-0 cursor-pointer"
               >
                 <ChevronLeft size={24} strokeWidth={2} />

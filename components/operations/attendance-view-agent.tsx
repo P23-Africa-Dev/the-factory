@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { MapPin, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { MapPin, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight, Download, Clock, ChevronDown } from "lucide-react";
+import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { AddAgentModal } from "./add-agent-modal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
 
@@ -35,7 +37,7 @@ const attendanceList: AttendanceItem[] = [
 
 const PAGE_SIZE = 5;
 
-export function AttendanceView({ basePath }: { basePath: string }) {
+export function AttendanceViewAgent() {
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);
@@ -58,59 +60,66 @@ export function AttendanceView({ basePath }: { basePath: string }) {
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* ── Toolbar ──────────────────────────────────────────── */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <h1 className="text-[20px] font-extrabold text-dash-dark shrink-0">
-          <span className="lg:hidden">Attendance Overview</span>
+      <div className="flex items-center justify-between gap-6 mb-2">
+        <h1 className="text-[18px] font-extrabold text-dash-dark shrink-0 whitespace-nowrap">
+          My Attendance Stats
         </h1>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:justify-end min-w-0 mt-2 lg:mt-0 lg:-mt-16 xl:-mt-20 transition-all duration-300 relative z-10">
-          {/* Search */}
-          <div className="relative w-full md:w-114.5 group shrink-0">
+        {/* Search - Centered */}
+        <div className="flex-1 flex justify-center min-w-0">
+          <div className="relative w-full max-w-[580px] group">
             <Search
-              className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-dark transition-colors"
-              size={18}
+              className="absolute left-6 top-1/2 -translate-y-1/2 text-[#09232D] group-focus-within:text-dash-dark transition-colors"
+              size={20}
               strokeWidth={2}
             />
             <input
               type="text"
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
-              placeholder="Search by agent name..."
-              className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-dash-dark/10 transition-all font-sans"
+              placeholder="Search"
+              className="w-full bg-white pl-15 pr-6 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-dash-dark/10 transition-all font-sans"
               style={{
-                height: '46px',
-                borderRadius: '24px',
-                border: '0.7px solid #D7D7D7',
-                boxShadow: '0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026'
+                height: '52px',
+                borderRadius: '30px',
+                border: '1px solid #E5E5E5',
+                boxShadow: '0px 10px 25px -5px rgba(0, 0, 0, 0.1), 0px 8px 10px -6px rgba(0, 0, 0, 0.1)'
               }}
             />
           </div>
+        </div>
 
-          <button
-            onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
-              showFilters ? 'text-white' : 'text-gray-500'
-            }`}
-            style={{
-              background: showFilters ? '#34373C' : '#F8F8F8',
-              border: showFilters ? '0.5px solid #34373C' : '0.5px solid #D1D1D1',
-              boxShadow: showFilters ? 'none' : '0 2px 8px rgba(0, 0, 0, 0.06)'
-            }}
-          >
-            <SlidersHorizontal size={14} strokeWidth={2} />
-            <span style={{ fontFamily: 'Poppins, sans-serif', fontWeight: 400, fontSize: '10px', lineHeight: '100%' }}>
-              Filter
-            </span>
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Monthly Filter */}
+          <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#E5E5E5] rounded-xl text-[13px] font-medium text-gray-600 hover:bg-gray-50 transition-all">
+            <span>Monthly</span>
+            <ChevronDown size={16} />
           </button>
 
+          {/* Download */}
+          <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#E5E5E5] rounded-xl text-[13px] font-medium text-gray-600 hover:bg-gray-50 transition-all">
+            <Download size={16} className="text-gray-400" />
+            <span>Download</span>
+          </button>
+
+          {/* Filter */}
           <button
-            onClick={() => setShowAddAgent(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
-            style={{ boxShadow: '0 4px 14px rgba(9, 35, 45, 0.3)' }}
+            onClick={() => setShowFilters((v) => !v)}
+            className={`flex items-center gap-2 px-4 py-2.5 border rounded-xl text-[13px] font-medium transition-all ${
+              showFilters ? 'bg-dash-dark text-white border-dash-dark' : 'bg-white text-gray-600 border-[#E5E5E5] hover:bg-gray-50'
+            }`}
           >
-            <BookmarkPlus size={15} strokeWidth={2} />
-            <span className="hidden sm:inline whitespace-nowrap">Add New Agent</span>
-            <span className="sm:hidden">New</span>
+            <SlidersHorizontal size={16} className={showFilters ? 'text-white' : 'text-gray-400'} />
+            <span>Filter</span>
+          </button>
+
+          {/* Clock In */}
+          <button
+            className="flex items-center gap-2 px-5 py-2.5 bg-[#0D1E25] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shadow-md"
+          >
+            <Clock size={16} />
+            <span>Clock In</span>
           </button>
         </div>
       </div>
@@ -120,11 +129,18 @@ export function AttendanceView({ basePath }: { basePath: string }) {
 
         {/* ── Left: attendance list ──────────────────────────── */}
         <div className="flex-1 min-w-0 flex flex-col gap-5">
+          {/* Stats Cards */}
+          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+            <StatCard value="22" unit="Days" label="Total Attendance" strokeColor="#6B9A9A" gradientId="gradTealAgent" data={STAT_DATA_1} />
+            <StatCard value="06" unit="Days" label="Late Attendance" strokeColor="#EF8E5B" gradientId="gradOrangeAgent" data={STAT_DATA_2} />
+            <StatCard value="01" unit="Day" label="Undertime" strokeColor="#5E6268" gradientId="gradGrayAgent" data={STAT_DATA_3} />
+          </div>
+
           <OpsTableContainer className="grow-0 flex flex-col h-140">
             {/* Header */}
             <div className="flex justify-end mb-5 shrink-0">
               <Link
-                href={`${basePath}/operations/attendance`}
+                href="/agent/operations/attendance"
                 className="px-5 py-2 bg-dash-dark text-white rounded-full text-[12px] font-semibold hover:opacity-90 transition-colors"
               >
                 Attendance List
@@ -314,6 +330,59 @@ export function AttendanceView({ basePath }: { basePath: string }) {
       </div>
 
       {showAddAgent && <AddAgentModal onClose={() => setShowAddAgent(false)} />}
+    </div>
+  );
+}
+
+// ─── Chart data ───────────────────────────────────────────────────────────────
+const STAT_DATA_1 = [{ value: 10 }, { value: 30 }, { value: 20 }, { value: 40 }, { value: 30 }, { value: 35 }, { value: 20 }];
+const STAT_DATA_2 = [{ value: 20 }, { value: 40 }, { value: 25 }, { value: 45 }, { value: 35 }, { value: 20 }, { value: 10 }];
+const STAT_DATA_3 = [{ value: 40 }, { value: 20 }, { value: 30 }, { value: 20 }, { value: 40 }, { value: 30 }, { value: 20 }];
+
+// ─── Stat Card ──────────────────────────────────────────────────────────────
+function StatCard({
+  value,
+  unit,
+  label,
+  strokeColor,
+  gradientId,
+  data,
+}: {
+  value: string;
+  unit: string;
+  label: string;
+  strokeColor: string;
+  gradientId: string;
+  data: { value: number }[];
+}) {
+  return (
+    <div className="px-5 sm:px-6 pb-2 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-[140px] flex-1 min-w-[200px] shrink-0">
+      <div className="flex flex-col pt-5 sm:pt-6">
+        <div className="flex items-baseline gap-1.5 mb-1">
+          <h2 className="text-[48px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
+            {value}
+          </h2>
+          <span className="text-[18px] font-bold text-[#34373C]">
+            {unit}
+          </span>
+        </div>
+        <p className="text-[12px] font-medium text-[#A3A3A3]">
+          {label}
+        </p>
+      </div>
+      <div className="w-full h-12 mt-auto -mx-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={strokeColor} stopOpacity={0.8} />
+                <stop offset="95%" stopColor="#D9D9D9" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <Area type="monotone" dataKey="value" stroke={strokeColor} strokeWidth={3} fillOpacity={1} fill={`url(#${gradientId})`} dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

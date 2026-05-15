@@ -6,7 +6,7 @@ import happyIcon from "@/assets/images/happy.png";
 import SearchListIcon from "@/assets/images/search-list-icon.png";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { cn } from "@/lib/utils/sample";
-import { ChevronRight, MoreHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 
@@ -266,6 +266,210 @@ export function WeeklyTasks() {
         </div>
 
         <button className="w-full bg-[#D056DC] text-white py-5 rounded-4xl mb-4 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
+          View All Task
+          <Image
+            src={ArrowUp}
+            alt="Arrow Up Right Icon"
+            width={18}
+            height={18}
+            className="text-white/80 self-end pb-1.5"
+          />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const AGENT_MOCK_TASKS = [
+  {
+    date: "2026-05-12",
+    tasks: [
+      { time: "10 am", title: "Guest: John Doe", desc: "Consultation meeting.", color: "#7BB6B8" },
+    ]
+  },
+  {
+    date: "2026-05-13",
+    tasks: [
+      { time: "11 am", title: "Guest: Sarah Connor", desc: "Project briefing.", color: "#D086E6" },
+    ]
+  },
+  {
+    date: "2026-05-14",
+    tasks: [
+      { time: "9 am", title: "Guest: Lane wade", desc: "Lorem ipsum dolor sit amet consectetur.", color: "#7BB6B8" },
+      { time: "2 pm", title: "Guest: Bayo Williams", desc: "Lorem ipsum dolor sit amet consectetur.", color: "#D086E6" },
+    ]
+  },
+  {
+    date: "2026-05-15",
+    tasks: [
+      { time: "3 pm", title: "Guest: Mike Tyson", desc: "Training session.", color: "#7BB6B8" },
+    ]
+  },
+  {
+    date: "2026-05-16",
+    tasks: [
+      { time: "8 am", title: "Guest: Elon Musk", desc: "Rocket launch prep.", color: "#D086E6" },
+    ]
+  }
+];
+
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
+
+export function WeeklyTasksAgents() {
+  const [filter, setFilter] = useState<TaskFilter>("Daily");
+  const [selectedDate, setSelectedDate] = useState(new Date("2026-05-14"));
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+
+  const formattedDate = selectedDate.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "long",
+    day: "numeric",
+  });
+
+  const dateString = selectedDate.toISOString().split("T")[0];
+  const dayTasks = AGENT_MOCK_TASKS.find(t => t.date === dateString)?.tasks || [];
+
+  const handlePrevDay = () => {
+    const prev = new Date(selectedDate);
+    prev.setDate(prev.getDate() - 1);
+    setSelectedDate(prev);
+  };
+
+  const handleNextDay = () => {
+    const next = new Date(selectedDate);
+    next.setDate(next.getDate() + 1);
+    setSelectedDate(next);
+  };
+
+  const handleMonthSelect = (monthIndex: number) => {
+    const newDate = new Date(selectedDate);
+    newDate.setMonth(monthIndex);
+    setSelectedDate(newDate);
+    setShowMonthPicker(false);
+  };
+
+  return (
+    <div className="drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)] lg:shrink-0">
+      <div className="ticket-cutout w-full lg:w-89 rounded-[20px] pt-4 px-4 sm:px-7 text-dash-dark h-fit flex flex-col relative border border-dash-dark/5 bg-white mt-4 lg:mt-20">
+        <div className="flex justify-between items-start mb-3 px-[11.5px]">
+          <h3 className="text-dash-dark font-medium text-sm tracking-tight">
+            Self Task
+          </h3>
+          <FilterSelect
+            value={filter}
+            onChange={setFilter}
+            options={taskFilterOptions}
+          />
+        </div>
+
+        <div className="flex items-center justify-between bg-[#F8F8F8] rounded-full px-4 py-2 mb-2 mx-2 relative">
+          <button 
+            onClick={handlePrevDay}
+            className="text-gray-400 hover:text-dash-dark transition-colors"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          
+          <div className="relative">
+            <button 
+              onClick={() => setShowMonthPicker(!showMonthPicker)}
+              className="flex items-center gap-2 text-[12px] font-medium text-[#09232D] hover:opacity-70 transition-all"
+            >
+              <span>{formattedDate}</span>
+              <ChevronRight size={14} className="rotate-90 text-gray-400" />
+            </button>
+
+            {showMonthPicker && (
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border border-gray-100 rounded-xl shadow-xl z-50 py-2 min-w-[120px] max-h-48 overflow-y-auto custom-scrollbar">
+                {MONTHS.map((month, idx) => (
+                  <button
+                    key={month}
+                    onClick={() => handleMonthSelect(idx)}
+                    className={cn(
+                      "w-full text-left px-4 py-2 text-[11px] hover:bg-gray-50 transition-colors",
+                      selectedDate.getMonth() === idx ? "text-dash-teal font-bold" : "text-gray-600"
+                    )}
+                  >
+                    {month}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button 
+            onClick={handleNextDay}
+            className="text-gray-400 hover:text-dash-dark transition-colors"
+          >
+            <ChevronRight size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-3 mb-4 min-h-[160px] flex flex-col justify-center">
+          {dayTasks.length > 0 ? (
+            <div className="space-y-3 w-full">
+              {dayTasks.map((task, i) => (
+                <div 
+                  key={i} 
+                  className="rounded-[40px] px-4 py-3 flex items-center gap-4 text-white animate-in fade-in slide-in-from-right-4 duration-300 w-full"
+                  style={{ backgroundColor: task.color }}
+                >
+                  <div className="text-[16px] font-bold whitespace-nowrap min-w-[50px]">
+                    {task.time}
+                  </div>
+                  <div className="flex flex-col">
+                    <p className="text-[14px] font-bold leading-tight">
+                      {task.title}
+                    </p>
+                    <p className="text-[10px] opacity-80 leading-tight mt-0.5">
+                      {task.desc}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-10 text-gray-300 w-full grow">
+              <p className="text-[11px] font-medium">No tasks for this day</p>
+            </div>
+          )}
+        </div>
+
+        {/* <div className="flex justify-end mb-4 px-4">
+          <button className="w-10 h-10 rounded-full border-2 border-[#7BB6B8] flex items-center justify-center text-[#7BB6B8] hover:bg-[#7BB6B8]/5 transition-all">
+            <Plus size={24} />
+          </button>
+        </div> */}
+
+        <div className="w-full h-px bg-[#D9D6D6] mb-2.75" />
+
+        <div className="mb-6.5 relative px-5">
+          <p className="text-[14px] font-medium text-[#34373C]">Ongoing Task</p>
+
+          <div className="w-full h-5 bg-[#F5F5F5] rounded-full p-1.5 shadow-inner ring-1 ring-dash-dark/5 mt-6.5">
+            <div className="w-[42%] h-full bg-[#FD6046] rounded-full shadow-lg relative">
+              <div className="absolute -top-6 -right-1.5 flex items-center gap-1.5  text-white rounded-full text-[9px] font-medium whitespace-nowrap -translate-y-1">
+                <Image
+                  src="/avatars/male-avatar.png"
+                  alt="Attendee"
+                  width={16}
+                  height={16}
+                  className="w-4 h-4 object-cover rounded-full overflow-hidden z-20"
+                />
+                <div className="bg-[#FD6046] leading-1.5 py-px px-0.75 text-[3px] rounded-r-[3px] absolute left-3.5">
+                  Alex ... 42%
+                </div>
+                <div className="absolute rotate-180 w-1.5 h-1.75 -bottom-1 right-1 bg-[#FD6046] [clip-path:polygon(50%_0%,100%_100%,0%_100%)]" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button className="w-full bg-[#8B2FA1] text-white py-5 rounded-4xl mb-4 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
           View All Task
           <Image
             src={ArrowUp}

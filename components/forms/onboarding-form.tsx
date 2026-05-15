@@ -15,10 +15,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Controller, useForm, useWatch } from "react-hook-form";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PhoneNumberInput from "@/components/ui/phone-number-input";
 import { z } from "zod";
 import { toast } from "sonner";
+import { ChevronLeft, ChevronRight, Eye, EyeOff } from "lucide-react";
 
 const onboardingSchema = z
   .object({
@@ -44,9 +45,9 @@ const onboardingSchema = z
   .superRefine((values, ctx) => {
     if (!values.avatar_key && !values.avatar_file) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["avatar_key"],
-        message: "Select an avatar or upload a custom image.",
+        message: "Select an avatar.",
       });
     }
   });
@@ -74,67 +75,136 @@ function AvatarPicker({
   isLoadingMore: boolean;
   onLoadMore: () => void;
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const prevCountRef = useRef(avatars.length);
   const [failedImageKeys, setFailedImageKeys] = useState<Set<string>>(new Set());
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollState = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  };
 
   useEffect(() => {
-    setFailedImageKeys(new Set());
+    const el = scrollRef.current;
+    if (!el) return;
+    updateScrollState();
+    el.addEventListener("scroll", updateScrollState);
+    const ro = new ResizeObserver(updateScrollState);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", updateScrollState);
+      ro.disconnect();
+    };
   }, [avatars]);
 
+  // Auto-scroll to end when more avatars are loaded
+  useEffect(() => {
+    if (avatars.length > prevCountRef.current && scrollRef.current) {
+      scrollRef.current.scrollTo({ left: scrollRef.current.scrollWidth, behavior: "smooth" });
+    }
+    prevCountRef.current = avatars.length;
+  }, [avatars.length]);
+
+  const scroll = (dir: "left" | "right") => {
+    scrollRef.current?.scrollBy({ left: dir === "left" ? -220 : 220, behavior: "smooth" });
+  };
+
   if (avatars.length === 0) {
-    return <p className="text-xs text-gray-400 text-center">No avatars available for selected gender.</p>;
+    return <p className="text-xs text-gray-400 text-center">No avatars available.</p>;
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 justify-center">
-      {avatars.map((avatar) => {
-        const isSelected = selectedAvatarKey === avatar.key;
-        const shouldRenderImage = Boolean(avatar.url) && !failedImageKeys.has(avatar.key);
-        return (
+    <div className="relative group">
+      {/* Left arrow */}
+      <button
+        type="button"
+        onClick={() => scroll("left")}
+        className={`absolute left-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 flex items-center justify-center rounded-full bg-white shadow-md border border-gray-100 text-gray-500 hover:text-gray-800 transition-all ${
+          canScrollLeft ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+        aria-label="Scroll left"
+      >
+        <ChevronLeft size={16} />
+      </button>
+
+      {/* Scrollable row */}
+      <div
+        ref={scrollRef}
+        className="flex items-center gap-3 overflow-x-auto px-6 py-2 scroll-smooth [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+      >
+        {avatars.map((avatar) => {
+          const isSelected = selectedAvatarKey === avatar.key;
+          const shouldRenderImage = Boolean(avatar.url) && !failedImageKeys.has(avatar.key);
+          return (
+            <button
+              key={avatar.key}
+              type="button"
+              onClick={() => onSelect(avatar.key)}
+              className={`h-14 w-14 shrink-0 rounded-full overflow-hidden border-2 transition-all ${
+                isSelected
+                  ? "border-[#6FA8A6] ring-2 ring-[#6FA8A6]/30 scale-110"
+                  : "border-gray-200 hover:border-gray-300"
+              }`}
+              title={avatar.key}
+            >
+              {shouldRenderImage ? (
+                <img
+                  src={avatar.url ?? ""}
+                  alt={avatar.key}
+                  className="h-full w-full object-cover"
+                  onError={() =>
+                    setFailedImageKeys((prev) => {
+                      const next = new Set(prev);
+                      next.add(avatar.key);
+                      return next;
+                    })
+                  }
+                />
+              ) : avatar.svg ? (
+                <div
+                  className="h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
+                  dangerouslySetInnerHTML={{ __html: avatar.svg }}
+                />
+              ) : (
+                <div className="h-full w-full bg-gray-100" />
+              )}
+            </button>
+          );
+        })}
+
+        {/* Load more button — lives inline at the end of the slider */}
+        {hasMore && (
           <button
-            key={avatar.key}
             type="button"
-            onClick={() => onSelect(avatar.key)}
-            className={`h-16 w-16 rounded-full overflow-hidden border-2 transition-all ${
-              isSelected ? "border-[#6FA8A6] ring-2 ring-[#6FA8A6]/30" : "border-gray-200"
-            }`}
-            title={avatar.key}
+            onClick={onLoadMore}
+            disabled={isLoadingMore}
+            className="h-14 w-14 shrink-0 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:border-[#6FA8A6] hover:text-[#6FA8A6] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Load more avatars"
           >
-            {shouldRenderImage ? (
-              <img
-                src={avatar.url ?? ""}
-                alt={avatar.key}
-                className="h-full w-full object-cover"
-                onError={() =>
-                  setFailedImageKeys((previous) => {
-                    const next = new Set(previous);
-                    next.add(avatar.key);
-                    return next;
-                  })
-                }
-              />
-            ) : avatar.svg ? (
-              <div
-                className="h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
-                dangerouslySetInnerHTML={{ __html: avatar.svg }}
-              />
+            {isLoadingMore ? (
+              <span className="animate-spin text-lg">⟳</span>
             ) : (
-              <div className="h-full w-full bg-gray-100" />
+              <span className="text-2xl font-light leading-none">+</span>
             )}
           </button>
-        );
-      })}
+        )}
+      </div>
 
-      {hasMore && (
-        <button
-          type="button"
-          onClick={onLoadMore}
-          disabled={isLoadingMore}
-          className="h-16 w-16 rounded-2xl border border-gray-300 text-3xl text-gray-400 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
-          aria-label="Load more avatars"
-        >
-          {isLoadingMore ? "..." : "+"}
-        </button>
-      )}
+      {/* Right arrow */}
+      <button
+        type="button"
+        onClick={() => scroll("right")}
+        className={`absolute right-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 flex items-center justify-center rounded-full bg-white shadow-md border border-gray-100 text-gray-500 hover:text-gray-800 transition-all ${
+          canScrollRight ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+        aria-label="Scroll right"
+      >
+        <ChevronRight size={16} />
+      </button>
     </div>
   );
 }
@@ -167,9 +237,10 @@ export default function OnboardingForm({
     setValue,
     setError,
     clearErrors,
-    formState: { errors },
+    formState: { errors, isValid },
   } = useForm<OnboardingFormValues>({
     resolver: zodResolver(onboardingSchema),
+    mode: "onChange",
     defaultValues: {
       phone_number: "",
       gender: "male",
@@ -209,11 +280,13 @@ export default function OnboardingForm({
           avatar: meRes.data.avatar,
           active_company: meRes.data.active_company,
         });
-      } catch {
-        // no-op: session is already saved
-      }
 
-      router.push("/dashboard");
+        const role = meRes.data.active_company?.role;
+        router.push(role === "agent" ? "/agent/dashboard" : "/admin/dashboard");
+      } catch {
+        // no-op: session is already saved, redirect to agent dashboard as fallback
+        router.push("/agent/dashboard");
+      }
     },
     onError: (err: ApiRequestError | Error) => {
       if (err instanceof ApiRequestError && err.errors) {
@@ -246,7 +319,9 @@ export default function OnboardingForm({
   const hasValidInviteParams =
     INVITATION_ID_REGEX.test(invitationId) && INVITE_TOKEN_REGEX.test(token);
   const preview = previewQuery.data?.data;
-  const [customAvatarPreview, setCustomAvatarPreview] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const genderAvatarsQuery = useInfiniteQuery({
     queryKey: ["internal-gender-avatars", selectedGender],
     queryFn: ({ pageParam }) =>
@@ -276,33 +351,14 @@ export default function OnboardingForm({
   }, [genderAvatarsQuery.data, preview, selectedGender]);
 
   useEffect(() => {
-    if (!selectedAvatarFile) {
-      if (customAvatarPreview) {
-        URL.revokeObjectURL(customAvatarPreview);
-      }
-
-      setCustomAvatarPreview(null);
-      return;
-    }
-
-    const nextPreview = URL.createObjectURL(selectedAvatarFile);
-    setCustomAvatarPreview(nextPreview);
-
-    return () => {
-      URL.revokeObjectURL(nextPreview);
-    };
-  }, [selectedAvatarFile]);
-
-  useEffect(() => {
     if (!preview || phoneNumber || !preview.prefilled_data.phone_number) return;
     const rawPhone = preview.prefilled_data.phone_number.replace(/\s+/g, "");
-    setValue("phone_number", rawPhone);
+    setValue("phone_number", rawPhone, { shouldValidate: true });
   }, [phoneNumber, preview, setValue]);
 
   useEffect(() => {
     const prefilledGender = preview?.prefilled_data.gender;
     if (!prefilledGender) return;
-
     setValue("gender", prefilledGender, { shouldValidate: true });
   }, [preview?.prefilled_data.gender, setValue]);
 
@@ -311,7 +367,7 @@ export default function OnboardingForm({
     const preferredAvatar =
       preview.prefilled_data.avatar_key ?? preview.suggested_avatar_key ?? avatarOptions[0]?.key;
     if (preferredAvatar) {
-      setValue("avatar_key", preferredAvatar);
+      setValue("avatar_key", preferredAvatar, { shouldValidate: true });
     }
   }, [avatarOptions, preview, selectedAvatarKey, setValue]);
 
@@ -331,12 +387,19 @@ export default function OnboardingForm({
     );
   }
 
+  const isSubmitDisabled =
+    !isValid ||
+    completeMutation.isPending ||
+    previewQuery.isPending ||
+    !preview;
+
   return (
     <form className="flex flex-col" onSubmit={handleSubmit((v) => completeMutation.mutate(v))}>
       {previewQuery.isPending && (
         <p className="text-xs text-gray-500 text-center mb-3">Loading invitation details...</p>
       )}
 
+      {/* Read-only prefilled fields */}
       <Input
         type="text"
         placeholder="Full Name"
@@ -345,7 +408,6 @@ export default function OnboardingForm({
         disabled
         readOnly
       />
-
       <Input
         type="email"
         placeholder="Email"
@@ -355,6 +417,7 @@ export default function OnboardingForm({
         readOnly
       />
 
+      {/* Phone number */}
       <div className="mb-2">
         <Controller
           control={control}
@@ -369,9 +432,10 @@ export default function OnboardingForm({
         />
       </div>
       {errors.phone_number && (
-        <p className="text-xs text-red-500 mb-4 px-4">{errors.phone_number.message}</p>
+        <p className="text-xs text-red-500 mb-3 px-4">{errors.phone_number.message}</p>
       )}
 
+      {/* Gender */}
       <div className="mb-2">
         <Select
           placeholder="Select Gender"
@@ -389,58 +453,21 @@ export default function OnboardingForm({
         />
       </div>
       {errors.gender && (
-        <p className="text-xs text-red-500 mb-4 px-4">{errors.gender.message}</p>
+        <p className="text-xs text-red-500 mb-3 px-4">{errors.gender.message}</p>
       )}
 
+      {/* Avatar slider */}
       <div className="mb-2">
         <input type="hidden" {...register("avatar_key")} />
-{/* 
-        <div className="mb-3 rounded-lg border border-dashed border-gray-300 p-3">
-          <label className="text-xs text-gray-500 block mb-2">Upload custom avatar (optional)</label>
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/svg+xml"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (!file) return;
-
-              setValue("avatar_file", file, { shouldValidate: true });
-              setValue("avatar_key", "", { shouldValidate: true });
-              clearErrors(["avatar_key", "avatar_file"]);
-            }}
-            className="block w-full text-xs text-gray-600 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium"
-          />
-
-          {customAvatarPreview && (
-            <div className="mt-3 flex items-center gap-3">
-              <img
-                src={customAvatarPreview}
-                alt="Custom avatar preview"
-                className="h-14 w-14 rounded-full object-cover border border-gray-200"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setValue("avatar_file", undefined, { shouldValidate: true });
-                  clearErrors("avatar_file");
-                }}
-                className="text-xs text-red-500 hover:text-red-600"
-              >
-                Remove upload
-              </button>
-            </div>
-          )}
-        </div> */}
 
         {genderAvatarsQuery.isPending && avatarOptions.length === 0 && (
           <p className="text-xs text-gray-400 text-center mb-2">Loading avatars...</p>
         )}
-
         {genderAvatarsQuery.isError && avatarOptions.length === 0 && (
           <p className="text-xs text-red-500 text-center mb-2">Unable to load avatars right now.</p>
         )}
 
-        <p className="text-sm text-gray-500 mb-2 text-center">Or, select any avatar of your choice</p>
+        <p className="text-sm text-gray-500 mb-2 text-center">Select an avatar</p>
         <AvatarPicker
           key={selectedGender}
           avatars={avatarOptions}
@@ -460,34 +487,60 @@ export default function OnboardingForm({
         />
       </div>
       {errors.avatar_key && (
-        <p className="text-xs text-red-500 mb-4 px-4">{errors.avatar_key.message}</p>
+        <p className="text-xs text-red-500 mb-3 px-4">{errors.avatar_key.message}</p>
       )}
       {errors.avatar_file && (
-        <p className="text-xs text-red-500 mb-4 px-4">{errors.avatar_file.message}</p>
+        <p className="text-xs text-red-500 mb-3 px-4">{errors.avatar_file.message}</p>
       )}
 
-      <Input type="password" placeholder="Password" className="mb-2" {...register("password")} />
+      {/* Password */}
+      <div className="relative mb-2">
+        <Input
+          type={showPassword ? "text" : "password"}
+          placeholder="Password"
+          className="pr-14"
+          {...register("password")}
+        />
+        <button
+          type="button"
+          onClick={() => setShowPassword((p) => !p)}
+          className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          tabIndex={-1}
+          aria-label={showPassword ? "Hide password" : "Show password"}
+        >
+          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
       {errors.password && (
-        <p className="text-xs text-red-500 mb-4 px-4">{errors.password.message}</p>
+        <p className="text-xs text-red-500 mb-3 px-4">{errors.password.message}</p>
       )}
 
-      <Input
-        type="password"
-        placeholder="Confirm Password"
-        className="mb-6"
-        {...register("password_confirmation")}
-      />
+      <div className="relative mb-6">
+        <Input
+          type={showConfirmPassword ? "text" : "password"}
+          placeholder="Confirm Password"
+          className="pr-14"
+          {...register("password_confirmation")}
+        />
+        <button
+          type="button"
+          onClick={() => setShowConfirmPassword((p) => !p)}
+          className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          tabIndex={-1}
+          aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+        >
+          {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
       {errors.password_confirmation && (
-        <p className="text-xs text-red-500 mb-4 px-4">
-          {errors.password_confirmation.message}
-        </p>
+        <p className="text-xs text-red-500 mb-4 px-4">{errors.password_confirmation.message}</p>
       )}
 
       {apiError && (
         <p className="text-xs text-red-500 text-center mb-4">{apiError.message}</p>
       )}
 
-      <Button type="submit" disabled={completeMutation.isPending || previewQuery.isPending || !preview}>
+      <Button type="submit" disabled={isSubmitDisabled}>
         {previewQuery.isPending
           ? "Loading invitation..."
           : completeMutation.isPending

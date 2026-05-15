@@ -5,9 +5,9 @@ import Input from "@/components/ui/input";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { loginUser } from "@/lib/api/auth";
+import { loginAgent } from "@/lib/api/auth";
 import { ApiRequestError, getMe } from "@/lib/api/onboarding";
-import { setAuthSession } from "@/lib/auth/session";
+import { setAuthSession, setCompanyId } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -23,7 +23,7 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-export default function LoginForm() {
+export default function AgentLoginForm() {
   const router = useRouter();
   const setUser = useAuthStore((s) => s.setUser);
   const [showPassword, setShowPassword] = useState(false);
@@ -56,24 +56,25 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      const res = await loginUser({ email: values.email, password: values.password });
+      const res = await loginAgent({ email: values.email, password: values.password });
       const token = res.data.token;
       setAuthSession(token, values.remember ?? true);
 
       const me = await getMe(token);
+      if (me.data.active_company?.id) {
+        setCompanyId(me.data.active_company.id);
+      }
       setUser({
         id: me.data.id,
         name: me.data.name,
         email: me.data.email,
         avatar: me.data.avatar,
-        user_type: res.data.user_type,
         access_role: res.data.access_role,
         active_company: me.data.active_company,
       });
 
       toast.success(res.message);
-      const dashboardPath = res.data.user_type === "agent" ? "/agent/dashboard" : "/admin/dashboard";
-      router.push(dashboardPath);
+      router.push("/agent/dashboard");
     } catch (err) {
       if (err instanceof ApiRequestError) {
         if (err.errors) {
@@ -164,30 +165,12 @@ export default function LoginForm() {
           tabIndex={-1}
         >
           {showPassword ? (
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
               <circle cx="12" cy="12" r="3" />
             </svg>
           ) : (
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 10a13.35 13.35 0 0 0 9 4 13.35 13.35 0 0 0 9-4" />
               <path d="M12 14v4" />
               <path d="M8.5 13.5l-2 3" />
@@ -232,10 +215,7 @@ export default function LoginForm() {
               />
             </svg>
           </div>
-          <label
-            htmlFor="remember"
-            className="text-sm text-[#A9AAAB] cursor-pointer"
-          >
+          <label htmlFor="remember" className="text-sm text-[#A9AAAB] cursor-pointer">
             Remember Me
           </label>
         </div>
@@ -250,16 +230,6 @@ export default function LoginForm() {
       <Button type="submit" disabled={!isFilled || loading}>
         {loading ? "Logging in…" : "Log In"}
       </Button>
-
-      <p className="text-center text-xs mt-4 text-[#A9AAAB]">
-        Don&apos;t have an account?{" "}
-        <Link
-          href="/register"
-          className="font-bold text-[#34373C] cursor-pointer hover:underline"
-        >
-          Contact Us.
-        </Link>
-      </p>
     </form>
   );
 }

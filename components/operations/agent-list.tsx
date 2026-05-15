@@ -36,7 +36,7 @@ interface AgentListProps {
   onSelect?: (agent: AgentItem) => void;
 }
 
-export function AgentList({ selectedId, onSelect }: AgentListProps) {
+export function AgentList({ selectedId, onSelect, basePath }: AgentListProps & { basePath: string }) {
   const [page, setPage] = useState(1);
   const totalPages = Math.ceil(AGENT_LIST_DATA.length / PAGE_SIZE);
   const currentPage = Math.min(page, totalPages);
@@ -47,7 +47,7 @@ export function AgentList({ selectedId, onSelect }: AgentListProps) {
       {/* Header */}
       <div className="flex justify-end mb-5 shrink-0">
         <Link
-          href="/operations/agents"
+          href={`${basePath}/operations/agents`}
           className="px-5 py-2 bg-dash-dark text-white rounded-full text-[12px] font-semibold hover:opacity-90 transition-colors"
         >
           View all Agents
