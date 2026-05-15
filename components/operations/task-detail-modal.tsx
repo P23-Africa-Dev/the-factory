@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { X, MapPin, Share2, RefreshCw, CheckCircle } from 'lucide-react';
+import { X, MapPin, Share2, RefreshCw, CheckCircle, Loader2 } from 'lucide-react';
 import type { DndItem } from '@/types/operations';
 import {
   useTaskDetail,
@@ -11,7 +11,14 @@ import {
 } from '@/hooks/use-tasks';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
+import { getAuthTokenFromDocument } from '@/lib/auth/session';
 import { toast } from 'sonner';
+import { LocationPermissionGate } from '@/components/tracking/LocationPermissionGate';
+import { CompleteTaskSheet } from '@/components/tracking/CompleteTaskSheet';
+import { useActiveTracking } from '@/components/tracking/active-tracking-provider';
+import { startTaskTracking } from '@/lib/api/tracking';
+import { ApiRequestError } from '@/lib/api/onboarding';
+import type { GeoReading } from '@/types/tracking';
 
 interface TaskDetailModalProps {
   isOpen: boolean;
@@ -27,6 +34,11 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
   const taskId = Number(task?.id ?? 0);
   const detailQuery = useTaskDetail(taskId, companyId ?? undefined);
   const [assignmentInput, setAssignmentInput] = useState('');
+  const [showLocationGate, setShowLocationGate] = useState(false);
+  const [commencing, setCommencing] = useState(false);
+  const [showCompleteSheet, setShowCompleteSheet] = useState(false);
+  const { startTracking, activeTaskId } = useActiveTracking();
+
   const updateStatusMutation = useUpdateTaskStatus({
     onSuccess: (updatedTask) => {
       toast.success(`Task moved to ${updatedTask.status.replace('_', ' ')}`);
@@ -39,6 +51,63 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
     onSuccess: () => toast.success('Task assignment updated.'),
   });
   if (!isOpen || !task) return null;
+
+  const handleCommenceAndTrack = () => {
+    if (!companyId) { toast.error('Company context is required.'); return; }
+    setShowLocationGate(true);
+  };
+
+  const handleLocationGranted = async (reading: GeoReading) => {
+    if (!companyId) return;
+    setShowLocationGate(false);
+    setCommencing(true);
+    try {
+      const token = getAuthTokenFromDocument();
+      const res = await startTaskTracking(
+        taskId,
+        {
+          company_id: companyId,
+          location_permission_granted: true,
+          latitude: reading.latitude,
+          longitude: reading.longitude,
+          accuracy_meters: reading.accuracyMeters,
+          recorded_at: reading.recordedAt,
+        },
+        token
+      );
+      startTracking(taskId, companyId as number, token, {
+        onArrived: () => toast.success("You've arrived at the destination!"),
+        onError: () => {},
+      });
+      if (res.data.arrived) {
+        toast.success("Task started — you're already at the destination!");
+      } else {
+        toast.success('Tracking started.');
+      }
+    } catch (err) {
+      if (err instanceof ApiRequestError) {
+        const first = err.errors ? Object.values(err.errors)[0]?.[0] : null;
+        toast.error(first ?? err.message ?? 'Failed to start tracking.');
+      } else {
+        toast.error('Failed to start tracking.');
+      }
+    } finally {
+      setCommencing(false);
+    }
+  };
+
+  const handleTaskDone = () => {
+    if (activeTaskId !== taskId) {
+      toast.error('Start tracking before completing the task.');
+      return;
+    }
+    setShowCompleteSheet(true);
+  };
+
+  const handleCompleteSuccess = () => {
+    setShowCompleteSheet(false);
+    onClose();
+  };
 
   const isPending = status === 'pending';
   const isInProgress = status === 'in-progress';
@@ -298,7 +367,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                       </div>
                     </button>
                     <button
-                      onClick={() => updateTaskStatus('completed')}
+                      onClick={handleTaskDone}
                       className="flex-1 flex items-center justify-center px-5 py-3.5 bg-[#7EB5AE] text-white rounded-[18px] text-[13px] font-semibold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all"
                     >
                       Task Done
@@ -317,10 +386,12 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
               {isPending && (
                 <div className="mt-auto pt-6">
                   <button
-                    onClick={() => updateTaskStatus('in_progress')}
-                    className="w-full flex items-center justify-center px-8 py-4 bg-[#7EB5AE] text-white rounded-[20px] text-[15px] font-semibold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all"
+                    onClick={handleCommenceAndTrack}
+                    disabled={commencing}
+                    className="w-full flex items-center justify-center gap-2 px-8 py-4 bg-[#7EB5AE] text-white rounded-[20px] text-[15px] font-semibold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all disabled:opacity-60"
                   >
-                    Commence Task
+                    {commencing && <Loader2 size={16} className="animate-spin" />}
+                    {commencing ? 'Starting…' : 'Commence Task'}
                   </button>
                   <button
                     onClick={() => updateTaskStatus('cancelled')}
@@ -386,6 +457,28 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
         className="hidden"
         onChange={onProofSelected}
       />
+
+      {/* Location permission gate overlay */}
+      {showLocationGate && (
+        <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm rounded-[28px] md:rounded-[40px] flex items-center justify-center">
+          <LocationPermissionGate
+            onGranted={handleLocationGranted}
+            onDenied={() => setShowLocationGate(false)}
+            onCancel={() => setShowLocationGate(false)}
+          />
+        </div>
+      )}
+
+      {/* Complete task sheet */}
+      {showCompleteSheet && companyId && (
+        <CompleteTaskSheet
+          taskId={taskId}
+          companyId={companyId}
+          minimumPhotos={detailQuery.data?.minimum_photos_required ?? 1}
+          onSuccess={handleCompleteSuccess}
+          onClose={() => setShowCompleteSheet(false)}
+        />
+      )}
     </div>
   );
 }
