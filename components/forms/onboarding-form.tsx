@@ -81,10 +81,6 @@ function AvatarPicker({
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
-  useEffect(() => {
-    setFailedImageKeys(new Set());
-  }, [avatars]);
-
   const updateScrollState = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -323,7 +319,6 @@ export default function OnboardingForm({
   const hasValidInviteParams =
     INVITATION_ID_REGEX.test(invitationId) && INVITE_TOKEN_REGEX.test(token);
   const preview = previewQuery.data?.data;
-  const [customAvatarPreview, setCustomAvatarPreview] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -354,17 +349,6 @@ export default function OnboardingForm({
       []
     );
   }, [genderAvatarsQuery.data, preview, selectedGender]);
-
-  useEffect(() => {
-    if (!selectedAvatarFile) {
-      if (customAvatarPreview) URL.revokeObjectURL(customAvatarPreview);
-      setCustomAvatarPreview(null);
-      return;
-    }
-    const nextPreview = URL.createObjectURL(selectedAvatarFile);
-    setCustomAvatarPreview(nextPreview);
-    return () => URL.revokeObjectURL(nextPreview);
-  }, [selectedAvatarFile]);
 
   useEffect(() => {
     if (!preview || phoneNumber || !preview.prefilled_data.phone_number) return;

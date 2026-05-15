@@ -8,7 +8,7 @@ import type { AgentItem } from "./agent-list";
 import { AgentSidebar } from "./agent-sidebar";
 import { AddAgentModal } from "./add-agent-modal";
 
-export function AgentView() {
+export function AgentView({ basePath }: { basePath: string }) {
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);
@@ -91,6 +91,7 @@ export function AgentView() {
         <div className="flex-1 min-w-0 flex flex-col gap-5">
           <AgentCurveChart />
           <AgentList
+            basePath={basePath}
             selectedId={selectedAgent.id}
             onSelect={setSelectedAgent}
           />
