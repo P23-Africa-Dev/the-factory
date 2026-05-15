@@ -384,7 +384,6 @@ class InternalUserOnboardingService
         $normalizedAvatarKey = $avatarKey !== null ? trim($avatarKey) : null;
 
         $avatarCatalog = $this->avatarCatalog();
-        $avatarGenderMap = $this->avatarGenderMap();
 
         if ($normalizedGender !== null && ! array_key_exists($normalizedGender, $avatarCatalog)) {
             throw ValidationException::withMessages([
@@ -393,21 +392,26 @@ class InternalUserOnboardingService
         }
 
         if ($normalizedAvatarKey !== null && ! $this->isCustomAvatarPath($normalizedAvatarKey)) {
-            $avatarGender = $avatarGenderMap[$normalizedAvatarKey] ?? null;
+            if ($normalizedGender !== null) {
+                if (! isset($avatarCatalog[$normalizedGender][$normalizedAvatarKey])) {
+                    throw ValidationException::withMessages([
+                        'avatar_key' => ['Selected avatar does not match selected gender.'],
+                    ]);
+                }
+            } else {
+                $matchingGenders = array_values(array_filter(
+                    array_keys($avatarCatalog),
+                    static fn(string $genderKey): bool => isset($avatarCatalog[$genderKey][$normalizedAvatarKey]),
+                ));
 
-            if ($avatarGender === null) {
-                throw ValidationException::withMessages([
-                    'avatar_key' => ['Selected avatar is invalid.'],
-                ]);
+                if ($matchingGenders === []) {
+                    throw ValidationException::withMessages([
+                        'avatar_key' => ['Selected avatar is invalid.'],
+                    ]);
+                }
+
+                $normalizedGender = $matchingGenders[0];
             }
-
-            if ($normalizedGender !== null && $normalizedGender !== $avatarGender) {
-                throw ValidationException::withMessages([
-                    'avatar_key' => ['Selected avatar does not match selected gender.'],
-                ]);
-            }
-
-            $normalizedGender ??= $avatarGender;
         }
 
         if ($normalizedAvatarKey === null && $assignRandomAvatar && $normalizedGender !== null) {
