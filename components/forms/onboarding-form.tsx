@@ -312,7 +312,11 @@ export default function OnboardingForm({
   });
 
   const apiError = completeMutation.error as ApiRequestError | Error | null;
-  const selectedGender = useWatch({ control, name: "gender" });
+  const selectedGender = useWatch({
+    control,
+    name: "gender",
+    defaultValue: "male",
+  });
   const phoneNumber = useWatch({ control, name: "phone_number" });
   const selectedAvatarKey = useWatch({ control, name: "avatar_key" });
   const selectedAvatarFile = useWatch({ control, name: "avatar_file" });
@@ -329,7 +333,10 @@ export default function OnboardingForm({
         cursor: pageParam as number,
         limit: AVATAR_PAGE_SIZE,
       }),
-    enabled: Boolean(selectedGender) && hasValidInviteParams && previewQuery.isSuccess,
+    enabled:
+      (selectedGender === "male" || selectedGender === "female") &&
+      hasValidInviteParams &&
+      previewQuery.isSuccess,
     staleTime: 60_000,
     retry: false,
     initialPageParam: 0,
@@ -349,6 +356,9 @@ export default function OnboardingForm({
       []
     );
   }, [genderAvatarsQuery.data, preview, selectedGender]);
+
+  const isAvatarInitialLoading =
+    genderAvatarsQuery.fetchStatus === "fetching" && avatarOptions.length === 0;
 
   useEffect(() => {
     if (!preview || phoneNumber || !preview.prefilled_data.phone_number) return;
@@ -460,11 +470,22 @@ export default function OnboardingForm({
       <div className="mb-2">
         <input type="hidden" {...register("avatar_key")} />
 
-        {genderAvatarsQuery.isPending && avatarOptions.length === 0 && (
+        {isAvatarInitialLoading && (
           <p className="text-xs text-gray-400 text-center mb-2">Loading avatars...</p>
         )}
         {genderAvatarsQuery.isError && avatarOptions.length === 0 && (
-          <p className="text-xs text-red-500 text-center mb-2">Unable to load avatars right now.</p>
+          <div className="mb-2 flex flex-col items-center gap-2">
+            <p className="text-xs text-red-500 text-center">Unable to load avatars right now.</p>
+            <button
+              type="button"
+              onClick={() => {
+                void genderAvatarsQuery.refetch();
+              }}
+              className="text-xs text-[#6FA8A6] hover:underline"
+            >
+              Retry loading avatars
+            </button>
+          </div>
         )}
 
         <p className="text-sm text-gray-500 mb-2 text-center">Select an avatar</p>

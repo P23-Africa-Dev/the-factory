@@ -169,10 +169,43 @@ export function listAvatars(
     params.set("limit", String(options.limit));
   }
 
-  return apiRequest<AvatarData>({
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+
+  return fetch(`${API_BASE_URL}/avatars?${params.toString()}`, {
     method: "GET",
-    path: `/avatars?${params.toString()}`,
-  }) as Promise<AvatarListResponse>;
+    headers: {
+      Accept: "application/json",
+    },
+    signal: controller.signal,
+  })
+    .then(async (response) => {
+      const result = (await response.json()) as AvatarListResponse;
+
+      if (!response.ok || !result.success) {
+        throw new ApiRequestError(
+          result.message || "Unable to load avatars.",
+          response.status,
+          result.errors
+        );
+      }
+
+      return result;
+    })
+    .catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ApiRequestError(
+          "Avatar request timed out. Please try again.",
+          408,
+          null
+        );
+      }
+
+      throw error;
+    })
+    .finally(() => {
+      clearTimeout(timeout);
+    });
 }
 
 export function loginAgent(
