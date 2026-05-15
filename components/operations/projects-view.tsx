@@ -25,7 +25,7 @@ const PRIORITY_FILTERS = ["All", "High", "Medium", "Low"];
 
 interface ProjectsViewProps {
   projects: Project[];
-  onViewProject: (projectId: string) => void;
+  onViewProject: (projectId: string, projectName?: string) => void;
   isLoading?: boolean;
   pagination?: PaginationData | null;
   currentPage?: number;
@@ -255,7 +255,7 @@ export function ProjectsView({
               <ProjectCard
                 key={project.id}
                 project={project}
-                onClick={() => onViewProject(project.id)}
+                onClick={() => onViewProject(project.id, project.name)}
                 onEdit={() => {
                   setEditingProject(project);
                   setShowDrawer(true);

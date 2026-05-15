@@ -326,6 +326,11 @@ export default function OnboardingForm({
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  const isAvatarQueryEnabled =
+    (selectedGender === "male" || selectedGender === "female") &&
+    hasValidInviteParams &&
+    previewQuery.isSuccess;
+
   const genderAvatarsQuery = useInfiniteQuery({
     queryKey: ["internal-gender-avatars", selectedGender],
     queryFn: ({ pageParam }) =>
@@ -333,10 +338,7 @@ export default function OnboardingForm({
         cursor: pageParam as number,
         limit: AVATAR_PAGE_SIZE,
       }),
-    enabled:
-      (selectedGender === "male" || selectedGender === "female") &&
-      hasValidInviteParams &&
-      previewQuery.isSuccess,
+    enabled: isAvatarQueryEnabled,
     staleTime: 60_000,
     retry: false,
     initialPageParam: 0,
@@ -358,8 +360,9 @@ export default function OnboardingForm({
   }, [genderAvatarsQuery.data, preview, selectedGender]);
 
   const isAvatarInitialLoading =
-    genderAvatarsQuery.fetchStatus === "fetching" && avatarOptions.length === 0;
-
+    isAvatarQueryEnabled &&
+    genderAvatarsQuery.fetchStatus === "fetching" &&
+    avatarOptions.length === 0;
   useEffect(() => {
     if (!preview || phoneNumber || !preview.prefilled_data.phone_number) return;
     const rawPhone = preview.prefilled_data.phone_number.replace(/\s+/g, "");

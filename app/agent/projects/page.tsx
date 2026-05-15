@@ -7,6 +7,7 @@ import { AllTasksView } from "@/components/operations/all-tasks-view";
 import { useProjects } from "@/hooks/use-projects";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { buildProjectSlug } from "@/lib/utils/route-slugs";
 
 type ProjectsTab = "projects" | "tasks";
 
@@ -42,8 +43,9 @@ function ProjectsContent() {
     router.push(`${pathname}?${params.toString()}`);
   };
 
-  const handleViewProject = (id: string) => {
-    router.push(`/projects/${id}`);
+  const handleViewProject = (id: string, name?: string) => {
+    const slug = buildProjectSlug(id, name);
+    router.push(`/agent/projects/${slug}`);
   };
 
   return (
