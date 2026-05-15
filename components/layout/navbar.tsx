@@ -83,9 +83,10 @@ export function Navbar() {
   }, []);
 
   function handleLogout() {
+    const isAgent = user?.active_company?.role === "agent";
     clearAuthSession();
     clearUser();
-    router.push("/login");
+    router.push(isAgent ? "/agent/login" : "/login");
   }
 
   return (

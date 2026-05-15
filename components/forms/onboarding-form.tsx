@@ -37,7 +37,7 @@ const onboardingSchema = z
   .superRefine((values, ctx) => {
     if (!values.avatar_key && !values.avatar_file) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["avatar_key"],
         message: "Select an avatar.",
       });
@@ -276,11 +276,13 @@ export default function OnboardingForm({
           avatar: meRes.data.avatar,
           active_company: meRes.data.active_company,
         });
-      } catch {
-        // no-op: session is already saved
-      }
 
-      router.push("/admin/dashboard");
+        const role = meRes.data.active_company?.role;
+        router.push(role === "agent" ? "/agent/dashboard" : "/admin/dashboard");
+      } catch {
+        // no-op: session is already saved, redirect to agent dashboard as fallback
+        router.push("/agent/dashboard");
+      }
     },
     onError: (err: ApiRequestError | Error) => {
       if (err instanceof ApiRequestError && err.errors?.avatar_file?.[0]) {

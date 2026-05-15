@@ -29,3 +29,20 @@ export function loginUser(
     body: payload,
   });
 }
+
+export type AgentLoginResponseData = {
+  token: string;
+  token_type: "Bearer";
+  internal_role: "agent";
+  access_role: "agent";
+};
+
+export function loginAgent(
+  payload: LoginPayload
+): Promise<ApiEnvelope<AgentLoginResponseData>> {
+  return apiRequest<AgentLoginResponseData>({
+    method: "POST",
+    path: "/agent/login",
+    body: payload,
+  });
+}
