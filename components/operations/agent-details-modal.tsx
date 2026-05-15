@@ -53,29 +53,8 @@ export function AgentDetailsModal({
 
   const [failedImageKeys, setFailedImageKeys] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (!isOpen || !normalizedGender) {
-      return;
-    }
-
-    if (!avatarQuery.hasNextPage || avatarQuery.isFetchingNextPage) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      void avatarQuery.fetchNextPage();
-    }, 120);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [
-    avatarQuery.fetchNextPage,
-    avatarQuery.hasNextPage,
-    avatarQuery.isFetchingNextPage,
-    isOpen,
-    normalizedGender,
-  ]);
+  const hasMoreAvatarPages = Boolean(avatarQuery.hasNextPage);
+  const isLoadingMoreAvatars = avatarQuery.isFetchingNextPage;
 
   useEffect(() => {
     setFailedImageKeys(new Set());
@@ -154,52 +133,62 @@ export function AgentDetailsModal({
           ) : visibleAvatars.length === 0 ? (
             <p className="text-[11px] text-gray-400">No avatars available for selected gender.</p>
           ) : (
-            <>
-              <div className="grid grid-cols-4 gap-2">
-                {visibleAvatars.map((avatar) => (
-                  <button
-                    key={avatar.key}
-                    type="button"
-                    onClick={() => {
-                      set("avatarKey", avatar.key);
-                      onClearError?.("avatarKey");
-                    }}
-                    className={`h-14 w-14 rounded-full overflow-hidden border-2 transition-all ${
-                      details.avatarKey === avatar.key
-                        ? "border-[#094B5C] ring-2 ring-offset-1 ring-[#094B5C]/30"
-                        : "border-gray-200"
-                    }`}
-                    title={avatar.key}
-                  >
-                    {Boolean(avatar.url) && !failedImageKeys.has(avatar.key) ? (
-                      <img
-                        src={avatar.url ?? ""}
-                        alt={avatar.key}
-                        className="block h-full w-full object-cover"
-                        onError={() =>
-                          setFailedImageKeys((prev) => {
-                            const next = new Set(prev);
-                            next.add(avatar.key);
-                            return next;
-                          })
-                        }
-                      />
-                    ) : avatar.svg ? (
-                      <div
-                        className="h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
-                        dangerouslySetInnerHTML={{ __html: avatar.svg }}
-                      />
-                    ) : (
-                      <div className="h-full w-full bg-gray-100" />
-                    )}
-                  </button>
-                ))}
-              </div>
+            <div className="grid grid-cols-4 gap-2">
+              {visibleAvatars.map((avatar) => (
+                <button
+                  key={avatar.key}
+                  type="button"
+                  onClick={() => {
+                    set("avatarKey", avatar.key);
+                    onClearError?.("avatarKey");
+                  }}
+                  className={`h-14 w-14 rounded-full overflow-hidden border-2 transition-all ${
+                    details.avatarKey === avatar.key
+                      ? "border-[#094B5C] ring-2 ring-offset-1 ring-[#094B5C]/30"
+                      : "border-gray-200"
+                  }`}
+                  title={avatar.key}
+                >
+                  {Boolean(avatar.url) && !failedImageKeys.has(avatar.key) ? (
+                    <img
+                      src={avatar.url ?? ""}
+                      alt={avatar.key}
+                      className="block h-full w-full object-cover"
+                      onError={() =>
+                        setFailedImageKeys((prev) => {
+                          const next = new Set(prev);
+                          next.add(avatar.key);
+                          return next;
+                        })
+                      }
+                    />
+                  ) : avatar.svg ? (
+                    <div
+                      className="h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
+                      dangerouslySetInnerHTML={{ __html: avatar.svg }}
+                    />
+                  ) : (
+                    <div className="h-full w-full bg-gray-100" />
+                  )}
+                </button>
+              ))}
 
-              {avatarQuery.isFetchingNextPage && visibleAvatars.length > 0 && (
-                <p className="text-[11px] text-gray-400 mt-2">Loading more avatars...</p>
+              {hasMoreAvatarPages && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (hasMoreAvatarPages && !isLoadingMoreAvatars) {
+                      void avatarQuery.fetchNextPage();
+                    }
+                  }}
+                  disabled={isLoadingMoreAvatars}
+                  className="h-14 w-14 rounded-2xl border border-gray-300 text-2xl text-gray-400 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                  aria-label="Load more avatars"
+                >
+                  {isLoadingMoreAvatars ? "..." : "+"}
+                </button>
               )}
-            </>
+            </div>
           )}
 
           {errors.avatarKey && (

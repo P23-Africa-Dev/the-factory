@@ -222,32 +222,39 @@ class InternalUserOnboardingService
         $invitation = InternalUserInvitation::query()->with('user')->findOrFail($invitationId);
         $this->validateInvitationToken($invitation, $token);
 
-        $prefilledProfile = $this->resolveProfileData(
-            phoneNumber: $invitation->user->phone_number,
-            gender: $invitation->user->gender,
-            avatarKey: $invitation->user->avatar,
-            assignRandomAvatar: true,
-            requireCompleteProfile: false,
-        );
+        $selectedGender = $invitation->user->gender !== null
+            ? strtolower(trim((string) $invitation->user->gender))
+            : null;
 
-        $avatars = $this->avatarCatalog();
-        $selectedGender = $prefilledProfile['gender'];
-        $options = $selectedGender ? array_values($avatars[$selectedGender] ?? []) : [];
+        if (! in_array($selectedGender, ['male', 'female'], true)) {
+            $selectedGender = null;
+        }
+
+        $phoneNumber = $invitation->user->phone_number !== null
+            ? trim((string) $invitation->user->phone_number)
+            : null;
+
+        $avatarKey = $invitation->user->avatar !== null
+            ? trim((string) $invitation->user->avatar)
+            : null;
 
         return [
             'user' => $invitation->user,
             'invitation' => $invitation,
-            'avatar_options' => $options,
-            'avatar_options_by_gender' => array_map(static fn(array $items): array => array_values($items), $avatars),
+            'avatar_options' => [],
+            'avatar_options_by_gender' => [
+                'male' => [],
+                'female' => [],
+            ],
             'prefilled_data' => [
-                'phone_number' => $prefilledProfile['phone_number'],
-                'gender' => $prefilledProfile['gender'],
-                'avatar_key' => $prefilledProfile['avatar_key'],
+                'phone_number' => $phoneNumber,
+                'gender' => $selectedGender,
+                'avatar_key' => $avatarKey,
             ],
             'selected_gender' => $selectedGender,
-            'selected_avatar_key' => $prefilledProfile['avatar_key'],
-            'selected_avatar_svg' => $prefilledProfile['avatar_svg'],
-            'suggested_avatar_key' => $prefilledProfile['avatar_key'],
+            'selected_avatar_key' => $avatarKey,
+            'selected_avatar_svg' => null,
+            'suggested_avatar_key' => $avatarKey,
         ];
     }
 

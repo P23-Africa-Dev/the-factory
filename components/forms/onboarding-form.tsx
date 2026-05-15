@@ -55,10 +55,16 @@ function AvatarPicker({
   avatars,
   selectedAvatarKey,
   onSelect,
+  hasMore,
+  isLoadingMore,
+  onLoadMore,
 }: {
   avatars: AvatarOption[];
   selectedAvatarKey?: string;
   onSelect: (avatarKey: string) => void;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  onLoadMore: () => void;
 }) {
   const [failedImageKeys, setFailedImageKeys] = useState<Set<string>>(new Set());
 
@@ -109,6 +115,18 @@ function AvatarPicker({
           </button>
         );
       })}
+
+      {hasMore && (
+        <button
+          type="button"
+          onClick={onLoadMore}
+          disabled={isLoadingMore}
+          className="h-16 w-16 rounded-2xl border border-gray-300 text-3xl text-gray-400 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
+          aria-label="Load more avatars"
+        >
+          {isLoadingMore ? "..." : "+"}
+        </button>
+      )}
     </div>
   );
 }
@@ -213,31 +231,15 @@ export default function OnboardingForm({
         cursor: pageParam as number,
         limit: AVATAR_PAGE_SIZE,
       }),
-    enabled: Boolean(selectedGender) && hasValidInviteParams,
+    enabled: Boolean(selectedGender) && hasValidInviteParams && previewQuery.isSuccess,
     staleTime: 60_000,
     retry: false,
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.meta?.next_cursor ?? undefined,
   });
 
-  useEffect(() => {
-    if (!selectedGender || !genderAvatarsQuery.hasNextPage || genderAvatarsQuery.isFetchingNextPage) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      void genderAvatarsQuery.fetchNextPage();
-    }, 120);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [
-    genderAvatarsQuery.fetchNextPage,
-    genderAvatarsQuery.hasNextPage,
-    genderAvatarsQuery.isFetchingNextPage,
-    selectedGender,
-  ]);
+  const hasMoreAvatarPages = Boolean(genderAvatarsQuery.hasNextPage);
+  const isLoadingMoreAvatars = genderAvatarsQuery.isFetchingNextPage;
 
   const avatarOptions = useMemo(() => {
     const apiData = genderAvatarsQuery.data?.pages.flatMap((page) => page.data) ?? [];
@@ -273,6 +275,13 @@ export default function OnboardingForm({
     const rawPhone = preview.prefilled_data.phone_number.replace(/\s+/g, "");
     setValue("phone_number", rawPhone);
   }, [phoneNumber, preview, setValue]);
+
+  useEffect(() => {
+    const prefilledGender = preview?.prefilled_data.gender;
+    if (!prefilledGender) return;
+
+    setValue("gender", prefilledGender, { shouldValidate: true });
+  }, [preview?.prefilled_data.gender, setValue]);
 
   useEffect(() => {
     if (!preview || selectedAvatarKey) return;
@@ -360,7 +369,7 @@ export default function OnboardingForm({
         <p className="text-xs text-red-500 mb-4 px-4">{errors.gender.message}</p>
       )}
 
-      <div className="mb-2">
+      {/* <div className="mb-2">
         <input type="hidden" {...register("avatar_key")} />
 
         <div className="mb-3 rounded-lg border border-dashed border-gray-300 p-3">
@@ -398,7 +407,7 @@ export default function OnboardingForm({
               </button>
             </div>
           )}
-        </div>
+        </div> */}
 
         {genderAvatarsQuery.isPending && avatarOptions.length === 0 && (
           <p className="text-xs text-gray-400 text-center mb-2">Loading avatars...</p>
@@ -413,16 +422,19 @@ export default function OnboardingForm({
           key={selectedGender}
           avatars={avatarOptions}
           selectedAvatarKey={selectedAvatarKey}
+          hasMore={hasMoreAvatarPages}
+          isLoadingMore={isLoadingMoreAvatars}
+          onLoadMore={() => {
+            if (hasMoreAvatarPages && !isLoadingMoreAvatars) {
+              void genderAvatarsQuery.fetchNextPage();
+            }
+          }}
           onSelect={(avatarKey) => {
             setValue("avatar_key", avatarKey, { shouldValidate: true });
             setValue("avatar_file", undefined, { shouldValidate: true });
             clearErrors(["avatar_key", "avatar_file"]);
           }}
         />
-
-        {genderAvatarsQuery.isFetchingNextPage && avatarOptions.length > 0 && (
-          <p className="text-xs text-gray-400 text-center mt-2">Loading more avatars...</p>
-        )}
       </div>
       {errors.avatar_key && (
         <p className="text-xs text-red-500 mb-4 px-4">{errors.avatar_key.message}</p>
