@@ -23,12 +23,20 @@ import { ChevronLeft, ChevronRight, Eye, EyeOff } from "lucide-react";
 
 const onboardingSchema = z
   .object({
-    phone_number: z.string().min(1, "Phone number is required."),
+    phone_number: z
+      .string()
+      .regex(/^\+[1-9][0-9]{7,14}$/, "Use a valid international number (e.g. +2348012345678)."),
     gender: z.enum(["male", "female"]),
     avatar_key: z.string().optional(),
     avatar_file: z.instanceof(File).optional(),
-    password: z.string().min(8, "Password must be at least 8 characters."),
-    password_confirmation: z.string().min(1, "Please confirm your password."),
+    password: z
+      .string()
+      .min(8, "Password must be at least 8 characters.")
+      .regex(/[a-z]/, "Password must include at least one lowercase letter.")
+      .regex(/[A-Z]/, "Password must include at least one uppercase letter.")
+      .regex(/[0-9]/, "Password must include at least one number.")
+      .regex(/[^A-Za-z0-9]/, "Password must include at least one symbol."),
+    password_confirmation: z.string().min(8, "Password confirmation is required."),
   })
   .refine((values) => values.password === values.password_confirmation, {
     path: ["password_confirmation"],
@@ -47,8 +55,8 @@ const onboardingSchema = z
 type OnboardingFormValues = z.infer<typeof onboardingSchema>;
 
 const INVITATION_ID_REGEX = /^[0-9]+$/;
-const INVITE_TOKEN_REGEX = /^[A-Za-z0-9_-]{32,128}$/;
-const AVATAR_PAGE_SIZE = 8;
+const INVITE_TOKEN_REGEX = /^[A-Za-z0-9_-]{64}$/;
+const AVATAR_PAGE_SIZE = 4;
 
 type AvatarOption = { key: string; url: string | null; svg: string | null };
 
@@ -285,9 +293,24 @@ export default function OnboardingForm({
       }
     },
     onError: (err: ApiRequestError | Error) => {
-      if (err instanceof ApiRequestError && err.errors?.avatar_file?.[0]) {
-        setError("avatar_file", { message: err.errors.avatar_file[0] });
+      if (err instanceof ApiRequestError && err.errors) {
+        const fieldErrorMap: Array<[keyof OnboardingFormValues, string]> = [
+          ["phone_number", "phone_number"],
+          ["gender", "gender"],
+          ["avatar_key", "avatar_key"],
+          ["avatar_file", "avatar_file"],
+          ["password", "password"],
+          ["password_confirmation", "password_confirmation"],
+        ];
+
+        fieldErrorMap.forEach(([formField, apiField]) => {
+          const firstError = err.errors?.[apiField]?.[0];
+          if (firstError) {
+            setError(formField, { message: firstError });
+          }
+        });
       }
+
       toast.error(err.message);
     },
   });
