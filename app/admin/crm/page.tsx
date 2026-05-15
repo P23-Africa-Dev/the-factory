@@ -37,7 +37,6 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
-import { useAuthStore } from "@/store/auth";
 import {
   Area,
   AreaChart,
@@ -577,8 +576,7 @@ function LeadListView({ containers }: { containers: DndContainer[] }) {
 
 function LeadBoard() {
   const router = useRouter();
-  const user = useAuthStore((s) => s.user);
-  const basePath = user?.active_company?.role === 'agent' ? '/agent' : '/admin';
+  const basePath = "/admin";
   const {
     containers,
     addItem,

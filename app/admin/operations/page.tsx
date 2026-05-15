@@ -49,7 +49,7 @@ function OperationsContent() {
         </div>
 
         {/* ── View ── */}
-        {activeTab === "agent" ? <AgentView /> : <AttendanceView />}
+        {activeTab === "agent" ? <AgentView /> : <AttendanceView basePath="/admin" />}
       </div>
     </div>
   );

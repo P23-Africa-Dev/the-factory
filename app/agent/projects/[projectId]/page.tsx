@@ -9,5 +9,5 @@ export default function ProjectTasksPage({
   params: Promise<{ projectId: string }>;
 }) {
   const resolvedParams = use(params);
-  return <ProjectDetailsView projectId={resolvedParams.projectId} />;
+  return <ProjectDetailsView projectId={resolvedParams.projectId} basePath="/agent" />;
 }

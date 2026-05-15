@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@/store/auth";
 import { ChevronLeft, SlidersHorizontal, BookmarkPlus, Loader2 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { TaskBoard } from "@/components/operations/task-board";
@@ -39,10 +38,8 @@ function CustomLabel({
   );
 }
 
-export function ProjectDetailsView({ projectId }: { projectId: string }) {
+export function ProjectDetailsView({ projectId, basePath }: { projectId: string; basePath: string }) {
   const router = useRouter();
-  const user = useAuthStore((s) => s.user);
-  const basePath = user?.active_company?.role === 'agent' ? '/agent' : '/admin';
   
   const { data: project, isPending: loadingProject } = useProject(projectId);
   const { data: tasksData, isPending: loadingTasks } = useTasks({ project_id: projectId });

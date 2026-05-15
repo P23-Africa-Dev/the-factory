@@ -1,4 +1,5 @@
 import { Navbar } from "@/components/layout/navbar";
+import { AdminGuard } from "@/components/auth/admin-guard";
 import { AUTH_TOKEN_COOKIE, ONBOARDING_DONE_COOKIE } from "@/lib/auth/session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -24,7 +25,7 @@ export default async function DashboardLayout({
     <div className="min-h-screen flex flex-col">
       <Navbar />
       <main className="flex-1 overflow-auto">
-        {children}
+        <AdminGuard>{children}</AdminGuard>
       </main>
     </div>
   );

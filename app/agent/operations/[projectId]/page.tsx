@@ -2,7 +2,6 @@
 
 import { Suspense, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@/store/auth";
 import { ChevronLeft, SlidersHorizontal, BookmarkPlus } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { TaskBoard } from "@/components/operations/task-board";
@@ -139,8 +138,7 @@ function CustomLabel({
 // ─── Page content ─────────────────────────────────────────────────────────────
 function ProjectTasksContent() {
   const router = useRouter();
-  const user = useAuthStore((s) => s.user);
-  const basePath = user?.active_company?.role === 'agent' ? '/agent' : '/admin';
+  const basePath = "/agent";
 
   const { containers, addItem, moveItem, moveToContainer, moveBetweenContainers, findContainer } =
     useDragAndDrop(INITIAL_DATA);

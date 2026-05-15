@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useAuthStore } from "@/store/auth";
 import { MapPin, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight } from "lucide-react";
 import { AddAgentModal } from "./add-agent-modal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
@@ -36,9 +35,7 @@ const attendanceList: AttendanceItem[] = [
 
 const PAGE_SIZE = 5;
 
-export function AttendanceView() {
-  const user = useAuthStore((s) => s.user);
-  const basePath = user?.active_company?.role === 'agent' ? '/agent' : '/admin';
+export function AttendanceView({ basePath }: { basePath: string }) {
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);

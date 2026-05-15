@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useAuthStore } from "@/store/auth";
 
 interface Lead {
   id: string;
@@ -140,8 +139,7 @@ function SourceDropdown({
 
 export default function AllLeadsPage() {
   const router = useRouter();
-  const user = useAuthStore((s) => s.user);
-  const basePath = user?.active_company?.role === 'agent' ? '/agent' : '/admin';
+  const basePath = "/admin";
   const [leads, setLeads] = useState<Lead[]>(ALL_LEADS);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
