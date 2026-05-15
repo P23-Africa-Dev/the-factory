@@ -22,6 +22,7 @@ class CompleteInternalOnboardingRequest extends FormRequest
             'phone_number' => ['nullable', 'string', 'regex:/^\+[1-9][0-9]{7,14}$/'],
             'gender' => ['nullable', 'string', 'in:male,female'],
             'avatar_key' => ['nullable', 'string', 'max:50'],
+            'avatar_file' => ['nullable', 'file', 'image', 'mimes:jpeg,png,webp,svg', 'max:5120'],
             'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
         ];
     }

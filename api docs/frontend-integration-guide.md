@@ -40,8 +40,8 @@ Dashboard routing:
 Request:
 
 {
-  "email": "supervisor@example.com",
-  "password": "password123"
+"email": "supervisor@example.com",
+"password": "password123"
 }
 
 Success response includes:
@@ -57,8 +57,8 @@ Success response includes:
 Request:
 
 {
-  "email": "agent@example.com",
-  "password": "password123"
+"email": "agent@example.com",
+"password": "password123"
 }
 
 Success response includes:
@@ -71,46 +71,46 @@ Success response includes:
 ## API Client Example
 
 ```typescript
-const API_BASE = '/api/v1';
+const API_BASE = "/api/v1";
 
 function authHeaders() {
-  const token = localStorage.getItem('auth_token');
+  const token = localStorage.getItem("auth_token");
   return token
-    ? { Accept: 'application/json', Authorization: `Bearer ${token}` }
-    : { Accept: 'application/json' };
+    ? { Accept: "application/json", Authorization: `Bearer ${token}` }
+    : { Accept: "application/json" };
 }
 
 export async function loginSharedAuth(email: string, password: string) {
   const response = await fetch(`${API_BASE}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ email, password }),
   });
 
   const body = await response.json();
   if (!response.ok || !body.success) throw body;
 
-  localStorage.setItem('auth_token', body.data.token);
-  localStorage.setItem('access_role', body.data.access_role);
-  localStorage.setItem('user_type', body.data.user_type ?? '');
-  localStorage.setItem('internal_role', body.data.internal_role ?? '');
+  localStorage.setItem("auth_token", body.data.token);
+  localStorage.setItem("access_role", body.data.access_role);
+  localStorage.setItem("user_type", body.data.user_type ?? "");
+  localStorage.setItem("internal_role", body.data.internal_role ?? "");
 
   return body.data;
 }
 
 export async function loginAgent(email: string, password: string) {
   const response = await fetch(`${API_BASE}/agent/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ email, password }),
   });
 
   const body = await response.json();
   if (!response.ok || !body.success) throw body;
 
-  localStorage.setItem('auth_token', body.data.token);
-  localStorage.setItem('access_role', body.data.access_role);
-  localStorage.setItem('internal_role', body.data.internal_role);
+  localStorage.setItem("auth_token", body.data.token);
+  localStorage.setItem("access_role", body.data.access_role);
+  localStorage.setItem("internal_role", body.data.internal_role);
 
   return body.data;
 }
@@ -121,13 +121,13 @@ export async function loginAgent(email: string, password: string) {
 ```typescript
 export async function logout() {
   await fetch(`${API_BASE}/auth/logout`, {
-    method: 'POST',
+    method: "POST",
     headers: authHeaders(),
   });
-  localStorage.removeItem('auth_token');
-  localStorage.removeItem('access_role');
-  localStorage.removeItem('user_type');
-  localStorage.removeItem('internal_role');
+  localStorage.removeItem("auth_token");
+  localStorage.removeItem("access_role");
+  localStorage.removeItem("user_type");
+  localStorage.removeItem("internal_role");
 }
 ```
 
@@ -160,8 +160,8 @@ Avatar API response shape:
 {
   "success": true,
   "data": [
-    "http://localhost/storage/avatar/female/avatar_1.png",
-    "http://localhost/storage/avatar/female/avatar_2.png"
+    "https://api.thefactory23.com/storage/avatar/female/avatar_1.png",
+    "https://api.thefactory23.com/storage/avatar/female/avatar_2.png"
   ]
 }
 ```
@@ -238,6 +238,7 @@ Progress UI rendering:
 4. 429: throttling
 
 Company context notes:
+
 1. All tenant-bound APIs resolve company context from `company_users`.
 2. Shared auth and agent auth require users to have active company membership.
 3. Frontend should always pass explicit `company_id` when available for deterministic context selection.

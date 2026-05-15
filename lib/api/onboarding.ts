@@ -29,7 +29,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-const API_BASE_URL =
+export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
 
 export async function apiRequest<TData>({

@@ -1,8 +1,9 @@
 "use client";
 
-import { getMe, type ApiRequestError } from "@/lib/api/onboarding";
+import { ApiRequestError, getMe } from "@/lib/api/onboarding";
 import {
   completeInternalInvitation,
+  listAvatars,
   previewInternalInvitation,
 } from "@/lib/api/internal-onboarding";
 import { setAuthSession, setCompanyId } from "@/lib/auth/session";
@@ -11,7 +12,7 @@ import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Select from "@/components/ui/select";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useEffect, useMemo, useState } from "react";
@@ -23,29 +24,30 @@ const onboardingSchema = z
   .object({
     phone_number: z.string().min(1, "Phone number is required."),
     gender: z.enum(["male", "female"]),
-    avatar_key: z.string().min(1, "Avatar is required."),
+    avatar_key: z.string().optional(),
+    avatar_file: z.instanceof(File).optional(),
     password: z.string().min(8, "Password must be at least 8 characters."),
     password_confirmation: z.string().min(8, "Password confirmation is required."),
   })
   .refine((values) => values.password === values.password_confirmation, {
     path: ["password_confirmation"],
     message: "Passwords do not match.",
+  })
+  .superRefine((values, ctx) => {
+    if (!values.avatar_key && !values.avatar_file) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["avatar_key"],
+        message: "Select an avatar or upload a custom image.",
+      });
+    }
   });
 
 type OnboardingFormValues = z.infer<typeof onboardingSchema>;
 
 const INVITATION_ID_REGEX = /^[0-9]+$/;
 const INVITE_TOKEN_REGEX = /^[A-Za-z0-9_-]{32,128}$/;
-const AVATAR_BATCH_SIZE = 4;
-
-function shuffleArray<T>(items: T[]): T[] {
-  const next = [...items];
-  for (let i = next.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [next[i], next[j]] = [next[j], next[i]];
-  }
-  return next;
-}
+const AVATAR_PAGE_SIZE = 4;
 
 type AvatarOption = { key: string; url: string | null; svg: string | null };
 
@@ -53,26 +55,32 @@ function AvatarPicker({
   avatars,
   selectedAvatarKey,
   onSelect,
+  hasMore,
+  isLoadingMore,
+  onLoadMore,
 }: {
   avatars: AvatarOption[];
   selectedAvatarKey?: string;
   onSelect: (avatarKey: string) => void;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  onLoadMore: () => void;
 }) {
-  const [visibleAvatarCount, setVisibleAvatarCount] = useState(AVATAR_BATCH_SIZE);
-  const shuffledAvatars = useMemo(() => shuffleArray(avatars), [avatars]);
-  const visibleAvatars = useMemo(
-    () => shuffledAvatars.slice(0, visibleAvatarCount),
-    [shuffledAvatars, visibleAvatarCount]
-  );
+  const [failedImageKeys, setFailedImageKeys] = useState<Set<string>>(new Set());
 
-  if (visibleAvatars.length === 0) {
+  useEffect(() => {
+    setFailedImageKeys(new Set());
+  }, [avatars]);
+
+  if (avatars.length === 0) {
     return <p className="text-xs text-gray-400 text-center">No avatars available for selected gender.</p>;
   }
 
   return (
     <div className="flex flex-wrap items-center gap-3 justify-center">
-      {visibleAvatars.map((avatar) => {
+      {avatars.map((avatar) => {
         const isSelected = selectedAvatarKey === avatar.key;
+        const shouldRenderImage = Boolean(avatar.url) && !failedImageKeys.has(avatar.key);
         return (
           <button
             key={avatar.key}
@@ -83,30 +91,42 @@ function AvatarPicker({
             }`}
             title={avatar.key}
           >
-            {avatar.url ? (
-              <img src={avatar.url} alt={avatar.key} className="h-full w-full object-cover" />
+            {shouldRenderImage ? (
+              <img
+                src={avatar.url ?? ""}
+                alt={avatar.key}
+                className="h-full w-full object-cover"
+                onError={() =>
+                  setFailedImageKeys((previous) => {
+                    const next = new Set(previous);
+                    next.add(avatar.key);
+                    return next;
+                  })
+                }
+              />
             ) : avatar.svg ? (
-              <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: avatar.svg }} />
+              <div
+                className="h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
+                dangerouslySetInnerHTML={{ __html: avatar.svg }}
+              />
             ) : (
               <div className="h-full w-full bg-gray-100" />
             )}
           </button>
         );
       })}
-      {visibleAvatarCount < shuffledAvatars.length ? (
+
+      {hasMore && (
         <button
           type="button"
-          onClick={() =>
-            setVisibleAvatarCount((count) =>
-              Math.min(count + AVATAR_BATCH_SIZE, shuffledAvatars.length)
-            )
-          }
-          className="h-16 w-16 rounded-2xl border border-gray-300 text-3xl text-gray-400 hover:bg-gray-50"
+          onClick={onLoadMore}
+          disabled={isLoadingMore}
+          className="h-16 w-16 rounded-2xl border border-gray-300 text-3xl text-gray-400 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
           aria-label="Load more avatars"
         >
-          +
+          {isLoadingMore ? "..." : "+"}
         </button>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -137,6 +157,8 @@ export default function OnboardingForm({
     register,
     handleSubmit,
     setValue,
+    setError,
+    clearErrors,
     formState: { errors },
   } = useForm<OnboardingFormValues>({
     resolver: zodResolver(onboardingSchema),
@@ -144,6 +166,7 @@ export default function OnboardingForm({
       phone_number: "",
       gender: "male",
       avatar_key: "",
+      avatar_file: undefined,
       password: "",
       password_confirmation: "",
     },
@@ -159,6 +182,7 @@ export default function OnboardingForm({
         phone_number: values.phone_number,
         gender: values.gender,
         avatar_key: values.avatar_key,
+        avatar_file: values.avatar_file,
       }),
     onSuccess: async (res) => {
       const authToken = res.data.token;
@@ -184,6 +208,9 @@ export default function OnboardingForm({
       router.push("/admin/dashboard");
     },
     onError: (err: ApiRequestError | Error) => {
+      if (err instanceof ApiRequestError && err.errors?.avatar_file?.[0]) {
+        setError("avatar_file", { message: err.errors.avatar_file[0] });
+      }
       toast.error(err.message);
     },
   });
@@ -192,13 +219,56 @@ export default function OnboardingForm({
   const selectedGender = useWatch({ control, name: "gender" });
   const phoneNumber = useWatch({ control, name: "phone_number" });
   const selectedAvatarKey = useWatch({ control, name: "avatar_key" });
+  const selectedAvatarFile = useWatch({ control, name: "avatar_file" });
   const hasValidInviteParams =
     INVITATION_ID_REGEX.test(invitationId) && INVITE_TOKEN_REGEX.test(token);
   const preview = previewQuery.data?.data;
-  const avatarOptions = useMemo(
-    () => preview?.avatar_options_by_gender?.[selectedGender] ?? preview?.avatar_options ?? [],
-    [preview, selectedGender]
-  );
+  const [customAvatarPreview, setCustomAvatarPreview] = useState<string | null>(null);
+  const genderAvatarsQuery = useInfiniteQuery({
+    queryKey: ["internal-gender-avatars", selectedGender],
+    queryFn: ({ pageParam }) =>
+      listAvatars(selectedGender, {
+        cursor: pageParam as number,
+        limit: AVATAR_PAGE_SIZE,
+      }),
+    enabled: Boolean(selectedGender) && hasValidInviteParams && previewQuery.isSuccess,
+    staleTime: 60_000,
+    retry: false,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.meta?.next_cursor ?? undefined,
+  });
+
+  const hasMoreAvatarPages = Boolean(genderAvatarsQuery.hasNextPage);
+  const isLoadingMoreAvatars = genderAvatarsQuery.isFetchingNextPage;
+
+  const avatarOptions = useMemo(() => {
+    const apiData = genderAvatarsQuery.data?.pages.flatMap((page) => page.data) ?? [];
+    if (apiData.length > 0) return apiData;
+
+    return (
+      preview?.avatar_options_by_gender?.[selectedGender] ??
+      preview?.avatar_options ??
+      []
+    );
+  }, [genderAvatarsQuery.data, preview, selectedGender]);
+
+  useEffect(() => {
+    if (!selectedAvatarFile) {
+      if (customAvatarPreview) {
+        URL.revokeObjectURL(customAvatarPreview);
+      }
+
+      setCustomAvatarPreview(null);
+      return;
+    }
+
+    const nextPreview = URL.createObjectURL(selectedAvatarFile);
+    setCustomAvatarPreview(nextPreview);
+
+    return () => {
+      URL.revokeObjectURL(nextPreview);
+    };
+  }, [selectedAvatarFile]);
 
   useEffect(() => {
     if (!preview || phoneNumber || !preview.prefilled_data.phone_number) return;
@@ -207,10 +277,16 @@ export default function OnboardingForm({
   }, [phoneNumber, preview, setValue]);
 
   useEffect(() => {
+    const prefilledGender = preview?.prefilled_data.gender;
+    if (!prefilledGender) return;
+
+    setValue("gender", prefilledGender, { shouldValidate: true });
+  }, [preview?.prefilled_data.gender, setValue]);
+
+  useEffect(() => {
     if (!preview || selectedAvatarKey) return;
-    const randomized = shuffleArray(avatarOptions);
     const preferredAvatar =
-      preview.prefilled_data.avatar_key ?? preview.suggested_avatar_key ?? randomized[0]?.key;
+      preview.prefilled_data.avatar_key ?? preview.suggested_avatar_key ?? avatarOptions[0]?.key;
     if (preferredAvatar) {
       setValue("avatar_key", preferredAvatar);
     }
@@ -224,11 +300,7 @@ export default function OnboardingForm({
     );
   }
 
-  if (previewQuery.isPending) {
-    return <p className="text-sm text-gray-500 text-center">Loading invitation...</p>;
-  }
-
-  if (previewQuery.isError || !previewQuery.data?.success) {
+  if (previewQuery.isError || (previewQuery.isSuccess && !previewQuery.data?.success)) {
     return (
       <p className="text-xs text-red-500 text-center mb-4">
         This invitation is invalid or has expired.
@@ -236,21 +308,17 @@ export default function OnboardingForm({
     );
   }
 
-  if (!preview) {
-    return (
-      <p className="text-xs text-red-500 text-center mb-4">
-        Invitation data is unavailable. Please request a fresh invite.
-      </p>
-    );
-  }
-
   return (
     <form className="flex flex-col" onSubmit={handleSubmit((v) => completeMutation.mutate(v))}>
+      {previewQuery.isPending && (
+        <p className="text-xs text-gray-500 text-center mb-3">Loading invitation details...</p>
+      )}
+
       <Input
         type="text"
         placeholder="Full Name"
         className="mb-2 bg-gray-50 text-gray-500"
-        value={preview.user.name ?? ""}
+        value={preview?.user.name ?? ""}
         disabled
         readOnly
       />
@@ -259,7 +327,7 @@ export default function OnboardingForm({
         type="email"
         placeholder="Email"
         className="mb-2 bg-gray-50 text-gray-500"
-        value={preview.user.email ?? ""}
+        value={preview?.user.email ?? ""}
         disabled
         readOnly
       />
@@ -284,7 +352,13 @@ export default function OnboardingForm({
       <div className="mb-2">
         <Select
           placeholder="Select Gender"
-          {...register("gender")}
+          {...register("gender", {
+            onChange: () => {
+              setValue("avatar_key", "", { shouldValidate: true });
+              setValue("avatar_file", undefined, { shouldValidate: true });
+              clearErrors(["avatar_key", "avatar_file"]);
+            },
+          })}
           options={[
             { label: "Male", value: "male" },
             { label: "Female", value: "female" },
@@ -295,18 +369,78 @@ export default function OnboardingForm({
         <p className="text-xs text-red-500 mb-4 px-4">{errors.gender.message}</p>
       )}
 
-      <div className="mb-2">
+      {/* <div className="mb-2">
         <input type="hidden" {...register("avatar_key")} />
+
+        <div className="mb-3 rounded-lg border border-dashed border-gray-300 p-3">
+          <label className="text-xs text-gray-500 block mb-2">Upload custom avatar (optional)</label>
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+
+              setValue("avatar_file", file, { shouldValidate: true });
+              setValue("avatar_key", "", { shouldValidate: true });
+              clearErrors(["avatar_key", "avatar_file"]);
+            }}
+            className="block w-full text-xs text-gray-600 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium"
+          />
+
+          {customAvatarPreview && (
+            <div className="mt-3 flex items-center gap-3">
+              <img
+                src={customAvatarPreview}
+                alt="Custom avatar preview"
+                className="h-14 w-14 rounded-full object-cover border border-gray-200"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setValue("avatar_file", undefined, { shouldValidate: true });
+                  clearErrors("avatar_file");
+                }}
+                className="text-xs text-red-500 hover:text-red-600"
+              >
+                Remove upload
+              </button>
+            </div>
+          )}
+        </div> */}
+
+        {genderAvatarsQuery.isPending && avatarOptions.length === 0 && (
+          <p className="text-xs text-gray-400 text-center mb-2">Loading avatars...</p>
+        )}
+
+        {genderAvatarsQuery.isError && avatarOptions.length === 0 && (
+          <p className="text-xs text-red-500 text-center mb-2">Unable to load avatars right now.</p>
+        )}
+
         <p className="text-sm text-gray-500 mb-2 text-center">Or, select any avatar of your choice</p>
         <AvatarPicker
-          key={`${selectedGender}-${avatarOptions.length}`}
+          key={selectedGender}
           avatars={avatarOptions}
           selectedAvatarKey={selectedAvatarKey}
-          onSelect={(avatarKey) => setValue("avatar_key", avatarKey, { shouldValidate: true })}
+          hasMore={hasMoreAvatarPages}
+          isLoadingMore={isLoadingMoreAvatars}
+          onLoadMore={() => {
+            if (hasMoreAvatarPages && !isLoadingMoreAvatars) {
+              void genderAvatarsQuery.fetchNextPage();
+            }
+          }}
+          onSelect={(avatarKey) => {
+            setValue("avatar_key", avatarKey, { shouldValidate: true });
+            setValue("avatar_file", undefined, { shouldValidate: true });
+            clearErrors(["avatar_key", "avatar_file"]);
+          }}
         />
       </div>
       {errors.avatar_key && (
         <p className="text-xs text-red-500 mb-4 px-4">{errors.avatar_key.message}</p>
+      )}
+      {errors.avatar_file && (
+        <p className="text-xs text-red-500 mb-4 px-4">{errors.avatar_file.message}</p>
       )}
 
       <Input type="password" placeholder="Password" className="mb-2" {...register("password")} />
@@ -330,8 +464,12 @@ export default function OnboardingForm({
         <p className="text-xs text-red-500 text-center mb-4">{apiError.message}</p>
       )}
 
-      <Button type="submit" disabled={completeMutation.isPending}>
-        {completeMutation.isPending ? "Finishing..." : "Complete Onboarding"}
+      <Button type="submit" disabled={completeMutation.isPending || previewQuery.isPending || !preview}>
+        {previewQuery.isPending
+          ? "Loading invitation..."
+          : completeMutation.isPending
+            ? "Finishing..."
+            : "Complete Onboarding"}
       </Button>
     </form>
   );

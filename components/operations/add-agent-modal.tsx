@@ -52,6 +52,7 @@ type FormErrors = Partial<{
   supervisorId: string;
   phone: string;
   gender: string;
+  avatarKey: string;
 }>;
 
 function FieldError({ message }: { message?: string }) {
@@ -76,8 +77,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const [agentDetails, setAgentDetails] = useState<AgentDetails>({
     phone: "",
     gender: "",
-    avatarIndex: -1,
-    avatarCustom: null,
+    avatarKey: "",
   });
   const [errors, setErrors] = useState<FormErrors>({});
 
@@ -125,6 +125,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
     if (fillForAgent) {
       if (!agentDetails.phone.trim()) e.phone = "Phone number is required.";
       if (!agentDetails.gender) e.gender = "Gender is required.";
+      if (!agentDetails.avatarKey) e.avatarKey = "Select an avatar.";
     }
     return e;
   };
@@ -144,6 +145,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       if (apiErr.errors.supervisor_user_id) fe.supervisorId = apiErr.errors.supervisor_user_id[0];
       if (apiErr.errors.phone_number) fe.phone = apiErr.errors.phone_number[0];
       if (apiErr.errors.gender) fe.gender = apiErr.errors.gender[0];
+      if (apiErr.errors.avatar_key) fe.avatarKey = apiErr.errors.avatar_key[0];
       if (apiErr.errors.authorization) toast.error(apiErr.errors.authorization[0]);
       setErrors(fe);
     }
@@ -183,7 +185,10 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
         ? { phone_number: agentDetails.phone.trim() }
         : {}),
       ...(fillForAgent && agentDetails.gender
-        ? { gender: agentDetails.gender.toLowerCase() as "male" | "female" }
+        ? { gender: agentDetails.gender as "male" | "female" }
+        : {}),
+      ...(fillForAgent && agentDetails.avatarKey
+        ? { avatar_key: agentDetails.avatarKey }
         : {}),
     };
 
@@ -396,11 +401,10 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
 
       <AgentDetailsModal
         isOpen={agentDetailsModalOpen}
-        onClose={() => setAgentDetailsModalOpen(false)}
         details={agentDetails}
         onDetailsChange={setAgentDetails}
-        errors={{ phone: errors.phone, gender: errors.gender }}
-        onClearError={(field) => clearError(field)}
+        errors={{ phone: errors.phone, gender: errors.gender, avatarKey: errors.avatarKey }}
+        onClearError={(field) => clearError(field as keyof FormErrors)}
       />
     </>
   );

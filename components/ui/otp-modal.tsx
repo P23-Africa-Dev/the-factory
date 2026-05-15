@@ -45,7 +45,7 @@ export default function OtpModal({ email, maskedEmail, onClose }: Props) {
       toast.success(res.message);
       sessionStorage.setItem("onboarding_name", res.data.user.name);
       setAuthSession(res.data.token, res.data.onboarding_completed ?? false);
-      router.push("/complete-onboarding");
+      router.push(res.data.onboarding_completed ? "/dashboard" : "/complete-onboarding");
     },
     onError: (err: ApiRequestError) => {
       toast.error(err.message);
