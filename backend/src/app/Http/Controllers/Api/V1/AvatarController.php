@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -49,52 +50,64 @@ class AvatarController
             ]);
         }
 
-        $files = $disk->files($avatarPath);
-        sort($files);
-        $avatars = [];
-        $diskKeys = [];
+        $cacheKey = sprintf('internal_onboarding.avatars.%s', $normalizedGender);
 
-        foreach ($files as $file) {
-            $filename = basename($file);
-            $extension = strtolower((string) pathinfo($filename, PATHINFO_EXTENSION));
+        $avatars = Cache::remember($cacheKey, now()->addMinutes(15), function () use (
+            $disk,
+            $avatarPath,
+            $publicBaseUrl,
+            $normalizedGender,
+        ): array {
+            $files = $disk->files($avatarPath);
+            sort($files);
 
-            if (! in_array($extension, ['png', 'svg'], true)) {
-                continue;
+            $items = [];
+            $diskKeys = [];
+
+            foreach ($files as $file) {
+                $filename = basename($file);
+                $extension = strtolower((string) pathinfo($filename, PATHINFO_EXTENSION));
+
+                if (! in_array($extension, ['png', 'svg'], true)) {
+                    continue;
+                }
+
+                $key = pathinfo($filename, PATHINFO_FILENAME);
+                $url = $publicBaseUrl . '/' . ltrim($file, '/');
+                $svgContent = null;
+
+                if ($extension === 'svg') {
+                    try {
+                        $svgContent = $disk->get($file);
+                    } catch (\Throwable) {
+                        // Non-fatal: URL fallback will be used.
+                    }
+                }
+
+                $items[] = [
+                    'key' => $key,
+                    'url' => $url,
+                    'svg' => $svgContent,
+                ];
+
+                $diskKeys[] = $key;
             }
 
-            $key = pathinfo($filename, PATHINFO_FILENAME);
-            $url = $publicBaseUrl . '/' . ltrim($file, '/');
-            $svgContent = null;
+            // Include SVG-only catalog entries whose keys are not already covered by disk files.
+            $svgCatalog = config("internal_onboarding.avatar_catalog.{$normalizedGender}", []);
 
-            if ($extension === 'svg') {
-                try {
-                    $svgContent = $disk->get($file);
-                } catch (\Throwable) {
-                    // Non-fatal: URL fallback will be used.
+            foreach ($svgCatalog as $catalogKey => $svg) {
+                if (! in_array($catalogKey, $diskKeys, true)) {
+                    $items[] = [
+                        'key' => $catalogKey,
+                        'url' => null,
+                        'svg' => $svg,
+                    ];
                 }
             }
 
-            $avatars[] = [
-                'key'  => $key,
-                'url'  => $url,
-                'svg'  => $svgContent,
-            ];
-
-            $diskKeys[] = $key;
-        }
-
-        // Include SVG-only catalog entries whose keys are not already covered by disk files.
-        $svgCatalog = config("internal_onboarding.avatar_catalog.{$normalizedGender}", []);
-
-        foreach ($svgCatalog as $catalogKey => $svg) {
-            if (! in_array($catalogKey, $diskKeys, true)) {
-                $avatars[] = [
-                    'key' => $catalogKey,
-                    'url' => null,
-                    'svg' => $svg,
-                ];
-            }
-        }
+            return $items;
+        });
 
         return response()->json([
             'success' => true,

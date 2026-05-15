@@ -110,7 +110,10 @@ function AvatarPicker({
                 }
               />
             ) : avatar.svg ? (
-              <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: avatar.svg }} />
+              <div
+                className="h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
+                dangerouslySetInnerHTML={{ __html: avatar.svg }}
+              />
             ) : (
               <div className="h-full w-full bg-gray-100" />
             )}
@@ -228,11 +231,15 @@ export default function OnboardingForm({
     INVITATION_ID_REGEX.test(invitationId) && INVITE_TOKEN_REGEX.test(token);
   const preview = previewQuery.data?.data;
   const [customAvatarPreview, setCustomAvatarPreview] = useState<string | null>(null);
+  const hasPreviewAvatarOptions =
+    Boolean(preview?.avatar_options_by_gender?.[selectedGender]?.length);
+  const shouldFetchAvatarsFromApi =
+    Boolean(selectedGender) && previewQuery.isSuccess && !hasPreviewAvatarOptions;
 
   const genderAvatarsQuery = useQuery({
     queryKey: ["internal-gender-avatars", selectedGender],
     queryFn: () => listAvatars(selectedGender),
-    enabled: Boolean(selectedGender),
+    enabled: shouldFetchAvatarsFromApi,
     staleTime: 60_000,
     retry: false,
   });
@@ -290,11 +297,7 @@ export default function OnboardingForm({
     );
   }
 
-  if (previewQuery.isPending) {
-    return <p className="text-sm text-gray-500 text-center">Loading invitation...</p>;
-  }
-
-  if (previewQuery.isError || !previewQuery.data?.success) {
+  if (previewQuery.isError || (previewQuery.isSuccess && !previewQuery.data?.success)) {
     return (
       <p className="text-xs text-red-500 text-center mb-4">
         This invitation is invalid or has expired.
@@ -302,21 +305,17 @@ export default function OnboardingForm({
     );
   }
 
-  if (!preview) {
-    return (
-      <p className="text-xs text-red-500 text-center mb-4">
-        Invitation data is unavailable. Please request a fresh invite.
-      </p>
-    );
-  }
-
   return (
     <form className="flex flex-col" onSubmit={handleSubmit((v) => completeMutation.mutate(v))}>
+      {previewQuery.isPending && (
+        <p className="text-xs text-gray-500 text-center mb-3">Loading invitation details...</p>
+      )}
+
       <Input
         type="text"
         placeholder="Full Name"
         className="mb-2 bg-gray-50 text-gray-500"
-        value={preview.user.name ?? ""}
+        value={preview?.user.name ?? ""}
         disabled
         readOnly
       />
@@ -325,7 +324,7 @@ export default function OnboardingForm({
         type="email"
         placeholder="Email"
         className="mb-2 bg-gray-50 text-gray-500"
-        value={preview.user.email ?? ""}
+        value={preview?.user.email ?? ""}
         disabled
         readOnly
       />
@@ -451,8 +450,12 @@ export default function OnboardingForm({
         <p className="text-xs text-red-500 text-center mb-4">{apiError.message}</p>
       )}
 
-      <Button type="submit" disabled={completeMutation.isPending}>
-        {completeMutation.isPending ? "Finishing..." : "Complete Onboarding"}
+      <Button type="submit" disabled={completeMutation.isPending || previewQuery.isPending || !preview}>
+        {previewQuery.isPending
+          ? "Loading invitation..."
+          : completeMutation.isPending
+            ? "Finishing..."
+            : "Complete Onboarding"}
       </Button>
     </form>
   );

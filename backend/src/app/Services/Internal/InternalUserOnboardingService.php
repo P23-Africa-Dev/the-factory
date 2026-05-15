@@ -19,6 +19,10 @@ use Throwable;
 
 class InternalUserOnboardingService
 {
+    private ?array $avatarCatalogCache = null;
+
+    private ?array $avatarGenderMapCache = null;
+
     public function __construct(private readonly InternalUserAccessService $accessService) {}
 
     public function createByManager(User $creator, array $data): array
@@ -474,6 +478,10 @@ class InternalUserOnboardingService
 
     private function avatarCatalog(): array
     {
+        if ($this->avatarCatalogCache !== null) {
+            return $this->avatarCatalogCache;
+        }
+
         $catalog = [
             'male' => [],
             'female' => [],
@@ -538,16 +546,24 @@ class InternalUserOnboardingService
             }
         }
 
-        return $catalog;
+        $this->avatarCatalogCache = $catalog;
+
+        return $this->avatarCatalogCache;
     }
 
     private function avatarGenderMap(): array
     {
-        return Collection::make($this->avatarCatalog())
+        if ($this->avatarGenderMapCache !== null) {
+            return $this->avatarGenderMapCache;
+        }
+
+        $this->avatarGenderMapCache = Collection::make($this->avatarCatalog())
             ->flatMap(fn(array $avatars, string $gender): array => collect(array_keys($avatars))
                 ->mapWithKeys(fn(string $avatarKey): array => [$avatarKey => $gender])
                 ->all())
             ->all();
+
+        return $this->avatarGenderMapCache;
     }
 
     private function randomAvatarKeyForGender(string $gender): ?string

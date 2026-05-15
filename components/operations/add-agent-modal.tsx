@@ -401,7 +401,6 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
 
       <AgentDetailsModal
         isOpen={agentDetailsModalOpen}
-        onClose={() => setAgentDetailsModalOpen(false)}
         details={agentDetails}
         onDetailsChange={setAgentDetails}
         errors={{ phone: errors.phone, gender: errors.gender, avatarKey: errors.avatarKey }}

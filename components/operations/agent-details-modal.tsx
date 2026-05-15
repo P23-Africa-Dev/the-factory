@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SectionDivider } from "@/components/payroll/payroll/section-divider";
 import { FormRow } from "@/components/payroll/payroll/form-row";
@@ -18,7 +18,6 @@ export interface AgentDetails {
 
 interface AgentDetailsModalProps {
   isOpen: boolean;
-  onClose: () => void;
   details: AgentDetails;
   onDetailsChange: (details: AgentDetails) => void;
   errors?: { phone?: string; gender?: string; avatarKey?: string };
@@ -48,6 +47,10 @@ export function AgentDetailsModal({
 
   const [failedImageKeys, setFailedImageKeys] = useState<Set<string>>(new Set());
 
+  useEffect(() => {
+    setFailedImageKeys(new Set());
+  }, [normalizedGender]);
+
   const visibleAvatars = avatarItems.slice(0, AVATAR_BATCH_SIZE);
 
   if (!isOpen) return null;
@@ -56,7 +59,7 @@ export function AgentDetailsModal({
     onDetailsChange({ ...details, [key]: val });
 
   return (
-    <div className="fixed right-119.75 bottom-3.25 z-60">
+    <div className="fixed right-119.75 bottom-3.25 z-[60]">
       <div className="relative bg-white rounded-3xl w-full max-w-105 p-7 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026]">
         <h3 className="text-[20px] font-bold text-[#0B1215] mb-6">
           Agent Details
@@ -141,7 +144,7 @@ export function AgentDetailsModal({
                     <img
                       src={avatar.url ?? ""}
                       alt={avatar.key}
-                      className="h-full w-full object-cover"
+                      className="block h-full w-full object-cover"
                       onError={() =>
                         setFailedImageKeys((prev) => {
                           const next = new Set(prev);
@@ -151,7 +154,10 @@ export function AgentDetailsModal({
                       }
                     />
                   ) : avatar.svg ? (
-                    <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: avatar.svg }} />
+                    <div
+                      className="h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
+                      dangerouslySetInnerHTML={{ __html: avatar.svg }}
+                    />
                   ) : (
                     <div className="h-full w-full bg-gray-100" />
                   )}
