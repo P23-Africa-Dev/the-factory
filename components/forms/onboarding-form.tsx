@@ -12,7 +12,7 @@ import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Select from "@/components/ui/select";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useEffect, useMemo, useState } from "react";
@@ -47,16 +47,7 @@ type OnboardingFormValues = z.infer<typeof onboardingSchema>;
 
 const INVITATION_ID_REGEX = /^[0-9]+$/;
 const INVITE_TOKEN_REGEX = /^[A-Za-z0-9_-]{32,128}$/;
-const AVATAR_BATCH_SIZE = 4;
-
-function shuffleArray<T>(items: T[]): T[] {
-  const next = [...items];
-  for (let i = next.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [next[i], next[j]] = [next[j], next[i]];
-  }
-  return next;
-}
+const AVATAR_PAGE_SIZE = 4;
 
 type AvatarOption = { key: string; url: string | null; svg: string | null };
 
@@ -69,21 +60,19 @@ function AvatarPicker({
   selectedAvatarKey?: string;
   onSelect: (avatarKey: string) => void;
 }) {
-  const [visibleAvatarCount, setVisibleAvatarCount] = useState(AVATAR_BATCH_SIZE);
   const [failedImageKeys, setFailedImageKeys] = useState<Set<string>>(new Set());
-  const shuffledAvatars = useMemo(() => shuffleArray(avatars), [avatars]);
-  const visibleAvatars = useMemo(
-    () => shuffledAvatars.slice(0, visibleAvatarCount),
-    [shuffledAvatars, visibleAvatarCount]
-  );
 
-  if (visibleAvatars.length === 0) {
+  useEffect(() => {
+    setFailedImageKeys(new Set());
+  }, [avatars]);
+
+  if (avatars.length === 0) {
     return <p className="text-xs text-gray-400 text-center">No avatars available for selected gender.</p>;
   }
 
   return (
     <div className="flex flex-wrap items-center gap-3 justify-center">
-      {visibleAvatars.map((avatar) => {
+      {avatars.map((avatar) => {
         const isSelected = selectedAvatarKey === avatar.key;
         const shouldRenderImage = Boolean(avatar.url) && !failedImageKeys.has(avatar.key);
         return (
@@ -120,20 +109,6 @@ function AvatarPicker({
           </button>
         );
       })}
-      {visibleAvatarCount < shuffledAvatars.length ? (
-        <button
-          type="button"
-          onClick={() =>
-            setVisibleAvatarCount((count) =>
-              Math.min(count + AVATAR_BATCH_SIZE, shuffledAvatars.length)
-            )
-          }
-          className="h-16 w-16 rounded-2xl border border-gray-300 text-3xl text-gray-400 hover:bg-gray-50"
-          aria-label="Load more avatars"
-        >
-          +
-        </button>
-      ) : null}
     </div>
   );
 }
@@ -231,21 +206,41 @@ export default function OnboardingForm({
     INVITATION_ID_REGEX.test(invitationId) && INVITE_TOKEN_REGEX.test(token);
   const preview = previewQuery.data?.data;
   const [customAvatarPreview, setCustomAvatarPreview] = useState<string | null>(null);
-  const hasPreviewAvatarOptions =
-    Boolean(preview?.avatar_options_by_gender?.[selectedGender]?.length);
-  const shouldFetchAvatarsFromApi =
-    Boolean(selectedGender) && previewQuery.isSuccess && !hasPreviewAvatarOptions;
-
-  const genderAvatarsQuery = useQuery({
+  const genderAvatarsQuery = useInfiniteQuery({
     queryKey: ["internal-gender-avatars", selectedGender],
-    queryFn: () => listAvatars(selectedGender),
-    enabled: shouldFetchAvatarsFromApi,
+    queryFn: ({ pageParam }) =>
+      listAvatars(selectedGender, {
+        cursor: pageParam as number,
+        limit: AVATAR_PAGE_SIZE,
+      }),
+    enabled: Boolean(selectedGender) && hasValidInviteParams,
     staleTime: 60_000,
     retry: false,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.meta?.next_cursor ?? undefined,
   });
 
+  useEffect(() => {
+    if (!selectedGender || !genderAvatarsQuery.hasNextPage || genderAvatarsQuery.isFetchingNextPage) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void genderAvatarsQuery.fetchNextPage();
+    }, 120);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    genderAvatarsQuery.fetchNextPage,
+    genderAvatarsQuery.hasNextPage,
+    genderAvatarsQuery.isFetchingNextPage,
+    selectedGender,
+  ]);
+
   const avatarOptions = useMemo(() => {
-    const apiData = genderAvatarsQuery.data?.data ?? [];
+    const apiData = genderAvatarsQuery.data?.pages.flatMap((page) => page.data) ?? [];
     if (apiData.length > 0) return apiData;
 
     return (
@@ -281,9 +276,8 @@ export default function OnboardingForm({
 
   useEffect(() => {
     if (!preview || selectedAvatarKey) return;
-    const randomized = shuffleArray(avatarOptions);
     const preferredAvatar =
-      preview.prefilled_data.avatar_key ?? preview.suggested_avatar_key ?? randomized[0]?.key;
+      preview.prefilled_data.avatar_key ?? preview.suggested_avatar_key ?? avatarOptions[0]?.key;
     if (preferredAvatar) {
       setValue("avatar_key", preferredAvatar);
     }
@@ -406,13 +400,17 @@ export default function OnboardingForm({
           )}
         </div>
 
-        {genderAvatarsQuery.isPending && (
+        {genderAvatarsQuery.isPending && avatarOptions.length === 0 && (
           <p className="text-xs text-gray-400 text-center mb-2">Loading avatars...</p>
+        )}
+
+        {genderAvatarsQuery.isError && avatarOptions.length === 0 && (
+          <p className="text-xs text-red-500 text-center mb-2">Unable to load avatars right now.</p>
         )}
 
         <p className="text-sm text-gray-500 mb-2 text-center">Or, select any avatar of your choice</p>
         <AvatarPicker
-          key={`${selectedGender}-${avatarOptions.length}`}
+          key={selectedGender}
           avatars={avatarOptions}
           selectedAvatarKey={selectedAvatarKey}
           onSelect={(avatarKey) => {
@@ -421,6 +419,10 @@ export default function OnboardingForm({
             clearErrors(["avatar_key", "avatar_file"]);
           }}
         />
+
+        {genderAvatarsQuery.isFetchingNextPage && avatarOptions.length > 0 && (
+          <p className="text-xs text-gray-400 text-center mt-2">Loading more avatars...</p>
+        )}
       </div>
       {errors.avatar_key && (
         <p className="text-xs text-red-500 mb-4 px-4">{errors.avatar_key.message}</p>

@@ -63,6 +63,18 @@ export type AvatarItem = {
 
 export type AvatarData = AvatarItem[];
 
+export type AvatarListMeta = {
+  cursor: number;
+  limit: number;
+  next_cursor: number | null;
+  has_more: boolean;
+  total: number;
+};
+
+export type AvatarListResponse = ApiEnvelope<AvatarData> & {
+  meta?: AvatarListMeta;
+};
+
 export type AgentLoginPayload = {
   email: string;
   password: string;
@@ -144,12 +156,23 @@ export function completeInternalInvitation(
 }
 
 export function listAvatars(
-  gender: "male" | "female"
-): Promise<ApiEnvelope<AvatarData>> {
+  gender: "male" | "female",
+  options?: { cursor?: number; limit?: number }
+): Promise<AvatarListResponse> {
+  const params = new URLSearchParams({ gender });
+
+  if (typeof options?.cursor === "number") {
+    params.set("cursor", String(options.cursor));
+  }
+
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+
   return apiRequest<AvatarData>({
     method: "GET",
-    path: `/avatars?gender=${gender}`,
-  });
+    path: `/avatars?${params.toString()}`,
+  }) as Promise<AvatarListResponse>;
 }
 
 export function loginAgent(

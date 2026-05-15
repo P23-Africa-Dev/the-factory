@@ -20,6 +20,8 @@ class AvatarController
     public function index(Request $request): JsonResponse
     {
         $gender = $request->query('gender');
+        $limit = max(1, min((int) $request->query('limit', 4), 12));
+        $cursor = max((int) $request->query('cursor', 0), 0);
 
         if ($gender === null) {
             throw ValidationException::withMessages([
@@ -50,9 +52,9 @@ class AvatarController
             ]);
         }
 
-        $cacheKey = sprintf('internal_onboarding.avatars.%s', $normalizedGender);
+        $manifestCacheKey = sprintf('internal_onboarding.avatar_manifest.%s', $normalizedGender);
 
-        $avatars = Cache::remember($cacheKey, now()->addMinutes(15), function () use (
+        $manifest = Cache::remember($manifestCacheKey, now()->addMinutes(15), function () use (
             $disk,
             $avatarPath,
             $publicBaseUrl,
@@ -61,7 +63,7 @@ class AvatarController
             $files = $disk->files($avatarPath);
             sort($files);
 
-            $items = [];
+            $manifestItems = [];
             $diskKeys = [];
 
             foreach ($files as $file) {
@@ -74,20 +76,13 @@ class AvatarController
 
                 $key = pathinfo($filename, PATHINFO_FILENAME);
                 $url = $publicBaseUrl . '/' . ltrim($file, '/');
-                $svgContent = null;
 
-                if ($extension === 'svg') {
-                    try {
-                        $svgContent = $disk->get($file);
-                    } catch (\Throwable) {
-                        // Non-fatal: URL fallback will be used.
-                    }
-                }
-
-                $items[] = [
+                $manifestItems[] = [
                     'key' => $key,
                     'url' => $url,
-                    'svg' => $svgContent,
+                    'file' => $file,
+                    'extension' => $extension,
+                    'svg' => null,
                 ];
 
                 $diskKeys[] = $key;
@@ -98,20 +93,54 @@ class AvatarController
 
             foreach ($svgCatalog as $catalogKey => $svg) {
                 if (! in_array($catalogKey, $diskKeys, true)) {
-                    $items[] = [
+                    $manifestItems[] = [
                         'key' => $catalogKey,
                         'url' => null,
+                        'file' => null,
+                        'extension' => 'svg',
                         'svg' => $svg,
                     ];
                 }
             }
 
-            return $items;
+            return $manifestItems;
         });
+
+        $total = count($manifest);
+        $page = array_slice($manifest, $cursor, $limit);
+
+        $avatars = array_map(function (array $item) use ($disk): array {
+            $svgContent = is_string($item['svg'] ?? null) ? $item['svg'] : null;
+            $file = $item['file'] ?? null;
+            $extension = $item['extension'] ?? null;
+
+            if ($svgContent === null && $extension === 'svg' && is_string($file)) {
+                try {
+                    $svgContent = $disk->get($file);
+                } catch (\Throwable) {
+                    // Non-fatal: URL fallback will be used.
+                }
+            }
+
+            return [
+                'key' => (string) $item['key'],
+                'url' => $item['url'] ?? null,
+                'svg' => $svgContent,
+            ];
+        }, $page);
+
+        $nextCursor = ($cursor + count($page)) < $total ? $cursor + count($page) : null;
 
         return response()->json([
             'success' => true,
             'data'    => $avatars,
+            'meta'    => [
+                'cursor' => $cursor,
+                'limit' => $limit,
+                'next_cursor' => $nextCursor,
+                'has_more' => $nextCursor !== null,
+                'total' => $total,
+            ],
         ]);
     }
 }

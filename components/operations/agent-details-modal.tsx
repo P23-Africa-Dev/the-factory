@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { SectionDivider } from "@/components/payroll/payroll/section-divider";
 import { FormRow } from "@/components/payroll/payroll/form-row";
 import { InlineSelect } from "@/components/payroll/payroll/inline-select";
 import PhoneNumberInput from "@/components/ui/phone-number-input";
 import { listAvatars } from "@/lib/api/internal-onboarding";
 
-const AVATAR_BATCH_SIZE = 8;
+const AVATAR_PAGE_SIZE = 4;
 
 export interface AgentDetails {
   phone: string;
@@ -34,24 +34,54 @@ export function AgentDetailsModal({
   // All hooks MUST be declared before any conditional return (Rules of Hooks).
   const normalizedGender = details.gender ? details.gender as "male" | "female" : null;
 
-  const avatarQuery = useQuery({
+  const avatarQuery = useInfiniteQuery({
     queryKey: ["internal-avatar-list", normalizedGender],
-    queryFn: () => listAvatars(normalizedGender as "male" | "female"),
-    enabled: Boolean(normalizedGender),
+    queryFn: ({ pageParam }) =>
+      listAvatars(normalizedGender as "male" | "female", {
+        cursor: pageParam as number,
+        limit: AVATAR_PAGE_SIZE,
+      }),
+    enabled: Boolean(normalizedGender) && isOpen,
     staleTime: 60_000,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.meta?.next_cursor ?? undefined,
   });
 
   const avatarItems = useMemo(() => {
-    return avatarQuery.data?.data ?? [];
+    return avatarQuery.data?.pages.flatMap((page) => page.data) ?? [];
   }, [avatarQuery.data]);
 
   const [failedImageKeys, setFailedImageKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    if (!isOpen || !normalizedGender) {
+      return;
+    }
+
+    if (!avatarQuery.hasNextPage || avatarQuery.isFetchingNextPage) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void avatarQuery.fetchNextPage();
+    }, 120);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    avatarQuery.fetchNextPage,
+    avatarQuery.hasNextPage,
+    avatarQuery.isFetchingNextPage,
+    isOpen,
+    normalizedGender,
+  ]);
+
+  useEffect(() => {
     setFailedImageKeys(new Set());
   }, [normalizedGender]);
 
-  const visibleAvatars = avatarItems.slice(0, AVATAR_BATCH_SIZE);
+  const visibleAvatars = avatarItems;
 
   if (!isOpen) return null;
 
@@ -117,53 +147,59 @@ export function AgentDetailsModal({
 
           {!normalizedGender ? (
             <p className="text-[11px] text-gray-400">Choose gender to load avatars.</p>
-          ) : avatarQuery.isPending ? (
+          ) : avatarQuery.isPending && visibleAvatars.length === 0 ? (
             <p className="text-[11px] text-gray-400">Loading avatars...</p>
           ) : avatarQuery.isError ? (
             <p className="text-[11px] text-red-500">Unable to load avatars right now.</p>
           ) : visibleAvatars.length === 0 ? (
             <p className="text-[11px] text-gray-400">No avatars available for selected gender.</p>
           ) : (
-            <div className="grid grid-cols-4 gap-2">
-              {visibleAvatars.map((avatar) => (
-                <button
-                  key={avatar.key}
-                  type="button"
-                  onClick={() => {
-                    set("avatarKey", avatar.key);
-                    onClearError?.("avatarKey");
-                  }}
-                  className={`h-14 w-14 rounded-full overflow-hidden border-2 transition-all ${
-                    details.avatarKey === avatar.key
-                      ? "border-[#094B5C] ring-2 ring-offset-1 ring-[#094B5C]/30"
-                      : "border-gray-200"
-                  }`}
-                  title={avatar.key}
-                >
-                  {Boolean(avatar.url) && !failedImageKeys.has(avatar.key) ? (
-                    <img
-                      src={avatar.url ?? ""}
-                      alt={avatar.key}
-                      className="block h-full w-full object-cover"
-                      onError={() =>
-                        setFailedImageKeys((prev) => {
-                          const next = new Set(prev);
-                          next.add(avatar.key);
-                          return next;
-                        })
-                      }
-                    />
-                  ) : avatar.svg ? (
-                    <div
-                      className="h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
-                      dangerouslySetInnerHTML={{ __html: avatar.svg }}
-                    />
-                  ) : (
-                    <div className="h-full w-full bg-gray-100" />
-                  )}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-4 gap-2">
+                {visibleAvatars.map((avatar) => (
+                  <button
+                    key={avatar.key}
+                    type="button"
+                    onClick={() => {
+                      set("avatarKey", avatar.key);
+                      onClearError?.("avatarKey");
+                    }}
+                    className={`h-14 w-14 rounded-full overflow-hidden border-2 transition-all ${
+                      details.avatarKey === avatar.key
+                        ? "border-[#094B5C] ring-2 ring-offset-1 ring-[#094B5C]/30"
+                        : "border-gray-200"
+                    }`}
+                    title={avatar.key}
+                  >
+                    {Boolean(avatar.url) && !failedImageKeys.has(avatar.key) ? (
+                      <img
+                        src={avatar.url ?? ""}
+                        alt={avatar.key}
+                        className="block h-full w-full object-cover"
+                        onError={() =>
+                          setFailedImageKeys((prev) => {
+                            const next = new Set(prev);
+                            next.add(avatar.key);
+                            return next;
+                          })
+                        }
+                      />
+                    ) : avatar.svg ? (
+                      <div
+                        className="h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
+                        dangerouslySetInnerHTML={{ __html: avatar.svg }}
+                      />
+                    ) : (
+                      <div className="h-full w-full bg-gray-100" />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {avatarQuery.isFetchingNextPage && visibleAvatars.length > 0 && (
+                <p className="text-[11px] text-gray-400 mt-2">Loading more avatars...</p>
+              )}
+            </>
           )}
 
           {errors.avatarKey && (
