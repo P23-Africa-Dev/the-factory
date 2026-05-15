@@ -385,6 +385,7 @@ export default function OnboardingForm({
 
       <div className="mb-2">
         <input type="hidden" {...register("avatar_key")} />
+{/*         
         <div className="mb-3 rounded-lg border border-dashed border-gray-300 p-3">
           <label className="text-xs text-gray-500 block mb-2">Upload custom avatar (optional)</label>
           <input
@@ -420,7 +421,7 @@ export default function OnboardingForm({
               </button>
             </div>
           )}
-        </div>
+        </div> */}
 
         {genderAvatarsQuery.isPending && (
           <p className="text-xs text-gray-400 text-center mb-2">Loading avatars...</p>
