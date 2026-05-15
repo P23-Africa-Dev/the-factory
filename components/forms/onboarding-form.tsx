@@ -66,10 +66,6 @@ function AvatarPicker({
     [shuffledAvatars, visibleAvatarCount]
   );
 
-  useEffect(() => {
-    setFailedImageKeys(new Set());
-  }, [avatars]);
-
   if (visibleAvatars.length === 0) {
     return <p className="text-xs text-gray-400 text-center">No avatars available for selected gender.</p>;
   }
