@@ -1,52 +1,67 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
-import { Search, MoreHorizontal, RefreshCw, MessageSquare, X } from 'lucide-react';
+import { Search, MessageSquare, X, Radio } from 'lucide-react';
+import { useTrackingStore } from '@/store/tracking';
+import { useTrackingWebSocket } from '@/hooks/use-tracking-ws';
+import type { LiveTaskState } from '@/types/tracking';
 
-interface Agent {
-  id: string;
-  name: string;
-  address: string;
-  lat: number;
-  lng: number;
-  avatar: string;
-  status: 'active' | 'idle';
-  zone: string;
+const STALE_MS = 2 * 60_000;
+
+function getStatusColor(status: string, stale: boolean): string {
+  if (stale) return '#9CA3AF';
+  if (status === 'arrived') return '#8B5CF6';
+  if (status === 'completed') return '#10B981';
+  return '#EF4444';
 }
 
-const INITIAL_AGENTS: Agent[] = [
-  { id: '1', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.6018, lng: 3.3515, avatar: '/avatars/female-avatar.png', status: 'active', zone: 'Ikeja LGA' },
-  { id: '2', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.5841, lng: 3.3705, avatar: '/avatars/female-avatar.png', status: 'idle',   zone: 'Agege LGA' },
-  { id: '3', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.5622, lng: 3.3210, avatar: '/avatars/female-avatar.png', status: 'idle',   zone: 'Alimosho LGA' },
-  { id: '4', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.6205, lng: 3.3850, avatar: '/avatars/female-avatar.png', status: 'idle',   zone: 'Kosofe LGA' },
-  { id: '5', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.5980, lng: 3.3120, avatar: '/avatars/female-avatar.png', status: 'active', zone: 'Ikeja LGA' },
-];
+function buildAgentEl(task: LiveTaskState, stale: boolean): HTMLElement {
+  const color = getStatusColor(task.status, stale);
+  const initials = task.agentName
+    ? task.agentName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
+    : '?';
+  const avatarHtml = task.agentAvatarUrl
+    ? `<img src="${task.agentAvatarUrl}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;border:1.5px solid #e5e7eb;"/>`
+    : `<div style="width:22px;height:22px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:white;">${initials}</div>`;
+  const statusText = stale
+    ? 'No signal'
+    : task.status === 'arrived'
+    ? 'Arrived'
+    : task.status === 'completed'
+    ? 'Completed'
+    : 'Live';
 
-const ROUTE_COORDS: [number, number][] = [
-  [3.3515, 6.6018], [3.3600, 6.5950], [3.3650, 6.5850],
-  [3.3705, 6.5841], [3.3720, 6.5760], [3.3730, 6.5700], [3.3850, 6.6205],
-];
-
-function jitter() { return (Math.random() - 0.5) * 0.0008; }
-
-function createMarkerEl(agent: Agent): HTMLElement {
   const el = document.createElement('div');
-  el.style.cssText = 'display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;';
+  el.style.cssText =
+    'display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;';
   el.innerHTML = `
     <svg width="30" height="36" viewBox="0 0 30 36" fill="none">
-      <path d="M15 0C6.716 0 0 6.716 0 15c0 9.941 13.5 21 15 21S30 24.941 30 15C30 6.716 23.284 0 15 0z" fill="#EF4444"/>
+      <path d="M15 0C6.716 0 0 6.716 0 15c0 9.941 13.5 21 15 21S30 24.941 30 15C30 6.716 23.284 0 15 0z" fill="${color}"/>
       <circle cx="15" cy="14" r="6" fill="white"/>
     </svg>
-    <div style="background:white;border-radius:20px;padding:3px 8px 3px 4px;display:flex;align-items:center;gap:5px;box-shadow:0 2px 8px rgba(0,0,0,0.15);margin-top:4px;white-space:nowrap;">
-      <img src="${agent.avatar}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;border:1.5px solid #e5e7eb;"/>
+    <div style="background:white;border-radius:20px;padding:3px 8px 3px 4px;display:flex;align-items:center;gap:5px;box-shadow:0 2px 8px rgba(0,0,0,0.15);margin-top:4px;white-space:nowrap;opacity:${stale ? 0.6 : 1};">
+      ${avatarHtml}
       <div style="line-height:1.2;">
-        <div style="font-size:10px;font-weight:700;color:#0B1215;">${agent.name}</div>
-        <div style="font-size:8px;color:#9ca3af;">Active at Kemsi Street</div>
+        <div style="font-size:10px;font-weight:700;color:#0B1215;">${task.agentName || 'Agent'}</div>
+        <div style="font-size:8px;color:${color};">${statusText}</div>
       </div>
-    </div>
-  `;
+    </div>`;
   return el;
+}
+
+// Mounts the WS hook — extracted so it only runs in full (non-compact) view.
+function WsConnector() {
+  useEffect(() => {
+    console.log(
+      "[tracking-ws]",
+      "WsConnector mounted on map page — listening for live events only.",
+      "Your device location is requested when an agent starts tracking a task (Operations → Commence, or /agent/tasks/.../tracking)."
+    );
+    return () => console.log("[tracking-ws]", "WsConnector unmounted");
+  }, []);
+  useTrackingWebSocket();
+  return null;
 }
 
 interface MapViewProps {
@@ -55,108 +70,180 @@ interface MapViewProps {
 
 export function MapView({ compact = false }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const mapRef       = useRef<mapboxgl.Map | null>(null);
-  const markersRef   = useRef<Map<string, mapboxgl.Marker>>(new Map());
-  const agentsRef    = useRef<Agent[]>(INITIAL_AGENTS);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const mapLoadedRef = useRef(false);
+  const agentMarkersRef = useRef<Map<number, { marker: mapboxgl.Marker; statusKey: string }>>(
+    new Map()
+  );
+  const destMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
 
-  const [agents, setAgents]               = useState<Agent[]>(INITIAL_AGENTS);
-  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
-  const [searchQuery, setSearchQuery]     = useState('');
-  const [mapReady, setMapReady]           = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  // Increments every 30s to re-evaluate stale status without extra state
+  const [tick, setTick] = useState(0);
+  // Flips true after map 'load' fires so the sync effect knows the map is ready
+  const [mapVersion, setMapVersion] = useState(0);
 
-  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "pk.eyJ1IjoiZWxpamFoc2NyaXB0ZGV2IiwiYSI6ImNtbnIzcHhvOTAwM2MycHF3b2JvZG1haG4ifQ.iu2J-8w1siVnexyejD7rjQ";
+  const liveTasks = useTrackingStore((s) => s.liveTasks);
+  const wsStatus = useTrackingStore((s) => s.wsStatus);
 
-  // ── Init map ────────────────────────────────────────────────────────────────
+  const tasks = Object.values(liveTasks);
+  const selectedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
+  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '';
+
+  // ── Staleness tick ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    const iv = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // ── Init map ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainer.current || mapRef.current || !token) return;
-
     mapboxgl.accessToken = token;
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/light-v11',
-      center: [3.3600, 6.5950],
+      center: [3.36, 6.595],
       zoom: compact ? 11.5 : 12.5,
       attributionControl: false,
       ...(compact && { interactive: false }),
     });
-
     mapRef.current = map;
 
     map.on('load', () => {
-      if (!compact) {
-        // Route line
-        map.addSource('route', {
-          type: 'geojson',
-          data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: ROUTE_COORDS } },
-        });
-        map.addLayer({
-          id: 'route-line', type: 'line', source: 'route',
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: { 'line-color': '#3B82F6', 'line-width': 10, 'line-opacity': 0.9 },
-        });
-
-        // Destination pulse
-        const destEl = document.createElement('div');
-        destEl.innerHTML = `
-          <style>.dest-pulse{animation:destpulse 2s infinite}@keyframes destpulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.2);opacity:.7}}</style>
-          <div class="dest-pulse" style="width:44px;height:44px;border-radius:50%;background:rgba(199,119,255,0.15);border:5px solid rgba(199,119,255,0.4);display:flex;align-items:center;justify-content:center;">
-            <div style="width:14px;height:14px;border-radius:50%;background:#9D4EDD;border:2px solid white;"></div>
-          </div>
-        `;
-        new mapboxgl.Marker({ element: destEl, anchor: 'center' }).setLngLat([3.4050, 6.6300]).addTo(map);
-
-        // Navigation arrow
-        const navEl = document.createElement('div');
-        navEl.innerHTML = `
-          <div style="width:34px;height:34px;border-radius:50%;background:#3B82F6;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(59,130,246,0.5);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>
-          </div>
-        `;
-        new mapboxgl.Marker({ element: navEl, anchor: 'center' }).setLngLat([3.3750, 6.5760]).addTo(map);
-      }
-
-      // Agent markers
-      agentsRef.current.forEach((agent) => {
-        const el = createMarkerEl(agent);
-        if (!compact) el.addEventListener('click', () => setSelectedAgent(agent));
-        const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
-          .setLngLat([agent.lng, agent.lat])
-          .addTo(map);
-        markersRef.current.set(agent.id, marker);
+      // GeoJSON source backing all agent route polylines
+      map.addSource('live-routes', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
       });
-
-      setMapReady(true);
+      map.addLayer({
+        id: 'route-lines',
+        type: 'line',
+        source: 'live-routes',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'status'],
+            'arrived',
+            '#8B5CF6',
+            'completed',
+            '#10B981',
+            '#3B82F6',
+          ],
+          'line-width': 3,
+          'line-opacity': 0.6,
+        },
+      });
+      mapLoadedRef.current = true;
+      setMapVersion((v) => v + 1);
     });
 
-    return () => { map.remove(); mapRef.current = null; };
+    return () => {
+      mapLoadedRef.current = false;
+      map.remove();
+      mapRef.current = null;
+      agentMarkersRef.current.forEach(({ marker }) => marker.remove());
+      agentMarkersRef.current.clear();
+      destMarkersRef.current.forEach((m) => m.remove());
+      destMarkersRef.current.clear();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, compact]);
 
-  // ── Animate agents ──────────────────────────────────────────────────────────
+  // ── Sync live tasks → markers + routes ───────────────────────────────────────
   useEffect(() => {
-    if (!mapReady || compact) return;
-    const interval = setInterval(() => {
-      setAgents((prev) => {
-        const next = prev.map((a) => ({ ...a, lat: a.lat + jitter(), lng: a.lng + jitter() }));
-        agentsRef.current = next;
-        next.forEach((a) => markersRef.current.get(a.id)?.setLngLat([a.lng, a.lat]));
-        return next;
-      });
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [mapReady]);
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current) return;
 
-  // ── Fly to agent ────────────────────────────────────────────────────────────
-  const handleAgentClick = useCallback((agent: Agent) => {
-    setSelectedAgent(agent);
-    mapRef.current?.flyTo({ center: [agent.lng, agent.lat], zoom: 14, speed: 1.2 });
-  }, []);
+    const now = Date.now();
+    const validTasks = tasks.filter(
+      (t) => t.lastPosition[0] !== 0 || t.lastPosition[1] !== 0
+    );
+    const validIds = new Set(validTasks.map((t) => t.taskId));
 
-  const filtered = agents.filter((a) =>
-    a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.address.toLowerCase().includes(searchQuery.toLowerCase())
+    // Update route polylines
+    const routeSource = map.getSource('live-routes') as mapboxgl.GeoJSONSource | undefined;
+    routeSource?.setData({
+      type: 'FeatureCollection',
+      features: validTasks
+        .filter((t) => t.polyline.length >= 2)
+        .map((t) => ({
+          type: 'Feature' as const,
+          geometry: { type: 'LineString' as const, coordinates: t.polyline },
+          properties: { taskId: t.taskId, status: t.status },
+        })),
+    });
+
+    // Remove markers whose tasks are gone
+    agentMarkersRef.current.forEach(({ marker }, id) => {
+      if (!validIds.has(id)) {
+        marker.remove();
+        agentMarkersRef.current.delete(id);
+      }
+    });
+    destMarkersRef.current.forEach((marker, id) => {
+      if (!validIds.has(id)) {
+        marker.remove();
+        destMarkersRef.current.delete(id);
+      }
+    });
+
+    validTasks.forEach((t) => {
+      const [lng, lat] = t.lastPosition;
+      const stale = now - new Date(t.lastEventAt).getTime() > STALE_MS;
+      const statusKey = `${t.status}_${stale}`;
+      const existing = agentMarkersRef.current.get(t.taskId);
+
+      if (existing) {
+        // Position always updates in-place
+        existing.marker.setLngLat([lng, lat]);
+        // Rebuild element only when status or staleness changes
+        if (existing.statusKey === statusKey) return;
+        existing.marker.remove();
+        agentMarkersRef.current.delete(t.taskId);
+      }
+
+      // Create agent pin
+      const el = buildAgentEl(t, stale);
+      if (!compact) {
+        el.addEventListener('click', () => {
+          setSelectedTaskId(t.taskId);
+          mapRef.current?.flyTo({ center: [lng, lat], zoom: 14, speed: 1.2 });
+        });
+      }
+      const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+        .setLngLat([lng, lat])
+        .addTo(map);
+      agentMarkersRef.current.set(t.taskId, { marker, statusKey });
+
+      // Destination pin (created once; destinations don't move)
+      if (t.destination && !destMarkersRef.current.has(t.taskId)) {
+        const destEl = document.createElement('div');
+        destEl.style.cssText =
+          'width:20px;height:20px;border-radius:50%;background:#9D4EDD;border:3px solid white;box-shadow:0 2px 8px rgba(157,78,221,0.4);';
+        const destMarker = new mapboxgl.Marker({ element: destEl, anchor: 'center' })
+          .setLngLat([t.destination.lng, t.destination.lat])
+          .addTo(map);
+        destMarkersRef.current.set(t.taskId, destMarker);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTasks, tick, compact, mapVersion]);
+
+  // ── Filtered sidebar list ────────────────────────────────────────────────────
+  const filteredTasks = tasks.filter(
+    (t) =>
+      t.agentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (t.taskTitle ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (t.taskAddress ?? '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const wsConnected = wsStatus === 'connected';
+
+  // ── No token fallback ────────────────────────────────────────────────────────
   if (!token) {
     if (compact) {
       return (
@@ -184,6 +271,7 @@ export function MapView({ compact = false }: MapViewProps) {
 
   return (
     <div className="relative w-full overflow-hidden" style={{ height: 'calc(100vh - 64px)' }}>
+      <WsConnector />
 
       {/* Map canvas */}
       <div ref={mapContainer} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
@@ -194,7 +282,7 @@ export function MapView({ compact = false }: MapViewProps) {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={17} />
           <input
             type="text"
-            placeholder="Search for Agents or Location"
+            placeholder="Search agents or tasks"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-white rounded-full py-3.5 pl-11 pr-5 text-[13px] shadow-lg outline-none border border-gray-100"
@@ -202,69 +290,169 @@ export function MapView({ compact = false }: MapViewProps) {
         </div>
       </div>
 
-      {/* Search Feeds — left panel */}
+      {/* Live Agents panel — left */}
       <div className="absolute top-5 left-5 z-20 w-72 bg-white rounded-3xl shadow-xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
-          <h3 className="text-[15px] font-bold text-dash-dark">Search Feeds</h3>
-          <button className="w-8 h-8 bg-dash-dark rounded-full flex items-center justify-center text-white hover:opacity-90 transition-all">
-            <RefreshCw size={13} />
-          </button>
-        </div>
-        <div className="max-h-[60vh] overflow-y-auto divide-y divide-gray-50">
-          {filtered.map((agent) => (
-            <button
-              key={agent.id}
-              onClick={() => handleAgentClick(agent)}
-              className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-all ${
-                selectedAgent?.id === agent.id ? 'bg-dash-dark' : 'hover:bg-gray-50'
+          <div className="flex items-center gap-2">
+            <h3 className="text-[15px] font-bold text-dash-dark">Live Agents</h3>
+            {tasks.length > 0 && (
+              <span className="text-[11px] text-gray-400 font-medium">({tasks.length})</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                wsConnected ? 'bg-green-500 animate-pulse' : 'bg-amber-400'
               }`}
-            >
-              <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 border-2 border-white shadow-sm">
-                <img src={agent.avatar} className="w-full h-full object-cover" alt={agent.name} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className={`text-[13px] font-bold truncate ${selectedAgent?.id === agent.id ? 'text-white' : 'text-dash-dark'}`}>
-                  {agent.name}
-                </p>
-                <p className={`text-[11px] truncate mt-0.5 ${selectedAgent?.id === agent.id ? 'text-white/50' : 'text-gray-400'}`}>
-                  {agent.address}
-                </p>
-              </div>
-              <MoreHorizontal size={16} className={selectedAgent?.id === agent.id ? 'text-white/40' : 'text-gray-300'} />
-            </button>
-          ))}
+            />
+            <span className="text-[10px] text-gray-400">
+              {wsConnected ? 'Live' : wsStatus === 'reconnecting' ? 'Reconnecting…' : 'Connecting'}
+            </span>
+          </div>
+        </div>
+
+        <div className="max-h-[60vh] overflow-y-auto divide-y divide-gray-50">
+          {filteredTasks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-2">
+              <Radio size={24} className="text-gray-200" />
+              <p className="text-[12px] text-gray-400">No agents currently tracked</p>
+            </div>
+          ) : (
+            filteredTasks.map((task) => {
+              const stale =
+                Date.now() - new Date(task.lastEventAt).getTime() > STALE_MS;
+              const color = getStatusColor(task.status, stale);
+              const isSelected = selectedTaskId === task.taskId;
+              return (
+                <button
+                  key={task.taskId}
+                  onClick={() => {
+                    setSelectedTaskId(task.taskId);
+                    const [lng, lat] = task.lastPosition;
+                    mapRef.current?.flyTo({ center: [lng, lat], zoom: 14, speed: 1.2 });
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-all ${
+                    isSelected ? 'bg-dash-dark' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 border-2 border-white shadow-sm bg-gray-100 flex items-center justify-center">
+                    {task.agentAvatarUrl ? (
+                      <img
+                        src={task.agentAvatarUrl}
+                        className="w-full h-full object-cover"
+                        alt={task.agentName}
+                      />
+                    ) : (
+                      <span className="text-[12px] font-bold text-gray-500">
+                        {task.agentName
+                          .split(' ')
+                          .map((w) => w[0])
+                          .join('')
+                          .slice(0, 2)
+                          .toUpperCase() || '?'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p
+                      className={`text-[13px] font-bold truncate ${
+                        isSelected ? 'text-white' : 'text-dash-dark'
+                      }`}
+                    >
+                      {task.agentName || 'Agent'}
+                    </p>
+                    <p
+                      className={`text-[11px] truncate mt-0.5 ${
+                        isSelected ? 'text-white/50' : 'text-gray-400'
+                      }`}
+                    >
+                      {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
+                    </p>
+                  </div>
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: color }}
+                  />
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
 
-      {/* Agent popup — top right, below search */}
-      {selectedAgent && (
-        <div className="absolute top-20 right-5 z-20 w-60 bg-white rounded-3xl shadow-2xl p-5 animate-in zoom-in-95 fade-in duration-200">
+      {/* Selected agent popup — below search bar */}
+      {selectedTask && (
+        <div className="absolute top-20 right-5 z-20 w-64 bg-white rounded-3xl shadow-2xl p-5 animate-in zoom-in-95 fade-in duration-200">
           <div className="flex items-center justify-between mb-4">
-            <button className="text-[12px] font-semibold text-dash-dark underline underline-offset-2 decoration-gray-300">
-              View Full Profile
+            <span
+              className="text-[12px] font-bold"
+              style={{
+                color: getStatusColor(
+                  selectedTask.status,
+                  Date.now() - new Date(selectedTask.lastEventAt).getTime() > STALE_MS
+                ),
+              }}
+            >
+              {selectedTask.status === 'arrived'
+                ? 'Arrived at destination'
+                : selectedTask.status === 'completed'
+                ? 'Task completed'
+                : 'Currently tracking'}
+            </span>
+            <button
+              onClick={() => setSelectedTaskId(null)}
+              className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 hover:bg-gray-200 transition-all"
+            >
+              <X size={11} />
             </button>
-            <div className="flex items-center gap-1.5">
-              <MoreHorizontal size={15} className="text-gray-400" />
-              <button
-                onClick={() => setSelectedAgent(null)}
-                className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 hover:bg-gray-200 transition-all"
-              >
-                <X size={11} />
-              </button>
-            </div>
           </div>
+
           <div className="flex justify-center mb-3">
-            <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-gray-100 shadow-md">
-              <img src={selectedAgent.avatar} className="w-full h-full object-cover" alt={selectedAgent.name} />
+            <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-gray-100 shadow-md bg-gray-100 flex items-center justify-center">
+              {selectedTask.agentAvatarUrl ? (
+                <img
+                  src={selectedTask.agentAvatarUrl}
+                  className="w-full h-full object-cover"
+                  alt={selectedTask.agentName}
+                />
+              ) : (
+                <span className="text-[22px] font-bold text-gray-400">
+                  {selectedTask.agentName
+                    .split(' ')
+                    .map((w) => w[0])
+                    .join('')
+                    .slice(0, 2)
+                    .toUpperCase() || '?'}
+                </span>
+              )}
             </div>
           </div>
+
           <div className="text-center space-y-1 mb-4">
-            <h4 className="text-[14px] font-bold text-dash-dark">{selectedAgent.name}</h4>
-            <p className="text-[11px] text-gray-400">{selectedAgent.address}</p>
-            <div className="inline-block px-3.5 py-1.5 bg-[#1A452C] text-[#4ADE80] rounded-full text-[10px] font-bold mt-1">
-              Presently On Field
+            <h4 className="text-[14px] font-bold text-dash-dark">
+              {selectedTask.agentName || 'Agent'}
+            </h4>
+            <p className="text-[11px] text-gray-400 line-clamp-2">{selectedTask.taskTitle}</p>
+            {selectedTask.taskAddress && (
+              <p className="text-[10px] text-gray-400 line-clamp-1">{selectedTask.taskAddress}</p>
+            )}
+            <div
+              className={`inline-block px-3.5 py-1.5 rounded-full text-[10px] font-bold mt-1 ${
+                selectedTask.status === 'arrived'
+                  ? 'bg-purple-50 text-purple-600'
+                  : selectedTask.status === 'completed'
+                  ? 'bg-green-50 text-green-600'
+                  : 'bg-[#1A452C] text-[#4ADE80]'
+              }`}
+            >
+              {selectedTask.status === 'arrived'
+                ? 'Arrived'
+                : selectedTask.status === 'completed'
+                ? 'Completed'
+                : 'On Field'}
             </div>
           </div>
+
           <button className="w-full flex items-center justify-center gap-2 py-2.5 border border-gray-100 rounded-2xl text-[12px] font-semibold text-gray-500 hover:bg-gray-50 transition-all">
             <MessageSquare size={14} />
             Send a message

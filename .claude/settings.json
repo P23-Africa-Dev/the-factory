@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(npm run:*)",
-      "Bash(xargs ls)"
+      "Bash(xargs ls)",
+      "Bash(find /Users/elijahobominuru/Desktop/stuff/the-factory/.env* -type f)",
+      "Bash(mkdir -p \"/Users/elijahobominuru/Desktop/stuff/the-factory/app/agent/tasks/[id]/tracking\")"
+    ],
+    "additionalDirectories": [
+      "/Users/elijahobominuru/Desktop/stuff/the-factory/app/agent/tasks/[id]"
     ]
   }
 }
