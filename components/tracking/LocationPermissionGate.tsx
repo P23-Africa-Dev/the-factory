@@ -189,8 +189,8 @@ export function LocationPermissionGate({
           Location access needed
         </h3>
         <p className="text-[13px] text-gray-500 leading-relaxed max-w-xs">
-          To begin this task, we'll track your location so supervisors can monitor
-          your route and confirm you've arrived. Location sharing stops the moment
+          To begin this task, we&apos;ll track your location so supervisors can monitor
+          your route and confirm you&apos;ve arrived. Location sharing stops the moment
           you complete or cancel the task.
         </p>
       </div>

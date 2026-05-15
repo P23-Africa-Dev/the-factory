@@ -141,13 +141,6 @@ export default function TrackingPage({
   const [showCompleteSheet, setShowCompleteSheet] = useState(false);
   const [commencing, setCommencing] = useState(false);
 
-  // Sync agent position from buffer updates (via store's last position if available)
-  useEffect(() => {
-    if (initialReading) {
-      setAgentPosition([initialReading.longitude, initialReading.latitude]);
-    }
-  }, [initialReading]);
-
   const destination =
     task?.latitude && task?.longitude
       ? { lat: task.latitude, lng: task.longitude }
@@ -155,6 +148,7 @@ export default function TrackingPage({
 
   const handleLocationGranted = async (reading: GeoReading) => {
     setInitialReading(reading);
+    setAgentPosition([reading.longitude, reading.latitude]);
     setPhase('ready');
   };
 

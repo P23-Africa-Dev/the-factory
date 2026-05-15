@@ -9,6 +9,11 @@ import type { LiveTaskState } from '@/types/tracking';
 
 const STALE_MS = 2 * 60_000;
 
+function isTaskStale(lastEventAt: string, nowMs: number): boolean {
+  if (!lastEventAt || !nowMs) return false;
+  return nowMs - new Date(lastEventAt).getTime() > STALE_MS;
+}
+
 function getStatusColor(status: string, stale: boolean): string {
   if (stale) return '#9CA3AF';
   if (status === 'arrived') return '#8B5CF6';
@@ -79,8 +84,9 @@ export function MapView({ compact = false }: MapViewProps) {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
-  // Increments every 30s to re-evaluate stale status without extra state
+  // Bumped every 30s to re-evaluate stale status and sync markers
   const [tick, setTick] = useState(0);
+  const [nowMs, setNowMs] = useState(0);
   // Flips true after map 'load' fires so the sync effect knows the map is ready
   const [mapVersion, setMapVersion] = useState(0);
 
@@ -91,15 +97,31 @@ export function MapView({ compact = false }: MapViewProps) {
   const selectedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '';
 
-  // ── Staleness tick ───────────────────────────────────────────────────────────
+  // ── Staleness clock (state, not Date.now() in render — react-hooks/purity) ─
   useEffect(() => {
-    const iv = setInterval(() => setTick((t) => t + 1), 30_000);
+    const bump = () => {
+      setNowMs(Date.now());
+      setTick((t) => t + 1);
+    };
+    bump();
+    const iv = setInterval(bump, 30_000);
     return () => clearInterval(iv);
   }, []);
+
+  // Fly to agent when sidebar selection changes (refs only in effects).
+  useEffect(() => {
+    if (selectedTaskId == null || !mapRef.current) return;
+    const task = useTrackingStore.getState().liveTasks[selectedTaskId];
+    if (!task) return;
+    const [lng, lat] = task.lastPosition;
+    mapRef.current.flyTo({ center: [lng, lat], zoom: 14, speed: 1.2 });
+  }, [selectedTaskId, mapVersion]);
 
   // ── Init map ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainer.current || mapRef.current || !token) return;
+    // Mapbox GL requires a global token before Map construction.
+    // eslint-disable-next-line react-hooks/immutability -- third-party API
     mapboxgl.accessToken = token;
 
     const map = new mapboxgl.Map({
@@ -319,18 +341,13 @@ export function MapView({ compact = false }: MapViewProps) {
             </div>
           ) : (
             filteredTasks.map((task) => {
-              const stale =
-                Date.now() - new Date(task.lastEventAt).getTime() > STALE_MS;
+              const stale = isTaskStale(task.lastEventAt, nowMs);
               const color = getStatusColor(task.status, stale);
               const isSelected = selectedTaskId === task.taskId;
               return (
                 <button
                   key={task.taskId}
-                  onClick={() => {
-                    setSelectedTaskId(task.taskId);
-                    const [lng, lat] = task.lastPosition;
-                    mapRef.current?.flyTo({ center: [lng, lat], zoom: 14, speed: 1.2 });
-                  }}
+                  onClick={() => setSelectedTaskId(task.taskId)}
                   className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-all ${
                     isSelected ? 'bg-dash-dark' : 'hover:bg-gray-50'
                   }`}
@@ -389,7 +406,7 @@ export function MapView({ compact = false }: MapViewProps) {
               style={{
                 color: getStatusColor(
                   selectedTask.status,
-                  Date.now() - new Date(selectedTask.lastEventAt).getTime() > STALE_MS
+                  isTaskStale(selectedTask.lastEventAt, nowMs)
                 ),
               }}
             >

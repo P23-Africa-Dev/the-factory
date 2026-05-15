@@ -58,6 +58,7 @@ export function useTrackingWebSocket() {
   const disconnectedAtRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   const connectionAttemptRef = useRef(0);
+  const connectRef = useRef<() => void>(() => {});
 
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
@@ -302,10 +303,14 @@ export function useTrackingWebSocket() {
       console.log(LOG, "Scheduling reconnect", { delayMs: delay, backoffStep: backoffRef.current });
 
       retryTimerRef.current = setTimeout(() => {
-        if (mountedRef.current) connect();
+        if (mountedRef.current) connectRef.current();
       }, delay);
     };
   }, [token, companyId, store, rehydrateActiveTasks, startPolling, stopPolling, user?.id]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     mountedRef.current = true;
