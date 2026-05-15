@@ -15,17 +15,26 @@ export type AuthUser = {
 
 type AuthState = {
   user: AuthUser | null;
+  _hasHydrated: boolean;
   setUser: (user: AuthUser) => void;
   clearUser: () => void;
+  setHasHydrated: (v: boolean) => void;
 };
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null,
+      _hasHydrated: false,
       setUser: (user) => set({ user }),
       clearUser: () => set({ user: null }),
+      setHasHydrated: (v) => set({ _hasHydrated: v }),
     }),
-    { name: "factory_auth_user" }
+    {
+      name: "factory_auth_user",
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
+    }
   )
 );

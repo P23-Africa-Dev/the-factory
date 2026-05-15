@@ -1,12 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Search, SlidersHorizontal, Loader2 } from 'lucide-react';
+import { Search, SlidersHorizontal } from 'lucide-react';
 import { TaskBoard } from './task-board';
 import { TaskDetailModal } from './task-detail-modal';
 import { useAuthStore } from '@/store/auth';
 import { useTasks } from '@/hooks/use-tasks';
 import type { DndContainer, DndItem } from '@/types/operations';
+import { TaskBoardSkeleton } from './skeletons/task-board-skeleton';
 import type { TaskApiItem } from '@/lib/api/tasks';
 
 export function AllTasksView() {
@@ -200,10 +201,7 @@ export function AllTasksView() {
 
       {/* Task Board */}
       {isPending ? (
-        <div className="py-32 flex flex-col items-center justify-center gap-4 text-gray-400">
-          <Loader2 className="w-8 h-8 animate-spin text-[#092635]" />
-          <span className="font-bold text-lg">Loading Tasks...</span>
-        </div>
+        <TaskBoardSkeleton />
       ) : (
         <div className="mt-2">
           <TaskBoard

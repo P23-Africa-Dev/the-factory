@@ -1,6 +1,6 @@
 "use client";
 
-import { ApiEnvelope, apiRequest } from "./onboarding";
+import { API_BASE_URL, ApiEnvelope, ApiRequestError, apiRequest } from "./onboarding";
 
 export type InvitationPreviewPayload = {
   invitation_id: number | string;
@@ -36,6 +36,7 @@ export type CompleteInvitationPayload = {
   phone_number?: string;
   gender?: "male" | "female";
   avatar_key?: string;
+  avatar_file?: File;
 };
 
 export type CompleteInvitationData = {
@@ -54,7 +55,25 @@ export type CompleteInvitationData = {
   };
 };
 
-export type AvatarData = string[];
+export type AvatarItem = {
+  key: string;
+  url: string | null;
+  svg: string | null;
+};
+
+export type AvatarData = AvatarItem[];
+
+export type AvatarListMeta = {
+  cursor: number;
+  limit: number;
+  next_cursor: number | null;
+  has_more: boolean;
+  total: number;
+};
+
+export type AvatarListResponse = ApiEnvelope<AvatarData> & {
+  meta?: AvatarListMeta;
+};
 
 export type AgentLoginPayload = {
   email: string;
@@ -87,6 +106,48 @@ export function previewInternalInvitation(
 export function completeInternalInvitation(
   payload: CompleteInvitationPayload
 ): Promise<ApiEnvelope<CompleteInvitationData>> {
+  if (payload.avatar_file) {
+    const formData = new FormData();
+    formData.set("invitation_id", String(payload.invitation_id));
+    formData.set("token", payload.token);
+    formData.set("password", payload.password);
+    formData.set("password_confirmation", payload.password_confirmation);
+
+    if (payload.phone_number) {
+      formData.set("phone_number", payload.phone_number);
+    }
+
+    if (payload.gender) {
+      formData.set("gender", payload.gender);
+    }
+
+    if (payload.avatar_key) {
+      formData.set("avatar_key", payload.avatar_key);
+    }
+
+    formData.set("avatar_file", payload.avatar_file);
+
+    return fetch(`${API_BASE_URL}/internal/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+      },
+      body: formData,
+    }).then(async (response) => {
+      const result = (await response.json()) as ApiEnvelope<CompleteInvitationData>;
+
+      if (!response.ok || !result.success) {
+        throw new ApiRequestError(
+          result.message || "Request failed.",
+          response.status,
+          result.errors
+        );
+      }
+
+      return result;
+    });
+  }
+
   return apiRequest<CompleteInvitationData>({
     method: "POST",
     path: "/internal/onboarding/complete",
@@ -95,12 +156,23 @@ export function completeInternalInvitation(
 }
 
 export function listAvatars(
-  gender: "male" | "female"
-): Promise<ApiEnvelope<AvatarData>> {
+  gender: "male" | "female",
+  options?: { cursor?: number; limit?: number }
+): Promise<AvatarListResponse> {
+  const params = new URLSearchParams({ gender });
+
+  if (typeof options?.cursor === "number") {
+    params.set("cursor", String(options.cursor));
+  }
+
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+
   return apiRequest<AvatarData>({
     method: "GET",
-    path: `/avatars?gender=${gender}`,
-  });
+    path: `/avatars?${params.toString()}`,
+  }) as Promise<AvatarListResponse>;
 }
 
 export function loginAgent(

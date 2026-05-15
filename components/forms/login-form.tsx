@@ -72,7 +72,8 @@ export default function LoginForm() {
       });
 
       toast.success(res.message);
-      router.push("/dashboard");
+      const dashboardPath = res.data.user_type === "agent" ? "/agent/dashboard" : "/admin/dashboard";
+      router.push(dashboardPath);
     } catch (err) {
       if (err instanceof ApiRequestError) {
         if (err.errors) {

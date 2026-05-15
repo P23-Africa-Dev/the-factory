@@ -13,14 +13,14 @@ const MapView = dynamic(
   },
 );
 
-export const DashboardMap = () => {
+export const DashboardMap = ({ basePath }: { basePath: string }) => {
   return (
     <div className="mt-6 lg:mt-26.5 min-w-0 lg:min-w-lg flex flex-col">
       <div className="flex items-center justify-between px-4.75 mb-4">
         <h3 className="text-[#203B5F] font-medium text-[16px] ">
-          Active Field Agents
+          {basePath === "/agent" ? "Live Location" : "Active Field Agents"}
         </h3>
-        <Link href="/map">
+        <Link href={`${basePath}/map`}>
           <TinyButton>Open Map</TinyButton>
         </Link>
       </div>

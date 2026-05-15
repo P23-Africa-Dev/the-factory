@@ -1,11 +1,10 @@
 "use client";
 
 import OnboardingForm from "@/components/forms/onboarding-form";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function InternalOnboardingClient() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [invitationId] = useState(() => searchParams.get("invitation_id") ?? "");
   const [token] = useState(() => searchParams.get("token") ?? "");
@@ -13,8 +12,8 @@ export default function InternalOnboardingClient() {
   useEffect(() => {
     if (!invitationId || !token) return;
     if (!searchParams.get("invitation_id") && !searchParams.get("token")) return;
-    router.replace("/onboarding/internal");
-  }, [invitationId, token, router, searchParams]);
+    window.history.replaceState(window.history.state, "", "/onboarding/internal");
+  }, [invitationId, token, searchParams]);
 
   return (
     <div className="w-full max-w-115 flex flex-col gap-8 md:mt-0 lg:-mt-12">
