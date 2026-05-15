@@ -185,7 +185,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
         ? { phone_number: agentDetails.phone.trim() }
         : {}),
       ...(fillForAgent && agentDetails.gender
-        ? { gender: agentDetails.gender.toLowerCase() as "male" | "female" }
+        ? { gender: agentDetails.gender as "male" | "female" }
         : {}),
       ...(fillForAgent && agentDetails.avatarKey
         ? { avatar_key: agentDetails.avatarKey }

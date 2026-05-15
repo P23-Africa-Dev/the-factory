@@ -50,25 +50,55 @@ class AvatarController
         }
 
         $files = $disk->files($avatarPath);
-        $avatarUrls = [];
+        sort($files);
+        $avatars = [];
+        $diskKeys = [];
 
         foreach ($files as $file) {
             $filename = basename($file);
             $extension = strtolower((string) pathinfo($filename, PATHINFO_EXTENSION));
 
-            // Skip unsupported file types.
             if (! in_array($extension, ['png', 'svg'], true)) {
                 continue;
             }
 
-            $avatarUrls[] = $publicBaseUrl.'/'.ltrim($file, '/');
+            $key = pathinfo($filename, PATHINFO_FILENAME);
+            $url = $publicBaseUrl . '/' . ltrim($file, '/');
+            $svgContent = null;
+
+            if ($extension === 'svg') {
+                try {
+                    $svgContent = $disk->get($file);
+                } catch (\Throwable) {
+                    // Non-fatal: URL fallback will be used.
+                }
+            }
+
+            $avatars[] = [
+                'key'  => $key,
+                'url'  => $url,
+                'svg'  => $svgContent,
+            ];
+
+            $diskKeys[] = $key;
         }
 
-        sort($avatarUrls);
+        // Include SVG-only catalog entries whose keys are not already covered by disk files.
+        $svgCatalog = config("internal_onboarding.avatar_catalog.{$normalizedGender}", []);
+
+        foreach ($svgCatalog as $catalogKey => $svg) {
+            if (! in_array($catalogKey, $diskKeys, true)) {
+                $avatars[] = [
+                    'key' => $catalogKey,
+                    'url' => null,
+                    'svg' => $svg,
+                ];
+            }
+        }
 
         return response()->json([
             'success' => true,
-            'data' => $avatarUrls,
+            'data'    => $avatars,
         ]);
     }
 }

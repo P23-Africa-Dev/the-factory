@@ -505,6 +505,14 @@ class InternalUserOnboardingService
                     'svg' => null,
                     'url' => $publicBaseUrl . '/' . ltrim($file, '/'),
                 ];
+
+                if ($extension === 'svg') {
+                    try {
+                        $catalog[$gender][$avatarKey]['svg'] = $disk->get($file);
+                    } catch (\Throwable) {
+                        // Non-fatal: URL fallback will be used.
+                    }
+                }
             }
         }
 

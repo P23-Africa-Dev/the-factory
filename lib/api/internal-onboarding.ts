@@ -55,7 +55,13 @@ export type CompleteInvitationData = {
   };
 };
 
-export type AvatarData = string[];
+export type AvatarItem = {
+  key: string;
+  url: string | null;
+  svg: string | null;
+};
+
+export type AvatarData = AvatarItem[];
 
 export type AgentLoginPayload = {
   email: string;

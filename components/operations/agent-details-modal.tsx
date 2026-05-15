@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SectionDivider } from "@/components/payroll/payroll/section-divider";
 import { FormRow } from "@/components/payroll/payroll/form-row";
@@ -12,7 +12,7 @@ const AVATAR_BATCH_SIZE = 8;
 
 export interface AgentDetails {
   phone: string;
-  gender: "Male" | "Female" | "";
+  gender: "male" | "female" | "";
   avatarKey: string;
 }
 
@@ -32,12 +32,8 @@ export function AgentDetailsModal({
   errors = {},
   onClearError,
 }: AgentDetailsModalProps) {
-  if (!isOpen) return null;
-
-  const set = <K extends keyof AgentDetails>(key: K, val: AgentDetails[K]) =>
-    onDetailsChange({ ...details, [key]: val });
-
-  const normalizedGender = details.gender ? details.gender.toLowerCase() as "male" | "female" : null;
+  // All hooks MUST be declared before any conditional return (Rules of Hooks).
+  const normalizedGender = details.gender ? details.gender as "male" | "female" : null;
 
   const avatarQuery = useQuery({
     queryKey: ["internal-avatar-list", normalizedGender],
@@ -47,20 +43,17 @@ export function AgentDetailsModal({
   });
 
   const avatarItems = useMemo(() => {
-    const urls = avatarQuery.data?.data ?? [];
-
-    return urls.map((url) => {
-      const lastSegment = url.split("/").pop() ?? "";
-      const key = lastSegment.replace(/\.(png|svg)$/i, "");
-
-      return {
-        key,
-        url,
-      };
-    });
+    return avatarQuery.data?.data ?? [];
   }, [avatarQuery.data]);
 
+  const [failedImageKeys, setFailedImageKeys] = useState<Set<string>>(new Set());
+
   const visibleAvatars = avatarItems.slice(0, AVATAR_BATCH_SIZE);
+
+  if (!isOpen) return null;
+
+  const set = <K extends keyof AgentDetails>(key: K, val: AgentDetails[K]) =>
+    onDetailsChange({ ...details, [key]: val });
 
   return (
     <div className="fixed right-119.75 bottom-3.25 z-60">
@@ -94,7 +87,7 @@ export function AgentDetailsModal({
               <InlineSelect
                 value={details.gender}
                 onChange={(e) => {
-                  set("gender", e.target.value as AgentDetails["gender"]);
+                  set("gender", e.target.value as "male" | "female" | "");
                   set("avatarKey", "");
                   onClearError?.("gender");
                   onClearError?.("avatarKey");
@@ -104,8 +97,8 @@ export function AgentDetailsModal({
                 <option value="" disabled>
                   E.g Male
                 </option>
-                <option>Male</option>
-                <option>Female</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
               </InlineSelect>
             </FormRow>
             {errors.gender && <p className="text-[11px] text-red-500 mt-0.5 text-right">{errors.gender}</p>}
@@ -144,7 +137,24 @@ export function AgentDetailsModal({
                   }`}
                   title={avatar.key}
                 >
-                  <img src={avatar.url} alt={avatar.key} className="h-full w-full object-cover" />
+                  {Boolean(avatar.url) && !failedImageKeys.has(avatar.key) ? (
+                    <img
+                      src={avatar.url ?? ""}
+                      alt={avatar.key}
+                      className="h-full w-full object-cover"
+                      onError={() =>
+                        setFailedImageKeys((prev) => {
+                          const next = new Set(prev);
+                          next.add(avatar.key);
+                          return next;
+                        })
+                      }
+                    />
+                  ) : avatar.svg ? (
+                    <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: avatar.svg }} />
+                  ) : (
+                    <div className="h-full w-full bg-gray-100" />
+                  )}
                 </button>
               ))}
             </div>
