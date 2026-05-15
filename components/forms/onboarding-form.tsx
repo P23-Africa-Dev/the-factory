@@ -369,9 +369,9 @@ export default function OnboardingForm({
         <p className="text-xs text-red-500 mb-4 px-4">{errors.gender.message}</p>
       )}
 
-      {/* <div className="mb-2">
+      <div className="mb-2">
         <input type="hidden" {...register("avatar_key")} />
-
+{/* 
         <div className="mb-3 rounded-lg border border-dashed border-gray-300 p-3">
           <label className="text-xs text-gray-500 block mb-2">Upload custom avatar (optional)</label>
           <input
