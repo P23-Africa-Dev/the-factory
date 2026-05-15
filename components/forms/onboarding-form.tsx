@@ -59,11 +59,16 @@ function AvatarPicker({
   onSelect: (avatarKey: string) => void;
 }) {
   const [visibleAvatarCount, setVisibleAvatarCount] = useState(AVATAR_BATCH_SIZE);
+  const [failedImageKeys, setFailedImageKeys] = useState<Set<string>>(new Set());
   const shuffledAvatars = useMemo(() => shuffleArray(avatars), [avatars]);
   const visibleAvatars = useMemo(
     () => shuffledAvatars.slice(0, visibleAvatarCount),
     [shuffledAvatars, visibleAvatarCount]
   );
+
+  useEffect(() => {
+    setFailedImageKeys(new Set());
+  }, [avatars]);
 
   if (visibleAvatars.length === 0) {
     return <p className="text-xs text-gray-400 text-center">No avatars available for selected gender.</p>;
@@ -73,6 +78,7 @@ function AvatarPicker({
     <div className="flex flex-wrap items-center gap-3 justify-center">
       {visibleAvatars.map((avatar) => {
         const isSelected = selectedAvatarKey === avatar.key;
+        const shouldRenderImage = Boolean(avatar.url) && !failedImageKeys.has(avatar.key);
         return (
           <button
             key={avatar.key}
@@ -83,8 +89,19 @@ function AvatarPicker({
             }`}
             title={avatar.key}
           >
-            {avatar.url ? (
-              <img src={avatar.url} alt={avatar.key} className="h-full w-full object-cover" />
+            {shouldRenderImage ? (
+              <img
+                src={avatar.url ?? ""}
+                alt={avatar.key}
+                className="h-full w-full object-cover"
+                onError={() =>
+                  setFailedImageKeys((previous) => {
+                    const next = new Set(previous);
+                    next.add(avatar.key);
+                    return next;
+                  })
+                }
+              />
             ) : avatar.svg ? (
               <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: avatar.svg }} />
             ) : (
