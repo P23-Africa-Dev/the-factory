@@ -7,6 +7,7 @@ namespace App\Services\Internal;
 use App\Models\InternalUserInvitation;
 use App\Models\User;
 use App\Notifications\InternalUserOnboardingInviteNotification;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -43,7 +44,7 @@ class InternalUserOnboardingService
         );
 
         return DB::transaction(function () use ($creator, $company, $data, $role, $supervisorUserId, $prefilledProfile): array {
-            $workDays = collect($data['work_days'])->map(fn ($d) => strtolower((string) $d))->unique()->values()->all();
+            $workDays = collect($data['work_days'])->map(fn($d) => strtolower((string) $d))->unique()->values()->all();
 
             $user = User::query()->create([
                 'name' => $data['full_name'],
@@ -233,7 +234,7 @@ class InternalUserOnboardingService
             'user' => $invitation->user,
             'invitation' => $invitation,
             'avatar_options' => $options,
-            'avatar_options_by_gender' => array_map(static fn (array $items): array => array_values($items), $avatars),
+            'avatar_options_by_gender' => array_map(static fn(array $items): array => array_values($items), $avatars),
             'prefilled_data' => [
                 'phone_number' => $prefilledProfile['phone_number'],
                 'gender' => $prefilledProfile['gender'],
@@ -258,10 +259,21 @@ class InternalUserOnboardingService
             avatarKey: $data['avatar_key'] ?? $user->avatar,
             assignRandomAvatar: true,
             requireCompleteProfile: true,
+            allowMissingAvatar: isset($data['avatar_file']) && $data['avatar_file'] instanceof UploadedFile,
         );
 
         return DB::transaction(function () use ($invitation, $user, $data, $resolvedProfile): array {
             $pivotRole = $invitation->role === 'supervisor' ? 'supervisor' : 'agent';
+
+            $avatarKey = $resolvedProfile['avatar_key'];
+            $avatarSvg = $resolvedProfile['avatar_svg'];
+            $avatarUrl = $resolvedProfile['avatar_url'];
+
+            if (isset($data['avatar_file']) && $data['avatar_file'] instanceof UploadedFile) {
+                $avatarKey = $this->storeCustomAvatar($data['avatar_file'], (int) $user->id);
+                $avatarSvg = null;
+                $avatarUrl = $this->buildAvatarPublicUrl($avatarKey);
+            }
 
             $invitation->company->users()->syncWithoutDetaching([
                 $user->id => [
@@ -273,7 +285,7 @@ class InternalUserOnboardingService
             $user->update([
                 'phone_number' => $resolvedProfile['phone_number'],
                 'gender' => $resolvedProfile['gender'],
-                'avatar' => $resolvedProfile['avatar_key'],
+                'avatar' => $avatarKey,
                 'password' => $data['password'],
                 'onboarding_status' => 'active',
                 'internal_onboarding_completed_at' => now(),
@@ -295,8 +307,8 @@ class InternalUserOnboardingService
             return [
                 'user' => $user->fresh(),
                 'token' => $token->plainTextToken,
-                'avatar_svg' => $resolvedProfile['avatar_svg'],
-                'avatar_url' => $resolvedProfile['avatar_url'],
+                'avatar_svg' => $avatarSvg,
+                'avatar_url' => $avatarUrl,
             ];
         });
     }
@@ -345,7 +357,7 @@ class InternalUserOnboardingService
             'token' => $token,
         ]);
 
-        return $frontendUrl.'?'.$query;
+        return $frontendUrl . '?' . $query;
     }
 
     private function resolveProfileData(
@@ -354,6 +366,7 @@ class InternalUserOnboardingService
         ?string $avatarKey,
         bool $assignRandomAvatar,
         bool $requireCompleteProfile,
+        bool $allowMissingAvatar = false,
     ): array {
         $normalizedPhoneNumber = $phoneNumber !== null ? trim($phoneNumber) : null;
         $normalizedGender = $gender !== null ? strtolower(trim($gender)) : null;
@@ -368,7 +381,7 @@ class InternalUserOnboardingService
             ]);
         }
 
-        if ($normalizedAvatarKey !== null) {
+        if ($normalizedAvatarKey !== null && ! $this->isCustomAvatarPath($normalizedAvatarKey)) {
             $avatarGender = $avatarGenderMap[$normalizedAvatarKey] ?? null;
 
             if ($avatarGender === null) {
@@ -401,7 +414,7 @@ class InternalUserOnboardingService
                 $errors['gender'] = ['Gender is required to complete onboarding.'];
             }
 
-            if ($normalizedAvatarKey === null) {
+            if ($normalizedAvatarKey === null && ! $allowMissingAvatar) {
                 $errors['avatar_key'] = ['Avatar selection is required to complete onboarding.'];
             }
 
@@ -410,17 +423,53 @@ class InternalUserOnboardingService
             }
         }
 
-        $avatarOption = $normalizedGender !== null && $normalizedAvatarKey !== null
-            ? ($avatarCatalog[$normalizedGender][$normalizedAvatarKey] ?? null)
-            : null;
+        $avatarOption = null;
+        $avatarUrl = null;
+
+        if ($normalizedAvatarKey !== null) {
+            if ($this->isCustomAvatarPath($normalizedAvatarKey)) {
+                $avatarUrl = $this->buildAvatarPublicUrl($normalizedAvatarKey);
+            } elseif ($normalizedGender !== null) {
+                $avatarOption = $avatarCatalog[$normalizedGender][$normalizedAvatarKey] ?? null;
+                $avatarUrl = $avatarOption['url'] ?? null;
+            }
+        }
 
         return [
             'phone_number' => $normalizedPhoneNumber,
             'gender' => $normalizedGender,
             'avatar_key' => $normalizedAvatarKey,
             'avatar_svg' => $avatarOption['svg'] ?? null,
-            'avatar_url' => $avatarOption['url'] ?? null,
+            'avatar_url' => $avatarUrl,
         ];
+    }
+
+    private function storeCustomAvatar(UploadedFile $avatarFile, int $userId): string
+    {
+        $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
+        $directory = "{$basePath}/custom";
+        $extension = strtolower($avatarFile->getClientOriginalExtension() ?: $avatarFile->extension() ?: 'png');
+        $filename = sprintf('user_%d_%s.%s', $userId, Str::random(16), $extension);
+
+        return $avatarFile->storeAs($directory, $filename, ['disk' => 'public']);
+    }
+
+    private function buildAvatarPublicUrl(string $path): string
+    {
+        $publicBaseUrl = rtrim((string) (
+            config('internal_onboarding.avatar_public_base_url')
+            ?: config('filesystems.disks.public.url')
+            ?: asset('storage')
+        ), '/');
+
+        return $publicBaseUrl . '/' . ltrim($path, '/');
+    }
+
+    private function isCustomAvatarPath(string $avatarKey): bool
+    {
+        $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
+
+        return str_starts_with($avatarKey, "{$basePath}/custom/");
     }
 
     private function avatarCatalog(): array
@@ -454,7 +503,7 @@ class InternalUserOnboardingService
                 $catalog[$gender][$avatarKey] = [
                     'key' => $avatarKey,
                     'svg' => null,
-                    'url' => $publicBaseUrl.'/'.ltrim($file, '/'),
+                    'url' => $publicBaseUrl . '/' . ltrim($file, '/'),
                 ];
             }
         }
@@ -487,8 +536,8 @@ class InternalUserOnboardingService
     private function avatarGenderMap(): array
     {
         return Collection::make($this->avatarCatalog())
-            ->flatMap(fn (array $avatars, string $gender): array => collect(array_keys($avatars))
-                ->mapWithKeys(fn (string $avatarKey): array => [$avatarKey => $gender])
+            ->flatMap(fn(array $avatars, string $gender): array => collect(array_keys($avatars))
+                ->mapWithKeys(fn(string $avatarKey): array => [$avatarKey => $gender])
                 ->all())
             ->all();
     }

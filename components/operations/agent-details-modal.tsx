@@ -1,25 +1,19 @@
 "use client";
 
-import { useRef } from "react";
-import { ImagePlus, Plus } from "lucide-react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { SectionDivider } from "@/components/payroll/payroll/section-divider";
 import { FormRow } from "@/components/payroll/payroll/form-row";
 import { InlineSelect } from "@/components/payroll/payroll/inline-select";
 import PhoneNumberInput from "@/components/ui/phone-number-input";
+import { listAvatars } from "@/lib/api/internal-onboarding";
 
-// Preset avatar colours + initials (placeholder until real assets exist)
-const PRESET_AVATARS = [
-  { bg: "#C9A96E", initials: "AA" },
-  { bg: "#3D2B1F", initials: "BB" },
-  { bg: "#8B72BE", initials: "CC" },
-  { bg: "#5BBFB5", initials: "DD" },
-];
+const AVATAR_BATCH_SIZE = 8;
 
 export interface AgentDetails {
   phone: string;
   gender: "Male" | "Female" | "";
-  avatarIndex: number;
-  avatarCustom: string | null;
+  avatarKey: string;
 }
 
 interface AgentDetailsModalProps {
@@ -27,8 +21,8 @@ interface AgentDetailsModalProps {
   onClose: () => void;
   details: AgentDetails;
   onDetailsChange: (details: AgentDetails) => void;
-  errors?: { phone?: string; gender?: string };
-  onClearError?: (field: "phone" | "gender") => void;
+  errors?: { phone?: string; gender?: string; avatarKey?: string };
+  onClearError?: (field: "phone" | "gender" | "avatarKey") => void;
 }
 
 export function AgentDetailsModal({
@@ -38,19 +32,35 @@ export function AgentDetailsModal({
   errors = {},
   onClearError,
 }: AgentDetailsModalProps) {
-  const fileRef = useRef<HTMLInputElement>(null);
-
   if (!isOpen) return null;
 
   const set = <K extends keyof AgentDetails>(key: K, val: AgentDetails[K]) =>
     onDetailsChange({ ...details, [key]: val });
 
-  const handleCustomAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    set("avatarCustom", URL.createObjectURL(file));
-    set("avatarIndex", -1);
-  };
+  const normalizedGender = details.gender ? details.gender.toLowerCase() as "male" | "female" : null;
+
+  const avatarQuery = useQuery({
+    queryKey: ["internal-avatar-list", normalizedGender],
+    queryFn: () => listAvatars(normalizedGender as "male" | "female"),
+    enabled: Boolean(normalizedGender),
+    staleTime: 60_000,
+  });
+
+  const avatarItems = useMemo(() => {
+    const urls = avatarQuery.data?.data ?? [];
+
+    return urls.map((url) => {
+      const lastSegment = url.split("/").pop() ?? "";
+      const key = lastSegment.replace(/\.(png|svg)$/i, "");
+
+      return {
+        key,
+        url,
+      };
+    });
+  }, [avatarQuery.data]);
+
+  const visibleAvatars = avatarItems.slice(0, AVATAR_BATCH_SIZE);
 
   return (
     <div className="fixed right-119.75 bottom-3.25 z-60">
@@ -83,7 +93,12 @@ export function AgentDetailsModal({
             <FormRow label="Gender">
               <InlineSelect
                 value={details.gender}
-                onChange={(e) => { set("gender", e.target.value as AgentDetails["gender"]); onClearError?.("gender"); }}
+                onChange={(e) => {
+                  set("gender", e.target.value as AgentDetails["gender"]);
+                  set("avatarKey", "");
+                  onClearError?.("gender");
+                  onClearError?.("avatarKey");
+                }}
                 className="col-span-2"
               >
                 <option value="" disabled>
@@ -99,65 +114,45 @@ export function AgentDetailsModal({
 
         <SectionDivider label="Profile Picture" />
 
-        {/* Avatar picker */}
-        <div className="flex items-start gap-4 pt-2 mb-6">
-          {/* Custom photo upload */}
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="w-20 h-20 rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-gray-400 transition-colors shrink-0 overflow-hidden"
-          >
-            {details.avatarCustom ? (
-              <img
-                src={details.avatarCustom}
-                alt="custom"
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <>
-                <ImagePlus size={18} />
-                <span className="text-[10px] text-center leading-tight">
-                  Click to add
-                  <br />
-                  profile picture
-                </span>
-              </>
-            )}
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleCustomAvatar}
-          />
+        <div className="pt-2 mb-6">
+          <p className="text-[11px] text-gray-500 mb-2">
+            Select an avatar for this user
+          </p>
 
-          {/* Presets */}
-          <div className="flex-1">
-            <p className="text-[11px] text-gray-500 mb-2">
-              Or, Select any Avatar of your choice
-            </p>
-            <div className="flex gap-2 flex-wrap">
-              {PRESET_AVATARS.map((av, i) => (
+          {!normalizedGender ? (
+            <p className="text-[11px] text-gray-400">Choose gender to load avatars.</p>
+          ) : avatarQuery.isPending ? (
+            <p className="text-[11px] text-gray-400">Loading avatars...</p>
+          ) : avatarQuery.isError ? (
+            <p className="text-[11px] text-red-500">Unable to load avatars right now.</p>
+          ) : visibleAvatars.length === 0 ? (
+            <p className="text-[11px] text-gray-400">No avatars available for selected gender.</p>
+          ) : (
+            <div className="grid grid-cols-4 gap-2">
+              {visibleAvatars.map((avatar) => (
                 <button
-                  key={i}
+                  key={avatar.key}
                   type="button"
                   onClick={() => {
-                    set("avatarIndex", i);
-                    set("avatarCustom", null);
+                    set("avatarKey", avatar.key);
+                    onClearError?.("avatarKey");
                   }}
-                  className={`w-12 h-12 rounded-full flex items-center justify-center text-white text-[13px] font-bold transition-all shrink-0 ${
-                    details.avatarIndex === i
-                      ? "ring-2 ring-offset-2 ring-[#094B5C]"
-                      : ""
+                  className={`h-14 w-14 rounded-full overflow-hidden border-2 transition-all ${
+                    details.avatarKey === avatar.key
+                      ? "border-[#094B5C] ring-2 ring-offset-1 ring-[#094B5C]/30"
+                      : "border-gray-200"
                   }`}
-                  style={{ backgroundColor: av.bg }}
+                  title={avatar.key}
                 >
-                  {av.initials}
+                  <img src={avatar.url} alt={avatar.key} className="h-full w-full object-cover" />
                 </button>
               ))}
             </div>
-          </div>
+          )}
+
+          {errors.avatarKey && (
+            <p className="text-[11px] text-red-500 mt-2 text-right">{errors.avatarKey}</p>
+          )}
         </div>
 
         <div className="flex items-center justify-start">

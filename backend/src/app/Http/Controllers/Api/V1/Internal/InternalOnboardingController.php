@@ -40,10 +40,16 @@ class InternalOnboardingController extends Controller
 
     public function complete(CompleteInternalOnboardingRequest $request): JsonResponse
     {
+        $data = $request->validated();
+
+        if ($request->hasFile('avatar_file')) {
+            $data['avatar_file'] = $request->file('avatar_file');
+        }
+
         $result = $this->service->completeOnboarding(
             invitationId: (int) $request->validated('invitation_id'),
             token: (string) $request->validated('token'),
-            data: $request->validated(),
+            data: $data,
         );
 
         return $this->success(

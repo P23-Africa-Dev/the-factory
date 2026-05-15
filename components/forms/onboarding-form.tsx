@@ -3,6 +3,7 @@
 import { getMe, type ApiRequestError } from "@/lib/api/onboarding";
 import {
   completeInternalInvitation,
+  listAvatars,
   previewInternalInvitation,
 } from "@/lib/api/internal-onboarding";
 import { setAuthSession, setCompanyId } from "@/lib/auth/session";
@@ -23,13 +24,23 @@ const onboardingSchema = z
   .object({
     phone_number: z.string().min(1, "Phone number is required."),
     gender: z.enum(["male", "female"]),
-    avatar_key: z.string().min(1, "Avatar is required."),
+    avatar_key: z.string().optional(),
+    avatar_file: z.instanceof(File).optional(),
     password: z.string().min(8, "Password must be at least 8 characters."),
     password_confirmation: z.string().min(8, "Password confirmation is required."),
   })
   .refine((values) => values.password === values.password_confirmation, {
     path: ["password_confirmation"],
     message: "Passwords do not match.",
+  })
+  .superRefine((values, ctx) => {
+    if (!values.avatar_key && !values.avatar_file) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["avatar_key"],
+        message: "Select an avatar or upload a custom image.",
+      });
+    }
   });
 
 type OnboardingFormValues = z.infer<typeof onboardingSchema>;
@@ -150,6 +161,8 @@ export default function OnboardingForm({
     register,
     handleSubmit,
     setValue,
+    setError,
+    clearErrors,
     formState: { errors },
   } = useForm<OnboardingFormValues>({
     resolver: zodResolver(onboardingSchema),
@@ -157,6 +170,7 @@ export default function OnboardingForm({
       phone_number: "",
       gender: "male",
       avatar_key: "",
+      avatar_file: undefined,
       password: "",
       password_confirmation: "",
     },
@@ -172,6 +186,7 @@ export default function OnboardingForm({
         phone_number: values.phone_number,
         gender: values.gender,
         avatar_key: values.avatar_key,
+        avatar_file: values.avatar_file,
       }),
     onSuccess: async (res) => {
       const authToken = res.data.token;
@@ -197,6 +212,9 @@ export default function OnboardingForm({
       router.push("/dashboard");
     },
     onError: (err: ApiRequestError | Error) => {
+      if (err instanceof ApiRequestError && err.errors?.avatar_file?.[0]) {
+        setError("avatar_file", { message: err.errors.avatar_file[0] });
+      }
       toast.error(err.message);
     },
   });
@@ -205,13 +223,64 @@ export default function OnboardingForm({
   const selectedGender = useWatch({ control, name: "gender" });
   const phoneNumber = useWatch({ control, name: "phone_number" });
   const selectedAvatarKey = useWatch({ control, name: "avatar_key" });
+  const selectedAvatarFile = useWatch({ control, name: "avatar_file" });
   const hasValidInviteParams =
     INVITATION_ID_REGEX.test(invitationId) && INVITE_TOKEN_REGEX.test(token);
   const preview = previewQuery.data?.data;
-  const avatarOptions = useMemo(
-    () => preview?.avatar_options_by_gender?.[selectedGender] ?? preview?.avatar_options ?? [],
-    [preview, selectedGender]
-  );
+  const [customAvatarPreview, setCustomAvatarPreview] = useState<string | null>(null);
+
+  const genderAvatarsQuery = useQuery({
+    queryKey: ["internal-gender-avatars", selectedGender],
+    queryFn: () => listAvatars(selectedGender),
+    enabled: Boolean(selectedGender),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const avatarOptions = useMemo(() => {
+    const previewOptions =
+      preview?.avatar_options_by_gender?.[selectedGender] ?? preview?.avatar_options ?? [];
+
+    const fallbackByKey = new Map(
+      previewOptions.map((item) => [item.key, item] as const)
+    );
+
+    const apiOptions = (genderAvatarsQuery.data?.data ?? []).map((url) => {
+      const file = url.split("/").pop() ?? "";
+      const key = file.replace(/\.(png|svg)$/i, "");
+      const fallback = fallbackByKey.get(key);
+
+      return {
+        key,
+        url,
+        svg: fallback?.svg ?? null,
+      };
+    });
+
+    if (apiOptions.length > 0) {
+      return apiOptions;
+    }
+
+    return previewOptions;
+  }, [genderAvatarsQuery.data, preview, selectedGender]);
+
+  useEffect(() => {
+    if (!selectedAvatarFile) {
+      if (customAvatarPreview) {
+        URL.revokeObjectURL(customAvatarPreview);
+      }
+
+      setCustomAvatarPreview(null);
+      return;
+    }
+
+    const nextPreview = URL.createObjectURL(selectedAvatarFile);
+    setCustomAvatarPreview(nextPreview);
+
+    return () => {
+      URL.revokeObjectURL(nextPreview);
+    };
+  }, [selectedAvatarFile]);
 
   useEffect(() => {
     if (!preview || phoneNumber || !preview.prefilled_data.phone_number) return;
@@ -297,7 +366,13 @@ export default function OnboardingForm({
       <div className="mb-2">
         <Select
           placeholder="Select Gender"
-          {...register("gender")}
+          {...register("gender", {
+            onChange: () => {
+              setValue("avatar_key", "", { shouldValidate: true });
+              setValue("avatar_file", undefined, { shouldValidate: true });
+              clearErrors(["avatar_key", "avatar_file"]);
+            },
+          })}
           options={[
             { label: "Male", value: "male" },
             { label: "Female", value: "female" },
@@ -310,16 +385,64 @@ export default function OnboardingForm({
 
       <div className="mb-2">
         <input type="hidden" {...register("avatar_key")} />
+        <div className="mb-3 rounded-lg border border-dashed border-gray-300 p-3">
+          <label className="text-xs text-gray-500 block mb-2">Upload custom avatar (optional)</label>
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+
+              setValue("avatar_file", file, { shouldValidate: true });
+              setValue("avatar_key", "", { shouldValidate: true });
+              clearErrors(["avatar_key", "avatar_file"]);
+            }}
+            className="block w-full text-xs text-gray-600 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium"
+          />
+
+          {customAvatarPreview && (
+            <div className="mt-3 flex items-center gap-3">
+              <img
+                src={customAvatarPreview}
+                alt="Custom avatar preview"
+                className="h-14 w-14 rounded-full object-cover border border-gray-200"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setValue("avatar_file", undefined, { shouldValidate: true });
+                  clearErrors("avatar_file");
+                }}
+                className="text-xs text-red-500 hover:text-red-600"
+              >
+                Remove upload
+              </button>
+            </div>
+          )}
+        </div>
+
+        {genderAvatarsQuery.isPending && (
+          <p className="text-xs text-gray-400 text-center mb-2">Loading avatars...</p>
+        )}
+
         <p className="text-sm text-gray-500 mb-2 text-center">Or, select any avatar of your choice</p>
         <AvatarPicker
           key={`${selectedGender}-${avatarOptions.length}`}
           avatars={avatarOptions}
           selectedAvatarKey={selectedAvatarKey}
-          onSelect={(avatarKey) => setValue("avatar_key", avatarKey, { shouldValidate: true })}
+          onSelect={(avatarKey) => {
+            setValue("avatar_key", avatarKey, { shouldValidate: true });
+            setValue("avatar_file", undefined, { shouldValidate: true });
+            clearErrors(["avatar_key", "avatar_file"]);
+          }}
         />
       </div>
       {errors.avatar_key && (
         <p className="text-xs text-red-500 mb-4 px-4">{errors.avatar_key.message}</p>
+      )}
+      {errors.avatar_file && (
+        <p className="text-xs text-red-500 mb-4 px-4">{errors.avatar_file.message}</p>
       )}
 
       <Input type="password" placeholder="Password" className="mb-2" {...register("password")} />
