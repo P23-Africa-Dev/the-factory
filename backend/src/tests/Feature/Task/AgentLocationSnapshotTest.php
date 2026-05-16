@@ -96,6 +96,9 @@ class AgentLocationSnapshotTest extends TestCase
         [$companyOne, $adminOne] = $this->seedCompanyUsers('FAC-AGLOC001');
         [$companyTwo, $adminTwo, $agentTwo] = $this->seedCompanyUsers('FAC-AGLOC002');
 
+
+
+
         AgentLocationSnapshot::query()->create([
             'company_id' => $companyTwo->id,
             'user_id' => $agentTwo->id,
@@ -110,17 +113,19 @@ class AgentLocationSnapshotTest extends TestCase
             'last_seen_at' => now(),
         ]);
 
-        $response = $this->withToken($adminOne->createToken('company-one-admin-token', ['*'])->plainTextToken)
+        $response = $this->actingAs($adminOne, 'sanctum')
             ->getJson('/api/v1/agents/locations?company_id=' . $companyTwo->id);
 
         $response->assertUnprocessable()
             ->assertJsonValidationErrors(['company_id']);
 
         // Sanity check: company two admin can still access company two snapshots.
-        $this->withToken($adminTwo->createToken('company-two-admin-token', ['*'])->plainTextToken)
+        $this->actingAs($adminTwo, 'sanctum')
             ->getJson('/api/v1/agents/locations?company_id=' . $companyTwo->id)
             ->assertOk()
             ->assertJsonPath('data.items.0.agent.id', $agentTwo->id);
+
+
     }
 
     public function test_stale_snapshot_is_reported_offline(): void

@@ -11,7 +11,7 @@ class HealthController extends Controller
     {
         return response()->json([
             'success' => true,
-            'message' => 'API is healthy (Monorepo version)',
+            'message' => 'API is healthy',
             'data' => [
                 'service' => config('app.name'),
                 'environment' => app()->environment(),

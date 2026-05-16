@@ -33,7 +33,7 @@ return new class extends Migration
 
             $table->decimal('destination_latitude', 10, 7)->nullable();
             $table->decimal('destination_longitude', 10, 7)->nullable();
-            $table->unsignedSmallInteger('destination_radius_meters');
+            $table->unsignedSmallInteger('destination_radius_meters')->nullable();
 
             $table->timestamp('arrival_detected_at')->nullable();
             $table->decimal('arrival_latitude', 10, 7)->nullable();

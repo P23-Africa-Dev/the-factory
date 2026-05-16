@@ -194,9 +194,9 @@ class LeadService
             ->with([
                 'creator:id,name,email',
                 'assignee:id,name,email',
-                'notes' => fn(Builder $query): Builder => $query->latest('id')->limit(10),
+                'notes' => fn($query) => $query->latest('id')->limit(10),
                 'notes.creator:id,name,email',
-                'activities' => fn(Builder $query): Builder => $query->latest('id')->limit(20),
+                'activities' => fn($query) => $query->latest('id')->limit(20),
                 'activities.creator:id,name,email',
             ]);
     }
