@@ -1,0 +1,90 @@
+"use client";
+
+import React, { createContext, useContext, useCallback, useRef } from "react";
+import { useTrackingStore } from "@/store/tracking";
+import * as locationBuffer from "@/lib/tracking/location-buffer";
+
+interface ActiveTrackingContextValue {
+  startTracking: (
+    taskId: number,
+    companyId: number | string,
+    token: string,
+    callbacks?: { onArrived?: () => void; onError?: (err: unknown) => void }
+  ) => void;
+  stopTracking: () => void;
+  isTracking: boolean;
+  activeTaskId: number | null;
+}
+
+const ActiveTrackingContext = createContext<ActiveTrackingContextValue>({
+  startTracking: () => {},
+  stopTracking: () => {},
+  isTracking: false,
+  activeTaskId: null,
+});
+
+export function useActiveTracking() {
+  return useContext(ActiveTrackingContext);
+}
+
+export function ActiveTrackingProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const setActiveTrackingTask = useTrackingStore((s) => s.setActiveTrackingTask);
+  const activeTrackingTaskId = useTrackingStore((s) => s.activeTrackingTaskId);
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  const startTracking = useCallback(
+    (
+      taskId: number,
+      companyId: number | string,
+      token: string,
+      callbacks?: { onArrived?: () => void; onError?: (err: unknown) => void }
+    ) => {
+      // Stop any existing session before starting a new one
+      if (locationBuffer.isActive()) {
+        locationBuffer.stop();
+      }
+
+      locationBuffer.start(taskId, companyId, token, {
+        onArrived: callbacks?.onArrived,
+        onError: callbacks?.onError,
+      });
+
+      setActiveTrackingTask(taskId);
+
+      cleanupRef.current = () => {
+        locationBuffer.stop();
+        setActiveTrackingTask(null);
+      };
+    },
+    [setActiveTrackingTask]
+  );
+
+  const stopTracking = useCallback(() => {
+    cleanupRef.current?.();
+    cleanupRef.current = null;
+  }, []);
+
+  // Clean up on unmount (e.g., logout / layout unmount)
+  React.useEffect(() => {
+    return () => {
+      cleanupRef.current?.();
+    };
+  }, []);
+
+  return (
+    <ActiveTrackingContext.Provider
+      value={{
+        startTracking,
+        stopTracking,
+        isTracking: activeTrackingTaskId !== null,
+        activeTaskId: activeTrackingTaskId,
+      }}
+    >
+      {children}
+    </ActiveTrackingContext.Provider>
+  );
+}

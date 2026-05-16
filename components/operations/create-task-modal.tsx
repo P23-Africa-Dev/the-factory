@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import {
   X,
   MapPin,
@@ -12,6 +12,7 @@ import {
   Calendar,
   AlertCircle,
   Navigation,
+  CheckCheck,
 } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -151,11 +152,34 @@ export function CreateTaskModal({
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
 
   const set = <K extends keyof typeof form>(key: K, val: (typeof form)[K]) => {
     setForm((p) => ({ ...p, [key]: val }));
     setErrors((p) => ({ ...p, [key]: "" }));
+    if (key === "address") setCoords(null);
   };
+
+  const geocodeAddress = useCallback(async (address: string) => {
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    if (!token || !address.trim()) return;
+    setGeocoding(true);
+    try {
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${token}&country=ng&limit=1`;
+      const res = await fetch(url);
+      const json = await res.json();
+      const feature = json.features?.[0];
+      if (feature) {
+        const [lng, lat] = feature.center as [number, number];
+        setCoords({ lat, lng });
+      }
+    } catch {
+      // geocoding failure is non-fatal
+    } finally {
+      setGeocoding(false);
+    }
+  }, []);
 
   const validate = () => {
     const errs: Record<string, string> = {};
@@ -186,6 +210,8 @@ export function CreateTaskModal({
         assigned_agent_id: form.assignTo ? Number(form.assignTo) : undefined,
         location: form.location || undefined,
         address: form.address || undefined,
+        latitude: coords?.lat,
+        longitude: coords?.lng,
         due_date: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
         required_actions: form.requiredActions ? form.requiredActions.split(',').map(s => s.trim()) : undefined,
         priority: form.priority ? priorityVal : undefined,
@@ -256,6 +282,7 @@ export function CreateTaskModal({
       category: "all",
     });
     setErrors({});
+    setCoords(null);
     onClose();
   };
 
@@ -400,18 +427,34 @@ export function CreateTaskModal({
             <FieldLabel>
               Address{" "}
               <span className="text-gray-400 normal-case font-normal">
-                (GPS Coordinate)
+                (for arrival detection)
               </span>
             </FieldLabel>
-            <InputWrap icon={<Navigation size={13} />}>
+            <InputWrap
+              icon={
+                geocoding ? (
+                  <Loader2 size={13} className="animate-spin text-dash-teal" />
+                ) : coords ? (
+                  <CheckCheck size={13} className="text-green-500" />
+                ) : (
+                  <Navigation size={13} />
+                )
+              }
+            >
               <input
                 type="text"
                 placeholder="e.g. Admiralty Way, Lekki Phase 1, Lagos"
                 value={form.address}
                 onChange={(e) => set("address", e.target.value)}
+                onBlur={(e) => geocodeAddress(e.target.value)}
                 className={`${INPUT_CLS()} pl-9 pr-4`}
               />
             </InputWrap>
+            {coords && (
+              <p className="text-[10px] text-green-600 mt-1 font-medium">
+                GPS locked: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
+              </p>
+            )}
           </div>
 
           {/* Due Date + Priority */}
