@@ -33,7 +33,7 @@ class CreatePayrollRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
             'salary_type' => ['required', 'string', Rule::in(PayrollSalaryType::values())],
             'base_salary' => ['required', 'numeric', 'gt:0'],
             'currency' => ['nullable', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],

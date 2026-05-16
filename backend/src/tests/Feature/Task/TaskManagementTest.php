@@ -25,7 +25,7 @@ class TaskManagementTest extends TestCase
     {
         Notification::fake();
 
-        [$company, , $agent] = $this->seedCompanyUsers();
+        [$company,, $agent] = $this->seedCompanyUsers();
 
         $owner = User::factory()->create(['email_verified_at' => now()]);
 
@@ -69,7 +69,7 @@ class TaskManagementTest extends TestCase
     {
         Notification::fake();
 
-        [$company, , $agent] = $this->seedCompanyUsers();
+        [$company,, $agent] = $this->seedCompanyUsers();
 
         $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
             ->postJson('/api/v1/agent/tasks/self', [
@@ -176,7 +176,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($secondaryAgent->createToken('secondary-agent-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/tasks/'.$task->id.'?company_id='.$company->id);
+            ->getJson('/api/v1/tasks/' . $task->id . '?company_id=' . $company->id);
 
         $response->assertOk()
             ->assertJsonPath('data.task.id', $task->id);
@@ -226,6 +226,23 @@ class TaskManagementTest extends TestCase
         ]);
     }
 
+    public function test_admin_cannot_create_task_without_company_context(): void
+    {
+        [, $admin, $agent] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/tasks', [
+                'title' => 'Missing Company Context',
+                'type' => 'inspection',
+                'description' => 'This task should be rejected when company context is missing.',
+                'assigned_agent_id' => $agent->id,
+                'due_date' => now()->addDay()->toISOString(),
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['company_id']);
+    }
+
     public function test_admin_and_agent_can_use_public_company_id_for_task_endpoints(): void
     {
         [$company, $admin, $agent] = $this->seedCompanyUsers();
@@ -252,14 +269,14 @@ class TaskManagementTest extends TestCase
         $agentToken = $agent->createToken('agent-token', ['*'])->plainTextToken;
 
         $listResponse = $this->withToken($agentToken)
-            ->getJson('/api/v1/tasks?company_id='.strtolower($company->company_id));
+            ->getJson('/api/v1/tasks?company_id=' . strtolower($company->company_id));
 
         $listResponse->assertOk()
             ->assertJsonPath('data.items.0.id', $taskId)
             ->assertJsonPath('data.items.0.company_id', $company->id);
 
         $showResponse = $this->withToken($agentToken)
-            ->getJson('/api/v1/tasks/'.$taskId.'?company_id='.strtolower($company->company_id));
+            ->getJson('/api/v1/tasks/' . $taskId . '?company_id=' . strtolower($company->company_id));
 
         $showResponse->assertOk()
             ->assertJsonPath('data.task.id', $taskId)
@@ -268,7 +285,7 @@ class TaskManagementTest extends TestCase
 
     public function test_agent_cannot_create_task(): void
     {
-        [$company, , $agent] = $this->seedCompanyUsers();
+        [$company,, $agent] = $this->seedCompanyUsers();
 
         $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
             ->postJson('/api/v1/tasks', [
@@ -386,7 +403,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/tasks?company_id='.$company->id);
+            ->getJson('/api/v1/tasks?company_id=' . $company->id);
 
         $response->assertOk()
             ->assertJsonPath('data.items.0.id', $task1->id)
@@ -422,7 +439,7 @@ class TaskManagementTest extends TestCase
 
         $uploadResponse = $this->withToken($token)
             ->withHeader('Accept', 'application/json')
-            ->post('/api/v1/tasks/'.$task->id.'/proofs', [
+            ->post('/api/v1/tasks/' . $task->id . '/proofs', [
                 'company_id' => $company->id,
                 'file' => UploadedFile::fake()->image('proof.jpg', 1000, 1000),
                 'latitude' => 6.45,
@@ -438,7 +455,7 @@ class TaskManagementTest extends TestCase
         $this->assertNotNull($proofPath);
         $this->assertTrue(Storage::disk('local')->exists((string) $proofPath));
 
-        $inProgressResponse = $this->withToken($token)->patchJson('/api/v1/tasks/'.$task->id.'/status', [
+        $inProgressResponse = $this->withToken($token)->patchJson('/api/v1/tasks/' . $task->id . '/status', [
             'company_id' => $company->id,
             'status' => 'in_progress',
         ]);
@@ -446,7 +463,7 @@ class TaskManagementTest extends TestCase
         $inProgressResponse->assertOk()
             ->assertJsonPath('data.task.status', 'in_progress');
 
-        $statusResponse = $this->withToken($token)->patchJson('/api/v1/tasks/'.$task->id.'/status', [
+        $statusResponse = $this->withToken($token)->patchJson('/api/v1/tasks/' . $task->id . '/status', [
             'company_id' => $company->id,
             'status' => 'completed',
         ]);
@@ -457,7 +474,7 @@ class TaskManagementTest extends TestCase
 
     public function test_agent_can_create_self_task_only_for_self(): void
     {
-        [$company, , $agent] = $this->seedCompanyUsers();
+        [$company,, $agent] = $this->seedCompanyUsers();
 
         $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
             ->postJson('/api/v1/agent/tasks/self', [
@@ -475,6 +492,21 @@ class TaskManagementTest extends TestCase
             ->assertJsonPath('data.task.project_id', null)
             ->assertJsonPath('data.task.created_by_user_id', $agent->id)
             ->assertJsonPath('data.task.assigned_agent_id', $agent->id);
+    }
+
+    public function test_agent_cannot_create_self_task_without_company_context(): void
+    {
+        [,, $agent] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/agent/tasks/self', [
+                'title' => 'Self Task Without Context',
+                'description' => 'Self task creation should fail when company context is missing.',
+                'due_date' => now()->addDay()->toISOString(),
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['company_id']);
     }
 
     public function test_agent_cannot_complete_task_without_required_proofs(): void
@@ -499,7 +531,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/tasks/'.$task->id.'/status', [
+            ->patchJson('/api/v1/tasks/' . $task->id . '/status', [
                 'company_id' => $company->id,
                 'status' => 'completed',
             ]);
@@ -531,7 +563,7 @@ class TaskManagementTest extends TestCase
 
         $token = $agent->createToken('agent-token', ['*'])->plainTextToken;
 
-        $cancelResponse = $this->withToken($token)->patchJson('/api/v1/tasks/'.$task->id.'/status', [
+        $cancelResponse = $this->withToken($token)->patchJson('/api/v1/tasks/' . $task->id . '/status', [
             'company_id' => $company->id,
             'status' => 'cancelled',
         ]);
@@ -539,7 +571,7 @@ class TaskManagementTest extends TestCase
         $cancelResponse->assertOk()
             ->assertJsonPath('data.task.status', 'cancelled');
 
-        $retryResponse = $this->withToken($token)->patchJson('/api/v1/tasks/'.$task->id.'/status', [
+        $retryResponse = $this->withToken($token)->patchJson('/api/v1/tasks/' . $task->id . '/status', [
             'company_id' => $company->id,
             'status' => 'in_progress',
         ]);
@@ -592,7 +624,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($supervisor->createToken('supervisor-token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/tasks/'.$task->id.'/assign', [
+            ->patchJson('/api/v1/tasks/' . $task->id . '/assign', [
                 'company_id' => $company->id,
                 'assigned_agent_id' => $newAgent->id,
             ]);
@@ -644,7 +676,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/tasks/'.$task->id.'/assign', [
+            ->patchJson('/api/v1/tasks/' . $task->id . '/assign', [
                 'company_id' => $company->id,
                 'assigned_agent_id' => $otherAgent->id,
             ]);
@@ -701,7 +733,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $path = Storage::disk('local')->putFile(
-            'task-proofs/company-'.$company->id.'/task-'.$task->id,
+            'task-proofs/company-' . $company->id . '/task-' . $task->id,
             UploadedFile::fake()->image('evidence.jpg')
         );
 
@@ -716,23 +748,23 @@ class TaskManagementTest extends TestCase
         ]);
 
         $adminResponse = $this->actingAs($admin, 'sanctum')
-            ->get('/api/v1/tasks/'.$task->id.'/proofs/'.$proof->id.'?company_id='.$company->id);
+            ->get('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
 
         $adminResponse->assertOk();
 
         $ownerResponse = $this->actingAs($owner, 'sanctum')
-            ->get('/api/v1/tasks/'.$task->id.'/proofs/'.$proof->id.'?company_id='.$company->id);
+            ->get('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
 
         $ownerResponse->assertOk();
 
         $supervisorResponse = $this->actingAs($supervisor, 'sanctum')
-            ->getJson('/api/v1/tasks/'.$task->id.'/proofs/'.$proof->id.'?company_id='.$company->id);
+            ->getJson('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
 
         $supervisorResponse->assertUnprocessable()
             ->assertJsonPath('errors.authorization.0', 'Only owners and admins can view proof files.');
 
         $agentResponse = $this->actingAs($agent, 'sanctum')
-            ->getJson('/api/v1/tasks/'.$task->id.'/proofs/'.$proof->id.'?company_id='.$company->id);
+            ->getJson('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
 
         $agentResponse->assertUnprocessable()
             ->assertJsonPath('errors.authorization.0', 'Only owners and admins can view proof files.');

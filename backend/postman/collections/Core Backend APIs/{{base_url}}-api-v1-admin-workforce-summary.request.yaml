@@ -1,0 +1,9 @@
+$kind: http-request
+name: "{{base_url}}/api/v1/admin/workforce/summary"
+url: "{{base_url}}/api/v1/admin/workforce/summary?company_id={{company_id}}"
+method: GET
+headers:
+  Accept: application/json
+  Authorization: "Bearer {{access_token}}"
+settings:
+  disabledSystemHeaders: []

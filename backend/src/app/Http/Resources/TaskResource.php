@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources;
 
+use App\Support\AvatarUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -32,25 +33,31 @@ class TaskResource extends JsonResource
             'status' => $this->status?->value,
             'started_at' => $this->started_at?->toIso8601String(),
             'completed_at' => $this->completed_at?->toIso8601String(),
-            'project' => $this->whenLoaded('project', fn (): ?array => $this->project ? [
+            'project' => $this->whenLoaded('project', fn(): ?array => $this->project ? [
                 'id' => $this->project->id,
                 'company_id' => $this->project->company_id,
                 'name' => $this->project->name,
                 'status' => $this->project->status?->value,
                 'priority' => $this->project->priority?->value,
             ] : null),
-            'creator' => $this->whenLoaded('creator', fn (): ?array => $this->creator ? [
+            'creator' => $this->whenLoaded('creator', fn(): ?array => $this->creator ? [
                 'id' => $this->creator->id,
                 'name' => $this->creator->name,
                 'email' => $this->creator->email,
+                'avatar_url' => AvatarUrlResolver::resolve($this->creator->avatar, $this->creator->gender),
             ] : null),
-            'assignee' => $this->whenLoaded('assignedAgent', fn (): ?array => $this->assignedAgent ? [
+            'assignee' => $this->whenLoaded('assignedAgent', fn(): ?array => $this->assignedAgent ? [
                 'id' => $this->assignedAgent->id,
                 'name' => $this->assignedAgent->name,
                 'email' => $this->assignedAgent->email,
+                'avatar_url' => AvatarUrlResolver::resolve($this->assignedAgent->avatar, $this->assignedAgent->gender),
             ] : null),
-            'assigned_users' => $this->whenLoaded('currentAssignees', fn (): array => $this->currentAssignees
-                ->map(fn ($u) => ['id' => $u->id, 'name' => $u->name])
+            'assigned_users' => $this->whenLoaded('currentAssignees', fn(): array => $this->currentAssignees
+                ->map(fn($u) => [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'avatar_url' => AvatarUrlResolver::resolve($u->avatar, $u->gender),
+                ])
                 ->values()
                 ->all()),
             'proofs_count' => $this->whenCounted('proofs'),

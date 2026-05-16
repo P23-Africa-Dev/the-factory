@@ -1,0 +1,17 @@
+$kind: http-request
+name: "{{base_url}}/api/v1/payroll/{id} (partial update)"
+url: "{{base_url}}/api/v1/payroll/{{payroll_id}}"
+method: PUT
+headers:
+  Content-Type: application/json
+  Accept: application/json
+  Authorization: "Bearer {{access_token}}"
+body:
+  type: json
+  content: |
+    {
+      "company_id": "{{company_id}}",
+      "base_salary": 135000
+    }
+settings:
+  disabledSystemHeaders: []

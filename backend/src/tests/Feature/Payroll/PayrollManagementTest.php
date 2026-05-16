@@ -76,7 +76,7 @@ class PayrollManagementTest extends TestCase
 
     public function test_owner_can_create_and_update_payroll_settings(): void
     {
-        [$company, , , , $owner] = $this->seedCompanyUsers();
+        [$company,,,, $owner] = $this->seedCompanyUsers();
 
         $createResponse = $this->actingAs($owner, 'sanctum')
             ->postJson('/api/v1/payroll', [
@@ -96,7 +96,7 @@ class PayrollManagementTest extends TestCase
         $payrollSettingId = (int) $createResponse->json('data.payroll.id');
 
         $updateResponse = $this->actingAs($owner, 'sanctum')
-            ->putJson('/api/v1/payroll/'.$payrollSettingId, [
+            ->putJson('/api/v1/payroll/' . $payrollSettingId, [
                 'company_id' => $company->company_id,
                 'salary_type' => 'weekly',
                 'base_salary' => 88000,
@@ -152,7 +152,7 @@ class PayrollManagementTest extends TestCase
         ]);
 
         $response = $this->actingAs($supervisor, 'sanctum')
-            ->putJson('/api/v1/payroll/'.$setting->id, [
+            ->putJson('/api/v1/payroll/' . $setting->id, [
                 'company_id' => $company->id,
                 'salary_type' => 'weekly',
                 'base_salary' => 90000,
@@ -186,7 +186,7 @@ class PayrollManagementTest extends TestCase
 
     public function test_supervisor_can_update_payroll_settings_with_public_company_id(): void
     {
-        [$company, , $supervisor] = $this->seedCompanyUsers();
+        [$company,, $supervisor] = $this->seedCompanyUsers();
 
         $setting = $this->createPayrollSetting($company, [
             'salary_type' => 'monthly',
@@ -197,7 +197,7 @@ class PayrollManagementTest extends TestCase
         ]);
 
         $response = $this->actingAs($supervisor, 'sanctum')
-            ->putJson('/api/v1/payroll/'.$setting->id, [
+            ->putJson('/api/v1/payroll/' . $setting->id, [
                 'company_id' => strtolower($company->company_id),
                 'salary_type' => 'weekly',
                 'base_salary' => 80000,
@@ -235,7 +235,7 @@ class PayrollManagementTest extends TestCase
         ]);
 
         $response = $this->actingAs($admin, 'sanctum')
-            ->putJson('/api/v1/payroll/'.$setting->id, [
+            ->putJson('/api/v1/payroll/' . $setting->id, [
                 'company_id' => $company->id,
                 'salary_type' => 'monthly',
                 'base_salary' => 100000,
@@ -257,7 +257,7 @@ class PayrollManagementTest extends TestCase
 
     public function test_agent_inherits_company_payroll_configuration(): void
     {
-        [$company, $admin, , $agent] = $this->seedCompanyUsers();
+        [$company, $admin,, $agent] = $this->seedCompanyUsers();
 
         $this->createPayrollSetting($company, [
             'salary_type' => 'monthly',
@@ -270,7 +270,7 @@ class PayrollManagementTest extends TestCase
         ]);
 
         $response = $this->actingAs($agent, 'sanctum')
-            ->getJson('/api/v1/payroll?company_id='.$company->id);
+            ->getJson('/api/v1/payroll?company_id=' . $company->id);
 
         $response->assertOk()
             ->assertJsonPath('data.payroll.salary_type', 'monthly')
@@ -281,7 +281,7 @@ class PayrollManagementTest extends TestCase
 
     public function test_agent_can_fetch_payroll_with_public_company_id(): void
     {
-        [$company, , , $agent] = $this->seedCompanyUsers();
+        [$company,,, $agent] = $this->seedCompanyUsers();
 
         $this->createPayrollSetting($company, [
             'salary_type' => 'monthly',
@@ -294,7 +294,7 @@ class PayrollManagementTest extends TestCase
         ]);
 
         $response = $this->actingAs($agent, 'sanctum')
-            ->getJson('/api/v1/payroll?company_id='.strtolower($company->company_id));
+            ->getJson('/api/v1/payroll?company_id=' . strtolower($company->company_id));
 
         $response->assertOk()
             ->assertJsonPath('data.payroll.salary_type', 'monthly')
@@ -305,10 +305,10 @@ class PayrollManagementTest extends TestCase
 
     public function test_get_payroll_returns_null_when_not_configured(): void
     {
-        [$company, , , $agent] = $this->seedCompanyUsers();
+        [$company,,, $agent] = $this->seedCompanyUsers();
 
         $response = $this->actingAs($agent, 'sanctum')
-            ->getJson('/api/v1/payroll?company_id='.$company->id);
+            ->getJson('/api/v1/payroll?company_id=' . $company->id);
 
         $response->assertOk()
             ->assertJsonPath('data.payroll', null);
@@ -316,7 +316,7 @@ class PayrollManagementTest extends TestCase
 
     public function test_agent_cannot_create_or_update_payroll_settings(): void
     {
-        [$company, $admin, , $agent] = $this->seedCompanyUsers();
+        [$company, $admin,, $agent] = $this->seedCompanyUsers();
 
         $setting = $this->createPayrollSetting($company);
 
@@ -333,7 +333,7 @@ class PayrollManagementTest extends TestCase
             ->assertJsonPath('errors.authorization.0', 'Only owners, admins, and supervisors can manage payroll settings.');
 
         $updateResponse = $this->actingAs($agent, 'sanctum')
-            ->putJson('/api/v1/payroll/'.$setting->id, [
+            ->putJson('/api/v1/payroll/' . $setting->id, [
                 'company_id' => $company->id,
                 'salary_type' => 'monthly',
                 'base_salary' => 120000,
@@ -350,7 +350,7 @@ class PayrollManagementTest extends TestCase
 
     public function test_payroll_settings_are_company_isolated_for_fetch_and_update(): void
     {
-        [$companyA, , $supervisorA] = $this->seedCompanyUsers('FAC-PAY-A');
+        [$companyA,, $supervisorA] = $this->seedCompanyUsers('FAC-PAY-A');
         [$companyB, $adminB] = $this->seedCompanyUsers('FAC-PAY-B');
 
         $settingB = $this->actingAs($adminB, 'sanctum')
@@ -365,13 +365,13 @@ class PayrollManagementTest extends TestCase
             ->json('data.payroll.id');
 
         $fetchResponse = $this->actingAs($supervisorA, 'sanctum')
-            ->getJson('/api/v1/payroll?company_id='.$companyB->id);
+            ->getJson('/api/v1/payroll?company_id=' . $companyB->id);
 
         $fetchResponse->assertUnprocessable()
             ->assertJsonValidationErrors(['company_id']);
 
         $updateResponse = $this->actingAs($supervisorA, 'sanctum')
-            ->putJson('/api/v1/payroll/'.$settingB, [
+            ->putJson('/api/v1/payroll/' . $settingB, [
                 'company_id' => $companyA->id,
                 'salary_type' => 'weekly',
                 'base_salary' => 100000,
@@ -430,11 +430,78 @@ class PayrollManagementTest extends TestCase
             ->assertJsonValidationErrors(['base_salary', 'work_days', 'work_hours']);
     }
 
+    public function test_create_and_update_payroll_require_company_context(): void
+    {
+        [$company, $admin] = $this->seedCompanyUsers();
+
+        $createResponse = $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/payroll', [
+                'salary_type' => 'monthly',
+                'base_salary' => 120000,
+                'work_days' => 22,
+                'work_hours' => 8,
+            ]);
+
+        $createResponse->assertUnprocessable()
+            ->assertJsonValidationErrors(['company_id']);
+
+        $setting = $this->createPayrollSetting($company);
+
+        $updateResponse = $this->actingAs($admin, 'sanctum')
+            ->putJson('/api/v1/payroll/' . $setting->id, [
+                'salary_type' => 'weekly',
+                'base_salary' => 90000,
+            ]);
+
+        $updateResponse->assertUnprocessable()
+            ->assertJsonValidationErrors(['company_id']);
+    }
+
+    public function test_partial_update_preserves_existing_boolean_and_schedule_values(): void
+    {
+        [$company, $admin] = $this->seedCompanyUsers();
+
+        $setting = $this->createPayrollSetting($company, [
+            'salary_type' => 'monthly',
+            'base_salary' => 120000,
+            'work_days' => 20,
+            'work_hours' => 10,
+            'daily_pay' => 6000,
+            'attendance_affects_pay' => true,
+            'commission_enabled' => true,
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->putJson('/api/v1/payroll/' . $setting->id, [
+                'company_id' => $company->id,
+                'base_salary' => 126000,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.payroll.salary_type', 'monthly')
+            ->assertJsonPath('data.payroll.base_salary', 126000)
+            ->assertJsonPath('data.payroll.work_days', 20)
+            ->assertJsonPath('data.payroll.work_hours', 10)
+            ->assertJsonPath('data.payroll.daily_pay', 6300)
+            ->assertJsonPath('data.payroll.attendance_affects_pay', true)
+            ->assertJsonPath('data.payroll.commission_enabled', true);
+
+        $this->assertDatabaseHas('payroll_settings', [
+            'id' => $setting->id,
+            'base_salary' => '126000.00',
+            'work_days' => 20,
+            'work_hours' => 10,
+            'daily_pay' => '6300.00',
+            'attendance_affects_pay' => 1,
+            'commission_enabled' => 1,
+        ]);
+    }
+
     private function seedCompanyUsers(string $companyId = 'FAC-PAY001'): array
     {
         $company = Company::create([
             'company_id' => $companyId,
-            'name' => 'Payroll Test Company '.$companyId,
+            'name' => 'Payroll Test Company ' . $companyId,
             'country' => 'NG',
             'currency_code' => 'NGN',
             'team_size' => '11-50',

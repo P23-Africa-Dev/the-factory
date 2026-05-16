@@ -7,6 +7,8 @@ use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\ResendOtpController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
+use App\Http\Controllers\Api\V1\Crm\LeadController;
+use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
 use App\Http\Controllers\Api\V1\Enterprise\BookDemoController;
 use App\Http\Controllers\Api\V1\Enterprise\CompleteFirstTimeSetupController;
 use App\Http\Controllers\Api\V1\Enterprise\EnterpriseLoginController;
@@ -19,6 +21,7 @@ use App\Http\Controllers\Api\V1\Internal\InternalUserController;
 use App\Http\Controllers\Api\V1\Onboarding\WorkspaceController;
 use App\Http\Controllers\Api\V1\Payroll\PayrollController;
 use App\Http\Controllers\Api\V1\Project\ProjectController;
+use App\Http\Controllers\Api\V1\Tracking\AgentLocationController;
 use App\Http\Controllers\Api\V1\Task\AgentTaskController;
 use App\Http\Controllers\Api\V1\Task\TaskAssignmentController;
 use App\Http\Controllers\Api\V1\Task\TaskController;
@@ -26,6 +29,7 @@ use App\Http\Controllers\Api\V1\Task\TaskProofController;
 use App\Http\Controllers\Api\V1\Task\TaskStatusController;
 use App\Http\Controllers\Api\V1\Task\TaskTrackingController;
 use App\Http\Controllers\Api\V1\User\MeController;
+use App\Http\Controllers\Api\V1\Workforce\WorkforceSummaryController;
 use Illuminate\Support\Facades\Route;
 
 // Public
@@ -169,6 +173,35 @@ Route::middleware('auth:sanctum')->group(function (): void {
                     ->middleware('throttle:30,1')
                     ->name('supervisor.assign');
             });
+
+            Route::prefix('crm')->name('crm.')->group(function (): void {
+                Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
+                Route::post('/leads', [LeadController::class, 'store'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.store');
+                Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+                Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
+                Route::patch('/leads/{lead}', [LeadController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.update');
+                Route::post('/leads/{lead}/notes', [LeadController::class, 'storeNote'])
+                    ->middleware('throttle:60,1')
+                    ->name('leads.notes.store');
+                Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
+                    ->middleware('throttle:60,1')
+                    ->name('leads.activities.store');
+            });
+
+            Route::get('/dashboard/overview', DashboardOverviewController::class)
+                ->name('dashboard.overview');
+
+            Route::get('/workforce/summary', WorkforceSummaryController::class)
+                ->name('workforce.summary');
+
+            Route::prefix('agents')->name('agents.')->group(function (): void {
+                Route::get('/locations', [AgentLocationController::class, 'index'])->name('locations.index');
+                Route::get('/{user}/location', [AgentLocationController::class, 'show'])->name('locations.show');
+            });
         });
 
     // Canonical agent endpoints.
@@ -190,6 +223,29 @@ Route::middleware('auth:sanctum')->group(function (): void {
                 Route::post('/{task}/proofs', [TaskProofController::class, 'store'])
                     ->middleware('throttle:60,1')
                     ->name('proofs.store');
+            });
+
+            Route::prefix('crm')->name('crm.')->group(function (): void {
+                Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
+                Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+                Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
+                Route::post('/leads/{lead}/notes', [LeadController::class, 'storeNote'])
+                    ->middleware('throttle:60,1')
+                    ->name('leads.notes.store');
+                Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
+                    ->middleware('throttle:60,1')
+                    ->name('leads.activities.store');
+            });
+
+            Route::get('/dashboard/overview', DashboardOverviewController::class)
+                ->name('dashboard.overview');
+
+            Route::get('/workforce/summary', WorkforceSummaryController::class)
+                ->name('workforce.summary');
+
+            Route::prefix('agents')->name('agents.')->group(function (): void {
+                Route::get('/locations', [AgentLocationController::class, 'index'])->name('locations.index');
+                Route::get('/{user}/location', [AgentLocationController::class, 'show'])->name('locations.show');
             });
         });
 
@@ -260,5 +316,34 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::patch('/{user}/supervisor', [InternalUserController::class, 'assignSupervisor'])
             ->middleware('throttle:30,1')
             ->name('supervisor.assign');
+    });
+
+    Route::prefix('crm')->name('crm.')->group(function (): void {
+        Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
+        Route::post('/leads', [LeadController::class, 'store'])
+            ->middleware('throttle:30,1')
+            ->name('leads.store');
+        Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+        Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
+        Route::patch('/leads/{lead}', [LeadController::class, 'update'])
+            ->middleware('throttle:30,1')
+            ->name('leads.update');
+        Route::post('/leads/{lead}/notes', [LeadController::class, 'storeNote'])
+            ->middleware('throttle:60,1')
+            ->name('leads.notes.store');
+        Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
+            ->middleware('throttle:60,1')
+            ->name('leads.activities.store');
+    });
+
+    Route::get('/dashboard/overview', DashboardOverviewController::class)
+        ->name('dashboard.overview');
+
+    Route::get('/workforce/summary', WorkforceSummaryController::class)
+        ->name('workforce.summary');
+
+    Route::prefix('agents')->name('agents.')->group(function (): void {
+        Route::get('/locations', [AgentLocationController::class, 'index'])->name('locations.index');
+        Route::get('/{user}/location', [AgentLocationController::class, 'show'])->name('locations.show');
     });
 });

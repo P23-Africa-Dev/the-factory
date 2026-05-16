@@ -41,7 +41,7 @@ class ProjectService
         }
 
         if (! empty($filters['search'])) {
-            $query->where('name', 'like', '%'.$filters['search'].'%');
+            $query->where('name', 'like', '%' . $filters['search'] . '%');
         }
 
         return $query->latest('id')->simplePaginate(20)->withQueryString();
@@ -155,14 +155,14 @@ class ProjectService
         return Project::query()
             ->where('company_id', $companyId)
             ->with([
-                'manager:id,name,email',
-                'teamUsers:id,name,email',
+                'manager:id,name,email,avatar,gender',
+                'teamUsers:id,name,email,avatar,gender',
                 'files',
             ])
             ->withCount([
                 'tasks as total_tasks_count',
-                'tasks as completed_tasks_count' => fn (Builder $query) => $query->where('status', TaskStatus::COMPLETED->value),
-                'tasks as pending_tasks_count' => fn (Builder $query) => $query->where('status', '!=', TaskStatus::COMPLETED->value),
+                'tasks as completed_tasks_count' => fn(Builder $query) => $query->where('status', TaskStatus::COMPLETED->value),
+                'tasks as pending_tasks_count' => fn(Builder $query) => $query->where('status', '!=', TaskStatus::COMPLETED->value),
             ]);
     }
 
@@ -229,7 +229,7 @@ class ProjectService
             return $normalized;
         }
 
-        return array_values(array_filter($normalized, fn (int $userId): bool => $userId !== $managerId));
+        return array_values(array_filter($normalized, fn(int $userId): bool => $userId !== $managerId));
     }
 
     /**

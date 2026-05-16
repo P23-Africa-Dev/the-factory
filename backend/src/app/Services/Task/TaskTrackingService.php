@@ -10,6 +10,7 @@ use App\Models\TaskLocationPoint;
 use App\Models\TaskProof;
 use App\Models\TaskTrackingSession;
 use App\Models\User;
+use App\Services\Tracking\AgentLocationSnapshotService;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -24,6 +25,7 @@ class TaskTrackingService
     public function __construct(
         private readonly TaskAccessService $accessService,
         private readonly TaskService $taskService,
+        private readonly AgentLocationSnapshotService $agentLocationSnapshotService,
     ) {}
 
     public function start(User $user, Task $task, array $data): array
@@ -77,8 +79,14 @@ class TaskTrackingService
         $accuracy = array_key_exists('accuracy_meters', $data) && $data['accuracy_meters'] !== null
             ? (float) $data['accuracy_meters']
             : null;
+        $speed = array_key_exists('speed_mps', $data) && $data['speed_mps'] !== null
+            ? (float) $data['speed_mps']
+            : null;
+        $heading = array_key_exists('heading_degrees', $data) && $data['heading_degrees'] !== null
+            ? (float) $data['heading_degrees']
+            : null;
 
-        return DB::transaction(function () use ($user, $task, $context, $latitude, $longitude, $accuracy, $recordedAt): array {
+        return DB::transaction(function () use ($user, $task, $context, $latitude, $longitude, $accuracy, $speed, $heading, $recordedAt): array {
             $session = TaskTrackingSession::query()->create([
                 'task_id' => $task->id,
                 'company_id' => $context->company->id,
@@ -109,23 +117,32 @@ class TaskTrackingService
                 eventType: 'start',
                 isCheckpoint: true,
                 accuracyMeters: $accuracy,
-                speedMps: null,
-                headingDegrees: null,
+                speedMps: $speed,
+                headingDegrees: $heading,
             );
 
             $arrivedNow = $this->markArrivalIfWithinRadius($session, $task, $user, $latitude, $longitude, $recordedAt, $accuracy);
+            $eventType = $arrivedNow ? 'arrival' : 'start';
 
-            $payload = [
-                'task_status' => $task->status?->value,
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-                'accuracy_meters' => $accuracy,
-                'arrived' => $arrivedNow,
-                'event_type' => 'start',
-            ];
+            $payload = $this->upsertSnapshotAndBuildRealtimePayload(
+                companyId: $context->company->id,
+                taskId: $task->id,
+                trackingSessionId: $session->id,
+                userId: $user->id,
+                latitude: $latitude,
+                longitude: $longitude,
+                accuracyMeters: $accuracy,
+                speedMps: $speed,
+                headingDegrees: $heading,
+                eventType: $eventType,
+                taskStatus: $task->status?->value,
+                arrived: $arrivedNow,
+                recordedAt: $recordedAt,
+            );
 
             $this->publishTrackingEvent('tracking.task.started', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
             $this->publishTrackingEvent('tracking.location.updated', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+            $this->publishTrackingEvent('tracking.agent.location.updated', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
 
             if ($arrivedNow) {
                 $this->publishTrackingEvent('tracking.task.arrived', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
@@ -226,18 +243,24 @@ class TaskTrackingService
                     $session->last_persisted_recorded_at = $recordedAt;
                 }
 
-                $payload = [
-                    'task_status' => $task->status?->value,
-                    'latitude' => $latitude,
-                    'longitude' => $longitude,
-                    'accuracy_meters' => $accuracy,
-                    'speed_mps' => $speed,
-                    'heading_degrees' => $heading,
-                    'arrived' => $session->arrival_detected_at !== null,
-                    'event_type' => $eventType,
-                ];
+                $payload = $this->upsertSnapshotAndBuildRealtimePayload(
+                    companyId: $session->company_id,
+                    taskId: $task->id,
+                    trackingSessionId: $session->id,
+                    userId: $user->id,
+                    latitude: $latitude,
+                    longitude: $longitude,
+                    accuracyMeters: $accuracy,
+                    speedMps: $speed,
+                    headingDegrees: $heading,
+                    eventType: $eventType,
+                    taskStatus: $task->status?->value,
+                    arrived: $session->arrival_detected_at !== null,
+                    recordedAt: $recordedAt,
+                );
 
                 $this->publishTrackingEvent('tracking.location.updated', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+                $this->publishTrackingEvent('tracking.agent.location.updated', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
 
                 if ($justArrived) {
                     $this->publishTrackingEvent('tracking.task.arrived', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
@@ -349,17 +372,25 @@ class TaskTrackingService
                 headingDegrees: null,
             );
 
-            $payload = [
-                'task_status' => TaskStatus::COMPLETED->value,
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-                'accuracy_meters' => $accuracy,
-                'proofs_uploaded' => count($proofs),
-                'arrived' => $session->arrival_detected_at !== null,
-                'event_type' => 'complete',
-            ];
+            $payload = $this->upsertSnapshotAndBuildRealtimePayload(
+                companyId: $context->company->id,
+                taskId: $task->id,
+                trackingSessionId: $session->id,
+                userId: $user->id,
+                latitude: $latitude,
+                longitude: $longitude,
+                accuracyMeters: $accuracy,
+                speedMps: null,
+                headingDegrees: null,
+                eventType: 'complete',
+                taskStatus: TaskStatus::COMPLETED->value,
+                arrived: $session->arrival_detected_at !== null,
+                recordedAt: $recordedAt,
+            );
+            $payload['proofs_uploaded'] = count($proofs);
 
             $this->publishTrackingEvent('tracking.location.updated', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+            $this->publishTrackingEvent('tracking.agent.location.updated', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
             $this->publishTrackingEvent('tracking.task.completed', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
 
             return [
@@ -663,6 +694,76 @@ class TaskTrackingService
         }
 
         return $distance;
+    }
+
+    private function upsertSnapshotAndBuildRealtimePayload(
+        int $companyId,
+        int $taskId,
+        int $trackingSessionId,
+        int $userId,
+        float $latitude,
+        float $longitude,
+        ?float $accuracyMeters,
+        ?float $speedMps,
+        ?float $headingDegrees,
+        string $eventType,
+        ?string $taskStatus,
+        bool $arrived,
+        Carbon $recordedAt,
+    ): array {
+        $snapshot = $this->agentLocationSnapshotService->upsertFromTrackingEvent([
+            'company_id' => $companyId,
+            'task_id' => $taskId,
+            'tracking_session_id' => $trackingSessionId,
+            'user_id' => $userId,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'accuracy_meters' => $accuracyMeters,
+            'speed_mps' => $speedMps,
+            'heading_degrees' => $headingDegrees,
+            'event_type' => $eventType,
+            'task_status' => $taskStatus,
+            'arrived' => $arrived,
+            'recorded_at' => $recordedAt->toIso8601String(),
+        ]);
+
+        $staleAfterSeconds = max(60, (int) config('tracking.agent_location_stale_after_seconds', 300));
+        $ageSeconds = $snapshot->last_seen_at
+            ? max(0, now()->getTimestamp() - $snapshot->last_seen_at->getTimestamp())
+            : null;
+        $isOnline = $ageSeconds !== null && $ageSeconds <= $staleAfterSeconds;
+
+        return [
+            'task_status' => $taskStatus,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'accuracy_meters' => $accuracyMeters,
+            'speed_mps' => $speedMps,
+            'heading_degrees' => $headingDegrees,
+            'arrived' => $arrived,
+            'event_type' => $eventType,
+            'agent' => [
+                'id' => $snapshot->user_id,
+                'name' => $snapshot->agent?->name,
+                'internal_role' => $snapshot->agent?->internal_role,
+            ],
+            'location' => [
+                'latitude' => $snapshot->latitude,
+                'longitude' => $snapshot->longitude,
+                'accuracy_meters' => $snapshot->accuracy_meters,
+                'speed_mps' => $snapshot->speed_mps,
+                'heading_degrees' => $snapshot->heading_degrees,
+                'event_type' => $snapshot->event_type,
+                'recorded_at' => $snapshot->recorded_at?->toIso8601String(),
+            ],
+            'status' => [
+                'is_online' => $isOnline,
+                'is_stale' => ! $isOnline,
+                'last_seen_at' => $snapshot->last_seen_at?->toIso8601String(),
+                'stale_after_seconds' => $staleAfterSeconds,
+                'age_seconds' => $ageSeconds,
+            ],
+        ];
     }
 
     private function publishTrackingEvent(

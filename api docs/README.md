@@ -39,6 +39,10 @@ Each feature document must include:
 8. [Project Management API](features/project-management.md)
 9. [Payroll Management API](features/payroll-management.md)
 10. [Task Tracking Realtime API](features/task-tracking-realtime.md)
+11. [CRM Management API](features/crm-management.md)
+12. [Dashboard Overview API](features/dashboard-overview.md)
+13. [Workforce Summary API](features/workforce-summary.md)
+14. [Rollout Readiness Checklist](features/rollout-readiness-checklist.md)
 
 ## OpenAPI Contract
 

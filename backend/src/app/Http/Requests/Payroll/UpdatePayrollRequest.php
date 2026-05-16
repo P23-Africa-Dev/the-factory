@@ -15,14 +15,33 @@ class UpdatePayrollRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        $this->merge([
+        $payload = [
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
-            'work_days' => $this->input('work_days', 22),
-            'work_hours' => $this->input('work_hours', 8),
-            'attendance_affects_pay' => $this->boolean('attendance_affects_pay'),
-            'commission_enabled' => $this->boolean('commission_enabled'),
-            'currency' => $this->filled('currency') ? strtoupper((string) $this->input('currency')) : null,
-        ]);
+        ];
+
+        if ($this->has('work_days')) {
+            $payload['work_days'] = $this->input('work_days');
+        }
+
+        if ($this->has('work_hours')) {
+            $payload['work_hours'] = $this->input('work_hours');
+        }
+
+        if ($this->has('attendance_affects_pay')) {
+            $payload['attendance_affects_pay'] = $this->boolean('attendance_affects_pay');
+        }
+
+        if ($this->has('commission_enabled')) {
+            $payload['commission_enabled'] = $this->boolean('commission_enabled');
+        }
+
+        if ($this->has('currency')) {
+            $payload['currency'] = $this->filled('currency')
+                ? strtoupper((string) $this->input('currency'))
+                : null;
+        }
+
+        $this->merge($payload);
     }
 
     public function authorize(): bool
@@ -33,14 +52,14 @@ class UpdatePayrollRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
-            'salary_type' => ['required', 'string', Rule::in(PayrollSalaryType::values())],
-            'base_salary' => ['required', 'numeric', 'gt:0'],
-            'currency' => ['nullable', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
-            'work_days' => ['required', 'integer', 'gt:0', 'max:31'],
-            'work_hours' => ['required', 'integer', 'between:4,12'],
-            'attendance_affects_pay' => ['nullable', 'boolean'],
-            'commission_enabled' => ['nullable', 'boolean'],
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'salary_type' => ['sometimes', 'required', 'string', Rule::in(PayrollSalaryType::values())],
+            'base_salary' => ['sometimes', 'required', 'numeric', 'gt:0'],
+            'currency' => ['sometimes', 'nullable', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
+            'work_days' => ['sometimes', 'required', 'integer', 'gt:0', 'max:31'],
+            'work_hours' => ['sometimes', 'required', 'integer', 'between:4,12'],
+            'attendance_affects_pay' => ['sometimes', 'boolean'],
+            'commission_enabled' => ['sometimes', 'boolean'],
         ];
     }
 }

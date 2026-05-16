@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Resources;
 
+use App\Support\AvatarUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 class InternalUserResource extends JsonResource
 {
@@ -41,36 +41,6 @@ class InternalUserResource extends JsonResource
 
     private function resolveAvatarUrl(): ?string
     {
-        if (! $this->avatar) {
-            return null;
-        }
-
-        $publicBaseUrl = rtrim((string) (
-            config('internal_onboarding.avatar_public_base_url')
-            ?: config('filesystems.disks.public.url')
-            ?: asset('storage')
-        ), '/');
-
-        $avatarRoot = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
-
-        if (str_starts_with($this->avatar, "{$avatarRoot}/custom/")) {
-            return $publicBaseUrl . '/' . ltrim($this->avatar, '/');
-        }
-
-        if (! $this->gender) {
-            return null;
-        }
-
-        $gender = strtolower((string) $this->gender);
-
-        foreach (['png', 'svg'] as $extension) {
-            $candidatePath = "{$avatarRoot}/{$gender}/{$this->avatar}.{$extension}";
-
-            if (Storage::disk('public')->exists($candidatePath)) {
-                return $publicBaseUrl . '/' . ltrim($candidatePath, '/');
-            }
-        }
-
-        return null;
+        return AvatarUrlResolver::resolve($this->avatar, $this->gender);
     }
 }

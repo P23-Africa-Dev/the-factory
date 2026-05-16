@@ -881,6 +881,109 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/agents/locations:
+    get:
+      tags:
+        - Tasks
+      summary: List latest agent location snapshots
+      description: Returns company-scoped latest known locations for agents with online or stale state metadata.
+      operationId: listAgentLocationSnapshots
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: company_id
+          schema:
+            oneOf:
+              - type: integer
+              - type: string
+                maxLength: 32
+                example: FAC-ABCD1234
+        - in: query
+          name: user_id
+          schema:
+            type: integer
+        - in: query
+          name: task_id
+          schema:
+            type: integer
+        - in: query
+          name: include_offline
+          schema:
+            type: boolean
+            default: true
+        - in: query
+          name: stale_after_seconds
+          schema:
+            type: integer
+            minimum: 60
+            maximum: 86400
+            default: 300
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+      responses:
+        "200":
+          description: Agent location snapshots fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentLocationListResponse"
+        "422":
+          description: Validation or company context failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/agents/{user}/location:
+    get:
+      tags:
+        - Tasks
+      summary: Get latest location snapshot for a single agent
+      description: Returns latest known location snapshot for one agent in the active company context.
+      operationId: getAgentLatestLocationSnapshot
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: company_id
+          schema:
+            oneOf:
+              - type: integer
+              - type: string
+                maxLength: 32
+                example: FAC-ABCD1234
+        - in: query
+          name: stale_after_seconds
+          schema:
+            type: integer
+            minimum: 60
+            maximum: 86400
+            default: 300
+      responses:
+        "200":
+          description: Agent latest location snapshot fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentLocationSingleResponse"
+        "422":
+          description: Validation, authorization, or company context failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/v1/tasks/{task}/assign:
     patch:
       tags:
@@ -1412,7 +1515,7 @@ paths:
     put:
       tags:
         - Payroll
-      summary: Update payroll settings
+      summary: Update payroll settings (partial payload supported)
       operationId: updatePayrollSettings
       security:
         - bearerAuth: []
@@ -1631,7 +1734,7 @@ components:
 
     CreateTaskRequest:
       type: object
-      required: [title]
+      required: [company_id, title]
       properties:
         company_id:
           oneOf:
@@ -1716,7 +1819,7 @@ components:
 
     CreateSelfTaskRequest:
       type: object
-      required: [title]
+      required: [company_id, title]
       properties:
         company_id:
           oneOf:
@@ -1873,6 +1976,16 @@ components:
           minimum: -180
           maximum: 180
         accuracy_meters:
+          type:
+            - number
+            - "null"
+          format: float
+        speed_mps:
+          type:
+            - number
+            - "null"
+          format: float
+        heading_degrees:
           type:
             - number
             - "null"
@@ -2234,6 +2347,165 @@ components:
           type:
             - "null"
 
+    AgentLocationSnapshot:
+      type: object
+      properties:
+        agent:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type:
+                - string
+                - "null"
+            email:
+              type:
+                - string
+                - "null"
+              format: email
+            avatar:
+              type:
+                - string
+                - "null"
+            internal_role:
+              type:
+                - string
+                - "null"
+        task:
+          type: object
+          properties:
+            id:
+              type:
+                - integer
+                - "null"
+            title:
+              type:
+                - string
+                - "null"
+            status:
+              type:
+                - string
+                - "null"
+            tracking_session_id:
+              type:
+                - integer
+                - "null"
+        location:
+          type: object
+          properties:
+            latitude:
+              type: number
+              format: float
+            longitude:
+              type: number
+              format: float
+            accuracy_meters:
+              type:
+                - number
+                - "null"
+              format: float
+            speed_mps:
+              type:
+                - number
+                - "null"
+              format: float
+            heading_degrees:
+              type:
+                - number
+                - "null"
+              format: float
+            event_type:
+              type: string
+            arrived:
+              type: boolean
+            recorded_at:
+              type:
+                - string
+                - "null"
+              format: date-time
+        status:
+          type: object
+          properties:
+            is_online:
+              type: boolean
+            is_stale:
+              type: boolean
+            stale_after_seconds:
+              type: integer
+            age_seconds:
+              type:
+                - integer
+                - "null"
+            last_seen_at:
+              type:
+                - string
+                - "null"
+              format: date-time
+        updated_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+
+    AgentLocationListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/AgentLocationSnapshot"
+            meta:
+              type: object
+              properties:
+                company_id:
+                  type: integer
+                stale_after_seconds:
+                  type: integer
+                generated_at:
+                  type: string
+                  format: date-time
+        errors:
+          type:
+            - "null"
+
+    AgentLocationSingleResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            snapshot:
+              oneOf:
+                - $ref: "#/components/schemas/AgentLocationSnapshot"
+                - type: "null"
+            meta:
+              type: object
+              properties:
+                company_id:
+                  type: integer
+                stale_after_seconds:
+                  type: integer
+                generated_at:
+                  type: string
+                  format: date-time
+        errors:
+          type:
+            - "null"
+
     TaskUserSummary:
       type:
         - object
@@ -2246,6 +2518,10 @@ components:
         email:
           type: string
           format: email
+        avatar_url:
+          type:
+            - string
+            - "null"
 
     TaskAssignedUserSummary:
       type: object
@@ -2254,6 +2530,10 @@ components:
           type: integer
         name:
           type: string
+        avatar_url:
+          type:
+            - string
+            - "null"
 
     TaskProjectSummary:
       type:
@@ -2638,6 +2918,10 @@ components:
         email:
           type: string
           format: email
+        avatar_url:
+          type:
+            - string
+            - "null"
 
     ProjectTeamMemberSummary:
       type: object
@@ -2651,6 +2935,10 @@ components:
           format: email
         role:
           type: string
+        avatar_url:
+          type:
+            - string
+            - "null"
 
     ProjectFile:
       type: object
@@ -3193,6 +3481,18 @@ components:
                 type: string
                 enum: [supervisor, agent]
                 example: supervisor
+              internal_role:
+                type: string
+                enum: [supervisor, agent]
+                example: supervisor
+              avatar_key:
+                type:
+                  - string
+                  - "null"
+              avatar_url:
+                type:
+                  - string
+                  - "null"
               onboarding_status:
                 type: string
                 enum: [pending_onboarding, active]
@@ -3266,6 +3566,17 @@ components:
                   role:
                     type: string
                     enum: [supervisor, agent]
+                  internal_role:
+                    type: string
+                    enum: [supervisor, agent]
+                  avatar_key:
+                    type:
+                      - string
+                      - "null"
+                  avatar_url:
+                    type:
+                      - string
+                      - "null"
                   onboarding_status:
                     type: string
                     enum: [pending_onboarding, active]
@@ -3381,7 +3692,7 @@ components:
 
     CreatePayrollRequest:
       type: object
-      required: [salary_type, base_salary, work_days, work_hours]
+      required: [company_id, salary_type, base_salary, work_days, work_hours]
       properties:
         company_id:
           oneOf:
@@ -3415,7 +3726,7 @@ components:
 
     UpdatePayrollRequest:
       type: object
-      required: [salary_type, base_salary, work_days, work_hours]
+      required: [company_id]
       properties:
         company_id:
           oneOf:
@@ -3442,10 +3753,8 @@ components:
           maximum: 12
         attendance_affects_pay:
           type: boolean
-          default: false
         commission_enabled:
           type: boolean
-          default: false
 
     PayrollResponse:
       type: object

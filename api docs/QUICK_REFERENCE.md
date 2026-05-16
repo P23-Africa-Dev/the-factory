@@ -4,10 +4,10 @@
 
 Authentication entry points:
 
-| User group | Endpoint | Role metadata in response |
-|---|---|---|
-| Self-serve Admin + Enterprise Admin + Supervisor | POST /api/v1/auth/login | access_role, user_type, internal_role |
-| Agent | POST /api/v1/agent/login | access_role=agent, internal_role=agent |
+| User group                                       | Endpoint                 | Role metadata in response              |
+| ------------------------------------------------ | ------------------------ | -------------------------------------- |
+| Self-serve Admin + Enterprise Admin + Supervisor | POST /api/v1/auth/login  | access_role, user_type, internal_role  |
+| Agent                                            | POST /api/v1/agent/login | access_role=agent, internal_role=agent |
 
 Compatibility endpoints:
 
@@ -45,6 +45,11 @@ curl -X POST http://localhost:8080/api/v1/agent/login \
 7. GET /api/v1/payroll
 8. POST /api/v1/payroll
 9. PUT /api/v1/payroll/{id}
+10. GET /api/v1/admin/crm/leads
+11. GET /api/v1/admin/crm/leads/pipeline
+12. GET /api/v1/admin/dashboard/overview
+13. GET /api/v1/admin/workforce/summary
+14. GET /api/v1/agents/locations
 
 ## Project and Task Quick Rules
 
@@ -59,32 +64,35 @@ Tasks:
 1. Management create endpoint: POST /api/v1/tasks
 2. Optional project_id links task to project
 3. project_id omitted/null means standalone task
-4. Agent self-task endpoint: POST /api/v1/agent/tasks/self (standalone only)
-5. Task creation with assignees sends assignment emails via Resend
+4. company_id is required for create and self-create mutation endpoints
+5. Agent self-task endpoint: POST /api/v1/agent/tasks/self (standalone only)
+6. Task creation with assignees sends assignment emails via Resend
 
 Payroll:
 
 1. One payroll settings record per company
 2. Only owner/admin/supervisor can create or update payroll settings
 3. Agents inherit payroll settings and can fetch read-only
-4. Daily pay is auto-derived as base_salary / work_days
+4. company_id is required for create and update payloads
+5. Update payload supports partial fields; omitted booleans/schedule values are preserved
+6. Daily pay is auto-derived as base_salary / work_days
 
 ## Project Progress Formula
 
-1. completed_percentage = (completed_tasks / total_tasks) * 100
-2. pending_percentage = (pending_tasks / total_tasks) * 100
+1. completed_percentage = (completed_tasks / total_tasks) \* 100
+2. pending_percentage = (pending_tasks / total_tasks) \* 100
 3. If total_tasks = 0, both values are 0
 
 ## Status/Behavior Cheatsheet
 
-| Area | Rule |
-|---|---|
-| Shared auth | Admin + Supervisor only |
-| Agent auth | Agent only |
-| Agent on shared endpoint | 401 |
-| Supervisor on agent endpoint | 401 |
-| Task status transitions | pending -> in_progress -> completed |
-| Completed task mutation | blocked |
+| Area                         | Rule                                |
+| ---------------------------- | ----------------------------------- |
+| Shared auth                  | Admin + Supervisor only             |
+| Agent auth                   | Agent only                          |
+| Agent on shared endpoint     | 401                                 |
+| Supervisor on agent endpoint | 401                                 |
+| Task status transitions      | pending -> in_progress -> completed |
+| Completed task mutation      | blocked                             |
 
 ## Common Error Codes
 
@@ -124,5 +132,5 @@ Task update denied for agent:
 8. docs/frontend-guide/project-management.md
 9. docs/frontend-guide/payroll-management.md
 
-Last Updated: April 15, 2026
+Last Updated: May 16, 2026
 Status: Current

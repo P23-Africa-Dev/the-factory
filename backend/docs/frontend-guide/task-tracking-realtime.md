@@ -11,7 +11,8 @@ Render live agent movement for active tasks and support start, location sync, ar
 3. Backend emits Redis events, relay forwards to subscribed sockets.
 4. Dashboard listens over WebSocket and updates map in real time.
 5. Agent app completes task with proofs via `POST /api/v1/tasks/{task}/complete`.
-6. Dashboard fetches historical route with `GET /api/v1/tasks/{task}/route`.
+6. Dashboard hydrates marker state with `GET /api/v1/agents/locations`.
+7. Dashboard fetches historical route with `GET /api/v1/tasks/{task}/route`.
 
 ## WebSocket Connection
 
@@ -48,6 +49,7 @@ Expected `type` values:
 2. `tracking.location.updated`
 3. `tracking.task.arrived`
 4. `tracking.task.completed`
+5. `tracking.agent.location.updated`
 
 Each event payload includes company/task/session IDs and coordinate data.
 
@@ -114,8 +116,9 @@ ws.onmessage = (evt) => {
 If socket disconnects for more than a threshold window:
 
 1. Keep retrying websocket with exponential backoff.
-2. Poll `GET /api/v1/tasks/{task}/route` every 20-30 seconds for active tasks.
-3. Stop polling when task is terminal (`completed` or `cancelled`).
+2. Poll `GET /api/v1/agents/locations` every 10-15 seconds for marker freshness.
+3. Poll `GET /api/v1/tasks/{task}/route` every 20-30 seconds for active tasks.
+4. Stop route polling when task is terminal (`completed` or `cancelled`).
 
 ## Validation UX
 

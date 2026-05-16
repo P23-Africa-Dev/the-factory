@@ -1,5 +1,10 @@
 # Admin Dashboard (Laravel Internal Panel)
 
+## Status
+
+This document covers the legacy Blade/session admin panel.
+For API-first dashboard aggregates, use `features/dashboard-overview.md`.
+
 ## Purpose
 
 This dashboard is an internal control panel built fully inside Laravel (Blade + Bootstrap). It is intentionally isolated from the Next.js frontend and serves operational/admin workflows.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources;
 
+use App\Support\AvatarUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -17,12 +18,16 @@ class InternalUserListResource extends JsonResource
     public function toArray(Request $request): array
     {
         $latestInvitation = $this->whenLoaded('latestInternalInvitation');
+        $avatarUrl = AvatarUrlResolver::resolve($this->avatar, $this->gender);
 
         return [
             'id' => $this->id,
             'name' => $this->name,
             'email' => $this->email,
             'role' => $this->internal_role,
+            'internal_role' => $this->internal_role,
+            'avatar_key' => $this->avatar,
+            'avatar_url' => $avatarUrl,
             'onboarding_status' => $this->onboarding_status,
             'is_active' => (bool) $this->is_active,
             'internal_onboarding_completed_at' => $this->internal_onboarding_completed_at?->toIso8601String(),

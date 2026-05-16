@@ -129,7 +129,10 @@ class TaskTrackingTest extends TestCase
 
         $routeResponse->assertOk()
             ->assertJsonPath('data.task_id', $task->id)
-            ->assertJsonPath('data.summary.points_count', 3);
+            ->assertJsonPath('data.summary.points_count', 3)
+            ->assertJsonPath('data.points.0.event_type', 'start')
+            ->assertJsonPath('data.polyline.0.0', 3.39)
+            ->assertJsonPath('data.polyline.0.1', 6.4);
 
         $completeResponse = $this->withToken($token)
             ->withHeader('Accept', 'application/json')
@@ -156,6 +159,16 @@ class TaskTrackingTest extends TestCase
             'task_id' => $task->id,
             'completed_by_user_id' => $agent->id,
         ]);
+
+        $postCompleteLocationResponse = $this->withToken($token)
+            ->postJson('/api/v1/tasks/' . $task->id . '/location', [
+                'company_id' => $company->id,
+                'latitude' => 6.4303,
+                'longitude' => 3.4203,
+            ]);
+
+        $postCompleteLocationResponse->assertUnprocessable()
+            ->assertJsonPath('errors.task.0', 'Location updates are only allowed while task is in progress.');
     }
 
     public function test_agents_from_other_company_cannot_track_task(): void
@@ -184,6 +197,7 @@ class TaskTrackingTest extends TestCase
         [$company, $admin, $agentOne] = $this->seedCompanyUsers();
 
         $agentTwo = User::factory()->create(['email_verified_at' => now()]);
+        self::assertInstanceOf(User::class, $agentTwo);
         DB::table('company_users')->insert([
             'company_id' => $company->id,
             'user_id' => $agentTwo->id,

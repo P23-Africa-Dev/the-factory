@@ -27,6 +27,20 @@ function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
   const trimmed = rawAvatar.trim();
   if (!trimmed) return null;
   if (trimmed.startsWith("/")) return trimmed;
+
+  // Support relative storage paths returned by older payloads.
+  if (trimmed.startsWith("avatar/") || trimmed.startsWith("storage/")) {
+    const apiBase =
+      process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
+    const apiOrigin = apiBase.replace(/\/api\/v1\/?$/, "");
+
+    if (trimmed.startsWith("storage/")) {
+      return `${apiOrigin}/${trimmed}`;
+    }
+
+    return `${apiOrigin}/storage/${trimmed}`;
+  }
+
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {

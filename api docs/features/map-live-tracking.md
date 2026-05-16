@@ -1,4 +1,14 @@
 # Map — Live Agent Location Tracking
+
+## Status
+
+This file is a historical deep-dive reference.
+Canonical production contract documentation is maintained in:
+
+1. `features/task-tracking-realtime.md`
+2. `frontend-guide/task-tracking-realtime.md`
+3. `../backend/openapi/openapi.yaml`
+
 **Backend Integration Specification**
 
 > **Stack:** Laravel (REST API) · Laravel Reverb (WebSocket) · Laravel Echo (frontend bridge)  
@@ -26,10 +36,10 @@
 
 The map feature displays the **live location of field agents** on a Mapbox map. Two complementary layers drive it:
 
-| Layer | Transport | Purpose |
-|---|---|---|
+| Layer            | Transport                    | Purpose                                 |
+| ---------------- | ---------------------------- | --------------------------------------- |
 | **Initial load** | REST `GET /agents/locations` | Fetch all agent positions on page mount |
-| **Live updates** | WebSocket (Reverb channel) | Stream position deltas as agents move |
+| **Live updates** | WebSocket (Reverb channel)   | Stream position deltas as agents move   |
 
 The frontend merges both: REST gives the initial snapshot, WebSocket updates individual markers in place. The mobile app (on the agent's device) is responsible for periodically **pushing** its GPS coordinates to the backend.
 
@@ -136,11 +146,11 @@ Returns the latest known position for every agent that belongs to the authentica
 
 #### Query Parameters
 
-| Param | Type | Default | Description |
-|---|---|---|---|
-| `company_id` | integer | from token | Scope to a specific company (admin use) |
-| `zone` | string | — | Filter by assigned zone label |
-| `status` | `online\|offline\|all` | `all` | Filter by online status |
+| Param        | Type                   | Default    | Description                             |
+| ------------ | ---------------------- | ---------- | --------------------------------------- |
+| `company_id` | integer                | from token | Scope to a specific company (admin use) |
+| `zone`       | string                 | —          | Filter by assigned zone label           |
+| `status`     | `online\|offline\|all` | `all`      | Filter by online status                 |
 
 #### Success Response — `200 OK`
 
@@ -211,7 +221,7 @@ Returns the latest known position for every agent that belongs to the authentica
 
 ---
 
-### `POST /api/v1/agents/location` *(Mobile App → Backend)*
+### `POST /api/v1/agents/location` _(Mobile App → Backend)_
 
 Called by the agent's mobile app every N seconds (recommended: every 10–30 seconds while active, every 5 minutes when idle/backgrounded).
 
@@ -229,15 +239,15 @@ Called by the agent's mobile app every N seconds (recommended: every 10–30 sec
 }
 ```
 
-| Field | Type | Required | Constraints |
-|---|---|---|---|
-| `latitude` | decimal | yes | -90 to 90 |
-| `longitude` | decimal | yes | -180 to 180 |
-| `heading` | integer | no | 0–359 |
-| `speed` | float | no | ≥ 0, m/s |
-| `accuracy` | float | no | ≥ 0, metres |
-| `altitude` | float | no | metres |
-| `recorded_at` | ISO 8601 | yes | Must not be in the future |
+| Field         | Type     | Required | Constraints               |
+| ------------- | -------- | -------- | ------------------------- |
+| `latitude`    | decimal  | yes      | -90 to 90                 |
+| `longitude`   | decimal  | yes      | -180 to 180               |
+| `heading`     | integer  | no       | 0–359                     |
+| `speed`       | float    | no       | ≥ 0, m/s                  |
+| `accuracy`    | float    | no       | ≥ 0, metres               |
+| `altitude`    | float    | no       | metres                    |
+| `recorded_at` | ISO 8601 | yes      | Must not be in the future |
 
 #### Success Response — `200 OK`
 
@@ -308,11 +318,11 @@ Returns a time-series of locations for route playback / audit trail.
 
 #### Query Parameters
 
-| Param | Type | Default | Description |
-|---|---|---|---|
-| `from` | ISO 8601 | today 00:00 | Start of time range |
-| `to` | ISO 8601 | now | End of time range |
-| `limit` | integer | 500 | Max rows (cap at 2000) |
+| Param   | Type     | Default     | Description            |
+| ------- | -------- | ----------- | ---------------------- |
+| `from`  | ISO 8601 | today 00:00 | Start of time range    |
+| `to`    | ISO 8601 | now         | End of time range      |
+| `limit` | integer  | 500         | Max rows (cap at 2000) |
 
 #### Success Response — `200 OK`
 
@@ -326,9 +336,27 @@ Returns a time-series of locations for route playback / audit trail.
     "from": "2026-05-13T00:00:00Z",
     "to": "2026-05-13T10:42:17Z",
     "points": [
-      { "latitude": 6.5900, "longitude": 3.3400, "heading": 45,  "speed": 0,    "recorded_at": "2026-05-13T08:00:10Z" },
-      { "latitude": 6.5910, "longitude": 3.3415, "heading": 47,  "speed": 8.2,  "recorded_at": "2026-05-13T08:00:40Z" },
-      { "latitude": 6.5950, "longitude": 3.3470, "heading": 92,  "speed": 14.5, "recorded_at": "2026-05-13T08:01:15Z" }
+      {
+        "latitude": 6.59,
+        "longitude": 3.34,
+        "heading": 45,
+        "speed": 0,
+        "recorded_at": "2026-05-13T08:00:10Z"
+      },
+      {
+        "latitude": 6.591,
+        "longitude": 3.3415,
+        "heading": 47,
+        "speed": 8.2,
+        "recorded_at": "2026-05-13T08:00:40Z"
+      },
+      {
+        "latitude": 6.595,
+        "longitude": 3.347,
+        "heading": 92,
+        "speed": 14.5,
+        "recorded_at": "2026-05-13T08:01:15Z"
+      }
     ],
     "total_points": 3
   },
@@ -419,23 +447,41 @@ Broadcast::channel('company.{companyId}.locations', function (User $user, int $c
 ### WebSocket Payload (what the frontend receives on every agent move)
 
 ```jsonc
-// Event: "agent.location.updated"
-// Channel: "private-company.{companyId}.locations"
+// Event: "tracking.agent.location.updated"
+// Channel: "factory23.tracking.company.{companyId}" (via relay)
 {
-  "agent_id": 42,
-  "name": "Lade Wane",
-  "avatar_url": "https://cdn.thefactory23.com/avatars/lade-wane.jpg",
-  "zone": "Ikeja LGA",
-  "is_online": true,
-  "last_seen_at": "2026-05-13T10:42:17Z",
-  "location": {
-    "latitude": 6.6022,
-    "longitude": 3.3518,
-    "heading": 94,
-    "speed": 13.9,
-    "accuracy": 7.1,
-    "recorded_at": "2026-05-13T10:42:15Z"
-  }
+  "event": "tracking.agent.location.updated",
+  "version": 1,
+  "company_id": 12,
+  "task_id": 248,
+  "tracking_session_id": 90,
+  "user_id": 42,
+  "occurred_at": "2026-05-13T10:42:17Z",
+  "data": {
+    "task_status": "in_progress",
+    "arrived": false,
+    "event_type": "movement",
+    "agent": {
+      "id": 42,
+      "name": "Lade Wane",
+      "internal_role": "agent",
+    },
+    "location": {
+      "latitude": 6.6022,
+      "longitude": 3.3518,
+      "heading_degrees": 94,
+      "speed_mps": 13.9,
+      "accuracy_meters": 7.1,
+      "recorded_at": "2026-05-13T10:42:15Z",
+    },
+    "status": {
+      "is_online": true,
+      "is_stale": false,
+      "last_seen_at": "2026-05-13T10:42:17Z",
+      "stale_after_seconds": 300,
+      "age_seconds": 0,
+    },
+  },
 }
 ```
 
@@ -447,32 +493,47 @@ Replace the current `setInterval` jitter simulation with:
 // Pseudocode — illustrates the intended data flow
 
 // 1. On mount: REST snapshot → place all markers
-const { data } = await fetch('/api/v1/agents/locations?company_id=...');
-setAgents(data.agents);
+const { data } = await fetch("/api/v1/agents/locations?company_id=...");
+setAgents(data.items);
 
 // 2. Subscribe to Reverb channel via Laravel Echo
-window.Echo
-  .private(`company.${companyId}.locations`)
-  .listen('.agent.location.updated', (payload: AgentLocationPayload) => {
-    setAgents(prev =>
-      prev.map(a =>
-        a.id === String(payload.agent_id)
-          ? {
-              ...a,
-              lat: payload.location.latitude,
-              lng: payload.location.longitude,
-              heading: payload.location.heading,
-              is_online: payload.is_online,
-              last_seen_at: payload.last_seen_at,
-            }
-          : a
-      )
-    );
-    // Move the Mapbox marker directly (no re-render needed)
-    markersRef.current
-      .get(String(payload.agent_id))
-      ?.setLngLat([payload.location.longitude, payload.location.latitude]);
-  });
+relaySocket.onmessage = ({ data: raw }) => {
+  const payload = JSON.parse(raw);
+  if (payload.event !== "tracking.agent.location.updated") return;
+
+  const event = payload.data;
+
+  setAgents((prev) =>
+    prev.map((a) =>
+      a.agent.id === Number(event.agent.id)
+        ? {
+            ...a,
+            location: {
+              ...a.location,
+              latitude: event.location.latitude,
+              longitude: event.location.longitude,
+              heading_degrees: event.location.heading_degrees,
+              speed_mps: event.location.speed_mps,
+              accuracy_meters: event.location.accuracy_meters,
+              recorded_at: event.location.recorded_at,
+            },
+            status: event.status,
+          }
+        : a,
+    ),
+  );
+  // Move the Mapbox marker directly (no re-render needed)
+  markersRef.current
+    .get(String(event.agent.id))
+    ?.setLngLat([event.location.longitude, event.location.latitude]);
+};
+
+// 3. Fallback polling (if websocket disconnected)
+setInterval(async () => {
+  if (relaySocket.readyState === WebSocket.OPEN) return;
+  const { data } = await fetch("/api/v1/agents/locations?company_id=...");
+  setAgents(data.items);
+}, 15000);
 ```
 
 ### TypeScript types the frontend should declare
@@ -484,28 +545,28 @@ export interface AgentLocation {
   latitude: number;
   longitude: number;
   heading: number | null;
-  speed: number | null;         // m/s
-  accuracy: number | null;      // metres
-  recorded_at: string;          // ISO 8601
+  speed: number | null; // m/s
+  accuracy: number | null; // metres
+  recorded_at: string; // ISO 8601
 }
 
 export interface AgentCurrentTask {
   id: number;
   title: string;
-  status: 'pending' | 'in_progress' | 'completed';
+  status: "pending" | "in_progress" | "completed";
 }
 
 export interface MapAgent {
   id: number;
   name: string;
   email: string;
-  role: 'agent' | 'supervisor';
+  role: "agent" | "supervisor";
   avatar_url: string;
   zone: string;
   address: string;
   phone: string;
   is_online: boolean;
-  last_seen_at: string;         // ISO 8601
+  last_seen_at: string; // ISO 8601
   location: AgentLocation | null;
   current_task: AgentCurrentTask | null;
 }
@@ -537,30 +598,30 @@ export interface AgentLocationUpdatedEvent {
 
 ### Complete field glossary
 
-| Field | Source | Frontend use |
-|---|---|---|
-| `id` | users.id | Marker key, WebSocket reconciliation |
-| `name` | users.name | Marker label, sidebar |
-| `avatar_url` | CDN URL | Marker avatar, popup |
-| `zone` | internal_users.assigned_zone | Filter dropdown, sidebar |
-| `is_online` | `last_seen_at` within 5 min | Marker colour (red = online, grey = offline) |
-| `last_seen_at` | agent_location_snapshots | "Online" / "12 hours ago" display |
-| `location.latitude` | GPS | Marker `[lng, lat]` |
-| `location.longitude` | GPS | Marker `[lng, lat]` |
-| `location.heading` | GPS compass | Rotate marker arrow icon |
-| `location.speed` | GPS | Info panel (convert m/s → km/h × 3.6) |
-| `location.accuracy` | GPS | Optional accuracy circle radius |
-| `location.recorded_at` | Device clock | Stale-data warning if > 2 min old |
-| `current_task` | tasks table | Popup task context |
+| Field                  | Source                       | Frontend use                                 |
+| ---------------------- | ---------------------------- | -------------------------------------------- |
+| `id`                   | users.id                     | Marker key, WebSocket reconciliation         |
+| `name`                 | users.name                   | Marker label, sidebar                        |
+| `avatar_url`           | CDN URL                      | Marker avatar, popup                         |
+| `zone`                 | internal_users.assigned_zone | Filter dropdown, sidebar                     |
+| `is_online`            | `last_seen_at` within 5 min  | Marker colour (red = online, grey = offline) |
+| `last_seen_at`         | agent_location_snapshots     | "Online" / "12 hours ago" display            |
+| `location.latitude`    | GPS                          | Marker `[lng, lat]`                          |
+| `location.longitude`   | GPS                          | Marker `[lng, lat]`                          |
+| `location.heading`     | GPS compass                  | Rotate marker arrow icon                     |
+| `location.speed`       | GPS                          | Info panel (convert m/s → km/h × 3.6)        |
+| `location.accuracy`    | GPS                          | Optional accuracy circle radius              |
+| `location.recorded_at` | Device clock                 | Stale-data warning if > 2 min old            |
+| `current_task`         | tasks table                  | Popup task context                           |
 
 ### Null / empty states the frontend must handle
 
-| Scenario | What backend sends | Frontend behaviour |
-|---|---|---|
-| Agent never reported location | `"location": null` | Skip marker; show "No GPS data" in sidebar |
-| Agent is offline | `"is_online": false` | Grey marker, show `last_seen_at` relative time |
-| Agent has no current task | `"current_task": null` | Hide task section in popup |
-| `heading` unavailable | `"heading": null` | Show static marker; skip rotation |
+| Scenario                      | What backend sends     | Frontend behaviour                             |
+| ----------------------------- | ---------------------- | ---------------------------------------------- |
+| Agent never reported location | `"location": null`     | Skip marker; show "No GPS data" in sidebar     |
+| Agent is offline              | `"is_online": false`   | Grey marker, show `last_seen_at` relative time |
+| Agent has no current task     | `"current_task": null` | Hide task section in popup                     |
+| `heading` unavailable         | `"heading": null`      | Show static marker; skip rotation              |
 
 ---
 
@@ -568,14 +629,14 @@ export interface AgentLocationUpdatedEvent {
 
 ### HTTP Status Codes
 
-| Code | When | Frontend action |
-|---|---|---|
-| `200` | Success | Proceed |
-| `401` | Missing / expired token | Redirect to login |
-| `403` | User not authorised to view this company's map | Show "Access denied" toast |
-| `422` | Mobile app sent invalid coordinates | Log and retry with back-off |
-| `429` | Mobile app is pushing too fast | Respect `Retry-After` header; implement exponential back-off |
-| `500` | Server error | Toast error; retry once after 3 s |
+| Code  | When                                           | Frontend action                                              |
+| ----- | ---------------------------------------------- | ------------------------------------------------------------ |
+| `200` | Success                                        | Proceed                                                      |
+| `401` | Missing / expired token                        | Redirect to login                                            |
+| `403` | User not authorised to view this company's map | Show "Access denied" toast                                   |
+| `422` | Mobile app sent invalid coordinates            | Log and retry with back-off                                  |
+| `429` | Mobile app is pushing too fast                 | Respect `Retry-After` header; implement exponential back-off |
+| `500` | Server error                                   | Toast error; retry once after 3 s                            |
 
 ### Error response shape (same envelope)
 
@@ -621,21 +682,24 @@ export interface AgentLocationUpdatedEvent {
 **Cause:** The server-side ping interval is not configured; the connection idles out.
 
 **Fix (Reverb config):**
+
 ```php
 // config/reverb.php
 'pulse_inertia' => 30,   // server sends ping every 30 s
 ```
+
 **Fix (Echo config):**
+
 ```js
 window.Echo = new Echo({
-  broadcaster: 'reverb',
+  broadcaster: "reverb",
   key: process.env.NEXT_PUBLIC_REVERB_APP_KEY,
   wsHost: process.env.NEXT_PUBLIC_REVERB_HOST,
   wsPort: process.env.NEXT_PUBLIC_REVERB_PORT,
   forceTLS: false,
-  enabledTransports: ['ws', 'wss'],
-  pongTimeout: 6000,          // wait 6 s for pong before reconnecting
-  activityTimeout: 120000,    // 2 min idle before considering connection dead
+  enabledTransports: ["ws", "wss"],
+  pongTimeout: 6000, // wait 6 s for pong before reconnecting
+  activityTimeout: 120000, // 2 min idle before considering connection dead
 });
 ```
 
@@ -648,11 +712,13 @@ window.Echo = new Echo({
 **Cause:** The mobile app sent `"latitude": null` or `0` when the GPS fix was lost (cold start, tunnel, signal drop). The backend accepted it without validation.
 
 **Fix (Laravel validation rule):**
+
 ```php
 // app/Http/Requests/UpdateLocationRequest.php
 'latitude'  => ['required', 'numeric', 'between:-90,90', 'not_in:0'],
 'longitude' => ['required', 'numeric', 'between:-180,180', 'not_in:0'],
 ```
+
 **Fallback:** The frontend should reject a `location` update where `accuracy > 200` (metres) — that's a GPS fix too poor to trust.
 
 ---
@@ -676,12 +742,14 @@ window.Echo = new Echo({
 **Fix (two options):**
 
 **Option A — Derive on read (simpler):**
+
 ```php
 // In the resource / collection transformer
 'is_online' => $snapshot->last_seen_at->diffInMinutes(now()) < 5,
 ```
 
 **Option B — Scheduled job (more accurate at scale):**
+
 ```php
 // app/Console/Kernel.php
 $schedule->job(new MarkOfflineAgentsJob)->everyMinute();
@@ -700,6 +768,7 @@ AgentLocationSnapshot::where('last_seen_at', '<', now()->subMinutes(5))
 **Symptom:** Agents complain their phone dies by midday.
 
 **Fix — adaptive update rate:**
+
 - Speed > 5 m/s (moving): push every **10 seconds**
 - Speed < 1 m/s (stationary): push every **3 minutes**
 - App backgrounded: push every **5 minutes** (OS background task limit)
@@ -711,8 +780,16 @@ The backend must also handle **batch pushes** for the offline-flush scenario:
 // POST /api/v1/agents/location/batch
 {
   "points": [
-    { "latitude": 6.600, "longitude": 3.350, "recorded_at": "2026-05-13T09:00:00Z" },
-    { "latitude": 6.601, "longitude": 3.351, "recorded_at": "2026-05-13T09:00:30Z" }
+    {
+      "latitude": 6.6,
+      "longitude": 3.35,
+      "recorded_at": "2026-05-13T09:00:00Z"
+    },
+    {
+      "latitude": 6.601,
+      "longitude": 3.351,
+      "recorded_at": "2026-05-13T09:00:30Z"
+    }
   ]
 }
 ```
@@ -736,6 +813,7 @@ The backend must also handle **batch pushes** for the offline-flush scenario:
 **Cause:** The Reverb server's `allowed_origins` doesn't include the Next.js dev/prod origin.
 
 **Fix:**
+
 ```php
 // config/reverb.php
 'apps' => [
@@ -760,10 +838,10 @@ The backend must also handle **batch pushes** for the offline-flush scenario:
 
 ## Security Considerations
 
-| Concern | Mitigation |
-|---|---|
-| Anyone can push fake GPS coordinates | `POST /agents/location` must be authenticated via Bearer token; the `user_id` must come from the token, never the request body |
-| Supervisors viewing other companies' agents | Channel auth gate in `routes/channels.php` enforces `user.company_id === channelCompanyId` |
-| Exposing agent home addresses via location history | Restrict `GET /agents/{id}/location/history` to supervisors and admins; agents may only view their own history |
-| WebSocket token interception | Use WSS (TLS) in production; store the Echo auth token in memory, not localStorage |
-| High-frequency push DDoS from a rogue device | Rate-limit `POST /agents/location` to 1 request per 5 seconds per user via `ThrottleRequests` middleware |
+| Concern                                            | Mitigation                                                                                                                     |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Anyone can push fake GPS coordinates               | `POST /agents/location` must be authenticated via Bearer token; the `user_id` must come from the token, never the request body |
+| Supervisors viewing other companies' agents        | Channel auth gate in `routes/channels.php` enforces `user.company_id === channelCompanyId`                                     |
+| Exposing agent home addresses via location history | Restrict `GET /agents/{id}/location/history` to supervisors and admins; agents may only view their own history                 |
+| WebSocket token interception                       | Use WSS (TLS) in production; store the Echo auth token in memory, not localStorage                                             |
+| High-frequency push DDoS from a rogue device       | Rate-limit `POST /agents/location` to 1 request per 5 seconds per user via `ThrottleRequests` middleware                       |
