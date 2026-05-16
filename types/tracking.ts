@@ -2,7 +2,8 @@ export type TrackingEventType =
   | "tracking.task.started"
   | "tracking.location.updated"
   | "tracking.task.arrived"
-  | "tracking.task.completed";
+  | "tracking.task.completed"
+  | "tracking.agent.location.updated";
 
 export interface LiveTaskState {
   taskId: number;
@@ -13,7 +14,7 @@ export interface LiveTaskState {
   taskTitle: string;
   taskAddress?: string;
   status: "in_progress" | "arrived" | "completed";
-  destination?: { lat: number; lng: number; radiusM: number };
+  destination?: { lat: number; lng: number; radiusM?: number };
   lastPosition: [number, number]; // [lng, lat] — Mapbox convention
   polyline: [number, number][]; // capped at 2000 pts
   lastEventAt: string; // ISO — used for staleness check
@@ -39,7 +40,91 @@ export interface TrackingEnvelope {
       arrived?: boolean;
       task_status?: string;
       arrival_recorded_at?: string;
+      destination?: {
+        latitude?: number;
+        longitude?: number;
+        radius_meters?: number;
+      };
+      task?: {
+        id?: number;
+        title?: string | null;
+        status?: string | null;
+        address?: string | null;
+        location?: string | null;
+        destination_latitude?: number | null;
+        destination_longitude?: number | null;
+      };
+      agent?: {
+        id?: number;
+        name?: string | null;
+        internal_role?: string | null;
+        avatar_url?: string | null;
+      };
+      location?: {
+        latitude?: number;
+        longitude?: number;
+        accuracy_meters?: number | null;
+        speed_mps?: number | null;
+        heading_degrees?: number | null;
+        event_type?: string | null;
+        recorded_at?: string | null;
+      };
+      status?: {
+        is_online?: boolean;
+        is_stale?: boolean;
+        last_seen_at?: string | null;
+        stale_after_seconds?: number;
+        age_seconds?: number | null;
+      };
     };
+  };
+}
+
+export interface AgentLocationSnapshotItem {
+  agent: {
+    id: number;
+    name: string | null;
+    email?: string | null;
+    avatar?: string | null;
+    avatar_url?: string | null;
+    internal_role?: string | null;
+  };
+  task: {
+    id: number | null;
+    title: string | null;
+    status: string | null;
+    tracking_session_id?: number | null;
+    address?: string | null;
+    location?: string | null;
+    destination_latitude?: number | null;
+    destination_longitude?: number | null;
+  };
+  location: {
+    latitude: number;
+    longitude: number;
+    accuracy_meters?: number | null;
+    speed_mps?: number | null;
+    heading_degrees?: number | null;
+    event_type?: string | null;
+    arrived?: boolean;
+    recorded_at?: string | null;
+  };
+  status: {
+    is_online: boolean;
+    is_stale: boolean;
+    stale_after_seconds?: number;
+    age_seconds?: number | null;
+    last_seen_at?: string | null;
+  };
+  updated_at?: string | null;
+}
+
+export interface AgentLocationsListData {
+  items: AgentLocationSnapshotItem[];
+  meta: {
+    company_id: number;
+    stale_after_seconds: number;
+    generated_at: string;
   };
 }
 

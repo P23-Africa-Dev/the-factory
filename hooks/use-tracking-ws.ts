@@ -5,17 +5,23 @@ import { useAuthStore } from "@/store/auth";
 import { useTrackingStore } from "@/store/tracking";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { getTaskRoute } from "@/lib/api/tracking";
+import { getTrackingWebSocketUrl } from "@/lib/config/public-env";
+import { getTaskRoute, listAgentLocations } from "@/lib/api/tracking";
 import type { TrackingEnvelope } from "@/types/tracking";
-
-const WS_URL =
-  process.env.NEXT_PUBLIC_TRACKING_WS_URL ?? "wss://realtime.thefactory23.com/tracking-ws";
 
 const BACKOFF_STEPS = [1000, 2000, 4000, 8000, 16000, 30000];
 const POLL_INTERVAL_MS = 25_000;
 const STALE_THRESHOLD_MS = 30_000;
 
 const LOG = "[tracking-ws]";
+
+function isManagementRole(role: string | null | undefined): boolean {
+  if (!role) return true;
+  const normalized = role.toLowerCase();
+  return ["owner", "admin", "management", "manager", "supervisor"].includes(
+    normalized
+  );
+}
 
 function readyStateLabel(state: number): string {
   switch (state) {
@@ -48,8 +54,9 @@ function safeParse(raw: string): unknown {
 
 export function useTrackingWebSocket() {
   const user = useAuthStore((s) => s.user);
-  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const { apiCompanyId: companyId, role: companyRole } = getActiveCompanyContext(user);
   const store = useTrackingStore();
+  const wsUrl = getTrackingWebSocketUrl();
 
   const wsRef = useRef<WebSocket | null>(null);
   const backoffRef = useRef(0);
@@ -61,6 +68,30 @@ export function useTrackingWebSocket() {
   const connectRef = useRef<() => void>(() => {});
 
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  const hydrateLocationSnapshots = useCallback(async () => {
+    if (!companyId || !token) {
+      return;
+    }
+
+    try {
+      const res = await listAgentLocations(
+        {
+          company_id: companyId,
+          include_offline: true,
+          limit: 300,
+        },
+        token
+      );
+
+      useTrackingStore.getState().hydrateFromSnapshots(res.data.items);
+      console.log(LOG, "Snapshot read model hydrated", {
+        items: res.data.items.length,
+      });
+    } catch (err) {
+      console.warn(LOG, "Snapshot hydration failed", err);
+    }
+  }, [companyId, token]);
 
   const rehydrateActiveTasks = useCallback(async () => {
     const { liveTasks } = useTrackingStore.getState();
@@ -81,9 +112,10 @@ export function useTrackingWebSocket() {
     await Promise.allSettled(
       active.map(async (t) => {
         try {
+          const routeRole = isManagementRole(companyRole) ? "management" : "agent";
           const res = await getTaskRoute(
             t.taskId,
-            { company_id: companyId, role: "management" },
+            { company_id: companyId, role: routeRole },
             token
           );
           console.log(LOG, "Route rehydrated", {
@@ -106,13 +138,18 @@ export function useTrackingWebSocket() {
         }
       })
     );
-  }, [companyId, token]);
+  }, [companyId, companyRole, token]);
+
+  const runRecoveryCycle = useCallback(async () => {
+    await hydrateLocationSnapshots();
+    await rehydrateActiveTasks();
+  }, [hydrateLocationSnapshots, rehydrateActiveTasks]);
 
   const startPolling = useCallback(() => {
     if (pollTimerRef.current) return;
     console.log(LOG, "Starting REST polling fallback", { intervalMs: POLL_INTERVAL_MS });
-    pollTimerRef.current = setInterval(rehydrateActiveTasks, POLL_INTERVAL_MS);
-  }, [rehydrateActiveTasks]);
+    pollTimerRef.current = setInterval(runRecoveryCycle, POLL_INTERVAL_MS);
+  }, [runRecoveryCycle]);
 
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -123,10 +160,11 @@ export function useTrackingWebSocket() {
   }, []);
 
   const connect = useCallback(() => {
-    if (!token || !companyId || !mountedRef.current) {
+    if (!token || !companyId || !wsUrl || !mountedRef.current) {
       console.log(LOG, "Connect skipped", {
         hasToken: !!token,
         companyId,
+        hasWsUrl: !!wsUrl,
         mounted: mountedRef.current,
       });
       return;
@@ -141,10 +179,10 @@ export function useTrackingWebSocket() {
 
     store.setWsStatus("connecting");
 
-    const url = `${WS_URL}?token=${encodeURIComponent(token)}&company_id=${companyId}`;
+    const url = `${wsUrl}?token=${encodeURIComponent(token)}&company_id=${companyId}`;
     console.groupCollapsed(`${LOG} Connecting (attempt #${attempt})`);
     console.log("URL (token redacted)", url.replace(token, redactToken(token)));
-    console.log("WS base", WS_URL);
+    console.log("WS base", wsUrl);
     console.log("company_id", companyId);
     console.log("user id", user?.id);
     console.log(
@@ -159,7 +197,7 @@ export function useTrackingWebSocket() {
       console.log(LOG, "✅ Socket OPEN", {
         attempt,
         readyState: readyStateLabel(ws.readyState),
-        url: WS_URL,
+        url: wsUrl,
       });
 
       if (!mountedRef.current) {
@@ -181,7 +219,7 @@ export function useTrackingWebSocket() {
       });
       ws.send(JSON.stringify(authMessage));
 
-      rehydrateActiveTasks();
+      runRecoveryCycle();
     };
 
     ws.onmessage = (evt) => {
@@ -229,6 +267,7 @@ export function useTrackingWebSocket() {
       if (
         msg.type === "tracking.task.started" ||
         msg.type === "tracking.location.updated" ||
+        msg.type === "tracking.agent.location.updated" ||
         msg.type === "tracking.task.arrived" ||
         msg.type === "tracking.task.completed"
       ) {
@@ -306,7 +345,16 @@ export function useTrackingWebSocket() {
         if (mountedRef.current) connectRef.current();
       }, delay);
     };
-  }, [token, companyId, store, rehydrateActiveTasks, startPolling, stopPolling, user?.id]);
+  }, [
+    token,
+    companyId,
+    store,
+    runRecoveryCycle,
+    startPolling,
+    stopPolling,
+    user?.id,
+    wsUrl,
+  ]);
 
   useEffect(() => {
     connectRef.current = connect;
@@ -317,13 +365,15 @@ export function useTrackingWebSocket() {
     console.log(LOG, "Hook mounted", {
       hasToken: !!token,
       companyId,
-      wsUrl: WS_URL,
+      wsUrl,
     });
 
-    if (token && companyId) {
+    if (token && companyId && wsUrl) {
       connect();
+    } else if (token && companyId) {
+      hydrateLocationSnapshots();
     } else {
-      console.warn(LOG, "Not connecting — missing token or companyId");
+      console.warn(LOG, "Not connecting — missing token, companyId, or wsUrl");
     }
 
     return () => {
@@ -355,7 +405,7 @@ export function useTrackingWebSocket() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, String(companyId)]);
+  }, [token, String(companyId), wsUrl]);
 
   return { wsStatus: store.wsStatus };
 }

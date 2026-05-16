@@ -10,17 +10,20 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { getAuthTokenFromDocument } from '@/lib/auth/session';
+import { getMapboxPublicToken } from '@/lib/config/public-env';
 import { useTaskDetail } from '@/hooks/use-tasks';
+import { useTrackingWebSocket } from '@/hooks/use-tracking-ws';
 import { useActiveTracking } from '@/components/tracking/active-tracking-provider';
 import { startTaskTracking } from '@/lib/api/tracking';
 import { ApiRequestError } from '@/lib/api/onboarding';
 import { LocationPermissionGate } from '@/components/tracking/LocationPermissionGate';
 import { CompleteTaskSheet } from '@/components/tracking/CompleteTaskSheet';
+import { useTrackingStore } from '@/store/tracking';
 import type { GeoReading } from '@/types/tracking';
 
 type Phase = 'permission' | 'ready' | 'tracking' | 'complete';
 
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '';
+const MAPBOX_TOKEN = getMapboxPublicToken();
 
 function TrackingMap({
   agentPosition,
@@ -129,7 +132,10 @@ export default function TrackingPage({
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const { data: task } = useTaskDetail(taskId, companyId ?? undefined);
-  const { startTracking, stopTracking, activeTaskId, isTracking } = useActiveTracking();
+  const { startTracking, stopTracking, activeTaskId } = useActiveTracking();
+  const liveTask = useTrackingStore((s) => s.liveTasks[taskId]);
+
+  useTrackingWebSocket();
 
   const [phase, setPhase] = useState<Phase>(() =>
     // If already tracking this task, skip straight to tracking phase
@@ -140,6 +146,16 @@ export default function TrackingPage({
   const [arrived, setArrived] = useState(false);
   const [showCompleteSheet, setShowCompleteSheet] = useState(false);
   const [commencing, setCommencing] = useState(false);
+
+  useEffect(() => {
+    if (!liveTask) return;
+
+    setAgentPosition(liveTask.lastPosition);
+
+    if (liveTask.status === 'arrived') {
+      setArrived(true);
+    }
+  }, [liveTask]);
 
   const destination =
     task?.latitude && task?.longitude
@@ -169,6 +185,27 @@ export default function TrackingPage({
         },
         token
       );
+
+      useTrackingStore.getState().seedFromTaskStart({
+        taskId,
+        trackingSessionId: res.data.tracking.id,
+        userId: user?.id ?? res.data.tracking.started_by_user_id,
+        agentName: user?.name,
+        agentAvatarUrl: user?.avatar ?? undefined,
+        taskTitle: res.data.task.title,
+        taskAddress: res.data.task.address ?? res.data.task.location ?? undefined,
+        destination:
+          typeof res.data.task.latitude === 'number' &&
+          typeof res.data.task.longitude === 'number'
+            ? {
+                lat: res.data.task.latitude,
+                lng: res.data.task.longitude,
+                radiusM: 75,
+              }
+            : undefined,
+        position: [initialReading.longitude, initialReading.latitude],
+        occurredAt: initialReading.recordedAt,
+      });
 
       startTracking(taskId, companyId as number, token, {
         onArrived: () => {

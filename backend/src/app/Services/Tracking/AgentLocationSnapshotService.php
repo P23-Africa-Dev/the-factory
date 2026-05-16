@@ -7,6 +7,7 @@ namespace App\Services\Tracking;
 use App\Models\AgentLocationSnapshot;
 use App\Models\User;
 use App\Services\Company\CompanyContextService;
+use App\Support\AvatarUrlResolver;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -43,7 +44,7 @@ class AgentLocationSnapshotService
         );
 
         return AgentLocationSnapshot::query()
-            ->with(['agent:id,name,email,avatar,internal_role', 'task:id,title,status'])
+            ->with(['agent:id,name,email,avatar,gender,internal_role', 'task:id,title,status,address_full,location_text,latitude,longitude'])
             ->where('company_id', (int) $payload['company_id'])
             ->where('user_id', (int) $payload['user_id'])
             ->firstOrFail();
@@ -58,7 +59,7 @@ class AgentLocationSnapshotService
         $staleAfterSeconds = $this->resolveStaleAfterSeconds($filters);
 
         $query = AgentLocationSnapshot::query()
-            ->with(['agent:id,name,email,avatar,internal_role', 'task:id,title,status'])
+            ->with(['agent:id,name,email,avatar,gender,internal_role', 'task:id,title,status,address_full,location_text,latitude,longitude'])
             ->where('company_id', $companyId)
             ->orderByDesc('last_seen_at');
 
@@ -118,7 +119,7 @@ class AgentLocationSnapshotService
         }
 
         $snapshot = AgentLocationSnapshot::query()
-            ->with(['agent:id,name,email,avatar,internal_role', 'task:id,title,status'])
+            ->with(['agent:id,name,email,avatar,gender,internal_role', 'task:id,title,status,address_full,location_text,latitude,longitude'])
             ->where('company_id', $companyId)
             ->where('user_id', $targetUser->id)
             ->first();
@@ -163,6 +164,10 @@ class AgentLocationSnapshotService
                 'name' => $snapshot->agent?->name,
                 'email' => $snapshot->agent?->email,
                 'avatar' => $snapshot->agent?->avatar,
+                'avatar_url' => AvatarUrlResolver::resolve(
+                    $snapshot->agent?->avatar,
+                    $snapshot->agent?->gender,
+                ),
                 'internal_role' => $snapshot->agent?->internal_role,
             ],
             'task' => [
@@ -170,6 +175,10 @@ class AgentLocationSnapshotService
                 'title' => $snapshot->task?->title,
                 'status' => $snapshot->task_status ?? $snapshot->task?->status?->value,
                 'tracking_session_id' => $snapshot->tracking_session_id,
+                'address' => $snapshot->task?->address_full,
+                'location' => $snapshot->task?->location_text,
+                'destination_latitude' => $snapshot->task?->latitude,
+                'destination_longitude' => $snapshot->task?->longitude,
             ],
             'location' => [
                 'latitude' => $snapshot->latitude,

@@ -28,12 +28,22 @@
 
 ## Executive Summary
 
+### Phase 0 Alignment Outputs
+
+Before implementing any further tracking work, use the following architecture alignment as the baseline:
+
+1. Canonical implementation path: Laravel task-tracking write APIs publish Redis events, the Node relay pushes them over WebSocket, and Next.js clients consume them.
+2. Canonical backend contract reference: `backend/docs/features/task-tracking-realtime.md`.
+3. Canonical architecture decision: `docs/tracking-architecture-decision.md`.
+4. Obsolete implementation references: `docs/map-realtime-tracking-plan.md` and `api docs/features/map-live-tracking.md`.
+5. Constraint: do not introduce Reverb, Echo, or Socket.IO into this feature unless a new architecture decision is approved.
+
 The repo contains **two different "map tracking" stories** in the docs. Only one matches what the backend actually implements:
 
-| Document | Transport | Use? |
-|----------|-----------|------|
-| `TRACKING_SYSTEM_ARCHITECTURE_REVIEW.md` + `api docs/frontend-guide/task-tracking-realtime.md` | REST task tracking + Node WebSocket relay (`/tracking-ws`) | **YES — follow this** |
-| `api docs/features/map-live-tracking.md` + `docs/map-realtime-tracking-plan.md` | Reverb/Echo or Socket.IO + `GET /agents/locations` | **NO — stale spec, ignore** |
+| Document                                                                                       | Transport                                                  | Use?                        |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------- |
+| `TRACKING_SYSTEM_ARCHITECTURE_REVIEW.md` + `api docs/frontend-guide/task-tracking-realtime.md` | REST task tracking + Node WebSocket relay (`/tracking-ws`) | **YES — follow this**       |
+| `api docs/features/map-live-tracking.md` + `docs/map-realtime-tracking-plan.md`                | Reverb/Echo or Socket.IO + `GET /agents/locations`         | **NO — stale spec, ignore** |
 
 **Do not implement Reverb, Echo, or Socket.IO.** The correct live path is: agent starts tracking on a task → Laravel persists points → Redis events → Node WebSocket relay → admin/agent map updates.
 
@@ -131,13 +141,13 @@ NEXT_PUBLIC_MAPBOX_TOKEN=pk...
 
 Match existing `lib/api/tasks.ts` style but use **role-scoped paths** where middleware differs:
 
-| Action | Agent path | Management path |
-|--------|-----------|-----------------|
-| Start tracking | `POST /agent/tasks/{id}/start` | N/A |
-| Record location | `POST /agent/tasks/{id}/location` | N/A |
-| Complete task | `POST /agent/tasks/{id}/complete` | N/A |
-| Route (history/live) | `GET /agent/tasks/{id}/route` | `GET /admin/tasks/{id}/route` |
-| List active tasks | `GET /agent/tasks?status=in_progress` | `GET /admin/tasks?status=in_progress` |
+| Action               | Agent path                            | Management path                       |
+| -------------------- | ------------------------------------- | ------------------------------------- |
+| Start tracking       | `POST /agent/tasks/{id}/start`        | N/A                                   |
+| Record location      | `POST /agent/tasks/{id}/location`     | N/A                                   |
+| Complete task        | `POST /agent/tasks/{id}/complete`     | N/A                                   |
+| Route (history/live) | `GET /agent/tasks/{id}/route`         | `GET /admin/tasks/{id}/route`         |
+| List active tasks    | `GET /agent/tasks?status=in_progress` | `GET /admin/tasks?status=in_progress` |
 
 Generic `/api/v1/tasks/...` also exists; prefer scoped routes for clearer 403 behaviour.
 
@@ -169,8 +179,8 @@ export interface LiveTaskState {
   status: "in_progress" | "arrived" | "completed";
   destination?: { lat: number; lng: number; radiusM: number };
   lastPosition: [number, number]; // [lng, lat] — Mapbox convention
-  polyline: [number, number][];   // capped at 2000 pts (drop oldest)
-  lastEventAt: string;            // ISO — used for staleness check
+  polyline: [number, number][]; // capped at 2000 pts (drop oldest)
+  lastEventAt: string; // ISO — used for staleness check
   arrivedAt?: string;
 }
 
@@ -247,11 +257,13 @@ export interface GeoReading {
 Follows the same `apiRequest` + `ApiEnvelope` pattern as `lib/api/tasks.ts`. Five exported functions:
 
 **`startTaskTracking(taskId, payload, token)`**
+
 - `POST /agent/tasks/{taskId}/start`
 - Payload: `{ company_id, location_permission_granted: true, latitude, longitude, accuracy_meters, recorded_at }`
 - Returns: `ApiEnvelope<{ task: TaskApiItem; tracking: TrackingSession; arrived: boolean }>`
 
 **`recordTaskLocation(taskId, payload, token)`**
+
 - `POST /agent/tasks/{taskId}/location`
 - Supports single point **and** batch `points[]` array (max 50 per backend config)
 - Single: `{ company_id, latitude, longitude, accuracy_meters, speed_mps, heading_degrees, recorded_at }`
@@ -259,18 +271,21 @@ Follows the same `apiRequest` + `ApiEnvelope` pattern as `lib/api/tasks.ts`. Fiv
 - Returns: `ApiEnvelope<{ received_points: number; persisted_points: number; arrived: boolean }>`
 
 **`completeTaskTracking(taskId, formData, token)`**
+
 - `POST /agent/tasks/{taskId}/complete` with `multipart/form-data`
 - Fields: `company_id`, `latitude`, `longitude`, `accuracy_meters`, `recorded_at`, `notes`, `files[]` (≥1 required)
 - Uses raw `fetch` (not `apiRequest`) because of multipart — same pattern as `uploadTaskProof` in `tasks.ts`
 - Returns: `ApiEnvelope<{ task: TaskApiItem; tracking: TrackingSession; proofs: ProofItem[] }>`
 
 **`getTaskRoute(taskId, params, token)`**
+
 - Agent: `GET /agent/tasks/{taskId}/route?company_id=X&include_points=true&limit=500`
 - Management: `GET /admin/tasks/{taskId}/route?company_id=X&include_points=true&limit=500`
 - Pass `role: 'agent' | 'management'` as a param to switch prefix
 - Returns: `ApiEnvelope<TaskRoute>`
 
 **`listAgentTasks(params, token)`**
+
 - `GET /agent/tasks?company_id=X&status=pending` (or `in_progress`, `completed`)
 - Returns assigned tasks for the authenticated agent
 - Reuses `TaskApiItem` type from `tasks.ts`
@@ -298,18 +313,21 @@ Pure utility (no React dependency) so it can be called from the buffer module an
 export async function requestLocationPermission(): Promise<PermissionState>;
 // Uses navigator.permissions.query({ name: 'geolocation' }) — no prompt triggered.
 
-export async function getCurrentPosition(options?: PositionOptions): Promise<GeoReading>;
+export async function getCurrentPosition(
+  options?: PositionOptions,
+): Promise<GeoReading>;
 // Calls navigator.geolocation.getCurrentPosition — triggers browser prompt if state is 'prompt'.
 // Throws on denial or timeout.
 
 export function watchPosition(
   onReading: (r: GeoReading) => void,
   onError: (e: GeolocationPositionError) => void,
-  options?: PositionOptions
+  options?: PositionOptions,
 ): () => void; // returns cleanup function (calls clearWatch internally)
 ```
 
 **Quality gates applied before returning a reading:**
+
 - Reject `accuracy > 200m` — too imprecise to persist
 - Reject `(0, 0)` coords — GPS cold-start artefact
 - Reject null `latitude`/`longitude`
@@ -322,6 +340,7 @@ export function watchPosition(
 Decoupled from React. Manages point queuing, batching, and flushing to the backend.
 
 **Responsibilities:**
+
 - Accepts `GeoReading` pushes from the geolocation watcher
 - Queues readings in memory; optionally snapshots to `sessionStorage` on `visibilitychange` / `beforeunload` for recovery after accidental refresh
 - Flushes as a **batch** every 30–60 seconds, or when queue reaches 5 points (whichever comes first)
@@ -355,7 +374,11 @@ interface TrackingStore {
 
   // Actions
   upsertFromWs(envelope: TrackingEnvelope): void;
-  hydrateFromRoute(taskId: number, routeData: TaskRoute, taskMeta: TaskApiItem): void;
+  hydrateFromRoute(
+    taskId: number,
+    routeData: TaskRoute,
+    taskMeta: TaskApiItem,
+  ): void;
   hydrateBatch(entries: LiveTaskState[]): void;
   appendPolylinePoint(taskId: number, point: [number, number]): void;
   markArrived(taskId: number, arrivedAt: string): void;
@@ -369,12 +392,12 @@ interface TrackingStore {
 
 **`upsertFromWs` routing logic:**
 
-| `envelope.type` | Store action |
-|---|---|
-| `tracking.task.started` | `upsertTask` with status `in_progress`, set `lastPosition`, `trackingSessionId` |
+| `envelope.type`             | Store action                                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `tracking.task.started`     | `upsertTask` with status `in_progress`, set `lastPosition`, `trackingSessionId`                         |
 | `tracking.location.updated` | `appendPolylinePoint` + update `lastPosition`, `lastEventAt`; if `data.arrived` also call `markArrived` |
-| `tracking.task.arrived` | `markArrived(taskId, occurred_at)` |
-| `tracking.task.completed` | `markCompleted(taskId)`; after 5s delay call `removeTask(taskId)` |
+| `tracking.task.arrived`     | `markArrived(taskId, occurred_at)`                                                                      |
+| `tracking.task.completed`   | `markCompleted(taskId)`; after 5s delay call `removeTask(taskId)`                                       |
 
 `appendPolylinePoint` caps the polyline array at 2000 entries (removes oldest) to prevent unbounded memory growth during long shifts.
 
@@ -392,6 +415,7 @@ const ws = new WebSocket(wsUrl);
 ```
 
 Post-connect auth message is also sent immediately after open as a backup (relay supports both):
+
 ```typescript
 ws.send(JSON.stringify({ type: "authenticate", token, company_id: companyId }));
 ```
@@ -404,10 +428,12 @@ ws.send(JSON.stringify({ type: "authenticate", token, company_id: companyId }));
 - `pong` — update heartbeat timestamp
 
 **Reconnection:**
+
 - Exponential backoff: 1s → 2s → 4s → 8s → 16s → 30s cap
 - On each successful reconnect: re-hydrate all `liveTasks` entries still `in_progress` via `getTaskRoute`
 
 **Polling fallback:**
+
 - If `wsStatus !== 'connected'` for > 30 seconds while `liveTasks` has active entries:
   - Poll `getTaskRoute` for each active task every 25 seconds
   - Stop polling when `wsStatus` returns to `'connected'`
@@ -463,6 +489,7 @@ Our own explainer that appears **before** the browser's native prompt, giving th
 A React context provider mounted under `app/agent/layout.tsx`. Survives navigation between agent dashboard, map, task modal, etc.
 
 **Responsibilities:**
+
 - Holds reference to the `locationBuffer` instance for the active task
 - Exposes `startTracking(taskId)` and `stopTracking()` to consumers
 - Prevents starting a second task if one is already active (shows "Complete your current task first")
@@ -481,6 +508,7 @@ The `locationBuffer` lives inside `ActiveTrackingProvider`, not in the tracking 
 ### 2.5 Agent task pages — new files
 
 **`app/agent/tasks/page.tsx`**
+
 - Three-tab layout: Pending / In Progress / Completed
 - React Query per tab, each cached independently
 - Task card: title, address, due date badge (red if overdue), priority badge, action button
@@ -488,6 +516,7 @@ The `locationBuffer` lives inside `ActiveTrackingProvider`, not in the tracking 
 - Start/Continue → navigates to `app/agent/tasks/[id]/tracking`
 
 **`app/agent/tasks/[id]/page.tsx`**
+
 - Reads `taskId` from params, calls `getTask`
 - Task header: title, priority, status
 - Details card: description, due date, assignor, required actions checklist
@@ -499,12 +528,14 @@ The `locationBuffer` lives inside `ActiveTrackingProvider`, not in the tracking 
 Three phases in sequence on the same page:
 
 _Phase A — Permission + pre-start:_
+
 - Shows `LocationPermissionGate`
 - Once granted: shows "Ready to Start" confirmation with initial position on mini-map
 - "Begin Task" button → calls `handleCommenceAndTrack`
 
 _Phase B — Active tracking:_
 Shown after `startTaskTracking` succeeds.
+
 - Full-screen Mapbox map centered on agent's current position
 - Live pulsing dot at agent position, destination pin, 75m arrival radius circle
 - Top overlay: task title, elapsed time
@@ -513,6 +544,7 @@ Shown after `startTaskTracking` succeeds.
 - Bottom: "Complete Task" button (enabled on arrival; also overrideable after 30-min timeout for edge cases)
 
 _Phase C — Completion sheet:_
+
 - `CompleteTaskSheet` slides up from bottom
 - File picker / camera capture — minimum photos from `task.minimum_photos_required`
 - Image preview grid (3 columns) with individual remove buttons
@@ -542,6 +574,7 @@ The current "Task Done" button calls `updateTaskStatus('completed')` directly. R
 ### 2.9 Arrival UX
 
 Backend auto-publishes `tracking.task.arrived` when agent enters the 75m radius. Agent UI should respond to either:
+
 - The WS `tracking.task.arrived` event hitting `upsertFromWs`
 - The `arrived: true` flag in any `recordTaskLocation` response
 
@@ -579,12 +612,12 @@ components/map/
 
 Key markers by **`taskId`**, not agent ID (one marker per actively tracked task). Marker tag content:
 
-| Tag field | Source |
-|-----------|--------|
-| Name | `assignee.name` or `assigned_users[0].name` |
-| Subtitle | `task.title` or `task.address` |
+| Tag field   | Source                                                |
+| ----------- | ----------------------------------------------------- |
+| Name        | `assignee.name` or `assigned_users[0].name`           |
+| Subtitle    | `task.title` or `task.address`                        |
 | Status chip | `in_progress` / `arrived` / stale (no update > 2 min) |
-| Avatar | `assignee` avatar URL if available |
+| Avatar      | `assignee` avatar URL if available                    |
 
 **Remove** the `setInterval` jitter entirely.
 
@@ -592,19 +625,19 @@ Key markers by **`taskId`**, not agent ID (one marker per actively tracked task)
 
 Use GeoJSON sources for performance (scalable vs many individual HTML markers):
 
-| Source ID | Type | Contents |
-|-----------|------|----------|
-| `live-positions` | FeatureCollection | One Point per active task (latest `lastPosition`), agent metadata in feature properties |
-| `live-routes` | FeatureCollection | One LineString per active task (full `polyline` array) |
-| `task-destinations` | FeatureCollection | One Point per active task destination |
+| Source ID           | Type              | Contents                                                                                |
+| ------------------- | ----------------- | --------------------------------------------------------------------------------------- |
+| `live-positions`    | FeatureCollection | One Point per active task (latest `lastPosition`), agent metadata in feature properties |
+| `live-routes`       | FeatureCollection | One LineString per active task (full `polyline` array)                                  |
+| `task-destinations` | FeatureCollection | One Point per active task destination                                                   |
 
-| Layer ID | Type | Purpose |
-|----------|------|---------|
-| `agent-circles` | circle | Agent dot — color by status: blue=in_progress, green=arrived, grey=stale |
-| `agent-labels` | symbol | Agent name text above dot |
-| `route-lines` | line | Route trace — solid blue=active, green=arrived, dashed grey=completed |
-| `destination-pins` | symbol | Purple destination marker icon |
-| `arrival-zones` | circle | Semi-transparent circle at 75m radius around destination |
+| Layer ID             | Type   | Purpose                                                                       |
+| -------------------- | ------ | ----------------------------------------------------------------------------- |
+| `agent-circles`      | circle | Agent dot — color by status: blue=in_progress, green=arrived, grey=stale      |
+| `agent-labels`       | symbol | Agent name text above dot                                                     |
+| `route-lines`        | line   | Route trace — solid blue=active, green=arrived, dashed grey=completed         |
+| `destination-pins`   | symbol | Purple destination marker icon                                                |
+| `arrival-zones`      | circle | Semi-transparent circle at 75m radius around destination                      |
 | `checkpoint-symbols` | symbol | Start/arrival/end checkpoint icons (loaded from route API when task selected) |
 
 Update all sources inside `requestAnimationFrame` to batch GPU updates and avoid tearing when event rate is high.
@@ -618,6 +651,7 @@ For > 20 agents: switch fully to symbol layers and `setData()` — GPU-side upda
 ### 3.6 Agent click → selection + panel
 
 Sidebar row click or `agent-circles` layer click:
+
 - `store.setSelectedTask(taskId)`
 - `map.flyTo({ center: lastPosition, zoom: 15 })`
 - `map-task-panel.tsx` shows: agent name, avatar, task title, address, last seen (relative time from `lastEventAt`), arrival badge, total distance from route summary
@@ -625,6 +659,7 @@ Sidebar row click or `agent-circles` layer click:
 ### 3.7 Compact dashboard map (`components/dashboard/dashboard-map.tsx`) — MODIFY EXISTING
 
 Currently passes mock data. Update to:
+
 - Connect to the same `store/tracking.ts`
 - If the tracking store has active entries: render real markers in compact mode
 - If empty: show "No active tracking" placeholder instead of mock jitter
@@ -640,6 +675,7 @@ Tracking is only as good as `task.latitude` / `task.longitude`. Currently these 
 ### 4.1 Geocode on create (`components/operations/create-task-modal.tsx`) — MODIFY EXISTING
 
 When admin/supervisor enters `location` + `address`:
+
 - On address field blur (or on submit if no geocode cached), call **Mapbox Geocoding API** (token already in env)
 - Endpoint: `https://api.mapbox.com/geocoding/v5/mapbox.places/{query}.json?access_token=TOKEN&country=NG&limit=1`
 - On success: populate hidden `latitude` / `longitude` fields in the form
@@ -654,6 +690,7 @@ When admin/supervisor enters `location` + `address`:
 ### 4.3 Task detail map header (`task-detail-modal.tsx`) — MODIFY EXISTING
 
 Replace the current static SVG placeholder with:
+
 - Small interactive Mapbox map centered on destination coords (if available)
 - After tracking starts, fetch `useTaskRoute(taskId)` and overlay the live polyline + checkpoint markers
 - If no coords: show "No location set" with an "Add coordinates" edit action
@@ -668,12 +705,12 @@ Tags = the white label chips on markers and sidebar rows.
 
 ### Status rules
 
-| State | Visual |
-|-------|--------|
-| Active / moving | Green ring on marker, subtitle: "En route · {task title}" |
-| Arrived | Purple pulse (already in design), marker chip: "Arrived" |
-| Stale (> 2 min no update) | Grey marker, subtitle: "Last seen {relative time from `lastEventAt`}" |
-| Completed | Remove from live layer; optionally show grey historical marker briefly |
+| State                     | Visual                                                                 |
+| ------------------------- | ---------------------------------------------------------------------- |
+| Active / moving           | Green ring on marker, subtitle: "En route · {task title}"              |
+| Arrived                   | Purple pulse (already in design), marker chip: "Arrived"               |
+| Stale (> 2 min no update) | Grey marker, subtitle: "Last seen {relative time from `lastEventAt`}"  |
+| Completed                 | Remove from live layer; optionally show grey historical marker briefly |
 
 ### Implementation
 
@@ -710,21 +747,21 @@ Side drawer, shown when a management user clicks a completed task entry.
 
 ## Phase 7 — Security, Errors, and Edge Cases
 
-| Scenario | Handling |
-|----------|----------|
-| `401` on API or WS | Refresh session or redirect to login; tear down geolocation watcher and buffer |
-| `403` not assigned | Toast "This task is not assigned to you"; do not start watcher |
-| `422` location permission not granted | Re-show `LocationPermissionGate` |
-| `422` session already active | Resume watcher from `activeTrackingTaskId`; or prompt to complete the other task first |
-| GPS denied mid-task | Pause uploads; persistent banner "Location access lost — tap to re-enable"; retry permission on banner tap |
-| Tab backgrounded | `visibilitychange` → reduce `watchPosition` accuracy to save battery; buffer accumulates; flush still runs on interval |
-| Task reassigned while tracking | Backend blocks further location points with 422; UI should stop watcher and show "Task was reassigned" |
-| Redis / WS down | REST still records agent path; map uses polling fallback (Phase 1.7) |
-| Poor GPS accuracy (> 200m) | Skip point client-side in geolocation.ts before pushing to buffer |
-| `(0, 0)` coordinates | Reject in `geolocation.ts` quality gate — GPS cold-start artefact |
+| Scenario                                | Handling                                                                                                                                                                        |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `401` on API or WS                      | Refresh session or redirect to login; tear down geolocation watcher and buffer                                                                                                  |
+| `403` not assigned                      | Toast "This task is not assigned to you"; do not start watcher                                                                                                                  |
+| `422` location permission not granted   | Re-show `LocationPermissionGate`                                                                                                                                                |
+| `422` session already active            | Resume watcher from `activeTrackingTaskId`; or prompt to complete the other task first                                                                                          |
+| GPS denied mid-task                     | Pause uploads; persistent banner "Location access lost — tap to re-enable"; retry permission on banner tap                                                                      |
+| Tab backgrounded                        | `visibilitychange` → reduce `watchPosition` accuracy to save battery; buffer accumulates; flush still runs on interval                                                          |
+| Task reassigned while tracking          | Backend blocks further location points with 422; UI should stop watcher and show "Task was reassigned"                                                                          |
+| Redis / WS down                         | REST still records agent path; map uses polling fallback (Phase 1.7)                                                                                                            |
+| Poor GPS accuracy (> 200m)              | Skip point client-side in geolocation.ts before pushing to buffer                                                                                                               |
+| `(0, 0)` coordinates                    | Reject in `geolocation.ts` quality gate — GPS cold-start artefact                                                                                                               |
 | Accidental page refresh during tracking | `sessionStorage` snapshot from `location-buffer.ts` restores queued points; `activeTrackingTaskId` lost (not persisted); agent sees "Resume tracking?" prompt on next task open |
-| Network offline | Buffer accumulates; flush on `navigator.onLine` recovery event |
-| Clock skew | Always include `recorded_at` from client (`new Date().toISOString()`); backend uses server time for final ordering when client time is unreasonable |
+| Network offline                         | Buffer accumulates; flush on `navigator.onLine` recovery event                                                                                                                  |
+| Clock skew                              | Always include `recorded_at` from client (`new Date().toISOString()`); backend uses server time for final ordering when client time is unreasonable                             |
 
 **Token on WebSocket:** prefer post-connect `{ type: "authenticate", token, company_id }` message in production. Query param (`?token=...`) is acceptable behind nginx in dev. Never log raw WS messages containing auth context.
 
@@ -750,28 +787,31 @@ Side drawer, shown when a management user clicks a completed task entry.
 ### Automated tests
 
 **Unit:**
+
 - `location-buffer.ts`: flush timing, 50-point cap, offline retry
 - `store/tracking.ts`: `upsertFromWs` reducer for all 4 event types; polyline cap at 2000 pts
 - Stale detection: `lastEventAt` > 2 min → correct status downgrade
 
 **Integration:**
+
 - Mock `apiRequest` + simulate WS message sequence → assert store state snapshots
 - `LocationPermissionGate`: mock `navigator.permissions` states (denied / prompt / granted) → assert correct branch renders
 
 **Contract:**
+
 - Type shapes in `types/tracking.ts` should match backend fixture responses from `backend/src/tests/Feature/Task/TaskTrackingTest.php`
 
 ---
 
 ## Recommended Implementation Order
 
-| Week | Deliverable | Why |
-|------|-------------|-----|
-| 1 | `lib/api/tracking.ts`, `types/tracking.ts`, fix Commence → `startTaskTracking`, fix "Task Done" → `completeTaskTracking` | Tracking sessions start existing immediately; unblocks everything |
-| 2 | Geolocation service + buffer, `LocationPermissionGate`, active tracking provider + `ActiveTrackingBar` | Agent can track continuously; foundation for WS |
-| 3 | `store/tracking.ts`, `hooks/use-tracking-ws.ts`, map hydration on mount | WS feeds store; admin map gets real data |
-| 4 | Map file split, GeoJSON layers, real marker tags, staleness, `dashboard-map.tsx` update | Full dashboard visibility |
-| 5 | Task geocoding in create-task-modal, task detail mini-map, route history panel, polling fallback, QA | End-to-end completeness + hardening |
+| Week | Deliverable                                                                                                              | Why                                                               |
+| ---- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| 1    | `lib/api/tracking.ts`, `types/tracking.ts`, fix Commence → `startTaskTracking`, fix "Task Done" → `completeTaskTracking` | Tracking sessions start existing immediately; unblocks everything |
+| 2    | Geolocation service + buffer, `LocationPermissionGate`, active tracking provider + `ActiveTrackingBar`                   | Agent can track continuously; foundation for WS                   |
+| 3    | `store/tracking.ts`, `hooks/use-tracking-ws.ts`, map hydration on mount                                                  | WS feeds store; admin map gets real data                          |
+| 4    | Map file split, GeoJSON layers, real marker tags, staleness, `dashboard-map.tsx` update                                  | Full dashboard visibility                                         |
+| 5    | Task geocoding in create-task-modal, task detail mini-map, route history panel, polling fallback, QA                     | End-to-end completeness + hardening                               |
 
 Each week is independently shippable. Week 1 alone makes agent tracking real, even before the admin map moves.
 
@@ -779,35 +819,35 @@ Each week is independently shippable. Week 1 alone makes agent tracking real, ev
 
 ## Full File Changelist
 
-| File | Action | Notes |
-|------|--------|-------|
-| `.env.local` | Modify | Add `NEXT_PUBLIC_TRACKING_WS_URL` |
-| `types/tracking.ts` | Create | Shared types: `LiveTaskState`, `TrackingEnvelope`, `TaskRoute`, `GeoReading`, etc. |
-| `lib/api/tracking.ts` | Create | 5 API functions following `apiRequest` pattern |
-| `hooks/use-tracking.ts` | Create | React Query wrappers: `useStartTracking`, `useCompleteTracking`, `useTaskRoute` |
-| `lib/tracking/geolocation.ts` | Create | Pure browser Geolocation wrapper with quality gates |
-| `lib/tracking/location-buffer.ts` | Create | Queue, batch-flush, offline recovery |
-| `store/tracking.ts` | Create | Zustand live-tracking store |
-| `hooks/use-tracking-ws.ts` | Create | WebSocket client, reconnect backoff, polling fallback |
-| `components/tracking/LocationPermissionGate.tsx` | Create | Explainer UI + denied fallback with browser-specific instructions |
-| `components/tracking/active-tracking-provider.tsx` | Create | Context provider mounted in agent layout |
-| `components/tracking/ActiveTrackingBar.tsx` | Create | Persistent tracking indicator bar |
-| `components/tracking/CompleteTaskSheet.tsx` | Create | Proof upload + notes + submit for completion |
-| `app/agent/tasks/page.tsx` | Create | Agent task list (Pending / In Progress / Completed tabs) |
-| `app/agent/tasks/[id]/page.tsx` | Create | Task detail with static mini-map |
-| `app/agent/tasks/[id]/tracking/page.tsx` | Create | Active tracking screen (3 phases) |
-| `app/agent/map/page.tsx` | Modify | Show own route / session if active; "no active tracking" state if not |
-| `app/agent/layout.tsx` | Modify | Mount `ActiveTrackingProvider` + `ActiveTrackingBar` |
-| `components/operations/task-detail-modal.tsx` | Modify | Commence → `handleCommenceAndTrack`; Task Done → `completeTaskTracking` |
-| `components/operations/create-task-modal.tsx` | Modify | Add Mapbox geocoding → populate `latitude`/`longitude` on task create |
-| `components/map/map-view.tsx` | Modify | Remove demo data; becomes shell mounting sub-components |
-| `components/map/map-canvas.tsx` | Create | Mapbox init, GeoJSON source + layer declarations |
-| `components/map/map-live-layer.tsx` | Create | Subscribes to store, calls `setData()` via `requestAnimationFrame` |
-| `components/map/map-agent-marker.tsx` | Modify | `createMarkerEl` uses real `LiveTaskState` instead of hardcoded `Agent` |
-| `components/map/map-sidebar.tsx` | Create | Agent list fed from `store.liveTasks` |
-| `components/map/map-task-panel.tsx` | Create | Popup panel with real task/agent/status data |
-| `components/map/RouteHistoryPanel.tsx` | Create | Historical route drawer for management |
-| `components/dashboard/dashboard-map.tsx` | Modify | Feed real store data instead of mock jitter |
+| File                                               | Action | Notes                                                                              |
+| -------------------------------------------------- | ------ | ---------------------------------------------------------------------------------- |
+| `.env.local`                                       | Modify | Add `NEXT_PUBLIC_TRACKING_WS_URL`                                                  |
+| `types/tracking.ts`                                | Create | Shared types: `LiveTaskState`, `TrackingEnvelope`, `TaskRoute`, `GeoReading`, etc. |
+| `lib/api/tracking.ts`                              | Create | 5 API functions following `apiRequest` pattern                                     |
+| `hooks/use-tracking.ts`                            | Create | React Query wrappers: `useStartTracking`, `useCompleteTracking`, `useTaskRoute`    |
+| `lib/tracking/geolocation.ts`                      | Create | Pure browser Geolocation wrapper with quality gates                                |
+| `lib/tracking/location-buffer.ts`                  | Create | Queue, batch-flush, offline recovery                                               |
+| `store/tracking.ts`                                | Create | Zustand live-tracking store                                                        |
+| `hooks/use-tracking-ws.ts`                         | Create | WebSocket client, reconnect backoff, polling fallback                              |
+| `components/tracking/LocationPermissionGate.tsx`   | Create | Explainer UI + denied fallback with browser-specific instructions                  |
+| `components/tracking/active-tracking-provider.tsx` | Create | Context provider mounted in agent layout                                           |
+| `components/tracking/ActiveTrackingBar.tsx`        | Create | Persistent tracking indicator bar                                                  |
+| `components/tracking/CompleteTaskSheet.tsx`        | Create | Proof upload + notes + submit for completion                                       |
+| `app/agent/tasks/page.tsx`                         | Create | Agent task list (Pending / In Progress / Completed tabs)                           |
+| `app/agent/tasks/[id]/page.tsx`                    | Create | Task detail with static mini-map                                                   |
+| `app/agent/tasks/[id]/tracking/page.tsx`           | Create | Active tracking screen (3 phases)                                                  |
+| `app/agent/map/page.tsx`                           | Modify | Show own route / session if active; "no active tracking" state if not              |
+| `app/agent/layout.tsx`                             | Modify | Mount `ActiveTrackingProvider` + `ActiveTrackingBar`                               |
+| `components/operations/task-detail-modal.tsx`      | Modify | Commence → `handleCommenceAndTrack`; Task Done → `completeTaskTracking`            |
+| `components/operations/create-task-modal.tsx`      | Modify | Add Mapbox geocoding → populate `latitude`/`longitude` on task create              |
+| `components/map/map-view.tsx`                      | Modify | Remove demo data; becomes shell mounting sub-components                            |
+| `components/map/map-canvas.tsx`                    | Create | Mapbox init, GeoJSON source + layer declarations                                   |
+| `components/map/map-live-layer.tsx`                | Create | Subscribes to store, calls `setData()` via `requestAnimationFrame`                 |
+| `components/map/map-agent-marker.tsx`              | Modify | `createMarkerEl` uses real `LiveTaskState` instead of hardcoded `Agent`            |
+| `components/map/map-sidebar.tsx`                   | Create | Agent list fed from `store.liveTasks`                                              |
+| `components/map/map-task-panel.tsx`                | Create | Popup panel with real task/agent/status data                                       |
+| `components/map/RouteHistoryPanel.tsx`             | Create | Historical route drawer for management                                             |
+| `components/dashboard/dashboard-map.tsx`           | Modify | Feed real store data instead of mock jitter                                        |
 
 ---
 
@@ -828,5 +868,5 @@ This matches the backend design: `TaskTrackingService::start()` handles the stat
 
 ---
 
-*Related docs: `TRACKING_SYSTEM_ARCHITECTURE_REVIEW.md` · `api docs/frontend-guide/task-tracking-realtime.md` · `api docs/features/task-tracking-realtime.md`*
-*Do NOT follow: `api docs/features/map-live-tracking.md` · `docs/map-realtime-tracking-plan.md` (Reverb/Socket.IO — stale spec)*
+_Related docs: `TRACKING_SYSTEM_ARCHITECTURE_REVIEW.md` · `api docs/frontend-guide/task-tracking-realtime.md` · `api docs/features/task-tracking-realtime.md`_
+_Do NOT follow: `api docs/features/map-live-tracking.md` · `docs/map-realtime-tracking-plan.md` (Reverb/Socket.IO — stale spec)_

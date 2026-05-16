@@ -1,5 +1,6 @@
 import type { GeoReading } from "@/types/tracking";
 import { recordTaskLocation } from "@/lib/api/tracking";
+import { useTrackingStore } from "@/store/tracking";
 import { watchPosition, watchVisibilityAccuracy } from "./geolocation";
 
 const MAX_QUEUE = 50;
@@ -12,6 +13,7 @@ interface BufferCallbacks {
 }
 
 interface BufferState {
+  sessionKey: string;
   taskId: number;
   companyId: number | string;
   token: string;
@@ -26,42 +28,46 @@ interface BufferState {
 
 let state: BufferState | null = null;
 
-function saveToSession(queue: GeoReading[]) {
+function buildSessionKey(taskId: number): string {
+  return `${SESSION_KEY}:${taskId}`;
+}
+
+function saveToSession(sessionKey: string, queue: GeoReading[]) {
   try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(queue));
+    sessionStorage.setItem(sessionKey, JSON.stringify(queue));
   } catch {
     // sessionStorage not available
   }
 }
 
-function loadFromSession(): GeoReading[] {
+function loadFromSession(sessionKey: string): GeoReading[] {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = sessionStorage.getItem(sessionKey);
     return raw ? (JSON.parse(raw) as GeoReading[]) : [];
   } catch {
     return [];
   }
 }
 
-function clearSession() {
+function clearSession(sessionKey: string) {
   try {
-    sessionStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(sessionKey);
   } catch {
     // ignore
   }
 }
 
-async function flush() {
-  if (!state || !state.active || state.queue.length === 0) return;
+async function flushBuffer(targetState: BufferState, force = false) {
+  if ((!targetState.active && !force) || targetState.queue.length === 0) return;
 
-  const batch = state.queue.splice(0, MAX_QUEUE);
-  saveToSession(state.queue);
+  const batch = targetState.queue.splice(0, MAX_QUEUE);
+  saveToSession(targetState.sessionKey, targetState.queue);
 
   try {
     const res = await recordTaskLocation(
-      state.taskId,
+      targetState.taskId,
       {
-        company_id: state.companyId,
+        company_id: targetState.companyId,
         points: batch.map((r) => ({
           latitude: r.latitude,
           longitude: r.longitude,
@@ -71,21 +77,33 @@ async function flush() {
           recorded_at: r.recordedAt,
         })),
       },
-      state.token
+      targetState.token
     );
 
     if (res.data.arrived) {
-      state.callbacks.onArrived?.();
+      useTrackingStore
+        .getState()
+        .markArrived(targetState.taskId, batch[batch.length - 1]?.recordedAt ?? new Date().toISOString());
+      targetState.callbacks.onArrived?.();
     }
   } catch (err) {
     // Put points back at the front of the queue for retry
-    state.queue.unshift(...batch);
-    if (state.queue.length > MAX_QUEUE) {
-      state.queue.splice(MAX_QUEUE);
+    targetState.queue.unshift(...batch);
+    if (targetState.queue.length > MAX_QUEUE) {
+      targetState.queue.splice(MAX_QUEUE);
     }
-    saveToSession(state.queue);
-    state.callbacks.onError?.(err);
+    saveToSession(targetState.sessionKey, targetState.queue);
+    targetState.callbacks.onError?.(err);
   }
+}
+
+async function flush(force = false) {
+  if (!state) return;
+  await flushBuffer(state, force);
+}
+
+function handleOnline() {
+  void flush();
 }
 
 function push(reading: GeoReading) {
@@ -94,7 +112,11 @@ function push(reading: GeoReading) {
   if (state.queue.length > MAX_QUEUE) {
     state.queue.shift();
   }
-  saveToSession(state.queue);
+  saveToSession(state.sessionKey, state.queue);
+
+  useTrackingStore
+    .getState()
+    .appendPolylinePoint(state.taskId, [reading.longitude, reading.latitude]);
 }
 
 function startWatcher() {
@@ -115,9 +137,11 @@ export function start(
 ) {
   if (state) stop();
 
-  const recovered = loadFromSession();
+  const sessionKey = buildSessionKey(taskId);
+  const recovered = loadFromSession(sessionKey);
 
   state = {
+    sessionKey,
     taskId,
     companyId,
     token,
@@ -138,34 +162,40 @@ export function start(
     startWatcher(); // restart with new accuracy
   });
 
-  state.flushTimer = setInterval(flush, FLUSH_INTERVAL_MS);
+  state.flushTimer = setInterval(() => {
+    void flush();
+  }, FLUSH_INTERVAL_MS);
 
   // Flush recovered points immediately
   if (recovered.length > 0) {
-    flush();
+    flushBuffer(state);
   }
 
   // Also flush on network recovery
   if (typeof window !== "undefined") {
-    window.addEventListener("online", flush);
+    window.addEventListener("online", handleOnline);
   }
 }
 
 export function stop() {
   if (!state) return;
-  state.active = false;
-  state.stopWatch?.();
-  state.stopVisibility?.();
-  if (state.flushTimer) clearInterval(state.flushTimer);
+  const closingState = state;
+  state = null;
+
+  closingState.active = false;
+  closingState.stopWatch?.();
+  closingState.stopVisibility?.();
+  if (closingState.flushTimer) clearInterval(closingState.flushTimer);
 
   if (typeof window !== "undefined") {
-    window.removeEventListener("online", flush);
+    window.removeEventListener("online", handleOnline);
   }
 
   // Final flush attempt
-  flush().finally(() => {
-    clearSession();
-    state = null;
+  flushBuffer(closingState, true).finally(() => {
+    if (!state || state.sessionKey !== closingState.sessionKey) {
+      clearSession(closingState.sessionKey);
+    }
   });
 }
 

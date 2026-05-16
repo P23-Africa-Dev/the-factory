@@ -22,6 +22,7 @@ import { useCreateTask } from "@/hooks/use-tasks";
 import type { DndItem, TaskCategory } from "@/types/operations";
 import type { ApiTaskPriority } from "@/lib/api/tasks";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { getMapboxPublicToken } from "@/lib/config/public-env";
 
 type StatusType = "pending" | "in-progress" | "completed";
 
@@ -162,7 +163,7 @@ export function CreateTaskModal({
   };
 
   const geocodeAddress = useCallback(async (address: string) => {
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    const token = getMapboxPublicToken();
     if (!token || !address.trim()) return;
     setGeocoding(true);
     try {

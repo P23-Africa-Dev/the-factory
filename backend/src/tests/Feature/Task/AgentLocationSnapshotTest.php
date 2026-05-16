@@ -124,8 +124,6 @@ class AgentLocationSnapshotTest extends TestCase
             ->getJson('/api/v1/agents/locations?company_id=' . $companyTwo->id)
             ->assertOk()
             ->assertJsonPath('data.items.0.agent.id', $agentTwo->id);
-
-
     }
 
     public function test_stale_snapshot_is_reported_offline(): void

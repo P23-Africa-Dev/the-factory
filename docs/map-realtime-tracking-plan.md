@@ -1,5 +1,17 @@
 # Real-Time Agent Tracking Map — Implementation Plan
 
+## Status
+
+This document is obsolete for current implementation work.
+
+The canonical tracking architecture is documented in:
+
+1. `docs/tracking-architecture-decision.md`
+2. `backend/docs/features/task-tracking-realtime.md`
+3. `TRACKING_IMPLEMENTATION_PLAN.md`
+
+This file describes a different stack built around MapLibre, MapTiler, and Socket.IO. Keep it only as historical reference material; do not use it to make implementation decisions for the current platform.
+
 > **Project:** The Factory Dashboard — `app/(dashboard)/map/page.tsx`
 > **Goal:** Aggregators see their agents' live GPS positions on a customisable map, with smooth animation, profile pop-ups, route lines, and a searchable agent sidebar.
 
@@ -79,16 +91,16 @@
 
 ## 2. Tech Stack & Rationale
 
-| Layer | Choice | Why |
-|---|---|---|
-| **Map rendering** | `maplibre-gl` + `react-map-gl` | Open-source, free, GPU-accelerated, fully style-customisable |
-| **Map tiles** | Maptiler "Dataviz Light" | Clean white/grey street style that matches the design; 100k req/month free |
-| **Real-time** | `socket.io-client` | Rooms, auto-reconnect, fallback to long-polling |
-| **State** | `zustand` | Minimal re-renders — only the updated agent's marker re-renders |
-| **Cache** | Redis | Instant initial load of all agent positions; horizontal scaling |
-| **DB** | PostgreSQL + PostGIS | Persist location history; geospatial queries |
-| **Mobile GPS** | Expo + `expo-location` | Background location tracking on iOS + Android |
-| **Routing engine** | Maptiler Directions API (or OSRM) | Generate delivery route polylines |
+| Layer              | Choice                            | Why                                                                        |
+| ------------------ | --------------------------------- | -------------------------------------------------------------------------- |
+| **Map rendering**  | `maplibre-gl` + `react-map-gl`    | Open-source, free, GPU-accelerated, fully style-customisable               |
+| **Map tiles**      | Maptiler "Dataviz Light"          | Clean white/grey street style that matches the design; 100k req/month free |
+| **Real-time**      | `socket.io-client`                | Rooms, auto-reconnect, fallback to long-polling                            |
+| **State**          | `zustand`                         | Minimal re-renders — only the updated agent's marker re-renders            |
+| **Cache**          | Redis                             | Instant initial load of all agent positions; horizontal scaling            |
+| **DB**             | PostgreSQL + PostGIS              | Persist location history; geospatial queries                               |
+| **Mobile GPS**     | Expo + `expo-location`            | Background location tracking on iOS + Android                              |
+| **Routing engine** | Maptiler Directions API (or OSRM) | Generate delivery route polylines                                          |
 
 ---
 
@@ -123,8 +135,11 @@ npm install socket.io-client
 
 > ⚠️ **Critical Next.js Note:** `maplibre-gl` accesses `window` and cannot run server-side.
 > Always wrap the map component with:
+>
 > ```ts
-> const MapView = dynamic(() => import("@/components/map/MapView"), { ssr: false });
+> const MapView = dynamic(() => import("@/components/map/MapView"), {
+>   ssr: false,
+> });
 > ```
 
 ---
@@ -208,8 +223,8 @@ export default function MapView() {
     <div className="relative w-full h-screen overflow-hidden">
       <Map
         initialViewState={{
-          longitude: -1.6833,  // Set to your region's coordinates
-          latitude: 6.7000,
+          longitude: -1.6833, // Set to your region's coordinates
+          latitude: 6.7,
           zoom: 13,
         }}
         style={{ width: "100%", height: "100%" }}
@@ -234,11 +249,11 @@ export default function MapView() {
 
 ### Recommended Style Options
 
-| Style Name | URL Slug | Best For |
-|---|---|---|
+| Style Name        | URL Slug        | Best For                              |
+| ----------------- | --------------- | ------------------------------------- |
 | **Dataviz Light** | `dataviz-light` | ⭐ Closest to the design — very clean |
-| Positron | `positron` | Ultra-minimal, pure white |
-| Streets v2 | `streets-v2` | More road detail visible |
+| Positron          | `positron`      | Ultra-minimal, pure white             |
+| Streets v2        | `streets-v2`    | More road detail visible              |
 
 You can also build a fully custom style at [style.maptiler.com](https://style.maptiler.com) using the visual Maputnik editor — export the JSON and serve it locally for full pixel-perfect control.
 
@@ -272,7 +287,9 @@ export function AgentMarker({ agent, onClick }: Props) {
       >
         {/* Name + address tag */}
         <div className="bg-white rounded-lg px-2.5 py-1 shadow-md mb-1.5 text-center">
-          <p className="text-[11px] font-bold text-[#0B1215] whitespace-nowrap">{agent.name}</p>
+          <p className="text-[11px] font-bold text-[#0B1215] whitespace-nowrap">
+            {agent.name}
+          </p>
           <p className="text-[9px] text-gray-400 whitespace-nowrap truncate max-w-[120px]">
             Active at {agent.currentAddress ?? "Unknown location"}
           </p>
@@ -289,8 +306,10 @@ export function AgentMarker({ agent, onClick }: Props) {
           />
         </div>
         {/* Red drop pin */}
-        <div className="w-0 h-0 border-l-[5px] border-r-[5px] border-t-[10px]
-          border-l-transparent border-r-transparent border-t-red-500 mt-0.5" />
+        <div
+          className="w-0 h-0 border-l-[5px] border-r-[5px] border-t-[10px]
+          border-l-transparent border-r-transparent border-t-red-500 mt-0.5"
+        />
       </div>
     </Marker>
   );
@@ -315,9 +334,9 @@ export interface Agent {
   status: AgentStatus;
   lat: number;
   lng: number;
-  lastSeen: number;             // Unix timestamp ms
+  lastSeen: number; // Unix timestamp ms
   currentAddress?: string;
-  routeCoords?: [number, number][];  // Pre-computed delivery route
+  routeCoords?: [number, number][]; // Pre-computed delivery route
 }
 
 export type AgentMap = Record<string, Agent>;
@@ -371,7 +390,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     return Object.values(agents).filter(
       (a) =>
         a.name.toLowerCase().includes(q) ||
-        (a.currentAddress ?? "").toLowerCase().includes(q)
+        (a.currentAddress ?? "").toLowerCase().includes(q),
     );
   },
 }));
@@ -450,7 +469,6 @@ export function useMapSocket(aggregatorId: string) {
 // server/socket/map.handler.ts
 
 io.on("connection", (socket) => {
-
   socket.on("join:aggregator", ({ aggregatorId }) => {
     socket.join(`aggregator:${aggregatorId}`);
   });
@@ -462,21 +480,25 @@ io.on("connection", (socket) => {
     await redis.hset(
       `locations:${aggregatorId}`,
       agentId,
-      JSON.stringify({ lat, lng, address, status, ts: Date.now() })
+      JSON.stringify({ lat, lng, address, status, ts: Date.now() }),
     );
 
     // 2. Append to history sorted set (for breadcrumb trail)
     await redis.zadd(
       `history:${agentId}`,
       Date.now(),
-      JSON.stringify({ lat, lng })
+      JSON.stringify({ lat, lng }),
     );
     // Trim to last 500 points to prevent unbounded growth
     await redis.zremrangebyrank(`history:${agentId}`, 0, -501);
 
     // 3. Broadcast ONLY to this aggregator's room
     io.to(`aggregator:${aggregatorId}`).emit("agent:moved", {
-      agentId, lat, lng, address, status,
+      agentId,
+      lat,
+      lng,
+      address,
+      status,
     });
 
     // 4. Throttled DB persist (every 30s per agent — not every ping)
@@ -501,7 +523,10 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET(req: NextRequest) {
   const aggregatorId = req.nextUrl.searchParams.get("aggregatorId");
   if (!aggregatorId)
-    return NextResponse.json({ error: "Missing aggregatorId" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Missing aggregatorId" },
+      { status: 400 },
+    );
 
   const raw = await redis.hgetall(`locations:${aggregatorId}`);
   if (!raw) return NextResponse.json({});
@@ -541,11 +566,12 @@ There are two distinct lines to render:
 // Fetch from Maptiler Directions API
 async function fetchDeliveryRoute(
   start: [number, number],
-  end: [number, number]
+  end: [number, number],
 ): Promise<[number, number][]> {
   const key = process.env.NEXT_PUBLIC_MAPTILER_KEY;
-  const url = `https://api.maptiler.com/directions/v2/route/${start.join(",")};${end.join(",")}`
-    + `?key=${key}&geometries=geojson&profile=car`;
+  const url =
+    `https://api.maptiler.com/directions/v2/route/${start.join(",")};${end.join(",")}` +
+    `?key=${key}&geometries=geojson&profile=car`;
   const res = await fetch(url);
   const data = await res.json();
   return data.routes[0].geometry.coordinates;
@@ -559,7 +585,7 @@ async function fetchDeliveryRoute(
 const history = await redis.zrangebyscore(`history:${agentId}`, "-inf", "+inf");
 const coords = history.map((h) => {
   const { lat, lng } = JSON.parse(h);
-  return [lng, lat] as [number, number];  // GeoJSON is [lng, lat]
+  return [lng, lat] as [number, number]; // GeoJSON is [lng, lat]
 });
 ```
 
@@ -569,14 +595,20 @@ const coords = history.map((h) => {
 // components/map/RouteLayer.tsx
 import { Source, Layer } from "react-map-gl/maplibre";
 
-export function RouteLayer({ coordinates }: { coordinates: [number, number][] }) {
+export function RouteLayer({
+  coordinates,
+}: {
+  coordinates: [number, number][];
+}) {
   const data: GeoJSON.FeatureCollection = {
     type: "FeatureCollection",
-    features: [{
-      type: "Feature",
-      geometry: { type: "LineString", coordinates },
-      properties: {},
-    }],
+    features: [
+      {
+        type: "Feature",
+        geometry: { type: "LineString", coordinates },
+        properties: {},
+      },
+    ],
   };
 
   return (
@@ -585,7 +617,7 @@ export function RouteLayer({ coordinates }: { coordinates: [number, number][] })
         id="route-line"
         type="line"
         paint={{
-          "line-color": "#3B82F6",    // Blue matching design
+          "line-color": "#3B82F6", // Blue matching design
           "line-width": 5,
           "line-cap": "round",
           "line-join": "round",
@@ -611,7 +643,7 @@ export function animateToPosition(
   marker: maplibregl.Marker,
   from: { lat: number; lng: number },
   to: { lat: number; lng: number },
-  duration = 1000
+  duration = 1000,
 ) {
   const start = performance.now();
 
@@ -637,10 +669,14 @@ export function animateToPosition(
 ```
 
 **Usage in AgentMarker:**
+
 - Keep `markerRef = useRef<maplibregl.Marker>(null)`
 - In a `useEffect` watching `[agent.lat, agent.lng]`, call:
   ```ts
-  animateToPosition(markerRef.current, prevPos, { lat: agent.lat, lng: agent.lng })
+  animateToPosition(markerRef.current, prevPos, {
+    lat: agent.lat,
+    lng: agent.lng,
+  });
   ```
 
 ---
@@ -659,7 +695,9 @@ export function formatLastSeen(lastSeenMs: number): string {
   return `${Math.floor(diffS / 3600)}h ago`;
 }
 
-export function getAgentStaleness(lastSeenMs: number): "fresh" | "stale" | "offline" {
+export function getAgentStaleness(
+  lastSeenMs: number,
+): "fresh" | "stale" | "offline" {
   const diffMin = (Date.now() - lastSeenMs) / 60_000;
   if (diffMin < 2) return "fresh";
   if (diffMin < 10) return "stale";
@@ -700,8 +738,13 @@ import { AgentSidebarItem } from "./AgentSidebarItem";
 import { Search } from "lucide-react";
 
 export function AgentSidebar() {
-  const { searchQuery, setSearchQuery, filteredAgents, selectAgent, selectedAgentId } =
-    useAgentStore();
+  const {
+    searchQuery,
+    setSearchQuery,
+    filteredAgents,
+    selectAgent,
+    selectedAgentId,
+  } = useAgentStore();
   const agents = filteredAgents();
 
   return (
@@ -721,11 +764,15 @@ export function AgentSidebar() {
             key={agent.id}
             agent={agent}
             isSelected={agent.id === selectedAgentId}
-            onClick={() => selectAgent(agent.id === selectedAgentId ? null : agent.id)}
+            onClick={() =>
+              selectAgent(agent.id === selectedAgentId ? null : agent.id)
+            }
           />
         ))}
         {agents.length === 0 && (
-          <p className="text-center text-xs text-gray-400 py-8">No agents found</p>
+          <p className="text-center text-xs text-gray-400 py-8">
+            No agents found
+          </p>
         )}
       </div>
     </div>
@@ -807,7 +854,9 @@ export function AgentProfileCard() {
         <p className="text-gray-400 text-sm mt-0.5">
           {agent.currentAddress ?? "Location unknown"}
         </p>
-        <p className="text-gray-300 text-xs mt-1">{formatLastSeen(agent.lastSeen)}</p>
+        <p className="text-gray-300 text-xs mt-1">
+          {formatLastSeen(agent.lastSeen)}
+        </p>
       </div>
 
       {/* Status Badge */}
@@ -817,20 +866,24 @@ export function AgentProfileCard() {
             agent.status === "active"
               ? "bg-green-100 text-green-700"
               : agent.status === "idle"
-              ? "bg-orange-100 text-orange-700"
-              : "bg-gray-100 text-gray-500"
+                ? "bg-orange-100 text-orange-700"
+                : "bg-gray-100 text-gray-500"
           }`}
         >
-          {agent.status === "active" ? "🟢 Presently On Field"
-           : agent.status === "idle" ? "🟡 Idle"
-           : "⚫ Offline"}
+          {agent.status === "active"
+            ? "🟢 Presently On Field"
+            : agent.status === "idle"
+              ? "🟡 Idle"
+              : "⚫ Offline"}
         </span>
       </div>
 
       {/* Message Button */}
       <div className="px-5 pb-5">
-        <button className="w-full flex items-center justify-center gap-2 py-3 border
-          border-gray-200 rounded-2xl text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+        <button
+          className="w-full flex items-center justify-center gap-2 py-3 border
+          border-gray-200 rounded-2xl text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+        >
           <MessageSquare size={15} />
           Send a message
         </button>
@@ -883,12 +936,12 @@ io.adapter(createAdapter(pubClient, subClient));
 
 ## 16. Redis Schema
 
-| Key Pattern | Type | Contents | TTL |
-|---|---|---|---|
-| `locations:{aggregatorId}` | Hash | `agentId → { lat, lng, status, address, ts }` | 24 hours |
-| `history:{agentId}` | Sorted Set | Score = timestamp, Value = `{ lat, lng }` | 7 days |
-| `agent:meta:{agentId}` | Hash | `{ name, avatarUrl, phone, aggregatorId }` | No TTL |
-| `session:{socketId}` | String | `{ agentId, aggregatorId }` | Socket lifetime |
+| Key Pattern                | Type       | Contents                                      | TTL             |
+| -------------------------- | ---------- | --------------------------------------------- | --------------- |
+| `locations:{aggregatorId}` | Hash       | `agentId → { lat, lng, status, address, ts }` | 24 hours        |
+| `history:{agentId}`        | Sorted Set | Score = timestamp, Value = `{ lat, lng }`     | 7 days          |
+| `agent:meta:{agentId}`     | Hash       | `{ name, avatarUrl, phone, aggregatorId }`    | No TTL          |
+| `session:{socketId}`       | String     | `{ agentId, aggregatorId }`                   | Socket lifetime |
 
 ### PostgreSQL Schema (for history persistence)
 
@@ -937,24 +990,28 @@ let currentAccuracy = Location.Accuracy.Balanced;
 
 AppState.addEventListener("change", (state) => {
   // Reduce accuracy when app is backgrounded to save battery
-  currentAccuracy = state === "active"
-    ? Location.Accuracy.Balanced
-    : Location.Accuracy.Low;
+  currentAccuracy =
+    state === "active" ? Location.Accuracy.Balanced : Location.Accuracy.Low;
 });
 
 // Watch position — emit on movement or every 4 seconds
 const watcher = await Location.watchPositionAsync(
   {
     accuracy: currentAccuracy,
-    timeInterval: 4000,          // Max: every 4 seconds
-    distanceInterval: 10,        // Or when moved 10 meters
+    timeInterval: 4000, // Max: every 4 seconds
+    distanceInterval: 10, // Or when moved 10 meters
   },
   async (location) => {
     const { latitude, longitude, speed } = location.coords;
 
     // Reverse geocode for human-readable address (cached 5min)
-    const [address] = await Location.reverseGeocodeAsync({ latitude, longitude });
-    const addressStr = [address.street, address.city].filter(Boolean).join(", ");
+    const [address] = await Location.reverseGeocodeAsync({
+      latitude,
+      longitude,
+    });
+    const addressStr = [address.street, address.city]
+      .filter(Boolean)
+      .join(", ");
 
     socket.emit("agent:location", {
       aggregatorId,
@@ -962,9 +1019,9 @@ const watcher = await Location.watchPositionAsync(
       lat: latitude,
       lng: longitude,
       address: addressStr,
-      status: (speed ?? 0) > 0.5 ? "active" : "idle",  // Moving vs. stationary
+      status: (speed ?? 0) > 0.5 ? "active" : "idle", // Moving vs. stationary
     });
-  }
+  },
 );
 
 // Stop when agent logs out
@@ -979,15 +1036,15 @@ function stopTracking() {
 
 ## 18. Performance Considerations
 
-| Concern | Problem | Solution |
-|---|---|---|
-| 50+ agents on map | HTML markers = 50+ DOM nodes thrashing | Switch to MapLibre symbol layers (GPU-rendered, single draw call) |
-| Reverse geocoding cost | API charges per call | Cache by `${lat.toFixed(4)},${lng.toFixed(4)}` in Redis for 5 minutes |
-| Redis memory growth | Sorted set grows forever | `ZREMRANGEBYSCORE` every hour for data older than 7 days |
-| Multiple open tabs | Duplicate socket connections | Socket.IO rooms handle fan-out; rooms naturally isolate aggregators |
-| Battery drain (mobile) | Continuous GPS = 15–20% battery/hour | `distanceInterval: 10` + adaptive accuracy reduces drain by ~40% |
-| Map tile rate limits | Maptiler free = 100k/month | Monitor usage; upgrade plan or switch to self-hosted OpenFreeMap tiles |
-| Socket spam reconnect | Poor network causes rapid reconnects | `reconnectionDelay: 1000, reconnectionDelayMax: 30000` with backoff |
+| Concern                | Problem                                | Solution                                                               |
+| ---------------------- | -------------------------------------- | ---------------------------------------------------------------------- |
+| 50+ agents on map      | HTML markers = 50+ DOM nodes thrashing | Switch to MapLibre symbol layers (GPU-rendered, single draw call)      |
+| Reverse geocoding cost | API charges per call                   | Cache by `${lat.toFixed(4)},${lng.toFixed(4)}` in Redis for 5 minutes  |
+| Redis memory growth    | Sorted set grows forever               | `ZREMRANGEBYSCORE` every hour for data older than 7 days               |
+| Multiple open tabs     | Duplicate socket connections           | Socket.IO rooms handle fan-out; rooms naturally isolate aggregators    |
+| Battery drain (mobile) | Continuous GPS = 15–20% battery/hour   | `distanceInterval: 10` + adaptive accuracy reduces drain by ~40%       |
+| Map tile rate limits   | Maptiler free = 100k/month             | Monitor usage; upgrade plan or switch to self-hosted OpenFreeMap tiles |
+| Socket spam reconnect  | Poor network causes rapid reconnects   | `reconnectionDelay: 1000, reconnectionDelayMax: 30000` with backoff    |
 
 ---
 
@@ -1042,10 +1099,15 @@ test("Agent marker appears within 500ms of socket event", async ({ page }) => {
   // Inject a mock socket event
   await page.evaluate(() => {
     window.__mockSocket.emit("agent:moved", {
-      agentId: "agent-1", lat: 6.5244, lng: 3.3792, status: "active"
+      agentId: "agent-1",
+      lat: 6.5244,
+      lng: 3.3792,
+      status: "active",
     });
   });
-  await expect(page.locator('[data-testid="agent-marker-agent-1"]')).toBeVisible();
+  await expect(
+    page.locator('[data-testid="agent-marker-agent-1"]'),
+  ).toBeVisible();
 });
 ```
 
@@ -1099,4 +1161,4 @@ Week 6  │ Deploy      │ Production hardening — SSL, CORS, Redis limits, mo
 
 ---
 
-*Each phase is independently shippable — the map works at every step, with progressively richer features added on top.*
+_Each phase is independently shippable — the map works at every step, with progressively richer features added on top._

@@ -11,6 +11,7 @@ use App\Models\TaskProof;
 use App\Models\TaskTrackingSession;
 use App\Models\User;
 use App\Services\Tracking\AgentLocationSnapshotService;
+use App\Support\AvatarUrlResolver;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -746,6 +747,24 @@ class TaskTrackingService
                 'id' => $snapshot->user_id,
                 'name' => $snapshot->agent?->name,
                 'internal_role' => $snapshot->agent?->internal_role,
+                'avatar_url' => AvatarUrlResolver::resolve(
+                    $snapshot->agent?->avatar,
+                    $snapshot->agent?->gender,
+                ),
+            ],
+            'task' => [
+                'id' => $snapshot->task_id,
+                'title' => $snapshot->task?->title,
+                'status' => $snapshot->task_status ?? $snapshot->task?->status?->value,
+                'address' => $snapshot->task?->address_full,
+                'location' => $snapshot->task?->location_text,
+                'destination_latitude' => $snapshot->task?->latitude,
+                'destination_longitude' => $snapshot->task?->longitude,
+            ],
+            'destination' => [
+                'latitude' => $snapshot->task?->latitude,
+                'longitude' => $snapshot->task?->longitude,
+                'radius_meters' => (int) config('tracking.arrival_radius_meters', 75),
             ],
             'location' => [
                 'latitude' => $snapshot->latitude,

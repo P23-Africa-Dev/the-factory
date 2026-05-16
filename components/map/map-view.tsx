@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
-import { Search, MessageSquare, X, Radio } from 'lucide-react';
+import { Search, X, Radio, Route } from 'lucide-react';
+import { MAPBOX_PUBLIC_TOKEN_ENV, getMapboxPublicToken } from '@/lib/config/public-env';
 import { useTrackingStore } from '@/store/tracking';
 import { useTrackingWebSocket } from '@/hooks/use-tracking-ws';
+import { RouteHistoryPanel } from '@/components/map/RouteHistoryPanel';
 import type { LiveTaskState } from '@/types/tracking';
 
 const STALE_MS = 2 * 60_000;
@@ -84,6 +86,7 @@ export function MapView({ compact = false }: MapViewProps) {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [historyTask, setHistoryTask] = useState<{ id: number; title: string } | null>(null);
   // Bumped every 30s to re-evaluate stale status and sync markers
   const [tick, setTick] = useState(0);
   const [nowMs, setNowMs] = useState(0);
@@ -95,7 +98,7 @@ export function MapView({ compact = false }: MapViewProps) {
 
   const tasks = Object.values(liveTasks);
   const selectedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
-  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '';
+  const token = getMapboxPublicToken();
 
   // ── Staleness clock (state, not Date.now() in render — react-hooks/purity) ─
   useEffect(() => {
@@ -270,7 +273,7 @@ export function MapView({ compact = false }: MapViewProps) {
     if (compact) {
       return (
         <div className="w-full h-full flex items-center justify-center bg-[#F0F0F0] text-sm text-gray-400">
-          Map requires NEXT_PUBLIC_MAPBOX_TOKEN
+          Map requires {MAPBOX_PUBLIC_TOKEN_ENV}
         </div>
       );
     }
@@ -279,9 +282,9 @@ export function MapView({ compact = false }: MapViewProps) {
         <div className="bg-white rounded-3xl p-10 shadow-lg max-w-md text-center space-y-4">
           <h2 className="text-xl font-bold text-dash-dark">Mapbox Token Required</h2>
           <div className="bg-gray-900 text-green-400 text-sm font-mono rounded-xl p-4 text-left">
-            NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ1...
+            {MAPBOX_PUBLIC_TOKEN_ENV}=...
           </div>
-          <p className="text-xs text-gray-400">Add to .env.local then restart the dev server.</p>
+          <p className="text-xs text-gray-400">Add it to your Next.js environment and restart the dev server.</p>
         </div>
       </div>
     );
@@ -470,11 +473,27 @@ export function MapView({ compact = false }: MapViewProps) {
             </div>
           </div>
 
-          <button className="w-full flex items-center justify-center gap-2 py-2.5 border border-gray-100 rounded-2xl text-[12px] font-semibold text-gray-500 hover:bg-gray-50 transition-all">
-            <MessageSquare size={14} />
-            Send a message
+          <button
+            onClick={() =>
+              setHistoryTask({
+                id: selectedTask.taskId,
+                title: selectedTask.taskTitle || `Task #${selectedTask.taskId}`,
+              })
+            }
+            className="w-full flex items-center justify-center gap-2 py-2.5 border border-gray-100 rounded-2xl text-[12px] font-semibold text-gray-500 hover:bg-gray-50 transition-all"
+          >
+            <Route size={14} />
+            View route history
           </button>
         </div>
+      )}
+
+      {historyTask && (
+        <RouteHistoryPanel
+          taskId={historyTask.id}
+          taskTitle={historyTask.title}
+          onClose={() => setHistoryTask(null)}
+        />
       )}
     </div>
   );

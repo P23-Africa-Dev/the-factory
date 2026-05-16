@@ -2,12 +2,16 @@
 
 ## Status
 
-This file is a historical deep-dive reference.
+This file is a historical deep-dive reference and is obsolete for current implementation work.
+
 Canonical production contract documentation is maintained in:
 
 1. `features/task-tracking-realtime.md`
 2. `frontend-guide/task-tracking-realtime.md`
 3. `../backend/openapi/openapi.yaml`
+4. `../docs/tracking-architecture-decision.md`
+
+Do not use this file to drive new implementation. It still describes a Laravel Reverb plus Echo transport model that does not match the current Redis plus Node relay implementation.
 
 **Backend Integration Specification**
 

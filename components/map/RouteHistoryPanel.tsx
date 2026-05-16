@@ -2,13 +2,13 @@
 
 import { useEffect, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
-import { X, MapPin, Clock, Route, CheckCircle2, Navigation } from 'lucide-react';
+import { X, MapPin, Route, CheckCircle2, Navigation } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
-import { getAuthTokenFromDocument } from '@/lib/auth/session';
+import { getMapboxPublicToken } from '@/lib/config/public-env';
 import { useTaskRoute } from '@/hooks/use-tracking';
 
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '';
+const MAPBOX_TOKEN = getMapboxPublicToken();
 
 function RouteMap({
   polyline,
@@ -125,12 +125,16 @@ function formatTime(iso: string): string {
 
 export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPanelProps) {
   const user = useAuthStore((s) => s.user);
-  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
-  const token = typeof window !== 'undefined' ? getAuthTokenFromDocument() : '';
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+
+  const routeRole: 'agent' | 'management' =
+    role && ['owner', 'admin', 'management', 'manager', 'supervisor'].includes(role.toLowerCase())
+      ? 'management'
+      : 'agent';
 
   const { data: route, isLoading, isError } = useTaskRoute(taskId, {
     company_id: companyId ?? 0,
-    role: 'management',
+    role: routeRole,
   });
 
   const polyline = (route?.polyline ?? []) as [number, number][];
