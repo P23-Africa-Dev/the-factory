@@ -17,6 +17,7 @@ export interface LiveTaskState {
   destination?: { lat: number; lng: number; radiusM?: number };
   lastPosition: [number, number]; // [lng, lat] — Mapbox convention
   polyline: [number, number][]; // capped at 2000 pts
+  trackingStartedAt?: string;
   lastEventAt: string; // ISO — used for staleness check
   arrivedAt?: string;
 }

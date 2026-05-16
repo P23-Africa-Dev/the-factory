@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { useTrackingStore } from "@/store/tracking";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
@@ -57,6 +57,7 @@ export function useTrackingWebSocket() {
   const { apiCompanyId: companyId, role: companyRole } = getActiveCompanyContext(user);
   const store = useTrackingStore();
   const wsUrl = getTrackingWebSocketUrl();
+  const [isInitialHydrating, setIsInitialHydrating] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const backoffRef = useRef(0);
@@ -64,14 +65,30 @@ export function useTrackingWebSocket() {
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const disconnectedAtRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
+  const authenticatedRef = useRef(false);
   const connectionAttemptRef = useRef(0);
-  const connectRef = useRef<() => void>(() => {});
+  const connectRef = useRef<() => void>(() => { });
+  const subscribedTaskIdsRef = useRef<number[]>([]);
 
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  const subscribedTaskIds = Array.from(
+    new Set(
+      [
+        ...Object.keys(store.liveTasks).map((value) => Number.parseInt(value, 10)),
+        store.activeTrackingTaskId,
+      ].filter((value): value is number => Number.isFinite(value))
+    )
+  ).sort((left, right) => left - right);
 
-  const hydrateLocationSnapshots = useCallback(async () => {
+  const hydrateLocationSnapshots = useCallback(async (options?: { markInitial?: boolean }) => {
     if (!companyId || !token) {
       return;
+    }
+
+    const markInitial = options?.markInitial ?? false;
+
+    if (markInitial) {
+      setIsInitialHydrating(true);
     }
 
     try {
@@ -90,6 +107,10 @@ export function useTrackingWebSocket() {
       });
     } catch (err) {
       console.warn(LOG, "Snapshot hydration failed", err);
+    } finally {
+      if (markInitial) {
+        setIsInitialHydrating(false);
+      }
     }
   }, [companyId, token]);
 
@@ -179,7 +200,14 @@ export function useTrackingWebSocket() {
 
     store.setWsStatus("connecting");
 
-    const url = `${wsUrl}?token=${encodeURIComponent(token)}&company_id=${companyId}`;
+    const params = new URLSearchParams({
+      token,
+      company_id: String(companyId),
+    });
+    if (subscribedTaskIds.length > 0) {
+      params.set("task_ids", subscribedTaskIds.join(","));
+    }
+    const url = `${wsUrl}?${params.toString()}`;
     console.groupCollapsed(`${LOG} Connecting (attempt #${attempt})`);
     console.log("URL (token redacted)", url.replace(token, redactToken(token)));
     console.log("WS base", wsUrl);
@@ -208,14 +236,22 @@ export function useTrackingWebSocket() {
 
       backoffRef.current = 0;
       disconnectedAtRef.current = null;
+      authenticatedRef.current = false;
+      subscribedTaskIdsRef.current = subscribedTaskIds;
       store.setWsStatus("connected");
       stopPolling();
 
-      const authMessage = { type: "authenticate", token, company_id: companyId };
+      const authMessage = {
+        type: "authenticate",
+        token,
+        company_id: companyId,
+        task_ids: subscribedTaskIds,
+      };
       console.log(LOG, "Sending post-connect authenticate", {
         type: authMessage.type,
         company_id: authMessage.company_id,
         token: redactToken(token),
+        task_ids: authMessage.task_ids,
       });
       ws.send(JSON.stringify(authMessage));
 
@@ -242,9 +278,16 @@ export function useTrackingWebSocket() {
         connection_id?: string;
         access_role?: string;
         company_id?: number;
+        subscribed_task_ids?: number[];
       };
 
       if (msg.type === "system.connected") {
+        authenticatedRef.current = true;
+        subscribedTaskIdsRef.current = Array.isArray(msg.subscribed_task_ids)
+          ? msg.subscribed_task_ids.filter(
+            (value: number): value is number => Number.isFinite(value)
+          )
+          : subscribedTaskIdsRef.current;
         console.log(LOG, "✅ Relay authenticated (system.connected)", msg);
         return;
       }
@@ -328,6 +371,7 @@ export function useTrackingWebSocket() {
         return;
       }
 
+      authenticatedRef.current = false;
       store.setWsStatus("reconnecting");
       disconnectedAtRef.current = disconnectedAtRef.current ?? Date.now();
 
@@ -352,9 +396,38 @@ export function useTrackingWebSocket() {
     runRecoveryCycle,
     startPolling,
     stopPolling,
+    subscribedTaskIds,
     user?.id,
     wsUrl,
   ]);
+
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN || !authenticatedRef.current) {
+      return;
+    }
+
+    const previous = new Set(subscribedTaskIdsRef.current);
+    const next = new Set(subscribedTaskIds);
+
+    for (const taskId of subscribedTaskIds) {
+      if (previous.has(taskId)) {
+        continue;
+      }
+
+      ws.send(JSON.stringify({ type: "subscribe_task", task_id: taskId }));
+    }
+
+    for (const taskId of subscribedTaskIdsRef.current) {
+      if (next.has(taskId)) {
+        continue;
+      }
+
+      ws.send(JSON.stringify({ type: "unsubscribe_task", task_id: taskId }));
+    }
+
+    subscribedTaskIdsRef.current = subscribedTaskIds;
+  }, [subscribedTaskIds]);
 
   useEffect(() => {
     connectRef.current = connect;
@@ -368,12 +441,18 @@ export function useTrackingWebSocket() {
       wsUrl,
     });
 
+    if (token && companyId) {
+      // Hydrate the store immediately from the REST snapshot endpoint so the
+      // map is populated before the WebSocket handshake completes (~1-3s lag).
+      queueMicrotask(() => {
+        void hydrateLocationSnapshots({ markInitial: true });
+      });
+    }
+
     if (token && companyId && wsUrl) {
       connect();
-    } else if (token && companyId) {
-      hydrateLocationSnapshots();
-    } else {
-      console.warn(LOG, "Not connecting — missing token, companyId, or wsUrl");
+    } else if (!token || !companyId) {
+      console.warn(LOG, "Not connecting — missing token or companyId");
     }
 
     return () => {
@@ -382,6 +461,7 @@ export function useTrackingWebSocket() {
       });
 
       mountedRef.current = false;
+      authenticatedRef.current = false;
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       stopPolling();
       const ws = wsRef.current;
@@ -407,5 +487,5 @@ export function useTrackingWebSocket() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, String(companyId), wsUrl]);
 
-  return { wsStatus: store.wsStatus };
+  return { wsStatus: store.wsStatus, isInitialHydrating };
 }

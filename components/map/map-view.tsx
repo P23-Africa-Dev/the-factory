@@ -3,7 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { Search, X, Radio, Route } from 'lucide-react';
-import { MAPBOX_PUBLIC_TOKEN_ENV, getMapboxPublicToken } from '@/lib/config/public-env';
+import {
+  MAPBOX_PUBLIC_TOKEN_ENV,
+  createMapboxTransformRequest,
+  getMapboxPublicToken,
+} from '@/lib/config/public-env';
 import { useTrackingStore } from '@/store/tracking';
 import { useTrackingWebSocket } from '@/hooks/use-tracking-ws';
 import { RouteHistoryPanel } from '@/components/map/RouteHistoryPanel';
@@ -23,54 +27,6 @@ function getStatusColor(status: string, stale: boolean): string {
   return '#EF4444';
 }
 
-function buildAgentEl(task: LiveTaskState, stale: boolean): HTMLElement {
-  const color = getStatusColor(task.status, stale);
-  const initials = task.agentName
-    ? task.agentName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
-    : '?';
-  const avatarHtml = task.agentAvatarUrl
-    ? `<img src="${task.agentAvatarUrl}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;border:1.5px solid #e5e7eb;"/>`
-    : `<div style="width:22px;height:22px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:white;">${initials}</div>`;
-  const statusText = stale
-    ? 'No signal'
-    : task.status === 'arrived'
-    ? 'Arrived'
-    : task.status === 'completed'
-    ? 'Completed'
-    : 'Live';
-
-  const el = document.createElement('div');
-  el.style.cssText =
-    'display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;';
-  el.innerHTML = `
-    <svg width="30" height="36" viewBox="0 0 30 36" fill="none">
-      <path d="M15 0C6.716 0 0 6.716 0 15c0 9.941 13.5 21 15 21S30 24.941 30 15C30 6.716 23.284 0 15 0z" fill="${color}"/>
-      <circle cx="15" cy="14" r="6" fill="white"/>
-    </svg>
-    <div style="background:white;border-radius:20px;padding:3px 8px 3px 4px;display:flex;align-items:center;gap:5px;box-shadow:0 2px 8px rgba(0,0,0,0.15);margin-top:4px;white-space:nowrap;opacity:${stale ? 0.6 : 1};">
-      ${avatarHtml}
-      <div style="line-height:1.2;">
-        <div style="font-size:10px;font-weight:700;color:#0B1215;">${task.agentName || 'Agent'}</div>
-        <div style="font-size:8px;color:${color};">${statusText}</div>
-      </div>
-    </div>`;
-  return el;
-}
-
-// Mounts the WS hook — extracted so it only runs in full (non-compact) view.
-function WsConnector() {
-  useEffect(() => {
-    console.log(
-      "[tracking-ws]",
-      "WsConnector mounted on map page — listening for live events only.",
-      "Your device location is requested when an agent starts tracking a task (Operations → Commence, or /agent/tasks/.../tracking)."
-    );
-    return () => console.log("[tracking-ws]", "WsConnector unmounted");
-  }, []);
-  useTrackingWebSocket();
-  return null;
-}
-
 interface MapViewProps {
   compact?: boolean;
 }
@@ -79,9 +35,6 @@ export function MapView({ compact = false }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const mapLoadedRef = useRef(false);
-  const agentMarkersRef = useRef<Map<number, { marker: mapboxgl.Marker; statusKey: string }>>(
-    new Map()
-  );
   const destMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -92,6 +45,7 @@ export function MapView({ compact = false }: MapViewProps) {
   const [nowMs, setNowMs] = useState(0);
   // Flips true after map 'load' fires so the sync effect knows the map is ready
   const [mapVersion, setMapVersion] = useState(0);
+  const [isInitialHydrating, setIsInitialHydrating] = useState(false);
 
   const liveTasks = useTrackingStore((s) => s.liveTasks);
   const wsStatus = useTrackingStore((s) => s.wsStatus);
@@ -123,8 +77,6 @@ export function MapView({ compact = false }: MapViewProps) {
   // ── Init map ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainer.current || mapRef.current || !token) return;
-    // Mapbox GL requires a global token before Map construction.
-    // eslint-disable-next-line react-hooks/immutability -- third-party API
     mapboxgl.accessToken = token;
 
     const map = new mapboxgl.Map({
@@ -133,11 +85,62 @@ export function MapView({ compact = false }: MapViewProps) {
       center: [3.36, 6.595],
       zoom: compact ? 11.5 : 12.5,
       attributionControl: false,
+      transformRequest: createMapboxTransformRequest(),
       ...(compact && { interactive: false }),
     });
     mapRef.current = map;
+    const destinationMarkers = destMarkersRef.current;
 
     map.on('load', () => {
+      map.addSource('live-agents', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'agent-points',
+        type: 'circle',
+        source: 'live-agents',
+        paint: {
+          'circle-radius': 10,
+          'circle-color': ['get', 'color'],
+          'circle-stroke-width': 3,
+          'circle-stroke-color': '#FFFFFF',
+          'circle-opacity': ['case', ['get', 'stale'], 0.5, 1],
+        },
+      });
+      map.addLayer({
+        id: 'agent-labels',
+        type: 'symbol',
+        source: 'live-agents',
+        layout: {
+          'text-field': ['get', 'initials'],
+          'text-size': 10,
+          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        },
+        paint: {
+          'text-color': '#FFFFFF',
+        },
+      });
+
+      if (!compact) {
+        map.on('click', 'agent-points', (event) => {
+          const feature = event.features?.[0];
+          if (!feature || !feature.properties) return;
+          const taskId = Number.parseInt(String(feature.properties.taskId), 10);
+          if (!Number.isFinite(taskId)) return;
+
+          setSelectedTaskId(taskId);
+          const point = (feature.geometry as GeoJSON.Point).coordinates as [number, number];
+          map.flyTo({ center: point, zoom: 14, speed: 1.2 });
+        });
+        map.on('mouseenter', 'agent-points', () => {
+          map.getCanvas().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', 'agent-points', () => {
+          map.getCanvas().style.cursor = '';
+        });
+      }
+
       // GeoJSON source backing all agent route polylines
       map.addSource('live-routes', {
         type: 'geojson',
@@ -170,12 +173,9 @@ export function MapView({ compact = false }: MapViewProps) {
       mapLoadedRef.current = false;
       map.remove();
       mapRef.current = null;
-      agentMarkersRef.current.forEach(({ marker }) => marker.remove());
-      agentMarkersRef.current.clear();
-      destMarkersRef.current.forEach((m) => m.remove());
-      destMarkersRef.current.clear();
+      destinationMarkers.forEach((m) => m.remove());
+      destinationMarkers.clear();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, compact]);
 
   // ── Sync live tasks → markers + routes ───────────────────────────────────────
@@ -188,6 +188,32 @@ export function MapView({ compact = false }: MapViewProps) {
       (t) => t.lastPosition[0] !== 0 || t.lastPosition[1] !== 0
     );
     const validIds = new Set(validTasks.map((t) => t.taskId));
+
+    const agentSource = map.getSource('live-agents') as mapboxgl.GeoJSONSource | undefined;
+    agentSource?.setData({
+      type: 'FeatureCollection',
+      features: validTasks.map((t) => {
+        const stale = now - new Date(t.lastEventAt).getTime() > STALE_MS;
+        const initials =
+          t.agentName
+            ?.split(' ')
+            .map((w) => w[0])
+            .join('')
+            .slice(0, 2)
+            .toUpperCase() || '?';
+
+        return {
+          type: 'Feature' as const,
+          geometry: { type: 'Point' as const, coordinates: t.lastPosition },
+          properties: {
+            taskId: t.taskId,
+            initials,
+            stale,
+            color: getStatusColor(t.status, stale),
+          },
+        };
+      }),
+    });
 
     // Update route polylines
     const routeSource = map.getSource('live-routes') as mapboxgl.GeoJSONSource | undefined;
@@ -202,13 +228,6 @@ export function MapView({ compact = false }: MapViewProps) {
         })),
     });
 
-    // Remove markers whose tasks are gone
-    agentMarkersRef.current.forEach(({ marker }, id) => {
-      if (!validIds.has(id)) {
-        marker.remove();
-        agentMarkersRef.current.delete(id);
-      }
-    });
     destMarkersRef.current.forEach((marker, id) => {
       if (!validIds.has(id)) {
         marker.remove();
@@ -217,33 +236,6 @@ export function MapView({ compact = false }: MapViewProps) {
     });
 
     validTasks.forEach((t) => {
-      const [lng, lat] = t.lastPosition;
-      const stale = now - new Date(t.lastEventAt).getTime() > STALE_MS;
-      const statusKey = `${t.status}_${stale}`;
-      const existing = agentMarkersRef.current.get(t.taskId);
-
-      if (existing) {
-        // Position always updates in-place
-        existing.marker.setLngLat([lng, lat]);
-        // Rebuild element only when status or staleness changes
-        if (existing.statusKey === statusKey) return;
-        existing.marker.remove();
-        agentMarkersRef.current.delete(t.taskId);
-      }
-
-      // Create agent pin
-      const el = buildAgentEl(t, stale);
-      if (!compact) {
-        el.addEventListener('click', () => {
-          setSelectedTaskId(t.taskId);
-          mapRef.current?.flyTo({ center: [lng, lat], zoom: 14, speed: 1.2 });
-        });
-      }
-      const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
-        .setLngLat([lng, lat])
-        .addTo(map);
-      agentMarkersRef.current.set(t.taskId, { marker, statusKey });
-
       // Destination pin (created once; destinations don't move)
       if (t.destination && !destMarkersRef.current.has(t.taskId)) {
         const destEl = document.createElement('div');
@@ -255,8 +247,7 @@ export function MapView({ compact = false }: MapViewProps) {
         destMarkersRef.current.set(t.taskId, destMarker);
       }
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveTasks, tick, compact, mapVersion]);
+  }, [tasks, tick, compact, mapVersion]);
 
   // ── Filtered sidebar list ────────────────────────────────────────────────────
   const filteredTasks = tasks.filter(
@@ -296,7 +287,9 @@ export function MapView({ compact = false }: MapViewProps) {
 
   return (
     <div className="relative w-full overflow-hidden" style={{ height: 'calc(100vh - 64px)' }}>
-      <WsConnector />
+      <div className="hidden" aria-hidden="true">
+        <HydrationBridge onHydrationChange={setIsInitialHydrating} />
+      </div>
 
       {/* Map canvas */}
       <div ref={mapContainer} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
@@ -326,18 +319,28 @@ export function MapView({ compact = false }: MapViewProps) {
           </div>
           <div className="flex items-center gap-1.5">
             <span
-              className={`w-2 h-2 rounded-full ${
-                wsConnected ? 'bg-green-500 animate-pulse' : 'bg-amber-400'
-              }`}
+              className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-amber-400'
+                }`}
             />
             <span className="text-[10px] text-gray-400">
-              {wsConnected ? 'Live' : wsStatus === 'reconnecting' ? 'Reconnecting…' : 'Connecting'}
+              {isInitialHydrating
+                ? 'Hydrating…'
+                : wsConnected
+                  ? 'Live'
+                  : wsStatus === 'reconnecting'
+                    ? 'Reconnecting…'
+                    : 'Connecting'}
             </span>
           </div>
         </div>
 
         <div className="max-h-[60vh] overflow-y-auto divide-y divide-gray-50">
-          {filteredTasks.length === 0 ? (
+          {isInitialHydrating && filteredTasks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-2">
+              <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
+              <p className="text-[12px] text-gray-400">Loading active agents…</p>
+            </div>
+          ) : filteredTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 gap-2">
               <Radio size={24} className="text-gray-200" />
               <p className="text-[12px] text-gray-400">No agents currently tracked</p>
@@ -351,9 +354,8 @@ export function MapView({ compact = false }: MapViewProps) {
                 <button
                   key={task.taskId}
                   onClick={() => setSelectedTaskId(task.taskId)}
-                  className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-all ${
-                    isSelected ? 'bg-dash-dark' : 'hover:bg-gray-50'
-                  }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-all ${isSelected ? 'bg-dash-dark' : 'hover:bg-gray-50'
+                    }`}
                 >
                   <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 border-2 border-white shadow-sm bg-gray-100 flex items-center justify-center">
                     {task.agentAvatarUrl ? (
@@ -375,16 +377,14 @@ export function MapView({ compact = false }: MapViewProps) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p
-                      className={`text-[13px] font-bold truncate ${
-                        isSelected ? 'text-white' : 'text-dash-dark'
-                      }`}
+                      className={`text-[13px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
+                        }`}
                     >
                       {task.agentName || 'Agent'}
                     </p>
                     <p
-                      className={`text-[11px] truncate mt-0.5 ${
-                        isSelected ? 'text-white/50' : 'text-gray-400'
-                      }`}
+                      className={`text-[11px] truncate mt-0.5 ${isSelected ? 'text-white/50' : 'text-gray-400'
+                        }`}
                     >
                       {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
                     </p>
@@ -416,8 +416,8 @@ export function MapView({ compact = false }: MapViewProps) {
               {selectedTask.status === 'arrived'
                 ? 'Arrived at destination'
                 : selectedTask.status === 'completed'
-                ? 'Task completed'
-                : 'Currently tracking'}
+                  ? 'Task completed'
+                  : 'Currently tracking'}
             </span>
             <button
               onClick={() => setSelectedTaskId(null)}
@@ -457,19 +457,18 @@ export function MapView({ compact = false }: MapViewProps) {
               <p className="text-[10px] text-gray-400 line-clamp-1">{selectedTask.taskAddress}</p>
             )}
             <div
-              className={`inline-block px-3.5 py-1.5 rounded-full text-[10px] font-bold mt-1 ${
-                selectedTask.status === 'arrived'
-                  ? 'bg-purple-50 text-purple-600'
-                  : selectedTask.status === 'completed'
+              className={`inline-block px-3.5 py-1.5 rounded-full text-[10px] font-bold mt-1 ${selectedTask.status === 'arrived'
+                ? 'bg-purple-50 text-purple-600'
+                : selectedTask.status === 'completed'
                   ? 'bg-green-50 text-green-600'
                   : 'bg-[#1A452C] text-[#4ADE80]'
-              }`}
+                }`}
             >
               {selectedTask.status === 'arrived'
                 ? 'Arrived'
                 : selectedTask.status === 'completed'
-                ? 'Completed'
-                : 'On Field'}
+                  ? 'Completed'
+                  : 'On Field'}
             </div>
           </div>
 
@@ -497,4 +496,18 @@ export function MapView({ compact = false }: MapViewProps) {
       )}
     </div>
   );
+}
+
+function HydrationBridge({
+  onHydrationChange,
+}: {
+  onHydrationChange: (isHydrating: boolean) => void;
+}) {
+  const { isInitialHydrating } = useTrackingWebSocket();
+
+  useEffect(() => {
+    onHydrationChange(isInitialHydrating);
+  }, [isInitialHydrating, onHydrationChange]);
+
+  return null;
 }

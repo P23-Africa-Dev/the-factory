@@ -7,6 +7,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { authenticateSocket } from "./auth.js";
 import { config } from "./config.js";
 import { shouldDeliverEvent } from "./filtering.js";
+import { createHealthResponse } from "./health.js";
 
 const LOG_LEVEL_WEIGHT = {
   debug: 10,
@@ -89,14 +90,31 @@ const start = async () => {
   await redisSubscriber.psubscribe(channelPattern);
   log("info", "Subscribed to Redis tracking channels.", { channelPattern });
 
-  const server = http.createServer();
+  const connections = new Map();
+  const server = http.createServer((request, response) => {
+    if (request.method === "GET" && request.url === "/healthz") {
+      const health = createHealthResponse({
+        redisStatus: redisSubscriber.status,
+        connectionCount: connections.size,
+        uptimeSeconds: Math.round(process.uptime()),
+      });
+
+      response.writeHead(health.statusCode, health.headers);
+      response.end(JSON.stringify(health.body));
+      return;
+    }
+
+    response.writeHead(404, {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    response.end(JSON.stringify({ error: "Not found" }));
+  });
   const wss = new WebSocketServer({
     server,
     maxPayload: config.maxMessageBytes,
     perMessageDeflate: false,
   });
-
-  const connections = new Map();
 
   const clearAuthTimer = (socket) => {
     const state = connections.get(socket);
@@ -188,7 +206,7 @@ const start = async () => {
     log("info", "Socket connected.", { connectionId });
 
     if (initialQuery.token) {
-      authenticateAndAttach(socket, initialQuery).catch(() => {});
+      authenticateAndAttach(socket, initialQuery).catch(() => { });
     } else {
       safeSend(socket, {
         type: "system.auth_required",
@@ -239,7 +257,7 @@ const start = async () => {
           ? message.task_ids.map((value) => Number.parseInt(String(value), 10)).filter(Number.isFinite)
           : [];
 
-        authenticateAndAttach(socket, { token, companyHint, taskIds }).catch(() => {});
+        authenticateAndAttach(socket, { token, companyHint, taskIds }).catch(() => { });
         return;
       }
 

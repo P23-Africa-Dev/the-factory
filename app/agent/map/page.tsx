@@ -1,23 +1,10 @@
 'use client';
 
-import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Navigation, ClipboardList } from 'lucide-react';
+import { AgentMapView } from '@/components/map/agent-map-view';
 import { useActiveTracking } from '@/components/tracking/active-tracking-provider';
 import { useTrackingStore } from '@/store/tracking';
-
-const MapView = dynamic(
-  () => import('@/components/map/map-view').then((m) => m.MapView),
-  {
-    ssr: false,
-    loading: () => (
-      <div
-        style={{ height: 'calc(100vh - 64px)' }}
-        className="bg-[#e8ecef] animate-pulse"
-      />
-    ),
-  }
-);
 
 export default function AgentMapPage() {
   const router = useRouter();
@@ -48,7 +35,6 @@ export default function AgentMapPage() {
     );
   }
 
-  // Show the map centered on the active task. Pass compact=false for full view.
   return (
     <div className="relative">
       {/* Active task banner */}
@@ -70,7 +56,7 @@ export default function AgentMapPage() {
           </button>
         </div>
       )}
-      <MapView />
+      <AgentMapView />
     </div>
   );
 }

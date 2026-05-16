@@ -5,7 +5,7 @@ import mapboxgl from 'mapbox-gl';
 import { X, MapPin, Route, CheckCircle2, Navigation } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
-import { getMapboxPublicToken } from '@/lib/config/public-env';
+import { createMapboxTransformRequest, getMapboxPublicToken } from '@/lib/config/public-env';
 import { useTaskRoute } from '@/hooks/use-tracking';
 
 const MAPBOX_TOKEN = getMapboxPublicToken();
@@ -32,8 +32,8 @@ function RouteMap({
       polyline.length > 0
         ? polyline[Math.floor(polyline.length / 2)]
         : start
-        ? [start.lng, start.lat]
-        : [3.36, 6.595];
+          ? [start.lng, start.lat]
+          : [3.36, 6.595];
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
@@ -41,6 +41,7 @@ function RouteMap({
       center,
       zoom: 13,
       attributionControl: false,
+      transformRequest: createMapboxTransformRequest(),
     });
     mapRef.current = map;
 
@@ -99,7 +100,7 @@ function RouteMap({
     });
 
     return () => { map.remove(); mapRef.current = null; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return <div ref={containerRef} className="w-full h-full" />;

@@ -82,15 +82,16 @@ function buildFromEnvelope(
     status: taskStatus,
     lastPosition: hasCoords ? [lng!, lat!] : [0, 0],
     polyline: [],
+    trackingStartedAt: payload.occurred_at,
     lastEventAt: payload.occurred_at,
     ...(hasDestination
       ? {
-          destination: {
-            lat: destinationLat!,
-            lng: destinationLng!,
-            radiusM: payload.data?.destination?.radius_meters,
-          },
-        }
+        destination: {
+          lat: destinationLat!,
+          lng: destinationLng!,
+          radiusM: payload.data?.destination?.radius_meters,
+        },
+      }
       : {}),
   };
 
@@ -104,15 +105,18 @@ function buildFromEnvelope(
     taskAddress:
       payload.data?.task?.address ?? payload.data?.task?.location ?? base.taskAddress,
     status: taskStatus,
+    trackingStartedAt:
+      prev?.trackingStartedAt ??
+      (envelope.type === "tracking.task.started" ? payload.occurred_at : base.trackingStartedAt),
     lastEventAt: payload.occurred_at,
     ...(hasDestination
       ? {
-          destination: {
-            lat: destinationLat!,
-            lng: destinationLng!,
-            radiusM: payload.data?.destination?.radius_meters,
-          },
-        }
+        destination: {
+          lat: destinationLat!,
+          lng: destinationLng!,
+          radiusM: payload.data?.destination?.radius_meters,
+        },
+      }
       : {}),
     ...(hasCoords && { lastPosition: [lng!, lat!] }),
     ...(payload.data?.arrived && !base.arrivedAt
@@ -160,8 +164,8 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
         const newPolyline: [number, number][] = hasCoords
           ? shouldAppend
             ? ([...polyline, [lng!, lat!] as [number, number]] as [number, number][]).slice(
-                -MAX_POLYLINE_PTS
-              )
+              -MAX_POLYLINE_PTS
+            )
             : polyline
           : polyline;
 
@@ -223,17 +227,19 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
           route.status === "completed"
             ? "completed"
             : route.arrival
-            ? "arrived"
-            : "in_progress",
+              ? "arrived"
+              : "in_progress",
         destination: route.destination
           ? {
-              lat: route.destination.latitude,
-              lng: route.destination.longitude,
-              radiusM: route.destination.radius_meters,
-            }
+            lat: route.destination.latitude,
+            lng: route.destination.longitude,
+            radiusM: route.destination.radius_meters,
+          }
           : undefined,
         lastPosition: lastPt ?? prev?.lastPosition ?? [0, 0],
         polyline: polyline.slice(-MAX_POLYLINE_PTS),
+        trackingStartedAt:
+          prev?.trackingStartedAt ?? route.start?.recorded_at ?? route.arrival?.recorded_at,
         lastEventAt:
           route.end?.recorded_at ??
           route.arrival?.recorded_at ??
@@ -280,15 +286,21 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
           status: normalizeLiveStatus(item.task.status) ?? prev?.status ?? "in_progress",
           destination:
             typeof item.task.destination_latitude === "number" &&
-            typeof item.task.destination_longitude === "number"
+              typeof item.task.destination_longitude === "number"
               ? {
-                  lat: item.task.destination_latitude,
-                  lng: item.task.destination_longitude,
-                }
+                lat: item.task.destination_latitude,
+                lng: item.task.destination_longitude,
+              }
               : prev?.destination,
           lastPosition,
           polyline:
             prev?.polyline && prev.polyline.length > 0 ? prev.polyline : [lastPosition],
+          trackingStartedAt:
+            prev?.trackingStartedAt ??
+            item.location.recorded_at ??
+            item.status.last_seen_at ??
+            item.updated_at ??
+            undefined,
           lastEventAt:
             item.location.recorded_at ??
             item.status.last_seen_at ??
@@ -333,6 +345,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
               prev?.polyline && prev.polyline.length > 0
                 ? prev.polyline
                 : [lastPosition],
+            trackingStartedAt: prev?.trackingStartedAt ?? occurredAt,
             lastEventAt: occurredAt,
             arrivedAt: prev?.arrivedAt,
           },

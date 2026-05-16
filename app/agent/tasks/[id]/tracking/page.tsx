@@ -2,7 +2,6 @@
 
 import { use, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { ArrowLeft, Navigation, CheckCircle, MapPin } from 'lucide-react';
@@ -10,7 +9,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { getAuthTokenFromDocument } from '@/lib/auth/session';
-import { getMapboxPublicToken } from '@/lib/config/public-env';
+import { createMapboxTransformRequest, getMapboxPublicToken } from '@/lib/config/public-env';
 import { useTaskDetail } from '@/hooks/use-tasks';
 import { useTrackingWebSocket } from '@/hooks/use-tracking-ws';
 import { useActiveTracking } from '@/components/tracking/active-tracking-provider';
@@ -43,8 +42,8 @@ function TrackingMap({
     const center: [number, number] = agentPosition
       ? agentPosition
       : destination
-      ? [destination.lng, destination.lat]
-      : [3.36, 6.595];
+        ? [destination.lng, destination.lat]
+        : [3.36, 6.595];
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
@@ -52,6 +51,7 @@ function TrackingMap({
       center,
       zoom: 15,
       interactive: true,
+      transformRequest: createMapboxTransformRequest(),
     });
     mapRef.current = map;
 
@@ -106,7 +106,7 @@ function TrackingMap({
     });
 
     return () => map.remove();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update agent marker on new position
@@ -150,11 +150,13 @@ export default function TrackingPage({
   useEffect(() => {
     if (!liveTask) return;
 
-    setAgentPosition(liveTask.lastPosition);
+    queueMicrotask(() => {
+      setAgentPosition(liveTask.lastPosition);
 
-    if (liveTask.status === 'arrived') {
-      setArrived(true);
-    }
+      if (liveTask.status === 'arrived') {
+        setArrived(true);
+      }
+    });
   }, [liveTask]);
 
   const destination =
@@ -196,12 +198,12 @@ export default function TrackingPage({
         taskAddress: res.data.task.address ?? res.data.task.location ?? undefined,
         destination:
           typeof res.data.task.latitude === 'number' &&
-          typeof res.data.task.longitude === 'number'
+            typeof res.data.task.longitude === 'number'
             ? {
-                lat: res.data.task.latitude,
-                lng: res.data.task.longitude,
-                radiusM: 75,
-              }
+              lat: res.data.task.latitude,
+              lng: res.data.task.longitude,
+              radiusM: 75,
+            }
             : undefined,
         position: [initialReading.longitude, initialReading.latitude],
         occurredAt: initialReading.recordedAt,
@@ -212,7 +214,7 @@ export default function TrackingPage({
           setArrived(true);
           toast.success("You've arrived at the destination!");
         },
-        onError: () => {},
+        onError: () => { },
       });
 
       if (res.data.arrived) {
@@ -338,11 +340,10 @@ export default function TrackingPage({
           <div className="bg-white border-t border-gray-100 px-5 py-4 pb-safe shrink-0">
             <button
               onClick={() => setShowCompleteSheet(true)}
-              className={`w-full py-4 rounded-2xl text-[14px] font-bold flex items-center justify-center gap-2 transition-all ${
-                arrived
+              className={`w-full py-4 rounded-2xl text-[14px] font-bold flex items-center justify-center gap-2 transition-all ${arrived
                   ? 'bg-[#7EB5AE] text-white shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90'
                   : 'bg-gray-100 text-gray-400'
-              }`}
+                }`}
             >
               <CheckCircle size={16} />
               Complete Task

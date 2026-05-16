@@ -29,13 +29,13 @@ export function ActiveTrackingBar() {
   const router = useRouter();
   const { activeTaskId, stopTracking, isTracking } = useActiveTracking();
   const liveTasks = useTrackingStore((s) => s.liveTasks);
-  const [startedAt] = useState(() => new Date());
   const [confirmStop, setConfirmStop] = useState(false);
-  const elapsed = useElapsedTime(isTracking ? startedAt : null);
+  const task = activeTaskId ? liveTasks[activeTaskId] : null;
+  const startedAt = isTracking && task?.trackingStartedAt ? new Date(task.trackingStartedAt) : null;
+  const elapsed = useElapsedTime(startedAt);
 
   if (!isTracking || !activeTaskId) return null;
 
-  const task = liveTasks[activeTaskId];
   const taskTitle = task?.taskTitle ?? `Task #${activeTaskId}`;
 
   const handleStop = () => {
@@ -71,11 +71,10 @@ export function ActiveTrackingBar() {
             e.stopPropagation();
             handleStop();
           }}
-          className={`p-1.5 rounded-xl transition-colors shrink-0 ${
-            confirmStop
+          className={`p-1.5 rounded-xl transition-colors shrink-0 ${confirmStop
               ? "bg-red-500 text-white"
               : "bg-white/10 text-gray-300 hover:bg-white/20"
-          }`}
+            }`}
           title={confirmStop ? "Tap again to stop tracking" : "Stop tracking"}
         >
           <X size={14} />
