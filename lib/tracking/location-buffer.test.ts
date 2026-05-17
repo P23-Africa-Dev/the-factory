@@ -4,13 +4,9 @@ import * as locationBuffer from "@/lib/tracking/location-buffer";
 
 const {
     recordTaskLocationMock,
-    appendPolylinePointMock,
-    markArrivedMock,
     positionCallbackRef,
 } = vi.hoisted(() => ({
     recordTaskLocationMock: vi.fn(),
-    appendPolylinePointMock: vi.fn(),
-    markArrivedMock: vi.fn(),
     positionCallbackRef: {
         current: null as
             | ((reading: {
@@ -27,15 +23,6 @@ const {
 
 vi.mock("@/lib/api/tracking", () => ({
     recordTaskLocation: recordTaskLocationMock,
-}));
-
-vi.mock("@/store/tracking", () => ({
-    useTrackingStore: {
-        getState: () => ({
-            appendPolylinePoint: appendPolylinePointMock,
-            markArrived: markArrivedMock,
-        }),
-    },
 }));
 
 vi.mock("@/lib/tracking/geolocation", () => ({
@@ -72,7 +59,18 @@ describe("location-buffer", () => {
             recordedAt: "2026-05-16T10:00:00.000Z",
         });
 
-        expect(appendPolylinePointMock).toHaveBeenCalledWith(55, [3.3, 6.5]);
+        expect(sessionStorage.getItem("factory_location_buffer")).toBe(
+            JSON.stringify([
+                {
+                    latitude: 6.5,
+                    longitude: 3.3,
+                    accuracyMeters: 5,
+                    speedMps: null,
+                    headingDegrees: null,
+                    recordedAt: "2026-05-16T10:00:00.000Z",
+                },
+            ])
+        );
 
         await vi.advanceTimersByTimeAsync(30_000);
 
@@ -94,7 +92,7 @@ describe("location-buffer", () => {
 
     it("flushes recovered queue and triggers arrival callback when backend reports arrived", async () => {
         sessionStorage.setItem(
-            "factory_location_buffer:77",
+            "factory_location_buffer",
             JSON.stringify([
                 {
                     latitude: 6.6,
@@ -115,7 +113,6 @@ describe("location-buffer", () => {
         await Promise.resolve();
 
         expect(recordTaskLocationMock).toHaveBeenCalled();
-        expect(markArrivedMock).toHaveBeenCalledWith(77, "2026-05-16T11:00:00.000Z");
         expect(onArrived).toHaveBeenCalledTimes(1);
     });
 });
