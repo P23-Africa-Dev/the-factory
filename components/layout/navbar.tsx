@@ -53,7 +53,7 @@ function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
 }
 
 const navItems = [
-  { name: "Dashboard", href: "/dashboard", icon: DashboardIcon },
+  { name: "Dashboard", href: "/home", icon: DashboardIcon },
   // { name: 'Sales Engine', href: '/sales-engine', icon: SalesEngineIcon },
   { name: "Map", href: "/map", icon: MapIconAsset },
   {
@@ -81,7 +81,7 @@ export function Navbar() {
   const profileRef = useRef<HTMLDivElement>(null);
   const user = useAuthStore((s) => s.user);
   const clearUser = useAuthStore((s) => s.clearUser);
-  const basePath = user?.active_company?.role === 'agent' ? '/agent' : '/admin';
+  const basePath = user?.active_company?.role === 'agent' ? '/agent' : '/dashboard';
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -107,7 +107,7 @@ export function Navbar() {
     <nav className="h-20 flex items-center justify-between px-6 lg:px-10 bg-dash-dark text-white sticky top-0 z-50">
       {/* Logo */}
       <div className="flex items-center">
-        <Link href={`${basePath}/dashboard`} className="flex items-center">
+        <Link href={`${basePath}/home`} className="flex items-center">
           <div className="w-10 h-10 flex items-center justify-center relative">
             <Image
               src={Logo}

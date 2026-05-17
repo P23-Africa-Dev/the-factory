@@ -4,7 +4,12 @@
       "Bash(npm run:*)",
       "Bash(xargs ls)",
       "Bash(find /Users/elijahobominuru/Desktop/stuff/the-factory/.env* -type f)",
-      "Bash(mkdir -p \"/Users/elijahobominuru/Desktop/stuff/the-factory/app/agent/tasks/[id]/tracking\")"
+      "Bash(mkdir -p \"/Users/elijahobominuru/Desktop/stuff/the-factory/app/agent/tasks/[id]/tracking\")",
+      "Bash(sed -i '' \"s|': '/agent' : '/admin'|': '/agent' : '/dashboard'|g\" /Users/elijahobominuru/Desktop/stuff/the-factory/components/layout/navbar.tsx)",
+      "Bash(sed -i '' 's|/admin/dashboard|/dashboard/home|g' /Users/elijahobominuru/Desktop/stuff/the-factory/components/forms/login-form.tsx)",
+      "Bash(sed -i '' 's|/admin/dashboard|/dashboard/home|g' /Users/elijahobominuru/Desktop/stuff/the-factory/components/forms/otp-form.tsx)",
+      "Bash(sed -i '' 's|/admin/dashboard|/dashboard/home|g' /Users/elijahobominuru/Desktop/stuff/the-factory/components/forms/onboarding-form.tsx)",
+      "Bash(sed -i '' 's|/admin/dashboard|/dashboard/home|g' /Users/elijahobominuru/Desktop/stuff/the-factory/components/auth/agent-guard.tsx)"
     ],
     "additionalDirectories": [
       "/Users/elijahobominuru/Desktop/stuff/the-factory/app/agent/tasks/[id]"

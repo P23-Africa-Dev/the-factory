@@ -12,5 +12,5 @@ export default function ProjectTasksPage({
   const resolvedParams = use(params);
   const projectId = resolveProjectIdentifier(resolvedParams.projectId);
 
-  return <ProjectDetailsView projectId={projectId} basePath="/admin" />;
+  return <ProjectDetailsView projectId={projectId} basePath="/dashboard" />;
 }
