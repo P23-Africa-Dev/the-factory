@@ -11,6 +11,7 @@ import type {
   RecordLocationResponse,
   TrackingSession,
   TaskRoute,
+  AgentLocationsListData,
 } from "@/types/tracking";
 
 export type { TrackingSession, TaskRoute };
@@ -156,6 +157,24 @@ export function listAgentTasks(
   return apiRequest<TasksListData>({
     method: "GET",
     path: `/agent/tasks${qs.toString() ? `?${qs.toString()}` : ""}`,
+    token,
+  });
+}
+
+// ─── List agent locations (management snapshot) ────────────────────────────
+
+export function listAgentLocations(
+  params: { company_id?: number | string; include_offline?: boolean; limit?: number },
+  token: string
+): Promise<ApiEnvelope<AgentLocationsListData>> {
+  const qs = new URLSearchParams();
+  if (params.company_id != null) qs.set("company_id", String(params.company_id));
+  if (params.include_offline != null) qs.set("include_offline", String(params.include_offline));
+  if (params.limit != null) qs.set("limit", String(params.limit));
+
+  return apiRequest<AgentLocationsListData>({
+    method: "GET",
+    path: `/tracking/agents/locations${qs.toString() ? `?${qs.toString()}` : ""}`,
     token,
   });
 }
