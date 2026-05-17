@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { Search, X, Radio, Route } from 'lucide-react';
 import {
@@ -12,19 +12,42 @@ import { useTrackingStore } from '@/store/tracking';
 import { useTrackingWebSocket } from '@/hooks/use-tracking-ws';
 import { RouteHistoryPanel } from '@/components/map/RouteHistoryPanel';
 import type { LiveTaskState } from '@/types/tracking';
+import {
+  areSamePoint,
+  buildDirectionSegment,
+  buildTaskTrail,
+  createAgentMarkerElement,
+  createStaticMarkerElement,
+  getAgentInitials,
+  resolveVisualTaskState,
+  sanitizePolyline,
+  updateAgentMarkerElement,
+  VISUAL_PALETTE,
+  type VisualTaskState,
+} from '@/lib/tracking/map-visualization';
 
 const STALE_MS = 2 * 60_000;
+const MARKER_ANIMATION_MS = 700;
 
 function isTaskStale(lastEventAt: string, nowMs: number): boolean {
   if (!lastEventAt || !nowMs) return false;
   return nowMs - new Date(lastEventAt).getTime() > STALE_MS;
 }
 
-function getStatusColor(status: string, stale: boolean): string {
-  if (stale) return '#9CA3AF';
-  if (status === 'arrived') return '#8B5CF6';
-  if (status === 'completed') return '#10B981';
-  return '#EF4444';
+function getStatusLabel(status: LiveTaskState['status']): string {
+  if (status === 'arrived') return 'Arrived';
+  if (status === 'completed') return 'Completed';
+  return 'On field';
+}
+
+function getDestinationMarkerKind(status: LiveTaskState['status']): 'destination' | 'arrived' | 'completed' {
+  if (status === 'completed') return 'completed';
+  if (status === 'arrived') return 'arrived';
+  return 'destination';
+}
+
+function getVisualState(task: LiveTaskState, stale: boolean): VisualTaskState {
+  return resolveVisualTaskState(task.status, stale);
 }
 
 interface MapViewProps {
@@ -35,7 +58,11 @@ export function MapView({ compact = false }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const mapLoadedRef = useRef(false);
-  const destMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
+  const originMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
+  const destinationMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
+  const agentMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
+  const markerAnimationsRef = useRef<Map<number, number>>(new Map());
+  const markerPositionRef = useRef<Map<number, [number, number]>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -50,9 +77,51 @@ export function MapView({ compact = false }: MapViewProps) {
   const liveTasks = useTrackingStore((s) => s.liveTasks);
   const wsStatus = useTrackingStore((s) => s.wsStatus);
 
-  const tasks = Object.values(liveTasks);
+  const tasks = useMemo(() => Object.values(liveTasks), [liveTasks]);
   const selectedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
   const token = getMapboxPublicToken();
+
+  const animateMarkerTo = useCallback((taskId: number, marker: mapboxgl.Marker, target: [number, number]) => {
+    const cached = markerPositionRef.current.get(taskId);
+    const current = cached ?? [marker.getLngLat().lng, marker.getLngLat().lat] as [number, number];
+
+    if (areSamePoint(current, target)) {
+      marker.setLngLat(target);
+      markerPositionRef.current.set(taskId, target);
+      return;
+    }
+
+    const existingFrame = markerAnimationsRef.current.get(taskId);
+    if (existingFrame) {
+      cancelAnimationFrame(existingFrame);
+      markerAnimationsRef.current.delete(taskId);
+    }
+
+    const startedAt = performance.now();
+
+    const step = (frameNow: number) => {
+      const progress = Math.min((frameNow - startedAt) / MARKER_ANIMATION_MS, 1);
+      const eased = progress < 0.5
+        ? 2 * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+      const nextLng = current[0] + (target[0] - current[0]) * eased;
+      const nextLat = current[1] + (target[1] - current[1]) * eased;
+      marker.setLngLat([nextLng, nextLat]);
+
+      if (progress < 1) {
+        const id = requestAnimationFrame(step);
+        markerAnimationsRef.current.set(taskId, id);
+        return;
+      }
+
+      markerAnimationsRef.current.delete(taskId);
+      markerPositionRef.current.set(taskId, target);
+    };
+
+    const firstFrame = requestAnimationFrame(step);
+    markerAnimationsRef.current.set(taskId, firstFrame);
+  }, []);
 
   // ── Staleness clock (state, not Date.now() in render — react-hooks/purity) ─
   useEffect(() => {
@@ -64,6 +133,12 @@ export function MapView({ compact = false }: MapViewProps) {
     const iv = setInterval(bump, 30_000);
     return () => clearInterval(iv);
   }, []);
+
+  useEffect(() => {
+    if (selectedTaskId != null && !liveTasks[selectedTaskId]) {
+      setSelectedTaskId(null);
+    }
+  }, [liveTasks, selectedTaskId]);
 
   // Fly to agent when sidebar selection changes (refs only in effects).
   useEffect(() => {
@@ -89,65 +164,25 @@ export function MapView({ compact = false }: MapViewProps) {
       ...(compact && { interactive: false }),
     });
     mapRef.current = map;
-    const destinationMarkers = destMarkersRef.current;
 
     map.on('load', () => {
-      map.addSource('live-agents', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      });
-      map.addLayer({
-        id: 'agent-points',
-        type: 'circle',
-        source: 'live-agents',
-        paint: {
-          'circle-radius': 10,
-          'circle-color': ['get', 'color'],
-          'circle-stroke-width': 3,
-          'circle-stroke-color': '#FFFFFF',
-          'circle-opacity': ['case', ['get', 'stale'], 0.5, 1],
-        },
-      });
-      map.addLayer({
-        id: 'agent-labels',
-        type: 'symbol',
-        source: 'live-agents',
-        layout: {
-          'text-field': ['get', 'initials'],
-          'text-size': 10,
-          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-        },
-        paint: {
-          'text-color': '#FFFFFF',
-        },
-      });
-
-      if (!compact) {
-        map.on('click', 'agent-points', (event) => {
-          const feature = event.features?.[0];
-          if (!feature || !feature.properties) return;
-          const taskId = Number.parseInt(String(feature.properties.taskId), 10);
-          if (!Number.isFinite(taskId)) return;
-
-          setSelectedTaskId(taskId);
-          const point = (feature.geometry as GeoJSON.Point).coordinates as [number, number];
-          map.flyTo({ center: point, zoom: 14, speed: 1.2 });
-        });
-        map.on('mouseenter', 'agent-points', () => {
-          map.getCanvas().style.cursor = 'pointer';
-        });
-        map.on('mouseleave', 'agent-points', () => {
-          map.getCanvas().style.cursor = '';
-        });
-      }
-
-      // GeoJSON source backing all agent route polylines
       map.addSource('live-routes', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
       });
       map.addLayer({
-        id: 'route-lines',
+        id: 'route-lines-casing',
+        type: 'line',
+        source: 'live-routes',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#FFFFFF',
+          'line-width': 8,
+          'line-opacity': 0.75,
+        },
+      });
+      map.addLayer({
+        id: 'route-lines-main',
         type: 'line',
         source: 'live-routes',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
@@ -156,25 +191,90 @@ export function MapView({ compact = false }: MapViewProps) {
             'match',
             ['get', 'status'],
             'arrived',
-            '#8B5CF6',
+            VISUAL_PALETTE.arrived.trail,
             'completed',
-            '#10B981',
-            '#3B82F6',
+            VISUAL_PALETTE.completed.trail,
+            'stale',
+            VISUAL_PALETTE.stale.trail,
+            VISUAL_PALETTE.in_progress.trail,
           ],
-          'line-width': 3,
-          'line-opacity': 0.6,
+          'line-width': 4,
+          'line-opacity': 0.92,
         },
       });
+
+      map.addSource('live-connectors', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'route-connectors',
+        type: 'line',
+        source: 'live-connectors',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'status'],
+            'arrived',
+            VISUAL_PALETTE.arrived.connector,
+            'completed',
+            VISUAL_PALETTE.completed.connector,
+            'stale',
+            VISUAL_PALETTE.stale.connector,
+            VISUAL_PALETTE.in_progress.connector,
+          ],
+          'line-width': 3,
+          'line-opacity': 0.82,
+          'line-dasharray': [2, 2],
+        },
+      });
+
+      map.addSource('live-direction', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'route-direction',
+        type: 'line',
+        source: 'live-direction',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'status'],
+            'arrived',
+            '#15803D',
+            'completed',
+            '#1E293B',
+            'stale',
+            '#64748B',
+            '#075985',
+          ],
+          'line-width': 5,
+          'line-opacity': 0.95,
+        },
+      });
+
       mapLoadedRef.current = true;
       setMapVersion((v) => v + 1);
     });
 
     return () => {
       mapLoadedRef.current = false;
+      markerAnimationsRef.current.forEach((frameId) => cancelAnimationFrame(frameId));
+      markerAnimationsRef.current.clear();
+      markerPositionRef.current.clear();
+
+      originMarkersRef.current.forEach((marker) => marker.remove());
+      destinationMarkersRef.current.forEach((marker) => marker.remove());
+      agentMarkersRef.current.forEach((marker) => marker.remove());
+      originMarkersRef.current.clear();
+      destinationMarkersRef.current.clear();
+      agentMarkersRef.current.clear();
+
       map.remove();
       mapRef.current = null;
-      destinationMarkers.forEach((m) => m.remove());
-      destinationMarkers.clear();
     };
   }, [token, compact]);
 
@@ -183,71 +283,190 @@ export function MapView({ compact = false }: MapViewProps) {
     const map = mapRef.current;
     if (!map || !mapLoadedRef.current) return;
 
-    const now = Date.now();
+    const now = nowMs || Date.now();
     const validTasks = tasks.filter(
       (t) => t.lastPosition[0] !== 0 || t.lastPosition[1] !== 0
     );
     const validIds = new Set(validTasks.map((t) => t.taskId));
+    const routeFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+    const connectorFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+    const directionFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+    const destinationIds = new Set<number>();
 
-    const agentSource = map.getSource('live-agents') as mapboxgl.GeoJSONSource | undefined;
-    agentSource?.setData({
-      type: 'FeatureCollection',
-      features: validTasks.map((t) => {
-        const stale = now - new Date(t.lastEventAt).getTime() > STALE_MS;
-        const initials =
-          t.agentName
-            ?.split(' ')
-            .map((w) => w[0])
-            .join('')
-            .slice(0, 2)
-            .toUpperCase() || '?';
+    validTasks.forEach((task) => {
+      const stale = isTaskStale(task.lastEventAt, now);
+      const visualState = getVisualState(task, stale);
+      const trail = sanitizePolyline(buildTaskTrail(task));
+      const currentPoint = task.lastPosition;
 
-        return {
-          type: 'Feature' as const,
-          geometry: { type: 'Point' as const, coordinates: t.lastPosition },
+      if (trail.length >= 2) {
+        routeFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: trail },
           properties: {
-            taskId: t.taskId,
-            initials,
-            stale,
-            color: getStatusColor(t.status, stale),
+            taskId: task.taskId,
+            status: visualState,
           },
-        };
-      }),
+        });
+
+        const directionSegment = buildDirectionSegment(trail);
+        if (directionSegment) {
+          directionFeatures.push({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: directionSegment },
+            properties: {
+              taskId: task.taskId,
+              status: visualState,
+            },
+          });
+        }
+      }
+
+      const originPoint = trail[0] ?? currentPoint;
+      const existingOriginMarker = originMarkersRef.current.get(task.taskId);
+      if (!existingOriginMarker) {
+        const el = createStaticMarkerElement('origin');
+        el.title = `Origin - ${task.agentName || `Task ${task.taskId}`}`;
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+          .setLngLat(originPoint)
+          .addTo(map);
+        originMarkersRef.current.set(task.taskId, marker);
+      } else {
+        existingOriginMarker.setLngLat(originPoint);
+      }
+
+      if (task.destination) {
+        destinationIds.add(task.taskId);
+        const destinationPoint: [number, number] = [task.destination.lng, task.destination.lat];
+        const markerKind = getDestinationMarkerKind(task.status);
+
+        if (!areSamePoint(currentPoint, destinationPoint)) {
+          connectorFeatures.push({
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: [currentPoint, destinationPoint],
+            },
+            properties: {
+              taskId: task.taskId,
+              status: visualState,
+            },
+          });
+        }
+
+        const existingDestinationMarker = destinationMarkersRef.current.get(task.taskId);
+        if (!existingDestinationMarker) {
+          const el = createStaticMarkerElement(markerKind);
+          el.dataset.kind = markerKind;
+          el.title =
+            markerKind === 'destination'
+              ? `Destination - ${task.agentName || `Task ${task.taskId}`}`
+              : markerKind === 'arrived'
+                ? `Arrival reached - ${task.agentName || `Task ${task.taskId}`}`
+                : `Completed - ${task.agentName || `Task ${task.taskId}`}`;
+          const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+            .setLngLat(destinationPoint)
+            .addTo(map);
+          destinationMarkersRef.current.set(task.taskId, marker);
+        } else {
+          const existingKind = existingDestinationMarker.getElement().dataset.kind;
+          if (existingKind !== markerKind) {
+            existingDestinationMarker.remove();
+            const el = createStaticMarkerElement(markerKind);
+            el.dataset.kind = markerKind;
+            const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+              .setLngLat(destinationPoint)
+              .addTo(map);
+            destinationMarkersRef.current.set(task.taskId, marker);
+          } else {
+            existingDestinationMarker.setLngLat(destinationPoint);
+          }
+        }
+      }
+
+      const existingAgentMarker = agentMarkersRef.current.get(task.taskId);
+      if (!existingAgentMarker) {
+        const el = createAgentMarkerElement({
+          name: task.agentName,
+          avatarUrl: task.agentAvatarUrl,
+          visualState,
+          stale,
+        });
+        el.title = `${task.agentName || `Task ${task.taskId}`} - ${getStatusLabel(task.status)}`;
+        if (!compact) {
+          el.addEventListener('click', () => {
+            setSelectedTaskId(task.taskId);
+            const latest = useTrackingStore.getState().liveTasks[task.taskId];
+            if (!latest) return;
+            map.flyTo({ center: latest.lastPosition, zoom: 14, speed: 1.2 });
+          });
+        }
+
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+          .setLngLat(task.lastPosition)
+          .addTo(map);
+        agentMarkersRef.current.set(task.taskId, marker);
+        markerPositionRef.current.set(task.taskId, task.lastPosition);
+      } else {
+        updateAgentMarkerElement(existingAgentMarker.getElement(), {
+          name: task.agentName,
+          avatarUrl: task.agentAvatarUrl,
+          visualState,
+          stale,
+        });
+        existingAgentMarker.getElement().setAttribute(
+          'title',
+          `${task.agentName || `Task ${task.taskId}`} - ${getStatusLabel(task.status)}`
+        );
+        animateMarkerTo(task.taskId, existingAgentMarker, task.lastPosition);
+      }
     });
 
-    // Update route polylines
     const routeSource = map.getSource('live-routes') as mapboxgl.GeoJSONSource | undefined;
     routeSource?.setData({
       type: 'FeatureCollection',
-      features: validTasks
-        .filter((t) => t.polyline.length >= 2)
-        .map((t) => ({
-          type: 'Feature' as const,
-          geometry: { type: 'LineString' as const, coordinates: t.polyline },
-          properties: { taskId: t.taskId, status: t.status },
-        })),
+      features: routeFeatures,
     });
 
-    destMarkersRef.current.forEach((marker, id) => {
+    const connectorSource = map.getSource('live-connectors') as mapboxgl.GeoJSONSource | undefined;
+    connectorSource?.setData({
+      type: 'FeatureCollection',
+      features: connectorFeatures,
+    });
+
+    const directionSource = map.getSource('live-direction') as mapboxgl.GeoJSONSource | undefined;
+    directionSource?.setData({
+      type: 'FeatureCollection',
+      features: directionFeatures,
+    });
+
+    originMarkersRef.current.forEach((marker, id) => {
       if (!validIds.has(id)) {
         marker.remove();
-        destMarkersRef.current.delete(id);
+        originMarkersRef.current.delete(id);
       }
     });
 
-    validTasks.forEach((t) => {
-      // Destination pin (created once; destinations don't move)
-      if (t.destination && !destMarkersRef.current.has(t.taskId)) {
-        const destEl = document.createElement('div');
-        destEl.style.cssText =
-          'width:20px;height:20px;border-radius:50%;background:#9D4EDD;border:3px solid white;box-shadow:0 2px 8px rgba(157,78,221,0.4);';
-        const destMarker = new mapboxgl.Marker({ element: destEl, anchor: 'center' })
-          .setLngLat([t.destination.lng, t.destination.lat])
-          .addTo(map);
-        destMarkersRef.current.set(t.taskId, destMarker);
+    destinationMarkersRef.current.forEach((marker, id) => {
+      if (!destinationIds.has(id)) {
+        marker.remove();
+        destinationMarkersRef.current.delete(id);
       }
     });
-  }, [tasks, tick, compact, mapVersion]);
+
+    agentMarkersRef.current.forEach((marker, id) => {
+      if (!validIds.has(id)) {
+        marker.remove();
+        agentMarkersRef.current.delete(id);
+        markerPositionRef.current.delete(id);
+        const frameId = markerAnimationsRef.current.get(id);
+        if (frameId) {
+          cancelAnimationFrame(frameId);
+          markerAnimationsRef.current.delete(id);
+        }
+      }
+    });
+  }, [tasks, tick, compact, mapVersion, nowMs, animateMarkerTo]);
 
   // ── Filtered sidebar list ────────────────────────────────────────────────────
   const filteredTasks = tasks.filter(
@@ -348,7 +567,6 @@ export function MapView({ compact = false }: MapViewProps) {
           ) : (
             filteredTasks.map((task) => {
               const stale = isTaskStale(task.lastEventAt, nowMs);
-              const color = getStatusColor(task.status, stale);
               const isSelected = selectedTaskId === task.taskId;
               return (
                 <button
@@ -357,24 +575,7 @@ export function MapView({ compact = false }: MapViewProps) {
                   className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-all ${isSelected ? 'bg-dash-dark' : 'hover:bg-gray-50'
                     }`}
                 >
-                  <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 border-2 border-white shadow-sm bg-gray-100 flex items-center justify-center">
-                    {task.agentAvatarUrl ? (
-                      <img
-                        src={task.agentAvatarUrl}
-                        className="w-full h-full object-cover"
-                        alt={task.agentName}
-                      />
-                    ) : (
-                      <span className="text-[12px] font-bold text-gray-500">
-                        {task.agentName
-                          .split(' ')
-                          .map((w) => w[0])
-                          .join('')
-                          .slice(0, 2)
-                          .toUpperCase() || '?'}
-                      </span>
-                    )}
-                  </div>
+                  <AgentAvatar name={task.agentName} avatarUrl={task.agentAvatarUrl} sizeClassName="w-10 h-10" />
                   <div className="flex-1 min-w-0">
                     <p
                       className={`text-[13px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
@@ -389,9 +590,16 @@ export function MapView({ compact = false }: MapViewProps) {
                       {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
                     </p>
                   </div>
+                  {task.destination && (
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-red-500 mr-1">
+                      D
+                    </span>
+                  )}
                   <span
                     className="w-2 h-2 rounded-full shrink-0"
-                    style={{ backgroundColor: color }}
+                    style={{
+                      backgroundColor: VISUAL_PALETTE[getVisualState(task, stale)].markerBorder,
+                    }}
                   />
                 </button>
               );
@@ -407,10 +615,9 @@ export function MapView({ compact = false }: MapViewProps) {
             <span
               className="text-[12px] font-bold"
               style={{
-                color: getStatusColor(
-                  selectedTask.status,
-                  isTaskStale(selectedTask.lastEventAt, nowMs)
-                ),
+                color: VISUAL_PALETTE[
+                  getVisualState(selectedTask, isTaskStale(selectedTask.lastEventAt, nowMs))
+                ].markerBorder,
               }}
             >
               {selectedTask.status === 'arrived'
@@ -428,24 +635,12 @@ export function MapView({ compact = false }: MapViewProps) {
           </div>
 
           <div className="flex justify-center mb-3">
-            <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-gray-100 shadow-md bg-gray-100 flex items-center justify-center">
-              {selectedTask.agentAvatarUrl ? (
-                <img
-                  src={selectedTask.agentAvatarUrl}
-                  className="w-full h-full object-cover"
-                  alt={selectedTask.agentName}
-                />
-              ) : (
-                <span className="text-[22px] font-bold text-gray-400">
-                  {selectedTask.agentName
-                    .split(' ')
-                    .map((w) => w[0])
-                    .join('')
-                    .slice(0, 2)
-                    .toUpperCase() || '?'}
-                </span>
-              )}
-            </div>
+            <AgentAvatar
+              name={selectedTask.agentName}
+              avatarUrl={selectedTask.agentAvatarUrl}
+              sizeClassName="w-20 h-20"
+              initialsClassName="text-[22px]"
+            />
           </div>
 
           <div className="text-center space-y-1 mb-4">
@@ -457,18 +652,13 @@ export function MapView({ compact = false }: MapViewProps) {
               <p className="text-[10px] text-gray-400 line-clamp-1">{selectedTask.taskAddress}</p>
             )}
             <div
-              className={`inline-block px-3.5 py-1.5 rounded-full text-[10px] font-bold mt-1 ${selectedTask.status === 'arrived'
-                ? 'bg-purple-50 text-purple-600'
-                : selectedTask.status === 'completed'
-                  ? 'bg-green-50 text-green-600'
-                  : 'bg-[#1A452C] text-[#4ADE80]'
-                }`}
+              className="inline-block px-3.5 py-1.5 rounded-full text-[10px] font-bold mt-1"
+              style={{
+                backgroundColor: `${VISUAL_PALETTE[getVisualState(selectedTask, isTaskStale(selectedTask.lastEventAt, nowMs))].markerBorder}20`,
+                color: VISUAL_PALETTE[getVisualState(selectedTask, isTaskStale(selectedTask.lastEventAt, nowMs))].markerText,
+              }}
             >
-              {selectedTask.status === 'arrived'
-                ? 'Arrived'
-                : selectedTask.status === 'completed'
-                  ? 'Completed'
-                  : 'On Field'}
+              {getStatusLabel(selectedTask.status)}
             </div>
           </div>
 
@@ -486,6 +676,36 @@ export function MapView({ compact = false }: MapViewProps) {
           </button>
         </div>
       )}
+
+      <div className="absolute bottom-5 right-5 z-20 bg-white/95 backdrop-blur rounded-2xl shadow-lg border border-gray-100 px-4 py-3 w-64">
+        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-2">Live legend</p>
+        <div className="space-y-2 text-[11px] text-gray-600">
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-4 rounded-full bg-[#2563EB] border-2 border-white shadow" />
+            Origin
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-4 rounded-full bg-[#DC2626] border-2 border-white shadow" />
+            Destination
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-4 rounded-full bg-[#16A34A] border-2 border-white shadow" />
+            Arrived
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-4 rounded-full bg-[#334155] border-2 border-white shadow" />
+            Completed
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-7 h-1 rounded-full bg-[#0284C7]" />
+            Historical route
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-7 h-0.5 rounded-full bg-[#38BDF8]" style={{ borderTop: '2px dashed #38BDF8' }} />
+            Current to destination
+          </div>
+        </div>
+      </div>
 
       {historyTask && (
         <RouteHistoryPanel
@@ -510,4 +730,44 @@ function HydrationBridge({
   }, [isInitialHydrating, onHydrationChange]);
 
   return null;
+}
+
+function AgentAvatar({
+  name,
+  avatarUrl,
+  sizeClassName,
+  initialsClassName = 'text-[12px]',
+}: {
+  name: string;
+  avatarUrl?: string;
+  sizeClassName: string;
+  initialsClassName?: string;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [avatarUrl]);
+
+  const initials = getAgentInitials(name);
+  const showImage = !!avatarUrl && !imageFailed;
+
+  return (
+    <div className={`${sizeClassName} rounded-full overflow-hidden shrink-0 border-2 border-white shadow-sm bg-gray-100 flex items-center justify-center`}>
+      {showImage ? (
+        <img
+          src={avatarUrl}
+          className="w-full h-full object-cover"
+          alt={name || 'Agent'}
+          onError={() => setImageFailed(true)}
+        />
+      ) : initials ? (
+        <span className={`${initialsClassName} font-bold text-gray-500`}>
+          {initials}
+        </span>
+      ) : (
+        <span className={`${initialsClassName} font-bold text-gray-500`}>#</span>
+      )}
+    </div>
+  );
 }
