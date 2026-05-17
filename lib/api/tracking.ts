@@ -11,7 +11,6 @@ import type {
   RecordLocationResponse,
   TrackingSession,
   TaskRoute,
-  AgentLocationsListData,
 } from "@/types/tracking";
 
 export type { TrackingSession, TaskRoute };
@@ -143,40 +142,6 @@ export function listAgentTasks(
   return apiRequest<TasksListData>({
     method: "GET",
     path: `/agent/tasks${qs.toString() ? `?${qs.toString()}` : ""}`,
-    token,
-  });
-}
-
-// ─── Snapshot read model ──────────────────────────────────────────────────
-
-export function listAgentLocations(
-  params: {
-    company_id: number | string;
-    include_offline?: boolean;
-    stale_after_seconds?: number;
-    limit?: number;
-  },
-  token: string
-): Promise<ApiEnvelope<AgentLocationsListData>> {
-  const qs = new URLSearchParams({
-    company_id: String(params.company_id),
-  });
-
-  if (params.include_offline != null) {
-    qs.set("include_offline", String(params.include_offline));
-  }
-
-  if (params.stale_after_seconds != null) {
-    qs.set("stale_after_seconds", String(params.stale_after_seconds));
-  }
-
-  if (params.limit != null) {
-    qs.set("limit", String(params.limit));
-  }
-
-  return apiRequest<AgentLocationsListData>({
-    method: "GET",
-    path: `/agents/locations?${qs.toString()}`,
     token,
   });
 }

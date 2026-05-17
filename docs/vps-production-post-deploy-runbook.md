@@ -32,27 +32,27 @@ Service flow:
 
 Replace all placeholder values below before running commands.
 
-| Key | Example | Your Value |
-|---|---|---|
-| APP_DOMAIN | app.example.com | |
-| API_DOMAIN | api.example.com | |
-| VPS_IP | 203.0.113.10 | |
-| SSH_USER | root or deploy | |
-| REPO_URL | git@github.com:org/repo.git | |
-| REPO_BRANCH | main | |
-| VPS_APP_DIR | /opt/factory23 | |
-| MYSQL_DB | factory23 | |
-| MYSQL_USER | factory23_user | |
-| MYSQL_PASSWORD | strong-db-password | |
-| MYSQL_ROOT_PASSWORD | strong-root-password | |
-| APP_KEY | base64:generated-laravel-key | |
-| MAPBOX_PUBLIC_TOKEN | pk.... | |
-| MAPBOX_SECRET_TOKEN | sk.... | |
-| MAIL_HOST | smtp.provider.com | |
-| MAIL_PORT | 587 | |
-| MAIL_USERNAME | no-reply@example.com | |
-| MAIL_PASSWORD | strong-mail-password | |
-| MAIL_FROM_ADDRESS | operation@example.com | |
+| Key                 | Example                      | Your Value |
+| ------------------- | ---------------------------- | ---------- |
+| APP_DOMAIN          | app.example.com              |            |
+| API_DOMAIN          | api.example.com              |            |
+| VPS_IP              | 203.0.113.10                 |            |
+| SSH_USER            | root or deploy               |            |
+| REPO_URL            | git@github.com:org/repo.git  |            |
+| REPO_BRANCH         | main                         |            |
+| VPS_APP_DIR         | /root/factory23              |            |
+| MYSQL_DB            | factory23                    |            |
+| MYSQL_USER          | factory23_user               |            |
+| MYSQL_PASSWORD      | strong-db-password           |            |
+| MYSQL_ROOT_PASSWORD | strong-root-password         |            |
+| APP_KEY             | base64:generated-laravel-key |            |
+| MAPBOX_PUBLIC_TOKEN | pk....                       |            |
+| MAPBOX_SECRET_TOKEN | sk....                       |            |
+| MAIL_HOST           | smtp.provider.com            |            |
+| MAIL_PORT           | 587                          |            |
+| MAIL_USERNAME       | no-reply@example.com         |            |
+| MAIL_PASSWORD       | strong-mail-password         |            |
+| MAIL_FROM_ADDRESS   | operation@example.com        |            |
 
 ---
 
@@ -95,8 +95,7 @@ Security notes:
 ## 4) Clone Repository and Prepare Production Env Files
 
 ```bash
-mkdir -p /opt
-cd /opt
+cd /root
 git clone <REPO_URL> factory23
 cd factory23
 git checkout <REPO_BRANCH>
@@ -161,6 +160,7 @@ DB_PASSWORD=<MYSQL_PASSWORD>
 
 CACHE_STORE=redis
 QUEUE_CONNECTION=redis
+QUEUE_FAILED_DRIVER=database
 SESSION_DRIVER=redis
 
 REDIS_CLIENT=phpredis
@@ -274,14 +274,14 @@ proxy_send_timeout 3600;
 Preferred command (already in repo):
 
 ```bash
-cd /opt/factory23/backend
+cd /root/factory23/backend
 bash scripts/deploy/production-monorepo-deploy.sh
 ```
 
 Manual equivalent sequence:
 
 ```bash
-cd /opt/factory23
+cd /root/factory23
 git fetch --all
 git checkout <REPO_BRANCH>
 git pull --ff-only
@@ -294,6 +294,7 @@ docker compose --profile workers up -d queue-worker scheduler
 
 docker compose exec app composer install --no-dev --optimize-autoloader
 docker compose exec app php artisan migrate --force
+docker compose exec app php artisan storage:link --force
 docker compose exec app php artisan optimize:clear
 docker compose exec app php artisan config:cache
 docker compose exec app php artisan route:cache
@@ -307,7 +308,7 @@ docker compose exec app php artisan queue:restart
 ### 8.1 Container health
 
 ```bash
-cd /opt/factory23/backend
+cd /root/factory23/backend
 docker compose ps
 docker compose logs --tail=100 app
 docker compose logs --tail=100 realtime
@@ -368,7 +369,7 @@ Key API routes expected to work:
 If deployment fails after release:
 
 ```bash
-cd /opt/factory23
+cd /root/factory23
 git log --oneline -n 5
 git checkout <PREVIOUS_COMMIT_SHA>
 

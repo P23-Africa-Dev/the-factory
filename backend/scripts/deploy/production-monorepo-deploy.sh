@@ -33,19 +33,22 @@ docker-compose up -d --build app nginx mysql redis realtime
 echo "[5/10] Installing PHP dependencies"
 docker-compose exec -T app composer install --no-interaction --prefer-dist --optimize-autoloader
 
-echo "[6/10] Running migrations safely"
+echo "[6/11] Running migrations safely"
 docker-compose exec -T app php artisan migrate --force
 
-echo "[7/10] Enabling workers and scheduler"
+echo "[7/11] Ensuring public storage symlink exists"
+docker-compose exec -T app php artisan storage:link --force
+
+echo "[8/11] Enabling workers and scheduler"
 docker-compose --profile workers up -d queue-worker scheduler
 
-echo "[8/10] Optimizing Laravel runtime"
+echo "[9/11] Optimizing Laravel runtime"
 docker-compose exec -T app php artisan optimize:clear
 docker-compose exec -T app php artisan config:cache
 docker-compose exec -T app php artisan route:cache
 docker-compose exec -T app php artisan queue:restart
 
-echo "[9/10] Health validation"
+echo "[10/11] Health validation"
 LOCAL_CODE="$(curl -s -m 10 -o /dev/null -w "%{http_code}" "$LOCAL_HEALTH_URL")"
 PUBLIC_CODE="$(curl -s -m 15 -o /dev/null -w "%{http_code}" "$API_HEALTH_URL")"
 
@@ -59,6 +62,6 @@ if [[ "$PUBLIC_CODE" != "200" ]]; then
   exit 1
 fi
 
-echo "[10/10] Deployment completed successfully"
+echo "[11/11] Deployment completed successfully"
 echo "Rollback snapshot: $BACKUP_DIR"
 docker-compose ps
