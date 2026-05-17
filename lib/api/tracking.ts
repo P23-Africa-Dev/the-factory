@@ -11,6 +11,7 @@ import type {
   RecordLocationResponse,
   TrackingSession,
   TaskRoute,
+  AgentLocationsListData,
 } from "@/types/tracking";
 
 export type { TrackingSession, TaskRoute };

@@ -16,6 +16,7 @@ const TABS: { value: ProjectsTab; label: string }[] = [
   { value: "tasks", label: "All Tasks" },
 ];
 
+// ─── Page content ─────────────────────────────────────────────────────────────
 function ProjectsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -50,6 +51,7 @@ function ProjectsContent() {
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
       <div className="max-w-400 mx-auto flex flex-col gap-5">
+        {/* ── Tabs ── */}
         <div className="flex items-center gap-4 relative z-20 w-fit">
           <div className="flex gap-1 bg-white rounded-full p-1.5 border border-gray-100 shadow-sm">
             {TABS.map((tab) => (
@@ -68,20 +70,21 @@ function ProjectsContent() {
           </div>
         </div>
 
+        {/* ── View ── */}
         {activeTab === "projects" ? (
           !canManageProjects ? (
             <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-500">
               Project management is available to owner, admin, and supervisor roles only.
             </div>
           ) : (
-            <ProjectsView
-              projects={projects}
-              onViewProject={handleViewProject}
-              isLoading={isLoading}
-              pagination={pagination}
-              currentPage={page}
-              onPageChange={setPage}
-            />
+          <ProjectsView
+            projects={projects}
+            onViewProject={handleViewProject}
+            isLoading={isLoading}
+            pagination={pagination}
+            currentPage={page}
+            onPageChange={setPage}
+          />
           )
         ) : (
           <AllTasksView />
