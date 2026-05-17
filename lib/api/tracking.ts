@@ -149,8 +149,7 @@ export function listAgentTasks(
   token: string
 ): Promise<ApiEnvelope<TasksListData>> {
   const qs = new URLSearchParams();
-  if (params.company_id != null)
-    qs.set("company_id", String(params.company_id));
+  if (params.company_id != null) qs.set("company_id", String(params.company_id));
   if (params.status) qs.set("status", params.status);
   if (params.page) qs.set("page", String(params.page));
 
@@ -161,20 +160,76 @@ export function listAgentTasks(
   });
 }
 
-// ─── List agent locations (management snapshot) ────────────────────────────
+// ─── List agent locations ─────────────────────────────────────────────────
+
+export type AgentLocationListParams = {
+  company_id?: number | string;
+  user_id?: number | string;
+  task_id?: number | string;
+  include_offline?: boolean | string | number | null;
+  stale_after_seconds?: number;
+  limit?: number;
+};
+
+export type AgentLocationListData = {
+  items: Array<{
+    agent: {
+      id: number;
+      name: string | null;
+      email?: string | null;
+      avatar?: string | null;
+      internal_role?: string | null;
+    };
+    task: {
+      id: number | null;
+      title?: string | null;
+      status?: string | null;
+      tracking_session_id?: number | null;
+    };
+    location: {
+      latitude: number;
+      longitude: number;
+      accuracy_meters?: number | null;
+      speed_mps?: number | null;
+      heading_degrees?: number | null;
+      event_type?: string | null;
+      arrived?: boolean;
+      recorded_at?: string | null;
+    };
+    status: {
+      is_online: boolean;
+      is_stale: boolean;
+      stale_after_seconds: number;
+      age_seconds: number | null;
+      last_seen_at: string | null;
+    };
+    updated_at?: string | null;
+  }>;
+  meta: {
+    company_id: number;
+    stale_after_seconds: number;
+    generated_at: string;
+  };
+};
 
 export function listAgentLocations(
-  params: { company_id?: number | string; include_offline?: boolean; limit?: number },
+  params: AgentLocationListParams,
   token: string
-): Promise<ApiEnvelope<AgentLocationsListData>> {
+): Promise<ApiEnvelope<AgentLocationListData>> {
   const qs = new URLSearchParams();
   if (params.company_id != null) qs.set("company_id", String(params.company_id));
-  if (params.include_offline != null) qs.set("include_offline", String(params.include_offline));
+  if (params.user_id != null) qs.set("user_id", String(params.user_id));
+  if (params.task_id != null) qs.set("task_id", String(params.task_id));
+  if (params.include_offline != null) {
+    qs.set("include_offline", normalizeBooleanQuery(params.include_offline, true));
+  }
+  if (params.stale_after_seconds != null) qs.set("stale_after_seconds", String(params.stale_after_seconds));
   if (params.limit != null) qs.set("limit", String(params.limit));
 
-  return apiRequest<AgentLocationsListData>({
+  return apiRequest<AgentLocationListData>({
     method: "GET",
-    path: `/tracking/agents/locations${qs.toString() ? `?${qs.toString()}` : ""}`,
+    path: `/agents/locations${qs.toString() ? `?${qs.toString()}` : ""}`,
     token,
   });
 }
+
