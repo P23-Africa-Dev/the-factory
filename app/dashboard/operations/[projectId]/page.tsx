@@ -138,7 +138,7 @@ function CustomLabel({
 // ─── Page content ─────────────────────────────────────────────────────────────
 function ProjectTasksContent() {
   const router = useRouter();
-  const basePath = "/admin";
+  const basePath = "/dashboard";
 
   const { containers, addItem, moveItem, moveToContainer, moveBetweenContainers, findContainer } =
     useDragAndDrop(INITIAL_DATA);
