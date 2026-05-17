@@ -68,7 +68,7 @@ export default function DashboardPage() {
         <div className="max-w-340 mx-auto gap-4.25 flex flex-col lg:flex-row px-4 md:px-6 lg:px-0">
           <TopCustomers />
           <WeeklyTasks />
-          <DashboardMap basePath="/dashboard" />
+          <DashboardMap basePath="" />
           <div className="w-full lg:max-w-34 mt-0 lg:mt-23.75">
             <CRMPipeline />
             <AIWorkspace />

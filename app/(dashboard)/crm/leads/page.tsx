@@ -139,7 +139,7 @@ function SourceDropdown({
 
 export default function AllLeadsPage() {
   const router = useRouter();
-  const basePath = "/dashboard";
+  const basePath = "";
   const [leads, setLeads] = useState<Lead[]>(ALL_LEADS);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 

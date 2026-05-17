@@ -230,7 +230,7 @@ function EnterpriseSetupContent() {
         // /me failure is non-fatal — session is saved, dashboard will re-fetch
       }
 
-      router.push("/dashboard/home");
+      router.push("/dashboard");
     },
     onError: (error: ApiRequestError | Error) => {
       setGlobalError(error.message || "Unable to complete setup.");

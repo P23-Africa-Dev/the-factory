@@ -282,7 +282,7 @@ export default function OnboardingForm({
         });
 
         const role = meRes.data.active_company?.role;
-        router.push(role === "agent" ? "/agent/dashboard" : "/dashboard/home");
+        router.push(role === "agent" ? "/agent/dashboard" : "/dashboard");
       } catch {
         // no-op: session is already saved, redirect to agent dashboard as fallback
         router.push("/agent/dashboard");

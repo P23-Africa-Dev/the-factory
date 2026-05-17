@@ -16,7 +16,7 @@ export function AgentGuard({ children }: { children: React.ReactNode }) {
       return;
     }
     if (user.active_company?.role !== "agent") {
-      router.replace("/dashboard/home");
+      router.replace("/dashboard");
     }
   }, [user, hasHydrated, router]);
 
