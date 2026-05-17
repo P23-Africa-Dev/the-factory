@@ -81,7 +81,11 @@ export function Navbar() {
   const profileRef = useRef<HTMLDivElement>(null);
   const user = useAuthStore((s) => s.user);
   const clearUser = useAuthStore((s) => s.clearUser);
-  const basePath = user?.active_company?.role === 'agent' ? '/agent' : '/dashboard';
+  const isAgent = user?.active_company?.role === 'agent';
+  const basePath = isAgent ? '/agent' : '/dashboard';
+  // Agents land on /agent/dashboard; management lands on /dashboard/home.
+  // The nav item has href="/home" which is correct for management but wrong for agents.
+  const homeSuffix = isAgent ? '/dashboard' : '/home';
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -107,7 +111,7 @@ export function Navbar() {
     <nav className="h-20 flex items-center justify-between px-6 lg:px-10 bg-dash-dark text-white sticky top-0 z-50">
       {/* Logo */}
       <div className="flex items-center">
-        <Link href={`${basePath}/home`} className="flex items-center">
+        <Link href={`${basePath}${homeSuffix}`} className="flex items-center">
           <div className="w-10 h-10 flex items-center justify-center relative">
             <Image
               src={Logo}
@@ -122,7 +126,7 @@ export function Navbar() {
         {/* Desktop Navigation Links */}
         <div className="hidden lg:flex items-center gap-8 xl:gap-10 ml-17">
           {navItems.map((item) => {
-            const itemHref = basePath + item.href;
+            const itemHref = basePath + (item.href === '/home' ? homeSuffix : item.href);
             const isActive = pathname.startsWith(itemHref);
             return (
               <Link
@@ -328,7 +332,7 @@ export function Navbar() {
 
               <div className="space-y-1">
                 {navItems.map((item) => {
-                  const itemHref = basePath + item.href;
+                  const itemHref = basePath + (item.href === '/home' ? homeSuffix : item.href);
                   const isActive = pathname.startsWith(itemHref);
                   return (
                     <Link
