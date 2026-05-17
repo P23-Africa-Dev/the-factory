@@ -13,9 +13,43 @@ class ListAgentLocationsRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $normalizedIncludeOffline = $this->normalizeIncludeOffline($this->input('include_offline'));
+
         $this->merge([
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
+            'include_offline' => $normalizedIncludeOffline,
         ]);
+    }
+
+    private function normalizeIncludeOffline(mixed $value): mixed
+    {
+        if ($value === null || is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return in_array((int) $value, [0, 1], true) ? (bool) $value : $value;
+        }
+
+        if (! is_string($value)) {
+            return $value;
+        }
+
+        $normalized = strtolower(trim($value));
+
+        if ($normalized === '' || $normalized === 'null' || $normalized === 'undefined') {
+            return null;
+        }
+
+        if (in_array($normalized, ['1', 'true', 'yes', 'on', 'all'], true)) {
+            return true;
+        }
+
+        if (in_array($normalized, ['0', 'false', 'no', 'off', 'online'], true)) {
+            return false;
+        }
+
+        return $value;
     }
 
     public function authorize(): bool

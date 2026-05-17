@@ -18,7 +18,6 @@ import { CompleteTaskSheet } from '@/components/tracking/CompleteTaskSheet';
 import { useActiveTracking } from '@/components/tracking/active-tracking-provider';
 import { startTaskTracking } from '@/lib/api/tracking';
 import { ApiRequestError } from '@/lib/api/onboarding';
-import { useTrackingStore } from '@/store/tracking';
 import type { GeoReading } from '@/types/tracking';
 
 interface TaskDetailModalProps {
@@ -76,24 +75,6 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
         },
         token
       );
-
-      useTrackingStore.getState().seedFromTaskStart({
-        taskId,
-        trackingSessionId: res.data.tracking.id,
-        userId: authUser?.id ?? res.data.tracking.started_by_user_id,
-        agentName: authUser?.name,
-        agentAvatarUrl: authUser?.avatar ?? undefined,
-        taskTitle: res.data.task.title,
-        taskAddress: res.data.task.address ?? res.data.task.location ?? undefined,
-        destination:
-          typeof res.data.task.latitude === 'number' &&
-          typeof res.data.task.longitude === 'number'
-            ? { lat: res.data.task.latitude, lng: res.data.task.longitude, radiusM: 75 }
-            : undefined,
-        position: [reading.longitude, reading.latitude],
-        occurredAt: reading.recordedAt,
-      });
-
       startTracking(taskId, companyId as number, token, {
         onArrived: () => toast.success("You've arrived at the destination!"),
         onError: () => {},

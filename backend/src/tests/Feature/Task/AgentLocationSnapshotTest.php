@@ -56,6 +56,31 @@ class AgentLocationSnapshotTest extends TestCase
             ->assertJsonPath('data.snapshot.status.is_online', true);
     }
 
+    public function test_management_can_list_snapshots_with_legacy_include_offline_all_value(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers('FAC-AGLOC-LEGACY');
+
+        AgentLocationSnapshot::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'task_id' => null,
+            'tracking_session_id' => null,
+            'latitude' => 6.5000,
+            'longitude' => 3.5000,
+            'event_type' => 'movement',
+            'task_status' => 'in_progress',
+            'arrived' => false,
+            'recorded_at' => now(),
+            'last_seen_at' => now(),
+        ]);
+
+        $response = $this->withToken($admin->createToken('legacy-include-offline-token', ['*'])->plainTextToken)
+            ->getJson('/api/v1/agents/locations?company_id=' . $company->id . '&include_offline=all');
+
+        $response->assertOk()
+            ->assertJsonPath('data.items.0.agent.id', $agent->id);
+    }
+
     public function test_agent_cannot_fetch_other_agent_latest_snapshot(): void
     {
         [$company, $admin, $agentOne] = $this->seedCompanyUsers();
