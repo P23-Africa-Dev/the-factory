@@ -139,23 +139,3 @@ export function getTaskRoute(
   });
 }
 
-// ─── List agent tasks ──────────────────────────────────────────────────────
-
-import type { TasksListData, ListTasksParams } from "./tasks";
-
-export function listAgentTasks(
-  params: ListTasksParams,
-  token: string
-): Promise<ApiEnvelope<TasksListData>> {
-  const qs = new URLSearchParams();
-  if (params.company_id != null)
-    qs.set("company_id", String(params.company_id));
-  if (params.status) qs.set("status", params.status);
-  if (params.page) qs.set("page", String(params.page));
-
-  return apiRequest<TasksListData>({
-    method: "GET",
-    path: `/agent/tasks${qs.toString() ? `?${qs.toString()}` : ""}`,
-    token,
-  });
-}
