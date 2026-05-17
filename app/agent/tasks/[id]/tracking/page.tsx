@@ -408,6 +408,12 @@ export default function TrackingPage({
 
   const handleBeginTask = async () => {
     if (!companyId || !initialReading) return;
+    const signedInUserId = user?.id;
+    if (typeof signedInUserId !== 'number') {
+      toast.error('Your session is unavailable. Please sign in again.');
+      return;
+    }
+
     setCommencing(true);
     try {
       const token = getAuthTokenFromDocument();
@@ -427,7 +433,7 @@ export default function TrackingPage({
       useTrackingStore.getState().seedFromTaskStart({
         taskId,
         trackingSessionId: res.data.tracking.id,
-        userId: user?.id ?? res.data.tracking.started_by_user_id,
+        userId: signedInUserId,
         agentName: user?.name,
         agentAvatarUrl: user?.avatar ?? undefined,
         taskTitle: res.data.task.title,
