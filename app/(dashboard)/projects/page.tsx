@@ -45,7 +45,7 @@ function ProjectsContent() {
 
   const handleViewProject = (id: string, name?: string) => {
     const slug = buildProjectSlug(id, name);
-    router.push(`/dashboard/projects/${slug}`);
+    router.push(`/projects/${slug}`);
   };
 
   return (

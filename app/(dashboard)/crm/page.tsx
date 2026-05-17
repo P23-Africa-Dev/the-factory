@@ -318,7 +318,7 @@ function LeadCard({
       const dx = Math.abs(e.clientX - pointerStart.current.x);
       const dy = Math.abs(e.clientY - pointerStart.current.y);
       if (dx < 5 && dy < 5) {
-        router.push(`/dashboard/crm/leads/${item.id}`);
+        router.push(`/crm/leads/${item.id}`);
       }
     }
     pointerStart.current = null;
@@ -495,7 +495,7 @@ function LeadListView({ containers }: { containers: DndContainer[] }) {
                 {container.items.map((item, idx) => (
                   <div
                     key={item.id}
-                    onClick={() => router.push(`/dashboard/crm/leads/${item.id}`)}
+                    onClick={() => router.push(`/crm/leads/${item.id}`)}
                     className={`grid grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-4 items-center px-4 py-3 rounded-xl transition-colors cursor-pointer hover:bg-gray-50 group/row ${
                       idx % 2 === 0 ? "" : "bg-gray-50/50"
                     }`}
@@ -576,7 +576,7 @@ function LeadListView({ containers }: { containers: DndContainer[] }) {
 
 function LeadBoard() {
   const router = useRouter();
-  const basePath = "/dashboard";
+  const basePath = "";
   const {
     containers,
     addItem,
@@ -641,7 +641,7 @@ function LeadBoard() {
       {/* Board toolbar */}
       <div className="flex items-center justify-end gap-3 px-6 pt-4 pb-2">
         <button
-          onClick={() => router.push(`/dashboard/crm/leads`)}
+          onClick={() => router.push(`/crm/leads`)}
           className="text-[11px] font-medium bg-[#0B1215] text-white px-4 py-1.5 rounded-lg hover:opacity-90 transition-all"
         >
           View All Leads
