@@ -126,7 +126,10 @@ export function Navbar() {
         {/* Desktop Navigation Links */}
         <div className="hidden lg:flex items-center gap-8 xl:gap-10 ml-17">
           {navItems.map((item) => {
-            const itemHref = basePath + (item.href === '/home' ? homeSuffix : item.href);
+            const itemHref =
+              item.href === '/projects'
+                ? (isAgent ? '/agent/projects' : '/projects')
+                : basePath + (item.href === '/home' ? homeSuffix : item.href);
             const isActive = pathname.startsWith(itemHref);
             return (
               <Link

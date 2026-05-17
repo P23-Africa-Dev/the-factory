@@ -192,6 +192,38 @@ class TaskTrackingTest extends TestCase
             ->assertJsonPath('errors.task.0', 'Task does not belong to the active company context.');
     }
 
+    public function test_route_accepts_legacy_include_points_all_value(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers('FAC-TRACK-LEGACY');
+
+        $task = $this->createAssignedTask($company->id, $admin->id, $agent->id, [
+            'status' => 'pending',
+            'latitude' => 6.4300,
+            'longitude' => 3.4200,
+        ]);
+
+        $token = $agent->createToken('agent-route-legacy-token', ['*'])->plainTextToken;
+
+        $this->withToken($token)
+            ->postJson('/api/v1/tasks/' . $task->id . '/start', [
+                'company_id' => $company->id,
+                'location_permission_granted' => true,
+                'latitude' => 6.4000,
+                'longitude' => 3.3900,
+                'accuracy_meters' => 5,
+            ])
+            ->assertOk();
+
+        $response = $this->withToken($token)
+            ->getJson('/api/v1/tasks/' . $task->id . '/route?company_id=' . $company->id . '&include_points=all');
+
+        $response->assertOk()
+            ->assertJsonPath('data.task_id', $task->id)
+            ->assertJsonPath('data.destination.latitude', 6.43)
+            ->assertJsonPath('data.summary.points_count', 1)
+            ->assertJsonPath('data.points.0.event_type', 'start');
+    }
+
     public function test_multiple_agents_can_be_tracked_simultaneously_on_separate_tasks(): void
     {
         [$company, $admin, $agentOne] = $this->seedCompanyUsers();

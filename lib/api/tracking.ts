@@ -15,6 +15,20 @@ import type {
 
 export type { TrackingSession, TaskRoute };
 
+function normalizeBooleanQuery(value: unknown, fallback: boolean): "true" | "false" {
+  if (typeof value === "boolean") return value ? "true" : "false";
+
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized || normalized === "null" || normalized === "undefined") {
+    return fallback ? "true" : "false";
+  }
+
+  if (["1", "true", "yes", "on", "all"].includes(normalized)) return "true";
+  if (["0", "false", "no", "off", "online"].includes(normalized)) return "false";
+
+  return fallback ? "true" : "false";
+}
+
 // ─── Start tracking ────────────────────────────────────────────────────────
 
 export interface StartTrackingResponse {
@@ -104,7 +118,7 @@ export function getTaskRoute(
   params: {
     company_id: number | string;
     role?: "agent" | "management";
-    include_points?: boolean;
+    include_points?: boolean | string | number | null;
     limit?: number;
   },
   token: string
@@ -114,7 +128,7 @@ export function getTaskRoute(
   const prefix = role === "management" ? "admin" : "agent";
   const qs = new URLSearchParams({
     company_id: String(company_id),
-    include_points: String(include_points),
+    include_points: normalizeBooleanQuery(include_points, true),
     limit: String(limit),
   });
 
