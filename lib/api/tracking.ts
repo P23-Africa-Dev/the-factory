@@ -181,9 +181,9 @@ export type AgentLocationListData = {
     };
     task: {
       id: number | null;
-      title?: string | null;
-      status?: string | null;
-      tracking_session_id?: number | null;
+      title: string | null;
+      status: string | null;
+      tracking_session_id: number | null;
     };
     location: {
       latitude: number;
