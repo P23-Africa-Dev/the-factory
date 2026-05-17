@@ -13,12 +13,14 @@ const MAPBOX_TOKEN = getMapboxPublicToken();
 function RouteMap({
   polyline,
   start,
+  near,
   arrival,
   end,
   destination,
 }: {
   polyline: [number, number][];
   start: { lat: number; lng: number } | null;
+  near: { lat: number; lng: number } | null;
   arrival: { lat: number; lng: number } | null;
   end: { lat: number; lng: number } | null;
   destination: { lat: number; lng: number } | null;
@@ -90,6 +92,14 @@ function RouteMap({
         new mapboxgl.Marker({ element: el }).setLngLat([arrival.lng, arrival.lat]).addTo(map);
       }
 
+      // Near marker
+      if (near) {
+        const el = document.createElement('div');
+        el.style.cssText =
+          'width:14px;height:14px;border-radius:50%;background:#D97706;border:2.5px solid white;box-shadow:0 2px 6px rgba(217,119,6,0.45);';
+        new mapboxgl.Marker({ element: el }).setLngLat([near.lng, near.lat]).addTo(map);
+      }
+
       // Completion marker
       if (end) {
         const el = document.createElement('div');
@@ -155,6 +165,9 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
   const arrival = route?.arrival
     ? { lat: route.arrival.latitude, lng: route.arrival.longitude }
     : null;
+  const near = route?.near
+    ? { lat: route.near.latitude, lng: route.near.longitude }
+    : null;
   const end = route?.end
     ? { lat: route.end.latitude, lng: route.end.longitude }
     : null;
@@ -189,6 +202,7 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
           <RouteMap
             polyline={polyline}
             start={start}
+            near={near}
             arrival={arrival}
             end={end}
             destination={destination}
@@ -259,12 +273,25 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
             {/* Arrival event */}
             {route.arrival && (
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-xl bg-purple-50 flex items-center justify-center shrink-0 mt-0.5">
-                  <MapPin size={14} className="text-purple-500" />
+                <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center shrink-0 mt-0.5">
+                  <MapPin size={14} className="text-green-600" />
                 </div>
                 <div>
                   <p className="text-[13px] font-bold text-dash-dark">Arrived at destination</p>
                   <p className="text-[11px] text-gray-400">{formatTime(route.arrival.recorded_at)}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Near-destination event */}
+            {route.near && !route.arrival && (
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
+                  <MapPin size={14} className="text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-[13px] font-bold text-dash-dark">Near destination</p>
+                  <p className="text-[11px] text-gray-400">{formatTime(route.near.recorded_at)}</p>
                 </div>
               </div>
             )}
@@ -290,7 +317,11 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
                 </div>
                 <div>
                   <p className="text-[13px] font-bold text-dash-dark">Currently tracking</p>
-                  <p className="text-[11px] text-gray-400">Agent is en route</p>
+                  <p className="text-[11px] text-gray-400">
+                    {route.proximity?.state === 'near_destination'
+                      ? 'Agent is near destination'
+                      : 'Agent is en route'}
+                  </p>
                 </div>
               </div>
             )}
@@ -301,6 +332,10 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
               <div className="flex items-center gap-2 text-[12px] text-gray-500">
                 <span className="w-3 h-3 rounded-full bg-blue-600 shrink-0" />
                 Start point
+              </div>
+              <div className="flex items-center gap-2 text-[12px] text-gray-500">
+                <span className="w-3 h-3 rounded-full bg-amber-600 shrink-0" />
+                Near destination
               </div>
               <div className="flex items-center gap-2 text-[12px] text-gray-500">
                 <span className="w-3 h-3 rounded-full bg-green-600 shrink-0" />

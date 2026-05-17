@@ -26,8 +26,9 @@ import {
 const DEFAULT_CENTER: [number, number] = [3.36, 6.595];
 const MARKER_ANIMATION_MS = 700;
 
-function getDestinationMarkerKind(status: 'in_progress' | 'arrived' | 'completed') {
+function getDestinationMarkerKind(status: 'in_progress' | 'near_destination' | 'arrived' | 'completed') {
     if (status === 'completed') return 'completed' as const;
+    if (status === 'near_destination') return 'near' as const;
     if (status === 'arrived') return 'arrived' as const;
     return 'destination' as const;
 }
@@ -125,6 +126,8 @@ export function AgentMapView() {
                     'line-color': [
                         'match',
                         ['get', 'status'],
+                        'near_destination',
+                        VISUAL_PALETTE.near_destination.trail,
                         'arrived',
                         VISUAL_PALETTE.arrived.trail,
                         'completed',
@@ -149,6 +152,8 @@ export function AgentMapView() {
                     'line-color': [
                         'match',
                         ['get', 'status'],
+                        'near_destination',
+                        VISUAL_PALETTE.near_destination.connector,
                         'arrived',
                         VISUAL_PALETTE.arrived.connector,
                         'completed',
@@ -171,7 +176,17 @@ export function AgentMapView() {
                 source: 'agent-route-direction',
                 layout: { 'line-join': 'round', 'line-cap': 'round' },
                 paint: {
-                    'line-color': '#075985',
+                    'line-color': [
+                        'match',
+                        ['get', 'status'],
+                        'near_destination',
+                        '#D97706',
+                        'arrived',
+                        '#15803D',
+                        'completed',
+                        '#1E293B',
+                        '#075985',
+                    ],
                     'line-width': 5,
                     'line-opacity': 0.95,
                 },

@@ -1,6 +1,6 @@
 import type { LiveTaskState } from "@/types/tracking";
 
-export type VisualTaskState = "in_progress" | "arrived" | "completed" | "stale";
+export type VisualTaskState = "in_progress" | "near_destination" | "arrived" | "completed" | "stale";
 
 type VisualPalette = {
     trail: string;
@@ -19,6 +19,14 @@ export const VISUAL_PALETTE: Record<VisualTaskState, VisualPalette> = {
         markerHalo: "rgba(14, 165, 233, 0.35)",
         markerFill: "#E0F2FE",
         markerText: "#0C4A6E",
+    },
+    near_destination: {
+        trail: "#D97706",
+        connector: "#F59E0B",
+        markerBorder: "#D97706",
+        markerHalo: "rgba(217, 119, 6, 0.35)",
+        markerFill: "#FEF3C7",
+        markerText: "#92400E",
     },
     arrived: {
         trail: "#16A34A",
@@ -53,6 +61,10 @@ export const STATIC_MARKER_COLORS = {
     },
     destination: {
         fill: "#DC2626",
+        border: "#FFFFFF",
+    },
+    near: {
+        fill: "#D97706",
         border: "#FFFFFF",
     },
     arrived: {
@@ -151,7 +163,7 @@ export function buildDirectionSegment(trail: [number, number][]): [number, numbe
     return [trail[trail.length - 2], trail[trail.length - 1]];
 }
 
-export function createStaticMarkerElement(kind: "origin" | "destination" | "arrived" | "completed") {
+export function createStaticMarkerElement(kind: "origin" | "destination" | "near" | "arrived" | "completed") {
     const root = document.createElement("div");
     root.style.width = "24px";
     root.style.height = "24px";
@@ -172,9 +184,11 @@ export function createStaticMarkerElement(kind: "origin" | "destination" | "arri
             ? "O"
             : kind === "destination"
                 ? "D"
-                : kind === "arrived"
-                    ? "A"
-                    : "C";
+                : kind === "near"
+                    ? "N"
+                    : kind === "arrived"
+                        ? "A"
+                        : "C";
 
     return root;
 }

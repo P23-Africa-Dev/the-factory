@@ -43,7 +43,11 @@ class AgentLocationSnapshotService
         );
 
         return AgentLocationSnapshot::query()
-            ->with(['agent:id,name,email,avatar,internal_role', 'task:id,title,status'])
+            ->with([
+                'agent:id,name,email,avatar,internal_role',
+                'task:id,title,status,latitude,longitude,address_full,location_text',
+                'trackingSession:id,task_id,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
+            ])
             ->where('company_id', (int) $payload['company_id'])
             ->where('user_id', (int) $payload['user_id'])
             ->firstOrFail();
@@ -58,7 +62,11 @@ class AgentLocationSnapshotService
         $staleAfterSeconds = $this->resolveStaleAfterSeconds($filters);
 
         $query = AgentLocationSnapshot::query()
-            ->with(['agent:id,name,email,avatar,internal_role', 'task:id,title,status'])
+            ->with([
+                'agent:id,name,email,avatar,internal_role',
+                'task:id,title,status,latitude,longitude,address_full,location_text',
+                'trackingSession:id,task_id,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
+            ])
             ->where('company_id', $companyId)
             ->orderByDesc('last_seen_at');
 
@@ -118,7 +126,11 @@ class AgentLocationSnapshotService
         }
 
         $snapshot = AgentLocationSnapshot::query()
-            ->with(['agent:id,name,email,avatar,internal_role', 'task:id,title,status'])
+            ->with([
+                'agent:id,name,email,avatar,internal_role',
+                'task:id,title,status,latitude,longitude,address_full,location_text',
+                'trackingSession:id,task_id,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
+            ])
             ->where('company_id', $companyId)
             ->where('user_id', $targetUser->id)
             ->first();
@@ -157,6 +169,31 @@ class AgentLocationSnapshotService
 
         $isOnline = $ageSeconds !== null && $ageSeconds <= $staleAfterSeconds;
 
+        $trackingSession = $snapshot->trackingSession;
+        $destinationLatitude = $trackingSession?->destination_latitude ?? $snapshot->task?->latitude;
+        $destinationLongitude = $trackingSession?->destination_longitude ?? $snapshot->task?->longitude;
+        $arrivalRadiusMeters = (float) ($trackingSession?->destination_radius_meters ?? config('tracking.arrival_radius_meters', 75));
+        $distanceToDestinationMeters =
+            $destinationLatitude !== null && $destinationLongitude !== null
+            ? $this->distanceMeters(
+                (float) $snapshot->latitude,
+                (float) $snapshot->longitude,
+                (float) $destinationLatitude,
+                (float) $destinationLongitude,
+            )
+            : null;
+        $distanceRemainingMeters =
+            $distanceToDestinationMeters !== null
+            ? max(0.0, $distanceToDestinationMeters - max(1.0, $arrivalRadiusMeters))
+            : null;
+
+        $taskStatus = $snapshot->task_status ?? $snapshot->task?->status?->value;
+        $arrived = (bool) $snapshot->arrived || $trackingSession?->arrival_detected_at !== null;
+        $nearDestination = ! $arrived && $trackingSession?->near_detected_at !== null;
+        $proximityState = $taskStatus === 'completed'
+            ? 'completed'
+            : ($arrived ? 'arrived' : ($nearDestination ? 'near_destination' : 'in_progress'));
+
         return [
             'agent' => [
                 'id' => $snapshot->user_id,
@@ -168,8 +205,12 @@ class AgentLocationSnapshotService
             'task' => [
                 'id' => $snapshot->task_id,
                 'title' => $snapshot->task?->title,
-                'status' => $snapshot->task_status ?? $snapshot->task?->status?->value,
+                'status' => $taskStatus,
                 'tracking_session_id' => $snapshot->tracking_session_id,
+                'address' => $snapshot->task?->address_full,
+                'location' => $snapshot->task?->location_text,
+                'destination_latitude' => $destinationLatitude,
+                'destination_longitude' => $destinationLongitude,
             ],
             'location' => [
                 'latitude' => $snapshot->latitude,
@@ -178,7 +219,10 @@ class AgentLocationSnapshotService
                 'speed_mps' => $snapshot->speed_mps,
                 'heading_degrees' => $snapshot->heading_degrees,
                 'event_type' => $snapshot->event_type,
-                'arrived' => $snapshot->arrived,
+                'arrived' => $arrived,
+                'near_destination' => $nearDestination,
+                'distance_to_destination_meters' => $distanceToDestinationMeters !== null ? round($distanceToDestinationMeters, 2) : null,
+                'distance_remaining_meters' => $distanceRemainingMeters !== null ? round($distanceRemainingMeters, 2) : null,
                 'recorded_at' => $snapshot->recorded_at?->toIso8601String(),
             ],
             'status' => [
@@ -187,8 +231,26 @@ class AgentLocationSnapshotService
                 'stale_after_seconds' => $staleAfterSeconds,
                 'age_seconds' => $ageSeconds,
                 'last_seen_at' => $lastSeenIso,
+                'proximity_state' => $proximityState,
             ],
             'updated_at' => $snapshot->updated_at?->toIso8601String(),
         ];
+    }
+
+    private function distanceMeters(float $fromLat, float $fromLng, float $toLat, float $toLng): float
+    {
+        $earthRadius = 6371000.0;
+
+        $deltaLat = deg2rad($toLat - $fromLat);
+        $deltaLng = deg2rad($toLng - $fromLng);
+
+        $a = sin($deltaLat / 2) ** 2
+            + cos(deg2rad($fromLat))
+            * cos(deg2rad($toLat))
+            * sin($deltaLng / 2) ** 2;
+
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+        return $earthRadius * $c;
     }
 }

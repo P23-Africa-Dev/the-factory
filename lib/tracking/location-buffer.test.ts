@@ -34,6 +34,9 @@ vi.mock("@/lib/tracking/geolocation", () => ({
 }));
 
 describe("location-buffer", () => {
+    const keyFor = (companyId: number | string, taskId: number) =>
+        `factory_location_buffer:${String(companyId)}:${taskId}`;
+
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useFakeTimers();
@@ -59,7 +62,7 @@ describe("location-buffer", () => {
             recordedAt: "2026-05-16T10:00:00.000Z",
         });
 
-        expect(sessionStorage.getItem("factory_location_buffer")).toBe(
+        expect(sessionStorage.getItem(keyFor(9, 55))).toBe(
             JSON.stringify([
                 {
                     latitude: 6.5,
@@ -92,7 +95,7 @@ describe("location-buffer", () => {
 
     it("flushes recovered queue and triggers arrival callback when backend reports arrived", async () => {
         sessionStorage.setItem(
-            "factory_location_buffer",
+            keyFor(12, 77),
             JSON.stringify([
                 {
                     latitude: 6.6,
@@ -114,5 +117,48 @@ describe("location-buffer", () => {
 
         expect(recordTaskLocationMock).toHaveBeenCalled();
         expect(onArrived).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not reuse queued points from a different task/company session key", async () => {
+        sessionStorage.setItem(
+            keyFor(12, 77),
+            JSON.stringify([
+                {
+                    latitude: 6.6,
+                    longitude: 3.4,
+                    accuracyMeters: 4,
+                    speedMps: null,
+                    headingDegrees: null,
+                    recordedAt: "2026-05-16T11:00:00.000Z",
+                },
+            ])
+        );
+
+        locationBuffer.start(55, 9, "token");
+        await Promise.resolve();
+
+        expect(recordTaskLocationMock).not.toHaveBeenCalled();
+
+        positionCallbackRef.current?.({
+            latitude: 6.7,
+            longitude: 3.5,
+            accuracyMeters: 6,
+            speedMps: null,
+            headingDegrees: null,
+            recordedAt: "2026-05-16T11:01:00.000Z",
+        });
+
+        await vi.advanceTimersByTimeAsync(30_000);
+
+        expect(recordTaskLocationMock).toHaveBeenCalledTimes(1);
+        expect(recordTaskLocationMock.mock.calls[0][1]).toMatchObject({
+            company_id: 9,
+            points: [
+                {
+                    latitude: 6.7,
+                    longitude: 3.5,
+                },
+            ],
+        });
     });
 });

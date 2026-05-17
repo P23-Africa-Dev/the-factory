@@ -4,7 +4,7 @@ import { watchPosition, watchVisibilityAccuracy } from "./geolocation";
 
 const MAX_QUEUE = 50;
 const FLUSH_INTERVAL_MS = 30_000;
-const SESSION_KEY = "factory_location_buffer";
+const SESSION_KEY_PREFIX = "factory_location_buffer";
 
 interface BufferCallbacks {
   onArrived?: () => void;
@@ -15,6 +15,7 @@ interface BufferState {
   taskId: number;
   companyId: number | string;
   token: string;
+  sessionKey: string;
   callbacks: BufferCallbacks;
   queue: GeoReading[];
   flushTimer: ReturnType<typeof setInterval> | null;
@@ -26,42 +27,47 @@ interface BufferState {
 
 let state: BufferState | null = null;
 
-function saveToSession(queue: GeoReading[]) {
+function makeSessionKey(taskId: number, companyId: number | string): string {
+  return `${SESSION_KEY_PREFIX}:${String(companyId)}:${taskId}`;
+}
+
+function saveToSession(key: string, queue: GeoReading[]) {
   try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(queue));
+    sessionStorage.setItem(key, JSON.stringify(queue));
   } catch {
     // sessionStorage not available
   }
 }
 
-function loadFromSession(): GeoReading[] {
+function loadFromSession(key: string): GeoReading[] {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = sessionStorage.getItem(key);
     return raw ? (JSON.parse(raw) as GeoReading[]) : [];
   } catch {
     return [];
   }
 }
 
-function clearSession() {
+function clearSession(key: string) {
   try {
-    sessionStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(key);
   } catch {
     // ignore
   }
 }
 
-async function flush() {
-  if (!state || !state.active || state.queue.length === 0) return;
+async function flushState(target: BufferState, options: { allowInactive?: boolean } = {}) {
+  const allowInactive = options.allowInactive ?? false;
+  if ((!target.active && !allowInactive) || target.queue.length === 0) return;
 
-  const batch = state.queue.splice(0, MAX_QUEUE);
-  saveToSession(state.queue);
+  const batch = target.queue.splice(0, MAX_QUEUE);
+  saveToSession(target.sessionKey, target.queue);
 
   try {
     const res = await recordTaskLocation(
-      state.taskId,
+      target.taskId,
       {
-        company_id: state.companyId,
+        company_id: target.companyId,
         points: batch.map((r) => ({
           latitude: r.latitude,
           longitude: r.longitude,
@@ -71,21 +77,26 @@ async function flush() {
           recorded_at: r.recordedAt,
         })),
       },
-      state.token
+      target.token
     );
 
     if (res.data.arrived) {
-      state.callbacks.onArrived?.();
+      target.callbacks.onArrived?.();
     }
   } catch (err) {
     // Put points back at the front of the queue for retry
-    state.queue.unshift(...batch);
-    if (state.queue.length > MAX_QUEUE) {
-      state.queue.splice(MAX_QUEUE);
+    target.queue.unshift(...batch);
+    if (target.queue.length > MAX_QUEUE) {
+      target.queue.splice(MAX_QUEUE);
     }
-    saveToSession(state.queue);
-    state.callbacks.onError?.(err);
+    saveToSession(target.sessionKey, target.queue);
+    target.callbacks.onError?.(err);
   }
+}
+
+async function flush() {
+  if (!state) return;
+  await flushState(state);
 }
 
 function push(reading: GeoReading) {
@@ -94,7 +105,7 @@ function push(reading: GeoReading) {
   if (state.queue.length > MAX_QUEUE) {
     state.queue.shift();
   }
-  saveToSession(state.queue);
+  saveToSession(state.sessionKey, state.queue);
 }
 
 function startWatcher() {
@@ -115,12 +126,14 @@ export function start(
 ) {
   if (state) stop();
 
-  const recovered = loadFromSession();
+  const sessionKey = makeSessionKey(taskId, companyId);
+  const recovered = loadFromSession(sessionKey);
 
   state = {
     taskId,
     companyId,
     token,
+    sessionKey,
     callbacks,
     queue: recovered,
     flushTimer: null,
@@ -153,19 +166,22 @@ export function start(
 
 export function stop() {
   if (!state) return;
-  state.active = false;
-  state.stopWatch?.();
-  state.stopVisibility?.();
-  if (state.flushTimer) clearInterval(state.flushTimer);
+
+  const stopping = state;
+  state = null;
+
+  stopping.active = false;
+  stopping.stopWatch?.();
+  stopping.stopVisibility?.();
+  if (stopping.flushTimer) clearInterval(stopping.flushTimer);
 
   if (typeof window !== "undefined") {
     window.removeEventListener("online", flush);
   }
 
   // Final flush attempt
-  flush().finally(() => {
-    clearSession();
-    state = null;
+  flushState(stopping, { allowInactive: true }).finally(() => {
+    clearSession(stopping.sessionKey);
   });
 }
 

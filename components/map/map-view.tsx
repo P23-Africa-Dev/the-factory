@@ -35,13 +35,15 @@ function isTaskStale(lastEventAt: string, nowMs: number): boolean {
 }
 
 function getStatusLabel(status: LiveTaskState['status']): string {
+  if (status === 'near_destination') return 'Near destination';
   if (status === 'arrived') return 'Arrived';
   if (status === 'completed') return 'Completed';
   return 'On field';
 }
 
-function getDestinationMarkerKind(status: LiveTaskState['status']): 'destination' | 'arrived' | 'completed' {
+function getDestinationMarkerKind(status: LiveTaskState['status']): 'destination' | 'near' | 'arrived' | 'completed' {
   if (status === 'completed') return 'completed';
+  if (status === 'near_destination') return 'near';
   if (status === 'arrived') return 'arrived';
   return 'destination';
 }
@@ -190,6 +192,8 @@ export function MapView({ compact = false }: MapViewProps) {
           'line-color': [
             'match',
             ['get', 'status'],
+            'near_destination',
+            VISUAL_PALETTE.near_destination.trail,
             'arrived',
             VISUAL_PALETTE.arrived.trail,
             'completed',
@@ -216,6 +220,8 @@ export function MapView({ compact = false }: MapViewProps) {
           'line-color': [
             'match',
             ['get', 'status'],
+            'near_destination',
+            VISUAL_PALETTE.near_destination.connector,
             'arrived',
             VISUAL_PALETTE.arrived.connector,
             'completed',
@@ -243,6 +249,8 @@ export function MapView({ compact = false }: MapViewProps) {
           'line-color': [
             'match',
             ['get', 'status'],
+            'near_destination',
+            '#D97706',
             'arrived',
             '#15803D',
             'completed',
@@ -361,9 +369,11 @@ export function MapView({ compact = false }: MapViewProps) {
           el.title =
             markerKind === 'destination'
               ? `Destination - ${task.agentName || `Task ${task.taskId}`}`
-              : markerKind === 'arrived'
-                ? `Arrival reached - ${task.agentName || `Task ${task.taskId}`}`
-                : `Completed - ${task.agentName || `Task ${task.taskId}`}`;
+              : markerKind === 'near'
+                ? `Near destination - ${task.agentName || `Task ${task.taskId}`}`
+                : markerKind === 'arrived'
+                  ? `Arrival reached - ${task.agentName || `Task ${task.taskId}`}`
+                  : `Completed - ${task.agentName || `Task ${task.taskId}`}`;
           const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
             .setLngLat(destinationPoint)
             .addTo(map);
@@ -622,9 +632,11 @@ export function MapView({ compact = false }: MapViewProps) {
             >
               {selectedTask.status === 'arrived'
                 ? 'Arrived at destination'
-                : selectedTask.status === 'completed'
-                  ? 'Task completed'
-                  : 'Currently tracking'}
+                : selectedTask.status === 'near_destination'
+                  ? 'Near destination'
+                  : selectedTask.status === 'completed'
+                    ? 'Task completed'
+                    : 'Currently tracking'}
             </span>
             <button
               onClick={() => setSelectedTaskId(null)}
@@ -687,6 +699,10 @@ export function MapView({ compact = false }: MapViewProps) {
           <div className="flex items-center gap-2">
             <span className="w-4 h-4 rounded-full bg-[#DC2626] border-2 border-white shadow" />
             Destination
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-4 rounded-full bg-[#D97706] border-2 border-white shadow" />
+            Near destination
           </div>
           <div className="flex items-center gap-2">
             <span className="w-4 h-4 rounded-full bg-[#16A34A] border-2 border-white shadow" />

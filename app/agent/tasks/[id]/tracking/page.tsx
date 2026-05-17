@@ -48,7 +48,7 @@ function TrackingMap({
   trail: [number, number][];
   agentName: string;
   agentAvatarUrl?: string;
-  status: 'in_progress' | 'arrived' | 'completed';
+  status: 'in_progress' | 'near_destination' | 'arrived' | 'completed';
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -104,6 +104,8 @@ function TrackingMap({
           'line-color': [
             'match',
             ['get', 'status'],
+            'near_destination',
+            VISUAL_PALETTE.near_destination.trail,
             'arrived',
             VISUAL_PALETTE.arrived.trail,
             'completed',
@@ -128,6 +130,8 @@ function TrackingMap({
           'line-color': [
             'match',
             ['get', 'status'],
+            'near_destination',
+            VISUAL_PALETTE.near_destination.connector,
             'arrived',
             VISUAL_PALETTE.arrived.connector,
             'completed',
@@ -239,9 +243,11 @@ function TrackingMap({
       const markerKind =
         status === 'completed'
           ? 'completed'
-          : status === 'arrived'
-            ? 'arrived'
-            : 'destination';
+          : status === 'near_destination'
+            ? 'near'
+            : status === 'arrived'
+              ? 'arrived'
+              : 'destination';
 
       if (!destinationMarkerRef.current) {
         const el = createStaticMarkerElement(markerKind);
@@ -432,7 +438,7 @@ export default function TrackingPage({
             ? {
               lat: res.data.task.latitude,
               lng: res.data.task.longitude,
-              radiusM: 75,
+              radiusM: res.data.tracking.destination?.radius_meters ?? 75,
             }
             : undefined,
         position: [initialReading.longitude, initialReading.latitude],
