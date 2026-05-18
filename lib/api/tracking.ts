@@ -35,7 +35,12 @@ function normalizeBooleanQuery(value: unknown, fallback: boolean): "true" | "fal
 export interface StartTrackingResponse {
   task: TaskApiItem;
   tracking: TrackingSession;
+  near_destination?: boolean;
   arrived: boolean;
+  proximity_state?: "in_progress" | "near_destination" | "arrived" | "completed";
+  distance_to_destination_meters?: number | null;
+  distance_remaining_meters?: number | null;
+  movement_started?: boolean;
 }
 
 export function startTaskTracking(
@@ -58,7 +63,12 @@ export interface RecordLocationApiResponse {
   tracking?: TrackingSession;
   received_points: number;
   persisted_points: number;
+  near_destination?: boolean;
   arrived: boolean;
+  proximity_state?: "in_progress" | "near_destination" | "arrived" | "completed";
+  distance_to_destination_meters?: number | null;
+  distance_remaining_meters?: number | null;
+  movement_started?: boolean;
 }
 
 export function recordTaskLocation(
@@ -182,9 +192,13 @@ export type AgentLocationListData = {
     };
     task: {
       id: number | null;
-      title?: string | null;
-      status?: string | null;
-      tracking_session_id?: number | null;
+      title: string | null;
+      status: string | null;
+      tracking_session_id: number | null;
+      address?: string | null;
+      location?: string | null;
+      destination_latitude?: number | null;
+      destination_longitude?: number | null;
     };
     location: {
       latitude: number;
@@ -194,6 +208,9 @@ export type AgentLocationListData = {
       heading_degrees?: number | null;
       event_type?: string | null;
       arrived?: boolean;
+      near_destination?: boolean;
+      distance_to_destination_meters?: number | null;
+      distance_remaining_meters?: number | null;
       recorded_at?: string | null;
     };
     status: {
@@ -202,6 +219,7 @@ export type AgentLocationListData = {
       stale_after_seconds: number;
       age_seconds: number | null;
       last_seen_at: string | null;
+      proximity_state?: "in_progress" | "near_destination" | "arrived" | "completed";
     };
     updated_at?: string | null;
   }>;

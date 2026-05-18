@@ -4,13 +4,9 @@ import * as locationBuffer from "@/lib/tracking/location-buffer";
 
 const {
     recordTaskLocationMock,
-    appendPolylinePointMock,
-    markArrivedMock,
     positionCallbackRef,
 } = vi.hoisted(() => ({
     recordTaskLocationMock: vi.fn(),
-    appendPolylinePointMock: vi.fn(),
-    markArrivedMock: vi.fn(),
     positionCallbackRef: {
         current: null as
             | ((reading: {
@@ -29,15 +25,6 @@ vi.mock("@/lib/api/tracking", () => ({
     recordTaskLocation: recordTaskLocationMock,
 }));
 
-vi.mock("@/store/tracking", () => ({
-    useTrackingStore: {
-        getState: () => ({
-            appendPolylinePoint: appendPolylinePointMock,
-            markArrived: markArrivedMock,
-        }),
-    },
-}));
-
 vi.mock("@/lib/tracking/geolocation", () => ({
     watchPosition: vi.fn((onPosition: typeof positionCallbackRef.current) => {
         positionCallbackRef.current = onPosition;
@@ -47,6 +34,9 @@ vi.mock("@/lib/tracking/geolocation", () => ({
 }));
 
 describe("location-buffer", () => {
+    const keyFor = (companyId: number | string, taskId: number) =>
+        `factory_location_buffer:${String(companyId)}:${taskId}`;
+
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useFakeTimers();
@@ -72,7 +62,18 @@ describe("location-buffer", () => {
             recordedAt: "2026-05-16T10:00:00.000Z",
         });
 
-        expect(appendPolylinePointMock).toHaveBeenCalledWith(55, [3.3, 6.5]);
+        expect(sessionStorage.getItem(keyFor(9, 55))).toBe(
+            JSON.stringify([
+                {
+                    latitude: 6.5,
+                    longitude: 3.3,
+                    accuracyMeters: 5,
+                    speedMps: null,
+                    headingDegrees: null,
+                    recordedAt: "2026-05-16T10:00:00.000Z",
+                },
+            ])
+        );
 
         await vi.advanceTimersByTimeAsync(30_000);
 
@@ -94,7 +95,7 @@ describe("location-buffer", () => {
 
     it("flushes recovered queue and triggers arrival callback when backend reports arrived", async () => {
         sessionStorage.setItem(
-            "factory_location_buffer:77",
+            keyFor(12, 77),
             JSON.stringify([
                 {
                     latitude: 6.6,
@@ -115,7 +116,49 @@ describe("location-buffer", () => {
         await Promise.resolve();
 
         expect(recordTaskLocationMock).toHaveBeenCalled();
-        expect(markArrivedMock).toHaveBeenCalledWith(77, "2026-05-16T11:00:00.000Z");
         expect(onArrived).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not reuse queued points from a different task/company session key", async () => {
+        sessionStorage.setItem(
+            keyFor(12, 77),
+            JSON.stringify([
+                {
+                    latitude: 6.6,
+                    longitude: 3.4,
+                    accuracyMeters: 4,
+                    speedMps: null,
+                    headingDegrees: null,
+                    recordedAt: "2026-05-16T11:00:00.000Z",
+                },
+            ])
+        );
+
+        locationBuffer.start(55, 9, "token");
+        await Promise.resolve();
+
+        expect(recordTaskLocationMock).not.toHaveBeenCalled();
+
+        positionCallbackRef.current?.({
+            latitude: 6.7,
+            longitude: 3.5,
+            accuracyMeters: 6,
+            speedMps: null,
+            headingDegrees: null,
+            recordedAt: "2026-05-16T11:01:00.000Z",
+        });
+
+        await vi.advanceTimersByTimeAsync(30_000);
+
+        expect(recordTaskLocationMock).toHaveBeenCalledTimes(1);
+        expect(recordTaskLocationMock.mock.calls[0][1]).toMatchObject({
+            company_id: 9,
+            points: [
+                {
+                    latitude: 6.7,
+                    longitude: 3.5,
+                },
+            ],
+        });
     });
 });

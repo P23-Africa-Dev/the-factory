@@ -29,7 +29,12 @@ class TaskTrackingController extends Controller
             data: [
                 'task' => new TaskResource($result['task']),
                 'tracking' => $this->trackingSessionPayload($result['session']),
+                'near_destination' => $result['near_destination'],
                 'arrived' => $result['arrived'],
+                'proximity_state' => $result['proximity_state'],
+                'distance_to_destination_meters' => $result['distance_to_destination_meters'],
+                'distance_remaining_meters' => $result['distance_remaining_meters'],
+                'movement_started' => $result['movement_started'],
             ],
         );
     }
@@ -45,7 +50,12 @@ class TaskTrackingController extends Controller
                 'tracking' => $this->trackingSessionPayload($result['session']),
                 'received_points' => $result['received_points'],
                 'persisted_points' => $result['persisted_points'],
+                'near_destination' => $result['near_destination'],
                 'arrived' => $result['arrived'],
+                'proximity_state' => $result['proximity_state'],
+                'distance_to_destination_meters' => $result['distance_to_destination_meters'],
+                'distance_remaining_meters' => $result['distance_remaining_meters'],
+                'movement_started' => $result['movement_started'],
             ],
         );
     }
@@ -94,6 +104,11 @@ class TaskTrackingController extends Controller
                 'latitude' => $session->arrival_latitude,
                 'longitude' => $session->arrival_longitude,
                 'recorded_at' => $session->arrival_detected_at?->toIso8601String(),
+            ],
+            'near' => [
+                'latitude' => $session->near_latitude,
+                'longitude' => $session->near_longitude,
+                'recorded_at' => $session->near_detected_at?->toIso8601String(),
             ],
             'end' => [
                 'latitude' => $session->end_latitude,

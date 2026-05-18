@@ -19,6 +19,17 @@ import { LocationPermissionGate } from '@/components/tracking/LocationPermission
 import { CompleteTaskSheet } from '@/components/tracking/CompleteTaskSheet';
 import { useTrackingStore } from '@/store/tracking';
 import type { GeoReading } from '@/types/tracking';
+import {
+  areSamePoint,
+  buildDirectionSegment,
+  buildTaskTrail,
+  createAgentMarkerElement,
+  createStaticMarkerElement,
+  resolveVisualTaskState,
+  sanitizePolyline,
+  updateAgentMarkerElement,
+  VISUAL_PALETTE,
+} from '@/lib/tracking/map-visualization';
 
 type Phase = 'permission' | 'ready' | 'tracking' | 'complete';
 
@@ -27,13 +38,26 @@ const MAPBOX_TOKEN = getMapboxPublicToken();
 function TrackingMap({
   agentPosition,
   destination,
+  trail,
+  agentName,
+  agentAvatarUrl,
+  status,
 }: {
   agentPosition: [number, number] | null;
   destination: { lat: number; lng: number } | null;
+  trail: [number, number][];
+  agentName: string;
+  agentAvatarUrl?: string;
+  status: 'in_progress' | 'near_destination' | 'arrived' | 'completed';
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
+  const mapLoadedRef = useRef(false);
   const agentMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const originMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const destinationMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const markerAnimationRef = useRef<number | null>(null);
+  const markerPositionRef = useRef<[number, number] | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -56,67 +80,277 @@ function TrackingMap({
     mapRef.current = map;
 
     map.on('load', () => {
-      // Destination pin
-      if (destination) {
-        const el = document.createElement('div');
-        el.className = 'w-5 h-5 rounded-full bg-purple-500 border-4 border-white shadow-lg';
-        new mapboxgl.Marker({ element: el })
-          .setLngLat([destination.lng, destination.lat])
-          .addTo(map);
+      map.addSource('tracking-route', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'tracking-route-casing',
+        type: 'line',
+        source: 'tracking-route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#FFFFFF',
+          'line-width': 8,
+          'line-opacity': 0.75,
+        },
+      });
+      map.addLayer({
+        id: 'tracking-route-line',
+        type: 'line',
+        source: 'tracking-route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'status'],
+            'near_destination',
+            VISUAL_PALETTE.near_destination.trail,
+            'arrived',
+            VISUAL_PALETTE.arrived.trail,
+            'completed',
+            VISUAL_PALETTE.completed.trail,
+            VISUAL_PALETTE.in_progress.trail,
+          ],
+          'line-width': 4,
+          'line-opacity': 0.9,
+        },
+      });
 
-        // Arrival radius circle
-        map.addSource('arrival-zone', {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            geometry: { type: 'Point', coordinates: [destination.lng, destination.lat] },
-            properties: {},
-          },
-        });
-        map.addLayer({
-          id: 'arrival-zone-fill',
-          type: 'circle',
-          source: 'arrival-zone',
-          paint: {
-            'circle-radius': {
-              stops: [
-                [0, 0],
-                [20, 75 / 0.075 / Math.cos((destination.lat * Math.PI) / 180)],
-              ],
-              base: 2,
-            },
-            'circle-color': '#9D4EDD',
-            'circle-opacity': 0.1,
-            'circle-stroke-color': '#9D4EDD',
-            'circle-stroke-width': 1,
-            'circle-stroke-opacity': 0.4,
-          },
-        });
-      }
+      map.addSource('tracking-route-connector', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'tracking-route-connector-line',
+        type: 'line',
+        source: 'tracking-route-connector',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'status'],
+            'near_destination',
+            VISUAL_PALETTE.near_destination.connector,
+            'arrived',
+            VISUAL_PALETTE.arrived.connector,
+            'completed',
+            VISUAL_PALETTE.completed.connector,
+            VISUAL_PALETTE.in_progress.connector,
+          ],
+          'line-width': 3,
+          'line-opacity': 0.85,
+          'line-dasharray': [2, 2],
+        },
+      });
 
-      // Agent marker
-      if (agentPosition) {
-        const el = document.createElement('div');
-        el.className =
-          'w-5 h-5 rounded-full bg-dash-teal border-4 border-white shadow-lg ring-4 ring-dash-teal/30';
-        agentMarkerRef.current = new mapboxgl.Marker({ element: el })
-          .setLngLat(agentPosition)
-          .addTo(map);
-      }
+      map.addSource('tracking-route-direction', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'tracking-route-direction-line',
+        type: 'line',
+        source: 'tracking-route-direction',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#075985',
+          'line-width': 5,
+          'line-opacity': 0.95,
+        },
+      });
+
+      mapLoadedRef.current = true;
     });
 
-    return () => map.remove();
+    return () => {
+      mapLoadedRef.current = false;
+      if (markerAnimationRef.current) {
+        cancelAnimationFrame(markerAnimationRef.current);
+        markerAnimationRef.current = null;
+      }
+      originMarkerRef.current?.remove();
+      destinationMarkerRef.current?.remove();
+      agentMarkerRef.current?.remove();
+      map.remove();
+      mapRef.current = null;
+      markerPositionRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update agent marker on new position
   useEffect(() => {
-    if (!agentPosition || !mapRef.current) return;
-    if (agentMarkerRef.current) {
-      agentMarkerRef.current.setLngLat(agentPosition);
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current) return;
+
+    const routeSource = map.getSource('tracking-route') as mapboxgl.GeoJSONSource | undefined;
+    const connectorSource = map.getSource('tracking-route-connector') as mapboxgl.GeoJSONSource | undefined;
+    const directionSource = map.getSource('tracking-route-direction') as mapboxgl.GeoJSONSource | undefined;
+
+    const path = sanitizePolyline(trail);
+    const visualState = resolveVisualTaskState(status, false);
+
+    routeSource?.setData({
+      type: 'FeatureCollection',
+      features: path.length >= 2
+        ? [
+          {
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: path,
+            },
+            properties: { status: visualState },
+          },
+        ]
+        : [],
+    });
+
+    const directionSegment = buildDirectionSegment(path);
+    directionSource?.setData({
+      type: 'FeatureCollection',
+      features: directionSegment
+        ? [
+          {
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: directionSegment,
+            },
+            properties: { status: visualState },
+          },
+        ]
+        : [],
+    });
+
+    const originPoint = path[0] ?? agentPosition;
+    if (originPoint) {
+      if (!originMarkerRef.current) {
+        originMarkerRef.current = new mapboxgl.Marker({
+          element: createStaticMarkerElement('origin'),
+          anchor: 'center',
+        })
+          .setLngLat(originPoint)
+          .addTo(map);
+      } else {
+        originMarkerRef.current.setLngLat(originPoint);
+      }
     }
-    mapRef.current.easeTo({ center: agentPosition, duration: 800 });
-  }, [agentPosition]);
+
+    if (destination) {
+      const destinationLngLat: [number, number] = [destination.lng, destination.lat];
+      const markerKind =
+        status === 'completed'
+          ? 'completed'
+          : status === 'near_destination'
+            ? 'near'
+            : status === 'arrived'
+              ? 'arrived'
+              : 'destination';
+
+      if (!destinationMarkerRef.current) {
+        const el = createStaticMarkerElement(markerKind);
+        el.dataset.kind = markerKind;
+        destinationMarkerRef.current = new mapboxgl.Marker({
+          element: el,
+          anchor: 'center',
+        })
+          .setLngLat(destinationLngLat)
+          .addTo(map);
+      } else {
+        if (destinationMarkerRef.current.getElement().dataset.kind !== markerKind) {
+          destinationMarkerRef.current.remove();
+          const el = createStaticMarkerElement(markerKind);
+          el.dataset.kind = markerKind;
+          destinationMarkerRef.current = new mapboxgl.Marker({
+            element: el,
+            anchor: 'center',
+          })
+            .setLngLat(destinationLngLat)
+            .addTo(map);
+        } else {
+          destinationMarkerRef.current.setLngLat(destinationLngLat);
+        }
+      }
+
+      if (agentPosition && !areSamePoint(agentPosition, destinationLngLat)) {
+        connectorSource?.setData({
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              geometry: {
+                type: 'LineString',
+                coordinates: [agentPosition, destinationLngLat],
+              },
+              properties: { status: visualState },
+            },
+          ],
+        });
+      } else {
+        connectorSource?.setData({ type: 'FeatureCollection', features: [] });
+      }
+    } else {
+      connectorSource?.setData({ type: 'FeatureCollection', features: [] });
+      destinationMarkerRef.current?.remove();
+      destinationMarkerRef.current = null;
+    }
+
+    if (!agentPosition) return;
+
+    if (!agentMarkerRef.current) {
+      const el = createAgentMarkerElement({
+        name: agentName,
+        avatarUrl: agentAvatarUrl,
+        visualState,
+        stale: false,
+      });
+      agentMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        .setLngLat(agentPosition)
+        .addTo(map);
+      markerPositionRef.current = agentPosition;
+    } else {
+      updateAgentMarkerElement(agentMarkerRef.current.getElement(), {
+        name: agentName,
+        avatarUrl: agentAvatarUrl,
+        visualState,
+        stale: false,
+      });
+
+      const from = markerPositionRef.current ?? [agentMarkerRef.current.getLngLat().lng, agentMarkerRef.current.getLngLat().lat] as [number, number];
+      if (!areSamePoint(from, agentPosition)) {
+        if (markerAnimationRef.current) {
+          cancelAnimationFrame(markerAnimationRef.current);
+          markerAnimationRef.current = null;
+        }
+
+        const startedAt = performance.now();
+        const duration = 700;
+        const step = (now: number) => {
+          const progress = Math.min((now - startedAt) / duration, 1);
+          const eased = progress < 0.5
+            ? 2 * progress * progress
+            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+          const nextLng = from[0] + (agentPosition[0] - from[0]) * eased;
+          const nextLat = from[1] + (agentPosition[1] - from[1]) * eased;
+          agentMarkerRef.current?.setLngLat([nextLng, nextLat]);
+
+          if (progress < 1) {
+            markerAnimationRef.current = requestAnimationFrame(step);
+            return;
+          }
+
+          markerAnimationRef.current = null;
+          markerPositionRef.current = agentPosition;
+        };
+
+        markerAnimationRef.current = requestAnimationFrame(step);
+      }
+    }
+
+    map.easeTo({ center: agentPosition, duration: 700 });
+  }, [agentPosition, destination, trail, agentName, agentAvatarUrl, status]);
 
   return <div ref={containerRef} className="w-full h-full" />;
 }
@@ -164,6 +398,8 @@ export default function TrackingPage({
       ? { lat: task.latitude, lng: task.longitude }
       : null;
 
+  const trackingTrail = liveTask ? buildTaskTrail(liveTask) : agentPosition ? [agentPosition] : [];
+
   const handleLocationGranted = async (reading: GeoReading) => {
     setInitialReading(reading);
     setAgentPosition([reading.longitude, reading.latitude]);
@@ -172,6 +408,12 @@ export default function TrackingPage({
 
   const handleBeginTask = async () => {
     if (!companyId || !initialReading) return;
+    const signedInUserId = user?.id;
+    if (typeof signedInUserId !== 'number') {
+      toast.error('Your session is unavailable. Please sign in again.');
+      return;
+    }
+
     setCommencing(true);
     try {
       const token = getAuthTokenFromDocument();
@@ -191,7 +433,7 @@ export default function TrackingPage({
       useTrackingStore.getState().seedFromTaskStart({
         taskId,
         trackingSessionId: res.data.tracking.id,
-        userId: user?.id ?? res.data.tracking.started_by_user_id,
+        userId: signedInUserId,
         agentName: user?.name,
         agentAvatarUrl: user?.avatar ?? undefined,
         taskTitle: res.data.task.title,
@@ -202,7 +444,7 @@ export default function TrackingPage({
             ? {
               lat: res.data.task.latitude,
               lng: res.data.task.longitude,
-              radiusM: 75,
+              radiusM: res.data.tracking.destination?.radius_meters ?? 75,
             }
             : undefined,
         position: [initialReading.longitude, initialReading.latitude],
@@ -318,7 +560,14 @@ export default function TrackingPage({
         <>
           {/* Map fills remaining space */}
           <div className="flex-1 relative">
-            <TrackingMap agentPosition={agentPosition} destination={destination} />
+            <TrackingMap
+              agentPosition={agentPosition}
+              destination={destination}
+              trail={trackingTrail}
+              agentName={liveTask?.agentName ?? user?.name ?? 'Agent'}
+              agentAvatarUrl={liveTask?.agentAvatarUrl ?? user?.avatar ?? undefined}
+              status={liveTask?.status ?? 'in_progress'}
+            />
 
             {/* GPS accuracy badge */}
             {initialReading?.accuracyMeters && (
@@ -341,8 +590,8 @@ export default function TrackingPage({
             <button
               onClick={() => setShowCompleteSheet(true)}
               className={`w-full py-4 rounded-2xl text-[14px] font-bold flex items-center justify-center gap-2 transition-all ${arrived
-                  ? 'bg-[#7EB5AE] text-white shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90'
-                  : 'bg-gray-100 text-gray-400'
+                ? 'bg-[#7EB5AE] text-white shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90'
+                : 'bg-gray-100 text-gray-400'
                 }`}
             >
               <CheckCircle size={16} />

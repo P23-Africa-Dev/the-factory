@@ -14,6 +14,9 @@ const LOW_ACCURACY_OPTIONS: PositionOptions = {
   maximumAge: 30_000,
 };
 
+const MAX_STREAMING_ACCURACY_HIGH_M = 120;
+const MAX_STREAMING_ACCURACY_LOW_M = 250;
+
 function coordsToReading(coords: GeolocationCoordinates): GeoReading {
   return {
     latitude: coords.latitude,
@@ -113,7 +116,7 @@ export function watchPosition(
 ): () => void {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
     console.warn(LOG, "watchPosition skipped — geolocation unavailable");
-    return () => {};
+    return () => { };
   }
 
   const options = lowAccuracy ? LOW_ACCURACY_OPTIONS : HIGH_ACCURACY_OPTIONS;
@@ -122,11 +125,18 @@ export function watchPosition(
   const watchId = navigator.geolocation.watchPosition(
     (pos) => {
       const reading = coordsToReading(pos.coords);
-      if (isValidReading(reading)) {
+      const maxAccuracyM = lowAccuracy
+        ? MAX_STREAMING_ACCURACY_LOW_M
+        : MAX_STREAMING_ACCURACY_HIGH_M;
+
+      if (isValidReading(reading, maxAccuracyM)) {
         console.log(LOG, "watchPosition update", reading);
         onReading(reading);
       } else {
-        console.log(LOG, "watchPosition update ignored (quality check)", reading);
+        console.log(LOG, "watchPosition update ignored (quality check)", {
+          reading,
+          maxAccuracyM,
+        });
       }
     },
     (err) => {
@@ -147,7 +157,7 @@ export function watchPosition(
 export function watchVisibilityAccuracy(
   onChange: (lowAccuracy: boolean) => void
 ): () => void {
-  if (typeof document === "undefined") return () => {};
+  if (typeof document === "undefined") return () => { };
 
   const handler = () => onChange(document.visibilityState === "hidden");
   document.addEventListener("visibilitychange", handler);

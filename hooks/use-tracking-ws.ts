@@ -309,6 +309,7 @@ export function useTrackingWebSocket() {
 
       if (
         msg.type === "tracking.task.started" ||
+        msg.type === "tracking.task.near_destination" ||
         msg.type === "tracking.location.updated" ||
         msg.type === "tracking.agent.location.updated" ||
         msg.type === "tracking.task.arrived" ||

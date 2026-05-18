@@ -13,12 +13,16 @@ const MAPBOX_TOKEN = getMapboxPublicToken();
 function RouteMap({
   polyline,
   start,
+  near,
   arrival,
+  end,
   destination,
 }: {
   polyline: [number, number][];
   start: { lat: number; lng: number } | null;
+  near: { lat: number; lng: number } | null;
   arrival: { lat: number; lng: number } | null;
+  end: { lat: number; lng: number } | null;
   destination: { lat: number; lng: number } | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -72,27 +76,43 @@ function RouteMap({
         map.fitBounds(bounds, { padding: 40, maxZoom: 15 });
       }
 
-      // Start marker (green)
+      // Start marker (origin)
       if (start) {
         const el = document.createElement('div');
         el.style.cssText =
-          'width:14px;height:14px;border-radius:50%;background:#10B981;border:2.5px solid white;box-shadow:0 2px 6px rgba(16,185,129,0.5);';
+          'width:14px;height:14px;border-radius:50%;background:#2563EB;border:2.5px solid white;box-shadow:0 2px 6px rgba(37,99,235,0.5);';
         new mapboxgl.Marker({ element: el }).setLngLat([start.lng, start.lat]).addTo(map);
       }
 
-      // Arrival marker (purple)
+      // Arrival marker
       if (arrival) {
         const el = document.createElement('div');
         el.style.cssText =
-          'width:14px;height:14px;border-radius:50%;background:#8B5CF6;border:2.5px solid white;box-shadow:0 2px 6px rgba(139,92,246,0.5);';
+          'width:14px;height:14px;border-radius:50%;background:#16A34A;border:2.5px solid white;box-shadow:0 2px 6px rgba(22,163,74,0.5);';
         new mapboxgl.Marker({ element: el }).setLngLat([arrival.lng, arrival.lat]).addTo(map);
+      }
+
+      // Near marker
+      if (near) {
+        const el = document.createElement('div');
+        el.style.cssText =
+          'width:14px;height:14px;border-radius:50%;background:#D97706;border:2.5px solid white;box-shadow:0 2px 6px rgba(217,119,6,0.45);';
+        new mapboxgl.Marker({ element: el }).setLngLat([near.lng, near.lat]).addTo(map);
+      }
+
+      // Completion marker
+      if (end) {
+        const el = document.createElement('div');
+        el.style.cssText =
+          'width:14px;height:14px;border-radius:50%;background:#334155;border:2.5px solid white;box-shadow:0 2px 6px rgba(51,65,85,0.5);';
+        new mapboxgl.Marker({ element: el }).setLngLat([end.lng, end.lat]).addTo(map);
       }
 
       // Destination marker
       if (destination) {
         const el = document.createElement('div');
         el.style.cssText =
-          'width:16px;height:16px;border-radius:50%;background:#9D4EDD;border:3px solid white;box-shadow:0 2px 8px rgba(157,78,221,0.4);';
+          'width:16px;height:16px;border-radius:50%;background:#DC2626;border:3px solid white;box-shadow:0 2px 8px rgba(220,38,38,0.4);';
         new mapboxgl.Marker({ element: el, anchor: 'center' })
           .setLngLat([destination.lng, destination.lat])
           .addTo(map);
@@ -145,6 +165,12 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
   const arrival = route?.arrival
     ? { lat: route.arrival.latitude, lng: route.arrival.longitude }
     : null;
+  const near = route?.near
+    ? { lat: route.near.latitude, lng: route.near.longitude }
+    : null;
+  const end = route?.end
+    ? { lat: route.end.latitude, lng: route.end.longitude }
+    : null;
   const destination = route?.destination
     ? { lat: route.destination.latitude, lng: route.destination.longitude }
     : null;
@@ -176,7 +202,9 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
           <RouteMap
             polyline={polyline}
             start={start}
+            near={near}
             arrival={arrival}
+            end={end}
             destination={destination}
           />
         )}
@@ -245,12 +273,25 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
             {/* Arrival event */}
             {route.arrival && (
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-xl bg-purple-50 flex items-center justify-center shrink-0 mt-0.5">
-                  <MapPin size={14} className="text-purple-500" />
+                <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center shrink-0 mt-0.5">
+                  <MapPin size={14} className="text-green-600" />
                 </div>
                 <div>
                   <p className="text-[13px] font-bold text-dash-dark">Arrived at destination</p>
                   <p className="text-[11px] text-gray-400">{formatTime(route.arrival.recorded_at)}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Near-destination event */}
+            {route.near && !route.arrival && (
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
+                  <MapPin size={14} className="text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-[13px] font-bold text-dash-dark">Near destination</p>
+                  <p className="text-[11px] text-gray-400">{formatTime(route.near.recorded_at)}</p>
                 </div>
               </div>
             )}
@@ -276,7 +317,11 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
                 </div>
                 <div>
                   <p className="text-[13px] font-bold text-dash-dark">Currently tracking</p>
-                  <p className="text-[11px] text-gray-400">Agent is en route</p>
+                  <p className="text-[11px] text-gray-400">
+                    {route.proximity?.state === 'near_destination'
+                      ? 'Agent is near destination'
+                      : 'Agent is en route'}
+                  </p>
                 </div>
               </div>
             )}
@@ -285,16 +330,24 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
             <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">
               <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Legend</p>
               <div className="flex items-center gap-2 text-[12px] text-gray-500">
-                <span className="w-3 h-3 rounded-full bg-green-500 shrink-0" />
+                <span className="w-3 h-3 rounded-full bg-blue-600 shrink-0" />
                 Start point
               </div>
               <div className="flex items-center gap-2 text-[12px] text-gray-500">
-                <span className="w-3 h-3 rounded-full bg-purple-500 shrink-0" />
+                <span className="w-3 h-3 rounded-full bg-amber-600 shrink-0" />
+                Near destination
+              </div>
+              <div className="flex items-center gap-2 text-[12px] text-gray-500">
+                <span className="w-3 h-3 rounded-full bg-green-600 shrink-0" />
                 Arrival point
               </div>
               <div className="flex items-center gap-2 text-[12px] text-gray-500">
-                <span className="w-3 h-3 rounded-full bg-[#9D4EDD] shrink-0" />
+                <span className="w-3 h-3 rounded-full bg-[#DC2626] shrink-0" />
                 Destination
+              </div>
+              <div className="flex items-center gap-2 text-[12px] text-gray-500">
+                <span className="w-3 h-3 rounded-full bg-slate-700 shrink-0" />
+                Completion point
               </div>
               <div className="flex items-center gap-2 text-[12px] text-gray-500">
                 <span className="w-8 h-0.5 bg-blue-500 shrink-0 rounded-full" />

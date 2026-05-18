@@ -50,7 +50,20 @@ function normalizeLiveStatus(
   const value = status.toLowerCase();
   if (value === "completed") return "completed";
   if (value === "arrived") return "arrived";
+  if (value === "near_destination") return "near_destination";
   return "in_progress";
+}
+
+function normalizeProximityState(
+  state: string | null | undefined
+): LiveTaskState["status"] | undefined {
+  if (!state) return undefined;
+  const value = state.toLowerCase();
+  if (value === "completed") return "completed";
+  if (value === "arrived") return "arrived";
+  if (value === "near_destination") return "near_destination";
+  if (value === "in_progress") return "in_progress";
+  return undefined;
 }
 
 function buildFromEnvelope(
@@ -66,9 +79,9 @@ function buildFromEnvelope(
   const hasDestination =
     typeof destinationLat === "number" && typeof destinationLng === "number";
 
-  const normalizedStatus = normalizeLiveStatus(
-    payload.data?.task?.status ?? payload.data?.task_status
-  );
+  const normalizedStatus =
+    normalizeProximityState(payload.data?.proximity_state) ??
+    normalizeLiveStatus(payload.data?.task?.status ?? payload.data?.task_status);
   const taskStatus = normalizedStatus ?? prev?.status ?? "in_progress";
 
   const base: LiveTaskState = prev ?? {
@@ -119,6 +132,18 @@ function buildFromEnvelope(
       }
       : {}),
     ...(hasCoords && { lastPosition: [lng!, lat!] }),
+    distanceToDestinationMeters:
+      payload.data?.distance_to_destination_meters ??
+      prev?.distanceToDestinationMeters ??
+      null,
+    distanceRemainingMeters:
+      payload.data?.distance_remaining_meters ??
+      prev?.distanceRemainingMeters ??
+      null,
+    movementStarted: payload.data?.movement_started ?? prev?.movementStarted,
+    nearDetectedAt:
+      payload.data?.near_recorded_at ??
+      (envelope.type === "tracking.task.near_destination" ? payload.occurred_at : prev?.nearDetectedAt),
     ...(payload.data?.arrived && !base.arrivedAt
       ? { arrivedAt: payload.occurred_at }
       : {}),
@@ -170,16 +195,37 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
           : polyline;
 
         const arrivedNow = !!payload.data?.arrived;
+        const nearNow = !!payload.data?.near_destination && !arrivedNow;
         return {
           liveTasks: {
             ...s.liveTasks,
             [taskId]: {
               ...updated,
               polyline: newPolyline,
-              status: arrivedNow ? "arrived" : updated.status,
+              status: arrivedNow
+                ? "arrived"
+                : nearNow
+                  ? "near_destination"
+                  : updated.status,
+              ...(nearNow && !prev?.nearDetectedAt
+                ? { nearDetectedAt: payload.data?.near_recorded_at ?? payload.occurred_at }
+                : {}),
               ...(arrivedNow && !prev?.arrivedAt
                 ? { arrivedAt: payload.occurred_at }
                 : {}),
+            },
+          },
+        };
+      }
+
+      if (type === "tracking.task.near_destination") {
+        return {
+          liveTasks: {
+            ...s.liveTasks,
+            [taskId]: {
+              ...updated,
+              status: "near_destination",
+              nearDetectedAt: payload.data?.near_recorded_at ?? payload.occurred_at,
             },
           },
         };
@@ -228,7 +274,9 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             ? "completed"
             : route.arrival
               ? "arrived"
-              : "in_progress",
+              : route.near || route.proximity?.state === "near_destination"
+                ? "near_destination"
+                : "in_progress",
         destination: route.destination
           ? {
             lat: route.destination.latitude,
@@ -243,9 +291,20 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
         lastEventAt:
           route.end?.recorded_at ??
           route.arrival?.recorded_at ??
+          route.near?.recorded_at ??
           route.start?.recorded_at ??
           new Date().toISOString(),
+        nearDetectedAt: route.near?.recorded_at ?? prev?.nearDetectedAt,
         arrivedAt: route.arrival?.recorded_at,
+        distanceToDestinationMeters:
+          route.proximity?.distance_to_destination_meters ??
+          prev?.distanceToDestinationMeters ??
+          null,
+        distanceRemainingMeters:
+          route.proximity?.distance_remaining_meters ??
+          prev?.distanceRemainingMeters ??
+          null,
+        movementStarted: prev?.movementStarted,
       };
 
       return { liveTasks: { ...s.liveTasks, [taskId]: entry } };
@@ -283,7 +342,11 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
           agentAvatarUrl: item.agent.avatar_url ?? prev?.agentAvatarUrl,
           taskTitle: item.task.title ?? prev?.taskTitle ?? `Task #${taskId}`,
           taskAddress: item.task.address ?? item.task.location ?? prev?.taskAddress,
-          status: normalizeLiveStatus(item.task.status) ?? prev?.status ?? "in_progress",
+          status:
+            normalizeProximityState(item.status.proximity_state) ??
+            normalizeLiveStatus(item.task.status) ??
+            prev?.status ??
+            "in_progress",
           destination:
             typeof item.task.destination_latitude === "number" &&
               typeof item.task.destination_longitude === "number"
@@ -307,10 +370,23 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             item.updated_at ??
             prev?.lastEventAt ??
             new Date().toISOString(),
+          nearDetectedAt:
+            item.status.proximity_state === "near_destination" && !item.location.arrived
+              ? prev?.nearDetectedAt ?? item.location.recorded_at ?? item.updated_at ?? undefined
+              : prev?.nearDetectedAt,
           arrivedAt:
             item.location.arrived || normalizeLiveStatus(item.task.status) === "arrived"
               ? prev?.arrivedAt ?? item.location.recorded_at ?? item.updated_at ?? undefined
               : prev?.arrivedAt,
+          distanceToDestinationMeters:
+            item.location.distance_to_destination_meters ??
+            prev?.distanceToDestinationMeters ??
+            null,
+          distanceRemainingMeters:
+            item.location.distance_remaining_meters ??
+            prev?.distanceRemainingMeters ??
+            null,
+          movementStarted: prev?.movementStarted,
         };
       }
 
