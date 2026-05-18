@@ -9,14 +9,13 @@ import {
   WeeklyTasks,
   CRMPipeline,
   AIWorkspace,
+  WeeklyTasksAgents,
 } from "@/components/dashboard/dashboard-cards";
 import { DashboardMap } from "@/components/dashboard/dashboard-map";
+import { getCurrentDateParts } from "@/lib/utils/date";
 
 export default function DashboardPage() {
-  const currentDate = new Date("2026-07-29");
-  const day = currentDate.getDate();
-  const weekDay = currentDate.toLocaleDateString("en-US", { weekday: "long" });
-  const month = currentDate.toLocaleDateString("en-US", { month: "long" });
+  const { day, weekDay, month } = getCurrentDateParts();
 
   return (
     <div className="min-h-full bg-[#09232D] text-white overflow-x-hidden">
@@ -67,7 +66,8 @@ export default function DashboardPage() {
       <div className="bg-dash-bg pb-2 pt-6 md:pt-4.25 relative z-10 shadow-inner">
         <div className="max-w-340 mx-auto gap-4.25 flex flex-col lg:flex-row px-4 md:px-6 lg:px-0">
           <TopCustomers />
-          <WeeklyTasks />
+          {/* <WeeklyTasks /> */}
+          <WeeklyTasksAgents />
           <DashboardMap basePath="" />
           <div className="w-full lg:max-w-34 mt-0 lg:mt-23.75">
             <CRMPipeline />

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { useAuthStore } from "@/store/auth";
 import {
   AreaChart,
   Area,
@@ -14,6 +15,7 @@ import {
   YAxis,
 } from "recharts";
 import ArrowDown from "@/assets/images/arrow-down.png";
+import { getCurrentDateParts } from "@/lib/utils/date";
 
 const paymentOverviewData = [
   { bar: 78, line: 74 },
@@ -100,6 +102,10 @@ function MiniChart({
 
 export function PaymentOverview() {
   const [mounted, setMounted] = useState(false);
+  const user = useAuthStore((s) => s.user);
+  const isAgent = user?.active_company?.role === "agent";
+    const { day, weekDay, month } = getCurrentDateParts();
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
@@ -107,7 +113,7 @@ export function PaymentOverview() {
 
   return (
     <div className="flex flex-col lg:flex-row gap-4">
-      <div className="p-5 flex-1 min-w-0 flex flex-col">
+      <div className="p-3 sm:p-5 flex-1 min-w-0 flex flex-col">
         <div className="flex items-start justify-between gap-4">
           <h2 className="text-[20px] font-bold text-[#0B1215] font-[poppins] pt-1.5">
             Payment Overview
@@ -129,14 +135,14 @@ export function PaymentOverview() {
                 As at Today
               </p>
               <p className="text-[12px] text-[#8B95A1] mt-0.5">
-                Monday, April 16th
+                {weekDay}, {month} {day}th
               </p>
             </div>
           </div>
         </div>
 
         {/* Combined bar + line chart */}
-        <div className="mt-4 flex-1 min-h-40">
+        <div className="mt-4 h-50 lg:h-auto lg:flex-1 lg:min-h-40">
           {mounted ? (
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
@@ -182,9 +188,9 @@ export function PaymentOverview() {
         </div>
       </div>
 
-      <div className="flex-1 min-w-0 flex flex-col lg:max-w-71.5 gap-2.5 lg:max-h-42.25">
-        <div className="bg-white rounded-3xl px-5 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] h-fit">
-          <p className="text-[32px] font-bold text-[#34373C] leading-13.75 tracking-tight font-[poppins]">
+      <div className="flex-1 min-w-0 flex flex-row lg:flex-col lg:max-w-71.5 gap-2.5 lg:max-h-42.25">
+        <div className="flex-1 bg-white rounded-3xl px-4 sm:px-5 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] h-fit">
+          <p className="text-[22px] sm:text-[28px] lg:text-[32px] font-bold text-[#34373C] leading-tight tracking-tight font-[poppins]">
             &#8358;1,180,000
           </p>
           <p className="text-[14px] font-light text-[#34373C] mb-2.5">
@@ -204,32 +210,34 @@ export function PaymentOverview() {
           </div>
         </div>
 
-        <div className="bg-white flex  rounded-3xl px-5 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] h-fit">
-          <div className="shrink-0 mr-2">
-            <p className="text-[20px] font-bold text-[#34373C] tracking-tight font-[poppins]">
-              &#8358;1,180,000
-            </p>
-            <p className="text-[12px] font-light text-[#34373C] leading-none">
-              Pending Approvals
-            </p>
+        {!isAgent && (
+          <div className="flex-1 bg-white flex rounded-3xl px-4 sm:px-5 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] h-fit">
+            <div className="shrink-0 mr-2">
+              <p className="text-[16px] sm:text-[20px] font-bold text-[#34373C] tracking-tight font-[poppins]">
+                &#8358;1,180,000
+              </p>
+              <p className="text-[12px] font-light text-[#34373C] leading-none">
+                Pending Approvals
+              </p>
+            </div>
+            <div className="w-full h-9">
+              {mounted ? (
+                <MiniChart color="#E18695" gradId="commGrad" />
+              ) : (
+                <div className="h-full w-full" />
+              )}
+            </div>
+            <div className="inline-flex items-center gap-1 text-[15px] font-medium ml-3.5">
+              20% <Image src={ArrowDown} alt="" width={7} />
+            </div>
           </div>
-          <div className="w-full h-9">
-            {mounted ? (
-              <MiniChart color="#E18695" gradId="commGrad" />
-            ) : (
-              <div className="h-full w-full" />
-            )}
-          </div>
-          <div className="inline-flex items-center gap-1 text-[15px] font-medium ml-3.5">
-            20% <Image src={ArrowDown} alt="" width={7} />
-          </div>
-        </div>
+        )}
       </div>
 
-      <div className="bg-[#09232D] lg:max-h-67.25 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-3xl lg:max-w-115.25 py-5 px-3.75 flex-1 min-w-0 relative overflow-hidden flex flex-col">
+      <div className="bg-[#09232D] min-h-55 lg:max-h-67.25 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-3xl lg:max-w-115.25 py-5 px-3.75 flex-1 min-w-0 relative overflow-hidden flex flex-col">
         <div className="relative z-10 flex flex-col flex-1">
           <div className="px-4.5 py-3.25 bg-[#041820] rounded-[20px] w-fit shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
-            <p className="text-[48px] text-white leading-tight tracking-tight">
+            <p className="text-[28px] sm:text-[38px] lg:text-[48px] text-white leading-tight tracking-tight">
               &#8358;4,250,0000
             </p>
             <p className="text-[14px] font-light text-white mt-0.75">
@@ -238,7 +246,7 @@ export function PaymentOverview() {
           </div>
 
           {/* Chart */}
-          <div className="mt-auto pt-4 h-27.75 flex items-baseline">
+          <div className="mt-auto pt-4 h-20 lg:h-27.75 flex items-baseline">
             {mounted ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
@@ -272,7 +280,7 @@ export function PaymentOverview() {
               <div className="h-full w-full" />
             )}
 
-            <span className="inline-flex items-center gap-1 text-[24px] font-medium text-[#95E1C0] px-2.5 py-0.5 rounded-full shrink-0">
+            <span className="inline-flex items-center gap-1 text-[16px] sm:text-[20px] lg:text-[24px] font-medium text-[#95E1C0] px-2.5 py-0.5 rounded-full shrink-0">
               20%
               <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
                 <path
