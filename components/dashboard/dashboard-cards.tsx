@@ -5,10 +5,13 @@ import ArrowUp from "@/assets/images/arrow-57deg.png";
 import happyIcon from "@/assets/images/happy.png";
 import SearchListIcon from "@/assets/images/search-list-icon.png";
 import { FilterSelect } from "@/components/ui/filter-select";
+import { useDashboardOverview } from "@/hooks/use-dashboard";
+import { getActiveCompanyContext } from "@/lib/company-context";
 import { cn } from "@/lib/utils/sample";
-import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
+import { useAuthStore } from "@/store/auth";
+import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import Image from "next/image";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 export function TopCustomers() {
   const customers = [
@@ -200,6 +203,38 @@ export function TopCustomers() {
 const taskFilterOptions = ["Daily", "Weekly", "Monthly"] as const;
 type TaskFilter = (typeof taskFilterOptions)[number];
 
+const TASK_COLORS = ["#7BB6B8", "#D086E6"] as const;
+
+function toDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatTimeLabel(value: string | null): string {
+  if (!value) {
+    return "--";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "--";
+  }
+
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatPipelineLabel(status: string): string {
+  return status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export function WeeklyTasks() {
   const [filter, setFilter] = useState<TaskFilter>("Daily");
 
@@ -280,40 +315,6 @@ export function WeeklyTasks() {
   );
 }
 
-const AGENT_MOCK_TASKS = [
-  {
-    date: "2026-05-12",
-    tasks: [
-      { time: "10 am", title: "Guest: John Doe", desc: "Consultation meeting.", color: "#7BB6B8" },
-    ]
-  },
-  {
-    date: "2026-05-13",
-    tasks: [
-      { time: "11 am", title: "Guest: Sarah Connor", desc: "Project briefing.", color: "#D086E6" },
-    ]
-  },
-  {
-    date: "2026-05-14",
-    tasks: [
-      { time: "9 am", title: "Guest: Lane wade", desc: "Lorem ipsum dolor sit amet consectetur.", color: "#7BB6B8" },
-      { time: "2 pm", title: "Guest: Bayo Williams", desc: "Lorem ipsum dolor sit amet consectetur.", color: "#D086E6" },
-    ]
-  },
-  {
-    date: "2026-05-15",
-    tasks: [
-      { time: "3 pm", title: "Guest: Mike Tyson", desc: "Training session.", color: "#7BB6B8" },
-    ]
-  },
-  {
-    date: "2026-05-16",
-    tasks: [
-      { time: "8 am", title: "Guest: Elon Musk", desc: "Rocket launch prep.", color: "#D086E6" },
-    ]
-  }
-];
-
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"
@@ -321,8 +322,16 @@ const MONTHS = [
 
 export function WeeklyTasksAgents() {
   const [filter, setFilter] = useState<TaskFilter>("Daily");
-  const [selectedDate, setSelectedDate] = useState(new Date("2026-05-14"));
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const basePath = role === "agent" ? "/agent" : "/admin";
+
+  const { data: overview } = useDashboardOverview({
+    company_id: companyId ?? undefined,
+    basePath,
+  });
 
   const formattedDate = selectedDate.toLocaleDateString("en-US", {
     weekday: "short",
@@ -330,8 +339,33 @@ export function WeeklyTasksAgents() {
     day: "numeric",
   });
 
-  const dateString = selectedDate.toISOString().split("T")[0];
-  const dayTasks = AGENT_MOCK_TASKS.find(t => t.date === dateString)?.tasks || [];
+  const tasksByDate = useMemo(() => {
+    const grouped: Record<string, Array<{ time: string; title: string; desc: string; color: string }>> = {};
+
+    (overview?.calendar_task_feed ?? []).forEach((task, index) => {
+      if (!task.due_at) {
+        return;
+      }
+
+      const dueDate = new Date(task.due_at);
+      if (Number.isNaN(dueDate.getTime())) {
+        return;
+      }
+
+      const dateKey = toDateKey(dueDate);
+      grouped[dateKey] ??= [];
+      grouped[dateKey].push({
+        time: formatTimeLabel(task.due_at),
+        title: task.title,
+        desc: task.status ? `Status: ${formatPipelineLabel(task.status)}` : "Scheduled task",
+        color: TASK_COLORS[index % TASK_COLORS.length],
+      });
+    });
+
+    return grouped;
+  }, [overview?.calendar_task_feed]);
+
+  const dayTasks = tasksByDate[toDateKey(selectedDate)] ?? [];
 
   const handlePrevDay = () => {
     const prev = new Date(selectedDate);
@@ -367,15 +401,15 @@ export function WeeklyTasksAgents() {
         </div>
 
         <div className="flex items-center justify-between bg-[#F8F8F8] rounded-full px-4 py-2 mb-2 mx-2 relative">
-          <button 
+          <button
             onClick={handlePrevDay}
             className="text-gray-400 hover:text-dash-dark transition-colors"
           >
             <ChevronLeft size={18} />
           </button>
-          
+
           <div className="relative">
-            <button 
+            <button
               onClick={() => setShowMonthPicker(!showMonthPicker)}
               className="flex items-center gap-2 text-[12px] font-medium text-[#09232D] hover:opacity-70 transition-all"
             >
@@ -401,7 +435,7 @@ export function WeeklyTasksAgents() {
             )}
           </div>
 
-          <button 
+          <button
             onClick={handleNextDay}
             className="text-gray-400 hover:text-dash-dark transition-colors"
           >
@@ -413,8 +447,8 @@ export function WeeklyTasksAgents() {
           {dayTasks.length > 0 ? (
             <div className="space-y-3 w-full">
               {dayTasks.map((task, i) => (
-                <div 
-                  key={i} 
+                <div
+                  key={i}
                   className="rounded-[40px] px-4 py-3 flex items-center gap-4 text-white animate-in fade-in slide-in-from-right-4 duration-300 w-full"
                   style={{ backgroundColor: task.color }}
                 >
@@ -485,6 +519,20 @@ export function WeeklyTasksAgents() {
 }
 
 export function CRMPipeline() {
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const basePath = role === "agent" ? "/agent" : "/admin";
+
+  const { data: overview } = useDashboardOverview({
+    company_id: companyId ?? undefined,
+    basePath,
+  });
+
+  const topStages = useMemo(() => {
+    const stages = overview?.crm_pipeline_snapshot?.stages ?? [];
+    return [...stages].sort((a, b) => b.count - a.count).slice(0, 3);
+  }, [overview?.crm_pipeline_snapshot?.stages]);
+
   return (
     <div className="py-3.75 px-2.75 pb-10 bg-[#D056DC] h-fit rounded-[20px] text-white relative overflow-hidden mb-2.5 shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
       <div className="z-20 relative">
@@ -505,6 +553,22 @@ export function CRMPipeline() {
           Get an intelligent review of your current leads, outreach performance,
           and engagement trends.
         </p>
+
+        <div className="mt-3 space-y-1.5">
+          {topStages.length === 0 ? (
+            <p className="text-[8px] text-white/85">No pipeline data available yet.</p>
+          ) : (
+            topStages.map((stage) => (
+              <div
+                key={stage.status}
+                className="flex items-center justify-between rounded-md bg-white/15 px-2 py-1"
+              >
+                <span className="text-[8px] font-medium">{formatPipelineLabel(stage.status)}</span>
+                <span className="text-[8px] font-bold">{stage.count}</span>
+              </div>
+            ))
+          )}
+        </div>
       </div>
       <div className="absolute w-40 h-51.5 bg-linear-to-l from-[#C248CE] to-[#F7ABFF] -left-10 -top-10 rounded-[50%_50%_45%_45%/60%_60%_40%_40%] transition-all duration-700 z-0" />
     </div>

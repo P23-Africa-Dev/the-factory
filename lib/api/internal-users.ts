@@ -37,6 +37,11 @@ export type InternalUserListItem = {
   name: string;
   email: string;
   role: InternalUserRole;
+  internal_role?: InternalUserRole;
+  assigned_zone?: string | null;
+  phone_number?: string | null;
+  avatar_key?: string | null;
+  avatar_url?: string | null;
   onboarding_status?: "active" | "pending_onboarding" | "inactive";
   is_active?: boolean;
   internal_onboarding_completed_at?: string | null;
