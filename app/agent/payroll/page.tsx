@@ -97,11 +97,11 @@ export default function FinancePage() {
       </div>
       {/* Main Content */}
       <div className="px-5 sm:px-8 lg:px-10 py-6 space-y-6">
-        {isAgent ? (
+        {/* {isAgent ? (
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700">
             You have read-only payroll access. Contact your manager to update payroll settings.
           </div>
-        ) : null}
+        ) : null} */}
         <PaymentOverview />
 
         {/* Payroll List + Sidebar */}

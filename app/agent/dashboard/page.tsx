@@ -11,12 +11,10 @@ import {
   AIWorkspace,
 } from "@/components/dashboard/dashboard-cards";
 import { DashboardMap } from "@/components/dashboard/dashboard-map";
+import { getCurrentDateParts } from "@/lib/utils/date";
 
 export default function DashboardPage() {
-  const currentDate = new Date("2026-07-29");
-  const day = currentDate.getDate();
-  const weekDay = currentDate.toLocaleDateString("en-US", { weekday: "long" });
-  const month = currentDate.toLocaleDateString("en-US", { month: "long" });
+  const { day, weekDay, month } = getCurrentDateParts();
 
   return (
     <div className="min-h-full bg-[#09232D] text-white overflow-x-hidden">

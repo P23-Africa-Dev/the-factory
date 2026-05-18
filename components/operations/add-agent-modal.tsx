@@ -18,15 +18,6 @@ import { useAuthStore } from "@/store/auth";
 import type { ApiRequestError } from "@/lib/api/onboarding";
 import { getActiveCompanyContext } from "@/lib/company-context";
 
-const ZONE_OPTIONS = [
-  "Ikeja LGA",
-  "Surulere LGA",
-  "Lekki LGA",
-  "Victoria Island",
-  "Yaba LGA",
-  "Oshodi LGA",
-];
-
 const ROLE_OPTIONS = [
   { label: "Supervisor", value: "supervisor" },
   { label: "Agent", value: "agent" },
@@ -46,7 +37,6 @@ type FormErrors = Partial<{
   name: string;
   email: string;
   role: string;
-  zone: string;
   salary: string;
   workDays: string;
   supervisorId: string;
@@ -67,7 +57,6 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"supervisor" | "agent" | "">("");
-  const [zone, setZone] = useState("");
   const [salary, setSalary] = useState("");
   const [workDays, setWorkDays] = useState<string[]>(["monday", "tuesday", "wednesday", "thursday", "friday"]);
   const [supervisorId, setSupervisorId] = useState("");
@@ -112,7 +101,6 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       e.email = "Enter a valid email address.";
     }
     if (!role) e.role = "Role is required.";
-    if (!zone) e.zone = "Zone is required.";
     if (salary) {
       const numeric = salary.replace(/,/g, "");
       if (isNaN(Number(numeric)) || Number(numeric) < 0)
@@ -139,7 +127,6 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       if (apiErr.errors.full_name) fe.name = apiErr.errors.full_name[0];
       if (apiErr.errors.email) fe.email = apiErr.errors.email[0];
       if (apiErr.errors.role) fe.role = apiErr.errors.role[0];
-      if (apiErr.errors.assigned_zone) fe.zone = apiErr.errors.assigned_zone[0];
       if (apiErr.errors.base_salary) fe.salary = apiErr.errors.base_salary[0];
       if (apiErr.errors.work_days) fe.workDays = apiErr.errors.work_days[0];
       if (apiErr.errors.supervisor_user_id) fe.supervisorId = apiErr.errors.supervisor_user_id[0];
@@ -174,7 +161,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       full_name: name.trim(),
       email: email.trim(),
       role: role as "supervisor" | "agent",
-      assigned_zone: zone,
+      assigned_zone: "",
       work_days: workDays,
       base_salary: baseSalaryNum,
       commission_enabled: commissionEnabled,
@@ -246,7 +233,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
               <SectionDivider label="Add New Agent" />
 
               <div>
-                <FormRow label="Fullname">
+                <FormRow label="Fullname" labelClassName="w-28">
                   <InlineInput
                     value={name}
                     onChange={(e) => { setName(e.target.value); clearError("name"); }}
@@ -258,7 +245,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
               </div>
 
               <div>
-                <FormRow label="Email">
+                <FormRow label="Email" labelClassName="w-28">
                   <InlineInput
                     value={email}
                     onChange={(e) => { setEmail(e.target.value); clearError("email"); }}
@@ -270,7 +257,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
               </div>
 
               <div>
-                <FormRow label="Role">
+                <FormRow label="Role" labelClassName="w-28">
                   <InlineSelect
                     value={role}
                     onChange={(e) => {
@@ -292,7 +279,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
 
               {role === "agent" && (
                 <div>
-                  <FormRow label="Supervisor">
+                  <FormRow label="Supervisor" labelClassName="w-28">
                     <InlineSelect
                       value={supervisorId}
                       onChange={(e) => { setSupervisorId(e.target.value); clearError("supervisorId"); }}
@@ -310,24 +297,9 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 </div>
               )}
 
-              <div>
-                <FormRow label="Zone">
-                  <InlineSelect
-                    value={zone}
-                    onChange={(e) => { setZone(e.target.value); clearError("zone"); }}
-                    className="col-span-2"
-                  >
-                    <option value="" disabled>E.g Ikeja LGA</option>
-                    {ZONE_OPTIONS.map((z) => (
-                      <option key={z}>{z}</option>
-                    ))}
-                  </InlineSelect>
-                </FormRow>
-                <FieldError message={errors.zone} />
-              </div>
 
               <div>
-                <FormRow label="Salary">
+                <FormRow label="Salary" labelClassName="w-28">
                   <InlineInput
                     value={salary}
                     onChange={(e) => {
@@ -341,7 +313,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 <FieldError message={errors.salary} />
               </div>
 
-              <FormRow label="Commission Enable">
+              <FormRow label="Commission Enable" labelClassName="w-28">
                 <Toggle
                   enabled={commissionEnabled}
                   onToggle={() => setCommissionEnabled(!commissionEnabled)}
@@ -376,7 +348,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 <FieldError message={errors.workDays} />
               </div>
 
-              <FormRow label="Fill for Agent">
+              <FormRow label="Fill for Agent" labelClassName="w-28">
                 <Toggle
                   enabled={fillForAgent}
                   onToggle={handleFillForAgentToggle}

@@ -54,7 +54,7 @@ export function PayrollList({
     : source;
 
   return (
-    <div className="bg-white rounded-[30px] pt-5.75 px-4 sm:px-10 pb-6 flex-1 min-w-0 flex flex-col h-140 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+    <div className="bg-white rounded-[30px] pt-5.75 px-4 sm:px-10 pb-6 flex-1 min-w-0 flex flex-col h-auto lg:h-140 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
       {/* Header */}
       {!showViewAll && (
         <div className="flex justify-end mb-7 shrink-0">
@@ -63,7 +63,7 @@ export function PayrollList({
       )}
 
       {/* Scrollable rows */}
-      <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3.5">
+      <div className="overflow-visible lg:flex-1 lg:min-h-0 lg:overflow-y-auto pr-1 space-y-3.5">
         {paginated.map((agent) => {
           const isSelected = selectedId === agent.id;
           return (
