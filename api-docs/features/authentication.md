@@ -20,6 +20,11 @@ Backward compatibility:
 
 - `/api/v1/internal/login` remains available as a deprecated alias for agents only.
 
+Password reset:
+
+- `POST /api/v1/auth/forgot-password` sends a password reset OTP to the user email when the account exists and can authenticate.
+- `POST /api/v1/auth/reset-password` verifies the OTP and updates the password.
+
 ## Authentication Roles
 
 ### Shared Management Auth Endpoint (`POST /api/v1/auth/login`)
@@ -43,8 +48,10 @@ Allowed users:
 3. `POST /api/v1/agent/login`
 4. `POST /api/v1/internal/login` (deprecated alias for agents only)
 5. `GET /api/v1/user/me` (authenticated profile including active company context)
-6. `GET|POST|PATCH /api/v1/admin/*` (management scope only)
-7. `GET|POST|PATCH /api/v1/agent/*` (agent scope only)
+6. `POST /api/v1/auth/forgot-password`
+7. `POST /api/v1/auth/reset-password`
+8. `GET|POST|PATCH /api/v1/admin/*` (management scope only)
+9. `GET|POST|PATCH /api/v1/agent/*` (agent scope only)
 
 Canonical protected namespaces:
 
@@ -68,6 +75,25 @@ Agent login request:
 {
   "email": "agent@example.com",
   "password": "securepassword123"
+}
+```
+
+Forgot password request:
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+Reset password request:
+
+```json
+{
+  "email": "user@example.com",
+  "otp": "123456",
+  "password": "Newpassword123",
+  "password_confirmation": "Newpassword123"
 }
 ```
 
@@ -169,6 +195,30 @@ Company context rules:
       "onboarding_status": "active"
     }
   },
+  "errors": null
+}
+```
+
+### Forgot password success (200)
+
+```json
+{
+  "success": true,
+  "message": "If the email exists, a password reset code has been sent.",
+  "data": {
+    "email": "us***@example.com"
+  },
+  "errors": null
+}
+```
+
+### Reset password success (200)
+
+```json
+{
+  "success": true,
+  "message": "Password reset successfully.",
+  "data": null,
   "errors": null
 }
 ```

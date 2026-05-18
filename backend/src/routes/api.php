@@ -2,9 +2,11 @@
 
 use App\Http\Controllers\Api\V1\Agent\AgentLoginController;
 use App\Http\Controllers\Api\V1\Auth\AdminLoginController;
+use App\Http\Controllers\Api\V1\Auth\ForgotPasswordController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\ResendOtpController;
+use App\Http\Controllers\Api\V1\Auth\ResetPasswordController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
@@ -50,6 +52,14 @@ Route::prefix('auth')->name('auth.')->group(function (): void {
     Route::post('/resend-otp', ResendOtpController::class)
         ->middleware('throttle:3,10')
         ->name('resend-otp');
+
+    Route::post('/forgot-password', ForgotPasswordController::class)
+        ->middleware('throttle:5,1')
+        ->name('forgot-password');
+
+    Route::post('/reset-password', ResetPasswordController::class)
+        ->middleware('throttle:10,1')
+        ->name('reset-password');
 
     // Unified admin login for self-serve and enterprise users
     Route::post('/login', AdminLoginController::class)

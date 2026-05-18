@@ -12,6 +12,7 @@ Authentication is role-aware and uses one Sanctum token system with two entry po
   - Agents only
 
 ## User Flow
+
 1. User selects login type in UI.
 2. Frontend sends credentials to the corresponding endpoint.
 3. Backend validates role, onboarding/account status, and active company membership.
@@ -29,8 +30,10 @@ Authentication is role-aware and uses one Sanctum token system with two entry po
 7. `POST /api/v1/agent/login`
 8. `POST /api/v1/internal/login` only for temporary backward compatibility with older agent clients
 9. `GET /api/v1/user/me` to fetch authenticated user and active company context
-10. Management-protected namespace: `/api/v1/admin/*`
-11. Agent-protected namespace: `/api/v1/agent/*`
+10. `POST /api/v1/auth/forgot-password` to request a password reset OTP
+11. `POST /api/v1/auth/reset-password` to verify the OTP and set a new password
+12. Management-protected namespace: `/api/v1/admin/*`
+13. Agent-protected namespace: `/api/v1/agent/*`
 
 ## Request Examples
 
@@ -52,12 +55,32 @@ Agent login:
 }
 ```
 
+Forgot password:
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+Reset password:
+
+```json
+{
+  "email": "user@example.com",
+  "otp": "123456",
+  "password": "Newpassword123",
+  "password_confirmation": "Newpassword123"
+}
+```
+
 Headers:
 
 - `Content-Type: application/json`
 - `Accept: application/json`
 
 ## Response Examples
+
 Shared auth success:
 
 ```json
@@ -123,6 +146,28 @@ Agent success:
 }
 ```
 
+Forgot password success:
+
+```json
+{
+  "success": true,
+  "message": "If the email exists, a password reset code has been sent.",
+  "data": {
+    "email": "us***@example.com"
+  }
+}
+```
+
+Reset password success:
+
+```json
+{
+  "success": true,
+  "message": "Password reset successfully.",
+  "data": null
+}
+```
+
 Shared auth error example (wrong endpoint/invalid credentials):
 
 ```json
@@ -150,6 +195,7 @@ Agent endpoint error example:
 ```
 
 ## Error Handling
+
 1. `401`: show generic auth error and suggest switching endpoint type.
 2. `422`: show form validation errors.
 3. `429`: show retry delay.

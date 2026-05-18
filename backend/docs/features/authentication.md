@@ -20,6 +20,11 @@ Backward compatibility:
 
 - `/api/v1/internal/login` remains available as a deprecated alias for agents only.
 
+Password reset:
+
+- `POST /api/v1/auth/forgot-password` sends a password reset OTP to the user email when the account exists and can authenticate.
+- `POST /api/v1/auth/reset-password` verifies the OTP and updates the password.
+
 ## Authentication Roles
 
 ### Shared Management Auth Endpoint (`POST /api/v1/auth/login`)
@@ -43,8 +48,10 @@ Allowed users:
 3. `POST /api/v1/agent/login`
 4. `POST /api/v1/internal/login` (deprecated alias for agents only)
 5. `GET /api/v1/user/me` (authenticated profile including active company context)
-6. `GET|POST|PATCH /api/v1/admin/*` (management scope only)
-7. `GET|POST|PATCH /api/v1/agent/*` (agent scope only)
+6. `POST /api/v1/auth/forgot-password`
+7. `POST /api/v1/auth/reset-password`
+8. `GET|POST|PATCH /api/v1/admin/*` (management scope only)
+9. `GET|POST|PATCH /api/v1/agent/*` (agent scope only)
 
 Canonical protected namespaces:
 

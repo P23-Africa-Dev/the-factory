@@ -30,8 +30,10 @@ Authentication is role-aware and uses one Sanctum token system with two entry po
 7. `POST /api/v1/agent/login`
 8. `POST /api/v1/internal/login` only for temporary backward compatibility with older agent clients
 9. `GET /api/v1/user/me` to fetch authenticated user and active company context
-10. Management-protected namespace: `/api/v1/admin/*`
-11. Agent-protected namespace: `/api/v1/agent/*`
+10. `POST /api/v1/auth/forgot-password` to request a password reset OTP
+11. `POST /api/v1/auth/reset-password` to verify the OTP and set a new password
+12. Management-protected namespace: `/api/v1/admin/*`
+13. Agent-protected namespace: `/api/v1/agent/*`
 
 ## Request Examples
 
