@@ -92,8 +92,8 @@ export interface AgentLocationSnapshotItem {
   };
   task: {
     id: number | null;
-    title: string | null;
-    status: string | null;
+    title?: string | null;
+    status?: string | null;
     tracking_session_id?: number | null;
     address?: string | null;
     location?: string | null;
