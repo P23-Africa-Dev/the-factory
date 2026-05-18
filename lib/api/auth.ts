@@ -1,5 +1,4 @@
 "use client";
-"use client";
 
 import { apiRequest, ApiEnvelope } from "./onboarding";
 
@@ -19,42 +18,42 @@ export type LoginResponseData = {
     name: string;
     email: string;
   };
-
-  export type ForgotPasswordPayload = {
-    email: string;
-  };
-
-  export type ForgotPasswordResponseData = {
-    email: string;
-  };
-
-  export function forgotPassword(
-    payload: ForgotPasswordPayload
-  ): Promise<ApiEnvelope<ForgotPasswordResponseData>> {
-    return apiRequest<ForgotPasswordResponseData>({
-      method: "POST",
-      path: "/auth/forgot-password",
-      body: payload,
-    });
-  }
-
-  export type ResetPasswordPayload = {
-    email: string;
-    otp: string;
-    password: string;
-    password_confirmation: string;
-  };
-
-  export function resetPassword(
-    payload: ResetPasswordPayload
-  ): Promise<ApiEnvelope<null>> {
-    return apiRequest<null>({
-      method: "POST",
-      path: "/auth/reset-password",
-      body: payload,
-    });
-  }
 };
+
+export type ForgotPasswordPayload = {
+  email: string;
+};
+
+export type ForgotPasswordResponseData = {
+  email: string;
+};
+
+export function forgotPassword(
+  payload: ForgotPasswordPayload
+): Promise<ApiEnvelope<ForgotPasswordResponseData>> {
+  return apiRequest<ForgotPasswordResponseData>({
+    method: "POST",
+    path: "/auth/forgot-password",
+    body: payload,
+  });
+}
+
+export type ResetPasswordPayload = {
+  email: string;
+  otp: string;
+  password: string;
+  password_confirmation: string;
+};
+
+export function resetPassword(
+  payload: ResetPasswordPayload
+): Promise<ApiEnvelope<null>> {
+  return apiRequest<null>({
+    method: "POST",
+    path: "/auth/reset-password",
+    body: payload,
+  });
+}
 
 export function loginUser(
   payload: LoginPayload
