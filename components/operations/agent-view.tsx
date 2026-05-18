@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Search, SlidersHorizontal, BookmarkPlus } from "lucide-react";
 import { AgentCurveChart } from "./agent-curve-chart";
 import { AgentList } from "./agent-list";
@@ -41,7 +41,7 @@ export function AgentView({ basePath }: { basePath: string }) {
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState<AgentItem | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
@@ -75,17 +75,13 @@ export function AgentView({ basePath }: { basePath: string }) {
     [internalUsers, search]
   );
 
-  useEffect(() => {
+  const selectedAgent = useMemo<AgentItem | null>(() => {
     if (!agents.length) {
-      setSelectedAgent(null);
-      return;
+      return null;
     }
 
-    setSelectedAgent((current) => {
-      if (!current) return agents[0];
-      return agents.find((agent) => agent.id === current.id) ?? agents[0];
-    });
-  }, [agents]);
+    return agents.find((agent) => agent.id === selectedAgentId) ?? agents[0];
+  }, [agents, selectedAgentId]);
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -121,10 +117,9 @@ export function AgentView({ basePath }: { basePath: string }) {
           {/* Filter toggle — icon before text */}
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
-              showFilters ? 'text-white' : 'text-gray-500'
-            }`}
-            style={{ 
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${showFilters ? 'text-white' : 'text-gray-500'
+              }`}
+            style={{
               background: showFilters ? '#34373C' : '#F8F8F8',
               border: showFilters ? '0.5px solid #34373C' : '0.5px solid #D1D1D1',
               boxShadow: showFilters ? 'none' : '0 2px 8px rgba(0, 0, 0, 0.06)'
@@ -170,7 +165,7 @@ export function AgentView({ basePath }: { basePath: string }) {
               agents={agents}
               basePath={basePath}
               selectedId={selectedAgent?.id}
-              onSelect={setSelectedAgent}
+              onSelect={(agent) => setSelectedAgentId(agent.id)}
             />
           )}
         </div>

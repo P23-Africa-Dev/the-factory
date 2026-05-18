@@ -51,31 +51,31 @@ export function AgentList({ agents, selectedId, onSelect, basePath }: AgentListP
             No agents found.
           </div>
         ) : (
-        <div className="space-y-3">
-          {paginated.map((agent) => {
-            const isSelected = selectedId === agent.id;
-            return (
-              <OpsTableRow
-                key={agent.id}
-                isSelected={isSelected}
-                onClick={() => onSelect?.(agent)}
-                avatar={agent.avatar}
-                avatarAlt={agent.name}
-              >
-                <OpsTableNameCol name={agent.name} subText={agent.description} isSelected={isSelected} />
-                <OpsTableCol label="Zone" value={agent.zone} isSelected={isSelected} className="hidden sm:block w-28 sm:w-32" />
-                <OpsTableCol label="Phone Number" value={agent.phone} isSelected={isSelected} className="hidden md:block w-36 sm:w-40" />
-                <OpsTableCol label="Role" value={agent.role} isSelected={isSelected} className="hidden lg:block w-28 sm:w-32" />
-                <OpsTableStatus
-                  label={agent.status}
-                  subText={agent.time}
+          <div className="space-y-3">
+            {paginated.map((agent) => {
+              const isSelected = selectedId === agent.id;
+              return (
+                <OpsTableRow
+                  key={agent.id}
                   isSelected={isSelected}
-                  badgeClass={agent.active ? 'bg-[#2F6C0E] text-white' : 'bg-[#EF7129] text-white'}
-                />
-              </OpsTableRow>
-            );
-          })}
-        </div>
+                  onClick={() => onSelect?.(agent)}
+                  avatar={agent.avatar}
+                  avatarAlt={agent.name}
+                >
+                  <OpsTableNameCol name={agent.name} subText={agent.description} isSelected={isSelected} />
+                  <OpsTableCol label="Zone" value={agent.zone} isSelected={isSelected} className="hidden sm:block w-28 sm:w-32" />
+                  <OpsTableCol label="Phone Number" value={agent.phone} isSelected={isSelected} className="hidden md:block w-36 sm:w-40" />
+                  <OpsTableCol label="Role" value={agent.role} isSelected={isSelected} className="hidden lg:block w-28 sm:w-32" />
+                  <OpsTableStatus
+                    label={agent.status}
+                    subText={agent.time}
+                    isSelected={isSelected}
+                    badgeClass={agent.active ? 'bg-[#2F6C0E] text-white' : 'bg-[#EF7129] text-white'}
+                  />
+                </OpsTableRow>
+              );
+            })}
+          </div>
         )}
       </div>
 

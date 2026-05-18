@@ -5,6 +5,7 @@ import Image from "next/image";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { TinyButton } from "../ui/tiny-button";
 import { StatusBadge } from "../ui/status-badge";
+import type { InternalUserListItem } from "@/lib/api/internal-users";
 
 export interface PayrollAgent {
   id: string;
@@ -18,20 +19,26 @@ export interface PayrollAgent {
   status: "Pending" | "Approved";
 }
 
-export const agents: PayrollAgent[] = [
-  { id: "1", name: "Francis Nasyomba", address: "13 Oloo Akron Avenue, Ikeja, Nairobi", lga: "Ikeja", avatar: "/avatars/male-avatar.png", baseSalary: "₦65,000", netPay: "₦15,000", role: "Field Agent", status: "Pending" },
-  { id: "2", name: "Lane Wade", address: "13 Oloo Akron Avenue, Ikeja, Nairobi", lga: "Ikeja", avatar: "/avatars/female-avatar.png", baseSalary: "₦65,000", netPay: "₦15,000", role: "Field Agent", status: "Approved" },
-  { id: "3", name: "Amina Bello", address: "45 Adeniran Ogunsanya, Surulere, Lagos", lga: "Surulere", avatar: "/avatars/female-avatar.png", baseSalary: "₦72,000", netPay: "₦20,000", role: "Senior Agent", status: "Approved" },
-  { id: "4", name: "Chidi Okonkwo", address: "3 Admiralty Way, Lekki Phase 1, Lagos", lga: "Lekki", avatar: "/avatars/male-avatar.png", baseSalary: "₦58,000", netPay: "₦12,500", role: "Field Agent", status: "Pending" },
-  { id: "5", name: "Ngozi Eze", address: "7 Ozumba Mbadiwe, Victoria Island, Lagos", lga: "Victoria Island", avatar: "/avatars/female-avatar.png", baseSalary: "₦80,000", netPay: "₦25,000", role: "Supervisor", status: "Approved" },
-  { id: "6", name: "Tunde Adeyemi", address: "22 Herbert Macaulay Way, Yaba, Lagos", lga: "Yaba", avatar: "/avatars/male-avatar.png", baseSalary: "₦65,000", netPay: "₦18,000", role: "Field Agent", status: "Pending" },
-  { id: "7", name: "Fatima Sule", address: "45 Adeniran Ogunsanya, Surulere, Lagos", lga: "Surulere", avatar: "/avatars/female-avatar.png", baseSalary: "₦60,000", netPay: "₦14,000", role: "Field Agent", status: "Pending" },
-  { id: "8", name: "Emeka Obi", address: "Oshodi Market Road, Oshodi, Lagos", lga: "Oshodi", avatar: "/avatars/male-avatar.png", baseSalary: "₦55,000", netPay: "₦11,000", role: "Field Agent", status: "Approved" },
-];
+export function mapInternalUserToPayrollAgent(user: InternalUserListItem): PayrollAgent {
+  const active = user.onboarding_status === "active" || user.is_active === true;
+
+  return {
+    id: String(user.id),
+    name: user.name,
+    address: user.email,
+    lga: user.assigned_zone ?? "Unassigned",
+    avatar: user.avatar_url ?? "/avatars/male-avatar.png",
+    baseSalary: "--",
+    netPay: "--",
+    role: user.internal_role ?? user.role,
+    status: active ? "Approved" : "Pending",
+  };
+}
 
 const PAGE_SIZE = 4;
 
 interface PayrollListProps {
+  users: PayrollAgent[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   showViewAll?: boolean;
@@ -39,6 +46,7 @@ interface PayrollListProps {
 }
 
 export function PayrollList({
+  users,
   selectedId,
   onSelect,
   showViewAll = false,
@@ -46,7 +54,7 @@ export function PayrollList({
 }: PayrollListProps) {
   const [page, setPage] = useState(1);
 
-  const source = showViewAll ? agents : agents.slice(0, 3);
+  const source = showViewAll ? users : users.slice(0, 3);
   const totalPages = Math.max(1, Math.ceil(source.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const paginated = showViewAll
@@ -64,15 +72,19 @@ export function PayrollList({
 
       {/* Scrollable rows */}
       <div className="overflow-visible lg:flex-1 lg:min-h-0 lg:overflow-y-auto pr-1 space-y-3.5">
+        {paginated.length === 0 ? (
+          <div className="rounded-[20px] border border-dashed border-gray-200 bg-[#F8F9FA] p-6 text-center text-[12px] text-gray-400">
+            No payroll agents found.
+          </div>
+        ) : null}
         {paginated.map((agent) => {
           const isSelected = selectedId === agent.id;
           return (
             <div
               key={agent.id}
               onClick={() => onSelect(agent.id)}
-              className={`flex border-[#E8E5E5] border-[0.8px] items-center gap-3 sm:gap-5 rounded-[30px] pr-4 sm:pr-5 overflow-hidden cursor-pointer ${
-                isSelected ? "bg-dash-dark" : "bg-[#F8F9FA]"
-              }`}
+              className={`flex border-[#E8E5E5] border-[0.8px] items-center gap-3 sm:gap-5 rounded-[30px] pr-4 sm:pr-5 overflow-hidden cursor-pointer ${isSelected ? "bg-dash-dark" : "bg-[#F8F9FA]"
+                }`}
             >
               <div className={`w-5 self-stretch shrink-0 rounded-l-[30px] ${isSelected ? "" : "bg-[#83C4F8]"}`} />
               <div className="w-14.75 h-14.75 mt-3.5 mb-3 sm:w-14 sm:h-14 rounded-full overflow-hidden shrink-0">
@@ -106,7 +118,9 @@ export function PayrollList({
       {showViewAll && (
         <div className="shrink-0 flex items-center justify-between pt-5 mt-4 border-t border-gray-100">
           <p className="text-[12px] text-gray-400">
-            Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, agents.length)} of {agents.length}
+            {source.length === 0
+              ? "Showing 0 of 0"
+              : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, source.length)} of ${source.length}`}
           </p>
           <div className="flex items-center gap-1">
             <button
