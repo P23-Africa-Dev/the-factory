@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\V1\Task\TaskProofController;
 use App\Http\Controllers\Api\V1\Task\TaskStatusController;
 use App\Http\Controllers\Api\V1\Task\TaskTrackingController;
 use App\Http\Controllers\Api\V1\User\MeController;
+use App\Http\Controllers\Api\V1\User\ProfileController;
 use App\Http\Controllers\Api\V1\Workforce\WorkforceSummaryController;
 use Illuminate\Support\Facades\Route;
 
@@ -118,6 +119,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::prefix('user')->name('user.')->group(function (): void {
         Route::get('/me', MeController::class)->name('me');
+        Route::get('/profile', [ProfileController::class, 'show'])->name('profile.show');
+        Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar'])
+            ->middleware('throttle:20,1')
+            ->name('profile.avatar.update');
     });
 
     Route::prefix('onboarding')->name('onboarding.')->group(function (): void {

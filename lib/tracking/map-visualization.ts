@@ -165,31 +165,54 @@ export function buildDirectionSegment(trail: [number, number][]): [number, numbe
 
 export function createStaticMarkerElement(kind: "origin" | "destination" | "near" | "arrived" | "completed") {
     const root = document.createElement("div");
+    
+    if (kind === "origin") {
+        root.style.width = "36px";
+        root.style.height = "36px";
+        root.style.borderRadius = "9999px";
+        root.style.background = "#0095FF";
+        root.style.boxShadow = "0 8px 16px rgba(0, 149, 255, 0.4)";
+        root.style.display = "flex";
+        root.style.alignItems = "center";
+        root.style.justifyContent = "center";
+        root.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M5 3L19 12L5 21V3Z" /></svg>`;
+    } else {
+        const color = kind === "destination" ? "#DC2626" : STATIC_MARKER_COLORS[kind].fill;
+        root.innerHTML = `
+            <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
+                <svg width="32" height="42" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0px 8px 12px rgba(220, 38, 38, 0.4));">
+                    <path d="M12 0C5.37258 0 0 5.37258 0 12C0 21 12 32 12 32C12 32 24 21 24 12C24 5.37258 18.6274 0 12 0Z" fill="${color}"/>
+                    <circle cx="12" cy="12" r="5" fill="white"/>
+                </svg>
+            </div>
+        `;
+    }
+
+    return root;
+}
+
+export function createPulseMarkerElement() {
+    const root = document.createElement("div");
+    root.style.position = "relative";
     root.style.width = "24px";
     root.style.height = "24px";
-    root.style.borderRadius = "9999px";
-    root.style.border = `3px solid ${STATIC_MARKER_COLORS[kind].border}`;
-    root.style.background = STATIC_MARKER_COLORS[kind].fill;
-    root.style.boxShadow = "0 6px 14px rgba(15, 23, 42, 0.22)";
     root.style.display = "flex";
     root.style.alignItems = "center";
     root.style.justifyContent = "center";
-    root.style.color = "#FFFFFF";
-    root.style.fontWeight = "700";
-    root.style.fontSize = "10px";
-    root.style.userSelect = "none";
 
-    root.textContent =
-        kind === "origin"
-            ? "O"
-            : kind === "destination"
-                ? "D"
-                : kind === "near"
-                    ? "N"
-                    : kind === "arrived"
-                        ? "A"
-                        : "C";
-
+    root.innerHTML = `
+        <div style="position: absolute; width: 64px; height: 64px; background: rgba(217, 70, 239, 0.2); border-radius: 9999px; animation: map-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;"></div>
+        <div style="position: absolute; width: 40px; height: 40px; background: rgba(217, 70, 239, 0.4); border-radius: 9999px;"></div>
+        <div style="position: relative; width: 24px; height: 24px; background: #FFF; border-radius: 9999px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
+            <div style="width: 12px; height: 12px; background: #D946EF; border-radius: 9999px;"></div>
+        </div>
+        <style>
+            @keyframes map-pulse {
+                0%, 100% { opacity: 1; transform: scale(1); }
+                50% { opacity: .6; transform: scale(1.15); }
+            }
+        </style>
+    `;
     return root;
 }
 

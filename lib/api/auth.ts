@@ -1,5 +1,3 @@
-"use client";
-
 import { apiRequest, ApiEnvelope } from "./onboarding";
 
 export type LoginPayload = {

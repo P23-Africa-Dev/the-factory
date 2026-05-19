@@ -238,3 +238,24 @@
     display: none;
   }
 }
+/* Custom Mapbox Popup Styles */
+.custom-dark-popup .mapboxgl-popup-content {
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+  border-radius: 16px;
+}
+.custom-dark-popup .mapboxgl-popup-close-button {
+  display: none;
+}
+.custom-dark-popup .mapboxgl-popup-tip {
+  border-top-color: #0A192F !important;
+  border-bottom-color: transparent !important;
+}
+.custom-dark-popup.mapboxgl-popup-anchor-top .mapboxgl-popup-tip,
+.custom-dark-popup.mapboxgl-popup-anchor-top-left .mapboxgl-popup-tip,
+.custom-dark-popup.mapboxgl-popup-anchor-top-right .mapboxgl-popup-tip {
+  border-bottom-color: #0A192F !important;
+  border-top-color: transparent !important;
+}
+
