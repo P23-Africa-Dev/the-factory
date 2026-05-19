@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
-import { Search, X, Radio, Route } from 'lucide-react';
+import { Search, X, Radio, Route, RefreshCcw, MoreHorizontal } from 'lucide-react';
 import {
   MAPBOX_PUBLIC_TOKEN_ENV,
   createMapboxTransformRequest,
@@ -14,9 +14,9 @@ import { RouteHistoryPanel } from '@/components/map/RouteHistoryPanel';
 import type { LiveTaskState } from '@/types/tracking';
 import {
   areSamePoint,
-  buildDirectionSegment,
   buildTaskTrail,
   createAgentMarkerElement,
+  createPulseMarkerElement,
   createStaticMarkerElement,
   getAgentInitials,
   resolveVisualTaskState,
@@ -25,6 +25,7 @@ import {
   VISUAL_PALETTE,
   type VisualTaskState,
 } from '@/lib/tracking/map-visualization';
+import { fetchDirectionsRoute, clearDirectionsCache } from '@/lib/tracking/directions';
 
 const STALE_MS = 2 * 60_000;
 const MARKER_ANIMATION_MS = 700;
@@ -65,6 +66,9 @@ export function MapView({ compact = false }: MapViewProps) {
   const agentMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
   const markerAnimationsRef = useRef<Map<number, number>>(new Map());
   const markerPositionRef = useRef<Map<number, [number, number]>>(new Map());
+  const popupRef = useRef<mapboxgl.Popup | null>(null);
+  const pulseMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const directionRoutesRef = useRef<Map<number, [number, number][]>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -148,8 +152,59 @@ export function MapView({ compact = false }: MapViewProps) {
     const task = useTrackingStore.getState().liveTasks[selectedTaskId];
     if (!task) return;
     const [lng, lat] = task.lastPosition;
-    mapRef.current.flyTo({ center: [lng, lat], zoom: 14, speed: 1.2 });
+    mapRef.current.flyTo({ center: [lng, lat], zoom: 15.5, speed: 1.2 });
   }, [selectedTaskId, mapVersion]);
+
+  // Handle Popup & Pulse Marker for Selected Task
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current) return;
+
+    if (!selectedTask) {
+      if (popupRef.current) {
+        popupRef.current.remove();
+        popupRef.current = null;
+      }
+      if (pulseMarkerRef.current) {
+        pulseMarkerRef.current.remove();
+        pulseMarkerRef.current = null;
+      }
+      return;
+    }
+
+    const { lastPosition, agentName, agentAvatarUrl, taskTitle, taskAddress } = selectedTask;
+
+    if (!pulseMarkerRef.current) {
+      const el = createPulseMarkerElement();
+      pulseMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        .setLngLat(lastPosition)
+        .addTo(map);
+    } else {
+      pulseMarkerRef.current.setLngLat(lastPosition);
+    }
+
+    if (!popupRef.current) {
+      popupRef.current = new mapboxgl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        className: 'custom-dark-popup',
+        offset: 20,
+      }).addTo(map);
+    }
+
+    const popupHtml = `
+      <div style="background-color: #0A192F; border-radius: 16px; padding: 12px; display: flex; align-items: center; gap: 16px; min-width: 240px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);">
+         <div style="width: 64px; height: 64px; border-radius: 12px; overflow: hidden; background: #1E293B; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+            ${agentAvatarUrl ? `<img src="${agentAvatarUrl}" style="width: 100%; height: 100%; object-fit: cover;" />` : `<div style="color: white; font-weight: bold; font-size: 20px;">#</div>`}
+         </div>
+         <div style="flex: 1;">
+            <div style="color: white; font-weight: 700; font-size: 14px; margin-bottom: 4px; font-family: sans-serif;">${agentName || 'Agent'}</div>
+            <div style="color: #94A3B8; font-size: 11px; line-height: 1.4; font-family: sans-serif;">${taskAddress || taskTitle || 'No location details'}</div>
+         </div>
+      </div>
+    `;
+    popupRef.current.setLngLat(lastPosition).setHTML(popupHtml);
+  }, [selectedTask, mapVersion]);
 
   // ── Init map ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -160,7 +215,7 @@ export function MapView({ compact = false }: MapViewProps) {
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/light-v11',
       center: [3.36, 6.595],
-      zoom: compact ? 11.5 : 12.5,
+      zoom: compact ? 12.5 : 14.5,
       attributionControl: false,
       transformRequest: createMapboxTransformRequest(),
       ...(compact && { interactive: false }),
@@ -178,9 +233,9 @@ export function MapView({ compact = false }: MapViewProps) {
         source: 'live-routes',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          'line-color': '#FFFFFF',
-          'line-width': 8,
-          'line-opacity': 0.75,
+          'line-color': '#0095FF',
+          'line-width': 12,
+          'line-opacity': 0.3,
         },
       });
       map.addLayer({
@@ -189,78 +244,37 @@ export function MapView({ compact = false }: MapViewProps) {
         source: 'live-routes',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          'line-color': [
-            'match',
-            ['get', 'status'],
-            'near_destination',
-            VISUAL_PALETTE.near_destination.trail,
-            'arrived',
-            VISUAL_PALETTE.arrived.trail,
-            'completed',
-            VISUAL_PALETTE.completed.trail,
-            'stale',
-            VISUAL_PALETTE.stale.trail,
-            VISUAL_PALETTE.in_progress.trail,
-          ],
-          'line-width': 4,
-          'line-opacity': 0.92,
+          'line-color': '#0095FF',
+          'line-width': 8,
+          'line-opacity': 1,
         },
       });
 
-      map.addSource('live-connectors', {
+      // Forward route layer: road-following path from agent → destination
+      map.addSource('forward-routes', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
       });
       map.addLayer({
-        id: 'route-connectors',
+        id: 'forward-route-casing',
         type: 'line',
-        source: 'live-connectors',
+        source: 'forward-routes',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          'line-color': [
-            'match',
-            ['get', 'status'],
-            'near_destination',
-            VISUAL_PALETTE.near_destination.connector,
-            'arrived',
-            VISUAL_PALETTE.arrived.connector,
-            'completed',
-            VISUAL_PALETTE.completed.connector,
-            'stale',
-            VISUAL_PALETTE.stale.connector,
-            VISUAL_PALETTE.in_progress.connector,
-          ],
-          'line-width': 3,
-          'line-opacity': 0.82,
-          'line-dasharray': [2, 2],
+          'line-color': '#0095FF',
+          'line-width': 12,
+          'line-opacity': 0.25,
         },
       });
-
-      map.addSource('live-direction', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      });
       map.addLayer({
-        id: 'route-direction',
+        id: 'forward-route-main',
         type: 'line',
-        source: 'live-direction',
+        source: 'forward-routes',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          'line-color': [
-            'match',
-            ['get', 'status'],
-            'near_destination',
-            '#D97706',
-            'arrived',
-            '#15803D',
-            'completed',
-            '#1E293B',
-            'stale',
-            '#64748B',
-            '#075985',
-          ],
-          'line-width': 5,
-          'line-opacity': 0.95,
+          'line-color': '#0095FF',
+          'line-width': 8,
+          'line-opacity': 0.9,
         },
       });
 
@@ -281,6 +295,13 @@ export function MapView({ compact = false }: MapViewProps) {
       destinationMarkersRef.current.clear();
       agentMarkersRef.current.clear();
 
+      if (popupRef.current) popupRef.current.remove();
+      if (pulseMarkerRef.current) pulseMarkerRef.current.remove();
+      popupRef.current = null;
+      pulseMarkerRef.current = null;
+      directionRoutesRef.current.clear();
+      clearDirectionsCache();
+
       map.remove();
       mapRef.current = null;
     };
@@ -297,8 +318,6 @@ export function MapView({ compact = false }: MapViewProps) {
     );
     const validIds = new Set(validTasks.map((t) => t.taskId));
     const routeFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
-    const connectorFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
-    const directionFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     const destinationIds = new Set<number>();
 
     validTasks.forEach((task) => {
@@ -316,18 +335,6 @@ export function MapView({ compact = false }: MapViewProps) {
             status: visualState,
           },
         });
-
-        const directionSegment = buildDirectionSegment(trail);
-        if (directionSegment) {
-          directionFeatures.push({
-            type: 'Feature',
-            geometry: { type: 'LineString', coordinates: directionSegment },
-            properties: {
-              taskId: task.taskId,
-              status: visualState,
-            },
-          });
-        }
       }
 
       const originPoint = trail[0] ?? currentPoint;
@@ -348,19 +355,7 @@ export function MapView({ compact = false }: MapViewProps) {
         const destinationPoint: [number, number] = [task.destination.lng, task.destination.lat];
         const markerKind = getDestinationMarkerKind(task.status);
 
-        if (!areSamePoint(currentPoint, destinationPoint)) {
-          connectorFeatures.push({
-            type: 'Feature',
-            geometry: {
-              type: 'LineString',
-              coordinates: [currentPoint, destinationPoint],
-            },
-            properties: {
-              taskId: task.taskId,
-              status: visualState,
-            },
-          });
-        }
+        // Forward route rendered via Directions API effect below
 
         const existingDestinationMarker = destinationMarkersRef.current.get(task.taskId);
         if (!existingDestinationMarker) {
@@ -408,7 +403,7 @@ export function MapView({ compact = false }: MapViewProps) {
             setSelectedTaskId(task.taskId);
             const latest = useTrackingStore.getState().liveTasks[task.taskId];
             if (!latest) return;
-            map.flyTo({ center: latest.lastPosition, zoom: 14, speed: 1.2 });
+            map.flyTo({ center: latest.lastPosition, zoom: 15.5, speed: 1.2 });
           });
         }
 
@@ -438,16 +433,21 @@ export function MapView({ compact = false }: MapViewProps) {
       features: routeFeatures,
     });
 
-    const connectorSource = map.getSource('live-connectors') as mapboxgl.GeoJSONSource | undefined;
-    connectorSource?.setData({
-      type: 'FeatureCollection',
-      features: connectorFeatures,
+    // Also render cached forward routes
+    const forwardFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+    directionRoutesRef.current.forEach((coords, taskId) => {
+      if (validIds.has(taskId) && coords.length >= 2) {
+        forwardFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: coords },
+          properties: { taskId },
+        });
+      }
     });
-
-    const directionSource = map.getSource('live-direction') as mapboxgl.GeoJSONSource | undefined;
-    directionSource?.setData({
+    const forwardSource = map.getSource('forward-routes') as mapboxgl.GeoJSONSource | undefined;
+    forwardSource?.setData({
       type: 'FeatureCollection',
-      features: directionFeatures,
+      features: forwardFeatures,
     });
 
     originMarkersRef.current.forEach((marker, id) => {
@@ -477,6 +477,71 @@ export function MapView({ compact = false }: MapViewProps) {
       }
     });
   }, [tasks, tick, compact, mapVersion, nowMs, animateMarkerTo]);
+
+  // ── Fetch Mapbox Directions routes for tasks with destinations ───────────────
+  useEffect(() => {
+    if (!token || !mapLoadedRef.current) return;
+
+    const tasksWithDest = tasks.filter(
+      (t) =>
+        t.destination &&
+        (t.lastPosition[0] !== 0 || t.lastPosition[1] !== 0) &&
+        t.status !== 'completed'
+    );
+
+    let cancelled = false;
+
+    async function fetchAll() {
+      let didChange = false;
+
+      for (const task of tasksWithDest) {
+        if (cancelled) return;
+        if (!task.destination) continue;
+
+        const origin: [number, number] = task.lastPosition;
+        const dest: [number, number] = [task.destination.lng, task.destination.lat];
+
+        // Skip if same point
+        if (areSamePoint(origin, dest)) continue;
+
+        const routeCoords = await fetchDirectionsRoute(origin, dest, token);
+        if (cancelled) return;
+
+        if (routeCoords && routeCoords.length >= 2) {
+          directionRoutesRef.current.set(task.taskId, routeCoords);
+          didChange = true;
+        }
+      }
+
+      // Remove routes for tasks that no longer have destinations
+      const activeIds = new Set(tasksWithDest.map((t) => t.taskId));
+      directionRoutesRef.current.forEach((_, id) => {
+        if (!activeIds.has(id)) {
+          directionRoutesRef.current.delete(id);
+          didChange = true;
+        }
+      });
+
+      // Update the forward-routes source on the map
+      if (didChange && !cancelled && mapRef.current) {
+        const forwardFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+        directionRoutesRef.current.forEach((coords, taskId) => {
+          if (coords.length >= 2) {
+            forwardFeatures.push({
+              type: 'Feature',
+              geometry: { type: 'LineString', coordinates: coords },
+              properties: { taskId },
+            });
+          }
+        });
+        const src = mapRef.current.getSource('forward-routes') as mapboxgl.GeoJSONSource | undefined;
+        src?.setData({ type: 'FeatureCollection', features: forwardFeatures });
+      }
+    }
+
+    fetchAll();
+    return () => { cancelled = true; };
+  }, [tasks, token, mapVersion]);
 
   // ── Filtered sidebar list ────────────────────────────────────────────────────
   const filteredTasks = tasks.filter(
@@ -524,93 +589,65 @@ export function MapView({ compact = false }: MapViewProps) {
       <div ref={mapContainer} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
 
       {/* Search — top right */}
-      <div className="absolute top-5 right-5 z-20 w-80">
+      <div className="absolute top-8 right-8 z-20 w-[450px]">
         <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={17} />
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} strokeWidth={2} />
           <input
             type="text"
-            placeholder="Search agents or tasks"
+            placeholder="Search for Location"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white rounded-full py-3.5 pl-11 pr-5 text-[13px] shadow-lg outline-none border border-gray-100"
+            className="w-full bg-white rounded-full py-4 pl-14 pr-6 text-[14px] shadow-2xl shadow-black/5 outline-none font-medium text-dash-dark placeholder:text-gray-400"
           />
         </div>
       </div>
 
-      {/* Live Agents panel — left */}
-      <div className="absolute top-5 left-5 z-20 w-72 bg-white rounded-3xl shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
-          <div className="flex items-center gap-2">
-            <h3 className="text-[15px] font-bold text-dash-dark">Live Agents</h3>
-            {tasks.length > 0 && (
-              <span className="text-[11px] text-gray-400 font-medium">({tasks.length})</span>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-amber-400'
-                }`}
-            />
-            <span className="text-[10px] text-gray-400">
-              {isInitialHydrating
-                ? 'Hydrating…'
-                : wsConnected
-                  ? 'Live'
-                  : wsStatus === 'reconnecting'
-                    ? 'Reconnecting…'
-                    : 'Connecting'}
-            </span>
-          </div>
+      {/* Search Feeds panel — left */}
+      <div className="absolute top-8 left-8 z-20 w-[340px] bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
+        <div className="flex items-center justify-between px-6 py-6 pb-4">
+          <h3 className="text-[18px] font-bold text-dash-dark">Search Feeds</h3>
+          <button className="w-9 h-9 rounded-full bg-[#0A192F] flex items-center justify-center hover:bg-gray-800 transition-colors">
+            <RefreshCcw size={15} className="text-[#38BDF8]" />
+          </button>
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto divide-y divide-gray-50">
+        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
           {isInitialHydrating && filteredTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 gap-2">
               <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
-              <p className="text-[12px] text-gray-400">Loading active agents…</p>
+              <p className="text-[12px] text-gray-400">Loading feeds…</p>
             </div>
           ) : filteredTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 gap-2">
               <Radio size={24} className="text-gray-200" />
-              <p className="text-[12px] text-gray-400">No agents currently tracked</p>
+              <p className="text-[12px] text-gray-400">No feeds available</p>
             </div>
           ) : (
             filteredTasks.map((task) => {
-              const stale = isTaskStale(task.lastEventAt, nowMs);
               const isSelected = selectedTaskId === task.taskId;
               return (
                 <button
                   key={task.taskId}
                   onClick={() => setSelectedTaskId(task.taskId)}
-                  className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-all ${isSelected ? 'bg-dash-dark' : 'hover:bg-gray-50'
+                  className={`w-full flex items-center gap-4 px-4 py-3.5 text-left transition-all rounded-[20px] ${isSelected ? 'bg-[#0A192F]' : 'bg-[#F8FAFC] hover:bg-gray-100'
                     }`}
                 >
-                  <AgentAvatar name={task.agentName} avatarUrl={task.agentAvatarUrl} sizeClassName="w-10 h-10" />
+                  <AgentAvatar name={task.agentName} avatarUrl={task.agentAvatarUrl} sizeClassName="w-12 h-12" />
                   <div className="flex-1 min-w-0">
                     <p
-                      className={`text-[13px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
+                      className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
                         }`}
                     >
-                      {task.agentName || 'Agent'}
+                      {task.agentName || 'Company Name'}
                     </p>
                     <p
-                      className={`text-[11px] truncate mt-0.5 ${isSelected ? 'text-white/50' : 'text-gray-400'
+                      className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-gray-400' : 'text-gray-500'
                         }`}
                     >
                       {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
                     </p>
                   </div>
-                  {task.destination && (
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-red-500 mr-1">
-                      D
-                    </span>
-                  )}
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{
-                      backgroundColor: VISUAL_PALETTE[getVisualState(task, stale)].markerBorder,
-                    }}
-                  />
+                  <MoreHorizontal size={20} className={isSelected ? 'text-white/50' : 'text-gray-400'} />
                 </button>
               );
             })
@@ -618,109 +655,11 @@ export function MapView({ compact = false }: MapViewProps) {
         </div>
       </div>
 
-      {/* Selected agent popup — below search bar */}
-      {selectedTask && (
-        <div className="absolute top-20 right-5 z-20 w-64 bg-white rounded-3xl shadow-2xl p-5 animate-in zoom-in-95 fade-in duration-200">
-          <div className="flex items-center justify-between mb-4">
-            <span
-              className="text-[12px] font-bold"
-              style={{
-                color: VISUAL_PALETTE[
-                  getVisualState(selectedTask, isTaskStale(selectedTask.lastEventAt, nowMs))
-                ].markerBorder,
-              }}
-            >
-              {selectedTask.status === 'arrived'
-                ? 'Arrived at destination'
-                : selectedTask.status === 'near_destination'
-                  ? 'Near destination'
-                  : selectedTask.status === 'completed'
-                    ? 'Task completed'
-                    : 'Currently tracking'}
-            </span>
-            <button
-              onClick={() => setSelectedTaskId(null)}
-              className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 hover:bg-gray-200 transition-all"
-            >
-              <X size={11} />
-            </button>
-          </div>
-
-          <div className="flex justify-center mb-3">
-            <AgentAvatar
-              name={selectedTask.agentName}
-              avatarUrl={selectedTask.agentAvatarUrl}
-              sizeClassName="w-20 h-20"
-              initialsClassName="text-[22px]"
-            />
-          </div>
-
-          <div className="text-center space-y-1 mb-4">
-            <h4 className="text-[14px] font-bold text-dash-dark">
-              {selectedTask.agentName || 'Agent'}
-            </h4>
-            <p className="text-[11px] text-gray-400 line-clamp-2">{selectedTask.taskTitle}</p>
-            {selectedTask.taskAddress && (
-              <p className="text-[10px] text-gray-400 line-clamp-1">{selectedTask.taskAddress}</p>
-            )}
-            <div
-              className="inline-block px-3.5 py-1.5 rounded-full text-[10px] font-bold mt-1"
-              style={{
-                backgroundColor: `${VISUAL_PALETTE[getVisualState(selectedTask, isTaskStale(selectedTask.lastEventAt, nowMs))].markerBorder}20`,
-                color: VISUAL_PALETTE[getVisualState(selectedTask, isTaskStale(selectedTask.lastEventAt, nowMs))].markerText,
-              }}
-            >
-              {getStatusLabel(selectedTask.status)}
-            </div>
-          </div>
-
-          <button
-            onClick={() =>
-              setHistoryTask({
-                id: selectedTask.taskId,
-                title: selectedTask.taskTitle || `Task #${selectedTask.taskId}`,
-              })
-            }
-            className="w-full flex items-center justify-center gap-2 py-2.5 border border-gray-100 rounded-2xl text-[12px] font-semibold text-gray-500 hover:bg-gray-50 transition-all"
-          >
-            <Route size={14} />
-            View route history
-          </button>
-        </div>
-      )}
-
-      <div className="absolute bottom-5 right-5 z-20 bg-white/95 backdrop-blur rounded-2xl shadow-lg border border-gray-100 px-4 py-3 w-64">
-        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-2">Live legend</p>
-        <div className="space-y-2 text-[11px] text-gray-600">
-          <div className="flex items-center gap-2">
-            <span className="w-4 h-4 rounded-full bg-[#2563EB] border-2 border-white shadow" />
-            Origin
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-4 h-4 rounded-full bg-[#DC2626] border-2 border-white shadow" />
-            Destination
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-4 h-4 rounded-full bg-[#D97706] border-2 border-white shadow" />
-            Near destination
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-4 h-4 rounded-full bg-[#16A34A] border-2 border-white shadow" />
-            Arrived
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-4 h-4 rounded-full bg-[#334155] border-2 border-white shadow" />
-            Completed
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-7 h-1 rounded-full bg-[#0284C7]" />
-            Historical route
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-7 h-0.5 rounded-full bg-[#38BDF8]" style={{ borderTop: '2px dashed #38BDF8' }} />
-            Current to destination
-          </div>
-        </div>
+      {/* Floating Action Button */}
+      <div className="absolute bottom-10 right-10 z-20">
+        <button className="bg-gradient-to-r from-[#D946EF] to-[#9333EA] hover:from-[#C026D3] hover:to-[#7E22CE] text-white px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2">
+          Location Mapping
+        </button>
       </div>
 
       {historyTask && (

@@ -13,15 +13,16 @@ import { useTrackingStore } from '@/store/tracking';
 import { useTrackingWebSocket } from '@/hooks/use-tracking-ws';
 import {
     areSamePoint,
-    buildDirectionSegment,
     buildTaskTrail,
     createAgentMarkerElement,
+    createPulseMarkerElement,
     createStaticMarkerElement,
     resolveVisualTaskState,
     sanitizePolyline,
     updateAgentMarkerElement,
     VISUAL_PALETTE,
 } from '@/lib/tracking/map-visualization';
+import { fetchDirectionsRoute, clearDirectionsCache } from '@/lib/tracking/directions';
 
 const DEFAULT_CENTER: [number, number] = [3.36, 6.595];
 const MARKER_ANIMATION_MS = 700;
@@ -42,6 +43,9 @@ export function AgentMapView() {
     const destinationMarkerRef = useRef<mapboxgl.Marker | null>(null);
     const markerAnimationRef = useRef<number | null>(null);
     const markerPositionRef = useRef<[number, number] | null>(null);
+    const forwardRouteCoordsRef = useRef<[number, number][] | null>(null);
+    const hasInitialFitRef = useRef(false);
+    const lastFitTaskIdRef = useRef<number | null>(null);
     const { activeTaskId } = useActiveTracking();
     const activeTask = useTrackingStore((s) =>
         activeTaskId ? s.liveTasks[activeTaskId] ?? null : null
@@ -95,7 +99,7 @@ export function AgentMapView() {
             container: mapContainer.current,
             style: 'mapbox://styles/mapbox/light-v11',
             center: DEFAULT_CENTER,
-            zoom: 12,
+            zoom: 14.5,
             attributionControl: false,
             transformRequest: createMapboxTransformRequest(),
         });
@@ -112,9 +116,9 @@ export function AgentMapView() {
                 source: 'agent-route',
                 layout: { 'line-join': 'round', 'line-cap': 'round' },
                 paint: {
-                    'line-color': '#FFFFFF',
-                    'line-width': 8,
-                    'line-opacity': 0.7,
+                    'line-color': '#0095FF',
+                    'line-width': 12,
+                    'line-opacity': 0.3,
                 },
             });
             map.addLayer({
@@ -123,72 +127,37 @@ export function AgentMapView() {
                 source: 'agent-route',
                 layout: { 'line-join': 'round', 'line-cap': 'round' },
                 paint: {
-                    'line-color': [
-                        'match',
-                        ['get', 'status'],
-                        'near_destination',
-                        VISUAL_PALETTE.near_destination.trail,
-                        'arrived',
-                        VISUAL_PALETTE.arrived.trail,
-                        'completed',
-                        VISUAL_PALETTE.completed.trail,
-                        VISUAL_PALETTE.in_progress.trail,
-                    ],
-                    'line-width': 4,
+                    'line-color': '#0095FF',
+                    'line-width': 8,
+                    'line-opacity': 1,
+                },
+            });
+
+            // Forward route layer: road-following path from agent → destination
+            map.addSource('forward-routes', {
+                type: 'geojson',
+                data: { type: 'FeatureCollection', features: [] },
+            });
+            map.addLayer({
+                id: 'forward-route-casing',
+                type: 'line',
+                source: 'forward-routes',
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: {
+                    'line-color': '#0095FF',
+                    'line-width': 12,
+                    'line-opacity': 0.25,
+                },
+            });
+            map.addLayer({
+                id: 'forward-route-main',
+                type: 'line',
+                source: 'forward-routes',
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: {
+                    'line-color': '#0095FF',
+                    'line-width': 8,
                     'line-opacity': 0.9,
-                },
-            });
-
-            map.addSource('agent-route-connector', {
-                type: 'geojson',
-                data: { type: 'FeatureCollection', features: [] },
-            });
-            map.addLayer({
-                id: 'agent-route-connector-line',
-                type: 'line',
-                source: 'agent-route-connector',
-                layout: { 'line-join': 'round', 'line-cap': 'round' },
-                paint: {
-                    'line-color': [
-                        'match',
-                        ['get', 'status'],
-                        'near_destination',
-                        VISUAL_PALETTE.near_destination.connector,
-                        'arrived',
-                        VISUAL_PALETTE.arrived.connector,
-                        'completed',
-                        VISUAL_PALETTE.completed.connector,
-                        VISUAL_PALETTE.in_progress.connector,
-                    ],
-                    'line-width': 3,
-                    'line-opacity': 0.85,
-                    'line-dasharray': [2, 2],
-                },
-            });
-
-            map.addSource('agent-route-direction', {
-                type: 'geojson',
-                data: { type: 'FeatureCollection', features: [] },
-            });
-            map.addLayer({
-                id: 'agent-route-direction-line',
-                type: 'line',
-                source: 'agent-route-direction',
-                layout: { 'line-join': 'round', 'line-cap': 'round' },
-                paint: {
-                    'line-color': [
-                        'match',
-                        ['get', 'status'],
-                        'near_destination',
-                        '#D97706',
-                        'arrived',
-                        '#15803D',
-                        'completed',
-                        '#1E293B',
-                        '#075985',
-                    ],
-                    'line-width': 5,
-                    'line-opacity': 0.95,
                 },
             });
 
@@ -211,6 +180,10 @@ export function AgentMapView() {
             originMarkerRef.current = null;
             destinationMarkerRef.current = null;
             markerPositionRef.current = null;
+            forwardRouteCoordsRef.current = null;
+            hasInitialFitRef.current = false;
+            lastFitTaskIdRef.current = null;
+            clearDirectionsCache();
         };
     }, [token]);
 
@@ -219,13 +192,11 @@ export function AgentMapView() {
         if (!map || !mapLoadedRef.current) return;
 
         const routeSource = map.getSource('agent-route') as mapboxgl.GeoJSONSource | undefined;
-        const connectorSource = map.getSource('agent-route-connector') as mapboxgl.GeoJSONSource | undefined;
-        const directionSource = map.getSource('agent-route-direction') as mapboxgl.GeoJSONSource | undefined;
+        const forwardSource = map.getSource('forward-routes') as mapboxgl.GeoJSONSource | undefined;
 
         if (!activeTask) {
             routeSource?.setData({ type: 'FeatureCollection', features: [] });
-            connectorSource?.setData({ type: 'FeatureCollection', features: [] });
-            directionSource?.setData({ type: 'FeatureCollection', features: [] });
+            forwardSource?.setData({ type: 'FeatureCollection', features: [] });
             agentMarkerRef.current?.remove();
             originMarkerRef.current?.remove();
             destinationMarkerRef.current?.remove();
@@ -233,8 +204,16 @@ export function AgentMapView() {
             originMarkerRef.current = null;
             destinationMarkerRef.current = null;
             markerPositionRef.current = null;
+            hasInitialFitRef.current = false;
+            lastFitTaskIdRef.current = null;
             return;
         }
+
+        // Reset fit flag when a different task becomes active
+        if (lastFitTaskIdRef.current !== null && lastFitTaskIdRef.current !== activeTask.taskId) {
+            hasInitialFitRef.current = false;
+        }
+        lastFitTaskIdRef.current = activeTask.taskId;
 
         const trail = sanitizePolyline(buildTaskTrail(activeTask));
         const visualState = resolveVisualTaskState(activeTask.status, false);
@@ -254,39 +233,19 @@ export function AgentMapView() {
                     : [],
         });
 
-        if (activeTask.destination && !areSamePoint(activeTask.lastPosition, [activeTask.destination.lng, activeTask.destination.lat])) {
-            connectorSource?.setData({
-                type: 'FeatureCollection',
-                features: [
-                    {
-                        type: 'Feature',
-                        geometry: {
-                            type: 'LineString',
-                            coordinates: [activeTask.lastPosition, [activeTask.destination.lng, activeTask.destination.lat]],
-                        },
-                        properties: { status: visualState },
-                    },
-                ],
-            });
-        } else {
-            connectorSource?.setData({ type: 'FeatureCollection', features: [] });
-        }
-
-        const directionSegment = buildDirectionSegment(trail);
-        directionSource?.setData({
+        // Render forward routes if available
+        forwardSource?.setData({
             type: 'FeatureCollection',
-            features: directionSegment
-                ? [
-                    {
-                        type: 'Feature',
-                        geometry: {
-                            type: 'LineString',
-                            coordinates: directionSegment,
+            features:
+                forwardRouteCoordsRef.current && forwardRouteCoordsRef.current.length >= 2
+                    ? [
+                        {
+                            type: 'Feature',
+                            geometry: { type: 'LineString', coordinates: forwardRouteCoordsRef.current },
+                            properties: { status: visualState },
                         },
-                        properties: { status: visualState },
-                    },
-                ]
-                : [],
+                    ]
+                    : [],
         });
 
         if (!originMarkerRef.current) {
@@ -357,10 +316,62 @@ export function AgentMapView() {
             destinationMarkerRef.current = null;
         }
 
-        if (!markerPositionRef.current || !areSamePoint(markerPositionRef.current, activeTask.lastPosition)) {
+        if (!hasInitialFitRef.current) {
+            // First time showing this task: fit the camera to frame agent + destination + trail
+            hasInitialFitRef.current = true;
+            if (activeTask.destination) {
+                const bounds = new mapboxgl.LngLatBounds();
+                bounds.extend(activeTask.lastPosition);
+                bounds.extend([activeTask.destination.lng, activeTask.destination.lat]);
+                // Include recent trail so the path is visible inside the frame
+                for (const pt of trail.slice(-40)) bounds.extend(pt);
+                map.fitBounds(bounds, {
+                    padding: { top: 120, bottom: 80, left: 60, right: 60 },
+                    maxZoom: 17,
+                    duration: 900,
+                });
+            } else {
+                map.easeTo({ center: activeTask.lastPosition, zoom: 16, duration: 900 });
+            }
+        } else if (markerPositionRef.current && !areSamePoint(markerPositionRef.current, activeTask.lastPosition)) {
+            // Subsequent position updates: follow the agent smoothly
             map.easeTo({ center: activeTask.lastPosition, duration: 700 });
         }
     }, [activeTask, animateAgentMarker]);
+
+    // ── Fetch Mapbox Directions route ────────────────────────────────────────────
+    useEffect(() => {
+        if (!token || !mapLoadedRef.current || !activeTask?.destination) return;
+
+        let cancelled = false;
+        const origin = activeTask.lastPosition;
+        const dest: [number, number] = [activeTask.destination.lng, activeTask.destination.lat];
+
+        if (areSamePoint(origin, dest) || activeTask.status === 'completed') {
+            forwardRouteCoordsRef.current = null;
+            const src = mapRef.current?.getSource('forward-routes') as mapboxgl.GeoJSONSource | undefined;
+            src?.setData({ type: 'FeatureCollection', features: [] });
+            return;
+        }
+
+        fetchDirectionsRoute(origin, dest, token).then(coords => {
+            if (cancelled) return;
+            if (coords && coords.length >= 2) {
+                forwardRouteCoordsRef.current = coords;
+                const src = mapRef.current?.getSource('forward-routes') as mapboxgl.GeoJSONSource | undefined;
+                src?.setData({
+                    type: 'FeatureCollection',
+                    features: [{
+                        type: 'Feature',
+                        geometry: { type: 'LineString', coordinates: coords },
+                        properties: {}
+                    }]
+                });
+            }
+        });
+
+        return () => { cancelled = true; };
+    }, [activeTask?.destination, activeTask?.lastPosition, activeTask?.status, token]);
 
     if (!token) {
         return (
