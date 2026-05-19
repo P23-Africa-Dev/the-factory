@@ -261,10 +261,14 @@ export function Navbar() {
 
                 {/* Menu items */}
                 <div className="p-1.5">
-                  <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/60 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium">
+                  <Link
+                    href={`${basePath}/profile`}
+                    onClick={() => setProfileOpen(false)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/60 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium"
+                  >
                     <User size={15} />
                     Profile
-                  </button>
+                  </Link>
                   <div className="my-1 border-t border-white/5" />
                   <button
                     onClick={handleLogout}
