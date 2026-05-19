@@ -69,6 +69,26 @@ class ProfileManagementTest extends TestCase
             ->assertJsonPath('data.organization.assigned_company.company_id', 'FAC-PROFILE-AGENT');
     }
 
+    public function test_profile_endpoint_handles_double_slash_path_variant(): void
+    {
+        $user = User::factory()->create([
+            'name' => 'Double Slash User',
+            'email' => 'double.slash.profile@example.test',
+            'onboarding_completed_at' => now(),
+            'is_active' => true,
+        ]);
+
+        $company = $this->createCompany('FAC-PROFILE-DSLASH', 'Double Slash Co');
+        $this->attachMembership($company, $user, 'owner');
+
+        $response = $this->withToken($user->createToken('profile')->plainTextToken)
+            ->getJson('/api/v1//user/profile?company_id=' . $company->company_id);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.organization.company.company_id', 'FAC-PROFILE-DSLASH');
+    }
+
     public function test_user_can_update_profile_identity_fields(): void
     {
         $user = User::factory()->create([
