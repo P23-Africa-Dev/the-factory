@@ -44,6 +44,8 @@ export function AgentMapView() {
     const markerAnimationRef = useRef<number | null>(null);
     const markerPositionRef = useRef<[number, number] | null>(null);
     const forwardRouteCoordsRef = useRef<[number, number][] | null>(null);
+    const hasInitialFitRef = useRef(false);
+    const lastFitTaskIdRef = useRef<number | null>(null);
     const { activeTaskId } = useActiveTracking();
     const activeTask = useTrackingStore((s) =>
         activeTaskId ? s.liveTasks[activeTaskId] ?? null : null
@@ -179,6 +181,8 @@ export function AgentMapView() {
             destinationMarkerRef.current = null;
             markerPositionRef.current = null;
             forwardRouteCoordsRef.current = null;
+            hasInitialFitRef.current = false;
+            lastFitTaskIdRef.current = null;
             clearDirectionsCache();
         };
     }, [token]);
@@ -200,8 +204,16 @@ export function AgentMapView() {
             originMarkerRef.current = null;
             destinationMarkerRef.current = null;
             markerPositionRef.current = null;
+            hasInitialFitRef.current = false;
+            lastFitTaskIdRef.current = null;
             return;
         }
+
+        // Reset fit flag when a different task becomes active
+        if (lastFitTaskIdRef.current !== null && lastFitTaskIdRef.current !== activeTask.taskId) {
+            hasInitialFitRef.current = false;
+        }
+        lastFitTaskIdRef.current = activeTask.taskId;
 
         const trail = sanitizePolyline(buildTaskTrail(activeTask));
         const visualState = resolveVisualTaskState(activeTask.status, false);
@@ -304,7 +316,25 @@ export function AgentMapView() {
             destinationMarkerRef.current = null;
         }
 
-        if (!markerPositionRef.current || !areSamePoint(markerPositionRef.current, activeTask.lastPosition)) {
+        if (!hasInitialFitRef.current) {
+            // First time showing this task: fit the camera to frame agent + destination + trail
+            hasInitialFitRef.current = true;
+            if (activeTask.destination) {
+                const bounds = new mapboxgl.LngLatBounds();
+                bounds.extend(activeTask.lastPosition);
+                bounds.extend([activeTask.destination.lng, activeTask.destination.lat]);
+                // Include recent trail so the path is visible inside the frame
+                for (const pt of trail.slice(-40)) bounds.extend(pt);
+                map.fitBounds(bounds, {
+                    padding: { top: 120, bottom: 80, left: 60, right: 60 },
+                    maxZoom: 17,
+                    duration: 900,
+                });
+            } else {
+                map.easeTo({ center: activeTask.lastPosition, zoom: 16, duration: 900 });
+            }
+        } else if (markerPositionRef.current && !areSamePoint(markerPositionRef.current, activeTask.lastPosition)) {
+            // Subsequent position updates: follow the agent smoothly
             map.easeTo({ center: activeTask.lastPosition, duration: 700 });
         }
     }, [activeTask, animateAgentMarker]);
