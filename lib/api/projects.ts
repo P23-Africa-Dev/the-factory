@@ -125,7 +125,8 @@ export type ProjectDetailData = {
 
 export function listProjects(
   params: ListProjectsParams,
-  token: string
+  token: string,
+  basePath = ""
 ): Promise<ApiEnvelope<ProjectsListData>> {
   const qs = new URLSearchParams();
   if (params.company_id != null) qs.set("company_id", String(params.company_id));
@@ -136,7 +137,7 @@ export function listProjects(
 
   return apiRequest<ProjectsListData>({
     method: "GET",
-    path: `/projects${query}`,
+    path: `${basePath}/projects${query}`,
     token,
   });
 }

@@ -49,6 +49,10 @@ class TaskService
             $query->where('type', $filters['type']);
         }
 
+        if (! empty($filters['project_id'])) {
+            $query->where('project_id', (int) $filters['project_id']);
+        }
+
         if ($context->isAgent()) {
             // Agents see tasks they are currently assigned to (either via assigned_agent_id or task_assignments)
             $query->where(function (Builder $q) use ($user): void {
@@ -227,7 +231,13 @@ class TaskService
 
         $allowedTransitions = [
             TaskStatus::PENDING->value => [TaskStatus::IN_PROGRESS->value, TaskStatus::CANCELLED->value],
-            TaskStatus::IN_PROGRESS->value => [TaskStatus::COMPLETED->value, TaskStatus::CANCELLED->value],
+            TaskStatus::IN_PROGRESS->value => [
+                TaskStatus::PAUSED->value,
+                TaskStatus::COMPLETED->value,
+                TaskStatus::CANCELLED->value,
+            ],
+            TaskStatus::PAUSED->value => [TaskStatus::RESUMED->value, TaskStatus::CANCELLED->value],
+            TaskStatus::RESUMED->value => [TaskStatus::IN_PROGRESS->value, TaskStatus::CANCELLED->value],
         ];
 
         if (! in_array($status, $allowedTransitions[$current] ?? [], true)) {
@@ -263,6 +273,51 @@ class TaskService
             'status' => $status,
             'last_status_updated_by_user_id' => $user->id,
             'started_at' => $status === TaskStatus::IN_PROGRESS->value && ! $task->started_at ? now() : $task->started_at,
+            'paused_at' => $status === TaskStatus::PAUSED->value ? now() : $task->paused_at,
+            'resumed_at' => $status === TaskStatus::RESUMED->value ? now() : $task->resumed_at,
+            'completed_at' => $status === TaskStatus::COMPLETED->value ? now() : null,
+        ]);
+
+        return $this->loadTask($task, $context);
+    }
+
+    public function updateStatusForManager(User $user, Task $task, string $status, ?int $companyId = null): Task
+    {
+        $context = $this->accessService->resolve($user, $companyId);
+        $this->accessService->ensureManager($context);
+        $this->assertTaskIntegrityInCompany($task, $context->company->id);
+
+        $current = $task->status?->value;
+
+        if ($this->isTerminalStatus($current)) {
+            throw ValidationException::withMessages([
+                'status' => ['Terminal tasks cannot be changed.'],
+            ]);
+        }
+
+        $allowedTransitions = [
+            TaskStatus::PENDING->value => [TaskStatus::IN_PROGRESS->value, TaskStatus::CANCELLED->value],
+            TaskStatus::IN_PROGRESS->value => [
+                TaskStatus::PAUSED->value,
+                TaskStatus::COMPLETED->value,
+                TaskStatus::CANCELLED->value,
+            ],
+            TaskStatus::PAUSED->value => [TaskStatus::RESUMED->value, TaskStatus::CANCELLED->value],
+            TaskStatus::RESUMED->value => [TaskStatus::IN_PROGRESS->value, TaskStatus::CANCELLED->value],
+        ];
+
+        if (! in_array($status, $allowedTransitions[$current] ?? [], true)) {
+            throw ValidationException::withMessages([
+                'status' => ['Invalid task status transition.'],
+            ]);
+        }
+
+        $task->update([
+            'status' => $status,
+            'last_status_updated_by_user_id' => $user->id,
+            'started_at' => $status === TaskStatus::IN_PROGRESS->value && ! $task->started_at ? now() : $task->started_at,
+            'paused_at' => $status === TaskStatus::PAUSED->value ? now() : $task->paused_at,
+            'resumed_at' => $status === TaskStatus::RESUMED->value ? now() : $task->resumed_at,
             'completed_at' => $status === TaskStatus::COMPLETED->value ? now() : null,
         ]);
 
@@ -487,8 +542,8 @@ class TaskService
             ->where('task_id', $task->id)
             ->where('is_current', true)
             ->pluck('assigned_agent_id')
-            ->map(static fn (mixed $id): int => (int) $id)
-            ->filter(static fn (int $id): bool => $id > 0)
+            ->map(static fn(mixed $id): int => (int) $id)
+            ->filter(static fn(int $id): bool => $id > 0)
             ->unique()
             ->values()
             ->all();

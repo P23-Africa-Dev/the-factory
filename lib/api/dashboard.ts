@@ -59,8 +59,17 @@ export type AgentLiveActivity = {
     agents_with_recent_location_ping: number;
 };
 
+export type ProjectKpis = {
+    total_projects: number;
+    active_projects: number;
+    planning_projects: number;
+    completed_projects: number;
+    completion_rate: number;
+};
+
 export type DashboardOverviewData = {
     kpis: DashboardKpis;
+    project_kpis: ProjectKpis;
     activity_summary: ActivitySummary;
     self_task_slices: SelfTaskSlices;
     top_prospects: TopProspect[];

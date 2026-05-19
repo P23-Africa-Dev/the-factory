@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\V1\Payroll\PayrollController;
 use App\Http\Controllers\Api\V1\Project\ProjectController;
 use App\Http\Controllers\Api\V1\Tracking\AgentLocationController;
 use App\Http\Controllers\Api\V1\Task\AgentTaskController;
+use App\Http\Controllers\Api\V1\Task\AdminTaskStatusController;
 use App\Http\Controllers\Api\V1\Task\TaskAssignmentController;
 use App\Http\Controllers\Api\V1\Task\TaskController;
 use App\Http\Controllers\Api\V1\Task\TaskProofController;
@@ -138,6 +139,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
                 Route::get('/{task}', [TaskController::class, 'show'])->name('show');
                 Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
                 Route::patch('/{task}/assign', [TaskAssignmentController::class, 'update'])->name('assign');
+                Route::patch('/{task}/status', [AdminTaskStatusController::class, 'update'])->name('status.update');
                 Route::get('/{task}/proofs/{proof}', [TaskProofController::class, 'show'])->name('proofs.show');
             });
 
@@ -219,6 +221,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->name('agent-api.')
         ->middleware('access.role:agent')
         ->group(function (): void {
+            Route::prefix('projects')->name('projects.')->group(function (): void {
+                Route::get('/', [ProjectController::class, 'agentIndex'])->name('index');
+            });
+
             Route::prefix('tasks')->name('tasks.')->group(function (): void {
                 Route::get('/', [TaskController::class, 'index'])->name('index');
                 Route::post('/self', [AgentTaskController::class, 'storeSelf'])

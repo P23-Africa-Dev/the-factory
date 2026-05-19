@@ -6,6 +6,7 @@ namespace Tests\Feature\Dashboard;
 
 use App\Models\Company;
 use App\Models\Lead;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskLocationPoint;
 use App\Models\TaskTrackingSession;
@@ -52,6 +53,25 @@ class DashboardAndWorkforceSummaryTest extends TestCase
             'priority' => 'medium',
         ]);
 
+        Project::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'project_manager_user_id' => $admin->id,
+            'name' => 'Active Project',
+            'status' => 'active',
+            'start_date' => now()->toDateString(),
+        ]);
+
+        Project::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'project_manager_user_id' => $admin->id,
+            'name' => 'Completed Project',
+            'status' => 'completed',
+            'start_date' => now()->subWeek()->toDateString(),
+            'end_date' => now()->toDateString(),
+        ]);
+
         $session = TaskTrackingSession::create([
             'task_id' => 1,
             'company_id' => $company->id,
@@ -79,6 +99,10 @@ class DashboardAndWorkforceSummaryTest extends TestCase
         $dashboardResponse->assertOk()
             ->assertJsonPath('data.kpis.total_tasks', 2)
             ->assertJsonPath('data.kpis.total_leads', 1)
+            ->assertJsonPath('data.project_kpis.total_projects', 2)
+            ->assertJsonPath('data.project_kpis.active_projects', 1)
+            ->assertJsonPath('data.project_kpis.completed_projects', 1)
+            ->assertJsonPath('data.project_kpis.completion_rate', 50)
             ->assertJsonPath('data.crm_pipeline_snapshot.total', 1)
             ->assertJsonPath('data.top_prospects.0.id', $lead->id);
 

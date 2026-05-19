@@ -38,6 +38,8 @@ class Task extends Model
         'visit_verification_required',
         'status',
         'started_at',
+        'paused_at',
+        'resumed_at',
         'completed_at',
     ];
 
@@ -49,6 +51,8 @@ class Task extends Model
             'minimum_photos_required' => 'integer',
             'visit_verification_required' => 'boolean',
             'started_at' => 'datetime',
+            'paused_at' => 'datetime',
+            'resumed_at' => 'datetime',
             'completed_at' => 'datetime',
             'latitude' => 'float',
             'longitude' => 'float',

@@ -143,13 +143,13 @@ class ProjectManagementTest extends TestCase
         $projectId = (int) $createResponse->json('data.project.id');
 
         $listResponse = $this->withToken($token)
-            ->getJson('/api/v1/projects?company_id='.strtolower($company->company_id));
+            ->getJson('/api/v1/projects?company_id=' . strtolower($company->company_id));
 
         $listResponse->assertOk()
             ->assertJsonPath('data.items.0.id', $projectId);
 
         $showResponse = $this->withToken($token)
-            ->getJson('/api/v1/projects/'.$projectId.'?company_id='.strtolower($company->company_id));
+            ->getJson('/api/v1/projects/' . $projectId . '?company_id=' . strtolower($company->company_id));
 
         $showResponse->assertOk()
             ->assertJsonPath('data.project.id', $projectId)
@@ -256,7 +256,7 @@ class ProjectManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($supervisor->createToken('supervisor-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/projects?company_id='.$company->id);
+            ->getJson('/api/v1/projects?company_id=' . $company->id);
 
         $response->assertOk()
             ->assertJsonPath('data.items.0.id', $project->id)
@@ -269,7 +269,7 @@ class ProjectManagementTest extends TestCase
 
     public function test_agent_cannot_create_or_list_projects(): void
     {
-        [$company, , $agent] = $this->seedCompanyUsers();
+        [$company,, $agent] = $this->seedCompanyUsers();
 
         $token = $agent->createToken('agent-token', ['*'])->plainTextToken;
 
@@ -284,9 +284,69 @@ class ProjectManagementTest extends TestCase
         $createResponse->assertUnprocessable();
 
         $listResponse = $this->withToken($token)
-            ->getJson('/api/v1/projects?company_id='.$company->id);
+            ->getJson('/api/v1/projects?company_id=' . $company->id);
 
         $listResponse->assertUnprocessable();
+    }
+
+    public function test_agent_can_list_only_projects_with_assigned_tasks_via_agent_endpoint(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $otherAgent = User::factory()->create(['email_verified_at' => now()]);
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $otherAgent->id,
+            'role' => 'agent',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $assignedProject = Project::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'project_manager_user_id' => $admin->id,
+            'name' => 'Assigned Agent Project',
+            'status' => 'active',
+            'start_date' => now()->toDateString(),
+        ]);
+
+        $unassignedProject = Project::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'project_manager_user_id' => $admin->id,
+            'name' => 'Other Agent Project',
+            'status' => 'active',
+            'start_date' => now()->toDateString(),
+        ]);
+
+        Task::create([
+            'company_id' => $company->id,
+            'project_id' => $assignedProject->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Visible Task',
+            'description' => 'Assigned to authenticated agent.',
+            'status' => 'pending',
+        ]);
+
+        Task::create([
+            'company_id' => $company->id,
+            'project_id' => $unassignedProject->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $otherAgent->id,
+            'title' => 'Hidden Task',
+            'description' => 'Assigned to a different agent.',
+            'status' => 'pending',
+        ]);
+
+        $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
+            ->getJson('/api/v1/agent/projects?company_id=' . $company->id);
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.id', $assignedProject->id);
     }
 
     public function test_admin_can_create_task_under_project_without_breaking_task_api(): void
@@ -329,7 +389,7 @@ class ProjectManagementTest extends TestCase
 
     public function test_agent_can_create_self_task_only_as_standalone(): void
     {
-        [$company, , $agent] = $this->seedCompanyUsers();
+        [$company,, $agent] = $this->seedCompanyUsers();
 
         $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
             ->postJson('/api/v1/agent/tasks/self', [

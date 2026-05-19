@@ -554,7 +554,7 @@ export function CRMPipeline() {
           and engagement trends.
         </p>
 
-        <div className="mt-3 space-y-1.5">
+        {/* <div className="mt-3 space-y-1.5">
           {topStages.length === 0 ? (
             <p className="text-[8px] text-white/85">No pipeline data available yet.</p>
           ) : (
@@ -568,7 +568,7 @@ export function CRMPipeline() {
               </div>
             ))
           )}
-        </div>
+        </div> */}
       </div>
       <div className="absolute w-40 h-51.5 bg-linear-to-l from-[#C248CE] to-[#F7ABFF] -left-10 -top-10 rounded-[50%_50%_45%_45%/60%_60%_40%_40%] transition-all duration-700 z-0" />
     </div>

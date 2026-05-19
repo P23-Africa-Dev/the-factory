@@ -43,6 +43,29 @@ class ProjectController extends Controller
         );
     }
 
+    public function agentIndex(Request $request): JsonResponse
+    {
+        $projects = $this->projectService->listForAgent($request->user(), [
+            'company_id' => $this->resolveCompanyContextId($request->input('company_id')),
+            'status' => $request->string('status')->toString(),
+            'priority' => $request->string('priority')->toString(),
+            'type' => $request->string('type')->toString(),
+            'search' => $request->string('search')->toString(),
+        ]);
+
+        return $this->success(
+            message: 'Projects fetched successfully.',
+            data: [
+                'items' => ProjectResource::collection($projects->items()),
+                'pagination' => [
+                    'next_page_url' => $projects->nextPageUrl(),
+                    'prev_page_url' => $projects->previousPageUrl(),
+                    'per_page' => $projects->perPage(),
+                ],
+            ],
+        );
+    }
+
     public function store(CreateProjectRequest $request): JsonResponse
     {
         $project = $this->projectService->create($request->user(), $request->validated());
