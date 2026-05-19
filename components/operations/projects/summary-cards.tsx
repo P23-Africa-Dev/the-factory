@@ -20,8 +20,10 @@ interface SummaryCardsProps {
 
 export function SummaryCards({ projects }: SummaryCardsProps) {
   const total = projects.length;
+  const pending = projects.filter((p) => p.status === "Pending").length;
   const completed = projects.filter((p) => p.status === "Completed").length;
   const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+  const pendingPercent = total === 0 ? 0 : Math.round((pending / total) * 100);
 
   // Single JS animation loop — drives both arc and dot together
   const [animatedPct, setAnimatedPct] = useState(0);
@@ -56,12 +58,16 @@ export function SummaryCards({ projects }: SummaryCardsProps) {
       />
 
       <div className="flex gap-6.25">
-        <TotalProjectsCard />
-        <PendingProjectsCard />
-        <AgentsCard />
+        <TotalProjectsCard total={total} />
+        <PendingProjectsCard pending={pending} />
+        <AgentsCard percentage={pendingPercent} />
       </div>
     </div>
   );
+}
+
+function formatStatCount(value: number): string {
+  return String(value).padStart(3, "0");
 }
 
 // ─── Performance Card ─────────────────────────────────────────────────────────
@@ -153,7 +159,7 @@ function PerformanceCard({
 }
 
 // ─── Total Projects Card ──────────────────────────────────────────────────────
-function TotalProjectsCard() {
+function TotalProjectsCard({ total }: { total: number }) {
   return (
     <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-69.75 shrink-0">
       <div className="flex items-start justify-between pt-5 sm:pt-6">
@@ -162,7 +168,7 @@ function TotalProjectsCard() {
             Total Projects
           </p>
           <h2 className="text-[64px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
-            045
+            {formatStatCount(total)}
           </h2>
         </div>
         <button className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#3AB37E] text-white rounded-full text-[7px] hover:bg-[#27ae60] transition-colors mt-1">
@@ -199,7 +205,7 @@ function TotalProjectsCard() {
 }
 
 // ─── Pending Projects Card ────────────────────────────────────────────────────
-function PendingProjectsCard() {
+function PendingProjectsCard({ pending }: { pending: number }) {
   return (
     <div className="xl:col-span-3 px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-69.75 shrink-0">
       <div className="flex items-start justify-between pt-5 sm:pt-6">
@@ -208,7 +214,7 @@ function PendingProjectsCard() {
             Pending Projects
           </p>
           <h2 className="text-[64px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
-            015
+            {formatStatCount(pending)}
           </h2>
         </div>
         <button className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#EF8E5B] text-white rounded-full text-[7px] hover:bg-[#d57848] transition-colors mt-1">
@@ -245,7 +251,14 @@ function PendingProjectsCard() {
 }
 
 // ─── Agents Card ──────────────────────────────────────────────────────────────
-function AgentsCard() {
+function AgentsCard({ percentage }: { percentage: number }) {
+  const normalizedPercentage = Math.max(0, Math.min(100, Math.round(percentage)));
+  const progressDash = (normalizedPercentage / 100) * ARC_LENGTH;
+  const accentDash = Math.min(progressDash, 30);
+  const dotAngle = (normalizedPercentage / 100) * 270 * (Math.PI / 180);
+  const dotX = 50 + 40 * Math.cos(dotAngle);
+  const dotY = 50 + 40 * Math.sin(dotAngle);
+
   return (
     <div className="xl:col-span-2 bg-[#7BA9A4] rounded-[20px] gap-4 p-5 shadow-sm relative flex flex-col items-center h-full w-29.75 text-center justify-between">
       <p className="text-white font-light text-[8px] leading-[1.4] max-w-20 mx-auto">
@@ -282,7 +295,7 @@ function AgentsCard() {
             stroke="white"
             strokeWidth="7"
             strokeLinecap="round"
-            strokeDasharray="81 251.3"
+            strokeDasharray={`${progressDash} ${CIRCUMFERENCE}`}
           />
           {/* Dark accent at the top */}
           <circle
@@ -293,13 +306,13 @@ function AgentsCard() {
             stroke="#0E2A33"
             strokeWidth="7"
             strokeLinecap="round"
-            strokeDasharray="30 251.3"
-            strokeDashoffset="-81"
+            strokeDasharray={`${accentDash} ${CIRCUMFERENCE}`}
+            strokeDashoffset={`-${progressDash}`}
           />
           {/* Endpoint dot */}
           <circle
-            cx="32.4"
-            cy="85.9"
+            cx={dotX}
+            cy={dotY}
             r="4.5"
             fill="white"
             stroke="#7BA9A4"
@@ -310,7 +323,7 @@ function AgentsCard() {
           <User size={14} className="text-[#09232D] fill-current" />
         </div>
         <span className="text-white text-[10px] font-bold absolute bottom-0">
-          43%
+          {normalizedPercentage}%
         </span>
       </div>
     </div>
