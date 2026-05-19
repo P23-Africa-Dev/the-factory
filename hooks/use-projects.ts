@@ -27,7 +27,8 @@ import type { Project } from "@/types/operations";
 
 export const PROJECT_KEYS = {
   all: ["projects"] as const,
-  list: (params: ListProjectsParams) => ["projects", params] as const,
+  list: (params: ListProjectsParams, basePath = "") =>
+    ["projects", basePath, params] as const,
   detail: (id: number | string) => ["project", id] as const,
 };
 
@@ -43,13 +44,13 @@ export type ProjectsResult = {
   pagination: PaginationData;
 };
 
-export function useProjects(params: ListProjectsParams = {}) {
+export function useProjects(params: ListProjectsParams = {}, basePath = "") {
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
   return useQuery({
-    queryKey: PROJECT_KEYS.list(params),
+    queryKey: PROJECT_KEYS.list(params, basePath),
     queryFn: async (): Promise<ProjectsResult> => {
-      const res = await listProjects(params, token);
+      const res = await listProjects(params, token, basePath);
       return {
         projects: res.data.items.map(mapApiProject),
         pagination: res.data.pagination,

@@ -1,20 +1,87 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Search, SlidersHorizontal, BookmarkPlus } from "lucide-react";
 import { AgentCurveChart } from "./agent-curve-chart";
-import { AgentList, AGENT_LIST_DATA } from "./agent-list";
+import { AgentList } from "./agent-list";
 import type { AgentItem } from "./agent-list";
 import { AgentSidebar } from "./agent-sidebar";
 import { AddAgentModal } from "./add-agent-modal";
+import { useInternalUsers } from "@/hooks/use-internal-users";
+import { useAuthStore } from "@/store/auth";
+import { getActiveCompanyContext } from "@/lib/company-context";
+
+function mapToAgentItem(input: {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  assigned_zone?: string | null;
+  phone_number?: string | null;
+  avatar_url?: string | null;
+  is_active?: boolean;
+}): AgentItem {
+  const isActive = Boolean(input.is_active);
+
+  return {
+    id: String(input.id),
+    name: input.name,
+    description: input.email,
+    zone: input.assigned_zone ?? "Unassigned",
+    phone: input.phone_number ?? "N/A",
+    role: input.role,
+    status: isActive ? "Active (View on Map)" : "Offline",
+    time: isActive ? "Online" : "Offline",
+    avatar: input.avatar_url ?? "/avatars/male-avatar.png",
+    active: isActive,
+  };
+}
 
 export function AgentView({ basePath }: { basePath: string }) {
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState<AgentItem>(
-    AGENT_LIST_DATA[0],
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+
+  const { data: internalUsers = [], isLoading } = useInternalUsers({
+    company_id: companyId ?? undefined,
+    role: "agent",
+  });
+
+  const agents = useMemo(
+    () =>
+      internalUsers
+        .map((item) =>
+          mapToAgentItem({
+            id: item.id,
+            name: item.name,
+            email: item.email,
+            role: item.internal_role ?? item.role,
+            assigned_zone: item.assigned_zone,
+            phone_number: item.phone_number,
+            avatar_url: item.avatar_url,
+            is_active: item.is_active,
+          })
+        )
+        .filter((agent) =>
+          [agent.name, agent.zone, agent.phone]
+            .join(" ")
+            .toLowerCase()
+            .includes(search.trim().toLowerCase())
+        ),
+    [internalUsers, search]
   );
+
+  const selectedAgent = useMemo<AgentItem | null>(() => {
+    if (!agents.length) {
+      return null;
+    }
+
+    return agents.find((agent) => agent.id === selectedAgentId) ?? agents[0];
+  }, [agents, selectedAgentId]);
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -50,10 +117,9 @@ export function AgentView({ basePath }: { basePath: string }) {
           {/* Filter toggle — icon before text */}
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
-              showFilters ? 'text-white' : 'text-gray-500'
-            }`}
-            style={{ 
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${showFilters ? 'text-white' : 'text-gray-500'
+              }`}
+            style={{
               background: showFilters ? '#34373C' : '#F8F8F8',
               border: showFilters ? '0.5px solid #34373C' : '0.5px solid #D1D1D1',
               boxShadow: showFilters ? 'none' : '0 2px 8px rgba(0, 0, 0, 0.06)'
@@ -90,11 +156,18 @@ export function AgentView({ basePath }: { basePath: string }) {
       <div className="flex flex-col xl:flex-row gap-5 mt-2">
         <div className="flex-1 min-w-0 flex flex-col gap-5">
           <AgentCurveChart />
-          <AgentList
-            basePath={basePath}
-            selectedId={selectedAgent.id}
-            onSelect={setSelectedAgent}
-          />
+          {isLoading ? (
+            <div className="bg-white rounded-3xl p-8 text-[13px] text-gray-400 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+              Loading agents...
+            </div>
+          ) : (
+            <AgentList
+              agents={agents}
+              basePath={basePath}
+              selectedId={selectedAgent?.id}
+              onSelect={(agent) => setSelectedAgentId(agent.id)}
+            />
+          )}
         </div>
         <AgentSidebar agent={selectedAgent} />
       </div>

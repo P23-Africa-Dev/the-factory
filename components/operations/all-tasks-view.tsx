@@ -6,6 +6,7 @@ import { TaskBoard } from './task-board';
 import { TaskDetailModal } from './task-detail-modal';
 import { useAuthStore } from '@/store/auth';
 import { useTasks } from '@/hooks/use-tasks';
+import { getActiveCompanyContext } from '@/lib/company-context';
 import type { DndContainer, DndItem } from '@/types/operations';
 import { TaskBoardSkeleton } from './skeletons/task-board-skeleton';
 import type { TaskApiItem } from '@/lib/api/tasks';
@@ -20,17 +21,19 @@ export function AllTasksView() {
   } | null>(null);
 
   const user = useAuthStore((s) => s.user);
-  const companyId = user?.active_company?.id;
+  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
 
   const { data: tasksData, isPending } = useTasks({
-    company_id: companyId,
+    company_id: companyId ?? undefined,
   });
 
   const containers: DndContainer[] = useMemo(() => {
     const items = tasksData?.tasks || [];
-    
+
     const pendingItems = items.filter(t => t.status === "pending").map(mapTaskToDnd);
-    const inProgressItems = items.filter(t => t.status === "in_progress").map(mapTaskToDnd);
+    const inProgressItems = items
+      .filter((t) => t.status === "in_progress" || t.status === "paused" || t.status === "resumed")
+      .map(mapTaskToDnd);
     const completedItems = items.filter(t => t.status === "completed").map(mapTaskToDnd);
     const cancelledItems = items.filter(t => t.status === "cancelled").map(mapTaskToDnd);
 
@@ -144,9 +147,8 @@ export function AllTasksView() {
 
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
-              showFilters ? 'text-white' : 'text-gray-500'
-            }`}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${showFilters ? 'text-white' : 'text-gray-500'
+              }`}
             style={{
               background: showFilters ? '#34373C' : '#F8F8F8',
               border: showFilters
@@ -175,11 +177,10 @@ export function AllTasksView() {
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
-                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${
-                    statusFilter === s
-                      ? 'bg-[#0B1215] text-white'
-                      : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
-                  }`}
+                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${statusFilter === s
+                    ? 'bg-[#0B1215] text-white'
+                    : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
+                    }`}
                 >
                   {s}
                 </button>
@@ -207,11 +208,11 @@ export function AllTasksView() {
           <TaskBoard
             containers={displayContainers}
             activeTab="all"
-            onAddCard={() => {}}
+            onAddCard={() => { }}
             findContainer={() => undefined}
-            moveItem={() => {}}
-            moveToContainer={() => {}}
-            moveBetweenContainers={() => {}}
+            moveItem={() => { }}
+            moveToContainer={() => { }}
+            moveBetweenContainers={() => { }}
             onTaskClick={(item, containerId) =>
               setSelectedTask({ item, containerId })
             }
@@ -233,6 +234,8 @@ export function AllTasksView() {
 function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
   let statusLabel = "Pending";
   if (apiTask.status === "in_progress") statusLabel = "In Progress";
+  if (apiTask.status === "paused") statusLabel = "Paused";
+  if (apiTask.status === "resumed") statusLabel = "Resumed";
   if (apiTask.status === "completed") statusLabel = "Completed";
   if (apiTask.status === "cancelled") statusLabel = "Cancelled";
 

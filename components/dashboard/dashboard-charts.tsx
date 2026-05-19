@@ -1,6 +1,9 @@
 "use client";
 
 import ArrowUp from "@/assets/images/arrow-57deg.png";
+import { useDashboardOverview } from "@/hooks/use-dashboard";
+import { getActiveCompanyContext } from "@/lib/company-context";
+import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import {
@@ -114,6 +117,16 @@ export function MyActivitiesChart() {
 
 export function TotalLeadsChart() {
   const [mounted, setMounted] = useState(false);
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const basePath = role === "agent" ? "/agent" : "/admin";
+
+  const { data: overview } = useDashboardOverview({
+    company_id: companyId ?? undefined,
+    basePath,
+  });
+
+  const totalLeads = overview?.kpis.total_leads ?? 0;
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -130,7 +143,9 @@ export function TotalLeadsChart() {
             Total Leads
           </h3>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-4xl font-bold tracking-tighter">4,100</span>
+            <span className="text-4xl font-bold tracking-tighter">
+              {totalLeads.toLocaleString()}
+            </span>
             <span className="text-dash-dark/40 text-sm font-bold mt-2">
               Leads
             </span>

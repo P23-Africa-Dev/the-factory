@@ -4,20 +4,24 @@ import CalendarIcon from "@/assets/images/calendar-icon.png";
 import CardValidationIcon from "@/assets/images/card-validation-icon.png";
 import FileExportIcon from "@/assets/images/file-export-icon.png";
 import { PaymentOverview } from "@/components/payroll/payment-overview";
-import { agents, PayrollList } from "@/components/payroll/payroll-list";
+import {
+  mapInternalUserToPayrollAgent,
+  PayrollList,
+} from "@/components/payroll/payroll-list";
 import { PayrollSidebar } from "@/components/payroll/payroll-sidebar";
 import { SetPayrollModal } from "@/components/payroll/set-payroll-modal";
+import { useInternalUsers } from "@/hooks/use-internal-users";
 import { usePayroll } from "@/hooks/use-payroll";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { Search, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export default function FinancePage() {
   const router = useRouter();
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>("2");
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [isPayrollModalOpen, setIsPayrollModalOpen] = useState(false);
 
   const user = useAuthStore((s) => s.user);
@@ -25,9 +29,35 @@ export default function FinancePage() {
   const isAgent = role === "agent";
 
   const { data: existingPayroll } = usePayroll(companyId);
+  const { data: internalUsers = [], isLoading: isUsersLoading } = useInternalUsers({
+    company_id: companyId ?? undefined,
+    role: "agent",
+  });
+
+  const payrollAgents = useMemo(
+    () => internalUsers.map(mapInternalUserToPayrollAgent),
+    [internalUsers]
+  );
+
+  useEffect(() => {
+    if (!payrollAgents.length) {
+      if (selectedAgentId !== null) {
+        const timeout = setTimeout(() => setSelectedAgentId(null), 0);
+        return () => clearTimeout(timeout);
+      }
+      return;
+    }
+
+    if (selectedAgentId && payrollAgents.some((agent) => agent.id === selectedAgentId)) {
+      return;
+    }
+
+    const timeout = setTimeout(() => setSelectedAgentId(payrollAgents[0].id), 0);
+    return () => clearTimeout(timeout);
+  }, [payrollAgents, selectedAgentId]);
 
   const selectedAgent = selectedAgentId
-    ? (agents.find((a) => a.id === selectedAgentId) ?? null)
+    ? (payrollAgents.find((a) => a.id === selectedAgentId) ?? null)
     : null;
 
   if (!companyId) {
@@ -107,11 +137,18 @@ export default function FinancePage() {
         {/* Payroll List + Sidebar */}
         <div className="flex flex-col xl:flex-row gap-6">
           <div className="flex-1 min-w-0">
-            <PayrollList
-              selectedId={selectedAgentId}
-              onSelect={setSelectedAgentId}
-              onShowViewAll={() => router.push("/agent/payroll/payroll-list")}
-            />
+            {isUsersLoading ? (
+              <div className="bg-white rounded-[30px] px-6 py-8 text-[13px] text-gray-400 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+                Loading payroll agents...
+              </div>
+            ) : (
+              <PayrollList
+                users={payrollAgents}
+                selectedId={selectedAgentId}
+                onSelect={setSelectedAgentId}
+                onShowViewAll={() => router.push("/agent/payroll/payroll-list")}
+              />
+            )}
           </div>
 
           <div className="w-full xl:w-85 xl:shrink-0 xl:min-w-131.25">

@@ -7,6 +7,7 @@ namespace App\Services\Dashboard;
 use App\Enums\LeadStatus;
 use App\Models\Lead;
 use App\Models\PayrollSetting;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskLocationPoint;
 use App\Models\User;
@@ -47,6 +48,7 @@ class DashboardAggregateService
                     ->whereBetween('created_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()]);
 
                 $allTasks = Task::query()->where('company_id', $resolvedCompanyId);
+                $allProjects = Project::query()->where('company_id', $resolvedCompanyId);
 
                 $allLeads = Lead::query()->where('company_id', $resolvedCompanyId);
                 $leadsInWindow = Lead::query()
@@ -82,6 +84,12 @@ class DashboardAggregateService
                     ->distinct('user_id')
                     ->count('user_id');
 
+                $totalProjects = (int) $allProjects->count();
+                $completedProjects = (int) (clone $allProjects)->where('status', 'completed')->count();
+                $completionRate = $totalProjects > 0
+                    ? round(($completedProjects / $totalProjects) * 100, 2)
+                    : 0;
+
                 return [
                     'kpis' => [
                         'total_tasks' => (int) $allTasks->count(),
@@ -90,6 +98,13 @@ class DashboardAggregateService
                         'total_leads' => (int) $allLeads->count(),
                         'converted_leads' => (int) (clone $allLeads)->whereNotNull('converted_at')->count(),
                         'payroll_configured' => PayrollSetting::query()->where('company_id', $resolvedCompanyId)->exists(),
+                    ],
+                    'project_kpis' => [
+                        'total_projects' => $totalProjects,
+                        'active_projects' => (int) (clone $allProjects)->where('status', 'active')->count(),
+                        'planning_projects' => (int) (clone $allProjects)->where('status', 'planning')->count(),
+                        'completed_projects' => $completedProjects,
+                        'completion_rate' => $completionRate,
                     ],
                     'activity_summary' => [
                         'range' => [

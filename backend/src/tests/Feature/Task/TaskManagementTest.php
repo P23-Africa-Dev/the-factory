@@ -412,6 +412,136 @@ class TaskManagementTest extends TestCase
             ->assertJsonCount(1, 'data.items');
     }
 
+    public function test_management_can_filter_tasks_by_project_id(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $projectA = Project::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'project_manager_user_id' => $admin->id,
+            'name' => 'Project A',
+            'status' => 'active',
+            'start_date' => now()->toDateString(),
+        ]);
+
+        $projectB = Project::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'project_manager_user_id' => $admin->id,
+            'name' => 'Project B',
+            'status' => 'active',
+            'start_date' => now()->toDateString(),
+        ]);
+
+        $taskA = Task::create([
+            'company_id' => $company->id,
+            'project_id' => $projectA->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Task A',
+            'description' => 'Task under project A.',
+            'status' => 'pending',
+        ]);
+
+        Task::create([
+            'company_id' => $company->id,
+            'project_id' => $projectB->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Task B',
+            'description' => 'Task under project B.',
+            'status' => 'pending',
+        ]);
+
+        $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
+            ->getJson('/api/v1/tasks?company_id=' . $company->id . '&project_id=' . $projectA->id);
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.id', $taskA->id)
+            ->assertJsonPath('data.items.0.project.id', $projectA->id);
+    }
+
+    public function test_management_can_update_task_status_via_admin_endpoint(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $task = Task::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Manager Controlled Task',
+            'description' => 'Status should be updated by management endpoint.',
+            'status' => 'pending',
+        ]);
+
+        $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
+            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
+                'company_id' => $company->id,
+                'status' => 'in_progress',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.task.id', $task->id)
+            ->assertJsonPath('data.task.status', 'in_progress');
+
+        $this->assertDatabaseHas('tasks', [
+            'id' => $task->id,
+            'status' => 'in_progress',
+            'last_status_updated_by_user_id' => $admin->id,
+        ]);
+    }
+
+    public function test_management_can_pause_and_resume_task_via_admin_endpoint(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $task = Task::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Pause Resume Task',
+            'description' => 'Task should support management pause and resume transitions.',
+            'status' => 'in_progress',
+            'started_at' => now()->subMinutes(15),
+        ]);
+
+        $token = $admin->createToken('admin-token', ['*'])->plainTextToken;
+
+        $pauseResponse = $this->withToken($token)
+            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
+                'company_id' => $company->id,
+                'status' => 'paused',
+            ]);
+
+        $pauseResponse->assertOk()
+            ->assertJsonPath('data.task.status', 'paused');
+
+        $this->assertNotNull($pauseResponse->json('data.task.paused_at'));
+
+        $this->assertDatabaseHas('tasks', [
+            'id' => $task->id,
+            'status' => 'paused',
+        ]);
+
+        $resumeResponse = $this->withToken($token)
+            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
+                'company_id' => $company->id,
+                'status' => 'resumed',
+            ]);
+
+        $resumeResponse->assertOk()
+            ->assertJsonPath('data.task.status', 'resumed');
+
+        $this->assertNotNull($resumeResponse->json('data.task.resumed_at'));
+
+        $this->assertDatabaseHas('tasks', [
+            'id' => $task->id,
+            'status' => 'resumed',
+        ]);
+    }
+
     public function test_agent_can_upload_proof_and_complete_task(): void
     {
         Storage::fake('local');

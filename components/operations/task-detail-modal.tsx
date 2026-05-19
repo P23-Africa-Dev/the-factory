@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
-import { X, MapPin, Share2, RefreshCw, CheckCircle, Loader2 } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import mapboxgl from 'mapbox-gl';
+import { useRouter } from 'next/navigation';
+import { X, RefreshCw, CheckCircle, Loader2 } from 'lucide-react';
 import type { DndItem } from '@/types/operations';
 import {
   useTaskDetail,
@@ -9,9 +11,11 @@ import {
   useUpdateTaskStatus,
   useUploadTaskProof,
 } from '@/hooks/use-tasks';
+import { useInternalUsers } from '@/hooks/use-internal-users';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { getAuthTokenFromDocument } from '@/lib/auth/session';
+import { createMapboxTransformRequest, getMapboxPublicToken } from '@/lib/config/public-env';
 import { toast } from 'sonner';
 import { LocationPermissionGate } from '@/components/tracking/LocationPermissionGate';
 import { CompleteTaskSheet } from '@/components/tracking/CompleteTaskSheet';
@@ -27,13 +31,113 @@ interface TaskDetailModalProps {
   status: 'pending' | 'in-progress' | 'completed' | string;
 }
 
+function toBoardStatus(status?: string): 'pending' | 'in-progress' | 'completed' | 'cancelled' {
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'completed') return 'completed';
+  if (status === 'in_progress' || status === 'paused' || status === 'resumed') {
+    return 'in-progress';
+  }
+
+  return 'pending';
+}
+
+function TaskLocationMap({
+  latitude,
+  longitude,
+  agentName,
+  agentAvatar,
+}: {
+  latitude: number | null;
+  longitude: number | null;
+  agentName: string;
+  agentAvatar?: string | null;
+}) {
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const token = useMemo(() => getMapboxPublicToken(), []);
+  const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
+
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current || !token || !hasCoordinates) return;
+
+    mapboxgl.accessToken = token;
+
+    const map = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: 'mapbox://styles/mapbox/light-v11',
+      center: [longitude as number, latitude as number],
+      zoom: 13.5,
+      attributionControl: false,
+      transformRequest: createMapboxTransformRequest(),
+    });
+
+    mapRef.current = map;
+
+    map.on('load', () => {
+      const destination = document.createElement('div');
+      destination.style.cssText =
+        'width:16px;height:16px;border-radius:999px;background:#DC2626;border:3px solid white;box-shadow:0 2px 8px rgba(220,38,38,0.45);';
+      new mapboxgl.Marker({ element: destination, anchor: 'center' })
+        .setLngLat([longitude as number, latitude as number])
+        .addTo(map);
+
+      const assignee = document.createElement('div');
+      assignee.style.cssText =
+        'display:flex;align-items:center;gap:8px;padding:4px 8px;background:rgba(15,23,42,0.86);color:white;border-radius:999px;box-shadow:0 4px 12px rgba(2,6,23,0.35);font-size:11px;font-weight:700;';
+
+      const avatar = document.createElement('img');
+      avatar.src = agentAvatar || '/avatars/female-avatar.png';
+      avatar.alt = agentName;
+      avatar.style.cssText =
+        'width:22px;height:22px;border-radius:999px;border:2px solid rgba(255,255,255,0.9);object-fit:cover;';
+      assignee.appendChild(avatar);
+
+      const name = document.createElement('span');
+      name.textContent = agentName;
+      assignee.appendChild(name);
+
+      new mapboxgl.Marker({ element: assignee, anchor: 'bottom-left', offset: [14, 8] })
+        .setLngLat([longitude as number, latitude as number])
+        .addTo(map);
+    });
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [agentAvatar, agentName, hasCoordinates, latitude, longitude, token]);
+
+  if (!hasCoordinates) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-[#eef0f3] text-[12px] font-medium text-gray-500">
+        Task destination coordinates are unavailable.
+      </div>
+    );
+  }
+
+  if (!token) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-[#eef0f3] text-[12px] font-medium text-gray-500 px-4 text-center">
+        Map preview requires NEXT_PUBLIC_MAPBOX_TOKEN.
+      </div>
+    );
+  }
+
+  return <div ref={mapContainerRef} className="h-full w-full" />;
+}
+
 export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailModalProps) {
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const authUser = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(authUser);
   const taskId = Number(task?.id ?? 0);
   const detailQuery = useTaskDetail(taskId, companyId ?? undefined);
-  const [assignmentInput, setAssignmentInput] = useState('');
+  const { data: agents = [], isLoading: loadingAgents } = useInternalUsers({
+    company_id: companyId ?? undefined,
+    role: 'agent',
+  });
+  const [selectedAgentId, setSelectedAgentId] = useState('');
   const [showLocationGate, setShowLocationGate] = useState(false);
   const [commencing, setCommencing] = useState(false);
   const [showCompleteSheet, setShowCompleteSheet] = useState(false);
@@ -50,7 +154,45 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
   const assignTaskMutation = useAssignTask({
     onSuccess: () => toast.success('Task assignment updated.'),
   });
+
+  useEffect(() => {
+    const assigneeId = detailQuery.data?.assignee?.id;
+    if (assigneeId) {
+      setSelectedAgentId(String(assigneeId));
+    }
+  }, [detailQuery.data?.assignee?.id]);
+
   if (!isOpen || !task) return null;
+
+  const apiStatus = detailQuery.data?.status;
+  const boardStatus = toBoardStatus(apiStatus ?? status);
+  const isPending = boardStatus === 'pending';
+  const isInProgress = boardStatus === 'in-progress';
+  const isCompleted = boardStatus === 'completed';
+  const isCancelled = boardStatus === 'cancelled';
+  const canDownloadProofs = role === 'owner' || role === 'admin';
+  const canOpenManagementMap =
+    role === 'owner' ||
+    role === 'admin' ||
+    role === 'management' ||
+    role === 'manager' ||
+    role === 'supervisor';
+
+  const fullMapPath = canOpenManagementMap ? '/map' : '/agent/map';
+  const title = detailQuery.data?.title || task.description;
+  const locationText = detailQuery.data?.address || detailQuery.data?.location || task.location;
+  const dueDateText = detailQuery.data?.due_date
+    ? new Date(detailQuery.data.due_date).toLocaleString()
+    : task.dueDate || 'No due date';
+  const assignedByText = detailQuery.data?.creator?.name || task.assignedBy || 'Not specified';
+  const taskDescription = detailQuery.data?.description || task.addedDescription || '';
+  const descriptionLines = taskDescription.split('\n').filter(Boolean);
+  const assignee = detailQuery.data?.assignee;
+  const assigneeName = assignee?.name || task.label || 'Unassigned';
+  const assigneeAvatar = assignee?.avatar_url || task.avatar || null;
+
+  const latitude = detailQuery.data?.latitude ?? null;
+  const longitude = detailQuery.data?.longitude ?? null;
 
   const handleCommenceAndTrack = () => {
     if (!companyId) { toast.error('Company context is required.'); return; }
@@ -77,7 +219,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
       );
       startTracking(taskId, companyId as number, token, {
         onArrived: () => toast.success("You've arrived at the destination!"),
-        onError: () => {},
+        onError: () => { },
       });
       if (res.data.arrived) {
         toast.success("Task started — you're already at the destination!");
@@ -109,21 +251,14 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
     onClose();
   };
 
-  const isPending = status === 'pending';
-  const isInProgress = status === 'in-progress';
-  const isCompleted = status === 'completed';
-  const canDownloadProofs = role === 'owner' || role === 'admin';
-
   const statusConfig = {
     pending: { bg: '#FF9F6A', text: 'white', label: 'Pending' },
     'in-progress': { bg: '#3B63F8', text: 'white', label: 'In-Progress' },
     completed: { bg: '#4FD1C5', text: 'white', label: 'Completed' },
+    cancelled: { bg: '#EF4444', text: 'white', label: 'Cancelled' },
   };
 
-  const currentStatus = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
-
-  // Format addedDescription: split by newline, render each line
-  const descriptionLines = (task.addedDescription || '').split('\n').filter(Boolean);
+  const currentStatus = statusConfig[boardStatus as keyof typeof statusConfig] || statusConfig.pending;
 
   const updateTaskStatus = (nextStatus: 'in_progress' | 'completed' | 'cancelled') => {
     if (!companyId) {
@@ -159,13 +294,8 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
       return;
     }
 
-    const assignedAgentIds = assignmentInput
-      .split(',')
-      .map((value) => Number(value.trim()))
-      .filter((value) => !Number.isNaN(value));
-
-    if (assignedAgentIds.length === 0) {
-      toast.error('Enter at least one agent ID.');
+    if (!selectedAgentId) {
+      toast.error('Select an agent to assign this task.');
       return;
     }
 
@@ -173,7 +303,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
       taskId,
       payload: {
         company_id: companyId,
-        assigned_agent_ids: assignedAgentIds,
+        assigned_agent_ids: [Number(selectedAgentId)],
       },
     });
   };
@@ -189,82 +319,12 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
 
         {/* ── Map Section ──────────────────────────────────────────────── */}
         <div className="relative h-44 md:h-55 w-full bg-[#eef0f3] overflow-hidden shrink-0">
-
-          {/* Grid lines */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-30">
-            <defs>
-              <pattern id="grid" width="80" height="60" patternUnits="userSpaceOnUse">
-                <path d="M 80 0 L 0 0 0 60" fill="none" stroke="#CBD5E1" strokeWidth="1"/>
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#grid)" />
-          </svg>
-
-          {/* Street labels */}
-          <div className="absolute left-50 top-0 bottom-0 flex flex-col justify-center gap-1 pointer-events-none">
-            <span className="text-[11px] font-semibold text-gray-400 -rotate-90 origin-center whitespace-nowrap">Dresd</span>
-            <span className="text-[11px] font-semibold text-gray-400 -rotate-90 origin-center whitespace-nowrap">Stree</span>
-          </div>
-
-          {/* Route line */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none">
-            <path
-              d="M100 160 C200 165 300 158 400 135 C450 122 500 135 600 135 C700 135 800 140 900 150"
-              stroke="#3B82F6"
-              strokeWidth="10"
-              strokeLinecap="round"
-              fill="none"
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
-
-          {/* Origin pin */}
-          <div className="absolute left-[10%] top-[40%]">
-            <MapPin size={20} className="text-red-500 fill-red-500 drop-shadow-md" />
-          </div>
-
-          {/* Agent marker */}
-          <div className="absolute flex flex-col items-center left-[15%] top-[55%]">
-            <div className="w-8 h-8 rounded-full border-[3px] border-white shadow-lg overflow-hidden">
-              <img
-                src={task.avatar || '/avatars/female-avatar.png'}
-                className="w-full h-full object-cover"
-                alt="Agent"
-              />
-            </div>
-            <div className="bg-[#B7E4C7] px-2 py-0.5 rounded-full mt-1 shadow-sm text-center whitespace-nowrap hidden sm:block">
-              <p className="text-[8px] font-bold text-[#2D6A4F]">Lane Wade</p>
-            </div>
-          </div>
-
-          {/* Mid waypoint */}
-          <div className="absolute left-[50%] top-[45%]">
-            <div className="w-6 h-6 bg-[#3B82F6] rounded-full flex items-center justify-center shadow-lg border-2 border-white">
-              <Share2 size={10} className="text-white fill-white" />
-            </div>
-          </div>
-
-          {/* Destination marker */}
-          <div className="absolute left-[85%] top-[55%]">
-            <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-lg border-4 border-[#C77DFF]/40">
-              <div className="w-2 h-2 bg-[#9D4EDD] rounded-full" />
-            </div>
-          </div>
-
-          {/* Business card overlay — hidden on small mobile */}
-          <div className="absolute top-4 right-16 hidden sm:flex rounded-[14px] overflow-hidden shadow-xl bg-white w-[180px]">
-            <div className="w-12 h-12 shrink-0 bg-gray-200 overflow-hidden">
-              <img
-                src="https://images.unsplash.com/photo-1486325212027-8081e485255e?w=200&q=80"
-                className="w-full h-full object-cover"
-                alt="Location"
-              />
-            </div>
-            <div className="flex-1 px-2 py-1.5 min-w-0">
-              <p className="text-[10px] font-bold text-dash-dark truncate">Company Name</p>
-              <p className="text-[9px] text-gray-400 leading-none mt-0.5">London SE1 2UF, UK</p>
-            </div>
-          </div>
+          <TaskLocationMap
+            latitude={latitude}
+            longitude={longitude}
+            agentName={assigneeName}
+            agentAvatar={assigneeAvatar}
+          />
 
           {/* Status badge */}
           <div
@@ -292,16 +352,19 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
               <section>
                 <h3 className="text-[14px] md:text-[15px] font-bold text-dash-dark mb-1.5">Task Title</h3>
                 <p className="text-[14px] text-gray-500 leading-snug">
-                  {task.description || 'Cover the entirety of Ikeja, For our product publicity'}
+                  {title}
                 </p>
               </section>
 
               <section>
                 <h3 className="text-[15px] font-bold text-dash-dark mb-1.5">Location</h3>
                 <p className="text-[14px] text-gray-500 underline decoration-gray-300 underline-offset-4 leading-relaxed mb-3">
-                  {task.location}
+                  {locationText}
                 </p>
-                <button className="px-4 py-1.5 bg-dash-teal/15 text-[#3A8C88] rounded-full text-[12px] font-semibold hover:bg-dash-teal/25 transition-colors">
+                <button
+                  onClick={() => router.push(fullMapPath)}
+                  className="px-4 py-1.5 bg-dash-teal/15 text-[#3A8C88] rounded-full text-[12px] font-semibold hover:bg-dash-teal/25 transition-colors"
+                >
                   View on Full Map
                 </button>
               </section>
@@ -309,14 +372,14 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
               <section>
                 <h3 className="text-[15px] font-bold text-dash-dark mb-1.5">Due Date</h3>
                 <p className="text-[14px] text-gray-400">
-                  {task.dueDate || 'Tomorrow (Friday, 3rd April. 2026)'}
+                  {dueDateText}
                 </p>
               </section>
 
               <section>
                 <h3 className="text-[15px] font-bold text-dash-dark mb-1.5">Assigned By</h3>
                 <p className="text-[14px] text-gray-400">
-                  {task.assignedBy || 'Ridwan Thomson (Supervisor)'}
+                  {assignedByText}
                 </p>
               </section>
             </div>
@@ -328,8 +391,8 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                 <div className="text-[13px] text-gray-500 leading-relaxed space-y-1">
                   {descriptionLines.length > 0
                     ? descriptionLines.map((line, i) => (
-                        <p key={i}>{line}</p>
-                      ))
+                      <p key={i}>{line}</p>
+                    ))
                     : (
                       <>
                         <p>Visit the Ikeja Computer village, and promote (product name) to the target audience there.</p>
@@ -411,6 +474,14 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                   </div>
                 </div>
               )}
+              {isCancelled && (
+                <div className="mt-auto pt-6">
+                  <div className="w-full flex items-center justify-center gap-3 px-8 py-4 bg-red-50 text-red-500 rounded-[20px] text-[15px] font-semibold border border-red-100">
+                    <CheckCircle size={20} />
+                    Task Cancelled
+                  </div>
+                </div>
+              )}
               {detailQuery.data?.proofs?.length ? (
                 <div className="mt-4 space-y-2">
                   <h4 className="text-[13px] font-bold text-dash-dark">Proofs</h4>
@@ -433,12 +504,22 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
               ) : null}
               <div className="mt-4 p-3 border border-gray-100 rounded-lg space-y-2">
                 <p className="text-[12px] font-bold text-dash-dark">Reassign Task</p>
-                <input
-                  value={assignmentInput}
-                  onChange={(event) => setAssignmentInput(event.target.value)}
-                  placeholder="Agent IDs e.g 31,42"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs"
-                />
+                <select
+                  value={selectedAgentId}
+                  onChange={(event) => setSelectedAgentId(event.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-white"
+                >
+                  <option value="">Select agent</option>
+                  {loadingAgents ? (
+                    <option value="" disabled>Loading agents...</option>
+                  ) : (
+                    agents.map((agent) => (
+                      <option key={agent.id} value={String(agent.id)}>
+                        {agent.name} ({agent.email})
+                      </option>
+                    ))
+                  )}
+                </select>
                 <button
                   onClick={updateAssignment}
                   className="w-full px-4 py-2 rounded-lg bg-dash-dark text-white text-xs font-semibold"

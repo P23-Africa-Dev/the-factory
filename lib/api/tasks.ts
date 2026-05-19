@@ -1,6 +1,12 @@
 import { apiRequest, ApiEnvelope, ApiRequestError } from "./onboarding";
 
-export type ApiTaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
+export type ApiTaskStatus =
+  | "pending"
+  | "in_progress"
+  | "paused"
+  | "resumed"
+  | "completed"
+  | "cancelled";
 export type ApiTaskPriority = "high" | "medium" | "low";
 
 export type TaskApiItem = {
@@ -39,6 +45,7 @@ export type TaskApiItem = {
     id: number;
     name: string;
     email: string;
+    avatar_url?: string | null;
   } | null;
   proofs?: Array<{
     id: number;
@@ -175,6 +182,19 @@ export function updateTaskStatus(
   return apiRequest<TaskDetailData>({
     method: "PATCH",
     path: `/tasks/${taskId}/status`,
+    body: payload,
+    token,
+  });
+}
+
+export function updateTaskStatusAdmin(
+  taskId: number | string,
+  payload: UpdateTaskStatusPayload,
+  token: string
+): Promise<ApiEnvelope<TaskDetailData>> {
+  return apiRequest<TaskDetailData>({
+    method: "PATCH",
+    path: `/admin/tasks/${taskId}/status`,
     body: payload,
     token,
   });

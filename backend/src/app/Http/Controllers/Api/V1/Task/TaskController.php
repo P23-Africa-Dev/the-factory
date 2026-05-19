@@ -23,6 +23,7 @@ class TaskController extends Controller
     {
         $tasks = $this->taskService->listForUser($request->user(), [
             'company_id' => $this->resolveCompanyContextId($request->input('company_id')),
+            'project_id' => $request->string('project_id')->toString(),
             'status' => $request->string('status')->toString(),
             'priority' => $request->string('priority')->toString(),
             'type' => $request->string('type')->toString(),

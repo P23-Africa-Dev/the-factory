@@ -32,6 +32,8 @@ class TaskResource extends JsonResource
             'visit_verification_required' => $this->visit_verification_required,
             'status' => $this->status?->value,
             'started_at' => $this->started_at?->toIso8601String(),
+            'paused_at' => $this->paused_at?->toIso8601String(),
+            'resumed_at' => $this->resumed_at?->toIso8601String(),
             'completed_at' => $this->completed_at?->toIso8601String(),
             'project' => $this->whenLoaded('project', fn(): ?array => $this->project ? [
                 'id' => $this->project->id,

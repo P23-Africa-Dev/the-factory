@@ -7,6 +7,7 @@ import {
   getTask,
   assignTask,
   updateTaskStatus,
+  updateTaskStatusAdmin,
   createSelfTask,
   uploadTaskProof,
   type ListTasksParams,
@@ -95,6 +96,24 @@ export function useUpdateTaskStatus(options?: { onSuccess?: (task: TaskApiItem) 
       taskId: number | string;
       payload: UpdateTaskStatusPayload;
     }) => updateTaskStatus(taskId, payload, token),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+      options?.onSuccess?.(res.data.task);
+    },
+  });
+}
+
+export function useUpdateTaskStatusAdmin(options?: { onSuccess?: (task: TaskApiItem) => void }) {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      payload,
+    }: {
+      taskId: number | string;
+      payload: UpdateTaskStatusPayload;
+    }) => updateTaskStatusAdmin(taskId, payload, token),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
       options?.onSuccess?.(res.data.task);

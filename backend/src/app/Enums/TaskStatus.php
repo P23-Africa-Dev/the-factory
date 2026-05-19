@@ -8,6 +8,8 @@ enum TaskStatus: string
 {
     case PENDING = 'pending';
     case IN_PROGRESS = 'in_progress';
+    case PAUSED = 'paused';
+    case RESUMED = 'resumed';
     case COMPLETED = 'completed';
     case CANCELLED = 'cancelled';
 

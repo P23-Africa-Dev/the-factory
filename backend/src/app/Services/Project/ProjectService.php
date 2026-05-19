@@ -47,6 +47,44 @@ class ProjectService
         return $query->latest('id')->simplePaginate(20)->withQueryString();
     }
 
+    public function listForAgent(User $user, array $filters): Paginator
+    {
+        $context = $this->accessService->resolve($user, $filters['company_id'] ?? null);
+        $this->accessService->ensureAgent($context);
+
+        $query = $this->baseProjectQuery($context->company->id)
+            ->whereHas('tasks', function (Builder $taskQuery) use ($user): void {
+                $taskQuery->where(function (Builder $assignedQuery) use ($user): void {
+                    $assignedQuery->where('tasks.assigned_agent_id', $user->id)
+                        ->orWhereExists(function ($sub) use ($user): void {
+                            $sub->selectRaw('1')
+                                ->from('task_assignments')
+                                ->whereColumn('task_assignments.task_id', 'tasks.id')
+                                ->where('task_assignments.assigned_agent_id', $user->id)
+                                ->where('task_assignments.is_current', true);
+                        });
+                });
+            });
+
+        if (! empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (! empty($filters['priority'])) {
+            $query->where('priority', $filters['priority']);
+        }
+
+        if (! empty($filters['type'])) {
+            $query->where('type', $filters['type']);
+        }
+
+        if (! empty($filters['search'])) {
+            $query->where('name', 'like', '%' . $filters['search'] . '%');
+        }
+
+        return $query->latest('id')->simplePaginate(20)->withQueryString();
+    }
+
     public function create(User $user, array $data): Project
     {
         $context = $this->accessService->resolve($user, $data['company_id'] ?? null);
