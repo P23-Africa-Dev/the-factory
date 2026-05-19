@@ -154,6 +154,14 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
   const assignTaskMutation = useAssignTask({
     onSuccess: () => toast.success('Task assignment updated.'),
   });
+
+  useEffect(() => {
+    const assigneeId = detailQuery.data?.assignee?.id;
+    if (assigneeId) {
+      setSelectedAgentId(String(assigneeId));
+    }
+  }, [detailQuery.data?.assignee?.id]);
+
   if (!isOpen || !task) return null;
 
   const apiStatus = detailQuery.data?.status;
@@ -185,13 +193,6 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
 
   const latitude = detailQuery.data?.latitude ?? null;
   const longitude = detailQuery.data?.longitude ?? null;
-
-  useEffect(() => {
-    const assigneeId = detailQuery.data?.assignee?.id;
-    if (assigneeId) {
-      setSelectedAgentId(String(assigneeId));
-    }
-  }, [detailQuery.data?.assignee?.id]);
 
   const handleCommenceAndTrack = () => {
     if (!companyId) { toast.error('Company context is required.'); return; }
