@@ -9,6 +9,7 @@ import { clearAuthSession } from "@/lib/auth/session";
 import { ChevronDown, Menu, X, LogOut, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils/sample";
+import LogoutModal from "@/components/ui/logout-modal";
 
 // Import local SVG assets
 import DashboardIcon from "@/assets/nav-icons/dashboard.svg";
@@ -78,6 +79,7 @@ export function Navbar() {
   const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const user = useAuthStore((s) => s.user);
   const clearUser = useAuthStore((s) => s.clearUser);
@@ -271,8 +273,11 @@ export function Navbar() {
                   </Link>
                   <div className="my-1 border-t border-white/5" />
                   <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-sm font-medium"
+                    onClick={() => {
+                      setProfileOpen(false);
+                      setIsLogoutModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-sm font-medium cursor-pointer"
                   >
                     <LogOut size={15} />
                     Log out
@@ -394,7 +399,7 @@ export function Navbar() {
                 </div>
 
                 <div className="flex gap-4">
-                  <button className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors">
+                  <button className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer">
                     <Image
                       src={NotificationIcon}
                       alt="Notifications"
@@ -402,7 +407,7 @@ export function Navbar() {
                       height={24}
                     />
                   </button>
-                  <button className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors">
+                  <button className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer">
                     <Image
                       src={SettingsIcon}
                       alt="Settings"
@@ -410,12 +415,27 @@ export function Navbar() {
                       height={24}
                     />
                   </button>
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      setIsLogoutModalOpen(true);
+                    }}
+                    className="flex-1 bg-red-500/10 p-4 rounded-xl flex items-center justify-center text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                  >
+                    <LogOut size={24} />
+                  </button>
                 </div>
               </div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
+      {/* Logout Confirmation Modal Overlay */}
+      <LogoutModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={handleLogout}
+      />
     </nav>
   );
 }
