@@ -144,11 +144,12 @@ export function listProjects(
 
 export function getProject(
   id: number | string,
-  token: string
+  token: string,
+  basePath = ""
 ): Promise<ApiEnvelope<ProjectDetailData>> {
   return apiRequest<ProjectDetailData>({
     method: "GET",
-    path: `/projects/${id}`,
+    path: `${basePath}/projects/${id}`,
     token,
   });
 }

@@ -349,6 +349,124 @@ class ProjectManagementTest extends TestCase
             ->assertJsonPath('data.items.0.id', $assignedProject->id);
     }
 
+    public function test_agent_can_open_assigned_project_via_agent_endpoint_with_scoped_task_summary(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $agentB = User::factory()->create(['email_verified_at' => now()]);
+        $agentC = User::factory()->create(['email_verified_at' => now()]);
+
+        DB::table('company_users')->insert([
+            [
+                'company_id' => $company->id,
+                'user_id' => $agentB->id,
+                'role' => 'agent',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $company->id,
+                'user_id' => $agentC->id,
+                'role' => 'agent',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $project = Project::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'project_manager_user_id' => $admin->id,
+            'name' => 'Mixed Assignment Project',
+            'status' => 'active',
+            'start_date' => now()->toDateString(),
+        ]);
+
+        Task::create([
+            'company_id' => $company->id,
+            'project_id' => $project->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Task for Agent A',
+            'status' => 'pending',
+        ]);
+
+        Task::create([
+            'company_id' => $company->id,
+            'project_id' => $project->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agentB->id,
+            'title' => 'Task for Agent B',
+            'status' => 'completed',
+        ]);
+
+        Task::create([
+            'company_id' => $company->id,
+            'project_id' => $project->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agentC->id,
+            'title' => 'Task for Agent C',
+            'status' => 'in_progress',
+        ]);
+
+        $token = $agent->createToken('agent-token', ['*'])->plainTextToken;
+
+        $agentProjectResponse = $this->withToken($token)
+            ->getJson('/api/v1/agent/projects/' . $project->id . '?company_id=' . $company->id);
+
+        $agentProjectResponse->assertOk()
+            ->assertJsonPath('data.project.id', $project->id)
+            ->assertJsonPath('data.project.task_summary.total_tasks', 1)
+            ->assertJsonPath('data.project.task_summary.completed_tasks', 0)
+            ->assertJsonPath('data.project.task_summary.pending_tasks', 1)
+            ->assertJsonMissingPath('data.project.assigned_team');
+
+        $managementProjectResponse = $this->withToken($token)
+            ->getJson('/api/v1/projects/' . $project->id . '?company_id=' . $company->id);
+
+        $managementProjectResponse->assertUnprocessable();
+    }
+
+    public function test_agent_cannot_open_unassigned_project_via_agent_endpoint(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $otherAgent = User::factory()->create(['email_verified_at' => now()]);
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $otherAgent->id,
+            'role' => 'agent',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $project = Project::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'project_manager_user_id' => $admin->id,
+            'name' => 'Unassigned Agent Project',
+            'status' => 'active',
+            'start_date' => now()->toDateString(),
+        ]);
+
+        Task::create([
+            'company_id' => $company->id,
+            'project_id' => $project->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $otherAgent->id,
+            'title' => 'Task for another agent',
+            'status' => 'pending',
+        ]);
+
+        $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
+            ->getJson('/api/v1/agent/projects/' . $project->id . '?company_id=' . $company->id);
+
+        $response->assertNotFound();
+    }
+
     public function test_admin_can_create_task_under_project_without_breaking_task_api(): void
     {
         [$company, $admin, $agent] = $this->seedCompanyUsers();

@@ -52,19 +52,7 @@ class ProjectService
         $context = $this->accessService->resolve($user, $filters['company_id'] ?? null);
         $this->accessService->ensureAgent($context);
 
-        $query = $this->baseProjectQuery($context->company->id)
-            ->whereHas('tasks', function (Builder $taskQuery) use ($user): void {
-                $taskQuery->where(function (Builder $assignedQuery) use ($user): void {
-                    $assignedQuery->where('tasks.assigned_agent_id', $user->id)
-                        ->orWhereExists(function ($sub) use ($user): void {
-                            $sub->selectRaw('1')
-                                ->from('task_assignments')
-                                ->whereColumn('task_assignments.task_id', 'tasks.id')
-                                ->where('task_assignments.assigned_agent_id', $user->id)
-                                ->where('task_assignments.is_current', true);
-                        });
-                });
-            });
+        $query = $this->baseAgentProjectQuery($context->company->id, (int) $user->id);
 
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);
@@ -188,6 +176,17 @@ class ProjectService
             ->firstOrFail();
     }
 
+    public function findForAgent(User $user, Project $project, ?int $companyId = null): Project
+    {
+        $context = $this->accessService->resolve($user, $companyId);
+        $this->accessService->ensureAgent($context);
+        $this->assertProjectInCompany($project, $context->company->id);
+
+        return $this->baseAgentProjectQuery($context->company->id, (int) $user->id)
+            ->whereKey($project->id)
+            ->firstOrFail();
+    }
+
     private function baseProjectQuery(int $companyId): Builder
     {
         return Project::query()
@@ -202,6 +201,46 @@ class ProjectService
                 'tasks as completed_tasks_count' => fn(Builder $query) => $query->where('status', TaskStatus::COMPLETED->value),
                 'tasks as pending_tasks_count' => fn(Builder $query) => $query->where('status', '!=', TaskStatus::COMPLETED->value),
             ]);
+    }
+
+    private function baseAgentProjectQuery(int $companyId, int $userId): Builder
+    {
+        return Project::query()
+            ->where('company_id', $companyId)
+            ->whereHas('tasks', function (Builder $taskQuery) use ($userId): void {
+                $this->applyAgentTaskAssignmentConstraint($taskQuery, $userId);
+            })
+            ->with([
+                'manager:id,name,email,avatar,gender',
+                'files',
+            ])
+            ->withCount([
+                'tasks as total_tasks_count' => function (Builder $query) use ($userId): void {
+                    $this->applyAgentTaskAssignmentConstraint($query, $userId);
+                },
+                'tasks as completed_tasks_count' => function (Builder $query) use ($userId): void {
+                    $query->where('status', TaskStatus::COMPLETED->value);
+                    $this->applyAgentTaskAssignmentConstraint($query, $userId);
+                },
+                'tasks as pending_tasks_count' => function (Builder $query) use ($userId): void {
+                    $query->where('status', '!=', TaskStatus::COMPLETED->value);
+                    $this->applyAgentTaskAssignmentConstraint($query, $userId);
+                },
+            ]);
+    }
+
+    private function applyAgentTaskAssignmentConstraint(Builder $taskQuery, int $userId): void
+    {
+        $taskQuery->where(function (Builder $assignedQuery) use ($userId): void {
+            $assignedQuery->where('tasks.assigned_agent_id', $userId)
+                ->orWhereExists(function ($sub) use ($userId): void {
+                    $sub->selectRaw('1')
+                        ->from('task_assignments')
+                        ->whereColumn('task_assignments.task_id', 'tasks.id')
+                        ->where('task_assignments.assigned_agent_id', $userId)
+                        ->where('task_assignments.is_current', true);
+                });
+        });
     }
 
     private function resolveTimeline(array $data): array

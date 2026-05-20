@@ -96,6 +96,60 @@ class TaskManagementTest extends TestCase
         );
     }
 
+    public function test_agent_project_task_list_is_filtered_to_only_assigned_tasks(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $otherAgent = User::factory()->create(['email_verified_at' => now()]);
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $otherAgent->id,
+            'role' => 'agent',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $project = Project::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'project_manager_user_id' => $admin->id,
+            'name' => 'Agent Scoped Project',
+            'status' => 'active',
+            'start_date' => now()->toDateString(),
+        ]);
+
+        $visibleTask = Task::create([
+            'company_id' => $company->id,
+            'project_id' => $project->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Visible Project Task',
+            'type' => 'inspection',
+            'description' => 'Task for authenticated agent.',
+            'status' => 'pending',
+        ]);
+
+        Task::create([
+            'company_id' => $company->id,
+            'project_id' => $project->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $otherAgent->id,
+            'title' => 'Hidden Project Task',
+            'type' => 'inspection',
+            'description' => 'Task for another agent.',
+            'status' => 'pending',
+        ]);
+
+        $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
+            ->getJson('/api/v1/tasks?company_id=' . $company->id . '&project_id=' . $project->id);
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.id', $visibleTask->id)
+            ->assertJsonPath('data.items.0.project_id', $project->id);
+    }
+
     public function test_agent_self_task_rejects_project_id_to_enforce_standalone_flow(): void
     {
         [$company, $admin, $agent] = $this->seedCompanyUsers();
