@@ -71,8 +71,7 @@ export function ProjectsView({
         </h1>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:justify-end min-w-0 mt-2 lg:mt-0 lg:-mt-16 xl:-mt-20 transition-all duration-300 relative z-10">
-          {/* Search */}
-          <div className="relative w-full md:w-[458px] group shrink-0">
+          <div className="relative w-full sm:flex-1 md:max-w-[458px] group">
             <Search
               className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#09232D] transition-colors"
               size={18}
@@ -513,14 +512,14 @@ function SummaryCards({ projects }: { projects: Project[] }) {
   const dotY = 50 + 40 * Math.sin(dotAngle);
 
   return (
-    <div className="flex justify-between w-full px-8 animate-in fade-in slide-in-from-bottom-2 duration-500 h-49">
+    <div className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar w-screen -mx-4 px-4 pb-2 gap-6 sm:flex-col lg:flex-row sm:justify-between sm:w-full sm:mx-0 sm:px-8 sm:gap-6 lg:gap-0 animate-in fade-in slide-in-from-bottom-2 duration-500 h-auto sm:overflow-visible sm:snap-none sm:pb-0 lg:h-49">
       <PerformanceCard
         percent={percent}
         animatedDash={animatedDash}
         dotX={dotX}
         dotY={dotY}
       />
-      <div className="flex gap-6.25">
+      <div className="contents sm:grid sm:grid-cols-3 sm:gap-6 lg:gap-6.25 sm:w-auto">
         <TotalProjectsCard total={total} />
         <PendingProjectsCard pending={pending} />
         <AgentsCard percentage={pendingPercent} />
@@ -546,8 +545,8 @@ function PerformanceCard({
   dotY: number;
 }) {
   return (
-    <div className="bg-[#0B1C25] rounded-[20px] p-6 sm:p-8 relative flex items-center gap-6 lg:gap-10 overflow-hidden min-h-45 max-h-52 shrink-0 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
-      <div className="relative w-41.5 h-41.5 shrink-0">
+    <div className="bg-[#0B1C25] rounded-[20px] p-5 sm:p-8 relative flex flex-col sm:flex-row items-center sm:items-center text-center sm:text-left gap-4 sm:gap-6 lg:gap-10 overflow-hidden min-h-45 max-h-60 sm:max-h-52 w-[85vw] sm:w-auto shrink-0 snap-center shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+      <div className="relative w-28 h-28 sm:w-41.5 sm:h-41.5 shrink-0">
         <svg
           viewBox="0 0 100 100"
           className="w-full h-full"
@@ -593,24 +592,24 @@ function PerformanceCard({
             strokeWidth="4px"
           />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
-          <div className="w-10 h-10 rounded-full bg-[#EF6C55] flex items-center justify-center shadow-lg">
-            <User size={18} className="text-white fill-current" />
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 sm:gap-1">
+          <div className="w-7 h-7 sm:w-10 sm:h-10 rounded-full bg-[#EF6C55] flex items-center justify-center shadow-lg">
+            <User className="text-white fill-current w-3 h-3 sm:w-4.5 sm:h-4.5" />
           </div>
-          <span className="text-white font-semibold text-[40px] leading-none">
+          <span className="text-white font-semibold text-[24px] sm:text-[40px] leading-none">
             {percent}%
           </span>
         </div>
       </div>
       <div className="flex flex-col z-10 text-white min-w-0">
-        <p className="text-[#E8E8E8] font-normal text-[14px] sm:text-[16px] leading-tight mb-0.5">
+        <p className="text-[#E8E8E8] font-normal text-[12px] sm:text-[14px] lg:text-[16px] leading-tight mb-0.5">
           Overall Project
         </p>
-        <h2 className="text-[28px] sm:text-[36px] font-semibold leading-[1.1] mb-7 tracking-tight">
+        <h2 className="text-[20px] sm:text-[28px] lg:text-[36px] font-semibold leading-[1.1] mb-2 sm:mb-7 tracking-tight">
           Performance
         </h2>
-        <p className="text-[14px] font-medium text-[#E8E8E8]">
-          Status: <span>{performanceLabel(percent)}</span>
+        <p className="text-[11px] sm:text-[14px] font-medium text-[#E8E8E8]/80">
+          Status: <span className="text-white font-semibold">{performanceLabel(percent)}</span>
         </p>
       </div>
     </div>
@@ -620,7 +619,7 @@ function PerformanceCard({
 // ─── Total Projects Card ──────────────────────────────────────────────────────
 function TotalProjectsCard({ total }: { total: number }) {
   return (
-    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-69.75 shrink-0">
+    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-[85vw] sm:w-full lg:w-69.75 shrink-0 snap-center">
       <div className="flex items-start justify-between pt-5 sm:pt-6">
         <div>
           <p className="text-[14px] font-medium text-[#2D2D2D]">
@@ -666,7 +665,7 @@ function TotalProjectsCard({ total }: { total: number }) {
 // ─── Pending Projects Card ────────────────────────────────────────────────────
 function PendingProjectsCard({ pending }: { pending: number }) {
   return (
-    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-69.75 shrink-0">
+    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-[85vw] sm:w-full lg:w-69.75 shrink-0 snap-center">
       <div className="flex items-start justify-between pt-5 sm:pt-6">
         <div>
           <p className="text-[14px] font-medium text-[#2D2D2D]">
@@ -719,7 +718,7 @@ function AgentsCard({ percentage }: { percentage: number }) {
   const dotY = 50 + 40 * Math.sin(dotAngle);
 
   return (
-    <div className="bg-[#7BA9A4] rounded-[20px] gap-4 p-5 shadow-sm relative flex flex-col items-center h-full w-29.75 text-center justify-between">
+    <div className="bg-[#7BA9A4] rounded-[20px] gap-4 p-5 shadow-sm relative flex flex-col items-center h-full w-[85vw] sm:w-full lg:w-29.75 text-center justify-between shrink-0 snap-center">
       <p className="text-white font-light text-[8px] leading-[1.4] max-w-20 mx-auto">
         View Agent who hasn&apos;t commenced task
       </p>

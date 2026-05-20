@@ -117,7 +117,7 @@ interface SearchInputProps {
 
 function SearchInput({ value, onChange }: SearchInputProps) {
   return (
-    <div className="relative w-full md:w-114.5 group shrink-0">
+    <div className="relative w-full md:flex-1 md:max-w-114.5 group">
       <Search
         className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-dark transition-colors"
         size={18}
