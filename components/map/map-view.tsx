@@ -140,11 +140,9 @@ export function MapView({ compact = false }: MapViewProps) {
     return () => clearInterval(iv);
   }, []);
 
-  useEffect(() => {
-    if (selectedTaskId != null && !liveTasks[selectedTaskId]) {
-      setSelectedTaskId(null);
-    }
-  }, [liveTasks, selectedTaskId]);
+  if (selectedTaskId != null && !liveTasks[selectedTaskId]) {
+    setSelectedTaskId(null);
+  }
 
   // Fly to agent when sidebar selection changes (refs only in effects).
   useEffect(() => {
@@ -632,7 +630,12 @@ export function MapView({ compact = false }: MapViewProps) {
                   className={`w-full flex items-center gap-4 px-4 py-3.5 text-left transition-all rounded-[20px] ${isSelected ? 'bg-[#0A192F]' : 'bg-[#F8FAFC] hover:bg-gray-100'
                     }`}
                 >
-                  <AgentAvatar name={task.agentName} avatarUrl={task.agentAvatarUrl} sizeClassName="w-12 h-12" />
+                  <AgentAvatar
+                    key={`${task.taskId}-${task.agentAvatarUrl ?? ""}`}
+                    name={task.agentName}
+                    avatarUrl={task.agentAvatarUrl}
+                    sizeClassName="w-12 h-12"
+                  />
                   <div className="flex-1 min-w-0">
                     <p
                       className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
@@ -699,10 +702,6 @@ function AgentAvatar({
   initialsClassName?: string;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-
-  useEffect(() => {
-    setImageFailed(false);
-  }, [avatarUrl]);
 
   const initials = getAgentInitials(name);
   const showImage = !!avatarUrl && !imageFailed;

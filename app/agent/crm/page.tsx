@@ -36,7 +36,7 @@ import {
   Tag,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import {
   Area,
   AreaChart,
@@ -735,13 +735,13 @@ function TotalLeadsCard() {
 }
 
 function LeadsChart() {
-  const [mounted, setMounted] = useState(false);
+  const isClient = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) return <div className="h-full w-full min-h-45" />;
+  if (!isClient) return <div className="h-full w-full min-h-45" />;
 
   return (
     <div className="rounded-3xl p-6 border-gray-100 flex-1 min-w-0 sm:min-w-75">

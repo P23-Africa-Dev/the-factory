@@ -1,59 +1,371 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, startTransition } from "react";
 import Link from "next/link";
-import { MapPin, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight } from "lucide-react";
+import { MapPin, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight, Loader2, Settings, X, ArrowUpRight } from "lucide-react";
+import { toast } from "sonner";
+import { AreaChart, Area, ResponsiveContainer } from "recharts";
+import { useAttendanceSettings, useUpdateAttendanceSettings } from "@/hooks/use-attendance";
+import { format, parseISO } from "date-fns";
 import { AddAgentModal } from "./add-agent-modal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
+import { useAttendanceMetrics, useAttendanceRecords } from "@/hooks/use-attendance";
+import { useAuthStore } from "@/store/auth";
+import { getActiveCompanyContext } from "@/lib/company-context";
+import type { ManagementAttendanceRecord } from "@/lib/api/attendance";
 
 type AttendanceItem = {
-  id: number;
+  id: number | string;
   name: string;
   address: string;
   checkIn: string;
   checkOut: string;
   role: string;
+  zone: string;
   status: string;
   subText: string;
   active: boolean;
   avatar: string;
 };
 
-const attendanceList: AttendanceItem[] = [
-  { id: 1, name: "Francis Nasyomba", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "Since Yesterday", active: false, avatar: "/avatars/male-avatar.png" },
-  { id: 2, name: "Lade Wane", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "8:25AM", checkOut: "Still Active", role: "Field Agent", status: "Present", subText: "Active", active: true, avatar: "/avatars/female-avatar.png" },
-  { id: 3, name: "Amina Bello", address: "45 Adeniran Ogunsanya, Surulere, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "Since Yesterday", active: false, avatar: "/avatars/female-avatar.png" },
-  { id: 4, name: "Chidi Okonkwo", address: "3 Admiralty Way, Lekki Phase 1, Lagos", checkIn: "9:10AM", checkOut: "5:00PM", role: "Senior Agent", status: "Present", subText: "Checked Out", active: false, avatar: "/avatars/male-avatar.png" },
-  { id: 5, name: "Ngozi Eze", address: "7 Ozumba Mbadiwe, Victoria Island, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "1 day ago", active: false, avatar: "/avatars/female-avatar.png" },
-  { id: 6, name: "Tunde Adeyemi", address: "22 Herbert Macaulay Way, Yaba, Lagos", checkIn: "7:58AM", checkOut: "Still Active", role: "Senior Agent", status: "Present", subText: "Active", active: true, avatar: "/avatars/male-avatar.png" },
-  { id: 7, name: "Fatima Sule", address: "45 Adeniran Ogunsanya, Surulere, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "5 hours ago", active: false, avatar: "/avatars/female-avatar.png" },
-  { id: 8, name: "Emeka Obi", address: "Oshodi Market Road, Oshodi, Lagos", checkIn: "8:45AM", checkOut: "4:30PM", role: "Field Agent", status: "Present", subText: "Checked Out", active: false, avatar: "/avatars/male-avatar.png" },
-  { id: 9, name: "Blessing Okafor", address: "12 Oba Akran Avenue, Ikeja, Lagos", checkIn: "8:00AM", checkOut: "Still Active", role: "Senior Agent", status: "Present", subText: "Active", active: true, avatar: "/avatars/female-avatar.png" },
-  { id: 10, name: "Abdul Kareem", address: "3 Admiralty Way, Lekki Phase 1, Lagos", checkIn: "No check-in record", checkOut: "No check-out record", role: "Field Agent", status: "Absent", subText: "Since Yesterday", active: false, avatar: "/avatars/male-avatar.png" },
-  { id: 11, name: "Seun Martins", address: "5 Allen Avenue, Ikeja, Lagos", checkIn: "8:30AM", checkOut: "Still Active", role: "Field Agent", status: "Present", subText: "Active", active: true, avatar: "/avatars/male-avatar.png" },
-];
+function resolveAvatar(avatar: string | null): string {
+  if (!avatar) return "/avatars/male-avatar.png";
+  if (avatar.startsWith("http")) return avatar;
+  return `/avatars/${avatar}.png`;
+}
+
+function mapRecord(record: ManagementAttendanceRecord): AttendanceItem {
+  return {
+    id: record.user_id,
+    name: record.agent_name,
+    address: record.zone ?? "—",
+    zone: record.zone ?? "—",
+    checkIn: record.clock_in_at
+      ? format(parseISO(record.clock_in_at), "h:mma")
+      : "No check-in record",
+    checkOut: record.clock_out_at
+      ? format(parseISO(record.clock_out_at), "h:mma")
+      : record.status !== "absent"
+      ? "Still Active"
+      : "No check-out record",
+    role: record.role ?? "Field Agent",
+    status: record.status === "present" || record.status === "late" ? "Present" : "Absent",
+    subText:
+      record.is_late
+        ? "Late"
+        : record.clock_out_at
+        ? "Checked Out"
+        : record.status !== "absent"
+        ? "Active"
+        : "Absent",
+    active: !!record.clock_in_at && !record.clock_out_at,
+    avatar: resolveAvatar(record.avatar),
+  };
+}
+
+const SPARK_PRESENT = [{ v: 8 }, { v: 14 }, { v: 10 }, { v: 18 }, { v: 12 }, { v: 16 }, { v: 20 }];
+const SPARK_ABSENT  = [{ v: 20 }, { v: 14 }, { v: 18 }, { v: 10 }, { v: 16 }, { v: 12 }, { v: 8 }];
+
+function MgmtStatCard({
+  value,
+  label,
+  href,
+  accentBg,
+  strokeColor,
+  gradientId,
+  data,
+  isLoading,
+}: {
+  value: number;
+  label: string;
+  href: string;
+  accentBg: string;
+  strokeColor: string;
+  gradientId: string;
+  data: { v: number }[];
+  isLoading: boolean;
+}) {
+  return (
+    <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 flex flex-col min-h-44 overflow-hidden relative">
+      <div className="flex items-start justify-between gap-2 mb-1">
+        {isLoading ? (
+          <div className="w-20 h-14 bg-gray-100 animate-pulse rounded-xl" />
+        ) : (
+          <h2 className="text-[52px] font-bold text-[#1A1A1A] leading-none tracking-tight">
+            {value}
+          </h2>
+        )}
+        <Link
+          href={href}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-bold text-white shrink-0 mt-1 hover:opacity-90 transition-opacity"
+          style={{ background: accentBg }}
+        >
+          View All
+          <ArrowUpRight size={11} />
+        </Link>
+      </div>
+      <p className="text-[13px] font-medium text-gray-500 mb-auto">{label}</p>
+      <div className="h-14 w-full mt-3 -mx-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={strokeColor} stopOpacity={0.25} />
+                <stop offset="95%" stopColor={strokeColor} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <Area type="monotone" dataKey="v" stroke={strokeColor} strokeWidth={2.5} fill={`url(#${gradientId})`} dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
 
 const PAGE_SIZE = 5;
 
+const DAYS_OF_WEEK = [
+  { key: "monday", label: "Mon" },
+  { key: "tuesday", label: "Tue" },
+  { key: "wednesday", label: "Wed" },
+  { key: "thursday", label: "Thu" },
+  { key: "friday", label: "Fri" },
+  { key: "saturday", label: "Sat" },
+  { key: "sunday", label: "Sun" },
+];
+
+function AttendanceSettingsModal({
+  companyId,
+  onClose,
+}: {
+  companyId: number | string;
+  onClose: () => void;
+}) {
+  const { data: settings, isLoading } = useAttendanceSettings(companyId);
+  const updateMutation = useUpdateAttendanceSettings();
+
+  const [openingTime, setOpeningTime] = useState("09:00");
+  const [closingTime, setClosingTime] = useState("17:00");
+  const [workingDays, setWorkingDays] = useState<string[]>(["monday", "tuesday", "wednesday", "thursday", "friday"]);
+  const [windowMinutes, setWindowMinutes] = useState(30);
+  const [autoClockout, setAutoClockout] = useState(false);
+
+  useEffect(() => {
+    if (settings) {
+      startTransition(() => {
+        if (settings.opening_time) setOpeningTime(settings.opening_time.slice(0, 5));
+        if (settings.closing_time) setClosingTime(settings.closing_time.slice(0, 5));
+        if (settings.working_days) setWorkingDays(settings.working_days);
+        if (settings.clockin_window_minutes !== undefined) setWindowMinutes(settings.clockin_window_minutes);
+        if (settings.auto_clockout_enabled !== undefined) setAutoClockout(settings.auto_clockout_enabled);
+      });
+    }
+  }, [settings]);
+
+  function toggleDay(day: string) {
+    setWorkingDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
+  }
+
+  function handleSave() {
+    updateMutation.mutate(
+      {
+        company_id: companyId,
+        opening_time: openingTime,
+        closing_time: closingTime,
+        working_days: workingDays,
+        clockin_window_minutes: windowMinutes,
+        auto_clockout_enabled: autoClockout,
+      },
+      {
+        onSuccess: () => {
+          toast.success("Attendance settings saved.");
+          onClose();
+        },
+        onError: (err: Error) => toast.error(err.message || "Failed to save settings."),
+      }
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-200 flex items-center justify-end">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="relative bg-white w-full max-w-md h-full shadow-2xl flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <div>
+            <h3 className="text-[16px] font-black text-dash-dark">Attendance Settings</h3>
+            <p className="text-[12px] text-gray-400 mt-0.5">Configure attendance windows for your team</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-6">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 size={24} className="animate-spin text-gray-400" />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-6">
+              {/* Working Days */}
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Working Days</label>
+                <div className="flex gap-2 flex-wrap">
+                  {DAYS_OF_WEEK.map((day) => (
+                    <button
+                      key={day.key}
+                      type="button"
+                      onClick={() => toggleDay(day.key)}
+                      className={`px-3 py-2 rounded-xl text-[12px] font-bold border transition-all ${
+                        workingDays.includes(day.key)
+                          ? "bg-dash-dark text-white border-dash-dark"
+                          : "bg-gray-50 text-gray-500 border-gray-200 hover:border-dash-dark/30"
+                      }`}
+                    >
+                      {day.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Opening / Closing times */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Opening Time</label>
+                  <input
+                    type="time"
+                    value={openingTime}
+                    onChange={(e) => setOpeningTime(e.target.value)}
+                    className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-[14px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Closing Time</label>
+                  <input
+                    type="time"
+                    value={closingTime}
+                    onChange={(e) => setClosingTime(e.target.value)}
+                    className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-[14px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Clock-in window */}
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+                  Clock-in Window <span className="normal-case font-normal text-gray-400">(minutes before/after opening)</span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="120"
+                  value={windowMinutes}
+                  onChange={(e) => setWindowMinutes(Number(e.target.value))}
+                  className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-[14px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 transition-all"
+                />
+                <p className="text-[11px] text-gray-400 mt-1.5">Agents can clock in up to {windowMinutes} minutes before/after opening time.</p>
+              </div>
+
+              {/* Auto-clockout */}
+              <div className="flex items-center justify-between py-4 px-4 bg-gray-50 rounded-2xl border border-gray-100">
+                <div>
+                  <p className="text-[13px] font-bold text-dash-dark">Auto Clock-out</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">Automatically clock out agents at closing time</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAutoClockout((v) => !v)}
+                  className={`relative w-12 h-6 rounded-full transition-all duration-200 ${
+                    autoClockout ? "bg-dash-dark" : "bg-gray-300"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
+                      autoClockout ? "translate-x-6" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="shrink-0 px-6 py-4 border-t border-gray-100 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 rounded-xl border border-gray-200 text-[13px] font-bold text-gray-600 hover:bg-gray-50 transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={updateMutation.isPending || isLoading}
+            className="flex-1 py-3 rounded-xl bg-dash-dark text-white text-[13px] font-bold hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {updateMutation.isPending && <Loader2 size={13} className="animate-spin" />}
+            {updateMutation.isPending ? "Saving..." : "Save Settings"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AttendanceView({ basePath }: { basePath: string }) {
+  const today = format(new Date(), "yyyy-MM-dd");
+
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);
-  const [selectedId, setSelectedId] = useState<number>(attendanceList[0].id);
+  const [showSettings, setShowSettings] = useState(false);
+  const [selectedId, setSelectedId] = useState<number | string | null>(null);
   const [page, setPage] = useState(1);
+  const [date, setDate] = useState(today);
 
-  const filtered = attendanceList.filter((i) =>
-    i.name.toLowerCase().includes(search.toLowerCase()) ||
-    i.address.toLowerCase().includes(search.toLowerCase())
+  const { user } = useAuthStore();
+  const { apiCompanyId } = getActiveCompanyContext(user);
+
+  const { data: metricsData } = useAttendanceMetrics(apiCompanyId ?? undefined, date);
+  const { data: recordsData, isLoading: recordsLoading } = useAttendanceRecords({
+    company_id: apiCompanyId ?? undefined,
+    date,
+    search: search || undefined,
+    per_page: 50,
+  });
+
+  const attendanceList: AttendanceItem[] = (recordsData?.items ?? []).map(mapRecord);
+
+  const filtered = attendanceList.filter(
+    (i) =>
+      i.name.toLowerCase().includes(search.toLowerCase()) ||
+      i.address.toLowerCase().includes(search.toLowerCase())
   );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  const selected = attendanceList.find((i) => i.id === selectedId) ?? attendanceList[0];
+  const activeId = selectedId ?? (paginated[0]?.id ?? null);
+  const selected = attendanceList.find((i) => i.id === activeId) ?? paginated[0] ?? null;
 
-  const handleSearch = (val: string) => { setSearch(val); setPage(1); };
+  const handleSearch = (val: string) => {
+    setSearch(val);
+    setPage(1);
+  };
+
+  const handleDateChange = (val: string) => {
+    setDate(val);
+    setPage(1);
+    setSelectedId(null);
+  };
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -63,7 +375,16 @@ export function AttendanceView({ basePath }: { basePath: string }) {
           <span className="lg:hidden">Attendance Overview</span>
         </h1>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:justify-end min-w-0 mt-2 lg:mt-0 lg:-mt-16 xl:-mt-20 transition-all duration-300 relative z-10">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:justify-end min-w-0 mt-2 lg:-mt-16 xl:-mt-20 transition-all duration-300 relative z-10">
+          {/* Date picker */}
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => handleDateChange(e.target.value)}
+            className="bg-white border border-[#D7D7D7] rounded-2xl px-4 py-2.5 text-[13px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 shrink-0"
+            style={{ boxShadow: "0px 1px 3px 0px #0000004D" }}
+          />
+
           {/* Search */}
           <div className="relative w-full md:w-114.5 group shrink-0">
             <Search
@@ -78,10 +399,10 @@ export function AttendanceView({ basePath }: { basePath: string }) {
               placeholder="Search by agent name..."
               className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-dash-dark/10 transition-all font-sans"
               style={{
-                height: '46px',
-                borderRadius: '24px',
-                border: '0.7px solid #D7D7D7',
-                boxShadow: '0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026'
+                height: "46px",
+                borderRadius: "24px",
+                border: "0.7px solid #D7D7D7",
+                boxShadow: "0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026",
               }}
             />
           </div>
@@ -89,24 +410,40 @@ export function AttendanceView({ basePath }: { basePath: string }) {
           <button
             onClick={() => setShowFilters((v) => !v)}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
-              showFilters ? 'text-white' : 'text-gray-500'
+              showFilters ? "text-white" : "text-gray-500"
             }`}
             style={{
-              background: showFilters ? '#34373C' : '#F8F8F8',
-              border: showFilters ? '0.5px solid #34373C' : '0.5px solid #D1D1D1',
-              boxShadow: showFilters ? 'none' : '0 2px 8px rgba(0, 0, 0, 0.06)'
+              background: showFilters ? "#34373C" : "#F8F8F8",
+              border: showFilters ? "0.5px solid #34373C" : "0.5px solid #D1D1D1",
+              boxShadow: showFilters ? "none" : "0 2px 8px rgba(0, 0, 0, 0.06)",
             }}
           >
             <SlidersHorizontal size={14} strokeWidth={2} />
-            <span style={{ fontFamily: 'Poppins, sans-serif', fontWeight: 400, fontSize: '10px', lineHeight: '100%' }}>
+            <span
+              style={{
+                fontFamily: "Poppins, sans-serif",
+                fontWeight: 400,
+                fontSize: "10px",
+                lineHeight: "100%",
+              }}
+            >
               Filter
             </span>
           </button>
 
           <button
+            onClick={() => setShowSettings(true)}
+            className="flex items-center gap-2 px-5 py-3 bg-white border border-[#D7D7D7] text-dash-dark rounded-xl text-[13px] font-bold hover:bg-gray-50 transition-all shrink-0 cursor-pointer"
+            style={{ boxShadow: "0px 1px 3px 0px #0000004D" }}
+          >
+            <Settings size={14} strokeWidth={2} />
+            <span className="hidden sm:inline">Settings</span>
+          </button>
+
+          <button
             onClick={() => setShowAddAgent(true)}
             className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
-            style={{ boxShadow: '0 4px 14px rgba(9, 35, 45, 0.3)' }}
+            style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
           >
             <BookmarkPlus size={15} strokeWidth={2} />
             <span className="hidden sm:inline whitespace-nowrap">Add New Agent</span>
@@ -115,11 +452,39 @@ export function AttendanceView({ basePath }: { basePath: string }) {
         </div>
       </div>
 
+
+
       {/* ── Main content ─────────────────────────────────────── */}
       <div className="flex flex-col xl:flex-row gap-5 mt-2">
 
+        
         {/* ── Left: attendance list ──────────────────────────── */}
         <div className="flex-1 min-w-0 flex flex-col gap-5">
+
+                {/* ── Stats Cards ───────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-4">
+        <MgmtStatCard
+          value={metricsData?.present ?? 0}
+          label="Present Agents Today"
+          href={`${basePath}/operations/attendance`}
+          accentBg="#4BB89E"
+          strokeColor="#4BB89E"
+          gradientId="mgmtGradPresent"
+          data={SPARK_PRESENT}
+          isLoading={!metricsData}
+        />
+        <MgmtStatCard
+          value={metricsData?.absent ?? 0}
+          label="Absent Agents Today"
+          href={`${basePath}/operations/attendance`}
+          accentBg="#EF7129"
+          strokeColor="#EF7129"
+          gradientId="mgmtGradAbsent"
+          data={SPARK_ABSENT}
+          isLoading={!metricsData}
+        />
+      </div>
+      
           <OpsTableContainer className="grow-0 flex flex-col h-140">
             {/* Header */}
             <div className="flex justify-end mb-5 shrink-0">
@@ -133,37 +498,72 @@ export function AttendanceView({ basePath }: { basePath: string }) {
 
             {/* Scrollable rows */}
             <div className="flex-1 min-h-0 overflow-y-auto">
-              <div className="space-y-3">
-                {paginated.map((item) => {
-                  const isSelected = item.id === selectedId;
-                  return (
-                    <OpsTableRow
-                      key={item.id}
-                      isSelected={isSelected}
-                      onClick={() => setSelectedId(item.id)}
-                      avatar={item.avatar}
-                      avatarAlt={item.name}
-                    >
-                      <OpsTableNameCol name={item.name} subText={item.address} isSelected={isSelected} />
-                      <OpsTableCol label="Check-In" value={item.checkIn} isSelected={isSelected} className="hidden sm:block w-28 sm:w-32" />
-                      <OpsTableCol label="Check-Out" value={item.checkOut} isSelected={isSelected} className="hidden md:block w-36 sm:w-40" />
-                      <OpsTableCol label="Role" value={item.role} isSelected={isSelected} className="hidden lg:block w-28 sm:w-32" />
-                      <OpsTableStatus
-                        label={item.status}
-                        subText={item.subText}
+              {recordsLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 size={24} className="animate-spin text-gray-400" />
+                </div>
+              ) : paginated.length === 0 ? (
+                <div className="py-16 text-center text-gray-400 text-[14px] font-medium">
+                  No attendance records found.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {paginated.map((item) => {
+                    const isSelected = item.id === activeId;
+                    return (
+                      <OpsTableRow
+                        key={item.id}
                         isSelected={isSelected}
-                        badgeClass={item.active ? 'bg-[#2F6C0E] text-white' : 'bg-[#EF7129] text-white'}
-                      />
-                    </OpsTableRow>
-                  );
-                })}
-              </div>
+                        onClick={() => setSelectedId(item.id)}
+                        avatar={item.avatar}
+                        avatarAlt={item.name}
+                      >
+                        <OpsTableNameCol
+                          name={item.name}
+                          subText={item.address}
+                          isSelected={isSelected}
+                        />
+                        <OpsTableCol
+                          label="Check-In"
+                          value={item.checkIn}
+                          isSelected={isSelected}
+                          className="hidden sm:block w-28 sm:w-32"
+                        />
+                        <OpsTableCol
+                          label="Check-Out"
+                          value={item.checkOut}
+                          isSelected={isSelected}
+                          className="hidden md:block w-36 sm:w-40"
+                        />
+                        <OpsTableCol
+                          label="Role"
+                          value={item.role}
+                          isSelected={isSelected}
+                          className="hidden lg:block w-28 sm:w-32"
+                        />
+                        <OpsTableStatus
+                          label={item.status}
+                          subText={item.subText}
+                          isSelected={isSelected}
+                          badgeClass={
+                            item.active
+                              ? "bg-[#2F6C0E] text-white"
+                              : "bg-[#EF7129] text-white"
+                          }
+                        />
+                      </OpsTableRow>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Pagination */}
             <div className="shrink-0 flex items-center justify-between pt-5 mt-4 border-t border-gray-100">
               <p className="text-[12px] text-gray-400">
-                Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
+                Showing{" "}
+                {filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}–
+                {Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
               </p>
               <div className="flex items-center gap-1">
                 <button
@@ -177,7 +577,11 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                   <button
                     key={p}
                     onClick={() => setPage(p)}
-                    className={`w-9 h-9 rounded-full text-[13px] font-bold transition-all ${p === currentPage ? 'bg-dash-dark text-white shadow-sm' : 'text-gray-400 hover:bg-gray-100'}`}
+                    className={`w-9 h-9 rounded-full text-[13px] font-bold transition-all ${
+                      p === currentPage
+                        ? "bg-dash-dark text-white shadow-sm"
+                        : "text-gray-400 hover:bg-gray-100"
+                    }`}
                   >
                     {p}
                   </button>
@@ -196,124 +600,178 @@ export function AttendanceView({ basePath }: { basePath: string }) {
 
         {/* ── Right: detail sidebar ──────────────────────────── */}
         <div className="flex flex-col gap-5 w-full xl:w-90 xl:shrink-0">
-          {/* Agent Info Card */}
-          <div className="px-4 sm:px-8">
-            <div className="flex items-start gap-5">
-              <div className="flex-1 space-y-3 min-w-0">
-                <div>
-                  <h3 className="text-[13px] font-extrabold text-dash-dark leading-tight">{selected.name}</h3>
-                  <p className="text-[11px] text-gray-400 mt-1 leading-relaxed max-w-45">{selected.address}</p>
-                </div>
-                <div>
-                  <p className="text-[13px] font-bold text-dash-dark mb-0.5">Role</p>
-                  <p className="text-[12px] text-gray-400">{selected.role}</p>
-                </div>
-                <div>
-                  <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check-In</p>
-                  <p className="text-[12px] text-gray-400">{selected.checkIn}</p>
-                </div>
-                <div>
-                  <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check-Out</p>
-                  <p className="text-[12px] text-gray-400">{selected.checkOut}</p>
+          {selected ? (
+            <>
+              {/* Agent Info Card */}
+              <div className="px-4 sm:px-8">
+                <div className="flex items-start gap-5">
+                  <div className="flex-1 space-y-3 min-w-0">
+                    <div>
+                      <h3 className="text-[13px] font-extrabold text-dash-dark leading-tight">
+                        {selected.name}
+                      </h3>
+                      <p className="text-[11px] text-gray-400 mt-1 leading-relaxed max-w-45">
+                        {selected.address}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Role</p>
+                      <p className="text-[12px] text-gray-400">{selected.role}</p>
+                    </div>
+                    <div>
+                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check-In</p>
+                      <p className="text-[12px] text-gray-400">{selected.checkIn}</p>
+                    </div>
+                    <div>
+                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check-Out</p>
+                      <p className="text-[12px] text-gray-400">{selected.checkOut}</p>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 flex flex-col items-center">
+                    <div className="bg-white p-2 rounded-[30px]">
+                      <div className="w-32 h-32 rounded-[22px] overflow-hidden shadow-md">
+                        <img
+                          src={selected.avatar}
+                          className="w-full h-full object-cover"
+                          alt={selected.name}
+                        />
+                      </div>
+                      <div className="mt-2.5 flex flex-col items-center gap-1">
+                        <p className="text-[13px] font-bold text-dash-dark">{selected.name}</p>
+                        <span
+                          className={`px-2.5 py-0.75 rounded-full text-[9px] font-bold ${
+                            selected.active
+                              ? "bg-[#22C55E] text-white"
+                              : "bg-[#F48243]/20 text-[#F48243]"
+                          }`}
+                        >
+                          {selected.status}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 mt-4">
+                      <svg width="33" height="33" viewBox="0 0 33 33" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="16.2378" cy="16.2378" r="15.9878" fill="#EAEAEA" stroke="#DFDFDF" strokeWidth="0.5" />
+                        <path d="M13.9717 18.5035H19.2584M13.9717 14.7273H16.615" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M18.2543 23.33C21.4135 23.12 23.9299 20.5678 24.137 17.3639C24.1775 16.7369 24.1775 16.0875 24.137 15.4605C23.9299 12.2565 21.4135 9.70435 18.2543 9.49435C17.1765 9.42271 16.0512 9.42286 14.9756 9.49435C11.8164 9.70435 9.29995 12.2565 9.09289 15.4605C9.05237 16.0875 9.05237 16.7369 9.09289 17.3639C9.16831 18.5308 9.68439 19.6113 10.292 20.5236C10.6447 21.1623 10.4119 21.9595 10.0445 22.6558C9.77953 23.1579 9.64706 23.4089 9.75343 23.5903C9.85979 23.7716 10.0974 23.7774 10.5726 23.789C11.5123 23.8118 12.1459 23.5454 12.6489 23.1745C12.9342 22.9642 13.0768 22.859 13.1751 22.8469C13.2734 22.8348 13.4669 22.9145 13.8538 23.0738C14.2015 23.217 14.6052 23.3054 14.9756 23.33C16.0512 23.4015 17.1765 23.4017 18.2543 23.33Z" stroke="#2F5E71" strokeLinejoin="round" />
+                      </svg>
+                      <svg width="33" height="33" viewBox="0 0 33 33" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="16.2378" cy="16.2378" r="15.9878" fill="#EAEAEA" stroke="#DFDFDF" strokeWidth="0.5" />
+                        <path d="M24.1674 15.4826V14.8916C24.1674 13.4268 24.1674 12.6943 23.725 12.2392C23.2825 11.7842 22.5705 11.7842 21.1464 11.7842H19.5766C18.8837 11.7842 18.878 11.7828 18.255 11.471L15.7388 10.2119C14.6882 9.68616 14.1629 9.4233 13.6033 9.44156C13.0437 9.45983 12.5357 9.75643 11.5197 10.3496L10.5923 10.891C9.84598 11.3267 9.47282 11.5446 9.26765 11.907C9.0625 12.2695 9.0625 12.7108 9.0625 13.5936V19.7994C9.0625 20.9592 9.0625 21.5392 9.32099 21.862C9.493 22.0767 9.73403 22.2211 10.0005 22.269C10.401 22.3409 10.8913 22.0546 11.8719 21.4821C12.5378 21.0933 13.1787 20.6896 13.9753 20.7991C14.6428 20.8908 15.2631 21.312 15.8597 21.6105" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M13.5942 9.44067V20.7693" stroke="#2F5E71" strokeLinejoin="round" />
+                        <path d="M18.8809 11.7063V14.7273" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M20.7692 16.6155C22.6085 16.6155 24.1678 18.1384 24.1678 19.9861C24.1678 21.8631 22.5831 23.1804 21.1193 24.076C21.0126 24.1363 20.8919 24.1679 20.7692 24.1679C20.6465 24.1679 20.5258 24.1363 20.4192 24.076C18.9581 23.1716 17.3706 21.8696 17.3706 19.9861C17.3706 18.1384 18.93 16.6155 20.7692 16.6155Z" stroke="#2F5E71" />
+                        <path d="M20.8633 20.014H20.7689M20.9577 20.014C20.9577 20.1183 20.8732 20.2028 20.7689 20.2028C20.6646 20.2028 20.5801 20.1183 20.5801 20.014C20.5801 19.9097 20.6646 19.8252 20.7689 19.8252C20.8732 19.8252 20.9577 19.9097 20.9577 20.014Z" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <svg width="33" height="33" viewBox="0 0 33 33" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="16.2378" cy="16.2378" r="15.9878" fill="#EAEAEA" stroke="#DFDFDF" strokeWidth="0.5" />
+                        <path d="M16.6154 9.06299C20.7865 9.06299 24.1679 12.4443 24.1679 16.6154C24.1679 20.7866 20.7865 24.1679 16.6154 24.1679C12.4443 24.1679 9.06299 20.7866 9.06299 16.6154M14.281 9.43069C13.5189 9.67812 12.81 10.0434 12.1758 10.5051M10.5051 12.1757C10.0433 12.8101 9.678 13.5192 9.43057 14.2814" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M16.6157 13.5945V19.6364M19.6367 16.6154H13.5947" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="shrink-0 flex flex-col items-center">
-                <div className="bg-white p-2 rounded-[30px]">
-                  <div className="w-32 h-32 rounded-[22px] overflow-hidden shadow-md">
-                    <img src={selected.avatar} className="w-full h-full object-cover" alt={selected.name} />
+              {/* Tracking card */}
+              <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
+                <div className="flex items-start gap-4 mb-5">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-In Time</p>
+                    <p className="text-[15px] font-bold text-white">{selected.checkIn}</p>
                   </div>
-                  <div className="mt-2.5 flex flex-col items-center gap-1">
-                    <p className="text-[13px] font-bold text-dash-dark">{selected.name}</p>
-                    <span className={`px-2.5 py-0.75 rounded-full text-[9px] font-bold ${selected.active ? 'bg-[#22C55E] text-white' : 'bg-[#F48243]/20 text-[#F48243]'}`}>
-                      {selected.status}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-Out Time</p>
+                    <p className="text-[13px] font-medium text-white/70">{selected.checkOut}</p>
+                  </div>
+                  <div
+                    className={`px-3 py-1.5 rounded-full text-[10px] font-bold shrink-0 self-start ${
+                      selected.active
+                        ? "bg-[#1A452C] text-[#4ADE80]"
+                        : "bg-gray-700 text-gray-300"
+                    }`}
+                  >
+                    {selected.active ? "On-Time" : "Absent"}
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <p className="text-[15px] font-bold text-white mb-0.5">
+                    Location (Check-In)
+                  </p>
+                  <p className="text-[12px] text-gray-400">{selected.address}</p>
+                </div>
+
+                {/* Map */}
+                <div className="relative h-44 w-full rounded-[18px] bg-[#e8ecef] overflow-hidden">
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-50">
+                    <defs>
+                      <pattern id="attgrid" width="36" height="36" patternUnits="userSpaceOnUse">
+                        <path d="M 36 0 L 0 0 0 36" fill="none" stroke="#CBD5E1" strokeWidth="0.8" />
+                      </pattern>
+                    </defs>
+                    <rect width="100%" height="100%" fill="url(#attgrid)" />
+                  </svg>
+                  <div className="absolute left-[30%] top-0 bottom-0 w-9 bg-white/60 pointer-events-none" />
+                  <div className="absolute top-[48%] left-0 right-0 h-8 bg-white/60 pointer-events-none" />
+                  <div className="absolute right-0 top-[28%] w-10 h-14 bg-[#A8D5B5]/60 pointer-events-none" />
+                  <div
+                    className="absolute pointer-events-none"
+                    style={{ left: "28%", top: 6 }}
+                  >
+                    <span className="text-[8px] font-semibold text-gray-600 block leading-tight">
+                      Dresd
+                    </span>
+                    <span className="text-[8px] font-semibold text-gray-600 block leading-tight">
+                      Street
                     </span>
                   </div>
-                </div>
-                <div className="flex items-center gap-3 mt-4">
-                  <svg width="33" height="33" viewBox="0 0 33 33" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="16.2378" cy="16.2378" r="15.9878" fill="#EAEAEA" stroke="#DFDFDF" strokeWidth="0.5" />
-                    <path d="M13.9717 18.5035H19.2584M13.9717 14.7273H16.615" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M18.2543 23.33C21.4135 23.12 23.9299 20.5678 24.137 17.3639C24.1775 16.7369 24.1775 16.0875 24.137 15.4605C23.9299 12.2565 21.4135 9.70435 18.2543 9.49435C17.1765 9.42271 16.0512 9.42286 14.9756 9.49435C11.8164 9.70435 9.29995 12.2565 9.09289 15.4605C9.05237 16.0875 9.05237 16.7369 9.09289 17.3639C9.16831 18.5308 9.68439 19.6113 10.292 20.5236C10.6447 21.1623 10.4119 21.9595 10.0445 22.6558C9.77953 23.1579 9.64706 23.4089 9.75343 23.5903C9.85979 23.7716 10.0974 23.7774 10.5726 23.789C11.5123 23.8118 12.1459 23.5454 12.6489 23.1745C12.9342 22.9642 13.0768 22.859 13.1751 22.8469C13.2734 22.8348 13.4669 22.9145 13.8538 23.0738C14.2015 23.217 14.6052 23.3054 14.9756 23.33C16.0512 23.4015 17.1765 23.4017 18.2543 23.33Z" stroke="#2F5E71" strokeLinejoin="round" />
-                  </svg>
-                  <svg width="33" height="33" viewBox="0 0 33 33" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="16.2378" cy="16.2378" r="15.9878" fill="#EAEAEA" stroke="#DFDFDF" strokeWidth="0.5" />
-                    <path d="M24.1674 15.4826V14.8916C24.1674 13.4268 24.1674 12.6943 23.725 12.2392C23.2825 11.7842 22.5705 11.7842 21.1464 11.7842H19.5766C18.8837 11.7842 18.878 11.7828 18.255 11.471L15.7388 10.2119C14.6882 9.68616 14.1629 9.4233 13.6033 9.44156C13.0437 9.45983 12.5357 9.75643 11.5197 10.3496L10.5923 10.891C9.84598 11.3267 9.47282 11.5446 9.26765 11.907C9.0625 12.2695 9.0625 12.7108 9.0625 13.5936V19.7994C9.0625 20.9592 9.0625 21.5392 9.32099 21.862C9.493 22.0767 9.73403 22.2211 10.0005 22.269C10.401 22.3409 10.8913 22.0546 11.8719 21.4821C12.5378 21.0933 13.1787 20.6896 13.9753 20.7991C14.6428 20.8908 15.2631 21.312 15.8597 21.6105" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M13.5942 9.44067V20.7693" stroke="#2F5E71" strokeLinejoin="round" />
-                    <path d="M18.8809 11.7063V14.7273" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M20.7692 16.6155C22.6085 16.6155 24.1678 18.1384 24.1678 19.9861C24.1678 21.8631 22.5831 23.1804 21.1193 24.076C21.0126 24.1363 20.8919 24.1679 20.7692 24.1679C20.6465 24.1679 20.5258 24.1363 20.4192 24.076C18.9581 23.1716 17.3706 21.8696 17.3706 19.9861C17.3706 18.1384 18.93 16.6155 20.7692 16.6155Z" stroke="#2F5E71" />
-                    <path d="M20.8633 20.014H20.7689M20.9577 20.014C20.9577 20.1183 20.8732 20.2028 20.7689 20.2028C20.6646 20.2028 20.5801 20.1183 20.5801 20.014C20.5801 19.9097 20.6646 19.8252 20.7689 19.8252C20.8732 19.8252 20.9577 19.9097 20.9577 20.014Z" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  <svg width="33" height="33" viewBox="0 0 33 33" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="16.2378" cy="16.2378" r="15.9878" fill="#EAEAEA" stroke="#DFDFDF" strokeWidth="0.5" />
-                    <path d="M16.6154 9.06299C20.7865 9.06299 24.1679 12.4443 24.1679 16.6154C24.1679 20.7866 20.7865 24.1679 16.6154 24.1679C12.4443 24.1679 9.06299 20.7866 9.06299 16.6154M14.281 9.43069C13.5189 9.67812 12.81 10.0434 12.1758 10.5051M10.5051 12.1757C10.0433 12.8101 9.678 13.5192 9.43057 14.2814" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M16.6157 13.5945V19.6364M19.6367 16.6154H13.5947" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Tracking card */}
-          <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
-            <div className="flex items-start gap-4 mb-5">
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-In Time</p>
-                <p className="text-[15px] font-bold text-white">{selected.checkIn}</p>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-Out Time</p>
-                <p className="text-[13px] font-medium text-white/70">{selected.checkOut}</p>
-              </div>
-              <div className={`px-3 py-1.5 rounded-full text-[10px] font-bold shrink-0 self-start ${selected.active ? "bg-[#1A452C] text-[#4ADE80]" : "bg-gray-700 text-gray-300"}`}>
-                {selected.active ? "On-Time" : "Absent"}
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <p className="text-[15px] font-bold text-white mb-0.5">Location (Check-In)</p>
-              <p className="text-[12px] text-gray-400">{selected.address}</p>
-            </div>
-
-            {/* Map */}
-            <div className="relative h-44 w-full rounded-[18px] bg-[#e8ecef] overflow-hidden">
-              <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-50">
-                <defs>
-                  <pattern id="attgrid" width="36" height="36" patternUnits="userSpaceOnUse">
-                    <path d="M 36 0 L 0 0 0 36" fill="none" stroke="#CBD5E1" strokeWidth="0.8" />
-                  </pattern>
-                </defs>
-                <rect width="100%" height="100%" fill="url(#attgrid)" />
-              </svg>
-              <div className="absolute left-[30%] top-0 bottom-0 w-9 bg-white/60 pointer-events-none" />
-              <div className="absolute top-[48%] left-0 right-0 h-8 bg-white/60 pointer-events-none" />
-              <div className="absolute right-0 top-[28%] w-10 h-14 bg-[#A8D5B5]/60 pointer-events-none" />
-              <div className="absolute pointer-events-none" style={{ left: "28%", top: 6 }}>
-                <span className="text-[8px] font-semibold text-gray-600 block leading-tight">Dresd</span>
-                <span className="text-[8px] font-semibold text-gray-600 block leading-tight">Street</span>
-              </div>
-              <div className="absolute right-1 top-[16%] pointer-events-none">
-                <span className="text-[7px] font-semibold text-gray-500 block leading-tight">McDow</span>
-                <span className="text-[7px] font-semibold text-gray-500 block leading-tight">ell Str</span>
-              </div>
-              <div className="absolute" style={{ left: "32%", top: "25%" }}>
-                <MapPin size={20} className="text-red-500 fill-red-500 drop-shadow-md" />
-              </div>
-              <div className="absolute flex flex-col items-center" style={{ left: "calc(32% - 14px)", top: "48%" }}>
-                <div className="w-7 h-7 rounded-full border-2 border-white shadow-md overflow-hidden">
-                  <img src={selected.avatar} className="w-full h-full object-cover" alt="Agent" />
-                </div>
-                <div className="bg-white px-2 py-0.5 rounded-lg mt-1 whitespace-nowrap shadow-md">
-                  <p className="text-[8px] font-bold text-dash-dark">{selected.name}</p>
-                  <p className="text-[7px] text-gray-400">Active at Kemsi Street</p>
+                  <div className="absolute right-1 top-[16%] pointer-events-none">
+                    <span className="text-[7px] font-semibold text-gray-500 block leading-tight">
+                      McDow
+                    </span>
+                    <span className="text-[7px] font-semibold text-gray-500 block leading-tight">
+                      ell Str
+                    </span>
+                  </div>
+                  <div className="absolute" style={{ left: "32%", top: "25%" }}>
+                    <MapPin size={20} className="text-red-500 fill-red-500 drop-shadow-md" />
+                  </div>
+                  <div
+                    className="absolute flex flex-col items-center"
+                    style={{ left: "calc(32% - 14px)", top: "48%" }}
+                  >
+                    <div className="w-7 h-7 rounded-full border-2 border-white shadow-md overflow-hidden">
+                      <img
+                        src={selected.avatar}
+                        className="w-full h-full object-cover"
+                        alt="Agent"
+                      />
+                    </div>
+                    <div className="bg-white px-2 py-0.5 rounded-lg mt-1 whitespace-nowrap shadow-md">
+                      <p className="text-[8px] font-bold text-dash-dark">{selected.name}</p>
+                      <p className="text-[7px] text-gray-400">Active at Kemsi Street</p>
+                    </div>
+                  </div>
                 </div>
               </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-center h-40 text-gray-400 text-[13px]">
+              Select a record to view details
             </div>
-          </div>
+          )}
         </div>
       </div>
 
       {showAddAgent && <AddAgentModal onClose={() => setShowAddAgent(false)} />}
+      {showSettings && apiCompanyId && (
+        <AttendanceSettingsModal
+          companyId={apiCompanyId}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   );
 }

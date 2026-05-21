@@ -145,6 +145,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
     status: 'pending',
   });
   const [selectedAgentId, setSelectedAgentId] = useState('');
+  const [prevAssigneeId, setPrevAssigneeId] = useState<number | undefined>();
   const [reassignmentReason, setReassignmentReason] = useState('');
   const [showLocationGate, setShowLocationGate] = useState(false);
   const [commencing, setCommencing] = useState(false);
@@ -172,12 +173,12 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
     onSuccess: () => toast.success('Task reassignment rejected.'),
   });
 
-  useEffect(() => {
-    const assigneeId = detailQuery.data?.assignee?.id;
-    if (assigneeId) {
-      setSelectedAgentId(String(assigneeId));
-    }
-  }, [detailQuery.data?.assignee?.id]);
+  const assigneeId = detailQuery.data?.assignee?.id;
+
+  if (assigneeId && assigneeId !== prevAssigneeId) {
+    setPrevAssigneeId(assigneeId);
+    setSelectedAgentId(String(assigneeId));
+  }
 
   if (!isOpen || !task) return null;
 

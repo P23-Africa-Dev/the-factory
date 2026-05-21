@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Calendar, FileText, Loader2, MapPin, Navigation, User, X } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth";
@@ -76,14 +76,12 @@ export function ScheduleTaskModal({
     const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
     const [geocoding, setGeocoding] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
+    const [wasOpen, setWasOpen] = useState(false);
 
     const isSubmitting = createTaskMutation.isPending || createSelfTaskMutation.isPending;
 
-    useEffect(() => {
-        if (!isOpen) {
-            return;
-        }
-
+    if (isOpen && !wasOpen) {
+        setWasOpen(true);
         setForm({
             taskDescription: "",
             assignTo: "",
@@ -93,7 +91,9 @@ export function ScheduleTaskModal({
         });
         setCoords(null);
         setErrors({});
-    }, [defaultDate, isOpen]);
+    } else if (!isOpen && wasOpen) {
+        setWasOpen(false);
+    }
 
     const dueDateIso = useMemo(() => {
         const fallbackDate = defaultDueDate(defaultDate);
