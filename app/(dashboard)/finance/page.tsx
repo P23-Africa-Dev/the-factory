@@ -146,7 +146,7 @@ export default function FinancePage() {
                 users={payrollAgents}
                 selectedId={selectedAgentId}
                 onSelect={setSelectedAgentId}
-                onShowViewAll={() => router.push("/payroll/payroll-list")}
+                onShowViewAll={() => router.push("/finance/payroll-list")}
               />
             )}
           </div>

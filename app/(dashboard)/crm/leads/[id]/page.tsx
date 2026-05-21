@@ -32,7 +32,14 @@ import { useInternalUsers } from "@/hooks/use-internal-users";
 import { useAuthStore } from "@/store/auth";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
-import { ApiLeadStatus, ApiLeadPriority, LeadNote, LeadActivity } from "@/lib/api/crm";
+import {
+  ApiLeadPriority,
+  ApiLeadStatus,
+  LeadApiItem,
+  LeadNote,
+  LeadActivity,
+  UpdateLeadPayload,
+} from "@/lib/api/crm";
 
 /* ─── Mock Lead Data ────────────────────────────────────── */
 
@@ -1114,6 +1121,17 @@ function MapPreview({ name }: { name: string }) {
 }
 
 
+type EditLeadForm = {
+  name: string;
+  phone: string;
+  location: string;
+  status: ApiLeadStatus;
+  source: string;
+  priority: ApiLeadPriority;
+  assigned_to_user_id: string;
+  next_action: string;
+};
+
 /* ─── Page Component ────────────────────────────────────── */
 
 export default function LeadDetailsPage() {
@@ -1137,36 +1155,52 @@ export default function LeadDetailsPage() {
   const internalUsers = usersData || [];
   
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState<Partial<Record<string, any>>>({});
+  const [editForm, setEditForm] = useState<EditLeadForm>({
+    name: "",
+    phone: "",
+    location: "",
+    status: "new",
+    source: "",
+    priority: "medium",
+    assigned_to_user_id: "",
+    next_action: "",
+  });
 
-  // Initialize edit form when entering edit mode
-  useEffect(() => {
-    if (isEditing && leadData) {
-      setEditForm({
-        name: leadData.name || "",
-        phone: leadData.phone || "",
-        location: leadData.location || "",
-        status: leadData.status || "new",
-        source: leadData.source || "",
-        priority: leadData.priority || "medium",
-        assigned_to_user_id: leadData.assigned_to_user_id || "",
-        next_action: leadData.next_action || "",
-      });
-    }
-  }, [isEditing, leadData]);
+  const buildEditForm = (lead: LeadApiItem): EditLeadForm => ({
+    name: lead.name || "",
+    phone: lead.phone || "",
+    location: lead.location || "",
+    status: lead.status || "new",
+    source: lead.source || "",
+    priority: lead.priority || "medium",
+    assigned_to_user_id: lead.assigned_to_user_id ? String(lead.assigned_to_user_id) : "",
+    next_action: lead.next_action || "",
+  });
 
-  const updateField = (field: string, value: any) => {
+  const startEditing = () => {
+    if (!leadData) return;
+    setEditForm(buildEditForm(leadData));
+    setIsEditing(true);
+  };
+
+  const updateField = <K extends keyof EditLeadForm>(field: K, value: EditLeadForm[K]) => {
     setEditForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSave = () => {
-    updateLead({
-      leadId,
-      payload: {
-        ...editForm,
-        assigned_to_user_id: editForm.assigned_to_user_id ? Number(editForm.assigned_to_user_id) : null
-      }
-    });
+    const payload: UpdateLeadPayload = {
+      name: editForm.name,
+      phone: editForm.phone,
+      location: editForm.location,
+      status: editForm.status,
+      source: editForm.source,
+      priority: editForm.priority,
+      next_action: editForm.next_action,
+      assigned_to_user_id: editForm.assigned_to_user_id
+        ? Number(editForm.assigned_to_user_id)
+        : null,
+    };
+    updateLead({ leadId, payload });
   };
 
   if (isLoading) {
@@ -1233,7 +1267,7 @@ export default function LeadDetailsPage() {
               </button>
             ) : (
               <button
-                onClick={() => setIsEditing(true)}
+                onClick={startEditing}
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-[14px] text-[13px] font-bold hover:opacity-90 transition-all shadow-lg"
                 id="edit-lead-btn"
               >
@@ -1380,7 +1414,7 @@ export default function LeadDetailsPage() {
                     options={STATUS_OPTIONS}
                     onChange={(label) => {
                        const value = label.toLowerCase().replace(' ', '_');
-                       updateField("status", value);
+                        updateField("status", value as ApiLeadStatus);
                     }}
                     disabled={!isEditing}
                   />
@@ -1464,7 +1498,7 @@ export default function LeadDetailsPage() {
                     color={PRIORITY_OPTIONS.find(o => o.label.toLowerCase() === (isEditing ? editForm.priority : leadData.priority))?.color || "#3B82F6"}
                     options={PRIORITY_OPTIONS}
                     onChange={(label) => {
-                       updateField("priority", label.toLowerCase());
+                       updateField("priority", label.toLowerCase() as ApiLeadPriority);
                     }}
                     disabled={!isEditing}
                   />

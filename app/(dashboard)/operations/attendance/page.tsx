@@ -1,12 +1,19 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Search, SlidersHorizontal, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { ArrowLeft, Search, SlidersHorizontal, ChevronLeft, ChevronRight, MapPin, Loader2, FileText, RefreshCw, ArrowUpRight } from 'lucide-react';
+import { useState } from 'react';
+import { format, parseISO } from 'date-fns';
+import { toast } from 'sonner';
+import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from '@/components/operations/ops-table';
+import { useAttendanceMetrics, useAttendanceRecords, usePayrollSummaries, useGeneratePayrollSummaries } from '@/hooks/use-attendance';
+import { useAuthStore } from '@/store/auth';
+import { getActiveCompanyContext } from '@/lib/company-context';
+import type { ManagementAttendanceRecord } from '@/lib/api/attendance';
 
-type AttendanceRecord = {
-  id: string;
+type AttendanceItem = {
+  id: number | string;
   name: string;
   address: string;
   checkIn: string;
@@ -19,24 +26,99 @@ type AttendanceRecord = {
   avatar: string;
 };
 
-const ALL_ATTENDANCE: AttendanceRecord[] = [
-  { id: '1', name: 'Francis Nasyomba', address: '12 Oba Akran Avenue, Ikeja, Lagos', checkIn: 'No check-in record', checkOut: 'No check-out record', role: 'Field Agent', zone: 'Ikeja LGA', status: 'Absent', subText: 'Since Yesterday', active: false, avatar: 'https://i.pravatar.cc/150?u=11' },
-  { id: '2', name: 'Lade Wane', address: '12 Oba Akran Avenue, Ikeja, Lagos', checkIn: '8:25AM', checkOut: 'Still Active', role: 'Field Agent', zone: 'Ikeja LGA', status: 'Present', subText: 'Active', active: true, avatar: 'https://i.pravatar.cc/150?u=12' },
-  { id: '3', name: 'Amina Bello', address: '45 Adeniran Ogunsanya, Surulere, Lagos', checkIn: 'No check-in record', checkOut: 'No check-out record', role: 'Field Agent', zone: 'Surulere LGA', status: 'Absent', subText: 'Since Yesterday', active: false, avatar: 'https://i.pravatar.cc/150?u=13' },
-  { id: '4', name: 'Chidi Okonkwo', address: '3 Admiralty Way, Lekki Phase 1, Lagos', checkIn: '9:10AM', checkOut: '5:00PM', role: 'Senior Agent', zone: 'Lekki LGA', status: 'Present', subText: 'Checked Out', active: false, avatar: 'https://i.pravatar.cc/150?u=14' },
-  { id: '5', name: 'Ngozi Eze', address: '7 Ozumba Mbadiwe, Victoria Island, Lagos', checkIn: 'No check-in record', checkOut: 'No check-out record', role: 'Field Agent', zone: 'Victoria Island', status: 'Absent', subText: '1 day ago', active: false, avatar: 'https://i.pravatar.cc/150?u=15' },
-  { id: '6', name: 'Tunde Adeyemi', address: '22 Herbert Macaulay Way, Yaba, Lagos', checkIn: '7:58AM', checkOut: 'Still Active', role: 'Senior Agent', zone: 'Yaba LGA', status: 'Present', subText: 'Active', active: true, avatar: 'https://i.pravatar.cc/150?u=16' },
-  { id: '7', name: 'Fatima Sule', address: '45 Adeniran Ogunsanya, Surulere, Lagos', checkIn: 'No check-in record', checkOut: 'No check-out record', role: 'Field Agent', zone: 'Surulere LGA', status: 'Absent', subText: '5 hours ago', active: false, avatar: 'https://i.pravatar.cc/150?u=17' },
-  { id: '8', name: 'Emeka Obi', address: 'Oshodi Market Road, Oshodi, Lagos', checkIn: '8:45AM', checkOut: '4:30PM', role: 'Field Agent', zone: 'Oshodi LGA', status: 'Present', subText: 'Checked Out', active: false, avatar: 'https://i.pravatar.cc/150?u=18' },
-  { id: '9', name: 'Blessing Okafor', address: '12 Oba Akran Avenue, Ikeja, Lagos', checkIn: '8:00AM', checkOut: 'Still Active', role: 'Senior Agent', zone: 'Ikeja LGA', status: 'Present', subText: 'Active', active: true, avatar: 'https://i.pravatar.cc/150?u=19' },
-  { id: '10', name: 'Abdul Kareem', address: '3 Admiralty Way, Lekki Phase 1, Lagos', checkIn: 'No check-in record', checkOut: 'No check-out record', role: 'Field Agent', zone: 'Lekki LGA', status: 'Absent', subText: 'Since Yesterday', active: false, avatar: 'https://i.pravatar.cc/150?u=20' },
-];
+function resolveAvatar(avatar: string | null): string {
+  if (!avatar) return '/avatars/male-avatar.png';
+  if (avatar.startsWith('http')) return avatar;
+  return `/avatars/${avatar}.png`;
+}
 
-const ZONES = ['All Zones', ...Array.from(new Set(ALL_ATTENDANCE.map((a) => a.zone)))];
+function mapRecord(record: ManagementAttendanceRecord): AttendanceItem {
+  return {
+    id: record.user_id,
+    name: record.agent_name,
+    address: record.zone ?? '—',
+    zone: record.zone ?? '—',
+    checkIn: record.clock_in_at
+      ? format(parseISO(record.clock_in_at), 'h:mma')
+      : 'No check-in record',
+    checkOut: record.clock_out_at
+      ? format(parseISO(record.clock_out_at), 'h:mma')
+      : record.status !== 'absent'
+      ? 'Still Active'
+      : 'No check-out record',
+    role: record.role ?? 'Field Agent',
+    status: record.status === 'present' || record.status === 'late' ? 'Present' : 'Absent',
+    subText:
+      record.is_late
+        ? 'Late'
+        : record.clock_out_at
+        ? 'Checked Out'
+        : record.status !== 'absent'
+        ? 'Active'
+        : 'Absent',
+    active: !!record.clock_in_at && !record.clock_out_at,
+    avatar: resolveAvatar(record.avatar),
+  };
+}
+
+const SPARK_PRESENT = [{ v: 8 }, { v: 14 }, { v: 10 }, { v: 18 }, { v: 12 }, { v: 16 }, { v: 20 }];
+const SPARK_ABSENT  = [{ v: 20 }, { v: 14 }, { v: 18 }, { v: 10 }, { v: 16 }, { v: 12 }, { v: 8 }];
+
+function StatCard({
+  value,
+  label,
+  accentBg,
+  strokeColor,
+  gradientId,
+  data,
+  isLoading,
+}: {
+  value: number;
+  label: string;
+  accentBg: string;
+  strokeColor: string;
+  gradientId: string;
+  data: { v: number }[];
+  isLoading: boolean;
+}) {
+  return (
+    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col min-h-44 overflow-hidden">
+      <div className="flex items-start justify-between gap-2 mb-1">
+        {isLoading ? (
+          <div className="w-24 h-14 bg-gray-100 animate-pulse rounded-xl" />
+        ) : (
+          <h2 className="text-[56px] font-bold text-[#1A1A1A] leading-none tracking-tight">{value}</h2>
+        )}
+        <div
+          className="flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-bold text-white shrink-0 mt-2"
+          style={{ background: accentBg }}
+        >
+          Today
+          <ArrowUpRight size={11} />
+        </div>
+      </div>
+      <p className="text-[14px] font-medium text-gray-500 mb-auto">{label}</p>
+      <div className="h-16 w-full mt-3 -mx-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={strokeColor} stopOpacity={0.25} />
+                <stop offset="95%" stopColor={strokeColor} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <Area type="monotone" dataKey="v" stroke={strokeColor} strokeWidth={2.5} fill={`url(#${gradientId})`} dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 const PAGE_SIZE = 5;
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-function AttendanceSidebar({ record }: { record: AttendanceRecord }) {
+function AttendanceSidebar({ record }: { record: AttendanceItem }) {
   return (
     <div className="flex flex-col gap-5 w-full xl:w-90 xl:shrink-0">
       {/* Info */}
@@ -49,7 +131,7 @@ function AttendanceSidebar({ record }: { record: AttendanceRecord }) {
                 <p className="text-[12px] text-gray-400 mt-1 leading-relaxed">{record.address}</p>
               </div>
               <div>
-                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Zone</p>
+                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Zone / Location</p>
                 <p className="text-[13px] text-gray-400">{record.zone}</p>
               </div>
               <div>
@@ -163,7 +245,7 @@ function AttendanceSidebar({ record }: { record: AttendanceRecord }) {
 }
 
 // ─── Row ──────────────────────────────────────────────────────────────────────
-function AttendanceRow({ item, isSelected, onClick }: { item: AttendanceRecord; isSelected: boolean; onClick: () => void }) {
+function AttendanceRow({ item, isSelected, onClick }: { item: AttendanceItem; isSelected: boolean; onClick: () => void }) {
   return (
     <OpsTableRow isSelected={isSelected} onClick={onClick} avatar={item.avatar} avatarAlt={item.name}>
       <OpsTableNameCol name={item.name} subText={item.address} isSelected={isSelected} />
@@ -182,44 +264,59 @@ function AttendanceRow({ item, isSelected, onClick }: { item: AttendanceRecord; 
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AttendanceListPage() {
-  const [search, setSearch]           = useState('');
-  const [zoneFilter, setZoneFilter]   = useState('All Zones');
+  const today = format(new Date(), 'yyyy-MM-dd');
+
+  const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'absent'>('all');
-  const [showFilters, setShowFilters] = useState(false);
-  const [page, setPage]               = useState(1);
-  const [selectedId, setSelectedId]   = useState<string>(ALL_ATTENDANCE[0].id);
+  const [showFilters, setShowFilters]   = useState(false);
+  const [page, setPage]                 = useState(1);
+  const [selectedId, setSelectedId]     = useState<number | string | null>(null);
+  const [date, setDate]                 = useState(today);
 
-  const filtered = useMemo(() => {
-    return ALL_ATTENDANCE.filter((a) => {
-      const matchesSearch =
-        a.name.toLowerCase().includes(search.toLowerCase()) ||
-        a.zone.toLowerCase().includes(search.toLowerCase()) ||
-        a.address.toLowerCase().includes(search.toLowerCase());
-      const matchesZone   = zoneFilter === 'All Zones' || a.zone === zoneFilter;
-      const matchesStatus =
-        statusFilter === 'all' ||
-        (statusFilter === 'present' && a.status === 'Present') ||
-        (statusFilter === 'absent'  && a.status === 'Absent');
-      return matchesSearch && matchesZone && matchesStatus;
-    });
-  }, [search, zoneFilter, statusFilter]);
+  const now = new Date();
+  const [payrollYear, setPayrollYear] = useState(now.getFullYear());
+  const [payrollMonth, setPayrollMonth] = useState(now.getMonth() + 1);
 
-  const totalPages  = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const { user } = useAuthStore();
+  const { apiCompanyId } = getActiveCompanyContext(user);
+
+  const apiStatus =
+    statusFilter === 'all' ? undefined :
+    statusFilter === 'present' ? 'present' : 'absent';
+
+  const { data: metricsData } = useAttendanceMetrics(apiCompanyId ?? undefined, date);
+
+  const { data: payrollData, isLoading: payrollLoading } = usePayrollSummaries({
+    company_id: apiCompanyId ?? undefined,
+    year: payrollYear,
+    month: payrollMonth,
+  });
+
+  const generatePayroll = useGeneratePayrollSummaries();
+
+  const { data: recordsData, isLoading } = useAttendanceRecords({
+    company_id: apiCompanyId ?? undefined,
+    date,
+    status: apiStatus,
+    search: search || undefined,
+    per_page: 100,
+  });
+
+  const allRecords: AttendanceItem[] = (recordsData?.items ?? []).map(mapRecord);
+
+  const totalPages  = Math.max(1, Math.ceil(allRecords.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const paginated   = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const paginated   = allRecords.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  const presentCount = ALL_ATTENDANCE.filter((a) => a.status === 'Present').length;
-  const absentCount  = ALL_ATTENDANCE.filter((a) => a.status === 'Absent').length;
+  const presentCount = metricsData?.present ?? 0;
+  const absentCount  = metricsData?.absent ?? 0;
 
-  const selectedRecord =
-    ALL_ATTENDANCE.find((a) => a.id === selectedId) ?? ALL_ATTENDANCE[0];
+  const activeId = selectedId ?? (paginated[0]?.id ?? null);
+  const selectedRecord = allRecords.find((a) => a.id === activeId) ?? paginated[0] ?? null;
 
   const handleSearch = (val: string) => { setSearch(val); setPage(1); };
-  const handleFilter = (key: 'zone' | 'status', val: string) => {
-    if (key === 'zone')   setZoneFilter(val);
-    if (key === 'status') setStatusFilter(val as 'all' | 'present' | 'absent');
-    setPage(1);
-  };
+  const handleDateChange = (val: string) => { setDate(val); setPage(1); setSelectedId(null); };
+  const handleStatus = (s: 'all' | 'present' | 'absent') => { setStatusFilter(s); setPage(1); };
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
@@ -232,34 +329,50 @@ export default function AttendanceListPage() {
           </Link>
           <div>
             <h1 className="text-[22px] font-bold text-dash-dark">Attendance List</h1>
-            <p className="text-[13px] text-gray-400 mt-0.5">{filtered.length} records found</p>
+            <p className="text-[13px] text-gray-400 mt-0.5">{allRecords.length} records found</p>
+          </div>
+          <div className="ml-auto">
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => handleDateChange(e.target.value)}
+              className="bg-white border border-gray-200 rounded-xl px-4 py-2 text-[13px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 shadow-sm"
+            />
           </div>
         </div>
 
-        {/* Stat Pills */}
-        <div className="flex gap-3 mb-6">
-          <div className="flex items-center gap-2.5 bg-white rounded-full px-5 py-2.5 shadow-sm">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#4ADE80] shrink-0" />
-            <span className="text-[13px] font-bold text-dash-dark">{presentCount}</span>
-            <span className="text-[12px] text-gray-400">Present</span>
-          </div>
-          <div className="flex items-center gap-2.5 bg-white rounded-full px-5 py-2.5 shadow-sm">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#F48243] shrink-0" />
-            <span className="text-[13px] font-bold text-dash-dark">{absentCount}</span>
-            <span className="text-[12px] text-gray-400">Absent</span>
-          </div>
-        </div>
+        {/* Stat Cards */}
+        {/* <div className="grid grid-cols-2 gap-4 mb-6">
+          <StatCard
+            value={presentCount}
+            label="Present Agents Today"
+            accentBg="#4BB89E"
+            strokeColor="#4BB89E"
+            gradientId="pageGradPresent"
+            data={SPARK_PRESENT}
+            isLoading={!metricsData && isLoading}
+          />
+          <StatCard
+            value={absentCount}
+            label="Absent Agents Today"
+            accentBg="#EF7129"
+            strokeColor="#EF7129"
+            gradientId="pageGradAbsent"
+            data={SPARK_ABSENT}
+            isLoading={!metricsData && isLoading}
+          />
+        </div> */}
 
         {/* Search + Filter */}
         <div className="flex items-center gap-3 mb-4">
           <div className="relative flex-1 group">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-teal transition-colors" size={17} />
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-dark transition-colors" size={17} />
             <input
               type="text"
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
-              placeholder="Search by name, zone or address..."
-              className="w-full bg-white border border-gray-100 rounded-full py-3.5 pl-12 pr-5 text-[13px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
+              placeholder="Search by name or address..."
+              className="w-full bg-white border border-gray-100 rounded-full py-3.5 pl-12 pr-5 text-[13px] outline-none focus:ring-2 focus:ring-dash-dark/20 transition-all shadow-sm"
             />
           </div>
           <button
@@ -277,16 +390,10 @@ export default function AttendanceListPage() {
         {showFilters && (
           <div className="flex flex-wrap gap-3 mb-4 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold text-gray-400 px-1">Zone</label>
-              <select value={zoneFilter} onChange={(e) => handleFilter('zone', e.target.value)} className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer">
-                {ZONES.map((z) => <option key={z}>{z}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
               <label className="text-[11px] font-bold text-gray-400 px-1">Status</label>
               <div className="flex gap-1">
                 {(['all', 'present', 'absent'] as const).map((s) => (
-                  <button key={s} onClick={() => handleFilter('status', s)}
+                  <button key={s} onClick={() => handleStatus(s)}
                     className={`px-4 py-2 rounded-full text-[12px] font-bold capitalize transition-all ${
                       statusFilter === s ? 'bg-dash-dark text-white' : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
                     }`}>
@@ -295,9 +402,9 @@ export default function AttendanceListPage() {
                 ))}
               </div>
             </div>
-            {(zoneFilter !== 'All Zones' || statusFilter !== 'all') && (
+            {statusFilter !== 'all' && (
               <div className="flex flex-col justify-end">
-                <button onClick={() => { setZoneFilter('All Zones'); setStatusFilter('all'); setPage(1); }}
+                <button onClick={() => { setStatusFilter('all'); setPage(1); }}
                   className="px-4 py-2 rounded-full text-[12px] font-bold text-red-400 hover:bg-red-50 transition-all border border-red-200">
                   Clear filters
                 </button>
@@ -313,7 +420,11 @@ export default function AttendanceListPage() {
           <OpsTableContainer className="flex-1 min-w-0 flex flex-col h-140">
             {/* Scrollable rows */}
             <div className="flex-1 min-h-0 overflow-y-auto">
-              {paginated.length === 0 ? (
+              {isLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 size={24} className="animate-spin text-gray-400" />
+                </div>
+              ) : paginated.length === 0 ? (
                 <div className="py-16 text-center text-gray-400 text-[14px] font-medium">No records match your search.</div>
               ) : (
                 <div className="space-y-3">
@@ -321,7 +432,7 @@ export default function AttendanceListPage() {
                     <AttendanceRow
                       key={item.id}
                       item={item}
-                      isSelected={selectedId === item.id}
+                      isSelected={activeId === item.id}
                       onClick={() => setSelectedId(item.id)}
                     />
                   ))}
@@ -333,7 +444,7 @@ export default function AttendanceListPage() {
             {totalPages > 1 && (
               <div className="shrink-0 flex items-center justify-between mt-4 pt-5 border-t border-gray-100">
                 <p className="text-[12px] text-gray-400">
-                  Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
+                  Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, allRecords.length)} of {allRecords.length}
                 </p>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}
@@ -356,8 +467,118 @@ export default function AttendanceListPage() {
           </OpsTableContainer>
 
           {/* Sidebar */}
-          <AttendanceSidebar record={selectedRecord} />
+          {selectedRecord ? (
+            <AttendanceSidebar record={selectedRecord} />
+          ) : (
+            <div className="flex items-center justify-center w-full xl:w-90 xl:shrink-0 h-40 text-gray-400 text-[13px]">
+              Select a record to view details
+            </div>
+          )}
         </div>
+
+        {/* ── Payroll Summaries ─────────────────────────────────────── */}
+        <div className="mt-8 pt-8 border-t border-gray-200">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-dash-dark flex items-center justify-center">
+                <FileText size={14} className="text-white" />
+              </div>
+              <div>
+                <h2 className="text-[16px] font-bold text-dash-dark">Payroll Summaries</h2>
+                <p className="text-[12px] text-gray-400">Monthly attendance payroll data</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              {/* Month/Year pickers */}
+              <select
+                value={payrollMonth}
+                onChange={(e) => setPayrollMonth(Number(e.target.value))}
+                className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-[13px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 shadow-sm"
+              >
+                {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
+                  <option key={m} value={i + 1}>{m}</option>
+                ))}
+              </select>
+              <input
+                type="number"
+                value={payrollYear}
+                onChange={(e) => setPayrollYear(Number(e.target.value))}
+                min={2020}
+                max={2099}
+                className="w-24 bg-white border border-gray-200 rounded-xl px-3 py-2 text-[13px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 shadow-sm"
+              />
+              {/* Generate button */}
+              <button
+                onClick={() => {
+                  if (!apiCompanyId) return;
+                  generatePayroll.mutate(
+                    { company_id: apiCompanyId, year: payrollYear, month: payrollMonth },
+                    {
+                      onSuccess: () => toast.success("Payroll summaries generated."),
+                      onError: (err: Error) => toast.error(err.message || "Failed to generate payroll."),
+                    }
+                  );
+                }}
+                disabled={generatePayroll.isPending || !apiCompanyId}
+                className="flex items-center gap-2 px-4 py-2.5 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              >
+                {generatePayroll.isPending ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={14} />
+                )}
+                <span className="hidden sm:inline">Generate</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Summaries table */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {payrollLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 size={24} className="animate-spin text-gray-400" />
+              </div>
+            ) : !payrollData?.summaries?.length ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <FileText size={32} className="text-gray-200" />
+                <p className="text-[13px] text-gray-400 font-medium">No payroll summaries for this period.</p>
+                <p className="text-[12px] text-gray-300">Click Generate to create them.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50/80">
+                      {Object.keys(payrollData.summaries[0] ?? {})
+                        .filter((k) => typeof (payrollData.summaries[0] as Record<string,unknown>)[k] !== "object" || (payrollData.summaries[0] as Record<string,unknown>)[k] === null)
+                        .map((col) => (
+                          <th key={col} className="px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">
+                            {col.replace(/_/g, " ")}
+                          </th>
+                        ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {payrollData.summaries.map((summary, i) => {
+                      const cols = Object.entries(summary as Record<string,unknown>)
+                        .filter(([, v]) => typeof v !== "object" || v === null);
+                      return (
+                        <tr key={i} className="hover:bg-gray-50/50 transition-colors">
+                          {cols.map(([k, v]) => (
+                            <td key={k} className="px-4 py-3 text-[13px] text-dash-dark font-medium whitespace-nowrap">
+                              {v === null || v === undefined ? "—" : String(v)}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
       </div>
     </div>
   );

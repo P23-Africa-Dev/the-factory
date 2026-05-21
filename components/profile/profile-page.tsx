@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import Image from "next/image";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -278,11 +278,19 @@ function AvatarModal({
     [token],
   );
 
-  useEffect(() => {
-    fetchCatalog(gender, 0, true);
+  const [catalogInitialized, setCatalogInitialized] = useState(false);
+
+  if (!catalogInitialized) {
+    setCatalogInitialized(true);
+    void fetchCatalog(gender, 0, true);
+  }
+
+  const handleGenderChange = (g: string) => {
+    setGender(g);
     setCursor(0);
     setSelectedKey(null);
-  }, [gender, fetchCatalog]);
+    void fetchCatalog(g, 0, true);
+  };
 
   function handleFileChange(file: File | null) {
     if (!file) return;
@@ -372,7 +380,7 @@ function AvatarModal({
                   {["male", "female"].map((g) => (
                     <button
                       key={g}
-                      onClick={() => setGender(g)}
+                      onClick={() => handleGenderChange(g)}
                       className={cn(
                         "flex-1 py-2 rounded-xl text-sm font-medium border transition-all",
                         gender === g
@@ -582,15 +590,17 @@ export function ProfilePage() {
   const [gender, setGender] = useState("");
   const [country, setCountry] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [syncedProfileId, setSyncedProfileId] = useState<number | undefined>();
 
-  useEffect(() => {
-    if (profile) {
-      setName(profile.identity.full_name ?? "");
-      setPhone(profile.identity.phone_number ?? "");
-      setGender(profile.identity.gender ?? "");
-      setCountry(profile.organization.company.country ?? "");
-    }
-  }, [profile]);
+  const profileId = profile?.identity.id;
+
+  if (profile && profileId !== syncedProfileId) {
+    setSyncedProfileId(profileId);
+    setName(profile.identity.full_name ?? "");
+    setPhone(profile.identity.phone_number ?? "");
+    setGender(profile.identity.gender ?? "");
+    setCountry(profile.organization.company.country ?? "");
+  }
 
   // ── save identity mutation ─────────────────────────────────────────────────
   const saveMutation = useMutation({
