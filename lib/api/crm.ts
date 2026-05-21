@@ -10,8 +10,7 @@ export type ApiLeadStatus =
     | "qualified"
     | "proposal_sent"
     | "won"
-    | "lost"
-    | "unqualified";
+    | "lost";
 
 export type ApiLeadPriority = "high" | "medium" | "low";
 
