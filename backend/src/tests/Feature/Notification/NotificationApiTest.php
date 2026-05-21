@@ -126,6 +126,58 @@ class NotificationApiTest extends TestCase
         ]);
     }
 
+    public function test_push_subscription_upsert_is_unique_by_device_token_and_can_be_deactivated(): void
+    {
+        [$company, $owner] = $this->seedOwnerContext();
+        $token = $owner->createToken('owner-token', ['*'])->plainTextToken;
+        $deviceToken = str_repeat('tok_', 250);
+
+        $this->withToken($token)
+            ->postJson('/api/v1/notifications/push-subscriptions', [
+                'company_id' => $company->id,
+                'provider' => 'fcm',
+                'platform' => 'web',
+                'device_token' => $deviceToken,
+                'endpoint' => 'https://example.test/endpoint/one',
+                'is_active' => true,
+            ])
+            ->assertCreated();
+
+        $this->withToken($token)
+            ->postJson('/api/v1/notifications/push-subscriptions/refresh', [
+                'company_id' => $company->id,
+                'provider' => 'fcm',
+                'platform' => 'web',
+                'device_token' => $deviceToken,
+                'endpoint' => 'https://example.test/endpoint/two',
+                'is_active' => true,
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseCount('push_subscriptions', 1);
+        $this->assertDatabaseHas('push_subscriptions', [
+            'user_id' => $owner->id,
+            'company_id' => $company->id,
+            'device_token_hash' => hash('sha256', $deviceToken),
+            'endpoint' => 'https://example.test/endpoint/two',
+            'is_active' => true,
+        ]);
+
+        $this->withToken($token)
+            ->deleteJson('/api/v1/notifications/push-subscriptions', [
+                'company_id' => $company->id,
+                'device_token' => $deviceToken,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.updated', 1);
+
+        $this->assertDatabaseHas('push_subscriptions', [
+            'user_id' => $owner->id,
+            'device_token_hash' => hash('sha256', $deviceToken),
+            'is_active' => false,
+        ]);
+    }
+
     private function seedOwnerContext(): array
     {
         $owner = User::factory()->create(['email_verified_at' => now()]);

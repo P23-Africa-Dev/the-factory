@@ -16,7 +16,8 @@ return new class extends Migration
             $table->foreignId('company_id')->nullable()->constrained('companies')->nullOnDelete();
             $table->string('provider')->default('fcm')->index();
             $table->string('platform')->nullable()->index();
-            $table->string('device_token', 2048)->unique();
+            $table->string('device_token', 2048);
+            $table->char('device_token_hash', 64)->unique();
             $table->string('endpoint', 2048)->nullable();
             $table->json('subscription_payload')->nullable();
             $table->text('user_agent')->nullable();

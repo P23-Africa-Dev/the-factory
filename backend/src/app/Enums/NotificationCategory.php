@@ -11,6 +11,7 @@ enum NotificationCategory: string
     case TASK = 'task';
     case PROJECT = 'project';
     case TRACKING = 'tracking';
+    case ATTENDANCE = 'attendance';
     case PAYROLL = 'payroll';
     case CRM = 'crm';
     case WORKFORCE = 'workforce';

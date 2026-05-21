@@ -203,4 +203,14 @@ class User extends Authenticatable
     {
         return $this->hasMany(PushSubscription::class);
     }
+
+    public function attendanceRecords(): HasMany
+    {
+        return $this->hasMany(AttendanceRecord::class);
+    }
+
+    public function attendancePayrollSummaries(): HasMany
+    {
+        return $this->hasMany(AttendancePayrollSummary::class);
+    }
 }

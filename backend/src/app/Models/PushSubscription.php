@@ -18,6 +18,7 @@ class PushSubscription extends Model
         'provider',
         'platform',
         'device_token',
+        'device_token_hash',
         'endpoint',
         'subscription_payload',
         'user_agent',

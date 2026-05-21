@@ -16,14 +16,18 @@ class PushNotificationService
     public function registerSubscription(User $user, array $payload): PushSubscription
     {
         $companyId = isset($payload['company_id']) ? (int) $payload['company_id'] : null;
+        $deviceToken = (string) $payload['device_token'];
+        $deviceTokenHash = hash('sha256', $deviceToken);
 
         return PushSubscription::query()->updateOrCreate(
-            ['device_token' => (string) $payload['device_token']],
+            ['device_token_hash' => $deviceTokenHash],
             [
                 'user_id' => $user->id,
                 'company_id' => $companyId,
                 'provider' => $payload['provider'] ?? config('notifications.push.provider', 'log'),
                 'platform' => $payload['platform'] ?? null,
+                'device_token' => $deviceToken,
+                'device_token_hash' => $deviceTokenHash,
                 'endpoint' => $payload['endpoint'] ?? null,
                 'subscription_payload' => $payload['subscription_payload'] ?? null,
                 'user_agent' => $payload['user_agent'] ?? null,
@@ -35,8 +39,11 @@ class PushNotificationService
 
     public function deactivateSubscription(User $user, string $deviceToken): int
     {
+        $deviceTokenHash = hash('sha256', $deviceToken);
+
         return PushSubscription::query()
             ->where('user_id', $user->id)
+            ->where('device_token_hash', $deviceTokenHash)
             ->where('device_token', $deviceToken)
             ->update([
                 'is_active' => false,
