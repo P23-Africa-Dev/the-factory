@@ -162,7 +162,7 @@ export function ScheduleTaskModal({
             return;
         }
 
-        const onSuccess = (task: TaskApiItem) => {
+        const handleTaskSuccess = (task: TaskApiItem) => {
             toast.success("Task scheduled successfully.");
             onCreated?.(task);
             onClose();
@@ -194,12 +194,18 @@ export function ScheduleTaskModal({
         };
 
         if (role === "agent") {
-            createSelfTaskMutation.mutate(commonPayload, { onSuccess, onError });
+            createSelfTaskMutation.mutate(commonPayload, {
+                onSuccess: (response) => handleTaskSuccess(response.data.task),
+                onError,
+            });
             return;
         }
 
         if (role === "supervisor") {
-            createTaskMutation.mutate(commonPayload, { onSuccess, onError });
+            createTaskMutation.mutate(commonPayload, {
+                onSuccess: (response) => handleTaskSuccess(response.data.task),
+                onError,
+            });
             return;
         }
 
@@ -208,7 +214,10 @@ export function ScheduleTaskModal({
                 ...commonPayload,
                 assigned_agent_id: canDelegate && form.assignTo ? Number(form.assignTo) : undefined,
             },
-            { onSuccess, onError }
+            {
+                onSuccess: (response) => handleTaskSuccess(response.data.task),
+                onError,
+            }
         );
     };
 
