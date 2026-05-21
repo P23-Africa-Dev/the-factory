@@ -53,7 +53,7 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
     role === "manager" ||
     role === "supervisor";
 
-  const { data: project, isPending: loadingProject } = useProject(projectId);
+  const { data: project, isPending: loadingProject } = useProject(projectId, basePath);
   const { data: tasksData, isPending: loadingTasks } = useTasks({ project_id: projectId });
   const statusMutation = useUpdateTaskStatusAdmin();
 
@@ -318,13 +318,15 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
                       <span className="text-gray-500 text-[12px] font-medium">Filter</span>
                     </button>
 
-                    <button
-                      onClick={() => setShowModal(true)}
-                      className="flex items-center gap-2 px-4 md:px-5 py-2.5 md:py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shadow-md cursor-pointer whitespace-nowrap flex-1 sm:flex-initial justify-center"
-                    >
-                      <BookmarkPlus size={16} strokeWidth={2} />
-                      <span>Create New Task</span>
-                    </button>
+                    {canManageTaskStatuses && (
+                      <button
+                        onClick={() => setShowModal(true)}
+                        className="flex items-center gap-2 px-4 md:px-5 py-2.5 md:py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shadow-md cursor-pointer whitespace-nowrap flex-1 sm:flex-initial justify-center"
+                      >
+                        <BookmarkPlus size={16} strokeWidth={2} />
+                        <span>Create New Task</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 

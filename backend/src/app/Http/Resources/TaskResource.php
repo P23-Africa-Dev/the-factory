@@ -12,6 +12,9 @@ class TaskResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $requestUser = $request->user();
+        $isAgentRequester = $requestUser !== null && $requestUser->internal_role === 'agent';
+
         return [
             'id' => $this->id,
             'company_id' => $this->company_id,
@@ -48,20 +51,38 @@ class TaskResource extends JsonResource
                 'email' => $this->creator->email,
                 'avatar_url' => AvatarUrlResolver::resolve($this->creator->avatar, $this->creator->gender),
             ] : null),
-            'assignee' => $this->whenLoaded('assignedAgent', fn(): ?array => $this->assignedAgent ? [
-                'id' => $this->assignedAgent->id,
-                'name' => $this->assignedAgent->name,
-                'email' => $this->assignedAgent->email,
-                'avatar_url' => AvatarUrlResolver::resolve($this->assignedAgent->avatar, $this->assignedAgent->gender),
-            ] : null),
-            'assigned_users' => $this->whenLoaded('currentAssignees', fn(): array => $this->currentAssignees
-                ->map(fn($u) => [
-                    'id' => $u->id,
-                    'name' => $u->name,
-                    'avatar_url' => AvatarUrlResolver::resolve($u->avatar, $u->gender),
-                ])
-                ->values()
-                ->all()),
+            'assignee' => $this->whenLoaded('assignedAgent', function () use ($isAgentRequester, $requestUser): ?array {
+                if (! $this->assignedAgent) {
+                    return null;
+                }
+
+                if ($isAgentRequester && $requestUser !== null && (int) $this->assignedAgent->id !== (int) $requestUser->id) {
+                    return null;
+                }
+
+                return [
+                    'id' => $this->assignedAgent->id,
+                    'name' => $this->assignedAgent->name,
+                    'email' => $this->assignedAgent->email,
+                    'avatar_url' => AvatarUrlResolver::resolve($this->assignedAgent->avatar, $this->assignedAgent->gender),
+                ];
+            }),
+            'assigned_users' => $this->whenLoaded('currentAssignees', function () use ($isAgentRequester, $requestUser): array {
+                $assignees = $this->currentAssignees;
+
+                if ($isAgentRequester && $requestUser !== null) {
+                    $assignees = $assignees->where('id', (int) $requestUser->id);
+                }
+
+                return $assignees
+                    ->map(fn($u) => [
+                        'id' => $u->id,
+                        'name' => $u->name,
+                        'avatar_url' => AvatarUrlResolver::resolve($u->avatar, $u->gender),
+                    ])
+                    ->values()
+                    ->all();
+            }),
             'proofs_count' => $this->whenCounted('proofs'),
             'proofs' => TaskProofResource::collection($this->whenLoaded('proofs')),
             'created_at' => $this->created_at?->toIso8601String(),

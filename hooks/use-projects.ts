@@ -29,7 +29,7 @@ export const PROJECT_KEYS = {
   all: ["projects"] as const,
   list: (params: ListProjectsParams, basePath = "") =>
     ["projects", basePath, params] as const,
-  detail: (id: number | string) => ["project", id] as const,
+  detail: (id: number | string, basePath = "") => ["project", basePath, id] as const,
 };
 
 export const INTERNAL_USER_KEYS = {
@@ -63,13 +63,13 @@ export function useProjects(params: ListProjectsParams = {}, basePath = "") {
 
 // ─── Single ───────────────────────────────────────────────────────────────────
 
-export function useProject(id: number | string | null | undefined) {
+export function useProject(id: number | string | null | undefined, basePath = "") {
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
   return useQuery({
-    queryKey: PROJECT_KEYS.detail(id ?? ""),
+    queryKey: PROJECT_KEYS.detail(id ?? "", basePath),
     queryFn: async (): Promise<Project> => {
-      const res = await getProject(id!, token);
+      const res = await getProject(id!, token, basePath);
       return mapApiProject(res.data.project);
     },
     enabled: !!token && !!id,

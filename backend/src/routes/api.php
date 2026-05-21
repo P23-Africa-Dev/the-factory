@@ -229,6 +229,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->group(function (): void {
             Route::prefix('projects')->name('projects.')->group(function (): void {
                 Route::get('/', [ProjectController::class, 'agentIndex'])->name('index');
+                Route::get('/{project}', [ProjectController::class, 'agentShow'])->name('show');
             });
 
             Route::prefix('tasks')->name('tasks.')->group(function (): void {

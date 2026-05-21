@@ -91,6 +91,20 @@ class ProjectController extends Controller
         );
     }
 
+    public function agentShow(Request $request, Project $project): JsonResponse
+    {
+        $project = $this->projectService->findForAgent(
+            $request->user(),
+            $project,
+            $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
+        return $this->success(
+            message: 'Project fetched successfully.',
+            data: ['project' => new ProjectResource($project)],
+        );
+    }
+
     public function update(UpdateProjectRequest $request, Project $project): JsonResponse
     {
         $project = $this->projectService->update($request->user(), $project, $request->validated());
