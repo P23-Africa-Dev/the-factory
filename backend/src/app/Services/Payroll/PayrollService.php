@@ -4,14 +4,20 @@ declare(strict_types=1);
 
 namespace App\Services\Payroll;
 
+use App\Enums\NotificationCategory;
+use App\Enums\NotificationPriority;
 use App\Models\PayrollSetting;
 use App\Models\User;
+use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class PayrollService
 {
-    public function __construct(private readonly PayrollAccessService $accessService) {}
+    public function __construct(
+        private readonly PayrollAccessService $accessService,
+        private readonly NotificationService $notificationService,
+    ) {}
 
     public function findForUser(User $user, ?int $companyId = null): ?PayrollSetting
     {
@@ -47,7 +53,7 @@ class PayrollService
         $workDays = (int) $data['work_days'];
         $baseSalary = (float) $data['base_salary'];
 
-        return DB::transaction(function () use ($context, $data, $currency, $workDays, $baseSalary): PayrollSetting {
+        $setting = DB::transaction(function () use ($context, $data, $currency, $workDays, $baseSalary): PayrollSetting {
             return PayrollSetting::query()->create([
                 'company_id' => $context->company->id,
                 'salary_type' => $data['salary_type'],
@@ -60,6 +66,17 @@ class PayrollService
                 'commission_enabled' => (bool) ($data['commission_enabled'] ?? false),
             ]);
         });
+
+        $this->notifyPayrollChange(
+            companyId: (int) $context->company->id,
+            actor: $user,
+            type: 'payroll.settings_created',
+            title: 'Payroll settings created',
+            message: 'Payroll settings have been configured for your company.',
+            priority: NotificationPriority::HIGH->value,
+        );
+
+        return $setting;
     }
 
     public function update(User $user, PayrollSetting $payrollSetting, array $data): PayrollSetting
@@ -88,6 +105,15 @@ class PayrollService
             'commission_enabled' => (bool) ($data['commission_enabled'] ?? $payrollSetting->commission_enabled),
         ]);
 
+        $this->notifyPayrollChange(
+            companyId: (int) $context->company->id,
+            actor: $user,
+            type: 'payroll.settings_updated',
+            title: 'Payroll settings updated',
+            message: 'Payroll settings have been updated.',
+            priority: NotificationPriority::NORMAL->value,
+        );
+
         return $payrollSetting->fresh();
     }
 
@@ -114,6 +140,46 @@ class PayrollService
         if ((int) $payrollSetting->company_id !== $companyId) {
             throw ValidationException::withMessages([
                 'payroll' => ['Payroll settings do not belong to the active company context.'],
+            ]);
+        }
+    }
+
+    private function notifyPayrollChange(
+        int $companyId,
+        User $actor,
+        string $type,
+        string $title,
+        string $message,
+        string $priority,
+    ): void {
+        $recipientIds = DB::table('company_users')
+            ->where('company_id', $companyId)
+            ->whereIn('role', ['owner', 'admin', 'supervisor'])
+            ->pluck('user_id')
+            ->map(static fn(mixed $id): int => (int) $id)
+            ->unique()
+            ->reject(static fn(int $id): bool => $id === (int) $actor->id)
+            ->values()
+            ->all();
+
+        foreach ($recipientIds as $recipientId) {
+            $this->notificationService->notifyUser($recipientId, [
+                'company_id' => $companyId,
+                'type' => $type,
+                'category' => NotificationCategory::PAYROLL->value,
+                'title' => $title,
+                'message' => $message,
+                'reference_type' => PayrollSetting::class,
+                'reference_id' => null,
+                'action_url' => '/payroll',
+                'action_route' => 'payroll.index',
+                'priority' => $priority,
+                'created_by_user_id' => (int) $actor->id,
+                'metadata' => [
+                    'company_id' => $companyId,
+                    'actor_user_id' => (int) $actor->id,
+                ],
+                'dedupe_key' => $type . ':' . $companyId . ':' . $recipientId,
             ]);
         }
     }

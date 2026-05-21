@@ -188,4 +188,19 @@ class User extends Authenticatable
     {
         return $this->hasOne(InternalUserInvitation::class, 'user_id')->latestOfMany();
     }
+
+    public function appNotifications(): HasMany
+    {
+        return $this->hasMany(AppNotification::class);
+    }
+
+    public function notificationPreferences(): HasMany
+    {
+        return $this->hasMany(NotificationPreference::class);
+    }
+
+    public function pushSubscriptions(): HasMany
+    {
+        return $this->hasMany(PushSubscription::class);
+    }
 }

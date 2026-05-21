@@ -2,18 +2,24 @@
 
 namespace App\Services\Auth;
 
+use App\Enums\NotificationCategory;
+use App\Enums\NotificationPriority;
 use App\Enums\VerificationType;
 use App\Exceptions\OtpDeliveryException;
 use App\Models\User;
 use App\Notifications\OtpNotification;
 use App\Notifications\WelcomeNotification;
+use App\Services\Notification\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class RegisterService
 {
-    public function __construct(private readonly OtpService $otpService) {}
+    public function __construct(
+        private readonly OtpService $otpService,
+        private readonly NotificationService $notificationService,
+    ) {}
 
     /**
      * Create (or retrieve) user and send an OTP verification code.
@@ -59,6 +65,23 @@ class RegisterService
 
         try {
             $user->notify(new OtpNotification($otp, VerificationType::REGISTRATION->value));
+
+            $this->notificationService->notifyUser((int) $user->id, [
+                'type' => 'auth.registration_otp_sent',
+                'category' => NotificationCategory::AUTH->value,
+                'title' => 'Verification code sent',
+                'message' => 'A verification code was sent to your email for account registration.',
+                'reference_type' => User::class,
+                'reference_id' => (int) $user->id,
+                'action_url' => '/auth/verify-email',
+                'action_route' => 'auth.verify-email',
+                'priority' => NotificationPriority::NORMAL->value,
+                'created_by_user_id' => (int) $user->id,
+                'metadata' => [
+                    'verification_type' => VerificationType::REGISTRATION->value,
+                ],
+                'dedupe_key' => 'auth-registration-otp:' . $user->id,
+            ]);
 
             Log::info('OTP delivery succeeded for registration.', [
                 'email' => $email,
@@ -117,6 +140,23 @@ class RegisterService
 
         if ($isFirstVerification) {
             $user->update(['email_verified_at' => now()]);
+
+            $this->notificationService->notifyUser((int) $user->id, [
+                'type' => 'auth.registration_verified',
+                'category' => NotificationCategory::AUTH->value,
+                'title' => 'Email verified',
+                'message' => 'Your email has been verified and your account is now active.',
+                'reference_type' => User::class,
+                'reference_id' => (int) $user->id,
+                'action_url' => '/dashboard',
+                'action_route' => 'dashboard.overview',
+                'priority' => NotificationPriority::HIGH->value,
+                'created_by_user_id' => (int) $user->id,
+                'metadata' => [
+                    'verification_type' => VerificationType::REGISTRATION->value,
+                ],
+                'dedupe_key' => 'auth-registration-verified:' . $user->id,
+            ]);
 
             try {
                 $user->notify(new WelcomeNotification);

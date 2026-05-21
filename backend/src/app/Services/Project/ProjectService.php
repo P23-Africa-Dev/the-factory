@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Project;
 
+use App\Enums\NotificationCategory;
+use App\Enums\NotificationPriority;
 use App\Enums\ProjectStatus;
 use App\Enums\TaskStatus;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\Notification\NotificationService;
 use App\Services\Task\TaskAccessService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\Paginator;
@@ -19,7 +22,10 @@ use Illuminate\Validation\ValidationException;
 
 class ProjectService
 {
-    public function __construct(private readonly TaskAccessService $accessService) {}
+    public function __construct(
+        private readonly TaskAccessService $accessService,
+        private readonly NotificationService $notificationService,
+    ) {}
 
     public function listForManager(User $user, array $filters): Paginator
     {
@@ -88,7 +94,7 @@ class ProjectService
 
         [$startDate, $endDate, $durationDays] = $this->resolveTimeline($data);
 
-        return DB::transaction(function () use ($context, $user, $data, $managerId, $teamUserIds, $startDate, $endDate, $durationDays): Project {
+        $project = DB::transaction(function () use ($context, $user, $data, $managerId, $teamUserIds, $startDate, $endDate, $durationDays): Project {
             $project = Project::create([
                 'company_id' => $context->company->id,
                 'created_by_user_id' => $user->id,
@@ -110,6 +116,17 @@ class ProjectService
 
             return $this->findForManager($user, $project, $context->company->id);
         });
+
+        $this->notifyProjectUpdated(
+            project: $project,
+            actor: $user,
+            type: 'project.created',
+            title: 'New project created',
+            message: "Project '{$project->name}' has been created.",
+            priority: NotificationPriority::HIGH->value,
+        );
+
+        return $project;
     }
 
     public function update(User $user, Project $project, array $data): Project
@@ -138,7 +155,7 @@ class ProjectService
                 : $project->end_date?->toDateString(),
         ]);
 
-        return DB::transaction(function () use ($user, $project, $data, $managerId, $teamUserIds, $startDate, $endDate, $durationDays, $context): Project {
+        $updatedProject = DB::transaction(function () use ($user, $project, $data, $managerId, $teamUserIds, $startDate, $endDate, $durationDays, $context): Project {
             $project->update([
                 'project_manager_user_id' => $managerId,
                 'name' => $data['name'] ?? $project->name,
@@ -163,6 +180,17 @@ class ProjectService
 
             return $this->findForManager($user, $project->fresh(), $context->company->id);
         });
+
+        $this->notifyProjectUpdated(
+            project: $updatedProject,
+            actor: $user,
+            type: 'project.updated',
+            title: 'Project updated',
+            message: "Project '{$updatedProject->name}' has been updated.",
+            priority: NotificationPriority::NORMAL->value,
+        );
+
+        return $updatedProject;
     }
 
     public function findForManager(User $user, Project $project, ?int $companyId = null): Project
@@ -339,6 +367,50 @@ class ProjectService
         }
 
         $project->teamUsers()->sync($payload);
+    }
+
+    private function notifyProjectUpdated(
+        Project $project,
+        User $actor,
+        string $type,
+        string $title,
+        string $message,
+        string $priority,
+    ): void {
+        $project->loadMissing('teamUsers:id', 'manager:id');
+
+        $recipientIds = collect([
+            (int) $project->created_by_user_id,
+            (int) ($project->project_manager_user_id ?? 0),
+        ])
+            ->merge($project->teamUsers->pluck('id')->map(static fn(mixed $id): int => (int) $id))
+            ->filter(static fn(int $id): bool => $id > 0)
+            ->unique()
+            ->reject(static fn(int $id): bool => $id === (int) $actor->id)
+            ->values()
+            ->all();
+
+        foreach ($recipientIds as $recipientId) {
+            $this->notificationService->notifyUser($recipientId, [
+                'company_id' => (int) $project->company_id,
+                'type' => $type,
+                'category' => NotificationCategory::PROJECT->value,
+                'title' => $title,
+                'message' => $message,
+                'reference_type' => Project::class,
+                'reference_id' => (int) $project->id,
+                'action_url' => '/projects/' . $project->id,
+                'action_route' => 'projects.show',
+                'priority' => $priority,
+                'created_by_user_id' => (int) $actor->id,
+                'metadata' => [
+                    'project_id' => (int) $project->id,
+                    'project_status' => $project->status?->value,
+                    'actor_user_id' => (int) $actor->id,
+                ],
+                'dedupe_key' => $type . ':' . $project->id . ':' . $recipientId,
+            ]);
+        }
     }
 
     /**

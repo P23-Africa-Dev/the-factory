@@ -20,6 +20,9 @@ use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\Internal\InternalLoginController;
 use App\Http\Controllers\Api\V1\Internal\InternalOnboardingController;
 use App\Http\Controllers\Api\V1\Internal\InternalUserController;
+use App\Http\Controllers\Api\V1\Notification\NotificationController;
+use App\Http\Controllers\Api\V1\Notification\NotificationPreferenceController;
+use App\Http\Controllers\Api\V1\Notification\PushSubscriptionController;
 use App\Http\Controllers\Api\V1\Onboarding\WorkspaceController;
 use App\Http\Controllers\Api\V1\Payroll\PayrollController;
 use App\Http\Controllers\Api\V1\Project\ProjectController;
@@ -130,6 +133,26 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/workspace', [WorkspaceController::class, 'store'])
             ->middleware('throttle:10,1')
             ->name('workspace');
+    });
+
+    Route::prefix('notifications')->name('notifications.')->group(function (): void {
+        Route::get('/', [NotificationController::class, 'index'])->name('index');
+        Route::get('/history', [NotificationController::class, 'history'])->name('history');
+        Route::get('/unread-count', [NotificationController::class, 'unreadCount'])->name('unread-count');
+        Route::patch('/read', [NotificationController::class, 'markRead'])->name('read');
+        Route::patch('/unread', [NotificationController::class, 'markUnread'])->name('unread');
+        Route::patch('/read-all', [NotificationController::class, 'markAllRead'])->name('read-all');
+        Route::delete('/{notification}', [NotificationController::class, 'destroy'])->name('destroy');
+
+        Route::get('/preferences', [NotificationPreferenceController::class, 'index'])->name('preferences.index');
+        Route::put('/preferences', [NotificationPreferenceController::class, 'update'])->name('preferences.update');
+
+        Route::get('/push-subscriptions', [PushSubscriptionController::class, 'index'])->name('push-subscriptions.index');
+        Route::post('/push-subscriptions', [PushSubscriptionController::class, 'store'])->name('push-subscriptions.store');
+        Route::post('/push-subscriptions/refresh', [PushSubscriptionController::class, 'refresh'])
+            ->name('push-subscriptions.refresh');
+        Route::delete('/push-subscriptions', [PushSubscriptionController::class, 'destroy'])
+            ->name('push-subscriptions.destroy');
     });
 
     // Canonical management endpoints.

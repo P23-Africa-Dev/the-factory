@@ -32,3 +32,6 @@ Schedule::command('users:lift-expired-suspensions')->daily();
 
 // Prune old tracking traces while retaining recent and checkpoint data.
 Schedule::command('tracking:prune')->dailyAt('02:00');
+
+// Dispatch due soon, overdue, and project deadline notification reminders.
+Schedule::command('notifications:dispatch-scheduled')->everyFifteenMinutes();

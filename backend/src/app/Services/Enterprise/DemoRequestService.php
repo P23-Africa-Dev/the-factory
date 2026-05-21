@@ -4,6 +4,8 @@ namespace App\Services\Enterprise;
 
 use App\Enums\CompanyUserRole;
 use App\Enums\DemoRequestStatus;
+use App\Enums\NotificationCategory;
+use App\Enums\NotificationPriority;
 use App\Exceptions\EnterpriseNotificationDeliveryException;
 use App\Models\Admin;
 use App\Models\Company;
@@ -12,6 +14,7 @@ use App\Models\User;
 use App\Notifications\EnterpriseActivationNotification;
 use App\Notifications\EnterpriseDemoRequestAdminNotification;
 use App\Notifications\EnterpriseDemoRequestReceivedNotification;
+use App\Services\Notification\NotificationService;
 use DomainException;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +26,8 @@ use Illuminate\Validation\ValidationException;
 
 class DemoRequestService
 {
+    public function __construct(private readonly NotificationService $notificationService) {}
+
     public function submit(array $data): CompanyDemoRequest
     {
         $this->preventActiveDuplicate($data['email']);
@@ -186,6 +191,25 @@ class DemoRequestService
                 onboardingLink: $activationLink,
             );
 
+            $this->notificationService->notifyUser((int) $user->id, [
+                'company_id' => (int) $company->id,
+                'type' => 'onboarding.enterprise_activation_sent',
+                'category' => NotificationCategory::ONBOARDING->value,
+                'title' => 'Enterprise activation ready',
+                'message' => 'Your enterprise activation link is ready. Complete setup to access your workspace.',
+                'reference_type' => CompanyDemoRequest::class,
+                'reference_id' => (int) $demoRequest->id,
+                'action_url' => '/enterprise/onboarding',
+                'action_route' => 'enterprise.onboarding.complete',
+                'priority' => NotificationPriority::HIGH->value,
+                'created_by_user_id' => (int) $user->id,
+                'metadata' => [
+                    'demo_request_id' => (int) $demoRequest->id,
+                    'company_id' => (int) $company->id,
+                ],
+                'dedupe_key' => 'enterprise-activation-sent:' . $demoRequest->id,
+            ]);
+
             return $demoRequest->fresh(['company', 'user', 'reviewedByAdmin']);
         });
     }
@@ -274,10 +298,10 @@ class DemoRequestService
         if ($baseUrl === '') {
             $frontendUrl = trim((string) (config('enterprise.frontend_url') ?: 'http://localhost:3000'));
             $setupPathValue = trim((string) (config('enterprise.onboarding_setup_path') ?: '/enterprise/setup'));
-            $setupPath = '/'.ltrim($setupPathValue, '/');
+            $setupPath = '/' . ltrim($setupPathValue, '/');
 
             if ($frontendUrl !== '') {
-                $baseUrl = rtrim($frontendUrl, '/').$setupPath;
+                $baseUrl = rtrim($frontendUrl, '/') . $setupPath;
             }
         }
 
@@ -304,7 +328,7 @@ class DemoRequestService
 
         $separator = parse_url($baseUrl, PHP_URL_QUERY) === null ? '?' : '&';
 
-        return $baseUrl.$separator.$query;
+        return $baseUrl . $separator . $query;
     }
 
     public function resolveValidApprovedRequestForFirstTimeSetup(int $requestId, string $token): CompanyDemoRequest
@@ -388,7 +412,7 @@ class DemoRequestService
         $prefix = strtoupper((string) config('enterprise.company_id_prefix', 'FAC'));
 
         do {
-            $candidate = $prefix.'-'.strtoupper(Str::random(8));
+            $candidate = $prefix . '-' . strtoupper(Str::random(8));
         } while (Company::where('company_id', $candidate)->exists());
 
         return $candidate;

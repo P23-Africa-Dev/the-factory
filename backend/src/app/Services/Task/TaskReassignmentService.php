@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Task;
 
+use App\Enums\NotificationCategory;
+use App\Enums\NotificationPriority;
 use App\Enums\TaskStatus;
 use App\Enums\TaskReassignmentStatus;
 use App\Models\Task;
@@ -12,6 +14,7 @@ use App\Models\TaskReassignment;
 use App\Models\TaskTrackingSession;
 use App\Models\User;
 use App\Notifications\TaskReassignmentRequestedNotification;
+use App\Services\Notification\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +26,10 @@ use Throwable;
 
 class TaskReassignmentService
 {
-    public function __construct(private readonly TaskAccessService $taskAccessService) {}
+    public function __construct(
+        private readonly TaskAccessService $taskAccessService,
+        private readonly NotificationService $notificationService,
+    ) {}
 
     public function request(
         User $user,
@@ -108,6 +114,27 @@ class TaskReassignmentService
                 ]);
             }
         }
+
+        $this->notificationService->notifyUser($toUser->id, [
+            'company_id' => (int) $context->company->id,
+            'type' => 'task.reassignment_requested',
+            'category' => NotificationCategory::TASK->value,
+            'title' => 'Task reassignment request',
+            'message' => "{$user->name} requested to reassign task '{$task->title}' to you.",
+            'reference_type' => TaskReassignment::class,
+            'reference_id' => (int) $reassignment->id,
+            'action_url' => '/tasks/reassignments/inbox',
+            'action_route' => 'tasks.reassignments.inbox',
+            'priority' => NotificationPriority::HIGH->value,
+            'created_by_user_id' => (int) $user->id,
+            'metadata' => [
+                'task_id' => (int) $task->id,
+                'reassignment_id' => (int) $reassignment->id,
+                'from_user_id' => (int) $reassignment->from_user_id,
+                'to_user_id' => (int) $reassignment->to_user_id,
+            ],
+            'dedupe_key' => 'task-reassignment-request:' . $reassignment->id,
+        ]);
 
         return $this->loadReassignment($reassignment);
     }
@@ -240,7 +267,45 @@ class TaskReassignmentService
             return $lockedReassignment;
         });
 
-        return $this->loadReassignment($acceptedReassignment->fresh());
+        $acceptedReassignment = $this->loadReassignment($acceptedReassignment->fresh());
+
+        $task = Task::query()->find($acceptedReassignment->task_id);
+        if ($task) {
+            $recipients = collect([
+                (int) $acceptedReassignment->requested_by_user_id,
+                (int) $acceptedReassignment->from_user_id,
+                (int) $acceptedReassignment->to_user_id,
+            ])->unique()->values()->all();
+
+            foreach ($recipients as $recipientId) {
+                if ($recipientId === (int) $user->id) {
+                    continue;
+                }
+
+                $this->notificationService->notifyUser($recipientId, [
+                    'company_id' => (int) $acceptedReassignment->company_id,
+                    'type' => 'task.reassignment_accepted',
+                    'category' => NotificationCategory::TASK->value,
+                    'title' => 'Task reassignment accepted',
+                    'message' => "Task reassignment for '{$task->title}' has been accepted.",
+                    'reference_type' => TaskReassignment::class,
+                    'reference_id' => (int) $acceptedReassignment->id,
+                    'action_url' => '/tasks/' . $task->id,
+                    'action_route' => 'tasks.show',
+                    'priority' => NotificationPriority::HIGH->value,
+                    'created_by_user_id' => (int) $user->id,
+                    'metadata' => [
+                        'task_id' => (int) $task->id,
+                        'reassignment_id' => (int) $acceptedReassignment->id,
+                        'from_user_id' => (int) $acceptedReassignment->from_user_id,
+                        'to_user_id' => (int) $acceptedReassignment->to_user_id,
+                    ],
+                    'dedupe_key' => 'task-reassignment-accepted:' . $acceptedReassignment->id . ':' . $recipientId,
+                ]);
+            }
+        }
+
+        return $acceptedReassignment;
     }
 
     public function reject(User $user, TaskReassignment $reassignment, ?int $companyId = null, ?string $responseNote = null): TaskReassignment
@@ -272,6 +337,40 @@ class TaskReassignmentService
             'responded_at' => now(),
             'rejected_at' => now(),
         ]);
+
+        $task = Task::query()->find($reassignment->task_id);
+        if ($task) {
+            $recipients = collect([
+                (int) $reassignment->requested_by_user_id,
+                (int) $reassignment->from_user_id,
+            ])->unique()->values()->all();
+
+            foreach ($recipients as $recipientId) {
+                if ($recipientId === (int) $user->id) {
+                    continue;
+                }
+
+                $this->notificationService->notifyUser($recipientId, [
+                    'company_id' => (int) $reassignment->company_id,
+                    'type' => 'task.reassignment_rejected',
+                    'category' => NotificationCategory::TASK->value,
+                    'title' => 'Task reassignment rejected',
+                    'message' => "Task reassignment for '{$task->title}' has been rejected.",
+                    'reference_type' => TaskReassignment::class,
+                    'reference_id' => (int) $reassignment->id,
+                    'action_url' => '/tasks/' . $task->id,
+                    'action_route' => 'tasks.show',
+                    'priority' => NotificationPriority::NORMAL->value,
+                    'created_by_user_id' => (int) $user->id,
+                    'metadata' => [
+                        'task_id' => (int) $task->id,
+                        'reassignment_id' => (int) $reassignment->id,
+                        'response_note' => $responseNote,
+                    ],
+                    'dedupe_key' => 'task-reassignment-rejected:' . $reassignment->id . ':' . $recipientId,
+                ]);
+            }
+        }
 
         return $this->loadReassignment($reassignment->fresh());
     }
