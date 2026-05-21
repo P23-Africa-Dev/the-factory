@@ -33,6 +33,12 @@ class ProjectResource extends JsonResource
             'duration_days' => $this->duration_days,
             'territory_zone' => $this->territory_zone,
             'notes' => $this->notes,
+            'creator' => $this->whenLoaded('creator', fn(): ?array => $this->creator ? [
+                'id' => $this->creator->id,
+                'name' => $this->creator->name,
+                'email' => $this->creator->email,
+                'avatar_url' => AvatarUrlResolver::resolve($this->creator->avatar, $this->creator->gender),
+            ] : null),
             'manager' => $this->whenLoaded('manager', fn(): ?array => $this->manager ? [
                 'id' => $this->manager->id,
                 'name' => $this->manager->name,

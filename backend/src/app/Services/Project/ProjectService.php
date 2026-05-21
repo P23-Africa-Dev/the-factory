@@ -192,6 +192,7 @@ class ProjectService
         return Project::query()
             ->where('company_id', $companyId)
             ->with([
+                'creator:id,name,email,avatar,gender',
                 'manager:id,name,email,avatar,gender',
                 'teamUsers:id,name,email,avatar,gender',
                 'files',
@@ -211,6 +212,7 @@ class ProjectService
                 $this->applyAgentTaskAssignmentConstraint($taskQuery, $userId);
             })
             ->with([
+                'creator:id,name,email,avatar,gender',
                 'manager:id,name,email,avatar,gender',
                 'files',
             ])

@@ -22,7 +22,7 @@ import { useCreateTask } from "@/hooks/use-tasks";
 import type { DndItem, TaskCategory } from "@/types/operations";
 import type { ApiTaskPriority } from "@/lib/api/tasks";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { getMapboxPublicToken } from "@/lib/config/public-env";
+import { geocodeAddressWithMapbox } from "@/lib/utils/geocoding";
 
 type StatusType = "pending" | "in-progress" | "completed";
 
@@ -39,25 +39,25 @@ const STATUS_OPTIONS: {
   color: string;
   short: string;
 }[] = [
-  {
-    value: "pending",
-    label: "Pending Task",
-    color: "#BD7A22",
-    short: "Pending",
-  },
-  {
-    value: "in-progress",
-    label: "In Progress",
-    color: "#094B5C",
-    short: "In Progress",
-  },
-  {
-    value: "completed",
-    label: "Completed",
-    color: "#4FD1C5",
-    short: "Completed",
-  },
-];
+    {
+      value: "pending",
+      label: "Pending Task",
+      color: "#BD7A22",
+      short: "Pending",
+    },
+    {
+      value: "in-progress",
+      label: "In Progress",
+      color: "#094B5C",
+      short: "In Progress",
+    },
+    {
+      value: "completed",
+      label: "Completed",
+      color: "#4FD1C5",
+      short: "Completed",
+    },
+  ];
 
 const TASK_TYPES: Record<string, string> = {
   "Sales Visit": "sales_visit",
@@ -163,17 +163,12 @@ export function CreateTaskModal({
   };
 
   const geocodeAddress = useCallback(async (address: string) => {
-    const token = getMapboxPublicToken();
-    if (!token || !address.trim()) return;
+    if (!address.trim()) return;
     setGeocoding(true);
     try {
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${token}&country=ng&limit=1`;
-      const res = await fetch(url);
-      const json = await res.json();
-      const feature = json.features?.[0];
-      if (feature) {
-        const [lng, lat] = feature.center as [number, number];
-        setCoords({ lat, lng });
+      const geocoded = await geocodeAddressWithMapbox(address);
+      if (geocoded) {
+        setCoords(geocoded);
       }
     } catch {
       // geocoding failure is non-fatal
@@ -196,12 +191,12 @@ export function CreateTaskModal({
       toast.error("You are not allowed to create management tasks.");
       return;
     }
-    
+
     // If real API mode is requested
     if (companyId) {
       const typeKey = TASK_TYPES[form.taskType] || "general";
       const priorityVal = form.priority.toLowerCase() as ApiTaskPriority;
-      
+
       mutate({
         company_id: companyId,
         project_id: projectId ?? undefined,
@@ -232,7 +227,7 @@ export function CreateTaskModal({
               minimum_photos_required: "minPhotos",
               visit_verification_required: "visitVerification"
             };
-            
+
             for (const key in backendErrors) {
               const formKey = ERROR_MAP[key] || key;
               mappedErrors[formKey] = backendErrors[key][0];
@@ -552,21 +547,19 @@ export function CreateTaskModal({
                 onClick={() =>
                   set("visitVerification", !form.visitVerification)
                 }
-                className={`mt-1 flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all select-none ${
-                  form.visitVerification
+                className={`mt-1 flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all select-none ${form.visitVerification
                     ? "bg-[#09232d] border-[#0B1215]"
                     : "bg-gray-50 border-gray-200 hover:border-gray-300"
-                }`}
+                  }`}
               >
                 <div
                   className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${form.visitVerification ? "bg-white/20" : "bg-gray-300"}`}
                 >
                   <div
-                    className={`absolute top-0.5 w-4 h-4 rounded-full shadow transition-all ${
-                      form.visitVerification
+                    className={`absolute top-0.5 w-4 h-4 rounded-full shadow transition-all ${form.visitVerification
                         ? "left-4 bg-white"
                         : "left-0.5 bg-white"
-                    }`}
+                      }`}
                   />
                 </div>
                 <span
@@ -589,11 +582,10 @@ export function CreateTaskModal({
                     key={opt.value}
                     type="button"
                     onClick={() => set("status", opt.value)}
-                    className={`py-2.5 px-2 rounded-xl text-[11px] font-bold transition-all border-2 ${
-                      form.status === opt.value
+                    className={`py-2.5 px-2 rounded-xl text-[11px] font-bold transition-all border-2 ${form.status === opt.value
                         ? "text-white shadow-md border-transparent"
                         : "text-gray-500 border-gray-200 bg-gray-50 hover:border-gray-300"
-                    }`}
+                      }`}
                     style={
                       form.status === opt.value
                         ? { backgroundColor: opt.color, borderColor: opt.color }

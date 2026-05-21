@@ -334,7 +334,7 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
                   <div className="space-y-1">
                     <h3 className="text-[14px] md:text-[16px] font-bold text-[#092635]">Created By</h3>
                     <p className="text-[14px] md:text-[16px] text-[#717171] font-light">
-                      {project.manager?.name || "Unknown"}
+                      {project.creator?.name || project.manager?.name || "Unknown"}
                     </p>
                   </div>
                   <div className="space-y-1">

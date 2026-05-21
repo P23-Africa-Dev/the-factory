@@ -96,9 +96,8 @@ export function ProjectsViewAgents({
           {/* Filter toggle — icon before text */}
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
-              showFilters ? "text-white" : "text-gray-500"
-            }`}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${showFilters ? "text-white" : "text-gray-500"
+              }`}
             style={{
               background: showFilters ? "#34373C" : "#F8F8F8",
               border: showFilters
@@ -140,11 +139,10 @@ export function ProjectsViewAgents({
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
-                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${
-                    statusFilter === s
+                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${statusFilter === s
                       ? "bg-[#0B1215] text-white"
                       : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
-                  }`}
+                    }`}
                 >
                   {s}
                 </button>
@@ -161,11 +159,10 @@ export function ProjectsViewAgents({
                 <button
                   key={p}
                   onClick={() => setPriorityFilter(p)}
-                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${
-                    priorityFilter === p
+                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${priorityFilter === p
                       ? "bg-[#0B1215] text-white"
                       : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
-                  }`}
+                    }`}
                 >
                   {p}
                 </button>
@@ -250,11 +247,11 @@ export function ProjectsViewAgents({
       )}
 
       {showDrawer && (
-        <CreateProjectDrawer 
+        <CreateProjectDrawer
           onClose={() => {
             setShowDrawer(false);
             setEditingProject(null);
-          }} 
+          }}
           projectToEdit={editingProject || undefined}
         />
       )}
@@ -346,7 +343,7 @@ function ProjectCard({
             {project.name}
           </h3>
           <div className="absolute right-0 top-0">
-            <button 
+            <button
               onClick={(e) => {
                 e.stopPropagation();
                 setMenuOpen(!menuOpen);
@@ -355,7 +352,7 @@ function ProjectCard({
             >
               <MoreVertical size={18} />
             </button>
-            
+
             {menuOpen && (
               <div className="absolute right-0 top-full mt-1 w-36 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-10 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
                 <button
@@ -472,6 +469,7 @@ function performanceLabel(pct: number) {
 
 function SummaryCards({ projects }: { projects: Project[] }) {
   const total = projects.length;
+  const pending = projects.filter((p) => p.status !== "Completed").length;
   const completed = projects.filter((p) => p.status === "Completed").length;
   const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
 
@@ -505,11 +503,15 @@ function SummaryCards({ projects }: { projects: Project[] }) {
         dotY={dotY}
       />
       <div className="contents sm:grid sm:grid-cols-2 sm:gap-6 lg:gap-6.25 sm:w-auto">
-        <TotalProjectsCard />
-        <PendingProjectsCard />
+        <TotalProjectsCard total={total} />
+        <PendingProjectsCard pending={pending} />
       </div>
     </div>
   );
+}
+
+function formatStatCount(value: number): string {
+  return String(value).padStart(3, "0");
 }
 
 // ─── Performance Card ─────────────────────────────────────────────────────────
@@ -597,7 +599,7 @@ function PerformanceCard({
 }
 
 // ─── Total Projects Card ──────────────────────────────────────────────────────
-function TotalProjectsCard() {
+function TotalProjectsCard({ total }: { total: number }) {
   return (
     <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-[85vw] sm:w-full lg:w-69.75 shrink-0 snap-center">
       <div className="flex items-start justify-between pt-5 sm:pt-6">
@@ -606,7 +608,7 @@ function TotalProjectsCard() {
             Total Projects
           </p>
           <h2 className="text-[64px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
-            045
+            {formatStatCount(total)}
           </h2>
         </div>
         <button className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#3AB37E] text-white rounded-full text-[7px] hover:bg-[#27ae60] transition-colors mt-1">
@@ -643,7 +645,7 @@ function TotalProjectsCard() {
 }
 
 // ─── Pending Projects Card ────────────────────────────────────────────────────
-function PendingProjectsCard() {
+function PendingProjectsCard({ pending }: { pending: number }) {
   return (
     <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-[85vw] sm:w-full lg:w-69.75 shrink-0 snap-center">
       <div className="flex items-start justify-between pt-5 sm:pt-6">
@@ -652,7 +654,7 @@ function PendingProjectsCard() {
             Pending Projects
           </p>
           <h2 className="text-[64px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
-            015
+            {formatStatCount(pending)}
           </h2>
         </div>
         <button className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#EF8E5B] text-white rounded-full text-[7px] hover:bg-[#d57848] transition-colors mt-1">

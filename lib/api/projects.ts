@@ -20,6 +20,13 @@ export type ProjectManager = {
   email: string;
 };
 
+export type ProjectCreator = {
+  id: number;
+  name: string;
+  email: string;
+  avatar_url?: string | null;
+};
+
 export type ProjectAttachment = {
   id: number;
   original_name: string;
@@ -41,6 +48,7 @@ export type ProjectApiItem = {
   duration_days?: number | null;
   territory_zone?: string | null;
   notes?: string | null;
+  creator?: ProjectCreator | null;
   manager?: ProjectManager | null;
   assigned_team?: Array<{ id: number; name: string; email?: string }>;
   attachments?: ProjectAttachment[];

@@ -46,6 +46,7 @@ export interface Project {
   startDate?: string;
   endDate?: string | null;
   type?: string | null;
+  creator?: { id: number; name: string; email: string; avatar_url?: string | null } | null;
   manager?: { id: number; name: string; email: string } | null;
 }
 
@@ -83,6 +84,7 @@ export function mapApiProject(item: {
   start_date?: string;
   end_date?: string | null;
   type?: string | null;
+  creator?: { id: number; name: string; email: string; avatar_url?: string | null } | null;
   manager?: { id: number; name: string; email: string } | null;
   task_summary: {
     total_tasks: number;
@@ -111,6 +113,7 @@ export function mapApiProject(item: {
     startDate: item.start_date,
     endDate: item.end_date,
     type: item.type,
+    creator: item.creator ?? null,
     manager: item.manager ?? null,
   };
 }
