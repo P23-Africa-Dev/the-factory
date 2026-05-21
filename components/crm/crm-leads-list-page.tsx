@@ -15,7 +15,6 @@ const STATUSES: Array<{ value: ApiLeadStatus; label: string }> = [
     { value: "proposal_sent", label: "Proposal Sent" },
     { value: "won", label: "Won" },
     { value: "lost", label: "Lost" },
-    { value: "unqualified", label: "Unqualified" },
 ];
 
 const statusLabelMap = new Map(STATUSES.map((entry) => [entry.value, entry.label]));

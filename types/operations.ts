@@ -14,6 +14,9 @@ export interface DndItem {
   addedDescription?: string;
   statusLabel?: string;
   routeData?: Record<string, unknown>;
+  priority?: string;
+  value?: string;
+  assignedToUserId?: string | number | null;
 }
 
 export interface DndContainer {

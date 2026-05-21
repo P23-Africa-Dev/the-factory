@@ -4,8 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useInternalUsers } from "@/hooks/use-internal-users";
 import type { ApiLeadStatus, ApiRoleBasePath, LeadApiItem } from "@/lib/api/crm";
 import type { DndContainer, DndItem } from "@/types/operations";
+import { AddLeadModal } from "./add-lead-modal";
 import {
     DndContext,
     DragEndEvent,
@@ -17,6 +19,7 @@ import {
     closestCorners,
     useSensor,
     useSensors,
+    useDroppable,
 } from "@dnd-kit/core";
 import {
     SortableContext,
@@ -25,7 +28,7 @@ import {
     verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, Edit2 } from "lucide-react";
 import { formatDistanceToNowStrict, parseISO } from "date-fns";
 import { toast } from "sonner";
 
@@ -33,7 +36,6 @@ const STAGES: Array<{ id: ApiLeadStatus; title: string; color: string }> = [
     { id: "new", title: "New Leads", color: "#2563EB" },
     { id: "proposal_sent", title: "Proposal Sent", color: "#F59E0B" },
     { id: "contacted", title: "Contacted", color: "#E879A0" },
-    { id: "unqualified", title: "Unqualified", color: "#1A1F2C" },
     { id: "qualified", title: "Qualified", color: "#10B981" },
     { id: "lost", title: "Lost", color: "#EF4444" },
     { id: "won", title: "Won", color: "#166534" },
@@ -55,10 +57,16 @@ function mapLeadToItem(lead: LeadApiItem): DndItem {
     return {
         id: String(lead.id),
         label: lead.name,
-        description: lead.email ?? lead.phone ?? "No contact",
+        description: lead.location || lead.source || lead.email || lead.phone || "No details",
         location: "0",
         assignedBy: lead.assignee?.name ?? "Unassigned",
+        assignedToUserId: lead.assigned_to_user_id ?? null,
         time: toRelativeTime(lead.updated_at),
+        priority: lead.priority ?? "medium",
+        // Format the value from meta if it exists, otherwise provide a fallback for the UI showcase
+        value: typeof lead.meta?.value === 'number'
+            ? `N ${lead.meta.value.toLocaleString()}`
+            : "N 40,010",
     };
 }
 
@@ -94,9 +102,15 @@ function findContainer(containers: DndContainer[], id: string): DndContainer | u
 function LeadCard({
     item,
     disabled,
+    onEditClick,
+    companyUsers,
+    onAssigneeChange,
 }: {
     item: DndItem;
     disabled: boolean;
+    onEditClick?: () => void;
+    companyUsers?: { id: number; name: string }[];
+    onAssigneeChange?: (leadId: string, assigneeId: string) => void;
 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
         useSortable({ id: item.id, disabled });
@@ -106,20 +120,76 @@ function LeadCard({
         transition,
     };
 
+    const priorityColors: Record<string, string> = {
+        high: "bg-[#EF4444]",
+        medium: "bg-[#12C6D8]",
+        low: "bg-[#10B981]",
+    };
+    const priorityColor = priorityColors[item.priority?.toLowerCase() || "medium"] || "bg-[#12C6D8]";
+
     return (
         <div
             ref={setNodeRef}
             style={style}
             {...attributes}
             {...listeners}
-            className={`bg-white rounded-[16px] p-4 border border-gray-100 shadow-sm mb-3 transition-all ${disabled ? "cursor-default" : "cursor-grab"
-                } ${isDragging ? "opacity-50" : ""}`}
+            className={`bg-white rounded-[32px] p-6 shadow-[0px_4px_16px_rgba(0,0,0,0.04)] border border-gray-100/60 mb-4 transition-all relative group ${disabled ? "cursor-default" : "cursor-grab"
+                } ${isDragging ? "opacity-50 shadow-xl" : ""}`}
         >
-            <p className="text-[#0B1215] font-bold text-[13px] leading-tight">{item.label}</p>
-            <p className="text-[#9CA3AF] text-[12px] mt-0.5 truncate">{item.description}</p>
-            <div className="flex items-center justify-between mt-2">
-                <span className="text-[#6B7280] text-[11px]">{item.assignedBy ?? "Unassigned"}</span>
-                <span className="text-[#6B7280] text-[11px]">{item.time}</span>
+            <div className="flex justify-between items-start gap-2">
+                <div className="min-w-0 flex-1">
+                    <p className="text-[#2F3033] font-extrabold text-[17px] leading-tight truncate">{item.label}</p>
+                    <p className="text-[#8C93A1] text-[13px] mt-1 truncate">{item.description}</p>
+                </div>
+                {!disabled && (
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onEditClick?.();
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="text-gray-400 hover:text-[#0B1215] p-1.5 rounded-full hover:bg-gray-50 transition-colors shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        title="Edit Lead"
+                    >
+                        <Edit2 size={15} />
+                    </button>
+                )}
+            </div>
+
+            <div className="flex items-center justify-between mt-5">
+                <span className="text-[#1A5C5A] font-extrabold text-[17px]">{item.value}</span>
+                <span className={`${priorityColor} text-white rounded-full px-3.5 py-1 text-[11px] font-semibold tracking-wide capitalize`}>
+                    {item.priority}
+                </span>
+            </div>
+
+            <div className="flex items-center justify-between mt-4">
+                {!disabled && companyUsers ? (
+                    <select
+                        value={item.assignedToUserId ?? ""}
+                        onChange={(e) => {
+                            e.stopPropagation();
+                            onAssigneeChange?.(item.id, e.target.value);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="text-[#8C93A1] text-[12px] bg-transparent outline-none cursor-pointer hover:text-[#0B1215] max-w-[120px] truncate border-none focus:ring-0 p-0"
+                        title="Assign User"
+                    >
+                        <option value="">Unassigned</option>
+                        {companyUsers.map((user) => (
+                            <option key={user.id} value={user.id}>
+                                {user.name}
+                            </option>
+                        ))}
+                    </select>
+                ) : (
+                    <span className="text-[#8C93A1] text-[12px] truncate max-w-[120px]">
+                        {item.assignedBy ?? "Unassigned"}
+                    </span>
+                )}
+                <span className="text-[#8C93A1] text-[12px]">{item.time}</span>
             </div>
         </div>
     );
@@ -128,34 +198,70 @@ function LeadCard({
 function LeadColumn({
     container,
     disabled,
+    onAddClick,
+    onEditLeadClick,
+    companyUsers,
+    onAssigneeChange,
 }: {
     container: DndContainer;
     disabled: boolean;
+    onAddClick?: () => void;
+    onEditLeadClick?: (leadId: string) => void;
+    companyUsers?: { id: number; name: string }[];
+    onAssigneeChange?: (leadId: string, assigneeId: string) => void;
 }) {
+    const totalValue = "N 342,000";
+    // Register the column body as a droppable so empty columns accept cards
+    const { setNodeRef: setDropRef } = useDroppable({ id: container.id });
+
     return (
-        <div className="flex flex-col w-72 shrink-0">
+        <div className="flex flex-col w-[320px] shrink-0 relative mb-4">
+            {/* Colored background layer (Header) */}
             <div
-                className="rounded-t-[16px] px-4 py-3 flex items-center justify-between"
+                className="absolute top-0 left-0 right-0 h-[120px] rounded-t-[40px]"
                 style={{ backgroundColor: container.color }}
             >
-                <span className="text-white font-semibold text-[13px]">{container.title}</span>
-                <span className="bg-white/95 rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ color: container.color }}>
-                    {container.items.length}
-                </span>
+                <div className="flex items-center justify-between px-6 pt-5">
+                    <div className="flex items-center gap-2">
+                        <span className="text-white font-semibold text-[15px]">{container.title}</span>
+                        <span className="bg-white rounded-full h-6 w-6 flex items-center justify-center text-[12px] font-bold" style={{ color: container.color }}>
+                            {container.items.length}
+                        </span>
+                    </div>
+                    <span className="text-white text-[14px] font-medium opacity-90">
+                        {totalValue}
+                    </span>
+                </div>
             </div>
 
-            <div className="bg-white rounded-b-[16px] p-3 min-h-[220px] border border-t-0 border-gray-100">
-                <SortableContext
-                    items={container.items.map((item) => item.id)}
-                    strategy={verticalListSortingStrategy}
-                >
-                    {container.items.map((item) => (
-                        <LeadCard key={item.id} item={item} disabled={disabled} />
-                    ))}
-                </SortableContext>
+            {/* White overlapping body — also the droppable target for this column */}
+            <div
+                ref={setDropRef}
+                className="bg-white relative mt-[60px] rounded-[40px] px-4 pt-6 pb-4 min-h-[400px] border border-gray-100 shadow-[0px_4px_16px_rgba(0,0,0,0.02)] flex flex-col"
+            >
+                <div className="flex-1">
+                    <SortableContext
+                        items={container.items.map((item) => item.id)}
+                        strategy={verticalListSortingStrategy}
+                    >
+                        {container.items.map((item) => (
+                            <LeadCard
+                                key={item.id}
+                                item={item}
+                                disabled={disabled}
+                                onEditClick={() => onEditLeadClick?.(item.id)}
+                                companyUsers={companyUsers}
+                                onAssigneeChange={onAssigneeChange}
+                            />
+                        ))}
+                    </SortableContext>
+                </div>
 
                 {!disabled && (
-                    <button className="w-full flex items-center justify-center gap-2 text-[12px] text-gray-400 hover:text-[#0B1215] py-2 transition-colors">
+                    <button
+                        onClick={onAddClick}
+                        className="w-full flex items-center justify-center gap-2 text-[12px] text-gray-400 hover:text-[#0B1215] py-3 mt-2 transition-colors cursor-pointer rounded-[24px] hover:bg-gray-50"
+                    >
                         <Plus size={13} />
                         Add Leads
                     </button>
@@ -169,14 +275,32 @@ function KanbanBoard({
     initialContainers,
     readOnly,
     onStatusChange,
+    onAddLeadClick,
+    onEditLeadClick,
+    companyUsers,
+    onAssigneeChange,
 }: {
     initialContainers: DndContainer[];
     readOnly: boolean;
     onStatusChange: (leadId: string, status: ApiLeadStatus) => Promise<void>;
+    onAddLeadClick?: (status: ApiLeadStatus) => void;
+    onEditLeadClick?: (leadId: string) => void;
+    companyUsers?: { id: number; name: string }[];
+    onAssigneeChange?: (leadId: string, assigneeId: string) => void;
 }) {
     const [containers, setContainers] = useState<DndContainer[]>(initialContainers);
     const [activeItem, setActiveItem] = useState<DndItem | null>(null);
+    // Keep a ref always in sync with state so async drag handlers read current data
+    const containersRef = useRef<DndContainer[]>(initialContainers);
     const dragOriginRef = useRef<string | null>(null);
+
+    function applyContainers(updater: DndContainer[] | ((prev: DndContainer[]) => DndContainer[])) {
+        setContainers((prev) => {
+            const next = typeof updater === "function" ? updater(prev) : updater;
+            containersRef.current = next;
+            return next;
+        });
+    }
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -187,7 +311,7 @@ function KanbanBoard({
         if (readOnly) return;
 
         const itemId = String(event.active.id);
-        const container = findContainer(containers, itemId);
+        const container = findContainer(containersRef.current, itemId);
         dragOriginRef.current = container?.id ?? null;
         const item = container?.items.find((entry) => entry.id === itemId) ?? null;
         setActiveItem(item);
@@ -202,7 +326,7 @@ function KanbanBoard({
         const activeId = String(active.id);
         const overId = String(over.id);
 
-        setContainers((previous) => {
+        applyContainers((previous) => {
             const activeContainer = findContainer(previous, activeId);
             const overContainer = findContainer(previous, overId);
             if (!activeContainer || !overContainer) return previous;
@@ -235,53 +359,55 @@ function KanbanBoard({
         const { active, over } = event;
         setActiveItem(null);
 
-        if (!over) {
-            dragOriginRef.current = null;
+        const activeId = String(active.id);
+        const originContainerId = dragOriginRef.current;
+        dragOriginRef.current = null;
+
+        if (!over || !originContainerId) {
+            applyContainers(initialContainers);
             return;
         }
 
-        const activeId = String(active.id);
-        const overId = String(over.id);
-
-        const destinationContainer = findContainer(containers, overId);
-        const originContainerId = dragOriginRef.current;
-        const destinationContainerId = destinationContainer?.id ?? null;
-
-        setContainers((previous) => {
-            const activeContainer = findContainer(previous, activeId);
-            const overContainer = findContainer(previous, overId);
-            if (!activeContainer || !overContainer) return previous;
-
-            if (activeContainer.id !== overContainer.id) {
-                return previous;
-            }
-
-            const activeIndex = activeContainer.items.findIndex((item) => item.id === activeId);
-            const overIndex = activeContainer.items.findIndex((item) => item.id === overId);
-            if (activeIndex < 0 || overIndex < 0 || activeIndex === overIndex) return previous;
-
-            const next = previous.map((container) => ({ ...container, items: [...container.items] }));
-            const target = next.find((container) => container.id === activeContainer.id);
-            if (!target) return previous;
-
-            const [moved] = target.items.splice(activeIndex, 1);
-            target.items.splice(overIndex, 0, moved);
-            return next;
-        });
-
-        if (
-            originContainerId &&
-            destinationContainerId &&
-            originContainerId !== destinationContainerId
-        ) {
-            try {
-                await onStatusChange(activeId, destinationContainerId as ApiLeadStatus);
-            } catch {
-                setContainers(initialContainers);
-            }
+        // Read where the item actually landed (handleDragOver already moved it in state)
+        const destinationContainer = findContainer(containersRef.current, activeId);
+        if (!destinationContainer) {
+            applyContainers(initialContainers);
+            return;
         }
 
-        dragOriginRef.current = null;
+        const destinationContainerId = destinationContainer.id;
+
+        if (originContainerId === destinationContainerId) {
+            // Same column: handle reordering
+            const overId = String(over.id);
+            applyContainers((previous) => {
+                const activeContainer = findContainer(previous, activeId);
+                const overContainer = findContainer(previous, overId);
+                if (!activeContainer || !overContainer) return previous;
+                if (activeContainer.id !== overContainer.id) return previous;
+
+                const activeIndex = activeContainer.items.findIndex((item) => item.id === activeId);
+                const overIndex = activeContainer.items.findIndex((item) => item.id === overId);
+                if (activeIndex < 0 || overIndex < 0 || activeIndex === overIndex) return previous;
+
+                const next = previous.map((container) => ({ ...container, items: [...container.items] }));
+                const target = next.find((container) => container.id === activeContainer.id);
+                if (!target) return previous;
+
+                const [moved] = target.items.splice(activeIndex, 1);
+                target.items.splice(overIndex, 0, moved);
+                return next;
+            });
+            return;
+        }
+
+        // Cross-column: optimistic state is already applied; call the API
+        try {
+            await onStatusChange(activeId, destinationContainerId as ApiLeadStatus);
+        } catch {
+            // Revert on failure
+            applyContainers(initialContainers);
+        }
     }
 
     return (
@@ -295,7 +421,15 @@ function KanbanBoard({
             >
                 <div className="flex gap-3 min-w-max pb-1">
                     {containers.map((container) => (
-                        <LeadColumn key={container.id} container={container} disabled={readOnly} />
+                        <LeadColumn
+                            key={container.id}
+                            container={container}
+                            disabled={readOnly}
+                            onAddClick={() => onAddLeadClick?.(container.id as ApiLeadStatus)}
+                            onEditLeadClick={onEditLeadClick}
+                            companyUsers={companyUsers}
+                            onAssigneeChange={onAssigneeChange}
+                        />
                     ))}
                 </div>
 
@@ -319,6 +453,9 @@ export function CrmKanbanPage({
 
     const [search, setSearch] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [defaultStatus, setDefaultStatus] = useState<ApiLeadStatus>("new");
+    const [editingLead, setEditingLead] = useState<LeadApiItem | null>(null);
 
     useEffect(() => {
         const timeout = setTimeout(() => {
@@ -348,19 +485,38 @@ export function CrmKanbanPage({
 
     const updateLeadMutation = useUpdateLead(undefined, apiBasePath);
 
-    async function persistStatusChange(leadId: string, status: ApiLeadStatus) {
+    const { data: companyUsers = [] } = useInternalUsers({
+        company_id: companyId ?? undefined,
+    });
+
+    const handleAssigneeChange = async (leadId: string, assigneeId: string) => {
+        if (!companyId) return;
+        
         try {
             await updateLeadMutation.mutateAsync({
                 leadId,
                 payload: {
-                    company_id: companyId ?? undefined,
-                    status,
-                },
+                    company_id: companyId,
+                    assigned_to_user_id: assigneeId ? Number(assigneeId) : null,
+                }
             });
+            toast.success("Assignee updated successfully");
         } catch {
-            toast.error("Could not update lead status. Re-syncing board...");
+            toast.error("Failed to update assignee");
+        }
+    };
+
+    async function persistStatusChange(leadId: string, status: ApiLeadStatus) {
+        try {
+            await updateLeadMutation.mutateAsync({
+                leadId,
+                payload: { company_id: companyId ?? "", status },
+            });
+            toast.success("Lead status updated");
             await refetch();
-            throw new Error("Lead status update failed");
+        } catch {
+            toast.error("Could not update lead status. Reverting...");
+            throw new Error("status update failed");
         }
     }
 
@@ -387,7 +543,13 @@ export function CrmKanbanPage({
                 </div>
 
                 {!readOnly && (
-                    <button className="flex items-center gap-2 px-6 py-3 bg-[#0B1215] text-white rounded-[14px] text-[13px] font-black hover:opacity-90 transition-all shadow-lg">
+                    <button
+                        onClick={() => {
+                            setDefaultStatus("new");
+                            setIsAddModalOpen(true);
+                        }}
+                        className="flex items-center gap-2 px-6 py-3 bg-[#0B1215] text-white rounded-[14px] text-[13px] font-black hover:opacity-90 transition-all shadow-lg cursor-pointer"
+                    >
                         Add New Leads
                         <Plus size={15} />
                     </button>
@@ -403,9 +565,37 @@ export function CrmKanbanPage({
                         initialContainers={initialContainers}
                         readOnly={readOnly}
                         onStatusChange={persistStatusChange}
+                        onAddLeadClick={(status) => {
+                            setDefaultStatus(status);
+                            setIsAddModalOpen(true);
+                        }}
+                        onEditLeadClick={(leadId) => {
+                            const lead = data?.leads.find((l) => String(l.id) === leadId);
+                            if (lead) {
+                                setEditingLead(lead);
+                            }
+                        }}
+                        companyUsers={companyUsers}
+                        onAssigneeChange={handleAssigneeChange}
                     />
                 )}
             </div>
+
+            {isAddModalOpen && (
+                <AddLeadModal
+                    onClose={() => setIsAddModalOpen(false)}
+                    apiBasePath={apiBasePath}
+                    defaultStatus={defaultStatus}
+                />
+            )}
+
+            {editingLead && (
+                <AddLeadModal
+                    lead={editingLead}
+                    onClose={() => setEditingLead(null)}
+                    apiBasePath={apiBasePath}
+                />
+            )}
         </div>
     );
 }
