@@ -79,7 +79,7 @@ export function TopCustomers() {
   }));
 
   return (
-    <div className="bg-[#09232D] rounded-[20px] p-6 flex flex-col h-min shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
+    <div className="bg-[#09232D] rounded-[20px] p-4 md:p-5 lg:p-6 flex flex-col w-full lg:w-80.75 h-auto lg:h-114 shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
       <div className="flex justify-between items-center mb-2">
         <h3 className="text-white font-medium text-[14px]">Top Leads</h3>
         <FilterSelect
@@ -90,7 +90,7 @@ export function TopCustomers() {
       </div>
 
       {/* Radial Bar Chart */}
-      <div className="relative h-66 w-full mx-auto">
+      <div className="relative h-48 md:h-56 lg:h-66 w-full mx-auto">
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <span className="text-[24px] font-bold text-white mt-1">
             {conversionRate}%
@@ -123,7 +123,7 @@ export function TopCustomers() {
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center justify-center gap-3 mb-6.25">
+      <div className="flex flex-wrap items-center justify-center gap-3 mb-3 md:mb-4 lg:mb-6.25">
         {(legendItems.length ? legendItems : chartData).map((item) => (
           <div key={item.name} className="flex items-center gap-2.5">
             <div
