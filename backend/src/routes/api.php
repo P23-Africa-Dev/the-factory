@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\Api\V1\Agent\AgentLoginController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceAgentController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceManagementController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceSettingsController;
 use App\Http\Controllers\Api\V1\Auth\AdminLoginController;
 use App\Http\Controllers\Api\V1\Auth\ForgotPasswordController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
@@ -198,6 +201,20 @@ Route::middleware('auth:sanctum')->group(function (): void {
                     ->name('update');
             });
 
+            Route::prefix('attendance')->name('attendance.')->group(function (): void {
+                Route::get('/settings', [AttendanceSettingsController::class, 'show'])->name('settings.show');
+                Route::put('/settings', [AttendanceSettingsController::class, 'update'])
+                    ->middleware('throttle:20,1')
+                    ->name('settings.update');
+                Route::get('/metrics', [AttendanceManagementController::class, 'metrics'])->name('metrics');
+                Route::get('/records', [AttendanceManagementController::class, 'index'])->name('records.index');
+                Route::get('/payroll-summaries', [AttendanceManagementController::class, 'payrollSummaries'])
+                    ->name('payroll-summaries.index');
+                Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
+                    ->middleware('throttle:20,1')
+                    ->name('payroll-summaries.generate');
+            });
+
             Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
                 Route::get('/', [InternalUserController::class, 'index'])
                     ->middleware('throttle:30,1')
@@ -288,6 +305,20 @@ Route::middleware('auth:sanctum')->group(function (): void {
                     ->name('leads.activities.store');
             });
 
+            Route::prefix('attendance')->name('attendance.')->group(function (): void {
+                Route::get('/today', [AttendanceAgentController::class, 'today'])->name('today');
+                Route::post('/clock-in', [AttendanceAgentController::class, 'clockIn'])
+                    ->middleware('throttle:20,1')
+                    ->name('clock-in');
+                Route::post('/clock-out', [AttendanceAgentController::class, 'clockOut'])
+                    ->middleware('throttle:20,1')
+                    ->name('clock-out');
+                Route::get('/history', [AttendanceAgentController::class, 'history'])->name('history');
+                Route::get('/stats', [AttendanceAgentController::class, 'stats'])->name('stats');
+                Route::get('/payroll-summary', [AttendanceAgentController::class, 'payrollSummary'])
+                    ->name('payroll-summary');
+            });
+
             Route::get('/dashboard/overview', DashboardOverviewController::class)
                 ->name('dashboard.overview');
 
@@ -350,6 +381,46 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::put('/{payrollSetting}', [PayrollController::class, 'update'])
             ->middleware('throttle:20,1')
             ->name('update');
+    });
+
+    Route::prefix('attendance')->name('attendance.')->group(function (): void {
+        Route::get('/settings', [AttendanceSettingsController::class, 'show'])
+            ->middleware('access.role:management')
+            ->name('settings.show');
+        Route::put('/settings', [AttendanceSettingsController::class, 'update'])
+            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->name('settings.update');
+        Route::get('/metrics', [AttendanceManagementController::class, 'metrics'])
+            ->middleware('access.role:management')
+            ->name('metrics');
+        Route::get('/records', [AttendanceManagementController::class, 'index'])
+            ->middleware('access.role:management')
+            ->name('records.index');
+        Route::get('/payroll-summaries', [AttendanceManagementController::class, 'payrollSummaries'])
+            ->middleware('access.role:management')
+            ->name('payroll-summaries.index');
+        Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
+            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->name('payroll-summaries.generate');
+
+        Route::get('/today', [AttendanceAgentController::class, 'today'])
+            ->middleware('access.role:agent')
+            ->name('today');
+        Route::post('/clock-in', [AttendanceAgentController::class, 'clockIn'])
+            ->middleware(['access.role:agent', 'throttle:20,1'])
+            ->name('clock-in');
+        Route::post('/clock-out', [AttendanceAgentController::class, 'clockOut'])
+            ->middleware(['access.role:agent', 'throttle:20,1'])
+            ->name('clock-out');
+        Route::get('/history', [AttendanceAgentController::class, 'history'])
+            ->middleware('access.role:agent')
+            ->name('history');
+        Route::get('/stats', [AttendanceAgentController::class, 'stats'])
+            ->middleware('access.role:agent')
+            ->name('stats');
+        Route::get('/payroll-summary', [AttendanceAgentController::class, 'payrollSummary'])
+            ->middleware('access.role:agent')
+            ->name('payroll-summary');
     });
 
     Route::prefix('internal-users')->name('internal-users.')->group(function (): void {

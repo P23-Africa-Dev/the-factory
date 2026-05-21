@@ -35,3 +35,9 @@ Schedule::command('tracking:prune')->dailyAt('02:00');
 
 // Dispatch due soon, overdue, and project deadline notification reminders.
 Schedule::command('notifications:dispatch-scheduled')->everyFifteenMinutes();
+
+// Auto close attendance records at/after configured company closing times.
+Schedule::command('attendance:auto-clockout')->everyTenMinutes();
+
+// Generate attendance payroll summaries for the previous month.
+Schedule::command('attendance:generate-monthly-payroll')->monthlyOn(1, '00:30');

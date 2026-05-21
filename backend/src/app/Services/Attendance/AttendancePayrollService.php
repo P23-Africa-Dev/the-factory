@@ -88,6 +88,13 @@ class AttendancePayrollService
         $anchor = $anchorDate?->copy() ?? now();
         $period = $anchor->copy()->subMonthNoOverflow();
 
+        return $this->generateForAllCompaniesPeriod((int) $period->year, (int) $period->month);
+    }
+
+    public function generateForAllCompaniesPeriod(int $year, int $month): int
+    {
+        $period = Carbon::create($year, $month, 1);
+
         $companies = PayrollSetting::query()->pluck('company_id')->unique()->values();
         $generated = 0;
 

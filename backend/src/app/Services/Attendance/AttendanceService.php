@@ -14,7 +14,6 @@ use App\Models\User;
 use App\Services\Notification\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\Paginator;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -142,7 +141,7 @@ class AttendanceService
             ]);
         }
 
-        [, , $closingTime] = $this->scheduleBoundsForDate($clockOutAt, $setting);
+        [,, $closingTime] = $this->scheduleBoundsForDate($clockOutAt, $setting);
 
         if ($clockOutAt->gt($closingTime)) {
             $this->notifyAttendanceIssue($user, (int) $context->company->id, 'clock_out_after_close', 'Clock-out is closed for the day.');
@@ -458,7 +457,7 @@ class AttendanceService
 
             foreach ($openRecords as $record) {
                 $attendanceDate = Carbon::parse((string) $record->attendance_date);
-                [, , $closingTime] = $this->scheduleBoundsForDate($attendanceDate, $setting);
+                [,, $closingTime] = $this->scheduleBoundsForDate($attendanceDate, $setting);
 
                 if (now()->lt($closingTime)) {
                     continue;
@@ -500,7 +499,7 @@ class AttendanceService
                 continue;
             }
 
-            [, , $todayClosing] = $this->scheduleBoundsForDate($today, $setting);
+            [,, $todayClosing] = $this->scheduleBoundsForDate($today, $setting);
             if (now()->lt($todayClosing)) {
                 continue;
             }
