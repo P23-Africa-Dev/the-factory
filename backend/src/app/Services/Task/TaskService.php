@@ -22,9 +22,28 @@ use Throwable;
 
 class TaskService
 {
-    private const INDEX_RELATIONS = ['project', 'creator', 'assignedAgent', 'currentAssignees'];
+    private const INDEX_RELATIONS = [
+        'project',
+        'creator',
+        'assignedAgent',
+        'currentAssignees',
+        'latestReassignment.requestedBy',
+        'latestReassignment.fromUser',
+        'latestReassignment.toUser',
+        'latestReassignment.respondedBy',
+    ];
 
-    private const DETAIL_RELATIONS = ['project', 'creator', 'assignedAgent', 'currentAssignees', 'proofs'];
+    private const DETAIL_RELATIONS = [
+        'project',
+        'creator',
+        'assignedAgent',
+        'currentAssignees',
+        'latestReassignment.requestedBy',
+        'latestReassignment.fromUser',
+        'latestReassignment.toUser',
+        'latestReassignment.respondedBy',
+        'proofs',
+    ];
 
     public function __construct(private readonly TaskAccessService $accessService) {}
 
@@ -54,7 +73,7 @@ class TaskService
         }
 
         if ($context->isAgent()) {
-            // Agents see tasks they are currently assigned to (either via assigned_agent_id or task_assignments)
+            // Agents see currently owned tasks and historical tasks they previously owned.
             $query->where(function (Builder $q) use ($user): void {
                 $q->where('assigned_agent_id', $user->id)
                     ->orWhereExists(function ($sub) use ($user): void {
@@ -63,6 +82,12 @@ class TaskService
                             ->whereColumn('task_assignments.task_id', 'tasks.id')
                             ->where('task_assignments.assigned_agent_id', $user->id)
                             ->where('task_assignments.is_current', true);
+                    })
+                    ->orWhereExists(function ($sub) use ($user): void {
+                        $sub->selectRaw('1')
+                            ->from('task_assignments as historical_task_assignments')
+                            ->whereColumn('historical_task_assignments.task_id', 'tasks.id')
+                            ->where('historical_task_assignments.assigned_agent_id', $user->id);
                     });
             });
         }
@@ -366,7 +391,7 @@ class TaskService
         $context = $this->accessService->resolve($user, $companyId);
         $this->assertTaskIntegrityInCompany($task, $context->company->id);
 
-        if ($context->isAgent() && ! $this->isUserAssignedToTask($task, $user)) {
+        if ($context->isAgent() && ! $this->isUserRelatedToTask($task, $user)) {
             throw ValidationException::withMessages([
                 'authorization' => ['You can only view tasks assigned to you.'],
             ]);
@@ -437,13 +462,13 @@ class TaskService
             ]);
         }
 
-        // Validate assignee only when one is set
+        // Validate assignee only when one is set.
         if ($task->assigned_agent_id !== null) {
             $assignedMembership = $this->companyMembership($companyId, (int) $task->assigned_agent_id);
 
-            if (! $assignedMembership || (string) $assignedMembership->role !== 'agent') {
+            if (! $assignedMembership || ! in_array((string) $assignedMembership->role, ['agent', 'supervisor'], true)) {
                 throw ValidationException::withMessages([
-                    'task' => ['Task assignee is not a valid agent in the active company context.'],
+                    'task' => ['Task assignee is not a valid assignable user in the active company context.'],
                 ]);
             }
         }
@@ -495,14 +520,14 @@ class TaskService
                     ->whereColumn('creator_memberships.user_id', 'tasks.created_by_user_id');
             })
             ->where(function (Builder $query): void {
-                // Allow unassigned tasks OR tasks with a valid current agent in the company
+                // Allow unassigned tasks OR tasks with a valid current assignable user in the company.
                 $query->whereNull('tasks.assigned_agent_id')
                     ->orWhereExists(function ($sub): void {
                         $sub->selectRaw('1')
                             ->from('company_users as assignee_memberships')
                             ->whereColumn('assignee_memberships.company_id', 'tasks.company_id')
                             ->whereColumn('assignee_memberships.user_id', 'tasks.assigned_agent_id')
-                            ->where('assignee_memberships.role', 'agent');
+                            ->whereIn('assignee_memberships.role', ['agent', 'supervisor']);
                     });
             })
             ->where(function (Builder $query): void {
@@ -533,6 +558,17 @@ class TaskService
         return $task->assignments()
             ->where('assigned_agent_id', $user->id)
             ->where('is_current', true)
+            ->exists();
+    }
+
+    private function isUserRelatedToTask(Task $task, User $user): bool
+    {
+        if ($this->isUserAssignedToTask($task, $user)) {
+            return true;
+        }
+
+        return $task->assignments()
+            ->where('assigned_agent_id', $user->id)
             ->exists();
     }
 

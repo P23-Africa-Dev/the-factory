@@ -118,4 +118,14 @@ class Task extends Model
     {
         return $this->hasMany(TaskLocationPoint::class);
     }
+
+    public function reassignments(): HasMany
+    {
+        return $this->hasMany(TaskReassignment::class);
+    }
+
+    public function latestReassignment(): HasOne
+    {
+        return $this->hasOne(TaskReassignment::class)->latestOfMany('id');
+    }
 }

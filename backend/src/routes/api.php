@@ -142,6 +142,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
                 Route::post('/', [TaskController::class, 'store'])
                     ->middleware('throttle:30,1')
                     ->name('store');
+                Route::get('/reassignments/inbox', [TaskAssignmentController::class, 'inbox'])->name('reassignments.inbox');
+                Route::post('/reassignments/{reassignment}/accept', [TaskAssignmentController::class, 'accept'])
+                    ->name('reassignments.accept');
+                Route::post('/reassignments/{reassignment}/reject', [TaskAssignmentController::class, 'reject'])
+                    ->name('reassignments.reject');
                 Route::get('/{task}', [TaskController::class, 'show'])->name('show');
                 Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
                 Route::patch('/{task}/assign', [TaskAssignmentController::class, 'update'])->name('assign');
@@ -277,6 +282,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/', [TaskController::class, 'store'])
             ->middleware('throttle:30,1')
             ->name('store');
+        Route::get('/reassignments/inbox', [TaskAssignmentController::class, 'inbox'])->name('reassignments.inbox');
+        Route::post('/reassignments/{reassignment}/accept', [TaskAssignmentController::class, 'accept'])
+            ->name('reassignments.accept');
+        Route::post('/reassignments/{reassignment}/reject', [TaskAssignmentController::class, 'reject'])
+            ->name('reassignments.reject');
         Route::get('/{task}', [TaskController::class, 'show'])->name('show');
         Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
         Route::post('/{task}/start', [TaskTrackingController::class, 'start'])->name('start');
