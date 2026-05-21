@@ -19,6 +19,7 @@ import {
     closestCorners,
     useSensor,
     useSensors,
+    useDroppable,
 } from "@dnd-kit/core";
 import {
     SortableContext,
@@ -209,9 +210,9 @@ function LeadColumn({
     companyUsers?: { id: number; name: string }[];
     onAssigneeChange?: (leadId: string, assigneeId: string) => void;
 }) {
-    // For the UI showcase, we provide a placeholder total value.
-    // Real implementation would calculate this from container.items if values exist.
     const totalValue = "N 342,000";
+    // Register the column body as a droppable so empty columns accept cards
+    const { setNodeRef: setDropRef } = useDroppable({ id: container.id });
 
     return (
         <div className="flex flex-col w-[320px] shrink-0 relative mb-4">
@@ -233,8 +234,11 @@ function LeadColumn({
                 </div>
             </div>
 
-            {/* White overlapping body containing the cards */}
-            <div className="bg-white relative mt-[60px] rounded-[40px] px-4 pt-6 pb-4 min-h-[400px] border border-gray-100 shadow-[0px_4px_16px_rgba(0,0,0,0.02)] flex flex-col">
+            {/* White overlapping body — also the droppable target for this column */}
+            <div
+                ref={setDropRef}
+                className="bg-white relative mt-[60px] rounded-[40px] px-4 pt-6 pb-4 min-h-[400px] border border-gray-100 shadow-[0px_4px_16px_rgba(0,0,0,0.02)] flex flex-col"
+            >
                 <div className="flex-1">
                     <SortableContext
                         items={container.items.map((item) => item.id)}
@@ -286,7 +290,17 @@ function KanbanBoard({
 }) {
     const [containers, setContainers] = useState<DndContainer[]>(initialContainers);
     const [activeItem, setActiveItem] = useState<DndItem | null>(null);
+    // Keep a ref always in sync with state so async drag handlers read current data
+    const containersRef = useRef<DndContainer[]>(initialContainers);
     const dragOriginRef = useRef<string | null>(null);
+
+    function applyContainers(updater: DndContainer[] | ((prev: DndContainer[]) => DndContainer[])) {
+        setContainers((prev) => {
+            const next = typeof updater === "function" ? updater(prev) : updater;
+            containersRef.current = next;
+            return next;
+        });
+    }
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -297,7 +311,7 @@ function KanbanBoard({
         if (readOnly) return;
 
         const itemId = String(event.active.id);
-        const container = findContainer(containers, itemId);
+        const container = findContainer(containersRef.current, itemId);
         dragOriginRef.current = container?.id ?? null;
         const item = container?.items.find((entry) => entry.id === itemId) ?? null;
         setActiveItem(item);
@@ -312,7 +326,7 @@ function KanbanBoard({
         const activeId = String(active.id);
         const overId = String(over.id);
 
-        setContainers((previous) => {
+        applyContainers((previous) => {
             const activeContainer = findContainer(previous, activeId);
             const overContainer = findContainer(previous, overId);
             if (!activeContainer || !overContainer) return previous;
@@ -345,53 +359,55 @@ function KanbanBoard({
         const { active, over } = event;
         setActiveItem(null);
 
-        if (!over) {
-            dragOriginRef.current = null;
+        const activeId = String(active.id);
+        const originContainerId = dragOriginRef.current;
+        dragOriginRef.current = null;
+
+        if (!over || !originContainerId) {
+            applyContainers(initialContainers);
             return;
         }
 
-        const activeId = String(active.id);
-        const overId = String(over.id);
-
-        const destinationContainer = findContainer(containers, overId);
-        const originContainerId = dragOriginRef.current;
-        const destinationContainerId = destinationContainer?.id ?? null;
-
-        setContainers((previous) => {
-            const activeContainer = findContainer(previous, activeId);
-            const overContainer = findContainer(previous, overId);
-            if (!activeContainer || !overContainer) return previous;
-
-            if (activeContainer.id !== overContainer.id) {
-                return previous;
-            }
-
-            const activeIndex = activeContainer.items.findIndex((item) => item.id === activeId);
-            const overIndex = activeContainer.items.findIndex((item) => item.id === overId);
-            if (activeIndex < 0 || overIndex < 0 || activeIndex === overIndex) return previous;
-
-            const next = previous.map((container) => ({ ...container, items: [...container.items] }));
-            const target = next.find((container) => container.id === activeContainer.id);
-            if (!target) return previous;
-
-            const [moved] = target.items.splice(activeIndex, 1);
-            target.items.splice(overIndex, 0, moved);
-            return next;
-        });
-
-        if (
-            originContainerId &&
-            destinationContainerId &&
-            originContainerId !== destinationContainerId
-        ) {
-            try {
-                await onStatusChange(activeId, destinationContainerId as ApiLeadStatus);
-            } catch {
-                setContainers(initialContainers);
-            }
+        // Read where the item actually landed (handleDragOver already moved it in state)
+        const destinationContainer = findContainer(containersRef.current, activeId);
+        if (!destinationContainer) {
+            applyContainers(initialContainers);
+            return;
         }
 
-        dragOriginRef.current = null;
+        const destinationContainerId = destinationContainer.id;
+
+        if (originContainerId === destinationContainerId) {
+            // Same column: handle reordering
+            const overId = String(over.id);
+            applyContainers((previous) => {
+                const activeContainer = findContainer(previous, activeId);
+                const overContainer = findContainer(previous, overId);
+                if (!activeContainer || !overContainer) return previous;
+                if (activeContainer.id !== overContainer.id) return previous;
+
+                const activeIndex = activeContainer.items.findIndex((item) => item.id === activeId);
+                const overIndex = activeContainer.items.findIndex((item) => item.id === overId);
+                if (activeIndex < 0 || overIndex < 0 || activeIndex === overIndex) return previous;
+
+                const next = previous.map((container) => ({ ...container, items: [...container.items] }));
+                const target = next.find((container) => container.id === activeContainer.id);
+                if (!target) return previous;
+
+                const [moved] = target.items.splice(activeIndex, 1);
+                target.items.splice(overIndex, 0, moved);
+                return next;
+            });
+            return;
+        }
+
+        // Cross-column: optimistic state is already applied; call the API
+        try {
+            await onStatusChange(activeId, destinationContainerId as ApiLeadStatus);
+        } catch {
+            // Revert on failure
+            applyContainers(initialContainers);
+        }
     }
 
     return (
@@ -491,32 +507,16 @@ export function CrmKanbanPage({
     };
 
     async function persistStatusChange(leadId: string, status: ApiLeadStatus) {
-        const lead = data?.leads.find((l) => String(l.id) === leadId);
-        if (!lead) return;
-
         try {
             await updateLeadMutation.mutateAsync({
                 leadId,
-                payload: {
-                    company_id: companyId ?? "",
-                    name: lead.name,
-                    email: lead.email,
-                    phone: lead.phone,
-                    location: lead.location,
-                    source: lead.source,
-                    status,
-                    priority: lead.priority ?? "medium",
-                    assigned_to_user_id: lead.assigned_to_user_id,
-                    next_action: lead.next_action,
-                    last_interaction: lead.last_interaction,
-                    last_interaction_at: lead.last_interaction_at,
-                },
+                payload: { company_id: companyId ?? "", status },
             });
-            toast.success("Lead status updated successfully");
-        } catch {
-            toast.error("Could not update lead status. Re-syncing board...");
+            toast.success("Lead status updated");
             await refetch();
-            throw new Error("Lead status update failed");
+        } catch {
+            toast.error("Could not update lead status. Reverting...");
+            throw new Error("status update failed");
         }
     }
 
