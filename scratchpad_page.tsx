@@ -724,14 +724,14 @@ function EmailPanel({ leadName }: { leadName: string }) {
 
 /* ─── Notes Panel ─────────────────────────────────────── */
 
-function NotesPanel({ leadId, notes = [], basePath = "/admin" }: { leadId: string | number; notes: LeadNote[]; basePath?: "/admin" | "/agent" }) {
+function NotesPanel({ leadId, notes = [] }: { leadId: string | number; notes: LeadNote[] }) {
   const [noteContent, setNoteContent] = useState("");
   const { mutate: addNote, isPending } = useAddLeadNote({
     onSuccess: () => {
       setNoteContent("");
       toast.success("Note added successfully");
     }
-  }, basePath);
+  });
 
   const handleAddNote = () => {
     if (!noteContent.trim()) return;
@@ -792,7 +792,7 @@ function NotesPanel({ leadId, notes = [], basePath = "/admin" }: { leadId: strin
 
 /* ─── Activities Panel ────────────────────────────────── */
 
-function ActivitiesPanel({ leadId, activities = [], basePath = "/admin" }: { leadId: string | number; activities: LeadActivity[]; basePath?: "/admin" | "/agent" }) {
+function ActivitiesPanel({ leadId, activities = [] }: { leadId: string | number; activities: LeadActivity[] }) {
   const [activityType, setActivityType] = useState("call");
   const [description, setDescription] = useState("");
   const { mutate: logActivity, isPending } = useAddLeadActivity({
@@ -800,7 +800,7 @@ function ActivitiesPanel({ leadId, activities = [], basePath = "/admin" }: { lea
       setDescription("");
       toast.success("Activity logged");
     }
-  }, basePath);
+  });
 
   const handleLogActivity = () => {
     if (!description.trim()) return;
@@ -883,7 +883,7 @@ function ActivitiesPanel({ leadId, activities = [], basePath = "/admin" }: { lea
 
 /* ─── Lead Interaction Panel (Tabs) ─────────────────────── */
 
-function LeadInteractionPanel({ leadId, leadName, notes, activities, basePath = "/admin" }: { leadId: string | number, leadName: string, notes: LeadNote[], activities: LeadActivity[], basePath?: "/admin" | "/agent" }) {
+function LeadInteractionPanel({ leadId, leadName, notes, activities }: { leadId: string | number, leadName: string, notes: LeadNote[], activities: LeadActivity[] }) {
   const [activeTab, setActiveTab] = useState<"emails" | "notes" | "activities">("emails");
 
   return (
@@ -911,8 +911,8 @@ function LeadInteractionPanel({ leadId, leadName, notes, activities, basePath = 
 
       <div className="flex-1 h-full min-h-0">
         {activeTab === "emails" && <EmailPanel leadName={leadName} />}
-        {activeTab === "notes" && <NotesPanel leadId={leadId} notes={notes} basePath={basePath} />}
-        {activeTab === "activities" && <ActivitiesPanel leadId={leadId} activities={activities} basePath={basePath} />}
+        {activeTab === "notes" && <NotesPanel leadId={leadId} notes={notes} />}
+        {activeTab === "activities" && <ActivitiesPanel leadId={leadId} activities={activities} />}
       </div>
     </div>
   );
@@ -1124,13 +1124,13 @@ export default function LeadDetailsPage() {
   const companyId = user?.active_company?.id;
   
   // Real data fetching
-  const { data: leadData, isLoading } = useLead(leadId, companyId, "/agent");
+  const { data: leadData, isLoading } = useLead(leadId, companyId, "/admin");
   const { mutate: updateLead, isPending: isUpdating } = useUpdateLead({
     onSuccess: () => {
       toast.success("Lead updated successfully");
       setIsEditing(false);
     }
-  }, "/agent");
+  });
 
   // Assignees list
   const { data: usersData } = useInternalUsers({ company_id: companyId });
@@ -1487,7 +1487,6 @@ export default function LeadDetailsPage() {
             leadName={leadData.name} 
             notes={leadData.notes || []} 
             activities={leadData.activities || []} 
-            basePath="/agent"
           />
         </div>
       </div>

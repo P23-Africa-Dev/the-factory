@@ -21,10 +21,18 @@ import {
   Star,
   Trash2,
   X,
+  FileText,
+  Activity,
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import PhoneNumberInput from "@/components/ui/phone-number-input";
+import { useLead, useUpdateLead, useAddLeadNote, useAddLeadActivity } from "@/hooks/use-crm";
+import { useInternalUsers } from "@/hooks/use-internal-users";
+import { useAuthStore } from "@/store/auth";
+import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
+import { ApiLeadStatus, ApiLeadPriority, LeadNote, LeadActivity } from "@/lib/api/crm";
 
 /* ─── Mock Lead Data ────────────────────────────────────── */
 
@@ -581,7 +589,7 @@ function EmailDetailView({
 
 /* ─── Email Communication Panel ─────────────────────────── */
 
-function EmailCommunicationPanel({ leadName }: { leadName: string }) {
+function EmailPanel({ leadName }: { leadName: string }) {
   const [emails, setEmails] = useState<EmailMessage[]>(INITIAL_EMAILS);
   const [view, setView] = useState<"list" | "compose" | "detail">("list");
   const [selectedEmail, setSelectedEmail] = useState<EmailMessage | null>(null);
@@ -708,6 +716,203 @@ function EmailCommunicationPanel({ leadName }: { leadName: string }) {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+
+/* ─── Notes Panel ─────────────────────────────────────── */
+
+function NotesPanel({ leadId, notes = [], basePath = "/admin" }: { leadId: string | number; notes: LeadNote[]; basePath?: "/admin" | "/agent" }) {
+  const [noteContent, setNoteContent] = useState("");
+  const { mutate: addNote, isPending } = useAddLeadNote({
+    onSuccess: () => {
+      setNoteContent("");
+      toast.success("Note added successfully");
+    }
+  }, basePath);
+
+  const handleAddNote = () => {
+    if (!noteContent.trim()) return;
+    addNote({ leadId, payload: { note: noteContent } });
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 min-h-[500px]">
+      <div className="flex items-center gap-3 sm:gap-4 mb-6 pb-4 border-b border-gray-100">
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-orange-50 flex items-center justify-center border border-orange-100 shadow-sm shrink-0">
+          <FileText size={18} className="text-orange-600" />
+        </div>
+        <div>
+          <h2 className="text-[16px] sm:text-[18px] font-semibold text-[#0B1215]">Notes</h2>
+          <p className="text-[10px] sm:text-[11px] text-gray-400 font-normal">{notes.length} note{notes.length !== 1 ? 's' : ''}</p>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto pr-2 space-y-4 mb-4">
+        {notes.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
+            <FileText size={40} className="mb-3 opacity-20" />
+            <p className="text-[14px] italic">No notes yet.</p>
+          </div>
+        ) : (
+          notes.map((note) => (
+            <div key={note.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[12px] font-semibold text-gray-700">{note.creator?.name || "System"}</span>
+                <span className="text-[10px] text-gray-400">
+                  {note.created_at ? new Date(note.created_at).toLocaleString() : ''}
+                </span>
+              </div>
+              <p className="text-[13px] text-gray-600 whitespace-pre-wrap leading-relaxed">{note.note}</p>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="mt-auto border-t border-gray-100 pt-4">
+        <textarea
+          value={noteContent}
+          onChange={(e) => setNoteContent(e.target.value)}
+          placeholder="Type a new note..."
+          className="w-full h-[100px] resize-none outline-none text-[13px] text-[#374151] placeholder:text-gray-300 bg-gray-50 border border-gray-200 rounded-xl p-3 mb-3"
+        />
+        <button
+          onClick={handleAddNote}
+          disabled={!noteContent.trim() || isPending}
+          className="w-full flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-[12px] text-[13px] font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isPending ? "Saving..." : "Add Note"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Activities Panel ────────────────────────────────── */
+
+function ActivitiesPanel({ leadId, activities = [], basePath = "/admin" }: { leadId: string | number; activities: LeadActivity[]; basePath?: "/admin" | "/agent" }) {
+  const [activityType, setActivityType] = useState("call");
+  const [description, setDescription] = useState("");
+  const { mutate: logActivity, isPending } = useAddLeadActivity({
+    onSuccess: () => {
+      setDescription("");
+      toast.success("Activity logged");
+    }
+  }, basePath);
+
+  const handleLogActivity = () => {
+    if (!description.trim()) return;
+    logActivity({
+      leadId,
+      payload: { type: activityType, description, happened_at: new Date().toISOString() }
+    });
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 min-h-[500px]">
+      <div className="flex items-center gap-3 sm:gap-4 mb-6 pb-4 border-b border-gray-100">
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100 shadow-sm shrink-0">
+          <Activity size={18} className="text-blue-600" />
+        </div>
+        <div>
+          <h2 className="text-[16px] sm:text-[18px] font-semibold text-[#0B1215]">Activities</h2>
+          <p className="text-[10px] sm:text-[11px] text-gray-400 font-normal">{activities.length} activit{activities.length !== 1 ? 'ies' : 'y'}</p>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto pr-2 space-y-4 mb-4 relative before:absolute before:inset-y-0 before:left-[19px] before:w-px before:bg-gray-200">
+        {activities.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 relative z-10 bg-white">
+            <Activity size={40} className="mb-3 opacity-20" />
+            <p className="text-[14px] italic">No activities yet.</p>
+          </div>
+        ) : (
+          activities.map((act) => (
+            <div key={act.id} className="relative z-10 flex gap-4">
+              <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center shrink-0 shadow-sm">
+                <Activity size={16} className="text-gray-500" />
+              </div>
+              <div className="flex-1 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[13px] font-semibold text-gray-700 capitalize">{act.type.replace('_', ' ')}</span>
+                  <span className="text-[10px] text-gray-400">
+                    {act.happened_at ? new Date(act.happened_at).toLocaleString() : ''}
+                  </span>
+                </div>
+                <p className="text-[12px] text-gray-600 font-medium mb-1">By {act.creator?.name || "System"}</p>
+                {act.description && <p className="text-[12px] text-gray-500">{act.description}</p>}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="mt-auto border-t border-gray-100 pt-4 space-y-3">
+        <select
+          value={activityType}
+          onChange={(e) => setActivityType(e.target.value)}
+          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-500"
+        >
+          <option value="call">Call</option>
+          <option value="meeting">Meeting</option>
+          <option value="email">Email Sent</option>
+          <option value="note">Note Added</option>
+          <option value="status_change">Status Change</option>
+          <option value="other">Other</option>
+        </select>
+        <input
+          type="text"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Activity description..."
+          className="w-full outline-none text-[13px] text-[#374151] placeholder:text-gray-300 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5"
+        />
+        <button
+          onClick={handleLogActivity}
+          disabled={!description.trim() || isPending}
+          className="w-full flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-[12px] text-[13px] font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isPending ? "Logging..." : "Log Activity"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Lead Interaction Panel (Tabs) ─────────────────────── */
+
+function LeadInteractionPanel({ leadId, leadName, notes, activities, basePath = "/admin" }: { leadId: string | number, leadName: string, notes: LeadNote[], activities: LeadActivity[], basePath?: "/admin" | "/agent" }) {
+  const [activeTab, setActiveTab] = useState<"emails" | "notes" | "activities">("emails");
+
+  return (
+    <div className="flex-1 flex flex-col h-full min-h-[500px]">
+      <div className="flex items-center gap-2 mb-4 bg-gray-100/50 p-1 rounded-2xl w-fit">
+        <button
+          onClick={() => setActiveTab("emails")}
+          className={`px-5 py-2 rounded-[14px] text-[12px] font-semibold transition-all ${activeTab === "emails" ? "bg-white text-[#0B1215] shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+        >
+          Emails
+        </button>
+        <button
+          onClick={() => setActiveTab("notes")}
+          className={`px-5 py-2 rounded-[14px] text-[12px] font-semibold transition-all ${activeTab === "notes" ? "bg-white text-[#0B1215] shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+        >
+          Notes
+        </button>
+        <button
+          onClick={() => setActiveTab("activities")}
+          className={`px-5 py-2 rounded-[14px] text-[12px] font-semibold transition-all ${activeTab === "activities" ? "bg-white text-[#0B1215] shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+        >
+          Activities
+        </button>
+      </div>
+
+      <div className="flex-1 h-full min-h-0">
+        {activeTab === "emails" && <EmailPanel leadName={leadName} />}
+        {activeTab === "notes" && <NotesPanel leadId={leadId} notes={notes} basePath={basePath} />}
+        {activeTab === "activities" && <ActivitiesPanel leadId={leadId} activities={activities} basePath={basePath} />}
       </div>
     </div>
   );
@@ -908,24 +1113,86 @@ function MapPreview({ name }: { name: string }) {
   );
 }
 
+
 /* ─── Page Component ────────────────────────────────────── */
 
 export default function LeadDetailsPage() {
   const router = useRouter();
   const params = useParams();
+  const leadId = params.id as string;
+  const { user } = useAuthStore();
+  const companyId = user?.active_company?.id;
+  
+  // Real data fetching
+  const { data: leadData, isLoading } = useLead(leadId, companyId, "/admin");
+  const { mutate: updateLead, isPending: isUpdating } = useUpdateLead({
+    onSuccess: () => {
+      toast.success("Lead updated successfully");
+      setIsEditing(false);
+    }
+  });
+
+  // Assignees list
+  const { data: usersData } = useInternalUsers({ company_id: companyId });
+  const internalUsers = usersData || [];
+  
   const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState<Partial<Record<string, any>>>({});
 
-  // Editable fields
-  const [lead, setLead] = useState<LeadDetail>(MOCK_LEAD);
+  // Initialize edit form when entering edit mode
+  useEffect(() => {
+    if (isEditing && leadData) {
+      setEditForm({
+        name: leadData.name || "",
+        phone: leadData.phone || "",
+        location: leadData.location || "",
+        status: leadData.status || "new",
+        source: leadData.source || "",
+        priority: leadData.priority || "medium",
+        assigned_to_user_id: leadData.assigned_to_user_id || "",
+        next_action: leadData.next_action || "",
+      });
+    }
+  }, [isEditing, leadData]);
 
-  const updateField = (field: keyof LeadDetail, value: string) => {
-    setLead((prev) => ({ ...prev, [field]: value }));
+  const updateField = (field: string, value: any) => {
+    setEditForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSave = () => {
-    // In a real app, this would call an API
-    setIsEditing(false);
+    updateLead({
+      leadId,
+      payload: {
+        ...editForm,
+        assigned_to_user_id: editForm.assigned_to_user_id ? Number(editForm.assigned_to_user_id) : null
+      }
+    });
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#F4F7F9] p-4 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-[#0B1215]/20 border-t-[#0B1215] rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!leadData) {
+    return (
+      <div className="min-h-screen bg-[#F4F7F9] p-4 flex flex-col items-center justify-center">
+        <h2 className="text-xl font-bold text-gray-800">Lead not found</h2>
+        <button onClick={() => router.back()} className="mt-4 text-blue-500 hover:underline">Go back</button>
+      </div>
+    );
+  }
+
+  const assignOptions = [
+    { label: "Unassigned", color: "#6B7280", value: "" },
+    ...internalUsers.map(u => ({ label: u.name, color: "#3B82F6", value: String(u.id) }))
+  ];
+
+  const currentAssignee = internalUsers.find(u => u.id === leadData.assigned_to_user_id);
+  const currentAssigneeLabel = currentAssignee ? currentAssignee.name : "Unassigned";
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-10">
@@ -957,11 +1224,12 @@ export default function LeadDetailsPage() {
             {isEditing ? (
               <button
                 onClick={handleSave}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-[14px] text-[13px] font-bold hover:opacity-90 transition-all shadow-lg"
+                disabled={isUpdating}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-[14px] text-[13px] font-bold hover:opacity-90 transition-all shadow-lg disabled:opacity-70"
                 id="save-lead-btn"
               >
-                <Save size={16} />
-                Save
+                {isUpdating ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={16} />}
+                {isUpdating ? "Saving..." : "Save"}
               </button>
             ) : (
               <button
@@ -979,7 +1247,7 @@ export default function LeadDetailsPage() {
         {/* ── Main Content Grid ───────────────────────────── */}
         <div className="flex flex-col lg:flex-row gap-8 items-stretch">
           {/* ── LEFT COLUMN ──────────────────────────────── */}
-          <div className="flex-[1.2] flex flex-col gap-8">
+          <div className="flex-[1.2] flex flex-col gap-8 min-w-[50%]">
             {/* ── Hero Card (dark) ───────────────────────── */}
             <div className="bg-[#0B1A1E] rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex flex-col sm:flex-row gap-6 sm:gap-8">
               {/* Left Part: White Info Card */}
@@ -991,23 +1259,23 @@ export default function LeadDetailsPage() {
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src="/avatars/male-avatar.png"
-                        alt={lead.name}
+                        alt={leadData.name}
                         className="w-full h-full object-cover"
                         onError={(e) => {
                           (e.currentTarget as HTMLImageElement).src =
-                            "https://i.pravatar.cc/150?u=lane-wade";
+                            `https://i.pravatar.cc/150?u=${leadData.id}`;
                         }}
                       />
                     </div>
                   </div>
                   <h3 className="text-[#0B1215] text-[18px] font-semibold text-center leading-none mb-1.5 tracking-tight">
-                    {lead.name}
+                    {leadData.name}
                   </h3>
                   <p className="text-gray-400 text-[12px] font-normal text-center mb-3">
-                    {lead.time}
+                    {leadData.created_at ? formatDistanceToNow(new Date(leadData.created_at), { addSuffix: true }) : "Unknown time"}
                   </p>
                   <span className="bg-[#0EA5E9] text-white text-[10px] font-semibold px-4 py-1 rounded-full uppercase tracking-tighter shadow-sm">
-                    {lead.priority}
+                    {leadData.priority || "Medium"}
                   </span>
                 </div>
                 {/* Action icons */}
@@ -1015,9 +1283,9 @@ export default function LeadDetailsPage() {
                   <button className="w-12 h-12 rounded-full bg-white flex items-center justify-center hover:bg-gray-50 transition-all shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100">
                     <MessageSquare size={20} className="text-[#0B1215]" />
                   </button>
-                  <button className="w-12 h-12 rounded-full bg-white flex items-center justify-center hover:bg-gray-50 transition-all shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100">
-                    <MapPin size={20} className="text-[#0B1215]" />
-                  </button>
+                  <a href={`tel:${leadData.phone}`} className="w-12 h-12 rounded-full bg-white flex items-center justify-center hover:bg-gray-50 transition-all shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100">
+                    <Phone size={20} className="text-[#0B1215]" />
+                  </a>
                 </div>
               </div>
 
@@ -1031,13 +1299,13 @@ export default function LeadDetailsPage() {
                     {isEditing ? (
                       <input
                         type="text"
-                        value={lead.name}
+                        value={editForm.name}
                         onChange={(e) => updateField("name", e.target.value)}
                         className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
                       />
                     ) : (
-                      <p className="text-white text-[16px] font-semibold">
-                        {lead.name}
+                      <p className="text-white text-[16px] font-semibold truncate">
+                        {leadData.name}
                       </p>
                     )}
                   </div>
@@ -1048,12 +1316,12 @@ export default function LeadDetailsPage() {
                     {isEditing ? (
                       <PhoneNumberInput
                         variant="dark"
-                        value={lead.phone}
+                        value={editForm.phone}
                         onChange={(value) => updateField("phone", value)}
                       />
                     ) : (
-                      <p className="text-white text-[16px] font-semibold">
-                        {lead.phone}
+                      <p className="text-white text-[16px] font-semibold truncate">
+                        {leadData.phone || "N/A"}
                       </p>
                     )}
                   </div>
@@ -1064,28 +1332,28 @@ export default function LeadDetailsPage() {
                     {isEditing ? (
                       <input
                         type="text"
-                        value={lead.location}
+                        value={editForm.location}
                         onChange={(e) => updateField("location", e.target.value)}
                         className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
                       />
                     ) : (
-                      <p className="text-white text-[16px] font-semibold">
-                        {lead.location}
+                      <p className="text-white text-[16px] font-semibold truncate">
+                        {leadData.location || "N/A"}
                       </p>
                     )}
                   </div>
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
-                      Status Tag
+                      Status
                     </label>
-                    <p className="text-white text-[16px] font-semibold">
-                      {lead.statusTag}
+                    <p className="text-white text-[16px] font-semibold capitalize">
+                      {(leadData.status || "New Lead").replace('_', ' ')}
                     </p>
                   </div>
                 </div>
                 {/* Map */}
                 <div className="w-full h-[160px] sm:flex-1 rounded-[24px] overflow-hidden shadow-inner">
-                  <MapPreview name={lead.name} />
+                  <MapPreview name={leadData.name} />
                 </div>
               </div>
             </div>
@@ -1107,12 +1375,13 @@ export default function LeadDetailsPage() {
                     Status
                   </label>
                   <PillDropdown
-                    value={lead.status}
-                    color={lead.statusColor}
+                    value={isEditing ? (STATUS_OPTIONS.find(o => o.label.toLowerCase().replace(' ', '_') === editForm.status)?.label || "New Lead") : (STATUS_OPTIONS.find(o => o.label.toLowerCase().replace(' ', '_') === leadData.status)?.label || "New Lead")}
+                    color={STATUS_OPTIONS.find(o => o.label.toLowerCase().replace(' ', '_') === (isEditing ? editForm.status : leadData.status))?.color || "#2563EB"}
                     options={STATUS_OPTIONS}
-                    onChange={(label, color) =>
-                      setLead((p) => ({ ...p, status: label, statusColor: color }))
-                    }
+                    onChange={(label) => {
+                       const value = label.toLowerCase().replace(' ', '_');
+                       updateField("status", value);
+                    }}
                     disabled={!isEditing}
                   />
                 </div>
@@ -1120,35 +1389,17 @@ export default function LeadDetailsPage() {
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Uploaded By
                   </label>
-                  {isEditing ? (
-                    <input
-                      type="text"
-                      value={lead.uploadedBy}
-                      onChange={(e) => updateField("uploadedBy", e.target.value)}
-                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-medium w-full outline-none focus:border-blue-500 shadow-sm"
-                    />
-                  ) : (
-                    <p className="text-[#0B1215] text-[16px] font-semibold">
-                      {lead.uploadedBy}
-                    </p>
-                  )}
+                  <p className="text-[#0B1215] text-[16px] font-semibold">
+                    {leadData.creator?.name || "System"}
+                  </p>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Last Interaction
                   </label>
-                  {isEditing ? (
-                    <input
-                      type="text"
-                      value={lead.lastInteraction}
-                      onChange={(e) => updateField("lastInteraction", e.target.value)}
-                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-medium w-full outline-none focus:border-blue-500 shadow-sm"
-                    />
-                  ) : (
-                    <p className="text-[#0B1215] text-[16px] font-semibold">
-                      {lead.lastInteraction}
-                    </p>
-                  )}
+                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                    {leadData.last_interaction || "None"}
+                  </p>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
@@ -1157,13 +1408,13 @@ export default function LeadDetailsPage() {
                   {isEditing ? (
                     <input
                       type="text"
-                      value={lead.source}
+                      value={editForm.source}
                       onChange={(e) => updateField("source", e.target.value)}
                       className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-medium w-full outline-none focus:border-blue-500 shadow-sm"
                     />
                   ) : (
-                    <p className="text-[#0B1215] text-[16px] font-semibold">
-                      {lead.source}
+                    <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                      {leadData.source || "Unknown"}
                     </p>
                   )}
                 </div>
@@ -1171,15 +1422,21 @@ export default function LeadDetailsPage() {
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Assign to
                   </label>
-                  <PillDropdown
-                    value={lead.assignTo}
-                    color={lead.assignColor}
-                    options={ASSIGN_OPTIONS}
-                    onChange={(label, color) =>
-                      setLead((p) => ({ ...p, assignTo: label, assignColor: color }))
-                    }
-                    disabled={!isEditing}
-                  />
+                  {isEditing ? (
+                     <select 
+                       value={editForm.assigned_to_user_id || ""}
+                       onChange={(e) => updateField("assigned_to_user_id", e.target.value)}
+                       className="bg-white border border-gray-100 rounded-xl px-3 py-1.5 text-[14px] outline-none"
+                     >
+                       {assignOptions.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                       ))}
+                     </select>
+                  ) : (
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-[11px] font-medium w-fit" style={{backgroundColor: currentAssignee ? "#3B82F6" : "#EF4444"}}>
+                      {currentAssigneeLabel}
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
@@ -1188,13 +1445,13 @@ export default function LeadDetailsPage() {
                   {isEditing ? (
                     <input
                       type="text"
-                      value={lead.nextAction}
-                      onChange={(e) => updateField("nextAction", e.target.value)}
+                      value={editForm.next_action}
+                      onChange={(e) => updateField("next_action", e.target.value)}
                       className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-medium w-full outline-none focus:border-blue-500 shadow-sm"
                     />
                   ) : (
-                    <p className="text-[#0B1215] text-[16px] font-semibold">
-                      {lead.nextAction}
+                    <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                      {leadData.next_action || "None"}
                     </p>
                   )}
                 </div>
@@ -1203,12 +1460,12 @@ export default function LeadDetailsPage() {
                     Priority
                   </label>
                   <PillDropdown
-                    value={lead.priority}
-                    color={lead.priorityColor}
+                    value={isEditing ? (editForm.priority ? editForm.priority.charAt(0).toUpperCase() + editForm.priority.slice(1) : "Medium") : (leadData.priority ? leadData.priority.charAt(0).toUpperCase() + leadData.priority.slice(1) : "Medium")}
+                    color={PRIORITY_OPTIONS.find(o => o.label.toLowerCase() === (isEditing ? editForm.priority : leadData.priority))?.color || "#3B82F6"}
                     options={PRIORITY_OPTIONS}
-                    onChange={(label, color) =>
-                      setLead((p) => ({ ...p, priority: label, priorityColor: color }))
-                    }
+                    onChange={(label) => {
+                       updateField("priority", label.toLowerCase());
+                    }}
                     disabled={!isEditing}
                   />
                 </div>
@@ -1216,25 +1473,22 @@ export default function LeadDetailsPage() {
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Created
                   </label>
-                  {isEditing ? (
-                    <input
-                      type="text"
-                      value={lead.created}
-                      onChange={(e) => updateField("created", e.target.value)}
-                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-medium w-full outline-none focus:border-blue-500 shadow-sm"
-                    />
-                  ) : (
-                    <p className="text-[#0B1215] text-[16px] font-semibold">
-                      {lead.created}
-                    </p>
-                  )}
+                  <p className="text-[#0B1215] text-[16px] font-semibold">
+                    {leadData.created_at ? new Date(leadData.created_at).toLocaleDateString() : "Unknown"}
+                  </p>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* ── RIGHT COLUMN: Email Communication ─────── */}
-          <EmailCommunicationPanel leadName={lead.name} />
+          {/* ── RIGHT COLUMN: Interaction Panel ─────── */}
+          <LeadInteractionPanel 
+            leadId={leadId} 
+            leadName={leadData.name} 
+            notes={leadData.notes || []} 
+            activities={leadData.activities || []} 
+            basePath="/admin"
+          />
         </div>
       </div>
     </div>
