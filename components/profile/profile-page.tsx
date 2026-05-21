@@ -40,11 +40,10 @@ function getSafeAvatar(url: string | null | undefined): string {
   const t = url.trim();
   if (!t) return "/avatars/male-avatar.png";
   if (t.startsWith("/") || t.startsWith("http")) return t;
-  const base =
-    (process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1").replace(
-      /\/api\/v1\/?$/,
-      ""
-    );
+  const base = (
+    process.env.NEXT_PUBLIC_API_BASE_URL ??
+    "https://api.thefactory23.com/api/v1"
+  ).replace(/\/api\/v1\/?$/, "");
   if (t.startsWith("storage/")) return `${base}/${t}`;
   return `${base}/storage/${t}`;
 }
@@ -82,11 +81,18 @@ function SectionCard({
 }) {
   return (
     <div className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
-      <div className={cn("flex items-center gap-3 px-6 py-4 border-b border-black/5", accent)}>
+      <div
+        className={cn(
+          "flex items-center gap-3 px-6 py-4 border-b border-black/5",
+          accent,
+        )}
+      >
         <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-white/70 shadow-sm">
           {icon}
         </span>
-        <h2 className="text-sm font-semibold text-gray-800 tracking-wide uppercase">{title}</h2>
+        <h2 className="text-sm font-semibold text-gray-800 tracking-wide uppercase">
+          {title}
+        </h2>
       </div>
       <div className="px-6 py-5">{children}</div>
     </div>
@@ -147,7 +153,7 @@ function EditableInput({
           disabled
             ? "bg-gray-50 text-gray-400 border-black/5 cursor-not-allowed"
             : "border-black/10 hover:border-[#4fd1c5]/50",
-          error && "border-red-400 focus:ring-red-200"
+          error && "border-red-400 focus:ring-red-200",
         )}
       />
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
@@ -180,7 +186,7 @@ function EditableSelect({
           disabled
             ? "bg-gray-50 text-gray-400 border-black/5 cursor-not-allowed"
             : "border-black/10 hover:border-[#4fd1c5]/50",
-          error && "border-red-400"
+          error && "border-red-400",
         )}
       >
         <option value="">Select…</option>
@@ -202,11 +208,14 @@ function StatusBadge({ active, label }: { active: boolean; label?: string }) {
         "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold",
         active
           ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-          : "bg-red-50 text-red-600 border border-red-100"
+          : "bg-red-50 text-red-600 border border-red-100",
       )}
     >
       <span
-        className={cn("w-1.5 h-1.5 rounded-full", active ? "bg-emerald-500" : "bg-red-500")}
+        className={cn(
+          "w-1.5 h-1.5 rounded-full",
+          active ? "bg-emerald-500" : "bg-red-500",
+        )}
       />
       {label ?? (active ? "Active" : "Inactive")}
     </span>
@@ -249,11 +258,15 @@ function AvatarModal({
       if (!token) return;
       setCatalogLoading(true);
       try {
-        const res = await getAvatarCatalog({ gender: g, limit: 12, cursor: c }, token);
+        const res = await getAvatarCatalog(
+          { gender: g, limit: 12, cursor: c },
+          token,
+        );
         const items = extractAvatarItems(res.data);
         setCatalog((prev) => (reset ? items : [...prev, ...items]));
         const meta =
-          !Array.isArray(res.data) && (res.data as { meta?: { has_more?: boolean; cursor?: number } }).meta;
+          !Array.isArray(res.data) &&
+          (res.data as { meta?: { has_more?: boolean; cursor?: number } }).meta;
         setHasMore(meta ? (meta.has_more ?? false) : false);
         setCursor(meta ? (meta.cursor ?? c + 12) : c + 12);
       } catch {
@@ -262,7 +275,7 @@ function AvatarModal({
         setCatalogLoading(false);
       }
     },
-    [token]
+    [token],
   );
 
   useEffect(() => {
@@ -273,7 +286,11 @@ function AvatarModal({
 
   function handleFileChange(file: File | null) {
     if (!file) return;
-    if (!["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(file.type)) {
+    if (
+      !["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(
+        file.type,
+      )
+    ) {
       toast.error("Only JPEG, PNG, or WebP images are supported.");
       return;
     }
@@ -338,7 +355,7 @@ function AvatarModal({
                   "flex-1 py-2 rounded-xl text-sm font-semibold transition-all",
                   tab === t
                     ? "bg-[#09232D] text-white shadow-sm"
-                    : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+                    : "text-gray-500 hover:text-gray-800 hover:bg-gray-50",
                 )}
               >
                 {t === "catalog" ? "Choose Avatar" : "Upload Photo"}
@@ -360,7 +377,7 @@ function AvatarModal({
                         "flex-1 py-2 rounded-xl text-sm font-medium border transition-all",
                         gender === g
                           ? "border-[#4fd1c5] bg-[#4fd1c5]/10 text-[#2a9d92]"
-                          : "border-black/10 text-gray-500 hover:border-[#4fd1c5]/50"
+                          : "border-black/10 text-gray-500 hover:border-[#4fd1c5]/50",
                       )}
                     >
                       {g.charAt(0).toUpperCase() + g.slice(1)}
@@ -371,7 +388,10 @@ function AvatarModal({
                 {/* Grid */}
                 {catalogLoading && catalog.length === 0 ? (
                   <div className="flex items-center justify-center py-12">
-                    <Loader2 size={28} className="animate-spin text-[#4fd1c5]" />
+                    <Loader2
+                      size={28}
+                      className="animate-spin text-[#4fd1c5]"
+                    />
                   </div>
                 ) : (
                   <>
@@ -384,7 +404,7 @@ function AvatarModal({
                             "relative aspect-square rounded-2xl overflow-hidden border-2 transition-all",
                             selectedKey === item.key
                               ? "border-[#4fd1c5] shadow-lg shadow-[#4fd1c5]/20 scale-105"
-                              : "border-transparent hover:border-[#4fd1c5]/40 hover:scale-102"
+                              : "border-transparent hover:border-[#4fd1c5]/40 hover:scale-102",
                           )}
                         >
                           <Image
@@ -396,7 +416,10 @@ function AvatarModal({
                           />
                           {selectedKey === item.key && (
                             <div className="absolute inset-0 bg-[#4fd1c5]/20 flex items-center justify-center">
-                              <CheckCircle2 size={20} className="text-[#4fd1c5] drop-shadow" />
+                              <CheckCircle2
+                                size={20}
+                                className="text-[#4fd1c5] drop-shadow"
+                              />
                             </div>
                           )}
                         </button>
@@ -441,7 +464,7 @@ function AvatarModal({
                     "relative flex flex-col items-center justify-center gap-3 py-10 rounded-2xl border-2 border-dashed cursor-pointer transition-all",
                     isDragging
                       ? "border-[#4fd1c5] bg-[#4fd1c5]/5"
-                      : "border-black/10 hover:border-[#4fd1c5]/50 hover:bg-gray-50/50"
+                      : "border-black/10 hover:border-[#4fd1c5]/50 hover:bg-gray-50/50",
                   )}
                 >
                   {uploadPreview ? (
@@ -455,8 +478,12 @@ function AvatarModal({
                           className="w-full h-full object-cover"
                         />
                       </div>
-                      <p className="text-sm text-gray-600 font-medium">{uploadFile?.name}</p>
-                      <p className="text-xs text-gray-400">Click to change image</p>
+                      <p className="text-sm text-gray-600 font-medium">
+                        {uploadFile?.name}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Click to change image
+                      </p>
                     </div>
                   ) : (
                     <>
@@ -481,7 +508,9 @@ function AvatarModal({
                     type="file"
                     accept="image/jpeg,image/jpg,image/png,image/webp"
                     className="hidden"
-                    onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
+                    onChange={(e) =>
+                      handleFileChange(e.target.files?.[0] ?? null)
+                    }
                   />
                 </div>
                 <p className="text-xs text-gray-400 text-center">
@@ -571,7 +600,11 @@ export function ProfilePage() {
       toast.success("Profile updated successfully.");
       queryClient.invalidateQueries({ queryKey: ["profile"] });
       if (res.data?.identity?.avatar_url && user) {
-        setUser({ ...user, name: res.data.identity.full_name, avatar: res.data.identity.avatar_url });
+        setUser({
+          ...user,
+          name: res.data.identity.full_name,
+          avatar: res.data.identity.avatar_url,
+        });
       }
       setFieldErrors({});
     },
@@ -603,17 +636,25 @@ export function ProfilePage() {
   const [showAvatarModal, setShowAvatarModal] = useState(false);
 
   const avatarMutation = useMutation({
-    mutationFn: async (args: { key?: string; file?: File; gender?: string }) => {
+    mutationFn: async (args: {
+      key?: string;
+      file?: File;
+      gender?: string;
+    }) => {
       if (args.key) {
         return selectCatalogAvatar(
           { avatar_key: args.key, gender: args.gender, company_id: companyId },
-          token
+          token,
         );
       }
       if (args.file) {
         return uploadAvatarFile(
-          { avatar_file: args.file, gender: profile?.identity.gender ?? undefined, company_id: companyId },
-          token
+          {
+            avatar_file: args.file,
+            gender: profile?.identity.gender ?? undefined,
+            company_id: companyId,
+          },
+          token,
         );
       }
       throw new Error("No avatar data provided.");
@@ -672,73 +713,68 @@ export function ProfilePage() {
 
   return (
     <>
-      <div className="min-h-full bg-[#09232D] text-white overflow-x-hidden">
-        {/* ── Hero Header ─────────────────────────────────────────────── */}
-        <div className="relative hero-grid px-6 md:px-12 pt-20 md:pt-16 pb-28 md:pb-36">
-          <div className="max-w-5xl mx-auto relative z-10">
-            {/* Page label */}
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/30 mb-6 flex items-center gap-2">
-              <ChevronRight size={12} className="opacity-40" />
-              My Profile
-            </p>
+      <div className="min-h-full text-white overflow-x-hidden">
+        {/* ── Content ─────────────────────────────────────────────────── */}
+        <div className="bg-dash-bg pb-16 relative z-10 rounded-t-3xl shadow-inner mt-0.5">
+          <div className="max-w-6xl mx-auto px-4 md:px-6 pt-10 grid grid-cols-1 lg:grid-cols-4 gap-5">
+            {/* left profile avatar */}
+            <div className="relative z-10 flex flex-col gap-6">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#09232D] mb-2 flex items-center gap-2">
+                <ChevronRight size={12} className="opacity-40" />
+                My Profile
+              </p>
 
-            <div className="flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-10">
-              {/* Avatar */}
-              <div className="relative shrink-0">
-                <div className="w-28 h-28 md:w-36 md:h-36 rounded-3xl overflow-hidden border-4 border-white/10 shadow-2xl bg-white/5">
-                  <Image
-                    src={avatarSrc}
-                    alt="Profile"
-                    width={144}
-                    height={144}
-                    className="w-full h-full object-cover"
-                    unoptimized={isAvatarSrcExternal}
-                    priority
-                  />
+              <div className="flex flex-col items-center md:items-end gap-6 md:gap-10">
+                <div className="relative shrink-0">
+                  <div className="w-28 h-28 md:w-[300px] md:h-[300px] rounded-3xl overflow-hidden border-4 border-white/10 shadow-2xl bg-white/5">
+                    <Image
+                      src={avatarSrc}
+                      alt="Profile"
+                      width={144}
+                      height={144}
+                      className="w-full h-full object-cover"
+                      unoptimized={isAvatarSrcExternal}
+                      priority
+                    />
+                  </div>
+                  <button
+                    onClick={() => setShowAvatarModal(true)}
+                    className="absolute -bottom-2 -right-2 w-10 h-10 rounded-2xl bg-[#4fd1c5] text-[#09232D] flex items-center justify-center shadow-lg hover:bg-[#38b2a8] transition-all hover:scale-105 active:scale-95"
+                  >
+                    <Camera size={16} />
+                  </button>
                 </div>
-                <button
-                  onClick={() => setShowAvatarModal(true)}
-                  className="absolute -bottom-2 -right-2 w-10 h-10 rounded-2xl bg-[#4fd1c5] text-[#09232D] flex items-center justify-center shadow-lg hover:bg-[#38b2a8] transition-all hover:scale-105 active:scale-95"
-                >
-                  <Camera size={16} />
-                </button>
-              </div>
 
-              {/* Identity summary */}
-              <div className="flex flex-col items-center md:items-start gap-3 text-center md:text-left">
-                <h1
-                  className="text-3xl md:text-4xl font-bold text-white leading-tight"
-                  style={{ fontFamily: "var(--font-montserrat)" }}
-                >
-                  {profile?.identity.full_name}
-                </h1>
-                <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-                  <span className="px-3 py-1 rounded-full bg-[#4fd1c5]/15 border border-[#4fd1c5]/30 text-[#4fd1c5] text-xs font-semibold">
-                    {roleLabel(profile?.organization.role)}
-                  </span>
-                  {profile?.organization.user_type && (
-                    <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/50 text-xs font-medium">
-                      {roleLabel(profile?.organization.user_type)}
+                <div className="flex flex-col items-center gap-3 text-center">
+                  <h1
+                    className="text-3xl font-bold text-[#09232D] leading-tight"
+                    style={{ fontFamily: "var(--font-montserrat)" }}
+                  >
+                    {profile?.identity.full_name}
+                  </h1>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <span className="px-3 py-1 rounded-full bg-[#4fd1c5]/15 border border-[#4fd1c5]/30 text-[#4fd1c5] text-xs font-semibold">
+                      {roleLabel(profile?.organization.role)}
                     </span>
-                  )}
-                  <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/50 text-xs font-medium">
-                    {profile?.organization.company.name}
-                  </span>
+                    {profile?.organization.user_type && (
+                      <span className="px-3 py-1 rounded-full bg-black/5 border border-black/10 text-gray-600 text-xs font-medium">
+                        {roleLabel(profile?.organization.user_type)}
+                      </span>
+                    )}
+                    <span className="px-3 py-1 rounded-full bg-black/5 border border-black/10 text-gray-600 text-xs font-medium">
+                      {profile?.organization.company.name}
+                    </span>
+                  </div>
+                  <p className="text-gray-500 text-sm">
+                    {profile?.identity.email}
+                  </p>
                 </div>
-                <p className="text-white/30 text-sm">{profile?.identity.email}</p>
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* ── Content ─────────────────────────────────────────────────── */}
-        <div className="bg-dash-bg pb-16 -mt-12 relative z-10 rounded-t-3xl shadow-inner">
-          <div className="max-w-5xl mx-auto px-4 md:px-6 pt-10 grid grid-cols-1 lg:grid-cols-3 gap-5">
-
-            {/* ── Left column: Identity + Organization ── */}
-            <div className="lg:col-span-2 flex flex-col gap-5">
-
-              {/* Identity */}
+            {/* ── center column: Identity + Organization ── */}
+            <div className="flex flex-col gap-5 lg:col-span-2">
+              Identity
               <SectionCard
                 icon={<User size={15} className="text-[#4fd1c5]" />}
                 title="Identity"
@@ -788,7 +824,9 @@ export function ProfilePage() {
                         error={fieldErrors.gender}
                       />
                     ) : (
-                      <ReadOnlyValue value={roleLabel(profile?.identity.gender)} />
+                      <ReadOnlyValue
+                        value={roleLabel(profile?.identity.gender)}
+                      />
                     )}
                   </FieldRow>
                 </div>
@@ -802,7 +840,9 @@ export function ProfilePage() {
                       disabled={saveMutation.isPending}
                       className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#09232D] text-white text-sm font-semibold hover:bg-[#0d2d3a] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                     >
-                      {saveMutation.isPending && <Loader2 size={14} className="animate-spin" />}
+                      {saveMutation.isPending && (
+                        <Loader2 size={14} className="animate-spin" />
+                      )}
                       {saveMutation.isPending ? "Saving…" : "Save Changes"}
                     </button>
                   </div>
@@ -821,21 +861,29 @@ export function ProfilePage() {
                   </FieldRow>
 
                   <FieldRow label="Company ID">
-                    <ReadOnlyValue value={profile?.organization.company.company_id} />
+                    <ReadOnlyValue
+                      value={profile?.organization.company.company_id}
+                    />
                   </FieldRow>
 
                   <FieldRow label="Role">
-                    <ReadOnlyValue value={roleLabel(profile?.organization.role)} />
+                    <ReadOnlyValue
+                      value={roleLabel(profile?.organization.role)}
+                    />
                   </FieldRow>
 
                   <FieldRow label="Membership">
                     <ReadOnlyValue
-                      value={roleLabel(profile?.organization.membership.relation)}
+                      value={roleLabel(
+                        profile?.organization.membership.relation,
+                      )}
                     />
                   </FieldRow>
 
                   <FieldRow label="Team Size">
-                    <ReadOnlyValue value={profile?.organization.company.team_size} />
+                    <ReadOnlyValue
+                      value={profile?.organization.company.team_size}
+                    />
                   </FieldRow>
 
                   <FieldRow label="Country">
@@ -847,7 +895,9 @@ export function ProfilePage() {
                         error={fieldErrors.country}
                       />
                     ) : (
-                      <ReadOnlyValue value={profile?.organization.company.country} />
+                      <ReadOnlyValue
+                        value={profile?.organization.company.country}
+                      />
                     )}
                   </FieldRow>
 
@@ -858,7 +908,11 @@ export function ProfilePage() {
                   </FieldRow>
 
                   <FieldRow label="Joined">
-                    <ReadOnlyValue value={formatDate(profile?.organization.membership.joined_at)} />
+                    <ReadOnlyValue
+                      value={formatDate(
+                        profile?.organization.membership.joined_at,
+                      )}
+                    />
                   </FieldRow>
                 </div>
 
@@ -869,7 +923,9 @@ export function ProfilePage() {
                       disabled={saveMutation.isPending}
                       className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#09232D] text-white text-sm font-semibold hover:bg-[#0d2d3a] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                     >
-                      {saveMutation.isPending && <Loader2 size={14} className="animate-spin" />}
+                      {saveMutation.isPending && (
+                        <Loader2 size={14} className="animate-spin" />
+                      )}
                       {saveMutation.isPending ? "Saving…" : "Save Changes"}
                     </button>
                   </div>
@@ -891,7 +947,10 @@ export function ProfilePage() {
                       <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">
                         Status
                       </span>
-                      <StatusBadge active={isAccountActive} label={roleLabel(accountStatus)} />
+                      <StatusBadge
+                        active={isAccountActive}
+                        label={roleLabel(accountStatus)}
+                      />
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">
@@ -933,7 +992,10 @@ export function ProfilePage() {
                             className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-gray-50 border border-black/5"
                           >
                             {step.done ? (
-                              <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
+                              <CheckCircle2
+                                size={14}
+                                className="text-emerald-500 shrink-0"
+                              />
                             ) : (
                               <div className="w-3.5 h-3.5 rounded-full border-2 border-gray-300 shrink-0" />
                             )}
@@ -988,13 +1050,15 @@ export function ProfilePage() {
                   />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-gray-800">Profile Photo</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    Profile Photo
+                  </p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {profile?.identity.avatar_source === "catalog"
                       ? "Using catalog avatar"
                       : profile?.identity.avatar_source === "upload"
-                      ? "Custom uploaded image"
-                      : "Default avatar"}
+                        ? "Custom uploaded image"
+                        : "Default avatar"}
                   </p>
                 </div>
                 <button
@@ -1006,6 +1070,7 @@ export function ProfilePage() {
                 </button>
               </div>
             </div>
+
           </div>
         </div>
       </div>
