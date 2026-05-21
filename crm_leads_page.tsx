@@ -137,8 +137,7 @@ function SourceDropdown({
   );
 }
 
-export default function AllLeadsPage() {
-  const basePath = "/agent/crm";
+export default function AllLeadsPage({ basePath = "/crm" }: { basePath?: string }) {
   const router = useRouter();
   const [leads, setLeads] = useState<Lead[]>(ALL_LEADS);
   const [selected, setSelected] = useState<Set<string>>(new Set());
