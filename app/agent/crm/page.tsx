@@ -37,7 +37,7 @@ import {
   Tag,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useSyncExternalStore } from "react";
+import { useState, useEffect, useMemo, useSyncExternalStore } from "react";
 import {
   Area,
   AreaChart,
