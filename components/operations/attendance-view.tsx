@@ -437,10 +437,10 @@ export function AttendanceView({ basePath }: { basePath: string }) {
             style={{ boxShadow: "0px 1px 3px 0px #0000004D" }}
           >
             <Settings size={14} strokeWidth={2} />
-            <span className="hidden sm:inline">Settings</span>
+            <span className="hidden sm:inline">Config</span>
           </button>
 
-          <button
+          {/* <button
             onClick={() => setShowAddAgent(true)}
             className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
             style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
@@ -448,7 +448,7 @@ export function AttendanceView({ basePath }: { basePath: string }) {
             <BookmarkPlus size={15} strokeWidth={2} />
             <span className="hidden sm:inline whitespace-nowrap">Add New Agent</span>
             <span className="sm:hidden">New</span>
-          </button>
+          </button> */}
         </div>
       </div>
 
