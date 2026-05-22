@@ -7,7 +7,7 @@ export function DashboardGreeting() {
   const firstName = user?.name?.split(" ")[0] ?? "there";
 
   return (
-    <div className="space-y-1">
+    <div className="lg:ml-[100px] space-y-2">
       <h1 className="text-[28px] md:text-[36px] font-extrabold leading-tight md:leading-9.5 text-[#F6F6F6]">
         Hi, {firstName}!
       </h1>

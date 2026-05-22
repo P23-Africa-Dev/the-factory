@@ -217,10 +217,13 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
 
   return (
     <>
-      <div className="fixed inset-0 z-50">
-        <div className="absolute inset-0 bg-white/40" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
+        <div 
+          className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 cursor-pointer" 
+          onClick={onClose} 
+        />
 
-        <div className="absolute right-12 bottom-3.25 bg-white rounded-[28px] w-full max-w-100 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] overflow-hidden">
+        <div className="relative bg-white rounded-t-[28px] sm:rounded-[28px] w-full sm:w-[440px] shadow-[0px_8px_32px_rgba(0,0,0,0.15)] overflow-hidden flex flex-col max-h-[90dvh] sm:max-h-[calc(100vh-80px)] transition-all duration-300 ease-out">
           {/* Header */}
           <div className="bg-transparent h-18 relative overflow-hidden flex items-center px-7">
             <div className="absolute top-0 right-0 w-[50%] h-full pointer-events-none">
@@ -251,7 +254,7 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
           <form
             id="set-payroll-form"
             onSubmit={handleSubmit}
-            className="px-7 pb-6 max-h-[calc(100vh-200px)] overflow-y-auto"
+            className="flex-1 min-h-0 overflow-y-auto px-7 pb-6"
           >
             {apiError && (
               <p className="text-[11px] text-red-500 mb-3 text-center">{apiError}</p>

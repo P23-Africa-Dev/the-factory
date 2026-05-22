@@ -11,6 +11,7 @@ import {
   DragStartEvent,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   closestCorners,
   useSensor,
   useSensors,
@@ -36,7 +37,7 @@ import {
   Tag,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -294,10 +295,16 @@ function LeadCard({
   item,
   isDragOverlay,
   basePath = "/crm",
+  stages,
+  currentStageId,
+  onMoveToStage,
 }: {
   item: DndItem;
   isDragOverlay?: boolean;
   basePath?: string;
+  stages?: Array<{ id: string; title: string; color: string }>;
+  currentStageId?: string;
+  onMoveToStage?: (leadId: string, targetStageId: string) => void;
 }) {
   const router = useRouter();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -338,6 +345,33 @@ function LeadCard({
         <span className="text-[#9CA3AF] text-[11px]">{item.assignedBy ?? "Unassigned"}</span>
         <span className="text-[#9CA3AF] text-[11px]">{item.time}</span>
       </div>
+
+      {onMoveToStage && stages && currentStageId && (
+        <div className="relative md:hidden mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+          <span className="text-gray-400 text-[11px]">Move to:</span>
+          <div className="relative">
+            <select
+              value={currentStageId}
+              onChange={(e) => {
+                e.stopPropagation();
+                onMoveToStage(item.id, e.target.value);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-[11px] font-semibold py-1 pl-2.5 pr-6 rounded-lg focus:outline-none cursor-pointer"
+            >
+              {stages.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              size={10}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -351,6 +385,9 @@ function LeadColumn({
   items,
   onAddCard,
   basePath,
+  activeTabId,
+  stages,
+  onMoveToStage,
 }: {
   id: string;
   title: string;
@@ -358,11 +395,18 @@ function LeadColumn({
   items: DndItem[];
   onAddCard: (item: DndItem) => void;
   basePath?: string;
+  activeTabId?: string;
+  stages?: Array<{ id: string; title: string; color: string }>;
+  onMoveToStage?: (leadId: string, targetStageId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
 
   return (
-    <div className="flex flex-col w-55 shrink-0">
+    <div
+      className={`flex flex-col w-full md:w-55 shrink-0 md:shrink-0 ${
+        activeTabId ? (id === activeTabId ? "flex" : "hidden md:flex") : ""
+      }`}
+    >
       {/* Header */}
       <div
         className="rounded-t-[20px] px-4 pt-3 pb-8 flex items-center justify-between"
@@ -393,7 +437,14 @@ function LeadColumn({
         >
           <div className="pt-2">
             {items.map((item) => (
-              <LeadCard key={item.id} item={item} basePath={basePath} />
+              <LeadCard
+                key={item.id}
+                item={item}
+                basePath={basePath}
+                stages={stages}
+                currentStageId={id}
+                onMoveToStage={onMoveToStage}
+              />
             ))}
           </div>
         </SortableContext>
@@ -409,7 +460,7 @@ function LeadColumn({
               time: "Just now",
             })
           }
-          className="w-full flex items-center justify-between px-3 py-2.5 text-gray-400 hover:text-[#0B1215] transition-colors group mt-1"
+          className="w-full flex items-center justify-between px-3 py-2.5 text-gray-400 hover:text-[#0B1215] transition-colors group mt-auto pt-3"
         >
           <span className="text-[11px] font-medium">Add Leads</span>
           <div className="w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center group-hover:border-[#0B1215] transition-colors">
@@ -437,7 +488,7 @@ function LeadListView({ containers, basePath = "/crm" }: { containers: DndContai
   return (
     <div className="px-4 pb-6">
       {/* Table header */}
-      <div className="grid grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 mb-1">
+      <div className="hidden md:grid grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 mb-1">
         {["Lead", "Company", "Stage", "Amount", "Priority", "Assigned", ""].map((h) => (
           <span key={h} className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
             {h}
@@ -480,12 +531,12 @@ function LeadListView({ containers, basePath = "/crm" }: { containers: DndContai
                   <div
                     key={item.id}
                     onClick={() => router.push(`${basePath}/leads/${item.id}`)}
-                    className={`grid grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-4 items-center px-4 py-3 rounded-xl transition-colors cursor-pointer hover:bg-gray-50 group/row ${
+                    className={`relative grid grid-cols-1 md:grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-2 md:gap-4 items-start md:items-center px-4 py-3 rounded-xl transition-colors cursor-pointer hover:bg-gray-50 group/row ${
                       idx % 2 === 0 ? "" : "bg-gray-50/50"
                     }`}
                   >
                     {/* Lead name */}
-                    <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0 pr-8 md:pr-0">
                       <div
                         className="w-1 h-7 rounded-full shrink-0"
                         style={{ backgroundColor: container.color }}
@@ -497,31 +548,34 @@ function LeadListView({ containers, basePath = "/crm" }: { containers: DndContai
                     </div>
 
                     {/* Company */}
-                    <span className="text-[12px] text-gray-500 truncate">{item.description}</span>
+                    <span className="text-[12px] text-gray-500 truncate pl-3.5 md:pl-0">{item.description}</span>
 
-                    {/* Stage pill */}
-                    <span
-                      className="text-[11px] font-semibold px-2.5 py-1 rounded-full w-fit"
-                      style={{ backgroundColor: `${container.color}18`, color: container.color }}
-                    >
-                      {container.title}
-                    </span>
+                    {/* Responsive badge/amount/priority/assigned grouping */}
+                    <div className="flex flex-wrap items-center gap-2 pl-3.5 md:pl-0 md:contents">
+                      {/* Stage pill */}
+                      <span
+                        className="text-[11px] font-semibold px-2.5 py-1 rounded-full w-fit"
+                        style={{ backgroundColor: `${container.color}18`, color: container.color }}
+                      >
+                        {container.title}
+                      </span>
 
-                    {/* Amount */}
-                    <span className="text-[13px] font-bold text-[#0B1215]">
-                      ₦ {Number(item.location).toLocaleString()}
-                    </span>
+                      {/* Amount */}
+                      <span className="text-[13px] font-bold text-[#0B1215]">
+                        ₦ {Number(item.location).toLocaleString()}
+                      </span>
 
-                    {/* Priority badge */}
-                    <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-2.5 py-0.5 rounded-full w-fit">
-                      Medium
-                    </span>
+                      {/* Priority badge */}
+                      <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-2.5 py-0.5 rounded-full w-fit">
+                        Medium
+                      </span>
 
-                    {/* Assigned */}
-                    <span className="text-[12px] text-gray-400">{item.assignedBy ?? "Unassigned"}</span>
+                      {/* Assigned */}
+                      <span className="text-[12px] text-gray-400">{item.assignedBy ?? "Unassigned"}</span>
+                    </div>
 
                     {/* Actions */}
-                    <button className="opacity-0 group-hover/row:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-gray-100">
+                    <button className="absolute right-4 top-3 md:relative md:top-auto md:right-auto opacity-100 md:opacity-0 md:group-hover/row:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-gray-100">
                       <MoreHorizontal size={14} className="text-gray-400" />
                     </button>
                   </div>
@@ -544,7 +598,7 @@ function LeadListView({ containers, basePath = "/crm" }: { containers: DndContai
       })}
 
       {/* Summary footer */}
-      <div className="mt-4 flex items-center justify-between px-4 py-3 bg-gray-50 rounded-xl">
+      <div className="mt-4 flex flex-col sm:flex-row gap-2 items-start sm:items-center sm:justify-between px-4 py-3 bg-gray-50 rounded-xl">
         <span className="text-[12px] font-semibold text-gray-500">
           {allLeads.length} total leads across {containers.length} stages
         </span>
@@ -572,8 +626,18 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
   const [activeItem, setActiveItem] = useState<DndItem | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
+  const [activeTabId, setActiveTabId] = useState<string>(() => containers[0]?.id ?? "new");
+
+  // Sync activeTabId if containers change and current activeTabId is not in the containers
+  useEffect(() => {
+    if (containers.length > 0 && !containers.some(c => c.id === activeTabId)) {
+      setActiveTabId(containers[0].id);
+    }
+  }, [containers, activeTabId]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
@@ -619,6 +683,10 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
     }
   }
 
+  const stagesList = useMemo(() => {
+    return containers.map((c) => ({ id: c.id, title: c.title, color: c.color }));
+  }, [containers]);
+
   return (
     <div className="bg-white shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] mt-6 overflow-hidden flex flex-col h-[calc(100vh-360px)] min-h-[70vh]">
       {/* Board toolbar */}
@@ -649,6 +717,36 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
         </div>
       </div>
 
+      {viewMode === "grid" && (
+        <div className="flex md:hidden gap-1.5 overflow-x-auto px-4 pb-3 pt-1 border-b border-gray-100 shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          {containers.map((c) => {
+            const isActive = activeTabId === c.id;
+            return (
+              <button
+                key={c.id}
+                onClick={() => setActiveTabId(c.id)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold transition-all shrink-0 select-none cursor-pointer"
+                style={{
+                  backgroundColor: isActive ? c.color : "#F3F4F6",
+                  color: isActive ? "#FFFFFF" : "#4B5563",
+                }}
+              >
+                <span>{c.title}</span>
+                <span
+                  className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                  style={{
+                    backgroundColor: isActive ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 0, 0, 0.05)",
+                    color: isActive ? "#FFFFFF" : "#4B5563",
+                  }}
+                >
+                  {c.items.length}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {viewMode === "list" ? (
         <div className="flex-1 overflow-y-auto">
           <LeadListView containers={containers} basePath={basePath} />
@@ -664,7 +762,7 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
           >
-            <div className="flex gap-3 px-4 min-w-max">
+            <div className="flex gap-3 px-4 min-w-full md:min-w-max">
               {containers.map((container) => (
                 <LeadColumn
                   key={container.id}
@@ -674,12 +772,23 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
                   items={container.items}
                   onAddCard={(item) => addItem(container.id, item)}
                   basePath={basePath}
+                  activeTabId={activeTabId}
+                  stages={stagesList}
+                  onMoveToStage={moveToContainer}
                 />
               ))}
             </div>
 
             <DragOverlay>
-              {activeItem ? <LeadCard item={activeItem} isDragOverlay basePath={basePath} /> : null}
+              {activeItem ? (
+                <LeadCard
+                  item={activeItem}
+                  isDragOverlay
+                  basePath={basePath}
+                  stages={stagesList}
+                  currentStageId={activeTabId}
+                />
+              ) : null}
             </DragOverlay>
           </DndContext>
         </div>
