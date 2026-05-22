@@ -193,6 +193,12 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
             Route::prefix('payroll')->name('payroll.')->group(function (): void {
                 Route::get('/', [PayrollController::class, 'index'])->name('index');
+                Route::get('/overview', [PayrollController::class, 'overview'])->name('overview');
+                Route::get('/agents', [PayrollController::class, 'agents'])->name('agents.index');
+                Route::get('/agents/{user}', [PayrollController::class, 'agentProfile'])->name('agents.show');
+                Route::patch('/agents/{user}', [PayrollController::class, 'updateAgentPayroll'])
+                    ->middleware('throttle:20,1')
+                    ->name('agents.update');
                 Route::post('/', [PayrollController::class, 'store'])
                     ->middleware('throttle:20,1')
                     ->name('store');
@@ -375,6 +381,12 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::prefix('payroll')->name('payroll.')->group(function (): void {
         Route::get('/', [PayrollController::class, 'index'])->name('index');
+        Route::get('/overview', [PayrollController::class, 'overview'])->name('overview');
+        Route::get('/agents', [PayrollController::class, 'agents'])->name('agents.index');
+        Route::get('/agents/{user}', [PayrollController::class, 'agentProfile'])->name('agents.show');
+        Route::patch('/agents/{user}', [PayrollController::class, 'updateAgentPayroll'])
+            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->name('agents.update');
         Route::post('/', [PayrollController::class, 'store'])
             ->middleware('throttle:20,1')
             ->name('store');
