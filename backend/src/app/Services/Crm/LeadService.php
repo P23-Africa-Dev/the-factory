@@ -4,18 +4,25 @@ declare(strict_types=1);
 
 namespace App\Services\Crm;
 
+use App\Enums\NotificationCategory;
+use App\Enums\NotificationPriority;
 use App\Models\Lead;
 use App\Models\LeadActivity;
 use App\Models\LeadNote;
 use App\Models\User;
 use App\Services\Company\CompanyContextService;
+use App\Services\Notification\NotificationService;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class LeadService
 {
-    public function __construct(private readonly CompanyContextService $companyContextService) {}
+    public function __construct(
+        private readonly CompanyContextService $companyContextService,
+        private readonly NotificationService $notificationService,
+    ) {}
 
     public function listForUser(User $user, array $filters): Paginator
     {
@@ -81,6 +88,15 @@ class LeadService
             'meta' => $data['meta'] ?? null,
         ]);
 
+        $this->notifyLeadRecipients(
+            lead: $lead,
+            actor: $user,
+            type: 'crm.lead_created',
+            title: 'New CRM lead created',
+            message: "Lead '{$lead->name}' has been created.",
+            priority: NotificationPriority::HIGH->value,
+        );
+
         return $this->findForUser($user, $lead, $companyId);
     }
 
@@ -124,6 +140,15 @@ class LeadService
             'converted_at' => array_key_exists('converted_at', $data) ? $data['converted_at'] : $lead->converted_at,
         ]);
 
+        $this->notifyLeadRecipients(
+            lead: $lead,
+            actor: $user,
+            type: 'crm.lead_updated',
+            title: 'CRM lead updated',
+            message: "Lead '{$lead->name}' has been updated.",
+            priority: NotificationPriority::NORMAL->value,
+        );
+
         return $this->findForUser($user, $lead->fresh(), $companyId);
     }
 
@@ -138,6 +163,15 @@ class LeadService
             'created_by_user_id' => $user->id,
             'note' => $note,
         ]);
+
+        $this->notifyLeadRecipients(
+            lead: $lead,
+            actor: $user,
+            type: 'crm.lead_note_added',
+            title: 'CRM lead note added',
+            message: "A new note was added to lead '{$lead->name}'.",
+            priority: NotificationPriority::NORMAL->value,
+        );
 
         return $leadNote->load('creator:id,name,email');
     }
@@ -157,6 +191,15 @@ class LeadService
             'happened_at' => $payload['happened_at'] ?? null,
             'meta' => $payload['meta'] ?? null,
         ]);
+
+        $this->notifyLeadRecipients(
+            lead: $lead,
+            actor: $user,
+            type: 'crm.lead_activity_added',
+            title: 'CRM lead activity added',
+            message: "A new activity was logged for lead '{$lead->name}'.",
+            priority: NotificationPriority::NORMAL->value,
+        );
 
         return $activity->load('creator:id,name,email');
     }
@@ -234,6 +277,55 @@ class LeadService
         if (! $memberExists) {
             throw ValidationException::withMessages([
                 $field => ['Selected user is not a member of this company.'],
+            ]);
+        }
+    }
+
+    private function notifyLeadRecipients(
+        Lead $lead,
+        User $actor,
+        string $type,
+        string $title,
+        string $message,
+        string $priority,
+    ): void {
+        $recipientIds = collect([
+            (int) $lead->created_by_user_id,
+            (int) ($lead->assigned_to_user_id ?? 0),
+        ])
+            ->merge(
+                DB::table('company_users')
+                    ->where('company_id', $lead->company_id)
+                    ->whereIn('role', ['owner', 'admin', 'supervisor'])
+                    ->pluck('user_id')
+                    ->map(static fn(mixed $id): int => (int) $id)
+                    ->all(),
+            )
+            ->filter(static fn(int $id): bool => $id > 0)
+            ->unique()
+            ->reject(static fn(int $id): bool => $id === (int) $actor->id)
+            ->values()
+            ->all();
+
+        foreach ($recipientIds as $recipientId) {
+            $this->notificationService->notifyUser($recipientId, [
+                'company_id' => (int) $lead->company_id,
+                'type' => $type,
+                'category' => NotificationCategory::CRM->value,
+                'title' => $title,
+                'message' => $message,
+                'reference_type' => Lead::class,
+                'reference_id' => (int) $lead->id,
+                'action_url' => '/crm/leads/' . $lead->id,
+                'action_route' => 'crm.leads.show',
+                'priority' => $priority,
+                'created_by_user_id' => (int) $actor->id,
+                'metadata' => [
+                    'lead_id' => (int) $lead->id,
+                    'lead_status' => $lead->status?->value,
+                    'actor_user_id' => (int) $actor->id,
+                ],
+                'dedupe_key' => $type . ':' . $lead->id . ':' . $recipientId,
             ]);
         }
     }

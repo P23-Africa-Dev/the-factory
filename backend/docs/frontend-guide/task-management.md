@@ -27,9 +27,12 @@ Management and shared task APIs:
 2. `POST /api/v1/tasks`
 3. `GET /api/v1/tasks/{task}`
 4. `PATCH /api/v1/tasks/{task}/assign`
-5. `PATCH /api/v1/tasks/{task}/status`
-6. `POST /api/v1/tasks/{task}/proofs`
-7. `GET /api/v1/tasks/{task}/proofs/{proof}`
+5. `GET /api/v1/tasks/reassignments/inbox`
+6. `POST /api/v1/tasks/reassignments/{reassignment}/accept`
+7. `POST /api/v1/tasks/reassignments/{reassignment}/reject`
+8. `PATCH /api/v1/tasks/{task}/status`
+9. `POST /api/v1/tasks/{task}/proofs`
+10. `GET /api/v1/tasks/{task}/proofs/{proof}`
 
 Agent-only task API:
 
@@ -51,7 +54,9 @@ Auth for all endpoints:
 7. Treat `file_url` as a protected API endpoint, not as a CDN/public storage URL.
 8. Hide proof-download actions unless the current role is `owner` or `admin`.
 9. Disable reassignment and status actions when task status is `completed` or `cancelled`.
-10. For multi-agent assignment, send `assigned_agent_ids: [id1, id2, ...]` in the reassign request. Legacy `assigned_agent_id` (single integer) is still accepted.
+10. Reassignment is request-based. `PATCH /tasks/{task}/assign` creates a pending request and does not transfer ownership until accepted.
+11. Send `to_user_id` (or legacy `assigned_agent_id`) and optional `reason` when creating a reassignment request.
+12. Use inbox + accept/reject endpoints for recipient actions.
 
 ## Request Examples
 
@@ -88,21 +93,42 @@ Minimal valid request:
 }
 ```
 
-### Reassign Task (Multi-Agent)
+### Request Task Reassignment
 
 ```json
 {
   "company_id": 1,
-  "assigned_agent_ids": [25, 31, 42]
+  "to_user_id": 31,
+  "reason": "Zone handover for shift coverage"
 }
 ```
 
-Legacy single-agent form (still supported):
+Legacy single-user form (still supported):
 
 ```json
 {
   "company_id": 1,
   "assigned_agent_id": 31
+}
+```
+
+### Accept / Reject Reassignment
+
+`POST /api/v1/tasks/reassignments/{reassignment}/accept`
+
+```json
+{
+  "company_id": 1,
+  "response_note": "Taking over this route now"
+}
+```
+
+`POST /api/v1/tasks/reassignments/{reassignment}/reject`
+
+```json
+{
+  "company_id": 1,
+  "response_note": "Unable to cover this zone"
 }
 ```
 

@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\Api\V1\Agent\AgentLoginController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceAgentController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceManagementController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceSettingsController;
 use App\Http\Controllers\Api\V1\Auth\AdminLoginController;
 use App\Http\Controllers\Api\V1\Auth\ForgotPasswordController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
@@ -20,6 +23,9 @@ use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\Internal\InternalLoginController;
 use App\Http\Controllers\Api\V1\Internal\InternalOnboardingController;
 use App\Http\Controllers\Api\V1\Internal\InternalUserController;
+use App\Http\Controllers\Api\V1\Notification\NotificationController;
+use App\Http\Controllers\Api\V1\Notification\NotificationPreferenceController;
+use App\Http\Controllers\Api\V1\Notification\PushSubscriptionController;
 use App\Http\Controllers\Api\V1\Onboarding\WorkspaceController;
 use App\Http\Controllers\Api\V1\Payroll\PayrollController;
 use App\Http\Controllers\Api\V1\Project\ProjectController;
@@ -132,6 +138,26 @@ Route::middleware('auth:sanctum')->group(function (): void {
             ->name('workspace');
     });
 
+    Route::prefix('notifications')->name('notifications.')->group(function (): void {
+        Route::get('/', [NotificationController::class, 'index'])->name('index');
+        Route::get('/history', [NotificationController::class, 'history'])->name('history');
+        Route::get('/unread-count', [NotificationController::class, 'unreadCount'])->name('unread-count');
+        Route::patch('/read', [NotificationController::class, 'markRead'])->name('read');
+        Route::patch('/unread', [NotificationController::class, 'markUnread'])->name('unread');
+        Route::patch('/read-all', [NotificationController::class, 'markAllRead'])->name('read-all');
+        Route::delete('/{notification}', [NotificationController::class, 'destroy'])->name('destroy');
+
+        Route::get('/preferences', [NotificationPreferenceController::class, 'index'])->name('preferences.index');
+        Route::put('/preferences', [NotificationPreferenceController::class, 'update'])->name('preferences.update');
+
+        Route::get('/push-subscriptions', [PushSubscriptionController::class, 'index'])->name('push-subscriptions.index');
+        Route::post('/push-subscriptions', [PushSubscriptionController::class, 'store'])->name('push-subscriptions.store');
+        Route::post('/push-subscriptions/refresh', [PushSubscriptionController::class, 'refresh'])
+            ->name('push-subscriptions.refresh');
+        Route::delete('/push-subscriptions', [PushSubscriptionController::class, 'destroy'])
+            ->name('push-subscriptions.destroy');
+    });
+
     // Canonical management endpoints.
     Route::prefix('admin')
         ->name('admin-api.')
@@ -142,6 +168,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
                 Route::post('/', [TaskController::class, 'store'])
                     ->middleware('throttle:30,1')
                     ->name('store');
+                Route::get('/reassignments/inbox', [TaskAssignmentController::class, 'inbox'])->name('reassignments.inbox');
+                Route::post('/reassignments/{reassignment}/accept', [TaskAssignmentController::class, 'accept'])
+                    ->name('reassignments.accept');
+                Route::post('/reassignments/{reassignment}/reject', [TaskAssignmentController::class, 'reject'])
+                    ->name('reassignments.reject');
                 Route::get('/{task}', [TaskController::class, 'show'])->name('show');
                 Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
                 Route::patch('/{task}/assign', [TaskAssignmentController::class, 'update'])->name('assign');
@@ -162,12 +193,32 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
             Route::prefix('payroll')->name('payroll.')->group(function (): void {
                 Route::get('/', [PayrollController::class, 'index'])->name('index');
+                Route::get('/overview', [PayrollController::class, 'overview'])->name('overview');
+                Route::get('/agents', [PayrollController::class, 'agents'])->name('agents.index');
+                Route::get('/agents/{user}', [PayrollController::class, 'agentProfile'])->name('agents.show');
+                Route::patch('/agents/{user}', [PayrollController::class, 'updateAgentPayroll'])
+                    ->middleware('throttle:20,1')
+                    ->name('agents.update');
                 Route::post('/', [PayrollController::class, 'store'])
                     ->middleware('throttle:20,1')
                     ->name('store');
                 Route::put('/{payrollSetting}', [PayrollController::class, 'update'])
                     ->middleware('throttle:20,1')
                     ->name('update');
+            });
+
+            Route::prefix('attendance')->name('attendance.')->group(function (): void {
+                Route::get('/settings', [AttendanceSettingsController::class, 'show'])->name('settings.show');
+                Route::put('/settings', [AttendanceSettingsController::class, 'update'])
+                    ->middleware('throttle:20,1')
+                    ->name('settings.update');
+                Route::get('/metrics', [AttendanceManagementController::class, 'metrics'])->name('metrics');
+                Route::get('/records', [AttendanceManagementController::class, 'index'])->name('records.index');
+                Route::get('/payroll-summaries', [AttendanceManagementController::class, 'payrollSummaries'])
+                    ->name('payroll-summaries.index');
+                Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
+                    ->middleware('throttle:20,1')
+                    ->name('payroll-summaries.generate');
             });
 
             Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
@@ -260,6 +311,20 @@ Route::middleware('auth:sanctum')->group(function (): void {
                     ->name('leads.activities.store');
             });
 
+            Route::prefix('attendance')->name('attendance.')->group(function (): void {
+                Route::get('/today', [AttendanceAgentController::class, 'today'])->name('today');
+                Route::post('/clock-in', [AttendanceAgentController::class, 'clockIn'])
+                    ->middleware('throttle:20,1')
+                    ->name('clock-in');
+                Route::post('/clock-out', [AttendanceAgentController::class, 'clockOut'])
+                    ->middleware('throttle:20,1')
+                    ->name('clock-out');
+                Route::get('/history', [AttendanceAgentController::class, 'history'])->name('history');
+                Route::get('/stats', [AttendanceAgentController::class, 'stats'])->name('stats');
+                Route::get('/payroll-summary', [AttendanceAgentController::class, 'payrollSummary'])
+                    ->name('payroll-summary');
+            });
+
             Route::get('/dashboard/overview', DashboardOverviewController::class)
                 ->name('dashboard.overview');
 
@@ -277,6 +342,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/', [TaskController::class, 'store'])
             ->middleware('throttle:30,1')
             ->name('store');
+        Route::get('/reassignments/inbox', [TaskAssignmentController::class, 'inbox'])->name('reassignments.inbox');
+        Route::post('/reassignments/{reassignment}/accept', [TaskAssignmentController::class, 'accept'])
+            ->name('reassignments.accept');
+        Route::post('/reassignments/{reassignment}/reject', [TaskAssignmentController::class, 'reject'])
+            ->name('reassignments.reject');
         Route::get('/{task}', [TaskController::class, 'show'])->name('show');
         Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
         Route::post('/{task}/start', [TaskTrackingController::class, 'start'])->name('start');
@@ -311,12 +381,58 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::prefix('payroll')->name('payroll.')->group(function (): void {
         Route::get('/', [PayrollController::class, 'index'])->name('index');
+        Route::get('/overview', [PayrollController::class, 'overview'])->name('overview');
+        Route::get('/agents', [PayrollController::class, 'agents'])->name('agents.index');
+        Route::get('/agents/{user}', [PayrollController::class, 'agentProfile'])->name('agents.show');
+        Route::patch('/agents/{user}', [PayrollController::class, 'updateAgentPayroll'])
+            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->name('agents.update');
         Route::post('/', [PayrollController::class, 'store'])
             ->middleware('throttle:20,1')
             ->name('store');
         Route::put('/{payrollSetting}', [PayrollController::class, 'update'])
             ->middleware('throttle:20,1')
             ->name('update');
+    });
+
+    Route::prefix('attendance')->name('attendance.')->group(function (): void {
+        Route::get('/settings', [AttendanceSettingsController::class, 'show'])
+            ->middleware('access.role:management')
+            ->name('settings.show');
+        Route::put('/settings', [AttendanceSettingsController::class, 'update'])
+            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->name('settings.update');
+        Route::get('/metrics', [AttendanceManagementController::class, 'metrics'])
+            ->middleware('access.role:management')
+            ->name('metrics');
+        Route::get('/records', [AttendanceManagementController::class, 'index'])
+            ->middleware('access.role:management')
+            ->name('records.index');
+        Route::get('/payroll-summaries', [AttendanceManagementController::class, 'payrollSummaries'])
+            ->middleware('access.role:management')
+            ->name('payroll-summaries.index');
+        Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
+            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->name('payroll-summaries.generate');
+
+        Route::get('/today', [AttendanceAgentController::class, 'today'])
+            ->middleware('access.role:agent')
+            ->name('today');
+        Route::post('/clock-in', [AttendanceAgentController::class, 'clockIn'])
+            ->middleware(['access.role:agent', 'throttle:20,1'])
+            ->name('clock-in');
+        Route::post('/clock-out', [AttendanceAgentController::class, 'clockOut'])
+            ->middleware(['access.role:agent', 'throttle:20,1'])
+            ->name('clock-out');
+        Route::get('/history', [AttendanceAgentController::class, 'history'])
+            ->middleware('access.role:agent')
+            ->name('history');
+        Route::get('/stats', [AttendanceAgentController::class, 'stats'])
+            ->middleware('access.role:agent')
+            ->name('stats');
+        Route::get('/payroll-summary', [AttendanceAgentController::class, 'payrollSummary'])
+            ->middleware('access.role:agent')
+            ->name('payroll-summary');
     });
 
     Route::prefix('internal-users')->name('internal-users.')->group(function (): void {

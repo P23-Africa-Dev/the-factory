@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { TinyButton } from "../ui/tiny-button";
 import { StatusBadge } from "../ui/status-badge";
 import type { InternalUserListItem } from "@/lib/api/internal-users";
+export { mapPayrollAgentToUi, mapPayrollProfileToUi } from "@/lib/api/payroll";
 
 export interface PayrollAgent {
   id: string;

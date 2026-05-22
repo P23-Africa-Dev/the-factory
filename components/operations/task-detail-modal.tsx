@@ -8,6 +8,9 @@ import type { DndItem } from '@/types/operations';
 import {
   useTaskDetail,
   useAssignTask,
+  useTaskReassignmentInbox,
+  useAcceptTaskReassignment,
+  useRejectTaskReassignment,
   useUpdateTaskStatus,
   useUploadTaskProof,
 } from '@/hooks/use-tasks';
@@ -131,13 +134,19 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const authUser = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(authUser);
+  const currentUserId = Number(authUser?.id ?? 0);
   const taskId = Number(task?.id ?? 0);
   const detailQuery = useTaskDetail(taskId, companyId ?? undefined);
-  const { data: agents = [], isLoading: loadingAgents } = useInternalUsers({
+  const { data: internalUsers = [], isLoading: loadingInternalUsers } = useInternalUsers({
     company_id: companyId ?? undefined,
-    role: 'agent',
+  });
+  const reassignmentInbox = useTaskReassignmentInbox({
+    company_id: companyId ?? undefined,
+    status: 'pending',
   });
   const [selectedAgentId, setSelectedAgentId] = useState('');
+  const [prevAssigneeId, setPrevAssigneeId] = useState<number | undefined>();
+  const [reassignmentReason, setReassignmentReason] = useState('');
   const [showLocationGate, setShowLocationGate] = useState(false);
   const [commencing, setCommencing] = useState(false);
   const [showCompleteSheet, setShowCompleteSheet] = useState(false);
@@ -152,15 +161,24 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
     onSuccess: () => toast.success('Proof uploaded successfully.'),
   });
   const assignTaskMutation = useAssignTask({
-    onSuccess: () => toast.success('Task assignment updated.'),
+    onSuccess: () => {
+      toast.success('Reassignment request sent. Waiting for acceptance.');
+      setReassignmentReason('');
+    },
+  });
+  const acceptReassignmentMutation = useAcceptTaskReassignment({
+    onSuccess: () => toast.success('Task reassignment accepted.'),
+  });
+  const rejectReassignmentMutation = useRejectTaskReassignment({
+    onSuccess: () => toast.success('Task reassignment rejected.'),
   });
 
-  useEffect(() => {
-    const assigneeId = detailQuery.data?.assignee?.id;
-    if (assigneeId) {
-      setSelectedAgentId(String(assigneeId));
-    }
-  }, [detailQuery.data?.assignee?.id]);
+  const assigneeId = detailQuery.data?.assignee?.id;
+
+  if (assigneeId && assigneeId !== prevAssigneeId) {
+    setPrevAssigneeId(assigneeId);
+    setSelectedAgentId(String(assigneeId));
+  }
 
   if (!isOpen || !task) return null;
 
@@ -193,6 +211,20 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
 
   const latitude = detailQuery.data?.latitude ?? null;
   const longitude = detailQuery.data?.longitude ?? null;
+  const latestReassignment = detailQuery.data?.latest_reassignment ?? null;
+
+  const canReassignToRoles = role === 'agent' ? ['agent'] : ['agent', 'supervisor'];
+  const eligibleUsers = internalUsers.filter((candidate) => {
+    const candidateRole = candidate.role ?? candidate.internal_role;
+    return !!candidateRole && canReassignToRoles.includes(candidateRole);
+  });
+
+  const pendingInboxRequest = reassignmentInbox.data?.find(
+    (item) => Number(item.task_id) === taskId && item.status === 'pending'
+  );
+  const canRespondToPendingRequest =
+    !!pendingInboxRequest && Number(pendingInboxRequest.to_user_id) === currentUserId;
+  const hasPendingReassignment = latestReassignment?.status === 'pending';
 
   const handleCommenceAndTrack = () => {
     if (!companyId) { toast.error('Company context is required.'); return; }
@@ -299,12 +331,37 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
       return;
     }
 
+    if (Number(selectedAgentId) === Number(detailQuery.data?.assigned_agent_id)) {
+      toast.error('Select a different user for reassignment.');
+      return;
+    }
+
     assignTaskMutation.mutate({
       taskId,
       payload: {
         company_id: companyId,
-        assigned_agent_ids: [Number(selectedAgentId)],
+        to_user_id: Number(selectedAgentId),
+        reason: reassignmentReason.trim() ? reassignmentReason.trim() : undefined,
       },
+    });
+  };
+
+  const respondToReassignment = (decision: 'accept' | 'reject') => {
+    if (!companyId || !pendingInboxRequest) {
+      return;
+    }
+
+    if (decision === 'accept') {
+      acceptReassignmentMutation.mutate({
+        reassignmentId: pendingInboxRequest.id,
+        payload: { company_id: companyId },
+      });
+      return;
+    }
+
+    rejectReassignmentMutation.mutate({
+      reassignmentId: pendingInboxRequest.id,
+      payload: { company_id: companyId },
     });
   };
 
@@ -504,28 +561,61 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
               ) : null}
               <div className="mt-4 p-3 border border-gray-100 rounded-lg space-y-2">
                 <p className="text-[12px] font-bold text-dash-dark">Reassign Task</p>
+                {hasPendingReassignment ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+                    Pending request: {latestReassignment?.from_user?.name ?? 'Current owner'} →{' '}
+                    {latestReassignment?.to_user?.name ?? 'New owner'}
+                  </div>
+                ) : null}
                 <select
                   value={selectedAgentId}
                   onChange={(event) => setSelectedAgentId(event.target.value)}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-white"
+                  disabled={hasPendingReassignment}
                 >
                   <option value="">Select agent</option>
-                  {loadingAgents ? (
+                  {loadingInternalUsers ? (
                     <option value="" disabled>Loading agents...</option>
                   ) : (
-                    agents.map((agent) => (
-                      <option key={agent.id} value={String(agent.id)}>
-                        {agent.name} ({agent.email})
+                    eligibleUsers.map((candidate) => (
+                      <option key={candidate.id} value={String(candidate.id)}>
+                        {candidate.name} ({candidate.email})
                       </option>
                     ))
                   )}
                 </select>
+                <textarea
+                  value={reassignmentReason}
+                  onChange={(event) => setReassignmentReason(event.target.value)}
+                  placeholder="Reason for reassignment (optional)"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-white min-h-20"
+                  disabled={hasPendingReassignment}
+                />
                 <button
                   onClick={updateAssignment}
-                  className="w-full px-4 py-2 rounded-lg bg-dash-dark text-white text-xs font-semibold"
+                  disabled={assignTaskMutation.isPending || hasPendingReassignment}
+                  className="w-full px-4 py-2 rounded-lg bg-dash-dark text-white text-xs font-semibold disabled:opacity-60"
                 >
-                  Update Assignment
+                  {assignTaskMutation.isPending ? 'Sending Request...' : 'Request Reassignment'}
                 </button>
+                {canRespondToPendingRequest ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => respondToReassignment('accept')}
+                      disabled={acceptReassignmentMutation.isPending || rejectReassignmentMutation.isPending}
+                      className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold disabled:opacity-60"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={() => respondToReassignment('reject')}
+                      disabled={acceptReassignmentMutation.isPending || rejectReassignmentMutation.isPending}
+                      className="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold disabled:opacity-60"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>

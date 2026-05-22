@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Payroll;
 
 use App\Models\Company;
+use App\Models\AttendanceRecord;
 use App\Models\PayrollSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -494,6 +495,117 @@ class PayrollManagementTest extends TestCase
             'daily_pay' => '6300.00',
             'attendance_affects_pay' => 1,
             'commission_enabled' => 1,
+        ]);
+    }
+
+    public function test_payroll_overview_uses_attendance_records_for_today_values(): void
+    {
+        [$company, $admin,, $agent] = $this->seedCompanyUsers();
+
+        $this->createPayrollSetting($company, [
+            'base_salary' => 120000,
+            'work_days' => 22,
+            'daily_pay' => 5454.55,
+            'attendance_affects_pay' => false,
+        ]);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'attendance_date' => '2026-06-02',
+            'clock_in_at' => '2026-06-02 09:00:00',
+            'clock_out_at' => '2026-06-02 17:00:00',
+            'status' => 'present',
+            'work_duration_minutes' => 480,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/payroll/overview?company_id=' . $company->id . '&date=2026-06-02');
+
+        $response->assertOk()
+            ->assertJsonPath('data.today_present_agents', 1)
+            ->assertJsonPath('data.today_payroll_value', 5454.55)
+            ->assertJsonPath('data.total_agents', 1)
+            ->assertJsonPath('data.total_payroll', 120000)
+            ->assertJsonPath('data.payroll_rise', true)
+            ->assertJsonPath('data.payroll_fall', false);
+    }
+
+    public function test_managers_can_fetch_agent_payroll_profile_and_agents_are_scoped_by_company(): void
+    {
+        [$company, $admin,, $agent] = $this->seedCompanyUsers();
+
+        $this->createPayrollSetting($company, [
+            'base_salary' => 120000,
+            'work_days' => 22,
+            'daily_pay' => 5454.55,
+        ]);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'attendance_date' => '2026-06-02',
+            'clock_in_at' => '2026-06-02 09:00:00',
+            'clock_out_at' => '2026-06-02 17:00:00',
+            'status' => 'present',
+            'work_duration_minutes' => 480,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        $agentsResponse = $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/payroll/agents?company_id=' . $company->id . '&year=2026&month=6&per_page=20');
+
+        $agentsResponse->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.id', $agent->id)
+            ->assertJsonPath('data.items.0.attendance_days', 1)
+            ->assertJsonPath('data.items.0.salary_type', 'monthly');
+
+        $profileResponse = $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/payroll/agents/' . $agent->id . '?company_id=' . $company->id . '&year=2026&month=6');
+
+        $profileResponse->assertOk()
+            ->assertJsonPath('data.id', $agent->id)
+            ->assertJsonPath('data.attendance_days', 1)
+            ->assertJsonPath('data.salary_payable', 120000)
+            ->assertJsonStructure(['data' => ['history']]);
+    }
+
+    public function test_admin_can_update_agent_payroll_profile(): void
+    {
+        [$company, $admin,, $agent] = $this->seedCompanyUsers();
+
+        $this->createPayrollSetting($company, [
+            'base_salary' => 120000,
+            'work_days' => 22,
+            'daily_pay' => 5454.55,
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->patchJson('/api/v1/payroll/agents/' . $agent->id, [
+                'company_id' => $company->id,
+                'base_salary' => 150000,
+                'salary_type' => 'weekly',
+                'attendance_affects_pay' => true,
+                'work_days_override' => 20,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.id', $agent->id)
+            ->assertJsonPath('data.base_salary', 150000)
+            ->assertJsonPath('data.salary_type', 'weekly')
+            ->assertJsonPath('data.attendance_affects_pay', true)
+            ->assertJsonPath('data.work_days', 20);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $agent->id,
+            'base_salary' => '150000.00',
+            'payroll_salary_type' => 'weekly',
+            'payroll_attendance_affects_pay' => 1,
+            'payroll_work_days_override' => 20,
         ]);
     }
 

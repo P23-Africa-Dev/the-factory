@@ -30,10 +30,13 @@ Authenticated via `auth:sanctum`:
 2. `POST /api/v1/tasks`
 3. `GET /api/v1/tasks/{task}`
 4. `PATCH /api/v1/tasks/{task}/assign`
-5. `PATCH /api/v1/tasks/{task}/status`
-6. `POST /api/v1/tasks/{task}/proofs`
-7. `GET /api/v1/tasks/{task}/proofs/{proof}`
-8. `POST /api/v1/agent/tasks/self`
+5. `GET /api/v1/tasks/reassignments/inbox`
+6. `POST /api/v1/tasks/reassignments/{reassignment}/accept`
+7. `POST /api/v1/tasks/reassignments/{reassignment}/reject`
+8. `PATCH /api/v1/tasks/{task}/status`
+9. `POST /api/v1/tasks/{task}/proofs`
+10. `GET /api/v1/tasks/{task}/proofs/{proof}`
+11. `POST /api/v1/agent/tasks/self`
 
 ## Authentication
 
@@ -347,13 +350,23 @@ Success 200:
 }
 ```
 
-### 4) Reassign Task
+### 4) Request Task Reassignment
 
 `PATCH /api/v1/tasks/101/assign`
 
-Supports single-agent (legacy) or multi-agent assignment.
+Creates a pending reassignment request. Ownership changes only after acceptance.
 
-Single-agent request (backward-compatible):
+Preferred request:
+
+```json
+{
+  "company_id": 1,
+  "to_user_id": 31,
+  "reason": "Shift handover for coverage"
+}
+```
+
+Legacy request (still supported):
 
 ```json
 {
@@ -362,22 +375,37 @@ Single-agent request (backward-compatible):
 }
 ```
 
-Multi-agent request:
+Notes:
+
+1. `to_user_id` is the explicit recipient of the request.
+2. Legacy `assigned_agent_id` and `assigned_agent_ids` payloads are normalized server-side to `to_user_id`.
+3. Recipient must belong to the active company context and have an allowed role.
+4. A pending request does not transfer task ownership until accepted.
+
+### 5) Respond to Reassignment
+
+Accept:
+
+`POST /api/v1/tasks/reassignments/{reassignment}/accept`
+
+Reject:
+
+`POST /api/v1/tasks/reassignments/{reassignment}/reject`
+
+Request payload:
 
 ```json
 {
   "company_id": 1,
-  "assigned_agent_ids": [31, 42, 55]
+  "response_note": "Acknowledged"
 }
 ```
 
-Notes:
+### 6) Reassignment Inbox
 
-1. When `assigned_agent_id` is provided (single integer), it is normalized server-side into `assigned_agent_ids: [id]`.
-2. `assigned_agent_ids` accepts 1 to 20 agent user IDs.
-3. All provided agents must belong to the same active company with `agent` role.
-4. The first ID in the array becomes the primary `assigned_agent_id` on the task record.
-5. All assigned agents appear in the `assigned_users` array in subsequent task responses.
+`GET /api/v1/tasks/reassignments/inbox?company_id=1&status=pending`
+
+Returns reassignment requests addressed to the authenticated user.
 
 Failure 422 example:
 
@@ -392,7 +420,7 @@ Failure 422 example:
 }
 ```
 
-### 5) Update Task Status
+### 7) Update Task Status
 
 `PATCH /api/v1/tasks/101/status`
 
@@ -497,6 +525,7 @@ Upload proof:
 5. Agents cannot view, update, or upload proof on tasks they are not assigned to
 6. `completed` and `cancelled` tasks cannot change status again
 7. Terminal tasks cannot be reassigned
+8. Reassignment acceptance closes any active tracking session before ownership transfer
 8. Proof download is denied for non-owner/admin roles
 9. Tasks may be created with no assignee; unassigned tasks are still valid
 10. Tasks may be created with no project; standalone tasks are not required to belong to a project

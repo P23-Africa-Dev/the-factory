@@ -2,7 +2,23 @@
   "permissions": {
     "allow": [
       "Bash(npm run:*)",
-      "Bash(xargs ls)"
+      "Bash(xargs ls)",
+      "Bash(sed -i '' 's|router.push\\(\"/payroll/payroll-list\"\\)|router.push\\(\"/finance/payroll-list\"\\)|g' \"/Users/elijahobominuru/Desktop/stuff/the-factory/app/\\(dashboard\\)/finance/page.tsx\")",
+      "Bash(sed -i '' 's|router.push\\(\"/agent/payroll/payroll-list\"\\)|router.push\\(\"/agent/finance/payroll-list\"\\)|g' \"/Users/elijahobominuru/Desktop/stuff/the-factory/app/agent/finance/page.tsx\")",
+      "Bash(sed -n '1140,1160p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/app/\\(dashboard\\)/crm/leads/[id]/page.tsx\")",
+      "Bash(sed -n '378,385p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/app/\\(dashboard\\)/crm/page.tsx\")",
+      "Bash(sed -n '566,572p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/app/\\(dashboard\\)/crm/page.tsx\")",
+      "Bash(sed -n '738,745p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/app/agent/crm/page.tsx\")",
+      "Bash(sed -n '142,150p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/components/map/map-view.tsx\")",
+      "Bash(sed -n '152,158p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/components/operations/attendance-view.tsx\")",
+      "Bash(sed -n '67,87p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/components/operations/project-details-view.tsx\")",
+      "Bash(sed -n '84,91p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/components/operations/schedule-task-modal.tsx\")",
+      "Bash(sed -n '175,182p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/components/operations/task-detail-modal.tsx\")",
+      "Bash(sed -n '279,285p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/components/profile/profile-page.tsx\")",
+      "Bash(sed -n '188,195p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/app/enterprise/setup/page.tsx\")",
+      "Bash(sed -n '46,52p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/components/forms/agent-login-form.tsx\")",
+      "Bash(sed -n '46,52p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/components/forms/login-form.tsx\")",
+      "Bash(sed -n '107,114p' \"/Users/elijahobominuru/Desktop/stuff/the-factory/components/forms/self-serve-onboarding-form.tsx\")"
     ]
   }
 }

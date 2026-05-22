@@ -811,10 +811,32 @@ class TaskManagementTest extends TestCase
             ->patchJson('/api/v1/tasks/' . $task->id . '/assign', [
                 'company_id' => $company->id,
                 'assigned_agent_id' => $newAgent->id,
+                'reason' => 'Coverage gap in current zone.',
             ]);
 
         $response->assertOk()
-            ->assertJsonPath('data.task.assigned_agent_id', $newAgent->id);
+            ->assertJsonPath('data.reassignment.status', 'pending')
+            ->assertJsonPath('data.reassignment.to_user_id', $newAgent->id);
+
+        $reassignmentId = (int) $response->json('data.reassignment.id');
+
+        $acceptResponse = $this->withToken($newAgent->createToken('new-agent-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/tasks/reassignments/' . $reassignmentId . '/accept', [
+                'company_id' => $company->id,
+            ]);
+
+        $acceptResponse->assertOk()
+            ->assertJsonPath('data.reassignment.status', 'accepted')
+            ->assertJsonPath('data.reassignment.to_user_id', $newAgent->id);
+
+        $task->refresh();
+        $this->assertSame($newAgent->id, $task->assigned_agent_id);
+
+        $this->assertDatabaseHas('task_assignments', [
+            'task_id' => $task->id,
+            'assigned_agent_id' => $newAgent->id,
+            'is_current' => true,
+        ]);
     }
 
     public function test_cross_company_assignment_is_rejected(): void
@@ -866,7 +888,79 @@ class TaskManagementTest extends TestCase
             ]);
 
         $response->assertUnprocessable()
-            ->assertJsonPath('errors.assigned_agent_id.0', 'Selected agent is not a member of this company.');
+            ->assertJsonPath('errors.to_user_id.0', 'Selected user is not a member of this company.');
+    }
+
+    public function test_old_owner_can_view_reassigned_task_but_cannot_update_it(): void
+    {
+        [$company, $admin, $oldOwner] = $this->seedCompanyUsers();
+
+        $newOwner = User::factory()->create(['email_verified_at' => now()]);
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $newOwner->id,
+            'role' => 'agent',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $task = Task::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $oldOwner->id,
+            'title' => 'Transfer Visibility Task',
+            'type' => 'inspection',
+            'description' => 'Ensures previous owner has read-only access post transfer.',
+            'location_text' => 'Yaba',
+            'address_full' => 'Herbert Macaulay Way, Yaba',
+            'due_at' => now()->addDay(),
+            'required_actions' => [],
+            'priority' => 'medium',
+            'minimum_photos_required' => 0,
+            'visit_verification_required' => false,
+            'status' => 'pending',
+        ]);
+
+        DB::table('task_assignments')->insert([
+            'task_id' => $task->id,
+            'assigned_by_user_id' => $admin->id,
+            'assigned_agent_id' => $oldOwner->id,
+            'assigned_at' => now(),
+            'is_current' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $requestResponse = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
+            ->patchJson('/api/v1/tasks/' . $task->id . '/assign', [
+                'company_id' => $company->id,
+                'assigned_agent_id' => $newOwner->id,
+            ]);
+
+        $requestResponse->assertOk();
+
+        $reassignmentId = (int) $requestResponse->json('data.reassignment.id');
+
+        $this->withToken($newOwner->createToken('new-owner-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/tasks/reassignments/' . $reassignmentId . '/accept', [
+                'company_id' => $company->id,
+            ])
+            ->assertOk();
+
+        $viewResponse = $this->withToken($oldOwner->createToken('old-owner-token', ['*'])->plainTextToken)
+            ->getJson('/api/v1/tasks/' . $task->id . '?company_id=' . $company->id);
+
+        $viewResponse->assertOk()
+            ->assertJsonPath('data.task.id', $task->id);
+
+        $updateResponse = $this->withToken($oldOwner->createToken('old-owner-status-token', ['*'])->plainTextToken)
+            ->patchJson('/api/v1/tasks/' . $task->id . '/status', [
+                'company_id' => $company->id,
+                'status' => 'in_progress',
+            ]);
+
+        $updateResponse->assertUnprocessable();
     }
 
     public function test_proof_download_is_restricted_to_owner_and_admin(): void

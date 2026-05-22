@@ -6,39 +6,36 @@ import MessageIcon from "@/assets/images/message-icon.png";
 import Image from "next/image";
 import { TinyButton } from "../ui/tiny-button";
 import type { PayrollAgent } from "./payroll-list";
-import type { PayrollSettings } from "@/lib/api/payroll";
+
+export type PayrollAgentProfileView = PayrollAgent & {
+  email: string;
+  salaryType: string;
+  dailyPay: string;
+  attendanceDays: number;
+  attendanceAffectsPay: boolean;
+  currency: string;
+  workDays?: number;
+  workHours?: number;
+  commissionEnabled?: boolean;
+};
 
 interface PayrollSidebarProps {
-  agent: PayrollAgent | null;
-  payrollSettings?: PayrollSettings | null;
+  agent: PayrollAgentProfileView | null;
+  onEditPayroll?: () => void;
 }
 
-function formatMoney(amount: number, currency: string) {
-  const formatted = amount.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-  if (currency === "NGN") return `₦${formatted}`;
-  if (currency === "USD") return `$${formatted}`;
-  return `${formatted} ${currency}`;
+function mailTo(email: string) {
+  return `mailto:${encodeURIComponent(email)}`;
 }
 
-export function PayrollSidebar({ agent, payrollSettings }: PayrollSidebarProps) {
+export function PayrollSidebar({ agent, onEditPayroll }: PayrollSidebarProps) {
   if (!agent) return null;
 
-  const baseSalary = payrollSettings
-    ? formatMoney(payrollSettings.base_salary, payrollSettings.currency)
-    : "—";
-
-  const dailyPay = payrollSettings
-    ? formatMoney(payrollSettings.daily_pay, payrollSettings.currency)
-    : "—";
-
-  const workDays = payrollSettings ? `${payrollSettings.work_days}` : "—";
-  const workHours = payrollSettings ? `${payrollSettings.work_hours} hrs` : "—";
-  const salaryType = payrollSettings
-    ? payrollSettings.salary_type.charAt(0).toUpperCase() + payrollSettings.salary_type.slice(1)
-    : "—";
+  const baseSalary = agent.baseSalary;
+  const dailyPay = agent.dailyPay;
+  const workDays = agent.workDays ? `${agent.workDays}` : "—";
+  const workHours = agent.workHours ? `${agent.workHours} hrs` : "—";
+  const salaryType = agent.salaryType ? agent.salaryType.charAt(0).toUpperCase() + agent.salaryType.slice(1) : "—";
 
   return (
     <div className="payroll-cutout w-full text-dash-dark h-auto lg:h-140 overflow-y-auto border-dash-dark/5 bg-white p-8 sm:p-[55px_42px_46.52px] relative rounded-2xl shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
@@ -95,7 +92,7 @@ export function PayrollSidebar({ agent, payrollSettings }: PayrollSidebarProps) 
               Attendance Pay
             </p>
             <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-              {payrollSettings ? (payrollSettings.attendance_affects_pay ? "Yes" : "No") : "—"}
+              {agent.attendanceAffectsPay ? "Yes" : "No"}
             </p>
           </div>
           <div>
@@ -111,7 +108,7 @@ export function PayrollSidebar({ agent, payrollSettings }: PayrollSidebarProps) 
               Commission
             </p>
             <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-              {payrollSettings ? (payrollSettings.commission_enabled ? "Enabled" : "Disabled") : "—"}
+              {agent.commissionEnabled ? "Enabled" : "Disabled"}
             </p>
           </div>
         </div>
@@ -143,17 +140,29 @@ export function PayrollSidebar({ agent, payrollSettings }: PayrollSidebarProps) 
 
           {/* Action buttons */}
           <div className="flex justify-end gap-1.75 mt-6.5">
-            <button className="w-[32.48px] h-[32.48px] rounded-full bg-[#EAEAEA] flex items-center justify-center cursor-pointer">
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = mailTo(agent.email);
+              }}
+              className="w-[32.48px] h-[32.48px] rounded-full bg-[#EAEAEA] flex items-center justify-center cursor-pointer"
+            >
               <Image src={MessageIcon} alt="Message" width={14} height={14} />
             </button>
-            <button className="w-[32.48px] h-[32.48px] rounded-full bg-[#EAEAEA] flex items-center justify-center cursor-pointer">
-              <Image
-                src={CustomizeIcon}
-                alt="Customize"
-                width={14}
-                height={14}
-              />
-            </button>
+            {onEditPayroll ? (
+              <button
+                type="button"
+                onClick={onEditPayroll}
+                className="w-[32.48px] h-[32.48px] rounded-full bg-[#EAEAEA] flex items-center justify-center cursor-pointer"
+              >
+                <Image
+                  src={CustomizeIcon}
+                  alt="Customize"
+                  width={14}
+                  height={14}
+                />
+              </button>
+            ) : null}
             <button className="w-[32.48px] h-[32.48px] rounded-full bg-[#EAEAEA] flex items-center justify-center cursor-pointer">
               <Image
                 src={FileExportIcon}

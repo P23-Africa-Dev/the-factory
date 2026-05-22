@@ -13,8 +13,19 @@ class AssignTaskRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $toUserId = $this->input('to_user_id');
+
+        if ($toUserId === null && $this->has('assigned_agent_id')) {
+            $toUserId = $this->input('assigned_agent_id');
+        }
+
+        if ($toUserId === null && is_array($this->input('assigned_agent_ids'))) {
+            $toUserId = $this->input('assigned_agent_ids')[0] ?? null;
+        }
+
         $payload = [
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
+            'to_user_id' => $toUserId,
         ];
 
         // Normalize: if a single assigned_agent_id is given, wrap it in array format
@@ -37,16 +48,18 @@ class AssignTaskRequest extends FormRequest
     {
         return [
             'company_id' => ['nullable', 'integer', 'exists:companies,id'],
+            'to_user_id' => ['nullable', 'integer', 'exists:users,id'],
             'assigned_agent_id' => ['nullable', 'integer', 'exists:users,id'],
-            'assigned_agent_ids' => ['required_without:assigned_agent_id', 'array', 'min:1', 'max:20'],
+            'assigned_agent_ids' => ['required_without_all:assigned_agent_id,to_user_id', 'array', 'min:1', 'max:20'],
             'assigned_agent_ids.*' => ['integer', 'distinct', 'exists:users,id'],
+            'reason' => ['nullable', 'string', 'min:3', 'max:2000'],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'assigned_agent_ids.required_without' => 'At least one agent must be assigned.',
+            'assigned_agent_ids.required_without_all' => 'A reassignment target is required.',
         ];
     }
 }

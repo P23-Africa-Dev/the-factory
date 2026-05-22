@@ -6,6 +6,9 @@ import {
   createTask,
   getTask,
   assignTask,
+  listTaskReassignmentInbox,
+  acceptTaskReassignment,
+  rejectTaskReassignment,
   updateTaskStatus,
   updateTaskStatusAdmin,
   createSelfTask,
@@ -14,6 +17,9 @@ import {
   type CreateTaskPayload,
   type CreateSelfTaskPayload,
   type AssignTaskPayload,
+  type TaskReassignmentsInboxParams,
+  type RespondTaskReassignmentPayload,
+  type TaskReassignmentItem,
   type UpdateTaskStatusPayload,
   type TaskApiItem,
   type PaginationData,
@@ -25,6 +31,8 @@ export const TASK_KEYS = {
   list: (params: ListTasksParams) => ["tasks", params] as const,
   detail: (taskId: number | string, companyId?: number | string) =>
     ["tasks", "detail", taskId, companyId] as const,
+  reassignmentInbox: (params: TaskReassignmentsInboxParams) =>
+    ["tasks", "reassignments", "inbox", params] as const,
 };
 
 export type TasksResult = {
@@ -72,7 +80,7 @@ export function useTaskDetail(taskId: number | string, companyId?: number | stri
   });
 }
 
-export function useAssignTask(options?: { onSuccess?: (task: TaskApiItem) => void }) {
+export function useAssignTask(options?: { onSuccess?: (reassignment: TaskReassignmentItem) => void }) {
   const queryClient = useQueryClient();
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
   return useMutation({
@@ -80,7 +88,66 @@ export function useAssignTask(options?: { onSuccess?: (task: TaskApiItem) => voi
       assignTask(taskId, payload, token),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
-      options?.onSuccess?.(res.data.task);
+      queryClient.invalidateQueries({ queryKey: ["tasks", "reassignments"] });
+      options?.onSuccess?.(res.data.reassignment);
+    },
+  });
+}
+
+export function useTaskReassignmentInbox(params: TaskReassignmentsInboxParams = {}) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useQuery({
+    queryKey: TASK_KEYS.reassignmentInbox(params),
+    queryFn: async (): Promise<TaskReassignmentItem[]> => {
+      const res = await listTaskReassignmentInbox(params, token);
+      return res.data.reassignments;
+    },
+    enabled: !!token && !!params.company_id,
+    staleTime: 1000 * 30,
+  });
+}
+
+export function useAcceptTaskReassignment(options?: {
+  onSuccess?: (reassignment: TaskReassignmentItem) => void;
+}) {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useMutation({
+    mutationFn: ({
+      reassignmentId,
+      payload,
+    }: {
+      reassignmentId: number | string;
+      payload: RespondTaskReassignmentPayload;
+    }) => acceptTaskReassignment(reassignmentId, payload, token),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+      queryClient.invalidateQueries({ queryKey: ["tasks", "reassignments"] });
+      options?.onSuccess?.(res.data.reassignment);
+    },
+  });
+}
+
+export function useRejectTaskReassignment(options?: {
+  onSuccess?: (reassignment: TaskReassignmentItem) => void;
+}) {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useMutation({
+    mutationFn: ({
+      reassignmentId,
+      payload,
+    }: {
+      reassignmentId: number | string;
+      payload: RespondTaskReassignmentPayload;
+    }) => rejectTaskReassignment(reassignmentId, payload, token),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+      queryClient.invalidateQueries({ queryKey: ["tasks", "reassignments"] });
+      options?.onSuccess?.(res.data.reassignment);
     },
   });
 }

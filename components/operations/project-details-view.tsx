@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, SlidersHorizontal, BookmarkPlus, Loader2 } from "lucide-react";
 import { arrayMove } from "@dnd-kit/sortable";
@@ -59,30 +59,33 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
 
   const [showModal, setShowModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState<{ item: DndItem; containerId: string } | null>(null);
-  const [boardContainers, setBoardContainers] = useState<DndContainer[]>([]);
+  const serverContainers = useMemo(
+    () => buildContainers(tasksData?.tasks ?? []),
+    [tasksData?.tasks],
+  );
+  const [boardContainers, setBoardContainers] = useState<DndContainer[]>(serverContainers);
   const [isDraggingBoard, setIsDraggingBoard] = useState(false);
-  const [pendingServerTasks, setPendingServerTasks] = useState<TaskApiItem[] | null>(null);
+  const [pendingServerContainers, setPendingServerContainers] = useState<DndContainer[] | null>(null);
+  const [prevServerContainers, setPrevServerContainers] = useState(serverContainers);
 
-  useEffect(() => {
-    const nextServerTasks = tasksData?.tasks ?? [];
-
+  if (serverContainers !== prevServerContainers) {
+    setPrevServerContainers(serverContainers);
     if (isDraggingBoard) {
-      setPendingServerTasks(nextServerTasks);
-      return;
+      setPendingServerContainers(serverContainers);
+    } else {
+      setBoardContainers(serverContainers);
+      setPendingServerContainers(null);
     }
+  }
 
-    setBoardContainers(buildContainers(nextServerTasks));
-    setPendingServerTasks(null);
-  }, [isDraggingBoard, tasksData?.tasks]);
-
-  useEffect(() => {
-    if (isDraggingBoard || pendingServerTasks === null) {
-      return;
+  const handleDragStateChange = useCallback((dragging: boolean) => {
+    if (!dragging && pendingServerContainers) {
+      setBoardContainers(pendingServerContainers);
+      setPrevServerContainers(pendingServerContainers);
+      setPendingServerContainers(null);
     }
-
-    setBoardContainers(buildContainers(pendingServerTasks));
-    setPendingServerTasks(null);
-  }, [isDraggingBoard, pendingServerTasks]);
+    setIsDraggingBoard(dragging);
+  }, [pendingServerContainers]);
 
   const findContainer = useCallback(
     (id: string) => {
@@ -370,7 +373,7 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
               moveToContainer={moveToContainer}
               moveBetweenContainers={moveBetweenContainers}
               onStatusDrop={handleStatusDrop}
-              onDragStateChange={setIsDraggingBoard}
+              onDragStateChange={handleDragStateChange}
               onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
             />
           )}

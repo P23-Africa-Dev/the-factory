@@ -5,11 +5,14 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth";
+import { getActiveCompanyContext } from "@/lib/company-context";
 import { clearAuthSession } from "@/lib/auth/session";
 import { ChevronDown, Menu, X, LogOut, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils/sample";
 import LogoutModal from "@/components/ui/logout-modal";
+import { NotificationPanel } from "@/components/notifications/notification-panel";
+import { useUnreadCount } from "@/hooks/use-notifications";
 
 // Import local SVG assets
 import DashboardIcon from "@/assets/nav-icons/dashboard.svg";
@@ -80,11 +83,15 @@ export function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const user = useAuthStore((s) => s.user);
   const clearUser = useAuthStore((s) => s.clearUser);
   const isAgent = user?.active_company?.role === 'agent';
   const basePath = isAgent ? '/agent' : '';
+  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const { data: unreadData } = useUnreadCount(companyId ?? undefined);
+  const unreadCount = unreadData?.unread_count ?? 0;
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -148,7 +155,7 @@ export function Navbar() {
                       : "opacity-60 group-hover:opacity-100",
                   )}
                 />
-                <span>{isAgent && item.name === "Payroll" ? "Finance" : item.name}</span>
+                <span>{isAgent && item.name === "Payroll" ? "Payroll" : item.name}</span>
                 {item.hasDropdown && (
                   <ChevronDown size={14} className="opacity-40" />
                 )}
@@ -168,14 +175,21 @@ export function Navbar() {
       {/* Right Side Actions */}
       <div className="flex items-center gap-4 lg:gap-8">
         <div className="hidden sm:flex items-center gap-3 lg:gap-5 text-white/60">
-          <button className="hover:text-white transition-all cursor-pointer relative p-1">
+          <button
+            onClick={() => setNotifOpen(true)}
+            className="hover:text-white transition-all cursor-pointer relative p-1"
+          >
             <Image
               src={NotificationIcon}
               alt="Notifications"
               width={20}
               height={20}
             />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-[#0B1215]"></span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-0.5 bg-red-500 text-white text-[9px] font-black rounded-full border-2 border-[#0B1215] flex items-center justify-center leading-none">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
           </button>
           <button className="hover:text-white transition-all cursor-pointer p-1">
             <Image src={SettingsIcon} alt="Settings" width={20} height={20} />
@@ -399,13 +413,16 @@ export function Navbar() {
                 </div>
 
                 <div className="flex gap-4">
-                  <button className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer">
-                    <Image
-                      src={NotificationIcon}
-                      alt="Notifications"
-                      width={24}
-                      height={24}
-                    />
+                  <button
+                    onClick={() => { setIsMobileMenuOpen(false); setNotifOpen(true); }}
+                    className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer relative"
+                  >
+                    <Image src={NotificationIcon} alt="Notifications" width={24} height={24} />
+                    {unreadCount > 0 && (
+                      <span className="absolute top-2.5 right-2.5 min-w-4 h-4 px-0.5 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center leading-none">
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </span>
+                    )}
                   </button>
                   <button className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer">
                     <Image
@@ -436,6 +453,9 @@ export function Navbar() {
         onClose={() => setIsLogoutModalOpen(false)}
         onConfirm={handleLogout}
       />
+
+      {/* Notification Panel */}
+      <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} />
     </nav>
   );
 }

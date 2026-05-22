@@ -41,7 +41,7 @@ import {
   Tag,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import {
   Area,
@@ -429,21 +429,16 @@ function LeadBoard({ basePath = "/crm", initialContainers, onStatusChange, onAdd
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const containersRef = useRef<DndContainer[]>(initialContainers);
   const dragOriginRef = useRef<string | null>(null);
+  const [prevInitialContainers, setPrevInitialContainers] = useState(initialContainers);
 
-  const [activeTabId, setActiveTabId] = useState<string>(() => initialContainers[0]?.id ?? "new");
-
-  // Sync activeTabId if containers change and current activeTabId is not in the containers
-  useEffect(() => {
-    if (initialContainers.length > 0 && !initialContainers.some(c => c.id === activeTabId)) {
-      setActiveTabId(initialContainers[0].id);
-    }
-  }, [initialContainers, activeTabId]);
-
-  // Sync when initialContainers changes (e.g. after refetch)
-  useEffect(() => {
+  if (initialContainers !== prevInitialContainers) {
+    setPrevInitialContainers(initialContainers);
     setContainers(initialContainers);
-    containersRef.current = initialContainers;
-  }, [initialContainers]);
+  }
+
+  useEffect(() => {
+    containersRef.current = containers;
+  }, [containers]);
 
   function apply(updater: DndContainer[] | ((prev: DndContainer[]) => DndContainer[])) {
     setContainers((prev) => {
@@ -674,13 +669,13 @@ function TotalLeadsCard({ totalLeads = 0 }: { totalLeads?: number }) {
 }
 
 function LeadsChart() {
-  const [mounted, setMounted] = useState(false);
+  const isClient = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) return <div className="h-full w-full min-h-45" />;
+  if (!isClient) return <div className="h-full w-full min-h-45" />;
 
   return (
     <div className="rounded-3xl p-6 border-gray-100 flex-1 min-w-0 sm:min-w-75">

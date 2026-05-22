@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services\Task;
 
+use App\Enums\NotificationCategory;
+use App\Enums\NotificationPriority;
 use App\Enums\TaskStatus;
 use App\Models\Task;
 use App\Models\TaskLocationPoint;
 use App\Models\TaskProof;
 use App\Models\TaskTrackingSession;
 use App\Models\User;
+use App\Services\Notification\NotificationService;
 use App\Services\Tracking\AgentLocationSnapshotService;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
@@ -26,6 +29,7 @@ class TaskTrackingService
         private readonly TaskAccessService $accessService,
         private readonly TaskService $taskService,
         private readonly AgentLocationSnapshotService $agentLocationSnapshotService,
+        private readonly NotificationService $notificationService,
     ) {}
 
     public function start(User $user, Task $task, array $data): array
@@ -151,6 +155,15 @@ class TaskTrackingService
             $this->publishTrackingEvent('tracking.task.started', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
             $this->publishTrackingEvent('tracking.location.updated', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
             $this->publishTrackingEvent('tracking.agent.location.updated', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+
+            $this->notifyTrackingEvent(
+                task: $task,
+                actor: $user,
+                type: 'tracking.task.started',
+                title: 'Task tracking started',
+                message: "{$user->name} started tracking for task '{$task->title}'.",
+                priority: NotificationPriority::NORMAL->value,
+            );
 
             return [
                 'task' => $this->loadTaskForResponse($task),
@@ -316,10 +329,28 @@ class TaskTrackingService
 
                 if ($justNearDestination) {
                     $this->publishTrackingEvent('tracking.task.near_destination', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+
+                    $this->notifyTrackingEvent(
+                        task: $task,
+                        actor: $user,
+                        type: 'tracking.task.near_destination',
+                        title: 'Agent near destination',
+                        message: "{$user->name} is near destination for task '{$task->title}'.",
+                        priority: NotificationPriority::HIGH->value,
+                    );
                 }
 
                 if ($justArrived) {
                     $this->publishTrackingEvent('tracking.task.arrived', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+
+                    $this->notifyTrackingEvent(
+                        task: $task,
+                        actor: $user,
+                        type: 'tracking.task.arrived',
+                        title: 'Agent arrived on site',
+                        message: "{$user->name} arrived at task '{$task->title}'.",
+                        priority: NotificationPriority::HIGH->value,
+                    );
                 }
             }
 
@@ -475,6 +506,15 @@ class TaskTrackingService
             $this->publishTrackingEvent('tracking.location.updated', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
             $this->publishTrackingEvent('tracking.agent.location.updated', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
             $this->publishTrackingEvent('tracking.task.completed', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+
+            $this->notifyTrackingEvent(
+                task: $task,
+                actor: $user,
+                type: 'tracking.task.completed',
+                title: 'Task tracking completed',
+                message: "{$user->name} completed task '{$task->title}'.",
+                priority: NotificationPriority::HIGH->value,
+            );
 
             return [
                 'task' => $this->loadTaskForResponse($updatedTask),
@@ -1034,6 +1074,49 @@ class TaskTrackingService
                 'tracking_session_id' => $trackingSessionId,
                 'exception' => $e::class,
                 'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function notifyTrackingEvent(
+        Task $task,
+        User $actor,
+        string $type,
+        string $title,
+        string $message,
+        string $priority,
+    ): void {
+        $recipientIds = DB::table('company_users')
+            ->where('company_id', $task->company_id)
+            ->whereIn('role', ['owner', 'admin', 'supervisor'])
+            ->pluck('user_id')
+            ->map(static fn(mixed $id): int => (int) $id)
+            ->merge([(int) $task->created_by_user_id, (int) ($task->assigned_agent_id ?? 0)])
+            ->filter(static fn(int $id): bool => $id > 0)
+            ->unique()
+            ->reject(static fn(int $id): bool => $id === (int) $actor->id)
+            ->values()
+            ->all();
+
+        foreach ($recipientIds as $recipientId) {
+            $this->notificationService->notifyUser($recipientId, [
+                'company_id' => (int) $task->company_id,
+                'type' => $type,
+                'category' => NotificationCategory::TRACKING->value,
+                'title' => $title,
+                'message' => $message,
+                'reference_type' => Task::class,
+                'reference_id' => (int) $task->id,
+                'action_url' => '/tasks/' . $task->id,
+                'action_route' => 'tasks.show',
+                'priority' => $priority,
+                'created_by_user_id' => (int) $actor->id,
+                'metadata' => [
+                    'task_id' => (int) $task->id,
+                    'task_status' => $task->status?->value,
+                    'actor_user_id' => (int) $actor->id,
+                ],
+                'dedupe_key' => $type . ':' . $task->id . ':' . $recipientId,
             ]);
         }
     }

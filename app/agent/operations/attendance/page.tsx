@@ -1,12 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Search, SlidersHorizontal, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { ArrowLeft, Search, SlidersHorizontal, ChevronLeft, ChevronRight, MapPin, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { format, parseISO } from 'date-fns';
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from '@/components/operations/ops-table';
+import { useAttendanceHistory } from '@/hooks/use-attendance';
+import { useAuthStore } from '@/store/auth';
+import { getActiveCompanyContext } from '@/lib/company-context';
+import type { AgentAttendanceRecord } from '@/lib/api/attendance';
 
-type AttendanceRecord = {
-  id: string;
+type AttendanceItem = {
+  id: number | string;
   name: string;
   address: string;
   checkIn: string;
@@ -17,26 +22,45 @@ type AttendanceRecord = {
   subText: string;
   active: boolean;
   avatar: string;
+  date: string;
 };
 
-const ALL_ATTENDANCE: AttendanceRecord[] = [
-  { id: '1', name: 'Francis Nasyomba', address: '12 Oba Akran Avenue, Ikeja, Lagos', checkIn: 'No check-in record', checkOut: 'No check-out record', role: 'Field Agent', zone: 'Ikeja LGA', status: 'Absent', subText: 'Since Yesterday', active: false, avatar: 'https://i.pravatar.cc/150?u=11' },
-  { id: '2', name: 'Lade Wane', address: '12 Oba Akran Avenue, Ikeja, Lagos', checkIn: '8:25AM', checkOut: 'Still Active', role: 'Field Agent', zone: 'Ikeja LGA', status: 'Present', subText: 'Active', active: true, avatar: 'https://i.pravatar.cc/150?u=12' },
-  { id: '3', name: 'Amina Bello', address: '45 Adeniran Ogunsanya, Surulere, Lagos', checkIn: 'No check-in record', checkOut: 'No check-out record', role: 'Field Agent', zone: 'Surulere LGA', status: 'Absent', subText: 'Since Yesterday', active: false, avatar: 'https://i.pravatar.cc/150?u=13' },
-  { id: '4', name: 'Chidi Okonkwo', address: '3 Admiralty Way, Lekki Phase 1, Lagos', checkIn: '9:10AM', checkOut: '5:00PM', role: 'Senior Agent', zone: 'Lekki LGA', status: 'Present', subText: 'Checked Out', active: false, avatar: 'https://i.pravatar.cc/150?u=14' },
-  { id: '5', name: 'Ngozi Eze', address: '7 Ozumba Mbadiwe, Victoria Island, Lagos', checkIn: 'No check-in record', checkOut: 'No check-out record', role: 'Field Agent', zone: 'Victoria Island', status: 'Absent', subText: '1 day ago', active: false, avatar: 'https://i.pravatar.cc/150?u=15' },
-  { id: '6', name: 'Tunde Adeyemi', address: '22 Herbert Macaulay Way, Yaba, Lagos', checkIn: '7:58AM', checkOut: 'Still Active', role: 'Senior Agent', zone: 'Yaba LGA', status: 'Present', subText: 'Active', active: true, avatar: 'https://i.pravatar.cc/150?u=16' },
-  { id: '7', name: 'Fatima Sule', address: '45 Adeniran Ogunsanya, Surulere, Lagos', checkIn: 'No check-in record', checkOut: 'No check-out record', role: 'Field Agent', zone: 'Surulere LGA', status: 'Absent', subText: '5 hours ago', active: false, avatar: 'https://i.pravatar.cc/150?u=17' },
-  { id: '8', name: 'Emeka Obi', address: 'Oshodi Market Road, Oshodi, Lagos', checkIn: '8:45AM', checkOut: '4:30PM', role: 'Field Agent', zone: 'Oshodi LGA', status: 'Present', subText: 'Checked Out', active: false, avatar: 'https://i.pravatar.cc/150?u=18' },
-  { id: '9', name: 'Blessing Okafor', address: '12 Oba Akran Avenue, Ikeja, Lagos', checkIn: '8:00AM', checkOut: 'Still Active', role: 'Senior Agent', zone: 'Ikeja LGA', status: 'Present', subText: 'Active', active: true, avatar: 'https://i.pravatar.cc/150?u=19' },
-  { id: '10', name: 'Abdul Kareem', address: '3 Admiralty Way, Lekki Phase 1, Lagos', checkIn: 'No check-in record', checkOut: 'No check-out record', role: 'Field Agent', zone: 'Lekki LGA', status: 'Absent', subText: 'Since Yesterday', active: false, avatar: 'https://i.pravatar.cc/150?u=20' },
-];
+function mapRecord(record: AgentAttendanceRecord, userName: string): AttendanceItem {
+  const lat = record.metadata?.clock_in_latitude;
+  const lng = record.metadata?.clock_in_longitude;
+  return {
+    id: record.id,
+    name: userName,
+    address: lat != null && lng != null ? `${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'No location data',
+    checkIn: record.clock_in_at
+      ? format(parseISO(record.clock_in_at), 'h:mma')
+      : 'No check-in record',
+    checkOut: record.clock_out_at
+      ? format(parseISO(record.clock_out_at), 'h:mma')
+      : record.status !== 'absent'
+      ? 'Still Active'
+      : 'No check-out record',
+    role: 'Field Agent',
+    zone: '—',
+    status: record.status === 'present' || record.status === 'late' ? 'Present' : 'Absent',
+    subText:
+      record.is_late
+        ? 'Late'
+        : record.clock_out_at
+        ? 'Checked Out'
+        : record.status !== 'absent'
+        ? 'Active'
+        : 'Absent',
+    active: !!record.clock_in_at && !record.clock_out_at,
+    avatar: '/avatars/male-avatar.png',
+    date: record.attendance_date,
+  };
+}
 
-const ZONES = ['All Zones', ...Array.from(new Set(ALL_ATTENDANCE.map((a) => a.zone)))];
 const PAGE_SIZE = 5;
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-function AttendanceSidebar({ record }: { record: AttendanceRecord }) {
+function AttendanceSidebar({ record }: { record: AttendanceItem }) {
   return (
     <div className="flex flex-col gap-5 w-full xl:w-90 xl:shrink-0">
       {/* Info */}
@@ -49,16 +73,20 @@ function AttendanceSidebar({ record }: { record: AttendanceRecord }) {
                 <p className="text-[12px] text-gray-400 mt-1 leading-relaxed">{record.address}</p>
               </div>
               <div>
-                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Zone</p>
-                <p className="text-[13px] text-gray-400">{record.zone}</p>
-              </div>
-              <div>
-                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Role</p>
-                <p className="text-[13px] text-gray-400">{record.role}</p>
+                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Date</p>
+                <p className="text-[13px] text-gray-400">{record.date}</p>
               </div>
               <div>
                 <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check-In</p>
                 <p className="text-[13px] text-gray-400">{record.checkIn}</p>
+              </div>
+              <div>
+                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check-Out</p>
+                <p className="text-[13px] text-gray-400">{record.checkOut}</p>
+              </div>
+              <div>
+                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Location</p>
+                <p className="text-[13px] text-gray-400">{record.address}</p>
               </div>
             </div>
             <div className="shrink-0 w-36">
@@ -163,7 +191,7 @@ function AttendanceSidebar({ record }: { record: AttendanceRecord }) {
 }
 
 // ─── Row ──────────────────────────────────────────────────────────────────────
-function AttendanceRow({ item, isSelected, onClick }: { item: AttendanceRecord; isSelected: boolean; onClick: () => void }) {
+function AttendanceRow({ item, isSelected, onClick }: { item: AttendanceItem; isSelected: boolean; onClick: () => void }) {
   return (
     <OpsTableRow isSelected={isSelected} onClick={onClick} avatar={item.avatar} avatarAlt={item.name}>
       <OpsTableNameCol name={item.name} subText={item.address} isSelected={isSelected} />
@@ -181,45 +209,44 @@ function AttendanceRow({ item, isSelected, onClick }: { item: AttendanceRecord; 
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
-export default function AttendanceListPage() {
-  const [search, setSearch]           = useState('');
-  const [zoneFilter, setZoneFilter]   = useState('All Zones');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'absent'>('all');
-  const [showFilters, setShowFilters] = useState(false);
-  const [page, setPage]               = useState(1);
-  const [selectedId, setSelectedId]   = useState<string>(ALL_ATTENDANCE[0].id);
+export default function AgentAttendanceListPage() {
+  const today = format(new Date(), 'yyyy-MM-dd');
 
-  const filtered = useMemo(() => {
-    return ALL_ATTENDANCE.filter((a) => {
-      const matchesSearch =
-        a.name.toLowerCase().includes(search.toLowerCase()) ||
-        a.zone.toLowerCase().includes(search.toLowerCase()) ||
-        a.address.toLowerCase().includes(search.toLowerCase());
-      const matchesZone   = zoneFilter === 'All Zones' || a.zone === zoneFilter;
-      const matchesStatus =
-        statusFilter === 'all' ||
-        (statusFilter === 'present' && a.status === 'Present') ||
-        (statusFilter === 'absent'  && a.status === 'Absent');
-      return matchesSearch && matchesZone && matchesStatus;
-    });
-  }, [search, zoneFilter, statusFilter]);
+  const [search, setSearch]             = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'absent'>('all');
+  const [showFilters, setShowFilters]   = useState(false);
+  const [page, setPage]                 = useState(1);
+  const [selectedId, setSelectedId]     = useState<number | string | null>(null);
+  const [fromDate, setFromDate]         = useState(today);
+  const [toDate, setToDate]             = useState(today);
+
+  const { user } = useAuthStore();
+  const { apiCompanyId } = getActiveCompanyContext(user);
+
+  const { data: historyData, isLoading } = useAttendanceHistory({
+    company_id: apiCompanyId ?? undefined,
+    from_date: fromDate,
+    to_date: toDate,
+    status: statusFilter === 'all' ? undefined : statusFilter,
+    per_page: 100,
+  });
+
+  const allRecords: AttendanceItem[] = (historyData?.items ?? []).map((r) => mapRecord(r, user?.name ?? 'Me'));
+
+  const filtered = allRecords.filter((a) =>
+    a.name.toLowerCase().includes(search.toLowerCase()) ||
+    a.address.toLowerCase().includes(search.toLowerCase())
+  );
 
   const totalPages  = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const paginated   = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  const presentCount = ALL_ATTENDANCE.filter((a) => a.status === 'Present').length;
-  const absentCount  = ALL_ATTENDANCE.filter((a) => a.status === 'Absent').length;
-
-  const selectedRecord =
-    ALL_ATTENDANCE.find((a) => a.id === selectedId) ?? ALL_ATTENDANCE[0];
+  const activeId = selectedId ?? (paginated[0]?.id ?? null);
+  const selectedRecord = filtered.find((a) => a.id === activeId) ?? paginated[0] ?? null;
 
   const handleSearch = (val: string) => { setSearch(val); setPage(1); };
-  const handleFilter = (key: 'zone' | 'status', val: string) => {
-    if (key === 'zone')   setZoneFilter(val);
-    if (key === 'status') setStatusFilter(val as 'all' | 'present' | 'absent');
-    setPage(1);
-  };
+  const handleStatus = (s: 'all' | 'present' | 'absent') => { setStatusFilter(s); setPage(1); };
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
@@ -227,39 +254,41 @@ export default function AttendanceListPage() {
 
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
-          <Link href="/operations?tab=attendance" className="flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-sm hover:shadow-md transition-all">
+          <Link href="/agent/operations?tab=attendance" className="flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-sm hover:shadow-md transition-all">
             <ArrowLeft size={18} className="text-dash-dark" />
           </Link>
           <div>
-            <h1 className="text-[22px] font-bold text-dash-dark">Attendance List</h1>
+            <h1 className="text-[22px] font-bold text-dash-dark">My Attendance</h1>
             <p className="text-[13px] text-gray-400 mt-0.5">{filtered.length} records found</p>
           </div>
-        </div>
-
-        {/* Stat Pills */}
-        <div className="flex gap-3 mb-6">
-          <div className="flex items-center gap-2.5 bg-white rounded-full px-5 py-2.5 shadow-sm">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#4ADE80] shrink-0" />
-            <span className="text-[13px] font-bold text-dash-dark">{presentCount}</span>
-            <span className="text-[12px] text-gray-400">Present</span>
-          </div>
-          <div className="flex items-center gap-2.5 bg-white rounded-full px-5 py-2.5 shadow-sm">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#F48243] shrink-0" />
-            <span className="text-[13px] font-bold text-dash-dark">{absentCount}</span>
-            <span className="text-[12px] text-gray-400">Absent</span>
+          {/* Date range */}
+          <div className="ml-auto flex items-center gap-2">
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => { setFromDate(e.target.value); setPage(1); setSelectedId(null); }}
+              className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-[12px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 shadow-sm"
+            />
+            <span className="text-[12px] text-gray-400">to</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => { setToDate(e.target.value); setPage(1); setSelectedId(null); }}
+              className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-[12px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 shadow-sm"
+            />
           </div>
         </div>
 
         {/* Search + Filter */}
         <div className="flex items-center gap-3 mb-4">
           <div className="relative flex-1 group">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-teal transition-colors" size={17} />
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-dark transition-colors" size={17} />
             <input
               type="text"
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
-              placeholder="Search by name, zone or address..."
-              className="w-full bg-white border border-gray-100 rounded-full py-3.5 pl-12 pr-5 text-[13px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
+              placeholder="Search by name or address..."
+              className="w-full bg-white border border-gray-100 rounded-full py-3.5 pl-12 pr-5 text-[13px] outline-none focus:ring-2 focus:ring-dash-dark/20 transition-all shadow-sm"
             />
           </div>
           <button
@@ -277,16 +306,10 @@ export default function AttendanceListPage() {
         {showFilters && (
           <div className="flex flex-wrap gap-3 mb-4 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold text-gray-400 px-1">Zone</label>
-              <select value={zoneFilter} onChange={(e) => handleFilter('zone', e.target.value)} className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer">
-                {ZONES.map((z) => <option key={z}>{z}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
               <label className="text-[11px] font-bold text-gray-400 px-1">Status</label>
               <div className="flex gap-1">
                 {(['all', 'present', 'absent'] as const).map((s) => (
-                  <button key={s} onClick={() => handleFilter('status', s)}
+                  <button key={s} onClick={() => handleStatus(s)}
                     className={`px-4 py-2 rounded-full text-[12px] font-bold capitalize transition-all ${
                       statusFilter === s ? 'bg-dash-dark text-white' : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
                     }`}>
@@ -295,9 +318,9 @@ export default function AttendanceListPage() {
                 ))}
               </div>
             </div>
-            {(zoneFilter !== 'All Zones' || statusFilter !== 'all') && (
+            {statusFilter !== 'all' && (
               <div className="flex flex-col justify-end">
-                <button onClick={() => { setZoneFilter('All Zones'); setStatusFilter('all'); setPage(1); }}
+                <button onClick={() => { setStatusFilter('all'); setPage(1); }}
                   className="px-4 py-2 rounded-full text-[12px] font-bold text-red-400 hover:bg-red-50 transition-all border border-red-200">
                   Clear filters
                 </button>
@@ -313,7 +336,11 @@ export default function AttendanceListPage() {
           <OpsTableContainer className="flex-1 min-w-0 flex flex-col h-140">
             {/* Scrollable rows */}
             <div className="flex-1 min-h-0 overflow-y-auto">
-              {paginated.length === 0 ? (
+              {isLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 size={24} className="animate-spin text-gray-400" />
+                </div>
+              ) : paginated.length === 0 ? (
                 <div className="py-16 text-center text-gray-400 text-[14px] font-medium">No records match your search.</div>
               ) : (
                 <div className="space-y-3">
@@ -321,7 +348,7 @@ export default function AttendanceListPage() {
                     <AttendanceRow
                       key={item.id}
                       item={item}
-                      isSelected={selectedId === item.id}
+                      isSelected={activeId === item.id}
                       onClick={() => setSelectedId(item.id)}
                     />
                   ))}
@@ -356,7 +383,13 @@ export default function AttendanceListPage() {
           </OpsTableContainer>
 
           {/* Sidebar */}
-          <AttendanceSidebar record={selectedRecord} />
+          {selectedRecord ? (
+            <AttendanceSidebar record={selectedRecord} />
+          ) : (
+            <div className="flex items-center justify-center w-full xl:w-90 xl:shrink-0 h-40 text-gray-400 text-[13px]">
+              Select a record to view details
+            </div>
+          )}
         </div>
       </div>
     </div>

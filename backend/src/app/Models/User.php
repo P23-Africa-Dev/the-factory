@@ -29,6 +29,9 @@ class User extends Authenticatable
         'assigned_zone',
         'work_days',
         'base_salary',
+        'payroll_salary_type',
+        'payroll_attendance_affects_pay',
+        'payroll_work_days_override',
         'salary_currency',
         'commission_enabled',
         'supervisor_user_id',
@@ -56,6 +59,8 @@ class User extends Authenticatable
             'deactivated_at' => 'datetime',
             'work_days' => 'array',
             'base_salary' => 'decimal:2',
+            'payroll_attendance_affects_pay' => 'boolean',
+            'payroll_work_days_override' => 'integer',
             'commission_enabled' => 'boolean',
             'is_active' => 'boolean',
             'suspended_until' => 'datetime',
@@ -187,5 +192,30 @@ class User extends Authenticatable
     public function latestInternalInvitation(): HasOne
     {
         return $this->hasOne(InternalUserInvitation::class, 'user_id')->latestOfMany();
+    }
+
+    public function appNotifications(): HasMany
+    {
+        return $this->hasMany(AppNotification::class);
+    }
+
+    public function notificationPreferences(): HasMany
+    {
+        return $this->hasMany(NotificationPreference::class);
+    }
+
+    public function pushSubscriptions(): HasMany
+    {
+        return $this->hasMany(PushSubscription::class);
+    }
+
+    public function attendanceRecords(): HasMany
+    {
+        return $this->hasMany(AttendanceRecord::class);
+    }
+
+    public function attendancePayrollSummaries(): HasMany
+    {
+        return $this->hasMany(AttendancePayrollSummary::class);
     }
 }

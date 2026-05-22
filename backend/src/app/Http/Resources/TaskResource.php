@@ -83,6 +83,38 @@ class TaskResource extends JsonResource
                     ->values()
                     ->all();
             }),
+            'latest_reassignment' => $this->whenLoaded('latestReassignment', fn(): ?array => $this->latestReassignment ? [
+                'id' => $this->latestReassignment->id,
+                'status' => $this->latestReassignment->status?->value,
+                'reason' => $this->latestReassignment->reason,
+                'response_note' => $this->latestReassignment->response_note,
+                'requested_at' => $this->latestReassignment->requested_at?->toIso8601String(),
+                'responded_at' => $this->latestReassignment->responded_at?->toIso8601String(),
+                'accepted_at' => $this->latestReassignment->accepted_at?->toIso8601String(),
+                'rejected_at' => $this->latestReassignment->rejected_at?->toIso8601String(),
+                'cancelled_at' => $this->latestReassignment->cancelled_at?->toIso8601String(),
+                'tracking_transferred_at' => $this->latestReassignment->tracking_transferred_at?->toIso8601String(),
+                'from_user' => $this->latestReassignment->relationLoaded('fromUser') && $this->latestReassignment->fromUser ? [
+                    'id' => $this->latestReassignment->fromUser->id,
+                    'name' => $this->latestReassignment->fromUser->name,
+                    'email' => $this->latestReassignment->fromUser->email,
+                ] : null,
+                'to_user' => $this->latestReassignment->relationLoaded('toUser') && $this->latestReassignment->toUser ? [
+                    'id' => $this->latestReassignment->toUser->id,
+                    'name' => $this->latestReassignment->toUser->name,
+                    'email' => $this->latestReassignment->toUser->email,
+                ] : null,
+                'requested_by' => $this->latestReassignment->relationLoaded('requestedBy') && $this->latestReassignment->requestedBy ? [
+                    'id' => $this->latestReassignment->requestedBy->id,
+                    'name' => $this->latestReassignment->requestedBy->name,
+                    'email' => $this->latestReassignment->requestedBy->email,
+                ] : null,
+                'responded_by' => $this->latestReassignment->relationLoaded('respondedBy') && $this->latestReassignment->respondedBy ? [
+                    'id' => $this->latestReassignment->respondedBy->id,
+                    'name' => $this->latestReassignment->respondedBy->name,
+                    'email' => $this->latestReassignment->respondedBy->email,
+                ] : null,
+            ] : null),
             'proofs_count' => $this->whenCounted('proofs'),
             'proofs' => TaskProofResource::collection($this->whenLoaded('proofs')),
             'created_at' => $this->created_at?->toIso8601String(),

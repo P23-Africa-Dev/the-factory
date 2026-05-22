@@ -4,12 +4,18 @@ namespace App\Services\Enterprise;
 
 use App\Enums\CompanyUserRole;
 use App\Enums\DemoRequestStatus;
+use App\Enums\NotificationCategory;
+use App\Enums\NotificationPriority;
+use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class FirstTimeOnboardingService
 {
-    public function __construct(private readonly DemoRequestService $demoRequestService) {}
+    public function __construct(
+        private readonly DemoRequestService $demoRequestService,
+        private readonly NotificationService $notificationService,
+    ) {}
 
     public function verifyCompanyId(int $requestId, string $token, string $companyId): array
     {
@@ -39,7 +45,7 @@ class FirstTimeOnboardingService
             ]);
         }
 
-        return DB::transaction(function () use ($demoRequest, $password): array {
+        $result = DB::transaction(function () use ($demoRequest, $password): array {
             $user = $demoRequest->user;
             $company = $demoRequest->company;
 
@@ -87,5 +93,29 @@ class FirstTimeOnboardingService
                 'token' => $token->plainTextToken,
             ];
         });
+
+        /** @var \App\Models\User $user */
+        $user = $result['user'];
+
+        $this->notificationService->notifyUser((int) $user->id, [
+            'company_id' => (int) $demoRequest->company_id,
+            'type' => 'onboarding.enterprise_activated',
+            'category' => NotificationCategory::ONBOARDING->value,
+            'title' => 'Enterprise onboarding completed',
+            'message' => 'Your enterprise account has been activated successfully.',
+            'reference_type' => $demoRequest::class,
+            'reference_id' => (int) $demoRequest->id,
+            'action_url' => '/dashboard',
+            'action_route' => 'dashboard.overview',
+            'priority' => NotificationPriority::HIGH->value,
+            'created_by_user_id' => (int) $user->id,
+            'metadata' => [
+                'demo_request_id' => (int) $demoRequest->id,
+                'company_id' => (int) $demoRequest->company_id,
+            ],
+            'dedupe_key' => 'enterprise-onboarding-complete:' . $demoRequest->id,
+        ]);
+
+        return $result;
     }
 }

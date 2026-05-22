@@ -7,9 +7,14 @@ namespace App\Http\Controllers\Api\V1\Payroll;
 use App\Http\Controllers\Concerns\ResolvesCompanyContextId;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Payroll\CreatePayrollRequest;
+use App\Http\Requests\Payroll\PayrollAgentListRequest;
+use App\Http\Requests\Payroll\PayrollAgentProfileRequest;
+use App\Http\Requests\Payroll\PayrollOverviewRequest;
 use App\Http\Requests\Payroll\UpdatePayrollRequest;
+use App\Http\Requests\Payroll\UpdateAgentPayrollRequest;
 use App\Http\Resources\PayrollSettingResource;
 use App\Models\PayrollSetting;
+use App\Models\User;
 use App\Services\Payroll\PayrollService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -30,6 +35,60 @@ class PayrollController extends Controller
         return $this->success(
             message: 'Payroll settings fetched successfully.',
             data: ['payroll' => $payrollSetting ? new PayrollSettingResource($payrollSetting) : null],
+        );
+    }
+
+    public function overview(PayrollOverviewRequest $request): JsonResponse
+    {
+        $overview = $this->payrollService->overview(
+            user: $request->user(),
+            filters: $request->validated(),
+        );
+
+        return $this->success(
+            message: 'Payroll overview fetched successfully.',
+            data: $overview,
+        );
+    }
+
+    public function agents(PayrollAgentListRequest $request): JsonResponse
+    {
+        $result = $this->payrollService->listAgents(
+            user: $request->user(),
+            filters: $request->validated(),
+        );
+
+        return $this->success(
+            message: 'Payroll agents fetched successfully.',
+            data: $result,
+        );
+    }
+
+    public function agentProfile(PayrollAgentProfileRequest $request, User $user): JsonResponse
+    {
+        $profile = $this->payrollService->profile(
+            actor: $request->user(),
+            targetUserId: (int) $user->id,
+            filters: $request->validated(),
+        );
+
+        return $this->success(
+            message: 'Payroll agent profile fetched successfully.',
+            data: $profile,
+        );
+    }
+
+    public function updateAgentPayroll(UpdateAgentPayrollRequest $request, User $user): JsonResponse
+    {
+        $profile = $this->payrollService->updateAgentPayrollProfile(
+            actor: $request->user(),
+            agentId: (int) $user->id,
+            data: $request->validated(),
+        );
+
+        return $this->success(
+            message: 'Agent payroll updated successfully.',
+            data: $profile,
         );
     }
 

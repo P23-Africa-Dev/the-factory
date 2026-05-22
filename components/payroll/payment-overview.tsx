@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import ArrowDown from "@/assets/images/arrow-down.png";
 import { getCurrentDateParts } from "@/lib/utils/date";
+import type { PayrollOverview } from "@/lib/api/payroll";
 
 const paymentOverviewData = [
   { bar: 78, line: 74 },
@@ -100,11 +101,40 @@ function MiniChart({
   );
 }
 
-export function PaymentOverview() {
+interface PaymentOverviewProps {
+  overview?: PayrollOverview | null;
+}
+
+function formatMoney(amount: number, currency: string) {
+  const formatted = amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  if (currency === "NGN") return `₦${formatted}`;
+  if (currency === "USD") return `$${formatted}`;
+
+  return `${formatted} ${currency}`;
+}
+
+export function PaymentOverview({ overview }: PaymentOverviewProps) {
   const [mounted, setMounted] = useState(false);
   const user = useAuthStore((s) => s.user);
   const isAgent = user?.active_company?.role === "agent";
-    const { day, weekDay, month } = getCurrentDateParts();
+  const { day, weekDay, month } = getCurrentDateParts();
+
+  const todayPresentAgents = overview?.today_present_agents ?? 0;
+  const todayPayrollValue = overview
+    ? formatMoney(overview.today_payroll_value, overview.currency)
+    : "₦0.00";
+  const totalPayroll = overview
+    ? formatMoney(overview.total_payroll, overview.currency)
+    : "₦0.00";
+  const payrollTrend = overview?.payroll_rise
+    ? { label: "Rise", color: "#2F6C0E" }
+    : overview?.payroll_fall
+      ? { label: "Fall", color: "#B42318" }
+      : { label: "Stable", color: "#6B7280" };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -191,7 +221,7 @@ export function PaymentOverview() {
       <div className="flex-1 min-w-0 flex flex-row lg:flex-col lg:max-w-71.5 gap-2.5 lg:max-h-42.25">
         <div className="flex-1 bg-white rounded-3xl px-4 sm:px-5 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] h-fit">
           <p className="text-[22px] sm:text-[28px] lg:text-[32px] font-bold text-[#34373C] leading-tight tracking-tight font-[poppins]">
-            &#8358;1,180,000
+            {formatMoney(overview?.total_commission ?? 0, overview?.currency ?? "NGN")}
           </p>
           <p className="text-[14px] font-light text-[#34373C] mb-2.5">
             Total Commissions
@@ -205,7 +235,7 @@ export function PaymentOverview() {
               )}
             </div>
             <div className="inline-flex items-center gap-1 text-[15px] font-medium">
-              20% <Image src={ArrowDown} alt="" width={7} />
+              {todayPresentAgents} <Image src={ArrowDown} alt="" width={7} />
             </div>
           </div>
         </div>
@@ -214,7 +244,7 @@ export function PaymentOverview() {
           <div className="flex-1 bg-white flex rounded-3xl px-4 sm:px-5 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] h-fit">
             <div className="shrink-0 mr-2">
               <p className="text-[16px] sm:text-[20px] font-bold text-[#34373C] tracking-tight font-[poppins]">
-                &#8358;1,180,000
+                {formatMoney(overview?.pending_approval ?? 0, overview?.currency ?? "NGN")}
               </p>
               <p className="text-[12px] font-light text-[#34373C] leading-none">
                 Pending Approvals
@@ -238,7 +268,7 @@ export function PaymentOverview() {
         <div className="relative z-10 flex flex-col flex-1">
           <div className="px-4.5 py-3.25 bg-[#041820] rounded-[20px] w-fit shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
             <p className="text-[28px] sm:text-[38px] lg:text-[48px] text-white leading-tight tracking-tight">
-              &#8358;4,250,0000
+              {totalPayroll}
             </p>
             <p className="text-[14px] font-light text-white mt-0.75">
               Total Payroll
@@ -281,7 +311,7 @@ export function PaymentOverview() {
             )}
 
             <span className="inline-flex items-center gap-1 text-[16px] sm:text-[20px] lg:text-[24px] font-medium text-[#95E1C0] px-2.5 py-0.5 rounded-full shrink-0">
-              20%
+              {payrollTrend.label}
               <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
                 <path
                   d="M5 8V2M2 5l3-3 3 3"
