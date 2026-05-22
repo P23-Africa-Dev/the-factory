@@ -132,8 +132,12 @@ export function AgentDetailsModal({
     onDetailsChange({ ...details, [key]: val });
 
   return (
-    <div className="fixed right-119.75 bottom-3.25 z-[60]">
-      <div className="relative bg-white rounded-3xl w-full max-w-105 p-7 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026]">
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6 pointer-events-none">
+      <div 
+        className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs pointer-events-auto sm:hidden" 
+      />
+
+      <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full sm:w-[420px] p-7 shadow-[0px_8px_32px_rgba(0,0,0,0.15)] flex flex-col max-h-[90dvh] sm:max-h-none overflow-y-auto sm:overflow-visible bottom-0 sm:absolute sm:right-[480px] sm:bottom-6 pointer-events-auto transition-all duration-300 ease-out">
         <h3 className="text-[20px] font-bold text-[#0B1215] mb-6">Agent Details</h3>
 
         <SectionDivider label="Personal Information" />
@@ -224,7 +228,7 @@ export function AgentDetailsModal({
           <button
             type="submit"
             form="add-agent-form"
-            className="w-fit px-9.25 py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer"
+            className="w-full sm:w-auto px-9.25 py-3 sm:py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer flex items-center justify-center gap-2"
           >
             Done
           </button>
