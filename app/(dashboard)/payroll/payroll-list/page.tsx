@@ -156,7 +156,7 @@ export default function PayrollListPage() {
 
       <div className="px-5 sm:px-8 lg:px-10 py-6 space-y-6">
         <div className="bg-white rounded-[30px] px-6 py-4 text-[13px] text-gray-500 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
-          {overview ? `Total payroll: ${overview.totalPayroll}` : "Loading payroll overview..."}
+          {overview ? `Total payroll: ${overview.total_payroll}` : "Loading payroll overview..."}
         </div>
         <div className="flex flex-col xl:flex-row gap-6">
           <div className="flex-1 min-w-0">

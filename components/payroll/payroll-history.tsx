@@ -12,7 +12,7 @@ function formatMoney(amount: number) {
 }
 
 export function PayrollHistory({ entries = [] }: PayrollHistoryProps) {
-  const historyData = entries.length > 0 ? entries : [];
+  const historyData = entries ?? [];
 
   return (
     <div className="mt-6">
