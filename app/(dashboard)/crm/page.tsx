@@ -266,7 +266,7 @@ function LeadColumn({
 
         <button
           onClick={() => onAddCard()}
-          className="w-full flex items-center justify-between px-3 py-2.5 text-gray-400 hover:text-[#0B1215] transition-colors group mt-4"
+          className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-gray-400 hover:text-[#0B1215] transition-colors group mt-4"
         >
           <span className="text-[11px] font-medium">Add Leads</span>
           <div className="w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center group-hover:border-[#0B1215] transition-colors">
@@ -429,6 +429,14 @@ function LeadBoard({ basePath = "/crm", initialContainers, onStatusChange, onAdd
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const containersRef = useRef<DndContainer[]>(initialContainers);
   const dragOriginRef = useRef<string | null>(null);
+  // Active tab state for column navigation
+  const [activeTabId, setActiveTabId] = useState<string>(() => initialContainers[0]?.id ?? "new");
+  // Sync activeTabId with containers changes
+  useEffect(() => {
+    if (initialContainers.length > 0 && !initialContainers.some(c => c.id === activeTabId)) {
+      setActiveTabId(initialContainers[0].id);
+    }
+  }, [initialContainers, activeTabId]);
   const [prevInitialContainers, setPrevInitialContainers] = useState(initialContainers);
 
   if (initialContainers !== prevInitialContainers) {
