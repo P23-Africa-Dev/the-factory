@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { X } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import { SectionDivider } from "@/components/payroll/payroll/section-divider";
@@ -25,14 +25,15 @@ export function EditAgentPayrollModal({ isOpen, onClose, agent, companyId }: Edi
     const [attendanceAffectsPay, setAttendanceAffectsPay] = useState(true);
     const [workDaysOverride, setWorkDaysOverride] = useState("");
     const mutation = useUpdateAgentPayroll(agent ? Number(agent.id) : undefined);
+    const [syncedAgentId, setSyncedAgentId] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (!agent) return;
+    if (agent && agent.id !== syncedAgentId) {
+        setSyncedAgentId(agent.id);
         setSalaryType(agent.salaryType.toLowerCase());
         setBaseSalary(String(Number(agent.baseSalary.replace(/[^0-9.]/g, ""))));
         setAttendanceAffectsPay(agent.attendanceAffectsPay);
         setWorkDaysOverride(String(agent.workDays || ""));
-    }, [agent]);
+    }
 
     if (!isOpen || !agent) return null;
 

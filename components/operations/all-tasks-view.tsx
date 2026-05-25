@@ -367,7 +367,7 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
 
 function isTaskNotCommenced(task: TaskApiItem): boolean {
   const hasAssignment =
-    task.assigned_users?.length > 0 ||
+    (task.assigned_users?.length ?? 0) > 0 ||
     !!task.assigned_agent_id ||
     !!task.assignee?.id;
 
