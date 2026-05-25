@@ -419,7 +419,7 @@ export default function AllAgentsPage() {
                   <AgentRow
                     key={agent.id}
                     agent={agent}
-                    isSelected={selectedAgent.id === agent.id}
+                    isSelected={selectedAgent?.id === agent.id}
                     onClick={() => setSelectedAgent(agent)}
                   />
                 ))}
