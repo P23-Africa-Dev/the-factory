@@ -20,6 +20,7 @@ import {
   type PaginationData,
   type InternalUser,
   type InternalUsersParams,
+  type ProjectsAnalyticsData,
 } from "@/lib/api/projects";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { mapApiProject } from "@/types/operations";
@@ -42,6 +43,7 @@ export const INTERNAL_USER_KEYS = {
 export type ProjectsResult = {
   projects: Project[];
   pagination: PaginationData;
+  analytics: ProjectsAnalyticsData | null;
 };
 
 export function useProjects(params: ListProjectsParams = {}, basePath = "") {
@@ -54,6 +56,7 @@ export function useProjects(params: ListProjectsParams = {}, basePath = "") {
       return {
         projects: res.data.items.map(mapApiProject),
         pagination: res.data.pagination,
+        analytics: res.data.analytics ?? null,
       };
     },
     enabled: !!token,

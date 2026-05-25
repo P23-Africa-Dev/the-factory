@@ -26,6 +26,10 @@ export type TaskApiItem = {
   latitude?: number;
   longitude?: number;
   due_date?: string;
+  started_at?: string | null;
+  paused_at?: string | null;
+  resumed_at?: string | null;
+  completed_at?: string | null;
   required_actions?: string[];
   priority?: ApiTaskPriority;
   minimum_photos_required?: number;

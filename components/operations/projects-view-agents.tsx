@@ -19,12 +19,14 @@ import { CreateProjectDrawer } from "./create-project-drawer";
 import { ProjectCardSkeleton } from "./skeletons/project-card-skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { PaginationData } from "@/lib/api/projects";
+import type { ProjectsAnalyticsData } from "@/lib/api/projects";
 
 const STATUS_FILTERS = ["All", "In progress", "Completed", "Pending"];
 const PRIORITY_FILTERS = ["All", "High", "Medium", "Low"];
 
 interface ProjectsViewProps {
   projects: Project[];
+  analytics?: ProjectsAnalyticsData | null;
   onViewProject: (projectId: string, projectName?: string) => void;
   isLoading?: boolean;
   pagination?: PaginationData | null;
@@ -34,6 +36,7 @@ interface ProjectsViewProps {
 
 export function ProjectsViewAgents({
   projects,
+  analytics = null,
   onViewProject,
   isLoading = false,
   pagination = null,
@@ -125,7 +128,7 @@ export function ProjectsViewAgents({
       </div>
 
       {/* ── Summary Cards ────────────────────────────────────── */}
-      <SummaryCards projects={projects} />
+      <SummaryCards projects={projects} analytics={analytics} />
 
       {/* ── Filter panel ─────────────────────────────────────── */}
       {showFilters && (
@@ -140,8 +143,8 @@ export function ProjectsViewAgents({
                   key={s}
                   onClick={() => setStatusFilter(s)}
                   className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${statusFilter === s
-                      ? "bg-[#0B1215] text-white"
-                      : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
+                    ? "bg-[#0B1215] text-white"
+                    : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
                     }`}
                 >
                   {s}
@@ -160,8 +163,8 @@ export function ProjectsViewAgents({
                   key={p}
                   onClick={() => setPriorityFilter(p)}
                   className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${priorityFilter === p
-                      ? "bg-[#0B1215] text-white"
-                      : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
+                    ? "bg-[#0B1215] text-white"
+                    : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
                     }`}
                 >
                   {p}
@@ -467,11 +470,19 @@ function performanceLabel(pct: number) {
   return "Poor";
 }
 
-function SummaryCards({ projects }: { projects: Project[] }) {
+function SummaryCards({
+  projects,
+  analytics,
+}: {
+  projects: Project[];
+  analytics?: ProjectsAnalyticsData | null;
+}) {
   const total = projects.length;
   const pending = projects.filter((p) => p.status !== "Completed").length;
   const completed = projects.filter((p) => p.status === "Completed").length;
-  const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+  const fallbackPercent = total === 0 ? 0 : Math.round((completed / total) * 100);
+  const percent = Math.round(analytics?.project_performance.project_progress ?? fallbackPercent);
+  const performanceStatus = analytics?.project_performance.status ?? performanceLabel(percent).toUpperCase();
 
   const [animatedPct, setAnimatedPct] = useState(0);
   useEffect(() => {
@@ -498,6 +509,7 @@ function SummaryCards({ projects }: { projects: Project[] }) {
     <div className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar w-screen -mx-4 px-4 pb-2 gap-6 sm:flex-col lg:flex-row sm:justify-between sm:w-full sm:mx-0 sm:px-8 sm:gap-6 lg:gap-0 animate-in fade-in slide-in-from-bottom-2 duration-500 h-auto sm:overflow-visible sm:snap-none sm:pb-0 lg:h-49">
       <PerformanceCard
         percent={percent}
+        status={performanceStatus}
         animatedDash={animatedDash}
         dotX={dotX}
         dotY={dotY}
@@ -517,11 +529,13 @@ function formatStatCount(value: number): string {
 // ─── Performance Card ─────────────────────────────────────────────────────────
 function PerformanceCard({
   percent,
+  status,
   animatedDash,
   dotX,
   dotY,
 }: {
   percent: number;
+  status: string;
   animatedDash: number;
   dotX: number;
   dotY: number;
@@ -591,7 +605,7 @@ function PerformanceCard({
           Performance
         </h2>
         <p className="text-[11px] sm:text-[14px] font-medium text-[#E8E8E8]/80">
-          Status: <span className="text-white font-semibold">{performanceLabel(percent)}</span>
+          Status: <span className="text-white font-semibold">{status}</span>
         </p>
       </div>
     </div>

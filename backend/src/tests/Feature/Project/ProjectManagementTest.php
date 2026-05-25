@@ -264,7 +264,11 @@ class ProjectManagementTest extends TestCase
             ->assertJsonPath('data.items.0.task_summary.completed_tasks', 1)
             ->assertJsonPath('data.items.0.task_summary.pending_tasks', 2)
             ->assertJsonPath('data.items.0.task_summary.completed_percentage', 33.33)
-            ->assertJsonPath('data.items.0.task_summary.pending_percentage', 66.67);
+            ->assertJsonPath('data.items.0.task_summary.pending_percentage', 66.67)
+            ->assertJsonPath('data.analytics.project_performance.task_completion', 33.33)
+            ->assertJsonPath('data.analytics.non_commenced_agents.assigned_agents', 1)
+            ->assertJsonPath('data.analytics.non_commenced_agents.not_started', 1)
+            ->assertJsonPath('data.analytics.non_commenced_agents.percentage', 100);
     }
 
     public function test_agent_cannot_create_or_list_projects(): void
@@ -346,7 +350,10 @@ class ProjectManagementTest extends TestCase
 
         $response->assertOk()
             ->assertJsonCount(1, 'data.items')
-            ->assertJsonPath('data.items.0.id', $assignedProject->id);
+            ->assertJsonPath('data.items.0.id', $assignedProject->id)
+            ->assertJsonPath('data.analytics.non_commenced_agents.assigned_agents', 1)
+            ->assertJsonPath('data.analytics.non_commenced_agents.not_started', 1)
+            ->assertJsonPath('data.analytics.non_commenced_agents.percentage', 100);
     }
 
     public function test_agent_can_open_assigned_project_via_agent_endpoint_with_scoped_task_summary(): void

@@ -22,13 +22,15 @@ class ProjectController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $projects = $this->projectService->listForManager($request->user(), [
+        $result = $this->projectService->listForManagerWithAnalytics($request->user(), [
             'company_id' => $this->resolveCompanyContextId($request->input('company_id')),
             'status' => $request->string('status')->toString(),
             'priority' => $request->string('priority')->toString(),
             'type' => $request->string('type')->toString(),
             'search' => $request->string('search')->toString(),
         ]);
+
+        $projects = $result['projects'];
 
         return $this->success(
             message: 'Projects fetched successfully.',
@@ -39,19 +41,22 @@ class ProjectController extends Controller
                     'prev_page_url' => $projects->previousPageUrl(),
                     'per_page' => $projects->perPage(),
                 ],
+                'analytics' => $result['analytics'],
             ],
         );
     }
 
     public function agentIndex(Request $request): JsonResponse
     {
-        $projects = $this->projectService->listForAgent($request->user(), [
+        $result = $this->projectService->listForAgentWithAnalytics($request->user(), [
             'company_id' => $this->resolveCompanyContextId($request->input('company_id')),
             'status' => $request->string('status')->toString(),
             'priority' => $request->string('priority')->toString(),
             'type' => $request->string('type')->toString(),
             'search' => $request->string('search')->toString(),
         ]);
+
+        $projects = $result['projects'];
 
         return $this->success(
             message: 'Projects fetched successfully.',
@@ -62,6 +67,7 @@ class ProjectController extends Controller
                     'prev_page_url' => $projects->previousPageUrl(),
                     'per_page' => $projects->perPage(),
                 ],
+                'analytics' => $result['analytics'],
             ],
         );
     }

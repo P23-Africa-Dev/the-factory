@@ -9,6 +9,7 @@ use App\Enums\NotificationPriority;
 use App\Enums\ProjectStatus;
 use App\Enums\TaskStatus;
 use App\Models\Project;
+use App\Models\Task;
 use App\Models\User;
 use App\Services\Notification\NotificationService;
 use App\Services\Task\TaskAccessService;
@@ -53,6 +54,25 @@ class ProjectService
         return $query->latest('id')->simplePaginate(20)->withQueryString();
     }
 
+    /**
+     * @return array{projects: Paginator, analytics: array<string, mixed>}
+     */
+    public function listForManagerWithAnalytics(User $user, array $filters): array
+    {
+        $context = $this->accessService->resolve($user, $filters['company_id'] ?? null);
+        $this->accessService->ensureManager($context);
+
+        return [
+            'projects' => $this->listForManager($user, $filters),
+            'analytics' => $this->buildProjectAnalytics(
+                companyId: (int) $context->company->id,
+                role: $context->role,
+                userId: (int) $user->id,
+                filters: $filters,
+            ),
+        ];
+    }
+
     public function listForAgent(User $user, array $filters): Paginator
     {
         $context = $this->accessService->resolve($user, $filters['company_id'] ?? null);
@@ -77,6 +97,25 @@ class ProjectService
         }
 
         return $query->latest('id')->simplePaginate(20)->withQueryString();
+    }
+
+    /**
+     * @return array{projects: Paginator, analytics: array<string, mixed>}
+     */
+    public function listForAgentWithAnalytics(User $user, array $filters): array
+    {
+        $context = $this->accessService->resolve($user, $filters['company_id'] ?? null);
+        $this->accessService->ensureAgent($context);
+
+        return [
+            'projects' => $this->listForAgent($user, $filters),
+            'analytics' => $this->buildProjectAnalytics(
+                companyId: (int) $context->company->id,
+                role: $context->role,
+                userId: (int) $user->id,
+                filters: $filters,
+            ),
+        ];
     }
 
     public function create(User $user, array $data): Project
@@ -337,6 +376,161 @@ class ProjectService
         }
 
         return array_values(array_filter($normalized, fn(int $userId): bool => $userId !== $managerId));
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    private function buildProjectAnalytics(int $companyId, string $role, int $userId, array $filters): array
+    {
+        $projectIdsQuery = Project::query()
+            ->where('projects.company_id', $companyId)
+            ->select('projects.id');
+
+        if ($role === 'agent') {
+            $projectIdsQuery->whereHas('tasks', function (Builder $taskQuery) use ($userId): void {
+                $this->applyAgentTaskAssignmentConstraint($taskQuery, $userId);
+            });
+        }
+
+        if (! empty($filters['status'])) {
+            $projectIdsQuery->where('projects.status', $filters['status']);
+        }
+
+        if (! empty($filters['priority'])) {
+            $projectIdsQuery->where('projects.priority', $filters['priority']);
+        }
+
+        if (! empty($filters['type'])) {
+            $projectIdsQuery->where('projects.type', $filters['type']);
+        }
+
+        if (! empty($filters['search'])) {
+            $projectIdsQuery->where('projects.name', 'like', '%' . $filters['search'] . '%');
+        }
+
+        $projectIds = (clone $projectIdsQuery)->pluck('projects.id');
+        $projectCount = $projectIds->count();
+
+        $timelineConsumption = 0.0;
+        if ($projectCount > 0) {
+            $timelineRows = Project::query()
+                ->whereIn('id', $projectIds)
+                ->get(['start_date', 'end_date']);
+
+            $totalDurationDays = 0.0;
+            $elapsedDays = 0.0;
+            $today = now()->startOfDay();
+
+            foreach ($timelineRows as $row) {
+                if (! $row->start_date || ! $row->end_date) {
+                    continue;
+                }
+
+                $start = $row->start_date->copy()->startOfDay();
+                $end = $row->end_date->copy()->startOfDay();
+
+                if ($end->lt($start)) {
+                    continue;
+                }
+
+                // Use diffInDays to align with product expectation (Aug 1 to Aug 31 = 30 days).
+                $duration = max(1, $start->diffInDays($end));
+                $elapsed = 0;
+
+                if ($today->greaterThan($start)) {
+                    $elapsed = min($duration, $start->diffInDays($today));
+                }
+
+                $totalDurationDays += $duration;
+                $elapsedDays += $elapsed;
+            }
+
+            if ($totalDurationDays > 0) {
+                $timelineConsumption = round(($elapsedDays / $totalDurationDays) * 100, 2);
+            }
+        }
+
+        $tasksQuery = Task::query()
+            ->where('company_id', $companyId)
+            ->whereIn('project_id', $projectIds)
+            ->whereNotNull('assigned_agent_id');
+
+        if ($role === 'agent') {
+            $this->applyAgentTaskAssignmentConstraint($tasksQuery, $userId);
+        }
+
+        $totalTasks = (int) (clone $tasksQuery)->count();
+        $completedTasks = (int) (clone $tasksQuery)->where('status', TaskStatus::COMPLETED->value)->count();
+        $taskCompletion = $totalTasks > 0
+            ? round(($completedTasks / $totalTasks) * 100, 2)
+            : 0.0;
+
+        $paceGap = max(0.0, $timelineConsumption - $taskCompletion);
+        $paceScore = max(0.0, min(100.0, 100.0 - ($paceGap * 2)));
+        $projectProgress = round(($taskCompletion * 0.7) + ($paceScore * 0.3), 2);
+
+        $status = match (true) {
+            $projectProgress <= 25 => 'POOR',
+            $projectProgress <= 50 => 'FAIR',
+            $projectProgress <= 75 => 'GOOD',
+            default => 'EXCELLENT',
+        };
+
+        $assignedAgents = (int) (clone $tasksQuery)
+            ->distinct('assigned_agent_id')
+            ->count('assigned_agent_id');
+
+        $notStartedBase = (clone $tasksQuery)
+            ->where('status', TaskStatus::PENDING->value)
+            ->whereNull('started_at');
+
+        $notStartedAgents = (int) (clone $notStartedBase)
+            ->distinct('assigned_agent_id')
+            ->count('assigned_agent_id');
+
+        $notStartedPercentage = $assignedAgents > 0
+            ? round(($notStartedAgents / $assignedAgents) * 100, 2)
+            : 0.0;
+
+        $startOfCurrentWeek = now()->startOfWeek();
+        $startOfPreviousWeek = $startOfCurrentWeek->copy()->subWeek();
+        $endOfPreviousWeek = $startOfCurrentWeek->copy()->subSecond();
+
+        $currentWeekNotStarted = (int) (clone $notStartedBase)
+            ->whereBetween('created_at', [$startOfCurrentWeek, now()])
+            ->distinct('assigned_agent_id')
+            ->count('assigned_agent_id');
+
+        $previousWeekNotStarted = (int) (clone $notStartedBase)
+            ->whereBetween('created_at', [$startOfPreviousWeek, $endOfPreviousWeek])
+            ->distinct('assigned_agent_id')
+            ->count('assigned_agent_id');
+
+        $trendDirection = 'flat';
+        if ($currentWeekNotStarted < $previousWeekNotStarted) {
+            $trendDirection = 'improved';
+        } elseif ($currentWeekNotStarted > $previousWeekNotStarted) {
+            $trendDirection = 'worsened';
+        }
+
+        return [
+            'project_performance' => [
+                'project_progress' => $projectProgress,
+                'task_completion' => $taskCompletion,
+                'timeline_consumption' => $timelineConsumption,
+                'status' => $status,
+            ],
+            'non_commenced_agents' => [
+                'assigned_agents' => $assignedAgents,
+                'not_started' => $notStartedAgents,
+                'percentage' => $notStartedPercentage,
+                'previous_week_not_started' => $previousWeekNotStarted,
+                'current_week_not_started' => $currentWeekNotStarted,
+                'trend_direction' => $trendDirection,
+            ],
+        ];
     }
 
     /**

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Search, SlidersHorizontal } from 'lucide-react';
 import { TaskBoard } from './task-board';
 import { TaskDetailModal } from './task-detail-modal';
@@ -40,9 +41,12 @@ function CustomLabel({
 
 
 export function AllTasksView() {
+  const searchParams = useSearchParams();
+  const isNotCommencedMode = searchParams.get('status') === 'not_commenced';
+
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState(isNotCommencedMode ? 'Pending' : 'All');
   const [selectedTask, setSelectedTask] = useState<{
     item: DndItem;
     containerId: string;
@@ -53,10 +57,17 @@ export function AllTasksView() {
 
   const { data: tasksData, isPending } = useTasks({
     company_id: companyId ?? undefined,
+    ...(isNotCommencedMode ? { status: 'pending' as const } : {}),
   });
 
   const containers: DndContainer[] = useMemo(() => {
-    const items = tasksData?.tasks || [];
+    const items = (tasksData?.tasks || []).filter((task) => {
+      if (!isNotCommencedMode) {
+        return true;
+      }
+
+      return isTaskNotCommenced(task);
+    });
 
     const pendingItems = items.filter(t => t.status === "pending").map(mapTaskToDnd);
     const inProgressItems = items
@@ -91,7 +102,7 @@ export function AllTasksView() {
         items: cancelledItems,
       },
     ];
-  }, [tasksData]);
+  }, [isNotCommencedMode, tasksData]);
 
   // Apply search + status filtering
   const filteredContainers: DndContainer[] = containers
@@ -352,4 +363,13 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     addedDescription: apiTask.description,
     statusLabel,
   };
+}
+
+function isTaskNotCommenced(task: TaskApiItem): boolean {
+  const hasAssignment =
+    task.assigned_users?.length > 0 ||
+    !!task.assigned_agent_id ||
+    !!task.assignee?.id;
+
+  return hasAssignment && task.status === 'pending' && !task.started_at;
 }

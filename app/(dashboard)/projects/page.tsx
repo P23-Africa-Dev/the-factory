@@ -36,6 +36,7 @@ function ProjectsContent() {
 
   const projects = data?.projects ?? [];
   const pagination = data?.pagination ?? null;
+  const analytics = data?.analytics ?? null;
 
   const handleTabChange = (tab: ProjectsTab) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -58,11 +59,10 @@ function ProjectsContent() {
               <button
                 key={tab.value}
                 onClick={() => handleTabChange(tab.value)}
-                className={`px-5 py-2.5 rounded-full transition-all cursor-pointer ${
-                  activeTab === tab.value
+                className={`px-5 py-2.5 rounded-full transition-all cursor-pointer ${activeTab === tab.value
                     ? "bg-[#09232D] text-white shadow-lg text-[14px] font-extrabold"
                     : "text-gray-400 hover:text-gray-600 text-[13px] font-medium"
-                }`}
+                  }`}
               >
                 {tab.label}
               </button>
@@ -77,14 +77,15 @@ function ProjectsContent() {
               Project management is available to owner, admin, and supervisor roles only.
             </div>
           ) : (
-          <ProjectsView
-            projects={projects}
-            onViewProject={handleViewProject}
-            isLoading={isLoading}
-            pagination={pagination}
-            currentPage={page}
-            onPageChange={setPage}
-          />
+            <ProjectsView
+              projects={projects}
+              analytics={analytics}
+              onViewProject={handleViewProject}
+              isLoading={isLoading}
+              pagination={pagination}
+              currentPage={page}
+              onPageChange={setPage}
+            />
           )
         ) : (
           <AllTasksView />

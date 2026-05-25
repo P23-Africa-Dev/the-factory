@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   MoreVertical,
   Search,
@@ -19,12 +20,14 @@ import { CreateProjectDrawer } from "./create-project-drawer";
 import { ProjectCardSkeleton } from "./skeletons/project-card-skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { PaginationData } from "@/lib/api/projects";
+import type { ProjectsAnalyticsData } from "@/lib/api/projects";
 
 const STATUS_FILTERS = ["All", "In progress", "Completed", "Pending"];
 const PRIORITY_FILTERS = ["All", "High", "Medium", "Low"];
 
 interface ProjectsViewProps {
   projects: Project[];
+  analytics?: ProjectsAnalyticsData | null;
   onViewProject: (projectId: string, projectName?: string) => void;
   isLoading?: boolean;
   pagination?: PaginationData | null;
@@ -34,12 +37,15 @@ interface ProjectsViewProps {
 
 export function ProjectsView({
   projects,
+  analytics = null,
   onViewProject,
   isLoading = false,
   pagination = null,
   currentPage = 1,
   onPageChange,
 }: ProjectsViewProps) {
+  const router = useRouter();
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [priorityFilter, setPriorityFilter] = useState("All");
@@ -61,6 +67,10 @@ export function ProjectsView({
       }),
     [projects, search, statusFilter, priorityFilter],
   );
+
+  const handleViewNotCommencedTasks = () => {
+    router.push("/tasks?status=not_commenced");
+  };
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -141,7 +151,11 @@ export function ProjectsView({
       </div>
 
       {/* ── Summary Cards ────────────────────────────────────── */}
-      <SummaryCards projects={projects} />
+      <SummaryCards
+        projects={projects}
+        analytics={analytics}
+        onViewNotCommencedTasks={handleViewNotCommencedTasks}
+      />
 
       {/* ── Filter panel ─────────────────────────────────────── */}
       {showFilters && (
@@ -156,8 +170,8 @@ export function ProjectsView({
                   key={s}
                   onClick={() => setStatusFilter(s)}
                   className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${statusFilter === s
-                      ? "bg-[#0B1215] text-white"
-                      : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
+                    ? "bg-[#0B1215] text-white"
+                    : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
                     }`}
                 >
                   {s}
@@ -176,8 +190,8 @@ export function ProjectsView({
                   key={p}
                   onClick={() => setPriorityFilter(p)}
                   className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${priorityFilter === p
-                      ? "bg-[#0B1215] text-white"
-                      : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
+                    ? "bg-[#0B1215] text-white"
+                    : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
                     }`}
                 >
                   {p}
@@ -483,12 +497,24 @@ function performanceLabel(pct: number) {
   return "Poor";
 }
 
-function SummaryCards({ projects }: { projects: Project[] }) {
+function SummaryCards({
+  projects,
+  analytics,
+  onViewNotCommencedTasks,
+}: {
+  projects: Project[];
+  analytics?: ProjectsAnalyticsData | null;
+  onViewNotCommencedTasks: () => void;
+}) {
   const total = projects.length;
   const pending = projects.filter((p) => p.status === "Pending").length;
   const completed = projects.filter((p) => p.status === "Completed").length;
-  const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
-  const pendingPercent = total === 0 ? 0 : Math.round((pending / total) * 100);
+  const fallbackPercent = total === 0 ? 0 : Math.round((completed / total) * 100);
+  const fallbackPendingPercent = total === 0 ? 0 : Math.round((pending / total) * 100);
+
+  const percent = Math.round(analytics?.project_performance.project_progress ?? fallbackPercent);
+  const pendingPercent = Math.round(analytics?.non_commenced_agents.percentage ?? fallbackPendingPercent);
+  const performanceStatus = analytics?.project_performance.status ?? performanceLabel(percent).toUpperCase();
 
   const [animatedPct, setAnimatedPct] = useState(0);
   useEffect(() => {
@@ -515,6 +541,7 @@ function SummaryCards({ projects }: { projects: Project[] }) {
     <div className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar w-screen -mx-4 px-4 pb-2 gap-6 sm:flex-col lg:flex-row sm:justify-between sm:w-full sm:mx-0 sm:px-8 sm:gap-6 lg:gap-0 animate-in fade-in slide-in-from-bottom-2 duration-500 h-auto sm:overflow-visible sm:snap-none sm:pb-0 lg:h-49">
       <PerformanceCard
         percent={percent}
+        status={performanceStatus}
         animatedDash={animatedDash}
         dotX={dotX}
         dotY={dotY}
@@ -522,7 +549,7 @@ function SummaryCards({ projects }: { projects: Project[] }) {
       <div className="contents sm:grid sm:grid-cols-3 sm:gap-6 lg:gap-6.25 sm:w-auto">
         <TotalProjectsCard total={total} />
         <PendingProjectsCard pending={pending} />
-        <AgentsCard percentage={pendingPercent} />
+        <AgentsCard percentage={pendingPercent} onViewAll={onViewNotCommencedTasks} />
       </div>
     </div>
   );
@@ -535,11 +562,13 @@ function formatStatCount(value: number): string {
 // ─── Performance Card ─────────────────────────────────────────────────────────
 function PerformanceCard({
   percent,
+  status,
   animatedDash,
   dotX,
   dotY,
 }: {
   percent: number;
+  status: string;
   animatedDash: number;
   dotX: number;
   dotY: number;
@@ -609,7 +638,7 @@ function PerformanceCard({
           Performance
         </h2>
         <p className="text-[11px] sm:text-[14px] font-medium text-[#E8E8E8]/80">
-          Status: <span className="text-white font-semibold">{performanceLabel(percent)}</span>
+          Status: <span className="text-white font-semibold">{status}</span>
         </p>
       </div>
     </div>
@@ -709,7 +738,13 @@ function PendingProjectsCard({ pending }: { pending: number }) {
 }
 
 // ─── Agents Card ──────────────────────────────────────────────────────────────
-function AgentsCard({ percentage }: { percentage: number }) {
+function AgentsCard({
+  percentage,
+  onViewAll,
+}: {
+  percentage: number;
+  onViewAll: () => void;
+}) {
   const normalizedPercentage = Math.max(0, Math.min(100, Math.round(percentage)));
   const progressDash = (normalizedPercentage / 100) * ARC_LENGTH;
   const accentDash = Math.min(progressDash, 30);
@@ -722,7 +757,10 @@ function AgentsCard({ percentage }: { percentage: number }) {
       <p className="text-white font-light text-[8px] leading-[1.4] max-w-20 mx-auto">
         View Agent who hasn&apos;t commenced task
       </p>
-      <button className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#08393A] text-white rounded-full text-[7px] hover:bg-[#d57848] transition-colors">
+      <button
+        onClick={onViewAll}
+        className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#08393A] text-white rounded-full text-[7px] hover:bg-[#d57848] transition-colors"
+      >
         View All
         <Image src={Arrow57Deg} alt="View All" width={7.5} height={7.5} />
       </button>

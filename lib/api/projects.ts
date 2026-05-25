@@ -122,9 +122,31 @@ export type PaginationData = {
   last_page?: number;
 };
 
+export type ProjectPerformanceAnalytics = {
+  project_progress: number;
+  task_completion: number;
+  timeline_consumption: number;
+  status: "POOR" | "FAIR" | "GOOD" | "EXCELLENT";
+};
+
+export type NonCommencedAgentsAnalytics = {
+  assigned_agents: number;
+  not_started: number;
+  percentage: number;
+  previous_week_not_started: number;
+  current_week_not_started: number;
+  trend_direction: "improved" | "worsened" | "flat";
+};
+
+export type ProjectsAnalyticsData = {
+  project_performance: ProjectPerformanceAnalytics;
+  non_commenced_agents: NonCommencedAgentsAnalytics;
+};
+
 export type ProjectsListData = {
   items: ProjectApiItem[];
   pagination: PaginationData;
+  analytics?: ProjectsAnalyticsData;
 };
 
 export type ProjectDetailData = {
