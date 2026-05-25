@@ -4,7 +4,7 @@ import type { ChangeEvent, ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
 import { X, ChevronUp, ChevronDown, Upload, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import type { ApiRoleBasePath, CrmLabel, CrmPipeline, ImportLeadRow } from "@/lib/api/crm";
+import type { ApiLeadPriority, ApiRoleBasePath, CrmLabel, CrmPipeline, ImportLeadRow } from "@/lib/api/crm";
 import {
     useCreateCrmLabel,
     useCreateCrmPipeline,
@@ -238,8 +238,29 @@ function parseCsv(content: string): ImportLeadRow[] {
         const row: ImportLeadRow = {};
         headers.forEach((header, idx) => {
             const val = values[idx] ?? "";
-            if (["name", "email", "phone", "location", "source", "status", "priority"].includes(header)) {
-                row[header as keyof ImportLeadRow] = val;
+            if (!val) return;
+            switch (header) {
+                case "name":
+                    row.name = val;
+                    break;
+                case "email":
+                    row.email = val;
+                    break;
+                case "phone":
+                    row.phone = val;
+                    break;
+                case "location":
+                    row.location = val;
+                    break;
+                case "source":
+                    row.source = val;
+                    break;
+                case "status":
+                    row.status = val;
+                    break;
+                case "priority":
+                    row.priority = val.toLowerCase() as ApiLeadPriority;
+                    break;
             }
         });
         return row;

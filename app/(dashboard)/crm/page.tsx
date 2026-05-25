@@ -430,12 +430,11 @@ function LeadBoard({ basePath = "/crm", leadListUrl, initialContainers, onStatus
   const dragOriginRef = useRef<string | null>(null);
   // Active tab state for column navigation
   const [activeTabId, setActiveTabId] = useState<string>(() => initialContainers[0]?.id ?? "newly_lead");
-  // Sync activeTabId with containers changes
-  useEffect(() => {
-    if (initialContainers.length > 0 && !initialContainers.some(c => c.id === activeTabId)) {
-      setActiveTabId(initialContainers[0].id);
-    }
-  }, [initialContainers, activeTabId]);
+  const resolvedActiveTabId =
+    initialContainers.length > 0 &&
+    !initialContainers.some((c) => c.id === activeTabId)
+      ? initialContainers[0].id
+      : activeTabId;
   const [prevInitialContainers, setPrevInitialContainers] = useState(initialContainers);
 
   if (initialContainers !== prevInitialContainers) {
@@ -549,7 +548,7 @@ function LeadBoard({ basePath = "/crm", leadListUrl, initialContainers, onStatus
       {viewMode === "grid" && (
         <div className="flex md:hidden gap-1.5 overflow-x-auto px-4 pb-3 pt-1 border-b border-gray-100 shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {containers.map((c) => {
-            const isActive = activeTabId === c.id;
+            const isActive = resolvedActiveTabId === c.id;
             return (
               <button
                 key={c.id}
@@ -600,7 +599,7 @@ function LeadBoard({ basePath = "/crm", leadListUrl, initialContainers, onStatus
                   items={container.items}
                   onAddCard={() => onAddClick?.(container.id as ApiLeadStatus)}
                   basePath={basePath}
-                  activeTabId={activeTabId}
+                  activeTabId={resolvedActiveTabId}
                   stages={stagesList}
                   onMoveToStage={async (leadId, targetStageId) => {
                     await onStatusChange(leadId, targetStageId as ApiLeadStatus);
@@ -616,7 +615,7 @@ function LeadBoard({ basePath = "/crm", leadListUrl, initialContainers, onStatus
                   isDragOverlay
                   basePath={basePath}
                   stages={stagesList}
-                  currentStageId={activeTabId}
+                  currentStageId={resolvedActiveTabId}
                 />
               ) : null}
             </DragOverlay>

@@ -627,13 +627,10 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   const [activeTabId, setActiveTabId] = useState<string>(() => containers[0]?.id ?? "new");
-
-  // Sync activeTabId if containers change and current activeTabId is not in the containers
-  useEffect(() => {
-    if (containers.length > 0 && !containers.some(c => c.id === activeTabId)) {
-      setActiveTabId(containers[0].id);
-    }
-  }, [containers, activeTabId]);
+  const resolvedActiveTabId =
+    containers.length > 0 && !containers.some((c) => c.id === activeTabId)
+      ? containers[0].id
+      : activeTabId;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -720,7 +717,7 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
       {viewMode === "grid" && (
         <div className="flex md:hidden gap-1.5 overflow-x-auto px-4 pb-3 pt-1 border-b border-gray-100 shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {containers.map((c) => {
-            const isActive = activeTabId === c.id;
+            const isActive = resolvedActiveTabId === c.id;
             return (
               <button
                 key={c.id}
@@ -772,7 +769,7 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
                   items={container.items}
                   onAddCard={(item) => addItem(container.id, item)}
                   basePath={basePath}
-                  activeTabId={activeTabId}
+                  activeTabId={resolvedActiveTabId}
                   stages={stagesList}
                   onMoveToStage={moveToContainer}
                 />
@@ -786,7 +783,7 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
                   isDragOverlay
                   basePath={basePath}
                   stages={stagesList}
-                  currentStageId={activeTabId}
+                  currentStageId={resolvedActiveTabId}
                 />
               ) : null}
             </DragOverlay>
