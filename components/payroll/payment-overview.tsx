@@ -218,8 +218,8 @@ export function PaymentOverview({ overview }: PaymentOverviewProps) {
         </div>
       </div>
 
-      <div className="flex-1 min-w-0 flex flex-row lg:flex-col lg:max-w-71.5 gap-2.5 lg:max-h-42.25">
-        <div className="flex-1 bg-white rounded-3xl px-4 sm:px-5 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] h-fit">
+              <div className="flex-1 min-w-0 flex flex-col lg:flex-row lg:max-w-71.5 gap-2.5 lg:max-h-42.25">
+        <div className="flex-1 bg-white rounded-3xl px-4 sm:px-5 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] h-fit w-full">
           <p className="text-[22px] sm:text-[28px] lg:text-[32px] font-bold text-[#34373C] leading-tight tracking-tight font-[poppins]">
             {formatMoney(overview?.total_commission ?? 0, overview?.currency ?? "NGN")}
           </p>
@@ -241,7 +241,7 @@ export function PaymentOverview({ overview }: PaymentOverviewProps) {
         </div>
 
         {!isAgent && (
-          <div className="flex-1 bg-white flex rounded-3xl px-4 sm:px-5 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] h-fit">
+          <div className="flex-1 bg-white flex rounded-3xl px-4 sm:px-5 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] h-fit w-full">
             <div className="shrink-0 mr-2">
               <p className="text-[16px] sm:text-[20px] font-bold text-[#34373C] tracking-tight font-[poppins]">
                 {formatMoney(overview?.pending_approval ?? 0, overview?.currency ?? "NGN")}
