@@ -377,7 +377,7 @@ export function WeeklyTasksAgents() {
   const badgeText = ongoingTask
     ? `${agentName.split(" ")[0]} ... ${Math.round(progressPercent)}%`
     : "No Active Task";
-  const tasksRoute = role === "agent" ? "/agent/tasks" : "/tasks";
+  const tasksRoute = role === "agent" ? "/agent/tasks" : "/operations/agents";
 
   const handlePrevDay = () => {
     const prev = new Date(selectedDate);
