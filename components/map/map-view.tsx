@@ -586,8 +586,8 @@ export function MapView({ compact = false }: MapViewProps) {
       {/* Map canvas */}
       <div ref={mapContainer} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
 
-      {/* Search — top right */}
-      <div className="absolute top-8 right-8 z-20 w-[450px]">
+      {/* Search — top, full-width on mobile / top-right on desktop */}
+      <div className="absolute top-4 left-4 right-4 md:top-8 md:right-8 md:left-auto md:w-[450px] z-20">
         <div className="relative">
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} strokeWidth={2} />
           <input
@@ -600,8 +600,8 @@ export function MapView({ compact = false }: MapViewProps) {
         </div>
       </div>
 
-      {/* Search Feeds panel — left */}
-      <div className="absolute top-8 left-8 z-20 w-[340px] bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
+      {/* Search Feeds panel — below search on mobile / top-left on desktop */}
+      <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-auto md:w-[340px] z-20 bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
         <div className="flex items-center justify-between px-6 py-6 pb-4">
           <h3 className="text-[18px] font-bold text-dash-dark">Search Feeds</h3>
           <button className="w-9 h-9 rounded-full bg-[#0A192F] flex items-center justify-center hover:bg-gray-800 transition-colors">
