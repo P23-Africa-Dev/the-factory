@@ -59,6 +59,39 @@ export type AgentLiveActivity = {
     agents_with_recent_location_ping: number;
 };
 
+export type ActivityMetricDailyPoint = {
+    name: string;
+    value: number;
+};
+
+export type ActivityMetric = {
+    activity_score: number;
+    direction: "up" | "down" | "flat";
+    current_week: number;
+    previous_week: number;
+    current_week_daily: ActivityMetricDailyPoint[];
+};
+
+export type OngoingTaskAgent = {
+    id: number | null;
+    name: string;
+    avatar_url: string | null;
+    initials: string;
+};
+
+export type OngoingTask = {
+    task_id: number;
+    task_title: string;
+    status: string;
+    tracking_state: "in_progress" | "near_destination" | "arrived" | "completed";
+    progress_percent: number;
+    total_distance_meters: number | null;
+    covered_distance_meters: number | null;
+    remaining_distance_meters: number | null;
+    eta_minutes: number | null;
+    agent: OngoingTaskAgent;
+};
+
 export type ProjectKpis = {
     total_projects: number;
     active_projects: number;
@@ -76,6 +109,8 @@ export type DashboardOverviewData = {
     crm_pipeline_snapshot: PipelineSnapshot;
     calendar_task_feed: CalendarTaskItem[];
     agent_live_activity: AgentLiveActivity;
+    activity_metric: ActivityMetric;
+    ongoing_tasks: OngoingTask[];
 };
 
 export type AgentSummary = {

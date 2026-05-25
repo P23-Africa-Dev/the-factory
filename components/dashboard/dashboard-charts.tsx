@@ -39,6 +39,32 @@ const leadsData = [
 
 export function MyActivitiesChart() {
   const [mounted, setMounted] = useState(false);
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const basePath = role === "agent" ? "/agent" : "/admin";
+
+  const { data: overview } = useDashboardOverview({
+    company_id: companyId ?? undefined,
+    basePath,
+  });
+
+  const metric = overview?.activity_metric;
+  const activityScore = metric?.activity_score ?? 0;
+  const direction = metric?.direction ?? "flat";
+
+  const activityValue = `${activityScore > 0 ? "+" : ""}${Math.round(activityScore)}%`;
+
+  const chartData =
+    metric?.current_week_daily?.length === 7
+      ? metric.current_week_daily
+      : activitiesData;
+
+  const referenceLine =
+    chartData.length > 0
+      ? Math.round(
+        chartData.reduce((sum, item) => sum + item.value, 0) / chartData.length
+      )
+      : 0;
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -56,14 +82,14 @@ export function MyActivitiesChart() {
           </h3>
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-4xl font-bold tracking-tighter leading-9">
-              60%
+              {activityValue}
             </span>
             <Image
               src={ArrowUp}
               alt="Arrow Up Right Icon"
               width={18}
               height={18}
-              className="text-white/80 self-end pb-1.5"
+              className={`self-end pb-1.5 ${direction === "down" ? "rotate-90 [filter:brightness(0)_saturate(100%)_invert(24%)_sepia(87%)_saturate(2642%)_hue-rotate(338deg)_brightness(97%)_contrast(104%)]" : ""}`}
             />
           </div>
         </div>
@@ -77,7 +103,7 @@ export function MyActivitiesChart() {
           minWidth={0}
         >
           <AreaChart
-            data={activitiesData}
+            data={chartData}
             margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
           >
             <defs>
@@ -87,7 +113,7 @@ export function MyActivitiesChart() {
               </linearGradient>
             </defs>
             <ReferenceLine
-              y={45}
+              y={referenceLine}
               stroke="white"
               strokeDasharray="3 3"
               strokeOpacity={0.4}

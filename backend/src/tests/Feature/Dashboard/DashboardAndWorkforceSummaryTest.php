@@ -23,14 +23,17 @@ class DashboardAndWorkforceSummaryTest extends TestCase
     {
         [$company, $admin, $agent] = $this->seedCompanyUsers();
 
-        Task::create([
+        $inProgressTask = Task::create([
             'company_id' => $company->id,
             'created_by_user_id' => $admin->id,
             'assigned_agent_id' => $agent->id,
-            'title' => 'Pending Task',
+            'title' => 'In Progress Task',
             'type' => 'inspection',
-            'description' => 'Pending task description',
-            'status' => 'pending',
+            'description' => 'In progress task description',
+            'status' => 'in_progress',
+            'latitude' => 6.5,
+            'longitude' => 3.5,
+            'started_at' => now()->subMinutes(25),
         ]);
 
         Task::create([
@@ -73,17 +76,23 @@ class DashboardAndWorkforceSummaryTest extends TestCase
         ]);
 
         $session = TaskTrackingSession::create([
-            'task_id' => 1,
+            'task_id' => $inProgressTask->id,
             'company_id' => $company->id,
             'started_by_user_id' => $agent->id,
             'start_latitude' => 6.4,
             'start_longitude' => 3.4,
+            'last_latitude' => 6.45,
+            'last_longitude' => 3.45,
+            'destination_latitude' => 6.5,
+            'destination_longitude' => 3.5,
+            'destination_radius_meters' => 75,
             'start_recorded_at' => now()->subMinutes(20),
+            'last_recorded_at' => now()->subMinutes(4),
         ]);
 
         TaskLocationPoint::create([
             'tracking_session_id' => $session->id,
-            'task_id' => 1,
+            'task_id' => $inProgressTask->id,
             'company_id' => $company->id,
             'user_id' => $agent->id,
             'latitude' => 6.401,
@@ -104,14 +113,19 @@ class DashboardAndWorkforceSummaryTest extends TestCase
             ->assertJsonPath('data.project_kpis.completed_projects', 1)
             ->assertJsonPath('data.project_kpis.completion_rate', 50)
             ->assertJsonPath('data.crm_pipeline_snapshot.total', 1)
-            ->assertJsonPath('data.top_prospects.0.id', $lead->id);
+            ->assertJsonPath('data.top_prospects.0.id', $lead->id)
+            ->assertJsonPath('data.activity_metric.direction', 'up')
+            ->assertJsonPath('data.activity_metric.activity_score', 100)
+            ->assertJsonPath('data.ongoing_tasks.0.task_id', $inProgressTask->id)
+            ->assertJsonPath('data.ongoing_tasks.0.status', 'ACTIVE');
 
         $workforceResponse = $this->withToken($admin->createToken('admin-workforce-token', ['*'])->plainTextToken)
             ->getJson('/api/v1/workforce/summary?company_id=' . $company->id);
 
         $workforceResponse->assertOk()
             ->assertJsonPath('data.agent_summary.total_agents', 1)
-            ->assertJsonPath('data.task_distribution.pending', 1)
+            ->assertJsonPath('data.task_distribution.pending', 0)
+            ->assertJsonPath('data.task_distribution.in_progress', 1)
             ->assertJsonPath('data.task_distribution.completed', 1)
             ->assertJsonPath('data.attendance_proxy.agents_with_location_ping_last_30m', 1);
     }
@@ -119,6 +133,16 @@ class DashboardAndWorkforceSummaryTest extends TestCase
     public function test_agent_can_fetch_summaries_but_cannot_escape_company_scope(): void
     {
         [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        Task::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => null,
+            'title' => 'Management-only activity',
+            'type' => 'inspection',
+            'description' => 'Should not count as agent self activity',
+            'status' => 'pending',
+        ]);
 
         $otherCompany = Company::create([
             'company_id' => 'FAC-DASH-002',
@@ -152,7 +176,9 @@ class DashboardAndWorkforceSummaryTest extends TestCase
         $dashboardResponse = $this->withToken($agent->createToken('agent-dashboard-token', ['*'])->plainTextToken)
             ->getJson('/api/v1/dashboard/overview?company_id=' . $company->id);
 
-        $dashboardResponse->assertOk();
+        $dashboardResponse->assertOk()
+            ->assertJsonPath('data.activity_metric.current_week', 0)
+            ->assertJsonCount(0, 'data.ongoing_tasks');
 
         $crossCompanyResponse = $this->withToken($agent->createToken('agent-dashboard-cross-company-token', ['*'])->plainTextToken)
             ->getJson('/api/v1/dashboard/overview?company_id=' . $otherCompany->id);

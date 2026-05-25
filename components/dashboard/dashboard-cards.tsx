@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils/sample";
 import { useAuthStore } from "@/store/auth";
 import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 export function TopCustomers() {
@@ -321,6 +322,7 @@ const MONTHS = [
 ];
 
 export function WeeklyTasksAgents() {
+  const router = useRouter();
   const [filter, setFilter] = useState<TaskFilter>("Daily");
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
@@ -366,6 +368,16 @@ export function WeeklyTasksAgents() {
   }, [overview?.calendar_task_feed]);
 
   const dayTasks = tasksByDate[toDateKey(selectedDate)] ?? [];
+  const ongoingTask = overview?.ongoing_tasks?.[0] ?? null;
+  const progressPercent = Math.max(
+    0,
+    Math.min(100, Number(ongoingTask?.progress_percent ?? 0))
+  );
+  const agentName = ongoingTask?.agent?.name ?? "No active task";
+  const badgeText = ongoingTask
+    ? `${agentName.split(" ")[0]} ... ${Math.round(progressPercent)}%`
+    : "No Active Task";
+  const tasksRoute = role === "agent" ? "/agent/tasks" : "/tasks";
 
   const handlePrevDay = () => {
     const prev = new Date(selectedDate);
@@ -485,17 +497,23 @@ export function WeeklyTasksAgents() {
           <p className="text-[14px] font-medium text-[#34373C]">Ongoing Task</p>
 
           <div className="w-full h-5 bg-[#F5F5F5] rounded-full p-1.5 shadow-inner ring-1 ring-dash-dark/5 mt-6.5">
-            <div className="w-[42%] h-full bg-[#FD6046] rounded-full shadow-lg relative">
+            <div className="h-full bg-[#FD6046] rounded-full shadow-lg relative" style={{ width: `${progressPercent}%` }}>
               <div className="absolute -top-6 -right-1.5 flex items-center gap-1.5  text-white rounded-full text-[9px] font-medium whitespace-nowrap -translate-y-1">
-                <Image
-                  src="/avatars/male-avatar.png"
-                  alt="Attendee"
-                  width={16}
-                  height={16}
-                  className="w-4 h-4 object-cover rounded-full overflow-hidden z-20"
-                />
+                {ongoingTask?.agent?.avatar_url ? (
+                  <Image
+                    src={ongoingTask.agent.avatar_url}
+                    alt={ongoingTask.agent.name}
+                    width={16}
+                    height={16}
+                    className="w-4 h-4 object-cover rounded-full overflow-hidden z-20"
+                  />
+                ) : (
+                  <div className="w-4 h-4 rounded-full bg-white text-[#FD6046] text-[7px] font-bold flex items-center justify-center z-20">
+                    {ongoingTask?.agent?.initials ?? "A"}
+                  </div>
+                )}
                 <div className="bg-[#FD6046] leading-1.5 py-px px-0.75 text-[3px] rounded-r-[3px] absolute left-3.5">
-                  Alex ... 42%
+                  {badgeText}
                 </div>
                 <div className="absolute rotate-180 w-1.5 h-1.75 -bottom-1 right-1 bg-[#FD6046] [clip-path:polygon(50%_0%,100%_100%,0%_100%)]" />
               </div>
@@ -503,7 +521,7 @@ export function WeeklyTasksAgents() {
           </div>
         </div>
 
-        <button className="w-full bg-[#8B2FA1] text-white py-5 rounded-4xl mb-4 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
+        <button onClick={() => router.push(tasksRoute)} className="w-full bg-[#8B2FA1] text-white py-5 rounded-4xl mb-4 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
           View All Task
           <Image
             src={ArrowUp}
@@ -519,9 +537,11 @@ export function WeeklyTasksAgents() {
 }
 
 export function CRMPipeline() {
+  const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const basePath = role === "agent" ? "/agent" : "/admin";
+  const crmRoute = role === "agent" ? "/agent/crm" : "/crm";
 
   const { data: overview } = useDashboardOverview({
     company_id: companyId ?? undefined,
@@ -534,7 +554,7 @@ export function CRMPipeline() {
   }, [overview?.crm_pipeline_snapshot?.stages]);
 
   return (
-    <div className="py-3.75 px-2.75 pb-10 bg-[#D056DC] h-fit rounded-[20px] text-white relative overflow-hidden mb-2.5 shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
+    <div onClick={() => router.push(crmRoute)} className="py-3.75 px-2.75 pb-10 bg-[#D056DC] h-fit rounded-[20px] text-white relative overflow-hidden mb-2.5 shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026] cursor-pointer">
       <div className="z-20 relative">
         <div className="w-12.75 h-12.75 rounded-[50px] bg-[#D056DC] backdrop-blur-xl flex items-center justify-center mb-2.25 drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)]">
           <Image
