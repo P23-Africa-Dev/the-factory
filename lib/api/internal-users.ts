@@ -55,7 +55,24 @@ export type ListInternalUsersParams = {
   company_id?: number | string;
   role?: InternalUserRole;
   onboarding_status?: "active" | "pending_onboarding" | "inactive";
+  status?: "active" | "pending_onboarding" | "inactive";
+  search?: string;
+  zone?: string;
   include_inactive?: 0 | 1;
+  per_page?: number;
+  page?: number;
+};
+
+export type PaginatedInternalUsersData = {
+  items: InternalUserListItem[];
+  pagination: {
+    next_page_url: string | null;
+    prev_page_url: string | null;
+    per_page: number;
+    current_page?: number;
+    last_page?: number;
+    total?: number;
+  };
 };
 
 export type InternalOnboardingStatusData = {
@@ -110,6 +127,29 @@ export function listInternalUsers(
   });
 
   return apiRequest<InternalUserListItem[]>({
+    method: "GET",
+    path: `/internal-users${query}`,
+    token,
+  });
+}
+
+export function listInternalUsersPaginated(
+  params: ListInternalUsersParams,
+  token: string
+): Promise<ApiEnvelope<PaginatedInternalUsersData>> {
+  const query = buildQuery({
+    company_id: params.company_id,
+    role: params.role,
+    onboarding_status: params.onboarding_status,
+    status: params.status,
+    search: params.search,
+    zone: params.zone,
+    include_inactive: params.include_inactive,
+    per_page: params.per_page,
+    page: params.page,
+  });
+
+  return apiRequest<PaginatedInternalUsersData>({
     method: "GET",
     path: `/internal-users${query}`,
     token,

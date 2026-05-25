@@ -165,6 +165,89 @@ class AttendanceApiTest extends TestCase
         ]);
     }
 
+    public function test_management_records_support_role_and_expanded_status_filters_and_avatar_url(): void
+    {
+        [$company, $owner, $supervisor, $agentA, $agentB] = $this->seedCompanyUsers();
+        $this->createAttendanceSetting($company);
+
+        $agentA->update([
+            'avatar' => 'male_01',
+            'internal_role' => 'agent',
+            'assigned_zone' => 'Ikeja LGA',
+        ]);
+
+        $supervisor->update([
+            'avatar' => 'female_01',
+            'internal_role' => 'supervisor',
+            'assigned_zone' => 'Surulere LGA',
+        ]);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentA->id,
+            'attendance_date' => '2026-06-01',
+            'clock_in_at' => '2026-06-01 09:20:00',
+            'clock_out_at' => null,
+            'status' => 'late',
+            'work_duration_minutes' => null,
+            'is_late' => true,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $supervisor->id,
+            'attendance_date' => '2026-06-01',
+            'clock_in_at' => '2026-06-01 08:55:00',
+            'clock_out_at' => '2026-06-01 17:00:00',
+            'status' => 'auto_clocked_out',
+            'work_duration_minutes' => 485,
+            'is_late' => false,
+            'is_auto_clocked_out' => true,
+        ]);
+
+        $presentResponse = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/records?company_id=' . $company->id . '&date=2026-06-01&status=present&per_page=10');
+
+        $presentResponse->assertOk()
+            ->assertJsonCount(2, 'data.items')
+            ->assertJsonPath('data.pagination.current_page', 1)
+            ->assertJsonPath('data.pagination.last_page', 1)
+            ->assertJsonPath('data.pagination.total', 2);
+
+        $firstAvatarUrl = (string) ($presentResponse->json('data.items.0.avatar_url') ?? '');
+        $this->assertNotSame('', $firstAvatarUrl);
+
+        $roleResponse = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/records?company_id=' . $company->id . '&date=2026-06-01&role=supervisor&per_page=10');
+
+        $roleResponse->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.role', 'supervisor');
+
+        $clockedOutResponse = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/records?company_id=' . $company->id . '&date=2026-06-01&status=clocked_out&per_page=10');
+
+        $clockedOutResponse->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.status', 'auto_clocked_out');
+
+        $lateResponse = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/records?company_id=' . $company->id . '&date=2026-06-01&status=late&per_page=10');
+
+        $lateResponse->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.status', 'late');
+
+        $absentResponse = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/records?company_id=' . $company->id . '&date=2026-06-01&status=absent&per_page=10');
+
+        $absentResponse->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.user_id', $agentB->id)
+            ->assertJsonPath('data.items.0.status', 'absent');
+    }
+
     public function test_attendance_payroll_generation_respects_attendance_affects_pay(): void
     {
         [$company, $owner,, $agentA, $agentB] = $this->seedCompanyUsers();

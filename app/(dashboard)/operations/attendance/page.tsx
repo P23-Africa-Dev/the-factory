@@ -29,7 +29,8 @@ type AttendanceItem = {
 function resolveAvatar(avatar: string | null): string {
   if (!avatar) return '/avatars/male-avatar.png';
   if (avatar.startsWith('http')) return avatar;
-  return `/avatars/${avatar}.png`;
+  if (avatar.startsWith('/')) return avatar;
+  return '/avatars/male-avatar.png';
 }
 
 function mapRecord(record: ManagementAttendanceRecord): AttendanceItem {
@@ -44,25 +45,25 @@ function mapRecord(record: ManagementAttendanceRecord): AttendanceItem {
     checkOut: record.clock_out_at
       ? format(parseISO(record.clock_out_at), 'h:mma')
       : record.status !== 'absent'
-      ? 'Still Active'
-      : 'No check-out record',
+        ? 'Still Active'
+        : 'No check-out record',
     role: record.role ?? 'Field Agent',
-    status: record.status === 'present' || record.status === 'late' ? 'Present' : 'Absent',
+    status: record.status === 'present' || record.status === 'late' || record.status === 'auto_clocked_out' ? 'Present' : 'Absent',
     subText:
       record.is_late
         ? 'Late'
         : record.clock_out_at
-        ? 'Checked Out'
-        : record.status !== 'absent'
-        ? 'Active'
-        : 'Absent',
+          ? 'Checked Out'
+          : record.status !== 'absent'
+            ? 'Active'
+            : 'Absent',
     active: !!record.clock_in_at && !record.clock_out_at,
-    avatar: resolveAvatar(record.avatar),
+    avatar: resolveAvatar(record.avatar_url ?? record.avatar),
   };
 }
 
 const SPARK_PRESENT = [{ v: 8 }, { v: 14 }, { v: 10 }, { v: 18 }, { v: 12 }, { v: 16 }, { v: 20 }];
-const SPARK_ABSENT  = [{ v: 20 }, { v: 14 }, { v: 18 }, { v: 10 }, { v: 16 }, { v: 12 }, { v: 8 }];
+const SPARK_ABSENT = [{ v: 20 }, { v: 14 }, { v: 18 }, { v: 10 }, { v: 16 }, { v: 12 }, { v: 8 }];
 
 function StatCard({
   value,
@@ -150,9 +151,8 @@ function AttendanceSidebar({ record }: { record: AttendanceItem }) {
               <div className="mt-2 text-center">
                 <p className="text-[12px] font-bold text-dash-dark">{record.name}</p>
                 <div className="flex items-center justify-center gap-2 mt-0.5">
-                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                    record.active ? 'bg-[#1A452C] text-[#4ADE80]' : 'bg-[#F48243]/20 text-[#F48243]'
-                  }`}>
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${record.active ? 'bg-[#1A452C] text-[#4ADE80]' : 'bg-[#F48243]/20 text-[#F48243]'
+                    }`}>
                     {record.status}
                   </span>
                 </div>
@@ -193,9 +193,8 @@ function AttendanceSidebar({ record }: { record: AttendanceItem }) {
             <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-Out Time</p>
             <p className="text-[13px] font-medium text-white/70">{record.checkOut}</p>
           </div>
-          <div className={`px-3 py-1.5 rounded-full text-[10px] font-bold shrink-0 self-start ${
-            record.active ? 'bg-[#1A452C] text-[#4ADE80]' : 'bg-gray-700 text-gray-300'
-          }`}>
+          <div className={`px-3 py-1.5 rounded-full text-[10px] font-bold shrink-0 self-start ${record.active ? 'bg-[#1A452C] text-[#4ADE80]' : 'bg-gray-700 text-gray-300'
+            }`}>
             {record.active ? 'On-Time' : 'Absent'}
           </div>
         </div>
@@ -266,12 +265,13 @@ function AttendanceRow({ item, isSelected, onClick }: { item: AttendanceItem; is
 export default function AttendanceListPage() {
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  const [search, setSearch]             = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'absent'>('all');
-  const [showFilters, setShowFilters]   = useState(false);
-  const [page, setPage]                 = useState(1);
-  const [selectedId, setSelectedId]     = useState<number | string | null>(null);
-  const [date, setDate]                 = useState(today);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'late' | 'clocked_out' | 'absent'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'agent' | 'supervisor'>('all');
+  const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<number | string | null>(null);
+  const [date, setDate] = useState(today);
 
   const now = new Date();
   const [payrollYear, setPayrollYear] = useState(now.getFullYear());
@@ -280,9 +280,8 @@ export default function AttendanceListPage() {
   const { user } = useAuthStore();
   const { apiCompanyId } = getActiveCompanyContext(user);
 
-  const apiStatus =
-    statusFilter === 'all' ? undefined :
-    statusFilter === 'present' ? 'present' : 'absent';
+  const apiStatus = statusFilter === 'all' ? undefined : statusFilter;
+  const apiRole = roleFilter === 'all' ? undefined : roleFilter;
 
   const { data: metricsData } = useAttendanceMetrics(apiCompanyId ?? undefined, date);
 
@@ -298,25 +297,27 @@ export default function AttendanceListPage() {
     company_id: apiCompanyId ?? undefined,
     date,
     status: apiStatus,
+    role: apiRole,
     search: search || undefined,
-    per_page: 100,
+    per_page: PAGE_SIZE,
+    page,
   });
 
   const allRecords: AttendanceItem[] = (recordsData?.items ?? []).map(mapRecord);
-
-  const totalPages  = Math.max(1, Math.ceil(allRecords.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const paginated   = allRecords.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pagination = recordsData?.pagination;
+  const totalPages = Math.max(1, pagination?.last_page ?? 1);
+  const currentPage = pagination?.current_page ?? page;
+  const paginated = allRecords;
 
   const presentCount = metricsData?.present ?? 0;
-  const absentCount  = metricsData?.absent ?? 0;
+  const absentCount = metricsData?.absent ?? 0;
 
   const activeId = selectedId ?? (paginated[0]?.id ?? null);
-  const selectedRecord = allRecords.find((a) => a.id === activeId) ?? paginated[0] ?? null;
+  const selectedRecord = paginated.find((a) => a.id === activeId) ?? paginated[0] ?? null;
 
   const handleSearch = (val: string) => { setSearch(val); setPage(1); };
   const handleDateChange = (val: string) => { setDate(val); setPage(1); setSelectedId(null); };
-  const handleStatus = (s: 'all' | 'present' | 'absent') => { setStatusFilter(s); setPage(1); };
+  const handleStatus = (s: 'all' | 'present' | 'late' | 'clocked_out' | 'absent') => { setStatusFilter(s); setPage(1); };
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
@@ -377,9 +378,8 @@ export default function AttendanceListPage() {
           </div>
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3.5 rounded-full text-[13px] font-bold transition-all shadow-sm border ${
-              showFilters ? 'bg-dash-dark text-white border-dash-dark' : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'
-            }`}
+            className={`flex items-center gap-2 px-5 py-3.5 rounded-full text-[13px] font-bold transition-all shadow-sm border ${showFilters ? 'bg-dash-dark text-white border-dash-dark' : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'
+              }`}
           >
             <SlidersHorizontal size={14} />
             <span>Filter</span>
@@ -392,19 +392,26 @@ export default function AttendanceListPage() {
             <div className="flex flex-col gap-1">
               <label className="text-[11px] font-bold text-gray-400 px-1">Status</label>
               <div className="flex gap-1">
-                {(['all', 'present', 'absent'] as const).map((s) => (
+                {(['all', 'present', 'late', 'clocked_out', 'absent'] as const).map((s) => (
                   <button key={s} onClick={() => handleStatus(s)}
-                    className={`px-4 py-2 rounded-full text-[12px] font-bold capitalize transition-all ${
-                      statusFilter === s ? 'bg-dash-dark text-white' : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
-                    }`}>
-                    {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+                    className={`px-4 py-2 rounded-full text-[12px] font-bold capitalize transition-all ${statusFilter === s ? 'bg-dash-dark text-white' : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
+                      }`}>
+                    {s === 'all' ? 'All' : s === 'clocked_out' ? 'Clocked Out' : s.charAt(0).toUpperCase() + s.slice(1)}
                   </button>
                 ))}
               </div>
             </div>
-            {statusFilter !== 'all' && (
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-bold text-gray-400 px-1">Role</label>
+              <select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value as 'all' | 'agent' | 'supervisor'); setPage(1); }} className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer">
+                <option value="all">All Roles</option>
+                <option value="agent">Field Agent</option>
+                <option value="supervisor">Supervisor</option>
+              </select>
+            </div>
+            {(statusFilter !== 'all' || roleFilter !== 'all') && (
               <div className="flex flex-col justify-end">
-                <button onClick={() => { setStatusFilter('all'); setPage(1); }}
+                <button onClick={() => { setStatusFilter('all'); setRoleFilter('all'); setPage(1); }}
                   className="px-4 py-2 rounded-full text-[12px] font-bold text-red-400 hover:bg-red-50 transition-all border border-red-200">
                   Clear filters
                 </button>
@@ -444,7 +451,7 @@ export default function AttendanceListPage() {
             {totalPages > 1 && (
               <div className="shrink-0 flex items-center justify-between mt-4 pt-5 border-t border-gray-100">
                 <p className="text-[12px] text-gray-400">
-                  Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, allRecords.length)} of {allRecords.length}
+                  Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, pagination?.total ?? allRecords.length)} of {pagination?.total ?? allRecords.length}
                 </p>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}
@@ -495,7 +502,7 @@ export default function AttendanceListPage() {
                 onChange={(e) => setPayrollMonth(Number(e.target.value))}
                 className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-[13px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 shadow-sm"
               >
-                {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
+                {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map((m, i) => (
                   <option key={m} value={i + 1}>{m}</option>
                 ))}
               </select>
@@ -550,7 +557,7 @@ export default function AttendanceListPage() {
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50/80">
                       {Object.keys(payrollData.summaries[0] ?? {})
-                        .filter((k) => typeof (payrollData.summaries[0] as Record<string,unknown>)[k] !== "object" || (payrollData.summaries[0] as Record<string,unknown>)[k] === null)
+                        .filter((k) => typeof (payrollData.summaries[0] as Record<string, unknown>)[k] !== "object" || (payrollData.summaries[0] as Record<string, unknown>)[k] === null)
                         .map((col) => (
                           <th key={col} className="px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">
                             {col.replace(/_/g, " ")}
@@ -560,7 +567,7 @@ export default function AttendanceListPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {payrollData.summaries.map((summary, i) => {
-                      const cols = Object.entries(summary as Record<string,unknown>)
+                      const cols = Object.entries(summary as Record<string, unknown>)
                         .filter(([, v]) => typeof v !== "object" || v === null);
                       return (
                         <tr key={i} className="hover:bg-gray-50/50 transition-colors">

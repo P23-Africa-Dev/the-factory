@@ -135,7 +135,7 @@ class InternalUserFetchTest extends TestCase
         ]);
 
         $response = $this->withToken($owner->createToken('test')->plainTextToken)
-            ->getJson('/api/v1/internal-users?company_id='.strtolower($company->company_id));
+            ->getJson('/api/v1/internal-users?company_id=' . strtolower($company->company_id));
 
         $response->assertOk()
             ->assertJsonCount(1, 'data')
@@ -199,7 +199,7 @@ class InternalUserFetchTest extends TestCase
         ]);
 
         $response = $this->withToken($owner->createToken('test')->plainTextToken)
-            ->getJson('/api/v1/internal-users/onboarding-status?company_id='.$company->company_id);
+            ->getJson('/api/v1/internal-users/onboarding-status?company_id=' . $company->company_id);
 
         $response->assertOk()
             ->assertJsonPath('data.summary.total', 2)
@@ -236,7 +236,7 @@ class InternalUserFetchTest extends TestCase
         ]);
 
         $response = $this->withToken($agent->createToken('test')->plainTextToken)
-            ->getJson('/api/v1/internal-users?company_id='.$company->company_id);
+            ->getJson('/api/v1/internal-users?company_id=' . $company->company_id);
 
         $response->assertUnprocessable()
             ->assertJsonPath('errors.authorization.0', 'You are not allowed to manage supervisors or agents.');
@@ -689,6 +689,69 @@ class InternalUserFetchTest extends TestCase
             ->assertJsonValidationErrors(['onboarding_status']);
     }
 
+    public function test_fetch_can_return_paginated_filtered_internal_users(): void
+    {
+        $company = Company::create([
+            'company_id' => 'FAC-INT-PAGINATED',
+            'name' => 'Paginated Internal Users Co',
+            'country' => 'NG',
+            'team_size' => '11-50',
+            'use_case' => 'Paginated internal users listing',
+            'status' => 'active',
+            'activated_at' => now(),
+        ]);
+
+        $owner = User::factory()->create(['internal_role' => null]);
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $owner->id,
+            'role' => 'owner',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $activeAgent = User::factory()->create([
+            'name' => 'Filtered Agent',
+            'email' => 'filtered-agent@factory.test',
+            'internal_role' => 'agent',
+            'onboarding_status' => 'active',
+            'is_active' => true,
+            'assigned_zone' => 'Ikeja LGA',
+        ]);
+
+        $inactiveAgent = User::factory()->create([
+            'name' => 'Inactive Agent',
+            'email' => 'inactive-agent@factory.test',
+            'internal_role' => 'agent',
+            'onboarding_status' => 'pending_onboarding',
+            'is_active' => false,
+            'assigned_zone' => 'Ikeja LGA',
+        ]);
+
+        foreach ([$activeAgent, $inactiveAgent] as $member) {
+            DB::table('company_users')->insert([
+                'company_id' => $company->id,
+                'user_id' => $member->id,
+                'role' => 'agent',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $response = $this->withToken($owner->createToken('test')->plainTextToken)
+            ->getJson('/api/v1/internal-users?per_page=1&page=1&status=active&search=filtered&zone=Ikeja%20LGA');
+
+        $response->assertOk()
+            ->assertJsonPath('data.pagination.per_page', 1)
+            ->assertJsonPath('data.pagination.current_page', 1)
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.id', $activeAgent->id)
+            ->assertJsonPath('data.items.0.is_active', true);
+    }
+
     public function test_fetch_with_unrelated_company_id_returns_selected_company_error(): void
     {
         $company = Company::create([
@@ -722,7 +785,7 @@ class InternalUserFetchTest extends TestCase
         ]);
 
         $response = $this->withToken($owner->createToken('test')->plainTextToken)
-            ->getJson('/api/v1/internal-users?company_id='.$otherCompany->id);
+            ->getJson('/api/v1/internal-users?company_id=' . $otherCompany->id);
 
         $response->assertUnprocessable()
             ->assertJsonPath('errors.company_id.0', 'You are not attached to the selected company context.');

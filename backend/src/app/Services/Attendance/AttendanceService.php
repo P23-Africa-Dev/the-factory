@@ -11,6 +11,7 @@ use App\Models\AttendanceRecord;
 use App\Models\AttendanceSetting;
 use App\Models\PayrollSetting;
 use App\Models\User;
+use App\Support\AvatarUrlResolver;
 use App\Services\Notification\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\Paginator;
@@ -387,8 +388,13 @@ class AttendanceService
             $query->where(function ($sub) use ($search): void {
                 $sub->where('u.name', 'like', $search)
                     ->orWhere('u.email', 'like', $search)
+                    ->orWhere('u.internal_role', 'like', $search)
                     ->orWhere('u.assigned_zone', 'like', $search);
             });
+        }
+
+        if (! empty($filters['role'])) {
+            $query->where('u.internal_role', (string) $filters['role']);
         }
 
         if (! empty($filters['status'])) {
@@ -396,6 +402,14 @@ class AttendanceService
 
             if ($status === 'absent') {
                 $query->whereNull('ar.id');
+            } elseif ($status === 'present') {
+                $query->whereIn('ar.status', [
+                    AttendanceStatus::PRESENT->value,
+                    AttendanceStatus::LATE->value,
+                    AttendanceStatus::AUTO_CLOCKED_OUT->value,
+                ]);
+            } elseif ($status === 'clocked_out') {
+                $query->whereNotNull('ar.clock_out_at');
             } else {
                 $query->where('ar.status', $status);
             }
@@ -403,16 +417,18 @@ class AttendanceService
 
         $paginated = $query
             ->orderBy('u.name')
-            ->simplePaginate((int) ($filters['per_page'] ?? 20))
+            ->paginate((int) ($filters['per_page'] ?? 20))
             ->withQueryString();
 
         $items = collect($paginated->items())->map(static function (object $item) use ($date): array {
             $status = $item->status !== null ? (string) $item->status : 'absent';
+            $avatarUrl = AvatarUrlResolver::resolve($item->avatar, null);
 
             return [
                 'user_id' => (int) $item->user_id,
                 'agent_name' => (string) $item->agent_name,
                 'avatar' => $item->avatar,
+                'avatar_url' => $avatarUrl,
                 'zone' => $item->assigned_zone,
                 'role' => $item->internal_role,
                 'attendance_date' => $date,
@@ -432,6 +448,9 @@ class AttendanceService
                 'next_page_url' => $paginated->nextPageUrl(),
                 'prev_page_url' => $paginated->previousPageUrl(),
                 'per_page' => $paginated->perPage(),
+                'current_page' => $paginated->currentPage(),
+                'last_page' => $paginated->lastPage(),
+                'total' => $paginated->total(),
             ],
         ];
     }

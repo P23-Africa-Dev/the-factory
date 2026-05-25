@@ -4,7 +4,7 @@ import { apiRequest } from "./onboarding";
 
 // ─── Shared Types ─────────────────────────────────────────────────────────────
 
-export type AttendanceStatus = "present" | "late" | "auto_clocked_out" | "absent";
+export type AttendanceStatus = "present" | "late" | "auto_clocked_out" | "clocked_out" | "absent";
 
 export type PaginationData = {
   total?: number;
@@ -90,6 +90,7 @@ export type ManagementAttendanceRecord = {
   user_id: number;
   agent_name: string;
   avatar: string | null;
+  avatar_url?: string | null;
   zone: string | null;
   role: string;
   attendance_date: string;
@@ -115,6 +116,7 @@ export type AttendanceRecordsParams = {
   company_id?: number | string;
   date?: string;
   status?: string;
+  role?: "agent" | "supervisor";
   search?: string;
   per_page?: number;
   page?: number;

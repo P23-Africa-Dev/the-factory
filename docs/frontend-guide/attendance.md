@@ -68,9 +68,18 @@ This guide describes how frontend clients should consume the new attendance back
 - Query params:
   - `company_id`
   - `date`
-  - `status` (`present`, `late`, `auto_clocked_out`, `absent`)
+  - `status` (`present`, `late`, `auto_clocked_out`, `clocked_out`, `absent`)
+  - `role` (`agent`, `supervisor`)
   - `search`
   - `per_page`
+  - `page`
+
+Response notes:
+
+- `items[*].avatar_url` is now a fully resolved URL and should be used directly by UI image tags.
+- `pagination` includes `current_page`, `last_page`, and `total` for page-number controls.
+- `status=present` includes records with `present`, `late`, and `auto_clocked_out` backend statuses.
+- `status=clocked_out` returns records where check-out exists (including `auto_clocked_out`).
 
 ### Monthly attendance payroll summaries
 - `GET /api/v1/attendance/payroll-summaries`

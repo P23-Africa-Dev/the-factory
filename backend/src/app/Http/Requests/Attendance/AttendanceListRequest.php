@@ -30,9 +30,11 @@ class AttendanceListRequest extends FormRequest
         return [
             'company_id' => ['nullable', 'integer', 'exists:companies,id'],
             'date' => ['nullable', 'date'],
-            'status' => ['nullable', Rule::in(['present', 'late', 'auto_clocked_out', 'absent'])],
+            'status' => ['nullable', Rule::in(['present', 'late', 'auto_clocked_out', 'clocked_out', 'absent'])],
+            'role' => ['nullable', Rule::in(['agent', 'supervisor'])],
             'search' => ['nullable', 'string', 'max:255'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
         ];
     }
 }

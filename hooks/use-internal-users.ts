@@ -5,11 +5,13 @@ import {
   createInternalUser,
   getInternalUsersOnboardingStatus,
   listInternalUsers,
+  listInternalUsersPaginated,
   type CreateInternalUserPayload,
   type CreatedInternalUser,
   type InternalOnboardingStatusData,
   type InternalUserListItem,
   type ListInternalUsersParams,
+  type PaginatedInternalUsersData,
 } from "@/lib/api/internal-users";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 
@@ -27,6 +29,20 @@ export function useInternalUsers(params: ListInternalUsersParams = {}) {
     queryKey: INTERNAL_USER_KEYS.list(params),
     queryFn: async (): Promise<InternalUserListItem[]> => {
       const res = await listInternalUsers(params, token);
+      return res.data;
+    },
+    enabled: !!token && !!params.company_id,
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+export function useInternalUsersPaginated(params: ListInternalUsersParams = {}) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useQuery({
+    queryKey: ["internal-users", "paginated", params] as const,
+    queryFn: async (): Promise<PaginatedInternalUsersData> => {
+      const res = await listInternalUsersPaginated(params, token);
       return res.data;
     },
     enabled: !!token && !!params.company_id,

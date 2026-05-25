@@ -28,6 +28,34 @@ class InternalUserController extends Controller
         $companyId = $request->validated('company_id');
         $onboardingStatus = $request->validated('onboarding_status');
 
+        $hasPaginationOrSearch = $request->filled('per_page')
+            || $request->filled('page')
+            || $request->filled('search')
+            || $request->filled('zone')
+            || $request->filled('status');
+
+        if ($hasPaginationOrSearch) {
+            $paginated = $this->fetchService->fetchByCompanyAndRolePaginated(
+                actor: $request->user(),
+                filters: $request->validated(),
+            );
+
+            return $this->success(
+                'Internal users retrieved successfully',
+                [
+                    'items' => InternalUserListResource::collection($paginated->items()),
+                    'pagination' => [
+                        'next_page_url' => $paginated->nextPageUrl(),
+                        'prev_page_url' => $paginated->previousPageUrl(),
+                        'per_page' => $paginated->perPage(),
+                        'current_page' => $paginated->currentPage(),
+                        'last_page' => $paginated->lastPage(),
+                        'total' => $paginated->total(),
+                    ],
+                ],
+            );
+        }
+
         $users = $this->fetchService->fetchByCompanyAndRole(
             actor: $request->user(),
             roleFilter: $request->string('role')->toString() ?: null,

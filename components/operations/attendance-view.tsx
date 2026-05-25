@@ -31,7 +31,8 @@ type AttendanceItem = {
 function resolveAvatar(avatar: string | null): string {
   if (!avatar) return "/avatars/male-avatar.png";
   if (avatar.startsWith("http")) return avatar;
-  return `/avatars/${avatar}.png`;
+  if (avatar.startsWith("/")) return avatar;
+  return "/avatars/male-avatar.png";
 }
 
 function mapRecord(record: ManagementAttendanceRecord): AttendanceItem {
@@ -46,25 +47,25 @@ function mapRecord(record: ManagementAttendanceRecord): AttendanceItem {
     checkOut: record.clock_out_at
       ? format(parseISO(record.clock_out_at), "h:mma")
       : record.status !== "absent"
-      ? "Still Active"
-      : "No check-out record",
+        ? "Still Active"
+        : "No check-out record",
     role: record.role ?? "Field Agent",
-    status: record.status === "present" || record.status === "late" ? "Present" : "Absent",
+    status: record.status === "present" || record.status === "late" || record.status === "auto_clocked_out" ? "Present" : "Absent",
     subText:
       record.is_late
         ? "Late"
         : record.clock_out_at
-        ? "Checked Out"
-        : record.status !== "absent"
-        ? "Active"
-        : "Absent",
+          ? "Checked Out"
+          : record.status !== "absent"
+            ? "Active"
+            : "Absent",
     active: !!record.clock_in_at && !record.clock_out_at,
-    avatar: resolveAvatar(record.avatar),
+    avatar: resolveAvatar(record.avatar_url ?? record.avatar),
   };
 }
 
 const SPARK_PRESENT = [{ v: 8 }, { v: 14 }, { v: 10 }, { v: 18 }, { v: 12 }, { v: 16 }, { v: 20 }];
-const SPARK_ABSENT  = [{ v: 20 }, { v: 14 }, { v: 18 }, { v: 10 }, { v: 16 }, { v: 12 }, { v: 8 }];
+const SPARK_ABSENT = [{ v: 20 }, { v: 14 }, { v: 18 }, { v: 10 }, { v: 16 }, { v: 12 }, { v: 8 }];
 
 function MgmtStatCard({
   value,
@@ -223,11 +224,10 @@ function AttendanceSettingsModal({
                       key={day.key}
                       type="button"
                       onClick={() => toggleDay(day.key)}
-                      className={`px-3 py-2 rounded-xl text-[12px] font-bold border transition-all ${
-                        workingDays.includes(day.key)
+                      className={`px-3 py-2 rounded-xl text-[12px] font-bold border transition-all ${workingDays.includes(day.key)
                           ? "bg-dash-dark text-white border-dash-dark"
                           : "bg-gray-50 text-gray-500 border-gray-200 hover:border-dash-dark/30"
-                      }`}
+                        }`}
                     >
                       {day.label}
                     </button>
@@ -282,14 +282,12 @@ function AttendanceSettingsModal({
                 <button
                   type="button"
                   onClick={() => setAutoClockout((v) => !v)}
-                  className={`relative w-12 h-6 rounded-full transition-all duration-200 ${
-                    autoClockout ? "bg-dash-dark" : "bg-gray-300"
-                  }`}
+                  className={`relative w-12 h-6 rounded-full transition-all duration-200 ${autoClockout ? "bg-dash-dark" : "bg-gray-300"
+                    }`}
                 >
                   <span
-                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
-                      autoClockout ? "translate-x-6" : "translate-x-0"
-                    }`}
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${autoClockout ? "translate-x-6" : "translate-x-0"
+                      }`}
                   />
                 </button>
               </div>
@@ -338,23 +336,18 @@ export function AttendanceView({ basePath }: { basePath: string }) {
     company_id: apiCompanyId ?? undefined,
     date,
     search: search || undefined,
-    per_page: 50,
+    per_page: PAGE_SIZE,
+    page,
   });
 
   const attendanceList: AttendanceItem[] = (recordsData?.items ?? []).map(mapRecord);
-
-  const filtered = attendanceList.filter(
-    (i) =>
-      i.name.toLowerCase().includes(search.toLowerCase()) ||
-      i.address.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pagination = recordsData?.pagination;
+  const totalPages = Math.max(1, pagination?.last_page ?? 1);
+  const currentPage = pagination?.current_page ?? page;
+  const paginated = attendanceList;
 
   const activeId = selectedId ?? (paginated[0]?.id ?? null);
-  const selected = attendanceList.find((i) => i.id === activeId) ?? paginated[0] ?? null;
+  const selected = paginated.find((i) => i.id === activeId) ?? paginated[0] ?? null;
 
   const handleSearch = (val: string) => {
     setSearch(val);
@@ -409,9 +402,8 @@ export function AttendanceView({ basePath }: { basePath: string }) {
 
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
-              showFilters ? "text-white" : "text-gray-500"
-            }`}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${showFilters ? "text-white" : "text-gray-500"
+              }`}
             style={{
               background: showFilters ? "#34373C" : "#F8F8F8",
               border: showFilters ? "0.5px solid #34373C" : "0.5px solid #D1D1D1",
@@ -457,34 +449,34 @@ export function AttendanceView({ basePath }: { basePath: string }) {
       {/* ── Main content ─────────────────────────────────────── */}
       <div className="flex flex-col xl:flex-row gap-5 mt-2">
 
-        
+
         {/* ── Left: attendance list ──────────────────────────── */}
         <div className="flex-1 min-w-0 flex flex-col gap-5">
 
-                {/* ── Stats Cards ───────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-4">
-        <MgmtStatCard
-          value={metricsData?.present ?? 0}
-          label="Present Agents Today"
-          href={`${basePath}/operations/attendance`}
-          accentBg="#4BB89E"
-          strokeColor="#4BB89E"
-          gradientId="mgmtGradPresent"
-          data={SPARK_PRESENT}
-          isLoading={!metricsData}
-        />
-        <MgmtStatCard
-          value={metricsData?.absent ?? 0}
-          label="Absent Agents Today"
-          href={`${basePath}/operations/attendance`}
-          accentBg="#EF7129"
-          strokeColor="#EF7129"
-          gradientId="mgmtGradAbsent"
-          data={SPARK_ABSENT}
-          isLoading={!metricsData}
-        />
-      </div>
-      
+          {/* ── Stats Cards ───────────────────────────────────────── */}
+          <div className="grid grid-cols-2 gap-4">
+            <MgmtStatCard
+              value={metricsData?.present ?? 0}
+              label="Present Agents Today"
+              href={`${basePath}/operations/attendance`}
+              accentBg="#4BB89E"
+              strokeColor="#4BB89E"
+              gradientId="mgmtGradPresent"
+              data={SPARK_PRESENT}
+              isLoading={!metricsData}
+            />
+            <MgmtStatCard
+              value={metricsData?.absent ?? 0}
+              label="Absent Agents Today"
+              href={`${basePath}/operations/attendance`}
+              accentBg="#EF7129"
+              strokeColor="#EF7129"
+              gradientId="mgmtGradAbsent"
+              data={SPARK_ABSENT}
+              isLoading={!metricsData}
+            />
+          </div>
+
           <OpsTableContainer className="grow-0 flex flex-col h-140">
             {/* Header */}
             <div className="flex justify-end mb-5 shrink-0">
@@ -562,8 +554,8 @@ export function AttendanceView({ basePath }: { basePath: string }) {
             <div className="shrink-0 flex items-center justify-between pt-5 mt-4 border-t border-gray-100">
               <p className="text-[12px] text-gray-400">
                 Showing{" "}
-                {filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}–
-                {Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
+                {paginated.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}–
+                {Math.min(currentPage * PAGE_SIZE, pagination?.total ?? paginated.length)} of {pagination?.total ?? paginated.length}
               </p>
               <div className="flex items-center gap-1">
                 <button
@@ -577,11 +569,10 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                   <button
                     key={p}
                     onClick={() => setPage(p)}
-                    className={`w-9 h-9 rounded-full text-[13px] font-bold transition-all ${
-                      p === currentPage
+                    className={`w-9 h-9 rounded-full text-[13px] font-bold transition-all ${p === currentPage
                         ? "bg-dash-dark text-white shadow-sm"
                         : "text-gray-400 hover:bg-gray-100"
-                    }`}
+                      }`}
                   >
                     {p}
                   </button>
@@ -640,11 +631,10 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                       <div className="mt-2.5 flex flex-col items-center gap-1">
                         <p className="text-[13px] font-bold text-dash-dark">{selected.name}</p>
                         <span
-                          className={`px-2.5 py-0.75 rounded-full text-[9px] font-bold ${
-                            selected.active
+                          className={`px-2.5 py-0.75 rounded-full text-[9px] font-bold ${selected.active
                               ? "bg-[#22C55E] text-white"
                               : "bg-[#F48243]/20 text-[#F48243]"
-                          }`}
+                            }`}
                         >
                           {selected.status}
                         </span>
@@ -686,11 +676,10 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                     <p className="text-[13px] font-medium text-white/70">{selected.checkOut}</p>
                   </div>
                   <div
-                    className={`px-3 py-1.5 rounded-full text-[10px] font-bold shrink-0 self-start ${
-                      selected.active
+                    className={`px-3 py-1.5 rounded-full text-[10px] font-bold shrink-0 self-start ${selected.active
                         ? "bg-[#1A452C] text-[#4ADE80]"
                         : "bg-gray-700 text-gray-300"
-                    }`}
+                      }`}
                   >
                     {selected.active ? "On-Time" : "Absent"}
                   </div>

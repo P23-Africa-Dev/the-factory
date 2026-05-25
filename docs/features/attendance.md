@@ -47,6 +47,16 @@ Equivalent canonical routes are available under:
 Equivalent canonical routes are available under:
 - `/api/v1/agent/attendance/*`
 
+### Attendance records filtering notes
+- `GET /api/v1/attendance/records` supports:
+  - `status`: `present`, `late`, `auto_clocked_out`, `clocked_out`, `absent`
+  - `role`: `agent`, `supervisor`
+  - `search`, `date`, `per_page`, `page`
+- `status=present` returns active attendance records including late and auto-clocked-out cases.
+- `status=clocked_out` returns records with a populated `clock_out_at`.
+- Each item includes `avatar_url` for direct frontend rendering.
+- Pagination metadata includes `current_page`, `last_page`, and `total`.
+
 ## Request Contracts
 
 ### Update settings
