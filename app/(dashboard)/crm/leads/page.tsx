@@ -11,11 +11,13 @@ import {
   Tag,
   Trash2,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useCrmLabels, useCrmPipelines, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { AddLeadModal } from "@/components/crm/add-lead-modal";
+import { ImportLeadsModal, LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
 import type { ApiLeadStatus } from "@/lib/api/crm";
 import { toast } from "sonner";
 
@@ -30,37 +32,29 @@ interface Lead {
   source: string;
 }
 
-const STATUSES: { label: string; value: ApiLeadStatus; color: string }[] = [
-  { label: "New Leads", value: "new", color: "#2563EB" },
-  { label: "Proposal Sent", value: "proposal_sent", color: "#F59E0B" },
-  { label: "Contacted", value: "contacted", color: "#E879A0" },
-  { label: "Qualified", value: "qualified", color: "#10B981" },
-  { label: "Lost", value: "lost", color: "#EF4444" },
-  { label: "Won", value: "won", color: "#166534" },
-];
-
-
-function getStatusColor(status?: string | null): string {
-  const match = STATUSES.find((s) => s.value === status);
+function getStatusColor(status: string | null | undefined, labels: Array<{ slug: string; color: string }>): string {
+  const match = labels.find((label) => label.slug === status);
   return match ? match.color : "#9CA3AF";
 }
 
-function getStatusLabel(status?: string | null): string {
-  const match = STATUSES.find((s) => s.value === status);
-  return match ? match.label : "New Leads";
+function getStatusLabel(status: string | null | undefined, labels: Array<{ slug: string; name: string }>): string {
+  const match = labels.find((label) => label.slug === status);
+  return match ? match.name : "Newly Lead";
 }
 
 function StatusDropdown({
   value,
   color,
+  options,
   onChange,
 }: {
   value: ApiLeadStatus;
   color: string;
+  options: Array<{ label: string; value: ApiLeadStatus; color: string }>;
   onChange: (value: ApiLeadStatus, color: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const label = getStatusLabel(value);
+  const label = options.find((option) => option.value === value)?.label ?? "Newly Lead";
 
   return (
     <div className="relative">
@@ -74,7 +68,7 @@ function StatusDropdown({
       </button>
       {open && (
         <div className="absolute z-50 top-full mt-1 left-0 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 min-w-[150px]">
-          {STATUSES.map((s) => (
+          {options.map((s) => (
             <button
               key={s.value}
               onClick={() => {
@@ -100,19 +94,59 @@ function StatusDropdown({
 export default function AllLeadsPage() {
   const basePath = "/crm";
   const router = useRouter();
+  const searchParams = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
+  const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
+  const [selectedLabel, setSelectedLabel] = useState<string>("all");
+  const [showFilter, setShowFilter] = useState(false);
+  const [showPipelineModal, setShowPipelineModal] = useState(false);
+  const [showLabelModal, setShowLabelModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
 
-  const { data, isLoading, refetch } = useLeads({ company_id: companyId ?? undefined, page: 1 }, "/admin");
+  const sourceParam = (searchParams.get("source") ?? "").trim().toLowerCase();
+  const agentUploadScope = [
+    "agent_upload",
+    "agent uploaded",
+    "agent upload",
+    "uploaded_by_agent",
+    "uploaded by agent",
+    "uploaded_by_agents",
+    "uploaded by agents",
+  ].includes(sourceParam);
+  const boardUrl = useMemo(
+    () => (agentUploadScope ? `${basePath}?source=agent_upload` : basePath),
+    [agentUploadScope, basePath],
+  );
+
+  const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, "/admin");
+  const { data: labels = [] } = useCrmLabels(companyId ?? undefined, "/admin");
+
+  const { data, isLoading, refetch } = useLeads({
+    company_id: companyId ?? undefined,
+    page: 1,
+    search: search.trim() || undefined,
+    pipeline_id: selectedPipelineId ?? undefined,
+    status: selectedLabel === "all" ? undefined : selectedLabel,
+    source: agentUploadScope ? "agent_upload" : undefined,
+  }, "/admin");
   const updateLeadMutation = useUpdateLead(undefined, "/admin");
+
+  const statusOptions = labels.map((label) => ({
+    label: label.name,
+    value: label.slug,
+    color: label.color,
+  }));
 
   const leads: Lead[] = (data?.leads ?? []).map((l) => ({
     id: String(l.id),
     name: l.name,
     company: l.location ?? l.source ?? "—",
-    status: (l.status ?? "new") as ApiLeadStatus,
-    statusColor: getStatusColor(l.status),
+    status: (l.status ?? "newly_lead") as ApiLeadStatus,
+    statusColor: getStatusColor(l.status, labels),
     value: typeof l.meta?.value === "number" ? l.meta.value : 0,
     assignedTo: l.assignee?.name ?? "Unassigned",
     source: l.source ?? "—",
@@ -170,34 +204,72 @@ export default function AllLeadsPage() {
             />
             <input
               type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
               placeholder="Search for Leads"
               className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
             />
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
-              All Pipeline
+            <button onClick={() => setShowPipelineModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+              {selectedPipelineId
+                ? (pipelines.find((pipeline) => pipeline.id === selectedPipelineId)?.name ?? "All Pipeline")
+                : "All Pipeline"}
               <ChevronDown size={13} />
             </button>
-            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button onClick={() => setShowLabelModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <Tag size={13} />
               Label
             </button>
-            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button onClick={() => setShowFilter((prev) => !prev)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <SlidersHorizontal size={13} />
               Filter
             </button>
-            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <Import size={13} />
               Import
             </button>
-            <button className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all">
+            <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all">
               Add New Leads
               <BookmarkPlus size={15} />
             </button>
           </div>
         </div>
+
+        {showFilter && (
+          <div className="bg-white rounded-[14px] border border-gray-100 p-3 flex flex-wrap items-center gap-2">
+            <select
+              value={selectedPipelineId ?? ""}
+              onChange={(e) => setSelectedPipelineId(e.target.value ? Number(e.target.value) : null)}
+              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px]"
+            >
+              <option value="">All Pipelines</option>
+              {pipelines.map((pipeline) => (
+                <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>
+              ))}
+            </select>
+            <select
+              value={selectedLabel}
+              onChange={(e) => setSelectedLabel(e.target.value)}
+              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px]"
+            >
+              <option value="all">All Labels</option>
+              {labels.map((label) => (
+                <option key={label.id} value={label.slug}>{label.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => {
+                setSelectedPipelineId(null);
+                setSelectedLabel("all");
+              }}
+              className="px-3 py-2 border border-red-200 text-red-500 rounded-[10px] text-[12px]"
+            >
+              Clear
+            </button>
+          </div>
+        )}
 
         {/* Table card */}
         <div className="bg-white rounded-[24px] shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] overflow-hidden flex flex-col h-[calc(100vh-200px)] min-h-96">
@@ -206,11 +278,10 @@ export default function AllLeadsPage() {
             <label className="flex items-center gap-2.5 cursor-pointer select-none group">
               <div
                 onClick={toggleAll}
-                className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${
-                  allChecked
+                className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${allChecked
                     ? "bg-[#0B1215] border-[#0B1215]"
                     : "border-gray-300 group-hover:border-gray-400"
-                }`}
+                  }`}
               >
                 {allChecked && (
                   <svg
@@ -234,7 +305,7 @@ export default function AllLeadsPage() {
 
             <div className="flex items-center gap-1">
               <button
-                onClick={() => router.push(basePath)}
+                onClick={() => router.push(boardUrl)}
                 className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 transition-colors"
               >
                 {/* Grid icon */}
@@ -290,21 +361,19 @@ export default function AllLeadsPage() {
                 <div
                   key={lead.id}
                   onClick={() => router.push(`${basePath}/leads/${lead.id}`)}
-                  className={`grid grid-cols-[40px_1fr_1.4fr_1.1fr_0.9fr_1fr_0.9fr_100px] gap-3 items-center px-2 py-3.5 rounded-2xl mb-1 transition-all duration-150 group/row cursor-pointer ${
-                    isSelected
+                  className={`grid grid-cols-[40px_1fr_1.4fr_1.1fr_0.9fr_1fr_0.9fr_100px] gap-3 items-center px-2 py-3.5 rounded-2xl mb-1 transition-all duration-150 group/row cursor-pointer ${isSelected
                       ? "bg-[#0B1215]"
                       : "hover:bg-gray-50 border border-transparent hover:border-gray-100"
-                  }`}
+                    }`}
                 >
                   {/* Checkbox */}
                   <div className="flex items-center justify-center">
                     <div
                       onClick={(e) => { e.stopPropagation(); toggleOne(lead.id); }}
-                      className={`w-4.5 h-4.5 rounded-md border-2 flex items-center justify-center transition-colors ${
-                        isSelected
+                      className={`w-4.5 h-4.5 rounded-md border-2 flex items-center justify-center transition-colors ${isSelected
                           ? "bg-white border-white"
                           : "border-gray-300"
-                      }`}
+                        }`}
                     >
                       {isSelected && (
                         <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
@@ -322,18 +391,16 @@ export default function AllLeadsPage() {
 
                   {/* Name */}
                   <span
-                    className={`text-[13px] font-semibold truncate ${
-                      isSelected ? "text-white" : "text-[#0B1215]"
-                    }`}
+                    className={`text-[13px] font-semibold truncate ${isSelected ? "text-white" : "text-[#0B1215]"
+                      }`}
                   >
                     {lead.name}
                   </span>
 
                   {/* Company */}
                   <span
-                    className={`text-[12px] truncate ${
-                      isSelected ? "text-white/80" : "text-gray-500"
-                    }`}
+                    className={`text-[12px] truncate ${isSelected ? "text-white/80" : "text-gray-500"
+                      }`}
                   >
                     {lead.company}
                   </span>
@@ -343,51 +410,47 @@ export default function AllLeadsPage() {
                     <StatusDropdown
                       value={lead.status}
                       color={lead.statusColor}
+                      options={statusOptions}
                       onChange={(s) => updateStatus(lead.id, s)}
                     />
                   </div>
 
                   {/* Value */}
                   <span
-                    className={`text-[13px] font-semibold ${
-                      isSelected ? "text-white" : "text-[#0B1215]"
-                    }`}
+                    className={`text-[13px] font-semibold ${isSelected ? "text-white" : "text-[#0B1215]"
+                      }`}
                   >
-                    N {lead.value.toLocaleString()}
+                    $ {lead.value.toLocaleString()}
                   </span>
 
                   {/* Assigned to */}
                   <span
-                    className={`text-[12px] truncate ${
-                      isSelected ? "text-white/80" : "text-gray-500"
-                    }`}
+                    className={`text-[12px] truncate ${isSelected ? "text-white/80" : "text-gray-500"
+                      }`}
                   >
                     {lead.assignedTo}
                   </span>
 
                   {/* Source */}
                   <span
-                    className={`text-[12px] truncate ${
-                      isSelected ? "text-white/80" : "text-gray-500"
-                    }`}
+                    className={`text-[12px] truncate ${isSelected ? "text-white/80" : "text-gray-500"
+                      }`}
                   >
                     {lead.source}
                   </span>
 
                   {/* Actions */}
                   <div
-                    className={`flex items-center justify-center gap-2 ${
-                      isSelected
+                    className={`flex items-center justify-center gap-2 ${isSelected
                         ? "opacity-100"
                         : "opacity-0 group-hover/row:opacity-100"
-                    } transition-opacity`}
+                      } transition-opacity`}
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button
                       onClick={() => router.push(`${basePath}/leads/${lead.id}`)}
-                      className={`p-1 rounded-md transition-colors ${
-                        isSelected ? "hover:bg-white/10" : "hover:bg-gray-100"
-                      }`}
+                      className={`p-1 rounded-md transition-colors ${isSelected ? "hover:bg-white/10" : "hover:bg-gray-100"
+                        }`}
                     >
                       <Eye
                         size={14}
@@ -396,9 +459,8 @@ export default function AllLeadsPage() {
                     </button>
                     <button
                       onClick={() => router.push(`${basePath}/leads/${lead.id}`)}
-                      className={`p-1 rounded-md transition-colors ${
-                        isSelected ? "hover:bg-white/10" : "hover:bg-gray-100"
-                      }`}
+                      className={`p-1 rounded-md transition-colors ${isSelected ? "hover:bg-white/10" : "hover:bg-gray-100"
+                        }`}
                     >
                       <Pencil
                         size={14}
@@ -406,9 +468,8 @@ export default function AllLeadsPage() {
                       />
                     </button>
                     <button
-                      className={`p-1 rounded-md transition-colors ${
-                        isSelected ? "hover:bg-white/10" : "hover:bg-gray-100"
-                      }`}
+                      className={`p-1 rounded-md transition-colors ${isSelected ? "hover:bg-white/10" : "hover:bg-gray-100"
+                        }`}
                       onClick={() => deleteLead(lead.id)}
                     >
                       <Trash2
@@ -444,6 +505,47 @@ export default function AllLeadsPage() {
           </div>
         </div>
       </div>
+
+      {showPipelineModal && companyId && (
+        <PipelineManagerModal
+          companyId={companyId}
+          apiBasePath="/admin"
+          pipelines={pipelines}
+          selectedPipelineId={selectedPipelineId}
+          onSelectPipeline={(pipelineId) => {
+            setSelectedPipelineId(pipelineId);
+            setShowPipelineModal(false);
+          }}
+          onClose={() => setShowPipelineModal(false)}
+        />
+      )}
+
+      {showLabelModal && companyId && (
+        <LabelManagerModal
+          companyId={companyId}
+          apiBasePath="/admin"
+          labels={labels}
+          onClose={() => setShowLabelModal(false)}
+        />
+      )}
+
+      {showImportModal && companyId && (
+        <ImportLeadsModal
+          companyId={companyId}
+          apiBasePath="/admin"
+          pipelines={pipelines}
+          labels={labels}
+          defaultPipelineId={selectedPipelineId}
+          onClose={() => setShowImportModal(false)}
+        />
+      )}
+
+      {showAddModal && (
+        <AddLeadModal
+          onClose={() => setShowAddModal(false)}
+          apiBasePath="/admin"
+        />
+      )}
     </div>
   );
 }

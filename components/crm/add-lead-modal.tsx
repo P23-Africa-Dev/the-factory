@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { SectionDivider } from "@/components/payroll/payroll/section-divider";
@@ -8,6 +8,7 @@ import { FormRow } from "@/components/payroll/payroll/form-row";
 import { InlineInput } from "@/components/payroll/payroll/inline-input";
 import { InlineSelect } from "@/components/payroll/payroll/inline-select";
 import { useCreateLead, useUpdateLead } from "@/hooks/use-crm";
+import { useCrmLabels, useCrmPipelines } from "@/hooks/use-crm";
 import { useInternalUsers } from "@/hooks/use-internal-users";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -15,6 +16,7 @@ import type { ApiLeadStatus, ApiLeadPriority, ApiRoleBasePath, LeadApiItem } fro
 import type { ApiRequestError } from "@/lib/api/onboarding";
 
 type FormErrors = Partial<{
+  pipelineId: string;
   name: string;
   email: string;
   phone: string;
@@ -39,15 +41,6 @@ const PRIORITY_OPTIONS = [
   { label: "Low", value: "low" },
 ] as const;
 
-const STATUS_OPTIONS = [
-  { label: "New Leads", value: "new" },
-  { label: "Contacted", value: "contacted" },
-  { label: "Qualified", value: "qualified" },
-  { label: "Proposal Sent", value: "proposal_sent" },
-  { label: "Won", value: "won" },
-  { label: "Lost", value: "lost" },
-] as const;
-
 export function AddLeadModal({
   onClose,
   apiBasePath = "/admin",
@@ -67,17 +60,39 @@ export function AddLeadModal({
   const [phone, setPhone] = useState(lead?.phone ?? "");
   const [location, setLocation] = useState(lead?.location ?? "");
   const [source, setSource] = useState(lead?.source ?? "");
+  const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
+  const { data: labels = [] } = useCrmLabels(companyId ?? undefined, apiBasePath);
+
+  const defaultPipelineId = lead?.pipeline_id != null
+    ? String(lead.pipeline_id)
+    : pipelines[0]?.id != null
+      ? String(pipelines[0].id)
+      : "";
+  const [pipelineId, setPipelineId] = useState(defaultPipelineId);
+
   const [status, setStatus] = useState<ApiLeadStatus>(lead?.status ?? defaultStatus);
   const [priority, setPriority] = useState<ApiLeadPriority>(lead?.priority ?? "medium");
   const [assignedToUserId, setAssignedToUserId] = useState(lead?.assigned_to_user_id ? String(lead.assigned_to_user_id) : "");
   const [nextAction, setNextAction] = useState(lead?.next_action ?? "");
   const [lastInteraction, setLastInteraction] = useState(lead?.last_interaction ?? "");
-  
+
   // Format lead?.last_interaction_at as YYYY-MM-DD for the HTML date input
   const initialDate = lead?.last_interaction_at ? lead.last_interaction_at.split("T")[0] : "";
   const [lastInteractionAt, setLastInteractionAt] = useState(initialDate);
 
   const [errors, setErrors] = useState<FormErrors>({});
+
+  useEffect(() => {
+    if (!pipelineId && pipelines.length > 0) {
+      setPipelineId(String(pipelines[0].id));
+    }
+  }, [pipelineId, pipelines]);
+
+  useEffect(() => {
+    if (labels.length > 0 && !labels.some((label) => label.slug === status)) {
+      setStatus(labels[0].slug);
+    }
+  }, [labels, status]);
 
   const { data: companyUsers = [], isLoading: loadingUsers } = useInternalUsers({
     company_id: companyId ?? undefined,
@@ -108,6 +123,7 @@ export function AddLeadModal({
 
   const validate = (): FormErrors => {
     const e: FormErrors = {};
+    if (!pipelineId) e.pipelineId = "Pipeline is required.";
     if (!name.trim()) e.name = "Name is required.";
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       e.email = "Enter a valid email address.";
@@ -122,6 +138,7 @@ export function AddLeadModal({
     if (apiErr.errors) {
       const fe: FormErrors = {};
       if (apiErr.errors.name) fe.name = apiErr.errors.name[0];
+      if (apiErr.errors.pipeline_id) fe.pipelineId = apiErr.errors.pipeline_id[0];
       if (apiErr.errors.email) fe.email = apiErr.errors.email[0];
       if (apiErr.errors.phone) fe.phone = apiErr.errors.phone[0];
       if (apiErr.errors.location) fe.location = apiErr.errors.location[0];
@@ -151,6 +168,7 @@ export function AddLeadModal({
 
     const payload = {
       company_id: companyId,
+      pipeline_id: Number(pipelineId),
       name: name.trim(),
       email: email.trim() || null,
       phone: phone.trim() || null,
@@ -182,9 +200,9 @@ export function AddLeadModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
-      <div 
-        className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 cursor-pointer" 
-        onClick={onClose} 
+      <div
+        className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 cursor-pointer"
+        onClick={onClose}
       />
 
       <div className="relative bg-white rounded-t-[28px] sm:rounded-[28px] w-full sm:w-[440px] shadow-[0px_8px_32px_rgba(0,0,0,0.15)] overflow-hidden flex flex-col max-h-[90dvh] sm:max-h-[calc(100vh-80px)] transition-all duration-300 ease-out">
@@ -286,6 +304,25 @@ export function AddLeadModal({
             <SectionDivider label={lead ? "Edit Lead Classification" : "Lead Classification"} />
 
             <div>
+              <FormRow label="Pipeline" labelClassName="w-28">
+                <InlineSelect
+                  value={pipelineId}
+                  onChange={(e) => {
+                    setPipelineId(e.target.value);
+                    clearError("pipelineId");
+                  }}
+                  className="col-span-2"
+                >
+                  <option value="">Select Pipeline</option>
+                  {pipelines.map((pipeline) => (
+                    <option key={pipeline.id} value={String(pipeline.id)}>{pipeline.name}</option>
+                  ))}
+                </InlineSelect>
+              </FormRow>
+              <FieldError message={errors.pipelineId} />
+            </div>
+
+            <div>
               <FormRow label="Source" labelClassName="w-28">
                 <InlineInput
                   value={source}
@@ -307,8 +344,8 @@ export function AddLeadModal({
                   }}
                   className="col-span-2"
                 >
-                  {STATUS_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
+                  {labels.map((label) => (
+                    <option key={label.id} value={label.slug}>{label.name}</option>
                   ))}
                 </InlineSelect>
               </FormRow>

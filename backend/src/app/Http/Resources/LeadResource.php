@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources;
 
+use App\Support\AvatarUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -14,6 +15,7 @@ class LeadResource extends JsonResource
         return [
             'id' => $this->id,
             'company_id' => $this->company_id,
+            'pipeline_id' => $this->pipeline_id,
             'created_by_user_id' => $this->created_by_user_id,
             'assigned_to_user_id' => $this->assigned_to_user_id,
             'name' => $this->name,
@@ -21,7 +23,7 @@ class LeadResource extends JsonResource
             'phone' => $this->phone,
             'location' => $this->location,
             'source' => $this->source,
-            'status' => $this->status?->value,
+            'status' => $this->status,
             'priority' => $this->priority?->value,
             'next_action' => $this->next_action,
             'last_interaction' => $this->last_interaction,
@@ -32,11 +34,18 @@ class LeadResource extends JsonResource
                 'id' => $this->creator->id,
                 'name' => $this->creator->name,
                 'email' => $this->creator->email,
+                'avatar_url' => AvatarUrlResolver::resolve($this->creator->avatar, $this->creator->gender),
             ] : null),
             'assignee' => $this->whenLoaded('assignee', fn(): ?array => $this->assignee ? [
                 'id' => $this->assignee->id,
                 'name' => $this->assignee->name,
                 'email' => $this->assignee->email,
+                'avatar_url' => AvatarUrlResolver::resolve($this->assignee->avatar, $this->assignee->gender),
+            ] : null),
+            'pipeline' => $this->whenLoaded('pipeline', fn(): ?array => $this->pipeline ? [
+                'id' => $this->pipeline->id,
+                'name' => $this->pipeline->name,
+                'currency_code' => $this->pipeline->currency_code,
             ] : null),
             'notes' => LeadNoteResource::collection($this->whenLoaded('notes')),
             'activities' => LeadActivityResource::collection($this->whenLoaded('activities')),

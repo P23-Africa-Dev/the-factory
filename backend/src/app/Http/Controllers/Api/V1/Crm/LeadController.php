@@ -31,8 +31,10 @@ class LeadController extends Controller
             'search' => $request->string('search')->toString(),
             'status' => $request->string('status')->toString(),
             'priority' => $request->string('priority')->toString(),
+            'pipeline_id' => $request->input('pipeline_id'),
             'source' => $request->string('source')->toString(),
             'assigned_to_user_id' => $request->input('assigned_to_user_id'),
+            'per_page' => $request->input('per_page'),
         ]);
 
         return $this->success(
@@ -43,6 +45,9 @@ class LeadController extends Controller
                     'next_page_url' => $leads->nextPageUrl(),
                     'prev_page_url' => $leads->previousPageUrl(),
                     'per_page' => $leads->perPage(),
+                    'current_page' => method_exists($leads, 'currentPage') ? $leads->currentPage() : 1,
+                    'last_page' => method_exists($leads, 'lastPage') ? $leads->lastPage() : 1,
+                    'total' => method_exists($leads, 'total') ? $leads->total() : null,
                 ],
             ],
         );
@@ -125,6 +130,145 @@ class LeadController extends Controller
         return $this->success(
             message: 'CRM pipeline fetched successfully.',
             data: $summary,
+        );
+    }
+
+    public function agentUploadsOverview(Request $request): JsonResponse
+    {
+        $overview = $this->leadService->agentUploadsOverview(
+            $request->user(),
+            $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
+        return $this->success(
+            message: 'CRM agent upload overview fetched successfully.',
+            data: $overview,
+        );
+    }
+
+    public function pipelines(Request $request): JsonResponse
+    {
+        $companyId = $this->resolveCompanyContextId($request->input('company_id'));
+        $items = $this->leadService->listPipelines($request->user(), $companyId);
+
+        return $this->success(
+            message: 'CRM pipelines fetched successfully.',
+            data: ['items' => $items],
+        );
+    }
+
+    public function storePipeline(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'name' => ['required', 'string', 'max:120'],
+        ]);
+        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+
+        $pipeline = $this->leadService->createPipeline($request->user(), $validated);
+
+        return $this->success(
+            message: 'CRM pipeline created successfully.',
+            data: ['pipeline' => $pipeline],
+            status: 201,
+        );
+    }
+
+    public function updatePipeline(Request $request, int $pipeline): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'name' => ['sometimes', 'required', 'string', 'max:120'],
+            'sort_order' => ['sometimes', 'integer', 'min:0'],
+        ]);
+        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+
+        $updated = $this->leadService->updatePipeline($request->user(), $pipeline, $validated);
+
+        return $this->success(
+            message: 'CRM pipeline updated successfully.',
+            data: ['pipeline' => $updated],
+        );
+    }
+
+    public function labels(Request $request): JsonResponse
+    {
+        $companyId = $this->resolveCompanyContextId($request->input('company_id'));
+        $items = $this->leadService->listLabels($request->user(), $companyId);
+
+        return $this->success(
+            message: 'CRM labels fetched successfully.',
+            data: ['items' => $items],
+        );
+    }
+
+    public function storeLabel(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'name' => ['required', 'string', 'max:120'],
+            'color' => ['nullable', 'string', 'max:20'],
+        ]);
+        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+
+        $label = $this->leadService->createLabel($request->user(), $validated);
+
+        return $this->success(
+            message: 'CRM label created successfully.',
+            data: ['label' => $label],
+            status: 201,
+        );
+    }
+
+    public function updateLabel(Request $request, int $label): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'name' => ['sometimes', 'required', 'string', 'max:120'],
+            'color' => ['sometimes', 'required', 'string', 'max:20'],
+        ]);
+        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+
+        $updated = $this->leadService->updateLabel($request->user(), $label, $validated);
+
+        return $this->success(
+            message: 'CRM label updated successfully.',
+            data: ['label' => $updated],
+        );
+    }
+
+    public function reorderLabels(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'ordered_label_ids' => ['required', 'array', 'min:1'],
+            'ordered_label_ids.*' => ['integer'],
+        ]);
+        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+
+        $items = $this->leadService->reorderLabels($request->user(), $validated);
+
+        return $this->success(
+            message: 'CRM labels reordered successfully.',
+            data: ['items' => $items],
+        );
+    }
+
+    public function import(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'pipeline_id' => ['required', 'integer'],
+            'rows' => ['required', 'array', 'min:1'],
+            'rows.*' => ['array'],
+        ]);
+        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+
+        $result = $this->leadService->importLeads($request->user(), $validated);
+
+        return $this->success(
+            message: 'CRM lead import completed.',
+            data: $result,
         );
     }
 }

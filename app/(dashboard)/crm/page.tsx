@@ -4,8 +4,9 @@ import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useAgentUploadsOverview, useCrmLabels, useCrmPipelines, useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
+import { ImportLeadsModal, LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
 import { useDroppable } from "@dnd-kit/core";
 import {
   DndContext,
@@ -40,7 +41,7 @@ import {
   SlidersHorizontal,
   Tag,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import {
@@ -63,14 +64,14 @@ const chartData = [
   { day: "Sat", value: 420 },
 ];
 
-const STAGES: Array<{ id: ApiLeadStatus; title: string; color: string }> = [
-  { id: "new", title: "New Leads", color: "#2563EB" },
+const DEFAULT_STAGES: Array<{ id: ApiLeadStatus; title: string; color: string }> = [
+  { id: "newly_lead", title: "Newly Lead", color: "#2563EB" },
   { id: "proposal_sent", title: "Proposal Sent", color: "#F59E0B" },
   { id: "contacted", title: "Contacted", color: "#E879A0" },
   { id: "qualified", title: "Qualified", color: "#10B981" },
-  { id: "lost", title: "Lost", color: "#EF4444" },
-  { id: "won", title: "Won", color: "#166534" },
 ];
+
+const AGENT_UPLOAD_SOURCE_FILTER = "agent_upload";
 
 function toRelativeTime(value?: string | null): string {
   if (!value) return "Just now";
@@ -89,14 +90,14 @@ function mapLeadToItem(lead: LeadApiItem): DndItem {
   };
 }
 
-function buildContainers(leads: LeadApiItem[]): DndContainer[] {
+function buildContainers(leads: LeadApiItem[], stages: Array<{ id: ApiLeadStatus; title: string; color: string }>): DndContainer[] {
   const grouped = new Map<ApiLeadStatus, DndItem[]>();
-  STAGES.forEach((s) => grouped.set(s.id, []));
+  stages.forEach((s) => grouped.set(s.id, []));
   leads.forEach((lead) => {
-    const status = (lead.status ?? "new") as ApiLeadStatus;
+    const status = (lead.status ?? "newly_lead") as ApiLeadStatus;
     grouped.get(status)?.push(mapLeadToItem(lead));
   });
-  return STAGES.map((s) => ({ id: s.id, title: s.title, color: s.color, items: grouped.get(s.id) ?? [] }));
+  return stages.map((s) => ({ id: s.id, title: s.title, color: s.color, items: grouped.get(s.id) ?? [] }));
 }
 
 function findContainerForItem(containers: DndContainer[], id: string): DndContainer | undefined {
@@ -149,7 +150,7 @@ function LeadCard({
 
       <div className="flex items-center justify-between mt-3">
         <span className="text-[#0B1215] font-bold text-[13px]">
-          ₦ {amount}
+          $ {amount}
         </span>
         <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-3 py-0.5 rounded-full">
           Medium
@@ -218,9 +219,8 @@ function LeadColumn({
 
   return (
     <div
-      className={`flex flex-col w-full md:w-55 shrink-0 md:shrink-0 ${
-        activeTabId ? (id === activeTabId ? "flex" : "hidden md:flex") : ""
-      }`}
+      className={`flex flex-col w-full md:w-55 shrink-0 md:shrink-0 ${activeTabId ? (id === activeTabId ? "flex" : "hidden md:flex") : ""
+        }`}
     >
       {/* Header */}
       <div
@@ -236,15 +236,14 @@ function LeadColumn({
             {items.length < 10 ? `0${items.length}` : items.length}
           </div>
         </div>
-        <span className="text-white text-[12px] font-medium">₦ 342,000</span>
+        <span className="text-white text-[12px] font-medium">$ 342,000</span>
       </div>
 
       {/* Cards */}
       <div
         ref={setNodeRef}
-        className={`flex-1 relative z-10 -mt-6 transition-colors duration-200 min-h-50 flex flex-col ${
-          isOver ? "bg-gray-100/60 rounded-[20px] ring-2 ring-inset ring-gray-200" : ""
-        }`}
+        className={`flex-1 relative z-10 -mt-6 transition-colors duration-200 min-h-50 flex flex-col ${isOver ? "bg-gray-100/60 rounded-[20px] ring-2 ring-inset ring-gray-200" : ""
+          }`}
       >
         <SortableContext
           items={items.map((i) => i.id)}
@@ -322,7 +321,7 @@ function LeadListView({ containers, basePath = "/crm" }: { containers: DndContai
                 {container.items.length} leads
               </span>
               <span className="text-[12px] font-semibold text-gray-500 mr-2">
-                ₦ {(total).toLocaleString()}
+                $ {(total).toLocaleString()}
               </span>
               <ChevronRight
                 size={14}
@@ -337,9 +336,8 @@ function LeadListView({ containers, basePath = "/crm" }: { containers: DndContai
                   <div
                     key={item.id}
                     onClick={() => router.push(`${basePath}/leads/${item.id}`)}
-                    className={`relative grid grid-cols-1 md:grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-2 md:gap-4 items-start md:items-center px-4 py-3 rounded-xl transition-colors cursor-pointer hover:bg-gray-50 group/row ${
-                      idx % 2 === 0 ? "" : "bg-gray-50/50"
-                    }`}
+                    className={`relative grid grid-cols-1 md:grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-2 md:gap-4 items-start md:items-center px-4 py-3 rounded-xl transition-colors cursor-pointer hover:bg-gray-50 group/row ${idx % 2 === 0 ? "" : "bg-gray-50/50"
+                      }`}
                   >
                     {/* Lead name */}
                     <div className="flex items-center gap-2.5 min-w-0 pr-8 md:pr-0">
@@ -368,7 +366,7 @@ function LeadListView({ containers, basePath = "/crm" }: { containers: DndContai
 
                       {/* Amount */}
                       <span className="text-[13px] font-bold text-[#0B1215]">
-                        ₦ {Number(item.location).toLocaleString()}
+                        $ {Number(item.location).toLocaleString()}
                       </span>
 
                       {/* Priority badge */}
@@ -409,15 +407,16 @@ function LeadListView({ containers, basePath = "/crm" }: { containers: DndContai
           {allLeads.length} total leads across {containers.length} stages
         </span>
         <span className="text-[13px] font-bold text-[#0B1215]">
-          ₦ {(allLeads.length * 40010).toLocaleString()} pipeline value
+          $ {(allLeads.length * 40010).toLocaleString()} pipeline value
         </span>
       </div>
     </div>
   );
 }
 
-function LeadBoard({ basePath = "/crm", initialContainers, onStatusChange, onAddClick, isLoading }: {
+function LeadBoard({ basePath = "/crm", leadListUrl, initialContainers, onStatusChange, onAddClick, isLoading }: {
   basePath?: string;
+  leadListUrl?: string;
   initialContainers: DndContainer[];
   onStatusChange: (leadId: string, status: ApiLeadStatus) => Promise<void>;
   onAddClick?: (status: ApiLeadStatus) => void;
@@ -430,7 +429,7 @@ function LeadBoard({ basePath = "/crm", initialContainers, onStatusChange, onAdd
   const containersRef = useRef<DndContainer[]>(initialContainers);
   const dragOriginRef = useRef<string | null>(null);
   // Active tab state for column navigation
-  const [activeTabId, setActiveTabId] = useState<string>(() => initialContainers[0]?.id ?? "new");
+  const [activeTabId, setActiveTabId] = useState<string>(() => initialContainers[0]?.id ?? "newly_lead");
   // Sync activeTabId with containers changes
   useEffect(() => {
     if (initialContainers.length > 0 && !initialContainers.some(c => c.id === activeTabId)) {
@@ -524,7 +523,7 @@ function LeadBoard({ basePath = "/crm", initialContainers, onStatusChange, onAdd
       {/* Board toolbar */}
       <div className="flex items-center justify-end gap-3 px-6 pt-4 pb-2">
         <button
-          onClick={() => router.push(`${basePath}/leads`)}
+          onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)}
           className="text-[11px] font-medium bg-[#0B1215] text-white px-4 py-1.5 rounded-lg hover:opacity-90 transition-all"
         >
           View All Leads
@@ -532,17 +531,15 @@ function LeadBoard({ basePath = "/crm", initialContainers, onStatusChange, onAdd
         <div className="flex items-center gap-1">
           <button
             onClick={() => setViewMode("grid")}
-            className={`p-1.5 rounded-md transition-colors ${
-              viewMode === "grid" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
-            }`}
+            className={`p-1.5 rounded-md transition-colors ${viewMode === "grid" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
+              }`}
           >
             <LayoutGrid size={16} />
           </button>
           <button
             onClick={() => setViewMode("list")}
-            className={`p-1.5 rounded-md transition-colors ${
-              viewMode === "list" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
-            }`}
+            className={`p-1.5 rounded-md transition-colors ${viewMode === "list" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
+              }`}
           >
             <List size={16} />
           </button>
@@ -678,7 +675,7 @@ function TotalLeadsCard({ totalLeads = 0 }: { totalLeads?: number }) {
 
 function LeadsChart() {
   const isClient = useSyncExternalStore(
-    () => () => {},
+    () => () => { },
     () => true,
     () => false,
   );
@@ -740,8 +737,22 @@ function LeadsChart() {
   );
 }
 
-function AgentUploadsCard({ basePath = "/crm" }: { basePath?: string }) {
+function AgentUploadsCard({
+  basePath = "/crm",
+  leadListUrl,
+  totalUploadedLeads = 0,
+  topAgentAvatarUrl,
+  recentLeadNames,
+}: {
+  basePath?: string;
+  leadListUrl?: string;
+  totalUploadedLeads?: number;
+  topAgentAvatarUrl?: string | null;
+  recentLeadNames?: string[];
+}) {
   const router = useRouter();
+  const previewText = (recentLeadNames ?? []).slice(0, 2).join(", ");
+
   return (
     <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex items-center gap-5 min-w-0 sm:min-w-70">
       {/* Avatar with ring */}
@@ -756,7 +767,7 @@ function AgentUploadsCard({ basePath = "/crm" }: { basePath?: string }) {
           <div className="w-full h-full rounded-full overflow-hidden bg-white">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/images/avatar/agent.png"
+              src={topAgentAvatarUrl || "/images/avatar/agent.png"}
               alt="Agent"
               className="w-full h-full object-cover"
               onError={(e) => {
@@ -771,11 +782,13 @@ function AgentUploadsCard({ basePath = "/crm" }: { basePath?: string }) {
       {/* Stats */}
       <div className="flex flex-col gap-1">
         <div className="flex items-baseline gap-1.5">
-          <span className="text-[36px] font-bold text-[#0B1215] leading-none">1,430</span>
+          <span className="text-[36px] font-bold text-[#0B1215] leading-none">{totalUploadedLeads.toLocaleString()}</span>
           <span className="text-[#9CA3AF] text-[13px] font-medium">Leads</span>
         </div>
-        <p className="text-[#6B7280] text-[12px]">Uploaded by your Agents</p>
-        <button onClick={() => router.push(`${basePath}/leads`)} className="flex items-center gap-1 text-[12px] font-semibold text-[#0B1215] mt-1 hover:opacity-70 transition-opacity">
+        <p className="text-[#6B7280] text-[12px]">
+          Uploaded by your Agents{previewText ? ` • ${previewText}` : ""}
+        </p>
+        <button onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)} className="flex items-center gap-1 text-[12px] font-semibold text-[#0B1215] mt-1 hover:opacity-70 transition-opacity">
           View Leads
           <ChevronRight size={14} />
         </button>
@@ -787,13 +800,41 @@ function AgentUploadsCard({ basePath = "/crm" }: { basePath?: string }) {
 export default function CRMPage() {
   const basePath = "/crm";
   const apiBasePath = "/admin" as const;
+  const searchParams = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+
+  const sourceParam = (searchParams.get("source") ?? "").trim().toLowerCase();
+  const agentUploadScope = [
+    "agent_upload",
+    "agent uploaded",
+    "agent upload",
+    "uploaded_by_agent",
+    "uploaded by agent",
+    "uploaded_by_agents",
+    "uploaded by agents",
+  ].includes(sourceParam);
+  const leadListUrl = `${basePath}/leads?source=${encodeURIComponent(AGENT_UPLOAD_SOURCE_FILTER)}`;
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [defaultStatus, setDefaultStatus] = useState<ApiLeadStatus>("new");
+  const [defaultStatus, setDefaultStatus] = useState<ApiLeadStatus>("newly_lead");
+  const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
+  const [selectedLabel, setSelectedLabel] = useState<string>("all");
+  const [showFilter, setShowFilter] = useState(false);
+  const [showPipelineModal, setShowPipelineModal] = useState(false);
+  const [showLabelModal, setShowLabelModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+
+  const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
+  const { data: labels = [] } = useCrmLabels(companyId ?? undefined, apiBasePath);
+  const { data: agentUploadsOverview } = useAgentUploadsOverview(companyId ?? undefined, apiBasePath);
+
+  const stages = useMemo(() => {
+    if (!labels.length) return DEFAULT_STAGES;
+    return labels.map((label) => ({ id: label.slug, title: label.name, color: label.color }));
+  }, [labels]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
@@ -801,11 +842,18 @@ export default function CRMPage() {
   }, [search]);
 
   const { data, isLoading, refetch } = useLeads(
-    { company_id: companyId ?? undefined, search: debouncedSearch || undefined, page: 1 },
+    {
+      company_id: companyId ?? undefined,
+      search: debouncedSearch || undefined,
+      page: 1,
+      pipeline_id: selectedPipelineId ?? undefined,
+      status: selectedLabel === "all" ? undefined : selectedLabel,
+      source: agentUploadScope ? AGENT_UPLOAD_SOURCE_FILTER : undefined,
+    },
     apiBasePath
   );
 
-  const initialContainers = useMemo(() => buildContainers(data?.leads ?? []), [data?.leads]);
+  const initialContainers = useMemo(() => buildContainers(data?.leads ?? [], stages), [data?.leads, stages]);
   const totalLeads = data?.leads?.length ?? 0;
 
   const updateMutation = useUpdateLead(undefined, apiBasePath);
@@ -841,24 +889,26 @@ export default function CRMPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
-              All Pipeline
+            <button onClick={() => setShowPipelineModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+              {selectedPipelineId
+                ? (pipelines.find((pipeline) => pipeline.id === selectedPipelineId)?.name ?? "All Pipeline")
+                : "All Pipeline"}
               <ChevronDown size={13} />
             </button>
-            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button onClick={() => setShowLabelModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <Tag size={13} />
               Label
             </button>
-            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button onClick={() => setShowFilter((prev) => !prev)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <SlidersHorizontal size={13} />
               Filter
             </button>
-            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <Import size={13} />
               Import
             </button>
             <button
-              onClick={() => { setDefaultStatus("new"); setIsAddModalOpen(true); }}
+              onClick={() => { setDefaultStatus("newly_lead"); setIsAddModalOpen(true); }}
               className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all"
             >
               Add New Leads
@@ -867,16 +917,57 @@ export default function CRMPage() {
           </div>
         </div>
 
+        {showFilter && (
+          <div className="bg-white rounded-[14px] border border-gray-100 p-3 flex flex-wrap items-center gap-2">
+            <select
+              value={selectedPipelineId ?? ""}
+              onChange={(e) => setSelectedPipelineId(e.target.value ? Number(e.target.value) : null)}
+              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px]"
+            >
+              <option value="">All Pipelines</option>
+              {pipelines.map((pipeline) => (
+                <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>
+              ))}
+            </select>
+            <select
+              value={selectedLabel}
+              onChange={(e) => setSelectedLabel(e.target.value)}
+              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px]"
+            >
+              <option value="all">All Labels</option>
+              {labels.map((label) => (
+                <option key={label.id} value={label.slug}>{label.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => {
+                setSelectedPipelineId(null);
+                setSelectedLabel("all");
+              }}
+              className="px-3 py-2 border border-red-200 text-red-500 rounded-[10px] text-[12px]"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         {/* Summary cards */}
         <div className="flex flex-col lg:flex-row gap-4 items-stretch">
           <TotalLeadsCard totalLeads={totalLeads} />
           <LeadsChart />
-          <AgentUploadsCard basePath={basePath} />
+          <AgentUploadsCard
+            basePath={basePath}
+            leadListUrl={leadListUrl}
+            totalUploadedLeads={agentUploadsOverview?.total_uploaded_leads ?? 0}
+            topAgentAvatarUrl={agentUploadsOverview?.top_agent?.avatar_url ?? null}
+            recentLeadNames={(agentUploadsOverview?.recent_leads ?? []).map((lead) => lead.name)}
+          />
         </div>
 
         {/* Pipeline board */}
         <LeadBoard
           basePath={basePath}
+          leadListUrl={agentUploadScope ? leadListUrl : undefined}
           initialContainers={initialContainers}
           onStatusChange={persistStatusChange}
           onAddClick={(status) => { setDefaultStatus(status); setIsAddModalOpen(true); }}
@@ -889,6 +980,40 @@ export default function CRMPage() {
           onClose={() => setIsAddModalOpen(false)}
           apiBasePath={apiBasePath}
           defaultStatus={defaultStatus}
+        />
+      )}
+
+      {showPipelineModal && companyId && (
+        <PipelineManagerModal
+          companyId={companyId}
+          apiBasePath={apiBasePath}
+          pipelines={pipelines}
+          selectedPipelineId={selectedPipelineId}
+          onSelectPipeline={(pipelineId) => {
+            setSelectedPipelineId(pipelineId);
+            setShowPipelineModal(false);
+          }}
+          onClose={() => setShowPipelineModal(false)}
+        />
+      )}
+
+      {showLabelModal && companyId && (
+        <LabelManagerModal
+          companyId={companyId}
+          apiBasePath={apiBasePath}
+          labels={labels}
+          onClose={() => setShowLabelModal(false)}
+        />
+      )}
+
+      {showImportModal && companyId && (
+        <ImportLeadsModal
+          companyId={companyId}
+          apiBasePath={apiBasePath}
+          pipelines={pipelines}
+          labels={labels}
+          defaultPipelineId={selectedPipelineId}
+          onClose={() => setShowImportModal(false)}
         />
       )}
     </div>

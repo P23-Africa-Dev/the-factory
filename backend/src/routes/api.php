@@ -248,7 +248,28 @@ Route::middleware('auth:sanctum')->group(function (): void {
                 Route::post('/leads', [LeadController::class, 'store'])
                     ->middleware('throttle:30,1')
                     ->name('leads.store');
+                Route::post('/leads/import', [LeadController::class, 'import'])
+                    ->middleware('throttle:20,1')
+                    ->name('leads.import');
                 Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+                Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
+                Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
+                Route::post('/pipelines', [LeadController::class, 'storePipeline'])
+                    ->middleware('throttle:20,1')
+                    ->name('pipelines.store');
+                Route::patch('/pipelines/{pipeline}', [LeadController::class, 'updatePipeline'])
+                    ->middleware('throttle:20,1')
+                    ->name('pipelines.update');
+                Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
+                Route::post('/labels', [LeadController::class, 'storeLabel'])
+                    ->middleware('throttle:20,1')
+                    ->name('labels.store');
+                Route::patch('/labels/{label}', [LeadController::class, 'updateLabel'])
+                    ->middleware('throttle:20,1')
+                    ->name('labels.update');
+                Route::post('/labels/reorder', [LeadController::class, 'reorderLabels'])
+                    ->middleware('throttle:20,1')
+                    ->name('labels.reorder');
                 Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
                     ->middleware('throttle:30,1')
@@ -302,6 +323,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
             Route::prefix('crm')->name('crm.')->group(function (): void {
                 Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
                 Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+                Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
+                Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
+                Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
                 Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
                 Route::post('/leads/{lead}/notes', [LeadController::class, 'storeNote'])
                     ->middleware('throttle:60,1')
@@ -462,7 +486,28 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/leads', [LeadController::class, 'store'])
             ->middleware('throttle:30,1')
             ->name('leads.store');
+        Route::post('/leads/import', [LeadController::class, 'import'])
+            ->middleware('throttle:20,1')
+            ->name('leads.import');
         Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+        Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
+        Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
+        Route::post('/pipelines', [LeadController::class, 'storePipeline'])
+            ->middleware('throttle:20,1')
+            ->name('pipelines.store');
+        Route::patch('/pipelines/{pipeline}', [LeadController::class, 'updatePipeline'])
+            ->middleware('throttle:20,1')
+            ->name('pipelines.update');
+        Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
+        Route::post('/labels', [LeadController::class, 'storeLabel'])
+            ->middleware('throttle:20,1')
+            ->name('labels.store');
+        Route::patch('/labels/{label}', [LeadController::class, 'updateLabel'])
+            ->middleware('throttle:20,1')
+            ->name('labels.update');
+        Route::post('/labels/reorder', [LeadController::class, 'reorderLabels'])
+            ->middleware('throttle:20,1')
+            ->name('labels.reorder');
         Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
         Route::patch('/leads/{lead}', [LeadController::class, 'update'])
             ->middleware('throttle:30,1')

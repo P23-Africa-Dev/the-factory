@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\LeadPriority;
-use App\Enums\LeadStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -19,6 +18,7 @@ class Lead extends Model
 
     protected $fillable = [
         'company_id',
+        'pipeline_id',
         'created_by_user_id',
         'assigned_to_user_id',
         'name',
@@ -38,7 +38,7 @@ class Lead extends Model
     protected function casts(): array
     {
         return [
-            'status' => LeadStatus::class,
+            'status' => 'string',
             'priority' => LeadPriority::class,
             'meta' => 'array',
             'last_interaction_at' => 'datetime',
@@ -49,6 +49,11 @@ class Lead extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    public function pipeline(): BelongsTo
+    {
+        return $this->belongsTo(LeadPipeline::class, 'pipeline_id');
     }
 
     public function creator(): BelongsTo

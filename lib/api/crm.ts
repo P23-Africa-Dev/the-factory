@@ -4,20 +4,15 @@ import { apiRequest, ApiEnvelope } from "./onboarding";
 
 export type ApiRoleBasePath = "/admin" | "/agent";
 
-export type ApiLeadStatus =
-    | "new"
-    | "contacted"
-    | "qualified"
-    | "proposal_sent"
-    | "won"
-    | "lost";
+export type ApiLeadStatus = string;
 
-export type ApiLeadPriority = "high" | "medium" | "low";
+export type ApiLeadPriority = "high" | "medium" | "low" | "urgent";
 
 export type LeadActor = {
     id: number;
     name: string;
     email: string;
+    avatar_url?: string | null;
 };
 
 export type LeadNote = {
@@ -47,6 +42,7 @@ export type LeadActivity = {
 export type LeadApiItem = {
     id: number;
     company_id: number;
+    pipeline_id?: number | null;
     created_by_user_id: number;
     assigned_to_user_id?: number | null;
     name: string;
@@ -63,6 +59,11 @@ export type LeadApiItem = {
     converted_at?: string | null;
     creator?: LeadActor | null;
     assignee?: LeadActor | null;
+    pipeline?: {
+        id: number;
+        name: string;
+        currency_code: string;
+    } | null;
     notes?: LeadNote[];
     activities?: LeadActivity[];
     created_at?: string;
@@ -82,9 +83,11 @@ export type ListLeadsParams = {
     company_id?: number | string;
     status?: ApiLeadStatus;
     priority?: ApiLeadPriority;
+    pipeline_id?: number | string;
     source?: string;
     search?: string;
     assigned_to_user_id?: number | string;
+    per_page?: number;
     page?: number;
 };
 
@@ -99,6 +102,8 @@ export type LeadDetailData = {
 
 export type PipelineStage = {
     status: ApiLeadStatus;
+    name?: string;
+    color?: string;
     count: number;
 };
 
@@ -109,6 +114,7 @@ export type PipelineSnapshot = {
 
 export type CreateLeadPayload = {
     company_id: number | string;
+    pipeline_id: number | string;
     name: string;
     email?: string | null;
     phone?: string | null;
@@ -125,6 +131,7 @@ export type CreateLeadPayload = {
 
 export type UpdateLeadPayload = {
     company_id?: number | string;
+    pipeline_id?: number | string;
     name?: string;
     email?: string | null;
     phone?: string | null;
@@ -154,6 +161,66 @@ export type AddLeadActivityPayload = {
     meta?: Record<string, unknown> | null;
 };
 
+export type CrmPipeline = {
+    id: number;
+    company_id: number;
+    name: string;
+    currency_code: string;
+    sort_order: number;
+    is_default: boolean;
+};
+
+export type CrmLabel = {
+    id: number;
+    company_id: number;
+    name: string;
+    slug: string;
+    color: string;
+    sort_order: number;
+    is_default: boolean;
+};
+
+export type ImportLeadRow = {
+    name?: string;
+    email?: string;
+    phone?: string;
+    location?: string;
+    source?: string;
+    status?: string;
+    priority?: ApiLeadPriority;
+};
+
+export type FailedImportRow = {
+    row_index: number;
+    data: ImportLeadRow;
+    errors: string[];
+};
+
+export type ImportLeadsResult = {
+    imported_count: number;
+    failed_rows: FailedImportRow[];
+};
+
+export type AgentUploadOverview = {
+    total_uploaded_leads: number;
+    top_agent: {
+        id: number;
+        name: string;
+        email: string;
+        avatar_url: string | null;
+        total_uploads: number;
+    } | null;
+    recent_leads: Array<{
+        id: number;
+        name: string;
+        status: string;
+        source?: string | null;
+        created_at?: string | null;
+        creator?: LeadActor | null;
+    }>;
+    source_filter: string;
+};
+
 function buildQuery(params: Record<string, string | number | undefined>) {
     const qs = new URLSearchParams();
 
@@ -180,9 +247,11 @@ export function listLeads(
         company_id: params.company_id,
         status: params.status,
         priority: params.priority,
+        pipeline_id: params.pipeline_id,
         source: params.source,
         search: params.search,
         assigned_to_user_id: params.assigned_to_user_id,
+        per_page: params.per_page,
         page: params.page,
     });
 
@@ -273,6 +342,126 @@ export function addLeadActivity(
         method: "POST",
         path: withBase(basePath, `/crm/leads/${leadId}/activities`),
         body: payload,
+        token,
+    });
+}
+
+export function listCrmPipelines(
+    params: Pick<ListLeadsParams, "company_id">,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ items: CrmPipeline[] }>> {
+    const query = buildQuery({ company_id: params.company_id });
+    return apiRequest<{ items: CrmPipeline[] }>({
+        method: "GET",
+        path: withBase(basePath, `/crm/pipelines${query}`),
+        token,
+    });
+}
+
+export function createCrmPipeline(
+    payload: { company_id: number | string; name: string },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ pipeline: CrmPipeline }>> {
+    return apiRequest<{ pipeline: CrmPipeline }>({
+        method: "POST",
+        path: withBase(basePath, "/crm/pipelines"),
+        body: payload,
+        token,
+    });
+}
+
+export function updateCrmPipeline(
+    pipelineId: number | string,
+    payload: { company_id?: number | string; name?: string; sort_order?: number },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ pipeline: CrmPipeline }>> {
+    return apiRequest<{ pipeline: CrmPipeline }>({
+        method: "PATCH",
+        path: withBase(basePath, `/crm/pipelines/${pipelineId}`),
+        body: payload,
+        token,
+    });
+}
+
+export function listCrmLabels(
+    params: Pick<ListLeadsParams, "company_id">,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ items: CrmLabel[] }>> {
+    const query = buildQuery({ company_id: params.company_id });
+    return apiRequest<{ items: CrmLabel[] }>({
+        method: "GET",
+        path: withBase(basePath, `/crm/labels${query}`),
+        token,
+    });
+}
+
+export function createCrmLabel(
+    payload: { company_id: number | string; name: string; color: string },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ label: CrmLabel }>> {
+    return apiRequest<{ label: CrmLabel }>({
+        method: "POST",
+        path: withBase(basePath, "/crm/labels"),
+        body: payload,
+        token,
+    });
+}
+
+export function updateCrmLabel(
+    labelId: number | string,
+    payload: { company_id?: number | string; name?: string; color?: string },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ label: CrmLabel }>> {
+    return apiRequest<{ label: CrmLabel }>({
+        method: "PATCH",
+        path: withBase(basePath, `/crm/labels/${labelId}`),
+        body: payload,
+        token,
+    });
+}
+
+export function reorderCrmLabels(
+    payload: { company_id: number | string; ordered_label_ids: Array<number | string> },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ items: CrmLabel[] }>> {
+    return apiRequest<{ items: CrmLabel[] }>({
+        method: "POST",
+        path: withBase(basePath, "/crm/labels/reorder"),
+        body: payload,
+        token,
+    });
+}
+
+export function importCrmLeads(
+    payload: { company_id: number | string; pipeline_id: number | string; rows: ImportLeadRow[] },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<ImportLeadsResult>> {
+    return apiRequest<ImportLeadsResult>({
+        method: "POST",
+        path: withBase(basePath, "/crm/leads/import"),
+        body: payload,
+        token,
+    });
+}
+
+export function getAgentUploadsOverview(
+    params: Pick<ListLeadsParams, "company_id">,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<AgentUploadOverview>> {
+    const query = buildQuery({ company_id: params.company_id });
+
+    return apiRequest<AgentUploadOverview>({
+        method: "GET",
+        path: withBase(basePath, `/crm/leads/agent-uploads-overview${query}`),
         token,
     });
 }
