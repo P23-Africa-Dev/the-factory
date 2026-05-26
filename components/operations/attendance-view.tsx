@@ -6,7 +6,7 @@ import { MapPin, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRi
 import { toast } from "sonner";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { useAttendanceSettings, useUpdateAttendanceSettings } from "@/hooks/use-attendance";
-import { format, parseISO } from "date-fns";
+import { endOfMonth, endOfWeek, format, parseISO, startOfMonth, startOfWeek } from "date-fns";
 import { AddAgentModal } from "./add-agent-modal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
 import { useAttendanceMetrics, useAttendanceRecords } from "@/hooks/use-attendance";
@@ -225,8 +225,8 @@ function AttendanceSettingsModal({
                       type="button"
                       onClick={() => toggleDay(day.key)}
                       className={`px-3 py-2 rounded-xl text-[12px] font-bold border transition-all ${workingDays.includes(day.key)
-                          ? "bg-dash-dark text-white border-dash-dark"
-                          : "bg-gray-50 text-gray-500 border-gray-200 hover:border-dash-dark/30"
+                        ? "bg-dash-dark text-white border-dash-dark"
+                        : "bg-gray-50 text-gray-500 border-gray-200 hover:border-dash-dark/30"
                         }`}
                     >
                       {day.label}
@@ -327,14 +327,56 @@ export function AttendanceView({ basePath }: { basePath: string }) {
   const [selectedId, setSelectedId] = useState<number | string | null>(null);
   const [page, setPage] = useState(1);
   const [date, setDate] = useState(today);
+  const [statusFilter, setStatusFilter] = useState<"all" | "present" | "late" | "clocked_out" | "absent">("all");
+  const [roleFilter, setRoleFilter] = useState<"all" | "agent" | "supervisor">("all");
+  const [clockStateFilter, setClockStateFilter] = useState<"all" | "clocked_in" | "clocked_out">("all");
+  const [periodFilter, setPeriodFilter] = useState<"day" | "week" | "month" | "range">("day");
+  const [fromDate, setFromDate] = useState(today);
+  const [toDate, setToDate] = useState(today);
 
   const { user } = useAuthStore();
   const { apiCompanyId } = getActiveCompanyContext(user);
 
+  const resolvePeriodRange = () => {
+    if (periodFilter === "week") {
+      const now = new Date();
+      return {
+        from: format(startOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd"),
+        to: format(endOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      };
+    }
+
+    if (periodFilter === "month") {
+      const now = new Date();
+      return {
+        from: format(startOfMonth(now), "yyyy-MM-dd"),
+        to: format(endOfMonth(now), "yyyy-MM-dd"),
+      };
+    }
+
+    if (periodFilter === "range") {
+      const start = fromDate <= toDate ? fromDate : toDate;
+      const end = toDate >= fromDate ? toDate : fromDate;
+      return { from: start, to: end };
+    }
+
+    return null;
+  };
+
+  const periodRange = resolvePeriodRange();
+  const statusParam = statusFilter === "all" ? undefined : statusFilter;
+  const roleParam = roleFilter === "all" ? undefined : roleFilter;
+  const clockStateParam = clockStateFilter === "all" ? undefined : clockStateFilter;
+
   const { data: metricsData } = useAttendanceMetrics(apiCompanyId ?? undefined, date);
   const { data: recordsData, isLoading: recordsLoading } = useAttendanceRecords({
     company_id: apiCompanyId ?? undefined,
-    date,
+    ...(periodRange
+      ? { from_date: periodRange.from, to_date: periodRange.to }
+      : { date }),
+    status: statusParam,
+    role: roleParam,
+    clock_state: clockStateParam,
     search: search || undefined,
     per_page: PAGE_SIZE,
     page,
@@ -356,6 +398,20 @@ export function AttendanceView({ basePath }: { basePath: string }) {
 
   const handleDateChange = (val: string) => {
     setDate(val);
+    setPeriodFilter("day");
+    setPage(1);
+    setSelectedId(null);
+  };
+
+  const clearFilters = () => {
+    setSearch("");
+    setStatusFilter("all");
+    setRoleFilter("all");
+    setClockStateFilter("all");
+    setPeriodFilter("day");
+    setDate(today);
+    setFromDate(today);
+    setToDate(today);
     setPage(1);
     setSelectedId(null);
   };
@@ -443,6 +499,129 @@ export function AttendanceView({ basePath }: { basePath: string }) {
           </button> */}
         </div>
       </div>
+
+      {showFilters && (
+        <div className="flex flex-wrap gap-3 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-gray-400 px-1">Period</label>
+            <div className="flex gap-1">
+              {([
+                ["day", "Day"],
+                ["week", "Week"],
+                ["month", "Month"],
+                ["range", "Range"],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  onClick={() => {
+                    setPeriodFilter(value);
+                    setPage(1);
+                    setSelectedId(null);
+                  }}
+                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${periodFilter === value
+                    ? "bg-dash-dark text-white"
+                    : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
+                    }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {periodFilter === "range" && (
+            <div className="flex items-end gap-2">
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-bold text-gray-400 px-1">From</label>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => {
+                    setFromDate(e.target.value);
+                    setPage(1);
+                    setSelectedId(null);
+                  }}
+                  className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] text-dash-dark outline-none"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-bold text-gray-400 px-1">To</label>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => {
+                    setToDate(e.target.value);
+                    setPage(1);
+                    setSelectedId(null);
+                  }}
+                  className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] text-dash-dark outline-none"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-gray-400 px-1">Status</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value as "all" | "present" | "late" | "clocked_out" | "absent");
+                setPage(1);
+              }}
+              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
+            >
+              <option value="all">All Status</option>
+              <option value="present">Present</option>
+              <option value="late">Late</option>
+              <option value="clocked_out">Clocked Out</option>
+              <option value="absent">Absent</option>
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-gray-400 px-1">Clock</label>
+            <select
+              value={clockStateFilter}
+              onChange={(e) => {
+                setClockStateFilter(e.target.value as "all" | "clocked_in" | "clocked_out");
+                setPage(1);
+              }}
+              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
+            >
+              <option value="all">All</option>
+              <option value="clocked_in">Clocked In</option>
+              <option value="clocked_out">Clocked Out</option>
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-gray-400 px-1">Role</label>
+            <select
+              value={roleFilter}
+              onChange={(e) => {
+                setRoleFilter(e.target.value as "all" | "agent" | "supervisor");
+                setPage(1);
+              }}
+              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
+            >
+              <option value="all">All Roles</option>
+              <option value="agent">Field Agent</option>
+              <option value="supervisor">Supervisor</option>
+            </select>
+          </div>
+
+          {(search.trim() !== "" || statusFilter !== "all" || roleFilter !== "all" || clockStateFilter !== "all" || periodFilter !== "day") && (
+            <div className="flex flex-col justify-end">
+              <button
+                onClick={clearFilters}
+                className="px-4 py-2 rounded-full text-[12px] font-bold text-red-400 hover:bg-red-50 transition-all border border-red-200"
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
 
 
@@ -570,8 +749,8 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                     key={p}
                     onClick={() => setPage(p)}
                     className={`w-9 h-9 rounded-full text-[13px] font-bold transition-all ${p === currentPage
-                        ? "bg-dash-dark text-white shadow-sm"
-                        : "text-gray-400 hover:bg-gray-100"
+                      ? "bg-dash-dark text-white shadow-sm"
+                      : "text-gray-400 hover:bg-gray-100"
                       }`}
                   >
                     {p}
@@ -632,8 +811,8 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                         <p className="text-[13px] font-bold text-dash-dark">{selected.name}</p>
                         <span
                           className={`px-2.5 py-0.75 rounded-full text-[9px] font-bold ${selected.active
-                              ? "bg-[#22C55E] text-white"
-                              : "bg-[#F48243]/20 text-[#F48243]"
+                            ? "bg-[#22C55E] text-white"
+                            : "bg-[#F48243]/20 text-[#F48243]"
                             }`}
                         >
                           {selected.status}
@@ -677,8 +856,8 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                   </div>
                   <div
                     className={`px-3 py-1.5 rounded-full text-[10px] font-bold shrink-0 self-start ${selected.active
-                        ? "bg-[#1A452C] text-[#4ADE80]"
-                        : "bg-gray-700 text-gray-300"
+                      ? "bg-[#1A452C] text-[#4ADE80]"
+                      : "bg-gray-700 text-gray-300"
                       }`}
                   >
                     {selected.active ? "On-Time" : "Absent"}

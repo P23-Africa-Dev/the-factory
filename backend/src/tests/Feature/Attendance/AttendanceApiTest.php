@@ -313,6 +313,62 @@ class AttendanceApiTest extends TestCase
         $this->assertNotNull($summary);
     }
 
+    public function test_management_records_support_date_range_and_clock_state_filters(): void
+    {
+        [$company, $owner,, $agentA, $agentB] = $this->seedCompanyUsers();
+        $this->createAttendanceSetting($company);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentA->id,
+            'attendance_date' => '2026-06-01',
+            'clock_in_at' => '2026-06-01 09:10:00',
+            'clock_out_at' => null,
+            'status' => 'late',
+            'work_duration_minutes' => null,
+            'is_late' => true,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentB->id,
+            'attendance_date' => '2026-06-03',
+            'clock_in_at' => '2026-06-03 08:55:00',
+            'clock_out_at' => '2026-06-03 17:00:00',
+            'status' => 'present',
+            'work_duration_minutes' => 485,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        $rangeResponse = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/records?company_id=' . $company->id . '&from_date=2026-06-01&to_date=2026-06-03&per_page=10');
+
+        $rangeResponse->assertOk()
+            ->assertJsonCount(2, 'data.items')
+            ->assertJsonPath('data.pagination.current_page', 1)
+            ->assertJsonPath('data.pagination.last_page', 1)
+            ->assertJsonPath('data.pagination.total', 2);
+
+        $clockedOutResponse = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/records?company_id=' . $company->id . '&from_date=2026-06-01&to_date=2026-06-03&clock_state=clocked_out&per_page=10');
+
+        $clockedOutResponse->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.user_id', $agentB->id);
+
+        $this->assertNotNull($clockedOutResponse->json('data.items.0.clock_out_at'));
+
+        $clockedInResponse = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/records?company_id=' . $company->id . '&from_date=2026-06-01&to_date=2026-06-03&clock_state=clocked_in&status=late&per_page=10');
+
+        $clockedInResponse->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.user_id', $agentA->id)
+            ->assertJsonPath('data.items.0.status', 'late');
+    }
+
     private function seedCompanyUsers(): array
     {
         $company = Company::create([

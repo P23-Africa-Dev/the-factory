@@ -67,8 +67,10 @@ This guide describes how frontend clients should consume the new attendance back
 - `GET /api/v1/attendance/records`
 - Query params:
   - `company_id`
-  - `date`
+  - `date` (single-day mode)
+  - `from_date`, `to_date` (range mode)
   - `status` (`present`, `late`, `auto_clocked_out`, `clocked_out`, `absent`)
+  - `clock_state` (`clocked_in`, `clocked_out`)
   - `role` (`agent`, `supervisor`)
   - `search`
   - `per_page`
@@ -80,6 +82,7 @@ Response notes:
 - `pagination` includes `current_page`, `last_page`, and `total` for page-number controls.
 - `status=present` includes records with `present`, `late`, and `auto_clocked_out` backend statuses.
 - `status=clocked_out` returns records where check-out exists (including `auto_clocked_out`).
+- `status=absent` is intended for single-day roster checks (`date=...`) where no attendance row exists.
 
 ### Monthly attendance payroll summaries
 - `GET /api/v1/attendance/payroll-summaries`

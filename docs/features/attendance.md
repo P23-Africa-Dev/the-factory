@@ -51,9 +51,12 @@ Equivalent canonical routes are available under:
 - `GET /api/v1/attendance/records` supports:
   - `status`: `present`, `late`, `auto_clocked_out`, `clocked_out`, `absent`
   - `role`: `agent`, `supervisor`
-  - `search`, `date`, `per_page`, `page`
+  - `clock_state`: `clocked_in`, `clocked_out`
+  - `search`, `date`, `from_date`, `to_date`, `per_page`, `page`
 - `status=present` returns active attendance records including late and auto-clocked-out cases.
 - `status=clocked_out` returns records with a populated `clock_out_at`.
+- `from_date` and `to_date` switch records mode to range listing (attendance entries across the window).
+- `status=absent` remains most reliable for single-day roster checks (`date=...`) where users without records are included.
 - Each item includes `avatar_url` for direct frontend rendering.
 - Pagination metadata includes `current_page`, `last_page`, and `total`.
 

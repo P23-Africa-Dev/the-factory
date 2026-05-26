@@ -359,29 +359,74 @@ class AttendanceService
             ? Carbon::parse((string) $filters['date'])->toDateString()
             : now()->toDateString();
 
-        $query = DB::table('company_users as cu')
-            ->join('users as u', 'u.id', '=', 'cu.user_id')
-            ->leftJoin('attendance_records as ar', function ($join) use ($date): void {
-                $join->on('ar.user_id', '=', 'u.id')
-                    ->on('ar.company_id', '=', 'cu.company_id')
-                    ->whereDate('ar.attendance_date', '=', $date);
-            })
-            ->where('cu.company_id', $context->company->id)
-            ->where('cu.role', 'agent')
-            ->select([
-                'u.id as user_id',
-                'u.name as agent_name',
-                'u.avatar',
-                'u.assigned_zone',
-                'u.internal_role',
-                'ar.id as attendance_record_id',
-                'ar.clock_in_at',
-                'ar.clock_out_at',
-                'ar.status',
-                'ar.work_duration_minutes',
-                'ar.is_late',
-                'ar.is_auto_clocked_out',
-            ]);
+        $fromDate = ! empty($filters['from_date'])
+            ? Carbon::parse((string) $filters['from_date'])->toDateString()
+            : null;
+        $toDate = ! empty($filters['to_date'])
+            ? Carbon::parse((string) $filters['to_date'])->toDateString()
+            : null;
+
+        $hasRangeFilter = $fromDate !== null || $toDate !== null;
+
+        if ($hasRangeFilter) {
+            $rangeFrom = $fromDate ?? $toDate;
+            $rangeTo = $toDate ?? $fromDate;
+
+            if ($rangeFrom !== null && $rangeTo !== null && strcmp($rangeFrom, $rangeTo) > 0) {
+                [$rangeFrom, $rangeTo] = [$rangeTo, $rangeFrom];
+            }
+
+            $query = DB::table('attendance_records as ar')
+                ->join('users as u', 'u.id', '=', 'ar.user_id')
+                ->join('company_users as cu', function ($join): void {
+                    $join->on('cu.user_id', '=', 'u.id')
+                        ->on('cu.company_id', '=', 'ar.company_id');
+                })
+                ->where('ar.company_id', $context->company->id)
+                ->where('cu.role', 'agent')
+                ->whereDate('ar.attendance_date', '>=', (string) $rangeFrom)
+                ->whereDate('ar.attendance_date', '<=', (string) $rangeTo)
+                ->select([
+                    'u.id as user_id',
+                    'u.name as agent_name',
+                    'u.avatar',
+                    'u.assigned_zone',
+                    'u.internal_role',
+                    'ar.attendance_date',
+                    'ar.id as attendance_record_id',
+                    'ar.clock_in_at',
+                    'ar.clock_out_at',
+                    'ar.status',
+                    'ar.work_duration_minutes',
+                    'ar.is_late',
+                    'ar.is_auto_clocked_out',
+                ]);
+        } else {
+            $query = DB::table('company_users as cu')
+                ->join('users as u', 'u.id', '=', 'cu.user_id')
+                ->leftJoin('attendance_records as ar', function ($join) use ($date): void {
+                    $join->on('ar.user_id', '=', 'u.id')
+                        ->on('ar.company_id', '=', 'cu.company_id')
+                        ->whereDate('ar.attendance_date', '=', $date);
+                })
+                ->where('cu.company_id', $context->company->id)
+                ->where('cu.role', 'agent')
+                ->select([
+                    'u.id as user_id',
+                    'u.name as agent_name',
+                    'u.avatar',
+                    'u.assigned_zone',
+                    'u.internal_role',
+                    'ar.attendance_date',
+                    'ar.id as attendance_record_id',
+                    'ar.clock_in_at',
+                    'ar.clock_out_at',
+                    'ar.status',
+                    'ar.work_duration_minutes',
+                    'ar.is_late',
+                    'ar.is_auto_clocked_out',
+                ]);
+        }
 
         if (! empty($filters['search'])) {
             $search = '%' . trim((string) $filters['search']) . '%';
@@ -401,7 +446,11 @@ class AttendanceService
             $status = (string) $filters['status'];
 
             if ($status === 'absent') {
-                $query->whereNull('ar.id');
+                if ($hasRangeFilter) {
+                    $query->where('ar.status', 'absent');
+                } else {
+                    $query->whereNull('ar.id');
+                }
             } elseif ($status === 'present') {
                 $query->whereIn('ar.status', [
                     AttendanceStatus::PRESENT->value,
@@ -415,7 +464,20 @@ class AttendanceService
             }
         }
 
+        if (! empty($filters['clock_state'])) {
+            $clockState = (string) $filters['clock_state'];
+
+            if ($clockState === 'clocked_in') {
+                $query->whereNotNull('ar.clock_in_at');
+            }
+
+            if ($clockState === 'clocked_out') {
+                $query->whereNotNull('ar.clock_out_at');
+            }
+        }
+
         $paginated = $query
+            ->orderByDesc('ar.attendance_date')
             ->orderBy('u.name')
             ->paginate((int) ($filters['per_page'] ?? 20))
             ->withQueryString();
@@ -423,6 +485,9 @@ class AttendanceService
         $items = collect($paginated->items())->map(static function (object $item) use ($date): array {
             $status = $item->status !== null ? (string) $item->status : 'absent';
             $avatarUrl = AvatarUrlResolver::resolve($item->avatar, null);
+            $attendanceDate = $item->attendance_date !== null
+                ? Carbon::parse((string) $item->attendance_date)->toDateString()
+                : $date;
 
             return [
                 'user_id' => (int) $item->user_id,
@@ -431,7 +496,7 @@ class AttendanceService
                 'avatar_url' => $avatarUrl,
                 'zone' => $item->assigned_zone,
                 'role' => $item->internal_role,
-                'attendance_date' => $date,
+                'attendance_date' => $attendanceDate,
                 'clock_in_at' => $item->clock_in_at ? Carbon::parse((string) $item->clock_in_at)->toIso8601String() : null,
                 'clock_out_at' => $item->clock_out_at ? Carbon::parse((string) $item->clock_out_at)->toIso8601String() : null,
                 'status' => $status,
@@ -443,6 +508,8 @@ class AttendanceService
 
         return [
             'date' => $date,
+            'from_date' => $fromDate,
+            'to_date' => $toDate,
             'items' => $items,
             'pagination' => [
                 'next_page_url' => $paginated->nextPageUrl(),

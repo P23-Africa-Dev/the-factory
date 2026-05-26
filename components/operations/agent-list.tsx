@@ -24,13 +24,45 @@ interface AgentListProps {
   agents: AgentItem[];
   selectedId?: string;
   onSelect?: (agent: AgentItem) => void;
+  page?: number;
+  pageSize?: number;
+  totalPages?: number;
+  totalItems?: number;
+  onPageChange?: (page: number) => void;
 }
 
-export function AgentList({ agents, selectedId, onSelect, basePath }: AgentListProps & { basePath: string }) {
+export function AgentList({
+  agents,
+  selectedId,
+  onSelect,
+  basePath,
+  page: controlledPageProp,
+  pageSize: pageSizeProp,
+  totalPages: totalPagesProp,
+  totalItems: totalItemsProp,
+  onPageChange,
+}: AgentListProps & { basePath: string }) {
   const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(agents.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const paginated = agents.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const isServerPaginated = typeof onPageChange === "function";
+  const pageSize = isServerPaginated ? Math.max(1, pageSizeProp ?? PAGE_SIZE) : PAGE_SIZE;
+  const controlledPage = isServerPaginated ? Math.max(1, controlledPageProp ?? 1) : page;
+  const totalPages = isServerPaginated
+    ? Math.max(1, totalPagesProp ?? 1)
+    : Math.max(1, Math.ceil(agents.length / PAGE_SIZE));
+  const totalItems = isServerPaginated ? (totalItemsProp ?? agents.length) : agents.length;
+  const currentPage = Math.min(controlledPage, totalPages);
+  const paginated = isServerPaginated
+    ? agents
+    : agents.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const handlePageChange = (nextPage: number) => {
+    if (isServerPaginated && onPageChange) {
+      onPageChange(nextPage);
+      return;
+    }
+
+    setPage(nextPage);
+  };
 
   return (
     <OpsTableContainer className="grow-0 flex flex-col h-140">
@@ -82,13 +114,13 @@ export function AgentList({ agents, selectedId, onSelect, basePath }: AgentListP
       {/* Pagination */}
       <div className="shrink-0 flex items-center justify-between pt-5 mt-4 border-t border-gray-100">
         <p className="text-[12px] text-gray-400">
-          {agents.length === 0
+          {totalItems === 0
             ? "Showing 0 of 0"
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, agents.length)} of ${agents.length}`}
+            : `Showing ${(currentPage - 1) * pageSize + 1}–${Math.min((currentPage - 1) * pageSize + paginated.length, totalItems)} of ${totalItems}`}
         </p>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
             disabled={currentPage === 1}
             className="flex items-center justify-center w-9 h-9 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
@@ -97,14 +129,14 @@ export function AgentList({ agents, selectedId, onSelect, basePath }: AgentListP
           {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
             <button
               key={p}
-              onClick={() => setPage(p)}
+              onClick={() => handlePageChange(p)}
               className={`w-9 h-9 rounded-full text-[13px] font-bold transition-all ${p === currentPage ? 'bg-dash-dark text-white shadow-sm' : 'text-gray-400 hover:bg-gray-100'}`}
             >
               {p}
             </button>
           ))}
           <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
             disabled={currentPage === totalPages}
             className="flex items-center justify-center w-9 h-9 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
