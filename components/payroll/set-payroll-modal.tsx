@@ -18,6 +18,7 @@ import type { PayrollSettings } from "@/lib/api/payroll";
 import type { ApiRequestError } from "@/lib/api/onboarding";
 import { toast } from "sonner";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { formatPayrollMoney, PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
 
 interface SetPayrollModalProps {
   isOpen: boolean;
@@ -52,7 +53,7 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
     existingPayroll ? capitalize(existingPayroll.salary_type) : "Monthly"
   );
   const [baseSalary, setBaseSalary] = useState(
-    existingPayroll ? String(existingPayroll.base_salary) : "₦30,000"
+    existingPayroll ? String(existingPayroll.base_salary) : "$30,000"
   );
   const [payBasis, setPayBasis] = useState("Per Day");
   const [workDays, setWorkDays] = useState(
@@ -82,7 +83,7 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
   const updateMutation = useUpdatePayroll(existingPayroll?.id);
 
   const isPending = createMutation.isPending || updateMutation.isPending;
-  const salaryNumericPreview = Number(baseSalary.replace(/[₦,\s]/g, ""));
+  const salaryNumericPreview = Number(baseSalary.replace(/[^0-9.]/g, ""));
   const workDaysNumericPreview = Number(workDays.replace(/[^0-9.]/g, ""));
   const derivedDailyPay =
     salaryNumericPreview > 0 && workDaysNumericPreview > 0
@@ -111,7 +112,7 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
     const formErrors: FormErrors = {};
     const prodErrs: ProductErrors = [];
 
-    const salaryNumeric = Number(baseSalary.replace(/[₦,\s]/g, ""));
+    const salaryNumeric = Number(baseSalary.replace(/[^0-9.]/g, ""));
     if (!baseSalary.trim()) {
       formErrors.baseSalary = "Base salary is required.";
     } else if (isNaN(salaryNumeric) || salaryNumeric <= 0) {
@@ -185,7 +186,7 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
       return;
     }
 
-    const salaryNumeric = Number(baseSalary.replace(/[₦,\s]/g, ""));
+    const salaryNumeric = Number(baseSalary.replace(/[^0-9.]/g, ""));
     const daysNumeric = Number(workDays.replace(/[^0-9.]/g, ""));
     const hoursNumeric = Number(workHours.replace(/[^0-9.]/g, ""));
 
@@ -218,9 +219,9 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
-        <div 
-          className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 cursor-pointer" 
-          onClick={onClose} 
+        <div
+          className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 cursor-pointer"
+          onClick={onClose}
         />
 
         <div className="relative bg-white rounded-t-[28px] sm:rounded-[28px] w-full sm:w-[440px] shadow-[0px_8px_32px_rgba(0,0,0,0.15)] overflow-hidden flex flex-col max-h-[90dvh] sm:max-h-[calc(100vh-80px)] transition-all duration-300 ease-out">
@@ -297,7 +298,7 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
                 <FieldError message={errors.payBasis} />
               </div>
               <div className="text-[11px] text-gray-500 text-right">
-                Daily pay (derived by backend): {derivedDailyPay ? `₦${derivedDailyPay}` : "—"}
+                Daily pay (derived by backend): {derivedDailyPay ? formatPayrollMoney(Number(derivedDailyPay), PAYROLL_DEFAULT_CURRENCY) : "—"}
               </div>
             </div>
 

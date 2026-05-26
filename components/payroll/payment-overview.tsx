@@ -17,6 +17,7 @@ import {
 import ArrowDown from "@/assets/images/arrow-down.png";
 import { getCurrentDateParts } from "@/lib/utils/date";
 import type { PayrollOverview } from "@/lib/api/payroll";
+import { formatPayrollMoney } from "@/lib/payroll/currency";
 
 const paymentOverviewData = [
   { bar: 78, line: 74 },
@@ -103,33 +104,18 @@ function MiniChart({
 
 interface PaymentOverviewProps {
   overview?: PayrollOverview | null;
+  currency: string;
 }
 
-function formatMoney(amount: number, currency: string) {
-  const formatted = amount.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
-  if (currency === "NGN") return `₦${formatted}`;
-  if (currency === "USD") return `$${formatted}`;
-
-  return `${formatted} ${currency}`;
-}
-
-export function PaymentOverview({ overview }: PaymentOverviewProps) {
+export function PaymentOverview({ overview, currency }: PaymentOverviewProps) {
   const [mounted, setMounted] = useState(false);
   const user = useAuthStore((s) => s.user);
   const isAgent = user?.active_company?.role === "agent";
   const { day, weekDay, month } = getCurrentDateParts();
 
   const todayPresentAgents = overview?.today_present_agents ?? 0;
-  const todayPayrollValue = overview
-    ? formatMoney(overview.today_payroll_value, overview.currency)
-    : "₦0.00";
-  const totalPayroll = overview
-    ? formatMoney(overview.total_payroll, overview.currency)
-    : "₦0.00";
+  const todayPayrollValue = formatPayrollMoney(overview?.today_payroll_value ?? 0, currency);
+  const totalPayroll = formatPayrollMoney(overview?.total_payroll ?? 0, currency);
   const payrollTrend = overview?.payroll_rise
     ? { label: "Rise", color: "#2F6C0E" }
     : overview?.payroll_fall
@@ -218,10 +204,10 @@ export function PaymentOverview({ overview }: PaymentOverviewProps) {
         </div>
       </div>
 
-              <div className="flex-1 min-w-0 flex flex-col lg:flex-row lg:max-w-71.5 gap-2.5 lg:max-h-42.25">
+      <div className="flex-1 min-w-0 flex flex-col lg:flex-row lg:max-w-71.5 gap-2.5 lg:max-h-42.25">
         <div className="flex-1 bg-white rounded-3xl px-4 sm:px-5 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] h-fit w-full">
           <p className="text-[22px] sm:text-[28px] lg:text-[32px] font-bold text-[#34373C] leading-tight tracking-tight font-[poppins]">
-            {formatMoney(overview?.total_commission ?? 0, overview?.currency ?? "NGN")}
+            {formatPayrollMoney(overview?.total_commission ?? 0, currency)}
           </p>
           <p className="text-[14px] font-light text-[#34373C] mb-2.5">
             Total Commissions
@@ -244,7 +230,7 @@ export function PaymentOverview({ overview }: PaymentOverviewProps) {
           <div className="flex-1 bg-white flex rounded-3xl px-4 sm:px-5 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] h-fit w-full">
             <div className="shrink-0 mr-2">
               <p className="text-[16px] sm:text-[20px] font-bold text-[#34373C] tracking-tight font-[poppins]">
-                {formatMoney(overview?.pending_approval ?? 0, overview?.currency ?? "NGN")}
+                {formatPayrollMoney(overview?.pending_approval ?? 0, currency)}
               </p>
               <p className="text-[12px] font-light text-[#34373C] leading-none">
                 Pending Approvals

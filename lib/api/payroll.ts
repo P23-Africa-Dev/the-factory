@@ -1,6 +1,7 @@
 "use client";
 
 import { apiRequest, ApiEnvelope } from "./onboarding";
+import { formatPayrollMoney, resolvePayrollCurrency } from "@/lib/payroll/currency";
 
 export type PayrollSettings = {
   id: number;
@@ -134,21 +135,23 @@ export type PayrollExportParams = {
   format: "csv" | "xls";
 };
 
-export function mapPayrollAgentToUi(agent: PayrollAgentListItem) {
+export function mapPayrollAgentToUi(agent: PayrollAgentListItem, currencyOverride?: string) {
+  const displayCurrency = resolvePayrollCurrency(currencyOverride ?? agent.currency);
+
   return {
     id: String(agent.id),
     name: agent.name,
     address: agent.email,
     lga: agent.assigned_zone ?? "Unassigned",
     avatar: agent.avatar_url ?? "/avatars/male-avatar.png",
-    baseSalary: formatMoney(agent.base_salary, agent.currency),
-    netPay: formatMoney(agent.net_pay, agent.currency),
+    baseSalary: formatPayrollMoney(agent.base_salary, displayCurrency),
+    netPay: formatPayrollMoney(agent.net_pay, displayCurrency),
     role: agent.role,
     status: agent.status,
     email: agent.email,
-    currency: agent.currency,
+    currency: displayCurrency,
     salaryType: agent.salary_type,
-    dailyPay: formatMoney(agent.daily_pay, agent.currency),
+    dailyPay: formatPayrollMoney(agent.daily_pay, displayCurrency),
     attendanceDays: agent.attendance_days,
     attendanceAffectsPay: agent.attendance_affects_pay,
     workDays: undefined,
@@ -156,38 +159,28 @@ export function mapPayrollAgentToUi(agent: PayrollAgentListItem) {
   };
 }
 
-export function mapPayrollProfileToUi(profile: PayrollAgentProfile) {
+export function mapPayrollProfileToUi(profile: PayrollAgentProfile, currencyOverride?: string) {
+  const displayCurrency = resolvePayrollCurrency(currencyOverride ?? profile.currency);
+
   return {
     id: String(profile.id),
     name: profile.name,
     address: profile.email,
     lga: profile.assigned_zone ?? "Unassigned",
     avatar: profile.avatar_url ?? "/avatars/male-avatar.png",
-    baseSalary: formatMoney(profile.base_salary, profile.currency),
-    netPay: formatMoney(profile.salary_payable, profile.currency),
+    baseSalary: formatPayrollMoney(profile.base_salary, displayCurrency),
+    netPay: formatPayrollMoney(profile.salary_payable, displayCurrency),
     role: profile.role,
     status: profile.status,
     email: profile.email,
-    currency: profile.currency,
+    currency: displayCurrency,
     salaryType: profile.salary_type,
-    dailyPay: formatMoney(profile.daily_pay, profile.currency),
+    dailyPay: formatPayrollMoney(profile.daily_pay, displayCurrency),
     attendanceDays: profile.attendance_days,
     attendanceAffectsPay: profile.attendance_affects_pay,
     workDays: profile.work_days,
     workHours: profile.work_hours,
   };
-}
-
-function formatMoney(amount: number, currency: string) {
-  const formatted = amount.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
-  if (currency === "NGN") return `₦${formatted}`;
-  if (currency === "USD") return `$${formatted}`;
-
-  return `${formatted} ${currency}`;
 }
 
 export type CreatePayrollPayload = {

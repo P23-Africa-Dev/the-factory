@@ -16,6 +16,7 @@ import { usePayroll, usePayrollAgents, usePayrollAgentProfile, usePayrollExport,
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { formatPayrollDateLabel, nextPayrollStatusFilter, type PayrollStatusFilter } from "@/lib/payroll/page-controls";
+import { formatPayrollMoney, PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
 import { ArrowLeft, Search, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -34,6 +35,7 @@ export default function PayrollListPage() {
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const isAgent = role === "agent";
+  const payrollCurrency = PAYROLL_DEFAULT_CURRENCY;
 
   const { data: overview } = usePayrollOverview({ company_id: companyId ?? undefined, date: selectedDate });
   const { data: existingPayroll } = usePayroll(companyId);
@@ -47,8 +49,8 @@ export default function PayrollListPage() {
   });
 
   const payrollAgents = useMemo(
-    () => (agentsData?.items ?? []).map(mapPayrollAgentToUi),
-    [agentsData]
+    () => (agentsData?.items ?? []).map((agent) => mapPayrollAgentToUi(agent, payrollCurrency)),
+    [agentsData, payrollCurrency]
   );
 
   useEffect(() => {
@@ -78,7 +80,7 @@ export default function PayrollListPage() {
   });
 
   const selectedAgent = selectedAgentProfileQuery.data
-    ? mapPayrollProfileToUi(selectedAgentProfileQuery.data)
+    ? mapPayrollProfileToUi(selectedAgentProfileQuery.data, payrollCurrency)
     : selectedAgentSummary;
 
   const handleToggleFilter = () => {
@@ -178,7 +180,7 @@ export default function PayrollListPage() {
 
       <div className="px-5 sm:px-8 lg:px-10 py-6 space-y-6">
         <div className="bg-white rounded-[30px] px-6 py-4 text-[13px] text-gray-500 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
-          {overview ? `Total payroll: ${overview.total_payroll}` : "Loading payroll overview..."}
+          {overview ? `Total payroll: ${formatPayrollMoney(overview.total_payroll, payrollCurrency)}` : "Loading payroll overview..."}
         </div>
         <div className="flex flex-col xl:flex-row gap-6">
           <div className="flex-1 min-w-0">
@@ -209,7 +211,7 @@ export default function PayrollListPage() {
             </div>
 
             {selectedAgentProfileQuery.data?.history?.length ? (
-              <PayrollHistory entries={selectedAgentProfileQuery.data.history} />
+              <PayrollHistory entries={selectedAgentProfileQuery.data.history} currency={payrollCurrency} />
             ) : null}
           </div>
         </div>

@@ -2,16 +2,14 @@
 
 import { StatusBadge } from "../ui/status-badge";
 import type { PayrollHistoryEntry } from "@/lib/api/payroll";
+import { formatPayrollMoney, PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
 
 interface PayrollHistoryProps {
   entries?: PayrollHistoryEntry[] | null;
+  currency?: string;
 }
 
-function formatMoney(amount: number) {
-  return `₦${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-export function PayrollHistory({ entries = [] }: PayrollHistoryProps) {
+export function PayrollHistory({ entries = [], currency = PAYROLL_DEFAULT_CURRENCY }: PayrollHistoryProps) {
   const historyData = entries ?? [];
 
   return (
@@ -46,7 +44,7 @@ export function PayrollHistory({ entries = [] }: PayrollHistoryProps) {
                     Base Salary
                   </p>
                   <p className="text-[10px] font-light text-[#616263]">
-                    {formatMoney(entry.base_salary)}
+                    {formatPayrollMoney(entry.base_salary, currency)}
                   </p>
                 </div>
                 <div>
@@ -54,7 +52,7 @@ export function PayrollHistory({ entries = [] }: PayrollHistoryProps) {
                     Net Pay
                   </p>
                   <p className="text-[10px] font-light text-[#616263]">
-                    {formatMoney(entry.net_pay)}
+                    {formatPayrollMoney(entry.net_pay, currency)}
                   </p>
                 </div>
                 <div className="flex flex-1 items-start justify-between">

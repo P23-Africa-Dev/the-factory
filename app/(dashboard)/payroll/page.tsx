@@ -16,6 +16,7 @@ import { usePayroll, usePayrollAgents, usePayrollAgentProfile, usePayrollExport,
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { formatPayrollDateLabel, nextPayrollStatusFilter, type PayrollStatusFilter } from "@/lib/payroll/page-controls";
+import { PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
 import { Search, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -34,6 +35,7 @@ export default function FinancePage() {
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const isAgent = role === "agent";
+  const payrollCurrency = PAYROLL_DEFAULT_CURRENCY;
 
   const { data: overview } = usePayrollOverview({ company_id: companyId ?? undefined, date: selectedDate });
   const { data: existingPayroll } = usePayroll(companyId);
@@ -51,8 +53,8 @@ export default function FinancePage() {
   });
 
   const payrollAgents = useMemo(
-    () => (agentsData?.items ?? []).map(mapPayrollAgentToUi),
-    [agentsData]
+    () => (agentsData?.items ?? []).map((agent) => mapPayrollAgentToUi(agent, payrollCurrency)),
+    [agentsData, payrollCurrency]
   );
 
   useEffect(() => {
@@ -82,7 +84,7 @@ export default function FinancePage() {
   });
 
   const selectedAgent = selectedAgentProfileQuery.data
-    ? mapPayrollProfileToUi(selectedAgentProfileQuery.data)
+    ? mapPayrollProfileToUi(selectedAgentProfileQuery.data, payrollCurrency)
     : selectedAgentSummary;
 
   const handleToggleFilter = () => {
@@ -197,7 +199,7 @@ export default function FinancePage() {
       </div>
       {/* Main Content */}
       <div className="px-5 sm:px-8 lg:px-10 py-6 space-y-6">
-        <PaymentOverview overview={overview ?? null} />
+        <PaymentOverview overview={overview ?? null} currency={payrollCurrency} />
 
         {/* Payroll List + Sidebar */}
         <div className="flex flex-col xl:flex-row gap-6">
