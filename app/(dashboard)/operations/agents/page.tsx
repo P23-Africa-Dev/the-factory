@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { ArrowLeft, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight, MapPin, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AddAgentModal } from '@/components/operations/add-agent-modal';
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from '@/components/operations/ops-table';
 import { useAuthStore } from '@/store/auth';
@@ -211,7 +211,7 @@ export default function AllAgentsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const onboardingStatusQuery = useInternalOnboardingStatus(companyId ?? undefined);
@@ -244,17 +244,14 @@ export default function AllAgentsPage() {
     .map((item) => item.assigned_zone)
     .filter((zone): zone is string => !!zone)))];
 
-  useEffect(() => {
-    if (filtered.length === 0) {
-      setSelectedAgent(null);
-      return;
+  const selectedAgent = useMemo(() => {
+    if (filtered.length === 0) return null;
+    if (selectedAgentId) {
+      return filtered.find((agent) => agent.id === selectedAgentId) ?? filtered[0];
     }
+    return filtered[0];
+  }, [filtered, selectedAgentId]);
 
-    setSelectedAgent((prev) => {
-      if (!prev) return filtered[0];
-      return filtered.find((agent) => agent.id === prev.id) ?? filtered[0];
-    });
-  }, [filtered]);
   const paginated = filtered;
 
   const handleSearch = (val: string) => { setSearch(val); setPage(1); };
@@ -420,7 +417,7 @@ export default function AllAgentsPage() {
                     key={agent.id}
                     agent={agent}
                     isSelected={selectedAgent?.id === agent.id}
-                    onClick={() => setSelectedAgent(agent)}
+                    onClick={() => setSelectedAgentId(agent.id)}
                   />
                 ))}
               </div>

@@ -9,6 +9,7 @@ import {
   createPayroll,
   updatePayroll,
   updatePayrollAgent,
+  approvePayrollAgent,
   type PayrollSettings,
   type CreatePayrollPayload,
   type UpdatePayrollPayload,
@@ -19,6 +20,7 @@ import {
   type PayrollOverviewParams,
   type PayrollAgentProfileParams,
   type UpdateAgentPayrollPayload,
+  type ApprovePayrollPayload,
 } from "@/lib/api/payroll";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 
@@ -132,6 +134,22 @@ export function useUpdateAgentPayroll(userId: number | string | undefined, optio
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: PAYROLL_KEYS.all });
       options?.onSuccess?.(res.data);
+    },
+  });
+}
+
+export function useApprovePayrollAgent(userId: number | string | undefined, options?: { onSuccess?: () => void }) {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useMutation({
+    mutationFn: (payload: ApprovePayrollPayload) => {
+      if (!userId) throw new Error("User ID is required for payroll approval.");
+      return approvePayrollAgent(userId, payload, token);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: PAYROLL_KEYS.all });
+      options?.onSuccess?.();
     },
   });
 }

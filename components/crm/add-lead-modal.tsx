@@ -83,17 +83,12 @@ export function AddLeadModal({
 
   const [errors, setErrors] = useState<FormErrors>({});
 
-  useEffect(() => {
-    if (!pipelineId && pipelines.length > 0) {
-      setPipelineId(String(pipelines[0].id));
-    }
-  }, [pipelineId, pipelines]);
-
-  useEffect(() => {
-    if (labels.length > 0 && !labels.some((label) => label.slug === status)) {
-      setStatus(labels[0].slug);
-    }
-  }, [labels, status]);
+  const effectivePipelineId =
+    pipelineId || (pipelines.length > 0 ? String(pipelines[0].id) : "");
+  const effectiveStatus: ApiLeadStatus =
+    labels.length > 0 && !labels.some((label) => label.slug === status)
+      ? labels[0].slug
+      : status;
 
   const { data: companyUsers = [], isLoading: loadingUsers } = useInternalUsers({
     company_id: !isAgentContext ? (companyId ?? undefined) : undefined,
@@ -124,7 +119,7 @@ export function AddLeadModal({
 
   const validate = (): FormErrors => {
     const e: FormErrors = {};
-    if (!pipelineId) e.pipelineId = "Pipeline is required.";
+    if (!effectivePipelineId) e.pipelineId = "Pipeline is required.";
     if (!name.trim()) e.name = "Name is required.";
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       e.email = "Enter a valid email address.";
@@ -169,7 +164,7 @@ export function AddLeadModal({
 
     const payload = {
       company_id: companyId,
-      pipeline_id: Number(pipelineId),
+      pipeline_id: Number(effectivePipelineId),
       name: name.trim(),
       email: email.trim() || null,
       phone: phone.trim() || null,

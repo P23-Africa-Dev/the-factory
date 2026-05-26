@@ -295,3 +295,24 @@ export function updatePayrollAgent(
     token,
   });
 }
+
+export type ApprovalAction = "approve" | "revoke";
+
+export type ApprovePayrollPayload = {
+  company_id: number | string;
+  action: ApprovalAction;
+  reason?: string;
+};
+
+export function approvePayrollAgent(
+  userId: number | string,
+  payload: ApprovePayrollPayload,
+  token: string
+): Promise<ApiEnvelope<PayrollAgentProfile>> {
+  return apiRequest<PayrollAgentProfile>({
+    method: "PATCH",
+    path: `/payroll/agents/${userId}/approval`,
+    body: payload,
+    token,
+  });
+}

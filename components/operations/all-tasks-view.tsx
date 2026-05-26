@@ -180,7 +180,7 @@ export function AllTasksView() {
           <span className="lg:hidden">Tasks Overview</span>
         </h1>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:justify-end min-w-0 mt-2 lg:mt-0 lg:-mt-16 xl:-mt-20 transition-all duration-300 relative z-10">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:justify-end min-w-0 mt-2 transition-all duration-300 relative z-10">
           <div className="relative w-full md:w-[458px] group shrink-0">
             <Search
               className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#09232D] transition-colors"
@@ -367,7 +367,7 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
 
 function isTaskNotCommenced(task: TaskApiItem): boolean {
   const hasAssignment =
-    task.assigned_users?.length > 0 ||
+    (task.assigned_users?.length ?? 0) > 0 ||
     !!task.assigned_agent_id ||
     !!task.assignee?.id;
 

@@ -426,6 +426,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
   const [containers, setContainers] = useState<DndContainer[]>(initialContainers);
   const [activeItem, setActiveItem] = useState<DndItem | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+<<<<<<< HEAD
   const containersRef = useRef<DndContainer[]>(initialContainers);
   const dragOriginRef = useRef<string | null>(null);
   // Active tab state for column navigation
@@ -454,6 +455,14 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
       return next;
     });
   }
+=======
+
+  const [activeTabId, setActiveTabId] = useState<string>(() => containers[0]?.id ?? "new");
+  const resolvedActiveTabId =
+    containers.length > 0 && !containers.some((c) => c.id === activeTabId)
+      ? containers[0].id
+      : activeTabId;
+>>>>>>> 7a1d5452c5fd8d4e1ed1c37c065844190d0fe8c1
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -549,7 +558,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
       {viewMode === "grid" && (
         <div className="flex md:hidden gap-1.5 overflow-x-auto px-4 pb-3 pt-1 border-b border-gray-100 shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {containers.map((c) => {
-            const isActive = activeTabId === c.id;
+            const isActive = resolvedActiveTabId === c.id;
             return (
               <button
                 key={c.id}
@@ -600,7 +609,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
                   items={container.items}
                   onAddCard={() => onAddClick?.(container.id as ApiLeadStatus)}
                   basePath={basePath}
-                  activeTabId={activeTabId}
+                  activeTabId={resolvedActiveTabId}
                   stages={stagesList}
                   onMoveToStage={async (leadId, targetStageId) => {
                     await onStatusChange(leadId, targetStageId as ApiLeadStatus);
@@ -616,7 +625,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
                   isDragOverlay
                   basePath={basePath}
                   stages={stagesList}
-                  currentStageId={activeTabId}
+                  currentStageId={resolvedActiveTabId}
                 />
               ) : null}
             </DragOverlay>
