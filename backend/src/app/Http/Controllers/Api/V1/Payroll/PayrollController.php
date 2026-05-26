@@ -6,9 +6,11 @@ namespace App\Http\Controllers\Api\V1\Payroll;
 
 use App\Http\Controllers\Concerns\ResolvesCompanyContextId;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Payroll\ApprovePayrollAgentRequest;
 use App\Http\Requests\Payroll\CreatePayrollRequest;
 use App\Http\Requests\Payroll\PayrollAgentListRequest;
 use App\Http\Requests\Payroll\PayrollAgentProfileRequest;
+use App\Http\Requests\Payroll\PayrollExportRequest;
 use App\Http\Requests\Payroll\PayrollOverviewRequest;
 use App\Http\Requests\Payroll\UpdatePayrollRequest;
 use App\Http\Requests\Payroll\UpdateAgentPayrollRequest;
@@ -18,6 +20,7 @@ use App\Models\User;
 use App\Services\Payroll\PayrollService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PayrollController extends Controller
 {
@@ -89,6 +92,36 @@ class PayrollController extends Controller
         return $this->success(
             message: 'Agent payroll updated successfully.',
             data: $profile,
+        );
+    }
+
+    public function approveAgentPayroll(ApprovePayrollAgentRequest $request, User $user): JsonResponse
+    {
+        $profile = $this->payrollService->approveAgentPayroll(
+            actor: $request->user(),
+            agentId: (int) $user->id,
+            data: $request->validated(),
+        );
+
+        return $this->success(
+            message: 'Payroll approval updated successfully.',
+            data: $profile,
+        );
+    }
+
+    public function export(PayrollExportRequest $request): StreamedResponse
+    {
+        $export = $this->payrollService->exportAgents(
+            user: $request->user(),
+            filters: $request->validated(),
+        );
+
+        return response()->streamDownload(
+            static function () use ($export): void {
+                echo $export['content'];
+            },
+            $export['filename'],
+            ['Content-Type' => $export['content_type']],
         );
     }
 

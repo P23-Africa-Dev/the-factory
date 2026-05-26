@@ -12,13 +12,15 @@ import {
 } from "@/components/payroll/payroll-list";
 import { PayrollSidebar } from "@/components/payroll/payroll-sidebar";
 import { SetPayrollModal } from "@/components/payroll/set-payroll-modal";
-import { usePayroll, usePayrollAgents, usePayrollAgentProfile, usePayrollOverview } from "@/hooks/use-payroll";
+import { usePayroll, usePayrollAgents, usePayrollAgentProfile, usePayrollExport, usePayrollOverview } from "@/hooks/use-payroll";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { formatPayrollDateLabel, nextPayrollStatusFilter, type PayrollStatusFilter } from "@/lib/payroll/page-controls";
 import { ArrowLeft, Search, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 export default function PayrollListPage() {
   const router = useRouter();
@@ -26,20 +28,21 @@ export default function PayrollListPage() {
   const [isPayrollModalOpen, setIsPayrollModalOpen] = useState(false);
   const [isAgentEditOpen, setIsAgentEditOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "approved" | "pending">("all");
+  const [statusFilter, setStatusFilter] = useState<PayrollStatusFilter>("all");
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const isAgent = role === "agent";
 
-  const { data: overview } = usePayrollOverview({ company_id: companyId ?? undefined });
+  const { data: overview } = usePayrollOverview({ company_id: companyId ?? undefined, date: selectedDate });
   const { data: existingPayroll } = usePayroll(companyId);
+  const exportMutation = usePayrollExport({ onSuccess: () => toast.success("Payroll export started.") });
   const { data: agentsData, isLoading: isUsersLoading } = usePayrollAgents({
     company_id: companyId ?? undefined,
     search: search || undefined,
     status: statusFilter === "all" ? undefined : statusFilter,
-    year: new Date().getFullYear(),
-    month: new Date().getMonth() + 1,
+    date: selectedDate,
     per_page: 100,
   });
 
@@ -71,8 +74,7 @@ export default function PayrollListPage() {
 
   const selectedAgentProfileQuery = usePayrollAgentProfile(selectedAgentId ?? undefined, {
     company_id: companyId ?? undefined,
-    year: new Date().getFullYear(),
-    month: new Date().getMonth() + 1,
+    date: selectedDate,
   });
 
   const selectedAgent = selectedAgentProfileQuery.data
@@ -80,10 +82,20 @@ export default function PayrollListPage() {
     : selectedAgentSummary;
 
   const handleToggleFilter = () => {
-    setStatusFilter((current) => {
-      if (current === "all") return "approved";
-      if (current === "approved") return "pending";
-      return "all";
+    setStatusFilter((current) => nextPayrollStatusFilter(current));
+  };
+
+  const handleExport = (format: "csv" | "xls") => {
+    if (!companyId || isAgent) {
+      return;
+    }
+
+    exportMutation.mutate({
+      company_id: companyId,
+      search: search || undefined,
+      status: statusFilter === "all" ? undefined : statusFilter,
+      date: selectedDate,
+      format,
     });
   };
 
@@ -115,24 +127,34 @@ export default function PayrollListPage() {
 
         <div className="flex items-center gap-4.25 flex-wrap">
           <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
-            <Image
-              src={CalendarIcon}
-              alt="Calendar Icon"
-              width={13}
-              height={13}
-            />
-            April 16, 2026
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Image
+                src={CalendarIcon}
+                alt="Calendar Icon"
+                width={13}
+                height={13}
+              />
+              {formatPayrollDateLabel(selectedDate)}
+              <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="sr-only" />
+            </label>
           </button>
-          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
-            <Image
-              src={FileExportIcon}
-              alt="Export Icon"
-              width={13}
-              height={13}
-              style={{ filter: "invert(40%) sepia(0%) grayscale(100%)" }}
-            />
-            Export
-          </button>
+          {!isAgent && (
+            <div className="flex items-center rounded-[10px] border border-gray-200 overflow-hidden text-[10px] text-gray-500 transition-all">
+              <button type="button" onClick={() => handleExport("csv")} disabled={exportMutation.isPending} className="flex items-center gap-2 px-2.5 py-[8.5px] hover:bg-gray-50 disabled:opacity-50">
+                <Image
+                  src={FileExportIcon}
+                  alt="Export Icon"
+                  width={13}
+                  height={13}
+                  style={{ filter: "invert(40%) sepia(0%) grayscale(100%)" }}
+                />
+                CSV
+              </button>
+              <button type="button" onClick={() => handleExport("xls")} disabled={exportMutation.isPending} className="border-l border-gray-200 px-2.5 py-[8.5px] hover:bg-gray-50 disabled:opacity-50">
+                Excel
+              </button>
+            </div>
+          )}
           <button onClick={handleToggleFilter} className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
             <SlidersHorizontal size={13} />
             Filter: {statusFilter}
@@ -180,7 +202,9 @@ export default function PayrollListPage() {
                 agent={selectedAgent}
                 onEditPayroll={() => setIsAgentEditOpen(true)}
                 companyId={companyId ?? undefined}
-                onApprovalSuccess={() => {}}
+                onApprovalSuccess={() => {
+                  selectedAgentProfileQuery.refetch();
+                }}
               />
             </div>
 

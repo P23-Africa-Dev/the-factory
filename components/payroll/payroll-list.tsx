@@ -17,7 +17,7 @@ export interface PayrollAgent {
   baseSalary: string;
   netPay: string;
   role: string;
-  status: "Pending" | "Approved";
+  status: "Pending" | "Approved" | "Revoked";
 }
 
 export function mapInternalUserToPayrollAgent(user: InternalUserListItem): PayrollAgent {

@@ -194,11 +194,15 @@ Route::middleware('auth:sanctum')->group(function (): void {
             Route::prefix('payroll')->name('payroll.')->group(function (): void {
                 Route::get('/', [PayrollController::class, 'index'])->name('index');
                 Route::get('/overview', [PayrollController::class, 'overview'])->name('overview');
+                Route::get('/export', [PayrollController::class, 'export'])->name('export');
                 Route::get('/agents', [PayrollController::class, 'agents'])->name('agents.index');
                 Route::get('/agents/{user}', [PayrollController::class, 'agentProfile'])->name('agents.show');
                 Route::patch('/agents/{user}', [PayrollController::class, 'updateAgentPayroll'])
                     ->middleware('throttle:20,1')
                     ->name('agents.update');
+                Route::patch('/agents/{user}/approval', [PayrollController::class, 'approveAgentPayroll'])
+                    ->middleware('throttle:20,1')
+                    ->name('agents.approval');
                 Route::post('/', [PayrollController::class, 'store'])
                     ->middleware('throttle:20,1')
                     ->name('store');
@@ -415,11 +419,17 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::prefix('payroll')->name('payroll.')->group(function (): void {
         Route::get('/', [PayrollController::class, 'index'])->name('index');
         Route::get('/overview', [PayrollController::class, 'overview'])->name('overview');
+        Route::get('/export', [PayrollController::class, 'export'])
+            ->middleware('access.role:management')
+            ->name('export');
         Route::get('/agents', [PayrollController::class, 'agents'])->name('agents.index');
         Route::get('/agents/{user}', [PayrollController::class, 'agentProfile'])->name('agents.show');
         Route::patch('/agents/{user}', [PayrollController::class, 'updateAgentPayroll'])
             ->middleware(['access.role:management', 'throttle:20,1'])
             ->name('agents.update');
+        Route::patch('/agents/{user}/approval', [PayrollController::class, 'approveAgentPayroll'])
+            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->name('agents.approval');
         Route::post('/', [PayrollController::class, 'store'])
             ->middleware('throttle:20,1')
             ->name('store');

@@ -10,6 +10,7 @@ import {
   updatePayroll,
   updatePayrollAgent,
   approvePayrollAgent,
+  downloadPayrollExport,
   type PayrollSettings,
   type CreatePayrollPayload,
   type UpdatePayrollPayload,
@@ -21,6 +22,7 @@ import {
   type PayrollAgentProfileParams,
   type UpdateAgentPayrollPayload,
   type ApprovePayrollPayload,
+  type PayrollExportParams,
 } from "@/lib/api/payroll";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 
@@ -149,6 +151,27 @@ export function useApprovePayrollAgent(userId: number | string | undefined, opti
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PAYROLL_KEYS.all });
+      options?.onSuccess?.();
+    },
+  });
+}
+
+export function usePayrollExport(options?: { onSuccess?: () => void }) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useMutation({
+    mutationFn: async (params: PayrollExportParams) => {
+      const { blob, filename } = await downloadPayrollExport(params, token);
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    },
+    onSuccess: () => {
       options?.onSuccess?.();
     },
   });
