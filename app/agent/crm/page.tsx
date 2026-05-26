@@ -426,17 +426,21 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
   const [containers, setContainers] = useState<DndContainer[]>(initialContainers);
   const [activeItem, setActiveItem] = useState<DndItem | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-<<<<<<< HEAD
   const containersRef = useRef<DndContainer[]>(initialContainers);
   const dragOriginRef = useRef<string | null>(null);
-  // Active tab state for column navigation
   const [activeTabId, setActiveTabId] = useState<string>(() => initialContainers[0]?.id ?? "newly_lead");
-  // Sync activeTabId with containers changes
+
   useEffect(() => {
     if (initialContainers.length > 0 && !initialContainers.some(c => c.id === activeTabId)) {
       setActiveTabId(initialContainers[0].id);
     }
   }, [initialContainers, activeTabId]);
+
+  const resolvedActiveTabId =
+    containers.length > 0 && !containers.some((c) => c.id === activeTabId)
+      ? containers[0].id
+      : activeTabId;
+
   const [prevInitialContainers, setPrevInitialContainers] = useState(initialContainers);
 
   if (initialContainers !== prevInitialContainers) {
@@ -455,14 +459,6 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
       return next;
     });
   }
-=======
-
-  const [activeTabId, setActiveTabId] = useState<string>(() => containers[0]?.id ?? "new");
-  const resolvedActiveTabId =
-    containers.length > 0 && !containers.some((c) => c.id === activeTabId)
-      ? containers[0].id
-      : activeTabId;
->>>>>>> 7a1d5452c5fd8d4e1ed1c37c065844190d0fe8c1
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
