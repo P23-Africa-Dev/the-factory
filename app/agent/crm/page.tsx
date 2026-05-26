@@ -1,7 +1,12 @@
 "use client";
 
-import { useDragAndDrop } from "@/lib/hooks/use-tasks-dnd";
 import type { DndContainer, DndItem } from "@/types/operations";
+import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
+import { useAuthStore } from "@/store/auth";
+import { getActiveCompanyContext } from "@/lib/company-context";
+import { useAgentUploadsOverview, useCrmLabels, useCrmPipelines, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { AddLeadModal } from "@/components/crm/add-lead-modal";
+import { ImportLeadsModal } from "@/components/crm/crm-toolbar-modals";
 import { useDroppable } from "@dnd-kit/core";
 import {
   DndContext,
@@ -36,8 +41,9 @@ import {
   SlidersHorizontal,
   Tag,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useState, useEffect, useMemo, useSyncExternalStore } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { toast } from "sonner";
 import {
   Area,
   AreaChart,
@@ -47,6 +53,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { formatDistanceToNowStrict, parseISO } from "date-fns";
 
 const chartData = [
   { day: "Mon", value: 180 },
@@ -57,244 +64,53 @@ const chartData = [
   { day: "Sat", value: 420 },
 ];
 
-const CRM_INITIAL_DATA: DndContainer[] = [
-  {
-    id: "new",
-    title: "New Leads",
-    color: "#2563EB",
-    items: [
-      {
-        id: "lead-1",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "lead-8",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "lead-9",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-    ],
-  },
-  {
-    id: "proposal-sent",
-    title: "Proposal Sent",
-    color: "#F59E0B",
-    items: [
-      {
-        id: "lead-2",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "lead-10",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "lead-11",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-    ],
-  },
-  {
-    id: "contacted",
-    title: "Contacted",
-    color: "#E879A0",
-    items: [
-      {
-        id: "lead-3",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "lead-12",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "lead-13",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-    ],
-  },
-  {
-    id: "unqualified",
-    title: "Unqualified",
-    color: "#1A1F2C",
-    items: [
-      {
-        id: "lead-4",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "lead-14",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "lead-15",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-    ],
-  },
-  {
-    id: "qualified",
-    title: "Qualified",
-    color: "#10B981",
-    items: [
-      {
-        id: "lead-5",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "lead-16",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "lead-17",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-    ],
-  },
-  {
-    id: "lost",
-    title: "Lost",
-    color: "#EF4444",
-    items: [
-      {
-        id: "lead-6",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "lead-18",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "lead-19",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-    ],
-  },
-  {
-    id: "won",
-    title: "Won",
-    color: "#166534",
-    items: [
-      {
-        id: "lead-7",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-      {
-        id: "lead-20",
-        label: "Francis Nasyomba",
-        description: "Raisin Capital Limited",
-        location: "40010",
-        assignedBy: "Unassigned",
-        time: "12 hours ago",
-        category: "agent",
-      },
-    ],
-  },
+const DEFAULT_STAGES: Array<{ id: ApiLeadStatus; title: string; color: string }> = [
+  { id: "newly_lead", title: "Newly Lead", color: "#2563EB" },
+  { id: "proposal_sent", title: "Proposal Sent", color: "#F59E0B" },
+  { id: "contacted", title: "Contacted", color: "#E879A0" },
+  { id: "qualified", title: "Qualified", color: "#10B981" },
 ];
+
+const AGENT_UPLOAD_SOURCE_FILTER = "agent_upload";
+
+function toRelativeTime(value?: string | null): string {
+  if (!value) return "Just now";
+  try { return `${formatDistanceToNowStrict(parseISO(value))} ago`; } catch { return "Just now"; }
+}
+
+function mapLeadToItem(lead: LeadApiItem): DndItem {
+  return {
+    id: String(lead.id),
+    label: lead.name,
+    description: lead.location || lead.source || lead.email || lead.phone || "No details",
+    location: "0",
+    assignedBy: lead.assignee?.name ?? "Unassigned",
+    time: toRelativeTime(lead.updated_at),
+    priority: lead.priority ?? "medium",
+  };
+}
+
+function buildContainers(leads: LeadApiItem[], stages: Array<{ id: ApiLeadStatus; title: string; color: string }>): DndContainer[] {
+  const grouped = new Map<ApiLeadStatus, DndItem[]>();
+  stages.forEach((s) => grouped.set(s.id, []));
+  leads.forEach((lead) => {
+    const status = (lead.status ?? "newly_lead") as ApiLeadStatus;
+    grouped.get(status)?.push(mapLeadToItem(lead));
+  });
+  return stages.map((s) => ({ id: s.id, title: s.title, color: s.color, items: grouped.get(s.id) ?? [] }));
+}
+
+function findContainerForItem(containers: DndContainer[], id: string): DndContainer | undefined {
+  if (containers.some((c) => c.id === id)) return containers.find((c) => c.id === id);
+  return containers.find((c) => c.items.some((i) => i.id === id));
+}
 
 /* ─── Lead Card ─────────────────────────────────────────── */
 
 function LeadCard({
   item,
   isDragOverlay,
-  basePath = "/crm",
+  basePath = "/agent/crm",
   stages,
   currentStageId,
   onMoveToStage,
@@ -334,7 +150,7 @@ function LeadCard({
 
       <div className="flex items-center justify-between mt-3">
         <span className="text-[#0B1215] font-bold text-[13px]">
-          ₦ {amount}
+          $ {amount}
         </span>
         <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-3 py-0.5 rounded-full">
           Medium
@@ -393,7 +209,7 @@ function LeadColumn({
   title: string;
   color: string;
   items: DndItem[];
-  onAddCard: (item: DndItem) => void;
+  onAddCard: () => void;
   basePath?: string;
   activeTabId?: string;
   stages?: Array<{ id: string; title: string; color: string }>;
@@ -403,9 +219,8 @@ function LeadColumn({
 
   return (
     <div
-      className={`flex flex-col w-full md:w-55 shrink-0 md:shrink-0 ${
-        activeTabId ? (id === activeTabId ? "flex" : "hidden md:flex") : ""
-      }`}
+      className={`flex flex-col w-full md:w-55 shrink-0 md:shrink-0 ${activeTabId ? (id === activeTabId ? "flex" : "hidden md:flex") : ""
+        }`}
     >
       {/* Header */}
       <div
@@ -421,15 +236,14 @@ function LeadColumn({
             {items.length < 10 ? `0${items.length}` : items.length}
           </div>
         </div>
-        <span className="text-white text-[12px] font-medium">₦ 342,000</span>
+        <span className="text-white text-[12px] font-medium">$ 342,000</span>
       </div>
 
       {/* Cards */}
       <div
         ref={setNodeRef}
-        className={`flex-1 relative z-10 -mt-6 transition-colors duration-200 min-h-50 flex flex-col ${
-          isOver ? "bg-gray-100/60 rounded-[20px] ring-2 ring-inset ring-gray-200" : ""
-        }`}
+        className={`flex-1 relative z-10 -mt-6 transition-colors duration-200 min-h-50 flex flex-col ${isOver ? "bg-gray-100/60 rounded-[20px] ring-2 ring-inset ring-gray-200" : ""
+          }`}
       >
         <SortableContext
           items={items.map((i) => i.id)}
@@ -450,17 +264,8 @@ function LeadColumn({
         </SortableContext>
 
         <button
-          onClick={() =>
-            onAddCard({
-              id: `lead-${Date.now()}`,
-              label: "New Lead",
-              description: "Company Name",
-              location: "0",
-              assignedBy: "Unassigned",
-              time: "Just now",
-            })
-          }
-          className="w-full flex items-center justify-between px-3 py-2.5 text-gray-400 hover:text-[#0B1215] transition-colors group mt-auto pt-3"
+          onClick={() => onAddCard()}
+          className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-gray-400 hover:text-[#0B1215] transition-colors group mt-4"
         >
           <span className="text-[11px] font-medium">Add Leads</span>
           <div className="w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center group-hover:border-[#0B1215] transition-colors">
@@ -474,7 +279,7 @@ function LeadColumn({
 
 /* ─── List View ─────────────────────────────────────────── */
 
-function LeadListView({ containers, basePath = "/crm" }: { containers: DndContainer[]; basePath?: string }) {
+function LeadListView({ containers, basePath = "/agent/crm" }: { containers: DndContainer[]; basePath?: string }) {
   const router = useRouter();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -516,7 +321,7 @@ function LeadListView({ containers, basePath = "/crm" }: { containers: DndContai
                 {container.items.length} leads
               </span>
               <span className="text-[12px] font-semibold text-gray-500 mr-2">
-                ₦ {(total).toLocaleString()}
+                $ {(total).toLocaleString()}
               </span>
               <ChevronRight
                 size={14}
@@ -531,9 +336,8 @@ function LeadListView({ containers, basePath = "/crm" }: { containers: DndContai
                   <div
                     key={item.id}
                     onClick={() => router.push(`${basePath}/leads/${item.id}`)}
-                    className={`relative grid grid-cols-1 md:grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-2 md:gap-4 items-start md:items-center px-4 py-3 rounded-xl transition-colors cursor-pointer hover:bg-gray-50 group/row ${
-                      idx % 2 === 0 ? "" : "bg-gray-50/50"
-                    }`}
+                    className={`relative grid grid-cols-1 md:grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-2 md:gap-4 items-start md:items-center px-4 py-3 rounded-xl transition-colors cursor-pointer hover:bg-gray-50 group/row ${idx % 2 === 0 ? "" : "bg-gray-50/50"
+                      }`}
                   >
                     {/* Lead name */}
                     <div className="flex items-center gap-2.5 min-w-0 pr-8 md:pr-0">
@@ -562,7 +366,7 @@ function LeadListView({ containers, basePath = "/crm" }: { containers: DndContai
 
                       {/* Amount */}
                       <span className="text-[13px] font-bold text-[#0B1215]">
-                        ₦ {Number(item.location).toLocaleString()}
+                        $ {Number(item.location).toLocaleString()}
                       </span>
 
                       {/* Priority badge */}
@@ -603,37 +407,53 @@ function LeadListView({ containers, basePath = "/crm" }: { containers: DndContai
           {allLeads.length} total leads across {containers.length} stages
         </span>
         <span className="text-[13px] font-bold text-[#0B1215]">
-          ₦ {(allLeads.length * 40010).toLocaleString()} pipeline value
+          $ {(allLeads.length * 40010).toLocaleString()} pipeline value
         </span>
       </div>
     </div>
   );
 }
 
-/* ─── Lead Board ─────────────────────────────────────────── */
-
-function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
+function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, onStatusChange, onAddClick, isLoading }: {
+  basePath?: string;
+  leadListUrl?: string;
+  initialContainers: DndContainer[];
+  onStatusChange: (leadId: string, status: ApiLeadStatus) => Promise<void>;
+  onAddClick?: (status: ApiLeadStatus) => void;
+  isLoading?: boolean;
+}) {
   const router = useRouter();
-  const {
-    containers,
-    addItem,
-    moveItem,
-    moveToContainer,
-    moveBetweenContainers,
-    findContainer,
-  } = useDragAndDrop(CRM_INITIAL_DATA);
-
+  const [containers, setContainers] = useState<DndContainer[]>(initialContainers);
   const [activeItem, setActiveItem] = useState<DndItem | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-
-  const [activeTabId, setActiveTabId] = useState<string>(() => containers[0]?.id ?? "new");
-
-  // Sync activeTabId if containers change and current activeTabId is not in the containers
+  const containersRef = useRef<DndContainer[]>(initialContainers);
+  const dragOriginRef = useRef<string | null>(null);
+  // Active tab state for column navigation
+  const [activeTabId, setActiveTabId] = useState<string>(() => initialContainers[0]?.id ?? "newly_lead");
+  // Sync activeTabId with containers changes
   useEffect(() => {
-    if (containers.length > 0 && !containers.some(c => c.id === activeTabId)) {
-      setActiveTabId(containers[0].id);
+    if (initialContainers.length > 0 && !initialContainers.some(c => c.id === activeTabId)) {
+      setActiveTabId(initialContainers[0].id);
     }
-  }, [containers, activeTabId]);
+  }, [initialContainers, activeTabId]);
+  const [prevInitialContainers, setPrevInitialContainers] = useState(initialContainers);
+
+  if (initialContainers !== prevInitialContainers) {
+    setPrevInitialContainers(initialContainers);
+    setContainers(initialContainers);
+  }
+
+  useEffect(() => {
+    containersRef.current = containers;
+  }, [containers]);
+
+  function apply(updater: DndContainer[] | ((prev: DndContainer[]) => DndContainer[])) {
+    setContainers((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      containersRef.current = next;
+      return next;
+    });
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -642,44 +462,47 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
   );
 
   function handleDragStart(event: DragStartEvent) {
-    const container = findContainer(event.active.id as string);
-    const item = container?.items.find((i) => i.id === event.active.id);
-    setActiveItem(item ?? null);
+    const itemId = String(event.active.id);
+    const container = findContainerForItem(containersRef.current, itemId);
+    dragOriginRef.current = container?.id ?? null;
+    setActiveItem(container?.items.find((i) => i.id === itemId) ?? null);
   }
 
   function handleDragOver(event: DragOverEvent) {
     const { active, over } = event;
     if (!over) return;
-    const activeId = active.id as string;
-    const overId = over.id as string;
-    const activeContainer = findContainer(activeId);
-    const overIsContainer = containers.some((c) => c.id === overId);
-    const overContainer = overIsContainer
-      ? containers.find((c) => c.id === overId)
-      : findContainer(overId);
-    if (!activeContainer || !overContainer) return;
-    if (activeContainer.id === overContainer.id) return;
-    if (overIsContainer) {
-      moveToContainer(activeId, overId);
-    } else {
-      moveBetweenContainers(activeId, overId, activeContainer.id, overContainer.id);
-    }
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    apply((prev) => {
+      const ac = findContainerForItem(prev, activeId);
+      const oc = findContainerForItem(prev, overId);
+      if (!ac || !oc || ac.id === oc.id) return prev;
+      const item = ac.items.find((i) => i.id === activeId);
+      if (!item) return prev;
+      const next = prev.map((c) => ({ ...c, items: [...c.items] }));
+      const na = next.find((c) => c.id === ac.id)!;
+      const no2 = next.find((c) => c.id === oc.id)!;
+      na.items = na.items.filter((i) => i.id !== activeId);
+      const oi = no2.items.findIndex((i) => i.id === overId);
+      if (oi >= 0) no2.items.splice(oi, 0, item); else no2.items.push(item);
+      return next;
+    });
   }
 
-  function handleDragEnd(event: DragEndEvent) {
+  async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     setActiveItem(null);
-    if (!over) return;
-    const activeId = active.id as string;
-    const overId = over.id as string;
-    const activeContainer = findContainer(activeId);
-    const overIsContainer = containers.some((c) => c.id === overId);
-    const overContainer = overIsContainer
-      ? containers.find((c) => c.id === overId)
-      : findContainer(overId);
-    if (!activeContainer || !overContainer) return;
-    if (activeId !== overId && activeContainer.id === overContainer.id) {
-      moveItem(activeId, overId, activeContainer.id);
+    const activeId = String(active.id);
+    const origin = dragOriginRef.current;
+    dragOriginRef.current = null;
+    if (!over || !origin) { apply(initialContainers); return; }
+    const dest = findContainerForItem(containersRef.current, activeId);
+    if (!dest) { apply(initialContainers); return; }
+    if (origin === dest.id) return; // same column reorder, no API call needed
+    try {
+      await onStatusChange(activeId, dest.id as ApiLeadStatus);
+    } catch {
+      apply(initialContainers);
     }
   }
 
@@ -687,12 +510,20 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
     return containers.map((c) => ({ id: c.id, title: c.title, color: c.color }));
   }, [containers]);
 
+  if (isLoading) {
+    return (
+      <div className="bg-white shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] mt-6 overflow-hidden flex items-center justify-center h-[calc(100vh-360px)] min-h-[70vh]">
+        <p className="text-[13px] text-gray-400">Loading CRM leads…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] mt-6 overflow-hidden flex flex-col h-[calc(100vh-360px)] min-h-[70vh]">
       {/* Board toolbar */}
       <div className="flex items-center justify-end gap-3 px-6 pt-4 pb-2">
         <button
-          onClick={() => router.push(`${basePath}/leads`)}
+          onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)}
           className="text-[11px] font-medium bg-[#0B1215] text-white px-4 py-1.5 rounded-lg hover:opacity-90 transition-all"
         >
           View All Leads
@@ -700,17 +531,15 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
         <div className="flex items-center gap-1">
           <button
             onClick={() => setViewMode("grid")}
-            className={`p-1.5 rounded-md transition-colors ${
-              viewMode === "grid" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
-            }`}
+            className={`p-1.5 rounded-md transition-colors ${viewMode === "grid" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
+              }`}
           >
             <LayoutGrid size={16} />
           </button>
           <button
             onClick={() => setViewMode("list")}
-            className={`p-1.5 rounded-md transition-colors ${
-              viewMode === "list" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
-            }`}
+            className={`p-1.5 rounded-md transition-colors ${viewMode === "list" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
+              }`}
           >
             <List size={16} />
           </button>
@@ -752,7 +581,6 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
           <LeadListView containers={containers} basePath={basePath} />
         </div>
       ) : (
-        /* Kanban columns */
         <div className="flex-1 overflow-x-auto overflow-y-auto pb-6">
           <DndContext
             id="crm-board"
@@ -770,11 +598,13 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
                   title={container.title}
                   color={container.color}
                   items={container.items}
-                  onAddCard={(item) => addItem(container.id, item)}
+                  onAddCard={() => onAddClick?.(container.id as ApiLeadStatus)}
                   basePath={basePath}
                   activeTabId={activeTabId}
                   stages={stagesList}
-                  onMoveToStage={moveToContainer}
+                  onMoveToStage={async (leadId, targetStageId) => {
+                    await onStatusChange(leadId, targetStageId as ApiLeadStatus);
+                  }}
                 />
               ))}
             </div>
@@ -799,7 +629,7 @@ function LeadBoard({ basePath = "/crm" }: { basePath?: string }) {
 
 /* ─── Summary Cards ──────────────────────────────────────── */
 
-function TotalLeadsCard() {
+function TotalLeadsCard({ totalLeads = 0 }: { totalLeads?: number }) {
   return (
     <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex flex-col justify-between min-w-0 sm:min-w-85">
       <div className="flex justify-between items-start">
@@ -813,7 +643,7 @@ function TotalLeadsCard() {
         <div>
           <div className="flex gap-1.5 items-end">
             <span className="text-[50px] font-medium text-[#0B1215] leading-none tracking-tight">
-              4,100
+              {totalLeads.toLocaleString()}
             </span>
             <span className="text-[#34373C] text-[15px] font-semibold mb-1">Leads</span>
           </div>
@@ -845,7 +675,7 @@ function TotalLeadsCard() {
 
 function LeadsChart() {
   const isClient = useSyncExternalStore(
-    () => () => {},
+    () => () => { },
     () => true,
     () => false,
   );
@@ -907,8 +737,22 @@ function LeadsChart() {
   );
 }
 
-function AgentUploadsCard({ basePath = "/crm" }: { basePath?: string }) {
+function AgentUploadsCard({
+  basePath = "/agent/crm",
+  leadListUrl,
+  totalUploadedLeads = 0,
+  topAgentAvatarUrl,
+  recentLeadNames,
+}: {
+  basePath?: string;
+  leadListUrl?: string;
+  totalUploadedLeads?: number;
+  topAgentAvatarUrl?: string | null;
+  recentLeadNames?: string[];
+}) {
   const router = useRouter();
+  const previewText = (recentLeadNames ?? []).slice(0, 2).join(", ");
+
   return (
     <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex items-center gap-5 min-w-0 sm:min-w-70">
       {/* Avatar with ring */}
@@ -923,7 +767,7 @@ function AgentUploadsCard({ basePath = "/crm" }: { basePath?: string }) {
           <div className="w-full h-full rounded-full overflow-hidden bg-white">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/images/avatar/agent.png"
+              src={topAgentAvatarUrl || "/images/avatar/agent.png"}
               alt="Agent"
               className="w-full h-full object-cover"
               onError={(e) => {
@@ -938,11 +782,13 @@ function AgentUploadsCard({ basePath = "/crm" }: { basePath?: string }) {
       {/* Stats */}
       <div className="flex flex-col gap-1">
         <div className="flex items-baseline gap-1.5">
-          <span className="text-[36px] font-bold text-[#0B1215] leading-none">1,430</span>
+          <span className="text-[36px] font-bold text-[#0B1215] leading-none">{totalUploadedLeads.toLocaleString()}</span>
           <span className="text-[#9CA3AF] text-[13px] font-medium">Leads</span>
         </div>
-        <p className="text-[#6B7280] text-[12px]">Uploaded by your Agents</p>
-        <button onClick={() => router.push(`${basePath}/leads`)} className="flex items-center gap-1 text-[12px] font-semibold text-[#0B1215] mt-1 hover:opacity-70 transition-opacity">
+        <p className="text-[#6B7280] text-[12px]">
+          Uploaded by your Agents{previewText ? ` • ${previewText}` : ""}
+        </p>
+        <button onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)} className="flex items-center gap-1 text-[12px] font-semibold text-[#0B1215] mt-1 hover:opacity-70 transition-opacity">
           View Leads
           <ChevronRight size={14} />
         </button>
@@ -951,10 +797,76 @@ function AgentUploadsCard({ basePath = "/crm" }: { basePath?: string }) {
   );
 }
 
-/* ─── Page ───────────────────────────────────────────────── */
-
 export default function CRMPage() {
   const basePath = "/agent/crm";
+  const apiBasePath = "/agent" as const;
+  const searchParams = useSearchParams();
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+
+  const sourceParam = (searchParams.get("source") ?? "").trim().toLowerCase();
+  const agentUploadScope = [
+    "agent_upload",
+    "agent uploaded",
+    "agent upload",
+    "uploaded_by_agent",
+    "uploaded by agent",
+    "uploaded_by_agents",
+    "uploaded by agents",
+  ].includes(sourceParam);
+  const leadListUrl = `${basePath}/leads?source=${encodeURIComponent(AGENT_UPLOAD_SOURCE_FILTER)}`;
+
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [defaultStatus, setDefaultStatus] = useState<ApiLeadStatus>("newly_lead");
+  const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
+  const [selectedLabel, setSelectedLabel] = useState<string>("all");
+  const [showFilter, setShowFilter] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+
+  const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
+  const { data: labels = [] } = useCrmLabels(companyId ?? undefined, apiBasePath);
+  const { data: agentUploadsOverview } = useAgentUploadsOverview(companyId ?? undefined, apiBasePath);
+
+  const stages = useMemo(() => {
+    if (!labels.length) return DEFAULT_STAGES;
+    return labels.map((label) => ({ id: label.slug, title: label.name, color: label.color }));
+  }, [labels]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const { data, isLoading, refetch } = useLeads(
+    {
+      company_id: companyId ?? undefined,
+      search: debouncedSearch || undefined,
+      page: 1,
+      pipeline_id: selectedPipelineId ?? undefined,
+      status: selectedLabel === "all" ? undefined : selectedLabel,
+      source: agentUploadScope ? AGENT_UPLOAD_SOURCE_FILTER : undefined,
+    },
+    apiBasePath
+  );
+
+  const initialContainers = useMemo(() => buildContainers(data?.leads ?? [], stages), [data?.leads, stages]);
+  const totalLeads = data?.leads?.length ?? 0;
+
+  const updateMutation = useUpdateLead(undefined, apiBasePath);
+
+  async function persistStatusChange(leadId: string, status: ApiLeadStatus) {
+    try {
+      await updateMutation.mutateAsync({ leadId, payload: { company_id: companyId ?? "", status } });
+      toast.success("Lead status updated");
+      await refetch();
+    } catch {
+      toast.error("Could not update lead status. Reverting...");
+      throw new Error("status update failed");
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
       <div className="max-w-350 mx-auto flex flex-col gap-5">
@@ -967,45 +879,118 @@ export default function CRMPage() {
             />
             <input
               type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
               placeholder="Search for Leads"
               className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
             />
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
-              All Pipeline
+            <button onClick={() => setShowFilter((prev) => !prev)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+              {selectedPipelineId
+                ? (pipelines.find((pipeline) => pipeline.id === selectedPipelineId)?.name ?? "All Pipeline")
+                : "All Pipeline"}
               <ChevronDown size={13} />
             </button>
-            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button onClick={() => setShowFilter((prev) => !prev)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <Tag size={13} />
               Label
             </button>
-            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button onClick={() => setShowFilter((prev) => !prev)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <SlidersHorizontal size={13} />
               Filter
             </button>
-            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <Import size={13} />
               Import
             </button>
-            <button className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all">
+            <button
+              onClick={() => { setDefaultStatus("newly_lead"); setIsAddModalOpen(true); }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all"
+            >
               Add New Leads
               <BookmarkPlus size={15} />
             </button>
           </div>
         </div>
 
+        {showFilter && (
+          <div className="bg-white rounded-[14px] border border-gray-100 p-3 flex flex-wrap items-center gap-2">
+            <select
+              value={selectedPipelineId ?? ""}
+              onChange={(e) => setSelectedPipelineId(e.target.value ? Number(e.target.value) : null)}
+              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px]"
+            >
+              <option value="">All Pipelines</option>
+              {pipelines.map((pipeline) => (
+                <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>
+              ))}
+            </select>
+            <select
+              value={selectedLabel}
+              onChange={(e) => setSelectedLabel(e.target.value)}
+              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px]"
+            >
+              <option value="all">All Labels</option>
+              {labels.map((label) => (
+                <option key={label.id} value={label.slug}>{label.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => {
+                setSelectedPipelineId(null);
+                setSelectedLabel("all");
+              }}
+              className="px-3 py-2 border border-red-200 text-red-500 rounded-[10px] text-[12px]"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         {/* Summary cards */}
         <div className="flex flex-col lg:flex-row gap-4 items-stretch">
-          <TotalLeadsCard />
+          <TotalLeadsCard totalLeads={totalLeads} />
           <LeadsChart />
-          <AgentUploadsCard basePath={basePath} />
+          <AgentUploadsCard
+            basePath={basePath}
+            leadListUrl={leadListUrl}
+            totalUploadedLeads={agentUploadsOverview?.total_uploaded_leads ?? 0}
+            topAgentAvatarUrl={agentUploadsOverview?.top_agent?.avatar_url ?? null}
+            recentLeadNames={(agentUploadsOverview?.recent_leads ?? []).map((lead) => lead.name)}
+          />
         </div>
 
         {/* Pipeline board */}
-        <LeadBoard basePath={basePath} />
+        <LeadBoard
+          basePath={basePath}
+          leadListUrl={agentUploadScope ? leadListUrl : undefined}
+          initialContainers={initialContainers}
+          onStatusChange={persistStatusChange}
+          onAddClick={(status) => { setDefaultStatus(status); setIsAddModalOpen(true); }}
+          isLoading={isLoading}
+        />
       </div>
+
+      {isAddModalOpen && (
+        <AddLeadModal
+          onClose={() => setIsAddModalOpen(false)}
+          apiBasePath={apiBasePath}
+          defaultStatus={defaultStatus}
+        />
+      )}
+
+      {showImportModal && companyId && (
+        <ImportLeadsModal
+          companyId={companyId}
+          apiBasePath={apiBasePath}
+          pipelines={pipelines}
+          labels={labels}
+          defaultPipelineId={selectedPipelineId}
+          onClose={() => setShowImportModal(false)}
+        />
+      )}
     </div>
   );
 }

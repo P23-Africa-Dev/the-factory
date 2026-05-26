@@ -322,11 +322,20 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
             Route::prefix('crm')->name('crm.')->group(function (): void {
                 Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
+                Route::post('/leads', [LeadController::class, 'store'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.store');
+                Route::post('/leads/import', [LeadController::class, 'import'])
+                    ->middleware('throttle:20,1')
+                    ->name('leads.import');
                 Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
                 Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
                 Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
                 Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
                 Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
+                Route::patch('/leads/{lead}', [LeadController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.update');
                 Route::post('/leads/{lead}/notes', [LeadController::class, 'storeNote'])
                     ->middleware('throttle:60,1')
                     ->name('leads.notes.store');
