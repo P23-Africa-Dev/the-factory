@@ -382,6 +382,24 @@ class LeadService
             }
         }
 
+        if ($topAgent === null) {
+            $fallbackAgent = $this->resolveFallbackAgentForUploadsOverview(
+                companyId: $resolvedCompanyId,
+                role: $role,
+                actor: $user,
+            );
+
+            if ($fallbackAgent !== null) {
+                $topAgent = [
+                    'id' => (int) $fallbackAgent->id,
+                    'name' => (string) $fallbackAgent->name,
+                    'email' => (string) $fallbackAgent->email,
+                    'avatar_url' => AvatarUrlResolver::resolve($fallbackAgent->avatar, $fallbackAgent->gender),
+                    'total_uploads' => 0,
+                ];
+            }
+        }
+
         $recentLeads = (clone $baseQuery)
             ->with(['creator:id,name,email,avatar,gender'])
             ->latest('id')
@@ -411,6 +429,25 @@ class LeadService
             'recent_leads' => $recentLeads,
             'source_filter' => 'agent_upload',
         ];
+    }
+
+    private function resolveFallbackAgentForUploadsOverview(int $companyId, string $role, User $actor): ?User
+    {
+        if ($role === 'agent') {
+            return $actor;
+        }
+
+        return User::query()
+            ->select('users.id', 'users.name', 'users.email', 'users.avatar', 'users.gender')
+            ->join('company_users', 'company_users.user_id', '=', 'users.id')
+            ->where('company_users.company_id', $companyId)
+            ->where(function (Builder $builder): void {
+                $builder->where('company_users.role', 'agent')
+                    ->orWhere('users.internal_role', 'agent');
+            })
+            ->orderBy('users.created_at')
+            ->orderBy('users.id')
+            ->first();
     }
 
     public function listPipelines(User $user, ?int $companyId = null): Collection

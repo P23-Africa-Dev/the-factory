@@ -343,6 +343,69 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.pagination.total', 2);
     }
 
+    public function test_agent_upload_overview_falls_back_to_first_created_agent_when_no_uploads_and_switches_to_top_uploader(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $agent->forceFill([
+            'name' => 'First Agent',
+            'created_at' => now()->subMinutes(10),
+            'updated_at' => now()->subMinutes(10),
+        ])->save();
+
+        $laterAgent = User::factory()->create([
+            'name' => 'Top Uploader Agent',
+            'email_verified_at' => now(),
+            'created_at' => now()->subMinutes(5),
+            'updated_at' => now()->subMinutes(5),
+        ]);
+
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $laterAgent->id,
+            'role' => 'agent',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $noUploadResponse = $this->withToken($admin->createToken('admin-no-upload-overview', ['*'])->plainTextToken)
+            ->getJson('/api/v1/crm/leads/agent-uploads-overview?company_id=' . $company->id);
+
+        $noUploadResponse->assertOk()
+            ->assertJsonPath('data.total_uploaded_leads', 0)
+            ->assertJsonPath('data.top_agent.id', $agent->id)
+            ->assertJsonPath('data.top_agent.total_uploads', 0);
+
+        Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $laterAgent->id,
+            'name' => 'Later Agent Upload One',
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+            'source' => 'uploaded by agents',
+        ]);
+
+        Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $laterAgent->id,
+            'name' => 'Later Agent Upload Two',
+            'status' => 'newly_lead',
+            'priority' => 'high',
+            'source' => 'agent_upload',
+        ]);
+
+        $uploadedResponse = $this->withToken($admin->createToken('admin-after-upload-overview', ['*'])->plainTextToken)
+            ->getJson('/api/v1/crm/leads/agent-uploads-overview?company_id=' . $company->id);
+
+        $uploadedResponse->assertOk()
+            ->assertJsonPath('data.total_uploaded_leads', 2)
+            ->assertJsonPath('data.top_agent.id', $laterAgent->id)
+            ->assertJsonPath('data.top_agent.total_uploads', 2);
+    }
+
     private function seedCompanyUsers(): array
     {
         $company = Company::create([
