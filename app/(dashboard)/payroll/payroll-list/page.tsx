@@ -179,6 +179,8 @@ export default function PayrollListPage() {
               <PayrollSidebar
                 agent={selectedAgent}
                 onEditPayroll={() => setIsAgentEditOpen(true)}
+                companyId={companyId ?? undefined}
+                onApprovalSuccess={() => {}}
               />
             </div>
 
