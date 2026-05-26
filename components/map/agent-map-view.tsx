@@ -23,8 +23,11 @@ import {
     VISUAL_PALETTE,
 } from '@/lib/tracking/map-visualization';
 import { fetchDirectionsRoute, clearDirectionsCache } from '@/lib/tracking/directions';
+import {
+    getCountryFallbackViewport,
+    resolvePrivacySafeViewport,
+} from '@/lib/map/default-viewport';
 
-const DEFAULT_CENTER: [number, number] = [3.36, 6.595];
 const MARKER_ANIMATION_MS = 700;
 
 function getDestinationMarkerKind(status: 'in_progress' | 'near_destination' | 'arrived' | 'completed') {
@@ -94,12 +97,13 @@ export function AgentMapView() {
     useEffect(() => {
         if (!mapContainer.current || mapRef.current || !token) return;
         mapboxgl.accessToken = token;
+        const initialViewport = getCountryFallbackViewport();
 
         const map = new mapboxgl.Map({
             container: mapContainer.current,
             style: 'mapbox://styles/mapbox/light-v11',
-            center: DEFAULT_CENTER,
-            zoom: 14.5,
+            center: initialViewport.center,
+            zoom: initialViewport.zoom,
             attributionControl: false,
             transformRequest: createMapboxTransformRequest(),
         });
@@ -186,6 +190,29 @@ export function AgentMapView() {
             clearDirectionsCache();
         };
     }, [token]);
+
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || !mapLoadedRef.current || activeTask) return;
+
+        let cancelled = false;
+
+        resolvePrivacySafeViewport().then((viewport) => {
+            if (cancelled || !mapRef.current || useTrackingStore.getState().activeTrackingTaskId) {
+                return;
+            }
+
+            mapRef.current.easeTo({
+                center: viewport.center,
+                zoom: viewport.zoom,
+                duration: 900,
+            });
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeTask]);
 
     useEffect(() => {
         const map = mapRef.current;

@@ -26,6 +26,10 @@ import {
   type VisualTaskState,
 } from '@/lib/tracking/map-visualization';
 import { fetchDirectionsRoute, clearDirectionsCache } from '@/lib/tracking/directions';
+import {
+  getCountryFallbackViewport,
+  resolvePrivacySafeViewport,
+} from '@/lib/map/default-viewport';
 
 const STALE_MS = 2 * 60_000;
 const MARKER_ANIMATION_MS = 700;
@@ -57,6 +61,10 @@ interface MapViewProps {
   compact?: boolean;
 }
 
+function hasUsableTaskPosition(task: LiveTaskState): boolean {
+  return task.lastPosition[0] !== 0 || task.lastPosition[1] !== 0;
+}
+
 export function MapView({ compact = false }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -84,6 +92,10 @@ export function MapView({ compact = false }: MapViewProps) {
   const wsStatus = useTrackingStore((s) => s.wsStatus);
 
   const tasks = useMemo(() => Object.values(liveTasks), [liveTasks]);
+  const hasActiveTaskPositions = useMemo(
+    () => tasks.some((task) => hasUsableTaskPosition(task)),
+    [tasks]
+  );
   const selectedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
   const token = getMapboxPublicToken();
 
@@ -208,12 +220,13 @@ export function MapView({ compact = false }: MapViewProps) {
   useEffect(() => {
     if (!mapContainer.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
+    const initialViewport = getCountryFallbackViewport();
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/light-v11',
-      center: [3.36, 6.595],
-      zoom: compact ? 12.5 : 14.5,
+      center: initialViewport.center,
+      zoom: compact ? Math.max(initialViewport.zoom, 5.4) : initialViewport.zoom,
       attributionControl: false,
       transformRequest: createMapboxTransformRequest(),
       ...(compact && { interactive: false }),
@@ -305,15 +318,46 @@ export function MapView({ compact = false }: MapViewProps) {
     };
   }, [token, compact]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current || hasActiveTaskPositions) {
+      return;
+    }
+
+    let cancelled = false;
+
+    resolvePrivacySafeViewport().then((viewport) => {
+      if (cancelled || !mapRef.current) {
+        return;
+      }
+
+      const stillIdle = Object.values(useTrackingStore.getState().liveTasks).every(
+        (task) => !hasUsableTaskPosition(task)
+      );
+
+      if (!stillIdle) {
+        return;
+      }
+
+      mapRef.current.easeTo({
+        center: viewport.center,
+        zoom: compact ? Math.max(viewport.zoom - 0.6, 5.4) : viewport.zoom,
+        duration: 900,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [compact, hasActiveTaskPositions, mapVersion]);
+
   // ── Sync live tasks → markers + routes ───────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoadedRef.current) return;
 
     const now = nowMs || Date.now();
-    const validTasks = tasks.filter(
-      (t) => t.lastPosition[0] !== 0 || t.lastPosition[1] !== 0
-    );
+    const validTasks = tasks.filter((t) => hasUsableTaskPosition(t));
     const validIds = new Set(validTasks.map((t) => t.taskId));
     const routeFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     const destinationIds = new Set<number>();

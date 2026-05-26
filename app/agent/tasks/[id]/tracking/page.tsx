@@ -20,6 +20,10 @@ import { CompleteTaskSheet } from '@/components/tracking/CompleteTaskSheet';
 import { useTrackingStore } from '@/store/tracking';
 import type { GeoReading } from '@/types/tracking';
 import {
+  getCountryFallbackViewport,
+  resolvePrivacySafeViewport,
+} from '@/lib/map/default-viewport';
+import {
   areSamePoint,
   buildDirectionSegment,
   buildTaskTrail,
@@ -62,18 +66,19 @@ function TrackingMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     mapboxgl.accessToken = MAPBOX_TOKEN;
+    const fallbackViewport = getCountryFallbackViewport();
 
     const center: [number, number] = agentPosition
       ? agentPosition
       : destination
         ? [destination.lng, destination.lat]
-        : [3.36, 6.595];
+        : fallbackViewport.center;
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
       style: 'mapbox://styles/mapbox/light-v11',
       center,
-      zoom: 15,
+      zoom: agentPosition || destination ? 15 : fallbackViewport.zoom,
       interactive: true,
       transformRequest: createMapboxTransformRequest(),
     });
@@ -178,6 +183,29 @@ function TrackingMap({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current || agentPosition || destination) return;
+
+    let cancelled = false;
+
+    resolvePrivacySafeViewport().then((viewport) => {
+      if (cancelled || !mapRef.current || agentPosition || destination) {
+        return;
+      }
+
+      mapRef.current.easeTo({
+        center: viewport.center,
+        zoom: viewport.zoom,
+        duration: 900,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agentPosition, destination]);
 
   // Update agent marker on new position
   useEffect(() => {
