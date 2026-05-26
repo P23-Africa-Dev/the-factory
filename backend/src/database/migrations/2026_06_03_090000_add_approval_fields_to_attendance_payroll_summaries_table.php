@@ -9,10 +9,16 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    private const TABLE = 'attendance_payroll_summaries';
+    private const LEGACY_UNIQUE = 'attendance_payroll_summaries_unique_period';
+    private const LEGACY_SUPPORT_INDEX = 'attendance_payroll_summaries_period_legacy_index';
+    private const CYCLE_UNIQUE = 'attendance_payroll_summaries_unique_cycle_period';
+    private const CYCLE_INDEX = 'attendance_payroll_summaries_cycle_period_index';
+
     public function up(): void
     {
-        Schema::table('attendance_payroll_summaries', function (Blueprint $table): void {
-            if (Schema::hasColumn('attendance_payroll_summaries', 'cycle_type')) {
+        Schema::table(self::TABLE, function (Blueprint $table): void {
+            if (Schema::hasColumn(self::TABLE, 'cycle_type')) {
                 return;
             }
 
@@ -25,36 +31,57 @@ return new class extends Migration
             $table->text('approval_reason')->nullable()->after('revoked_by_user_id');
         });
 
-        DB::table('attendance_payroll_summaries')
+        DB::table(self::TABLE)
             ->whereNull('cycle_type')
             ->update([
                 'cycle_type' => 'monthly',
                 'status' => 'pending',
             ]);
 
-        Schema::table('attendance_payroll_summaries', function (Blueprint $table): void {
-            $table->dropUnique('attendance_payroll_summaries_unique_period');
-            $table->unique(
-                ['company_id', 'user_id', 'cycle_type', 'period_start', 'period_end'],
-                'attendance_payroll_summaries_unique_cycle_period'
-            );
-            $table->index(['company_id', 'cycle_type', 'period_start', 'period_end'], 'attendance_payroll_summaries_cycle_period_index');
-        });
+        // Keep FK compatibility on MySQL by ensuring an alternate index exists
+        // before dropping the old unique key.
+        if (! $this->indexExists(self::TABLE, self::LEGACY_SUPPORT_INDEX)) {
+            Schema::table(self::TABLE, function (Blueprint $table): void {
+                $table->index(['company_id', 'user_id', 'period_year', 'period_month'], self::LEGACY_SUPPORT_INDEX);
+            });
+        }
+
+        if ($this->indexExists(self::TABLE, self::LEGACY_UNIQUE)) {
+            Schema::table(self::TABLE, function (Blueprint $table): void {
+                $table->dropUnique(self::LEGACY_UNIQUE);
+            });
+        }
+
+        if (! $this->indexExists(self::TABLE, self::CYCLE_UNIQUE)) {
+            Schema::table(self::TABLE, function (Blueprint $table): void {
+                $table->unique(
+                    ['company_id', 'user_id', 'cycle_type', 'period_start', 'period_end'],
+                    self::CYCLE_UNIQUE
+                );
+            });
+        }
+
+        if (! $this->indexExists(self::TABLE, self::CYCLE_INDEX)) {
+            Schema::table(self::TABLE, function (Blueprint $table): void {
+                $table->index(['company_id', 'cycle_type', 'period_start', 'period_end'], self::CYCLE_INDEX);
+            });
+        }
     }
 
     public function down(): void
     {
-        Schema::table('attendance_payroll_summaries', function (Blueprint $table): void {
-            if (! Schema::hasColumn('attendance_payroll_summaries', 'cycle_type')) {
+        Schema::table(self::TABLE, function (Blueprint $table): void {
+            if (! Schema::hasColumn(self::TABLE, 'cycle_type')) {
                 return;
             }
 
-            $table->dropUnique('attendance_payroll_summaries_unique_cycle_period');
-            $table->dropIndex('attendance_payroll_summaries_cycle_period_index');
-            $table->unique(['company_id', 'user_id', 'period_year', 'period_month'], 'attendance_payroll_summaries_unique_period');
+            if (Schema::hasColumn(self::TABLE, 'approved_by_user_id')) {
+                $table->dropConstrainedForeignId('approved_by_user_id');
+            }
+            if (Schema::hasColumn(self::TABLE, 'revoked_by_user_id')) {
+                $table->dropConstrainedForeignId('revoked_by_user_id');
+            }
 
-            $table->dropConstrainedForeignId('approved_by_user_id');
-            $table->dropConstrainedForeignId('revoked_by_user_id');
             $table->dropColumn([
                 'cycle_type',
                 'status',
@@ -63,5 +90,38 @@ return new class extends Migration
                 'approval_reason',
             ]);
         });
+
+        if ($this->indexExists(self::TABLE, self::CYCLE_UNIQUE)) {
+            Schema::table(self::TABLE, function (Blueprint $table): void {
+                $table->dropUnique(self::CYCLE_UNIQUE);
+            });
+        }
+
+        if ($this->indexExists(self::TABLE, self::CYCLE_INDEX)) {
+            Schema::table(self::TABLE, function (Blueprint $table): void {
+                $table->dropIndex(self::CYCLE_INDEX);
+            });
+        }
+
+        if (! $this->indexExists(self::TABLE, self::LEGACY_UNIQUE)) {
+            Schema::table(self::TABLE, function (Blueprint $table): void {
+                $table->unique(['company_id', 'user_id', 'period_year', 'period_month'], self::LEGACY_UNIQUE);
+            });
+        }
+
+        if ($this->indexExists(self::TABLE, self::LEGACY_SUPPORT_INDEX)) {
+            Schema::table(self::TABLE, function (Blueprint $table): void {
+                $table->dropIndex(self::LEGACY_SUPPORT_INDEX);
+            });
+        }
+    }
+
+    private function indexExists(string $table, string $indexName): bool
+    {
+        return DB::table('information_schema.statistics')
+            ->where('table_schema', DB::getDatabaseName())
+            ->where('table_name', $table)
+            ->where('index_name', $indexName)
+            ->exists();
     }
 };
