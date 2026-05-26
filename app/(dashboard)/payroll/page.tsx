@@ -180,6 +180,8 @@ export default function FinancePage() {
               <PayrollSidebar
                 agent={selectedAgent}
                 onEditPayroll={() => setIsAgentEditOpen(true)}
+                companyId={companyId ?? undefined}
+                onApprovalSuccess={() => {}}
               />
             </div>
           </div>
