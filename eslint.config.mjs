@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Monorepo/backend and generated artifacts not part of Next.js lint scope:
+    "backend/**",
+    "coverage/**",
+    "dist/**",
   ]),
 ]);
 
