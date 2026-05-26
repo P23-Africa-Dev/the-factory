@@ -155,133 +155,138 @@ export function AgentView({ basePath }: { basePath: string }) {
           {/* Filter toggle — icon before text */}
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${showFilters ? 'text-white' : 'text-gray-500'
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${showFilters ? "text-white" : "text-gray-500"}`}
+            style={{
+              background: showFilters ? "#34373C" : "#F8F8F8",
+              border: showFilters ? "0.5px solid #34373C" : "0.5px solid #D1D1D1",
+              boxShadow: showFilters ? "none" : "0 2px 8px rgba(0, 0, 0, 0.06)",
+            }}
+          >
+            <SlidersHorizontal size={14} strokeWidth={2} />
+            <span
+              style={{
+                fontFamily: "Poppins, sans-serif",
+                fontWeight: 400,
+                fontStyle: "normal",
+                fontSize: "10px",
+                lineHeight: "100%",
+                letterSpacing: "0%",
+                verticalAlign: "middle",
+              }}
+            >
+              Filter
+            </span>
+          </button>
+
+          {/* Create — shorter than search */}
+          <button
+            onClick={() => setShowAddAgent(true)}
+            className="flex items-center gap-2 px-5 py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
+            style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
+          >
+            <BookmarkPlus size={15} strokeWidth={2} />
+            <span className="hidden sm:inline whitespace-nowrap">Add New Agent</span>
+            <span className="sm:hidden">New</span>
+          </button>
+        </div>
+      </div>
 
       {showFilters && (
-              <div className="flex flex-wrap gap-3 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
-                <div className="flex flex-col gap-1">
-                  <label className="text-[11px] font-bold text-gray-400 px-1">Role</label>
-                  <select
-                    value={roleFilter}
-                    onChange={(e) => {
-                      setRoleFilter(e.target.value as "all" | "agent" | "supervisor");
-                      setPage(1);
-                    }}
-                    className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
-                  >
-                    <option value="all">All Roles</option>
-                    <option value="agent">Field Agent</option>
-                    <option value="supervisor">Supervisor</option>
-                  </select>
-                </div>
+        <div className="flex flex-wrap gap-3 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-gray-400 px-1">Role</label>
+            <select
+              value={roleFilter}
+              onChange={(e) => {
+                setRoleFilter(e.target.value as "all" | "agent" | "supervisor");
+                setPage(1);
+              }}
+              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
+            >
+              <option value="all">All Roles</option>
+              <option value="agent">Field Agent</option>
+              <option value="supervisor">Supervisor</option>
+            </select>
+          </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="text-[11px] font-bold text-gray-400 px-1">Status</label>
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => {
-                      setStatusFilter(e.target.value as "all" | "active" | "offline" | "pending");
-                      setPage(1);
-                    }}
-                    className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="active">Active</option>
-                    <option value="offline">Offline</option>
-                    <option value="pending">Pending Onboarding</option>
-                  </select>
-                </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-gray-400 px-1">Status</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value as "all" | "active" | "offline" | "pending");
+                setPage(1);
+              }}
+              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="offline">Offline</option>
+              <option value="pending">Pending Onboarding</option>
+            </select>
+          </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="text-[11px] font-bold text-gray-400 px-1">Zone</label>
-                  <select
-                    value={zoneFilter}
-                    onChange={(e) => {
-                      setZoneFilter(e.target.value);
-                      setPage(1);
-                    }}
-                    className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
-                  >
-                    <option value="all">All Zones</option>
-                    {zones.filter((zone) => zone !== "all").map((zone) => (
-                      <option key={zone} value={zone}>{zone}</option>
-                    ))}
-                  </select>
-                </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-gray-400 px-1">Zone</label>
+            <select
+              value={zoneFilter}
+              onChange={(e) => {
+                setZoneFilter(e.target.value);
+                setPage(1);
+              }}
+              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
+            >
+              <option value="all">All Zones</option>
+              {zones
+                .filter((zone) => zone !== "all")
+                .map((zone) => (
+                  <option key={zone} value={zone}>
+                    {zone}
+                  </option>
+                ))}
+            </select>
+          </div>
 
-                {(roleFilter !== "all" || statusFilter !== "all" || zoneFilter !== "all" || search.trim() !== "") && (
-                  <div className="flex flex-col justify-end">
-                    <button
-                      onClick={clearFilters}
-                      className="px-4 py-2 rounded-full text-[12px] font-bold text-red-400 hover:bg-red-50 transition-all border border-red-200"
-                    >
-                      Clear filters
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-              }`}
-          style={{
-            background: showFilters ? '#34373C' : '#F8F8F8',
-            border: showFilters ? '0.5px solid #34373C' : '0.5px solid #D1D1D1',
-            boxShadow: showFilters ? 'none' : '0 2px 8px rgba(0, 0, 0, 0.06)'
-          }}
-          >
-          <SlidersHorizontal size={14} strokeWidth={2} />
-          <span style={{
-            fontFamily: 'Poppins, sans-serif',
-            fontWeight: 400,
-            fontStyle: 'normal',
-            fontSize: '10px',
-            lineHeight: '100%',
-            letterSpacing: '0%',
-            verticalAlign: 'middle'
-          }}>
-            Filter
-          </span>
-        </button>
-
-        {/* Create — shorter than search */}
-        <button
-          onClick={() => setShowAddAgent(true)}
-          className="flex items-center gap-2 px-5 py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
-          style={{ boxShadow: '0 4px 14px rgba(9, 35, 45, 0.3)' }}
-        >
-          <BookmarkPlus size={15} strokeWidth={2} />
-          <span className="hidden sm:inline whitespace-nowrap">Add New Agent</span>
-          <span className="sm:hidden">New</span>
-        </button>
-      </div>
-    </div>
-
-      {/* ── Content ───────────────────────────────────────────── */ }
-  <div className="flex flex-col xl:flex-row gap-5 mt-2">
-    <div className="flex-1 min-w-0 flex flex-col gap-5">
-      <AgentCurveChart />
-      {isLoading ? (
-        <div className="bg-white rounded-3xl p-8 text-[13px] text-gray-400 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
-          Loading agents...
+          {(roleFilter !== "all" || statusFilter !== "all" || zoneFilter !== "all" || search.trim() !== "") && (
+            <div className="flex flex-col justify-end">
+              <button
+                onClick={clearFilters}
+                className="px-4 py-2 rounded-full text-[12px] font-bold text-red-400 hover:bg-red-50 transition-all border border-red-200"
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
         </div>
-      ) : (
-        <AgentList
-          agents={agents}
-          basePath={basePath}
-          selectedId={selectedAgent?.id}
-          onSelect={(agent) => setSelectedAgentId(agent.id)}
-          page={currentPage}
-          totalPages={totalPages}
-          totalItems={totalItems}
-          pageSize={pagination?.per_page ?? 4}
-          onPageChange={setPage}
-        />
       )}
-    </div>
-    <AgentSidebar agent={selectedAgent} />
-  </div>
 
-  {/* ── Modal ─────────────────────────────────────────────── */ }
-  { showAddAgent && <AddAgentModal onClose={() => setShowAddAgent(false)} /> }
+      {/* ── Content ───────────────────────────────────────────── */}
+      <div className="flex flex-col xl:flex-row gap-5 mt-2">
+        <div className="flex-1 min-w-0 flex flex-col gap-5">
+          <AgentCurveChart />
+          {isLoading ? (
+            <div className="bg-white rounded-3xl p-8 text-[13px] text-gray-400 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+              Loading agents...
+            </div>
+          ) : (
+            <AgentList
+              agents={agents}
+              basePath={basePath}
+              selectedId={selectedAgent?.id}
+              onSelect={(agent) => setSelectedAgentId(agent.id)}
+              page={currentPage}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              pageSize={pagination?.per_page ?? 4}
+              onPageChange={setPage}
+            />
+          )}
+        </div>
+        <AgentSidebar agent={selectedAgent} />
+      </div>
+
+      {/* ── Modal ─────────────────────────────────────────────── */}
+      {showAddAgent && <AddAgentModal onClose={() => setShowAddAgent(false)} />}
     </div >
   );
 }
