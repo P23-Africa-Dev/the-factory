@@ -56,8 +56,9 @@ Query params:
 - Base payroll settings are stored in `payroll_settings`.
 - Per-agent overrides are stored on the `users` table.
 - `attendance_affects_pay` determines whether the agent’s payable salary is derived from attendance presence or from the base salary directly.
+- Per-agent `salary_type`, `base_salary`, and `salary_currency` overrides take priority over company defaults.
 - `work_days_override` replaces the default work-day denominator when present.
-- `daily_pay` is computed from `base_salary / work_days`.
+- `daily_pay` is computed from the resolved salary type. Daily salaries use the configured daily amount directly.
 - Attendance payroll summaries are generated from attendance records and the active payroll settings.
 
 ## Agent Payroll Profile Shape

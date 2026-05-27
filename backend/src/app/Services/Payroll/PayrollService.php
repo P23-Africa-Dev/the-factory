@@ -64,11 +64,12 @@ class PayrollService
             companyCurrency: $context->company->currency_code,
             fallbackCurrency: null,
         );
+        $salaryType = strtolower((string) $data['salary_type']);
 
         $workDays = (int) $data['work_days'];
         $baseSalary = (float) $data['base_salary'];
 
-        $setting = DB::transaction(function () use ($context, $data, $currency, $workDays, $baseSalary): PayrollSetting {
+        $setting = DB::transaction(function () use ($context, $data, $currency, $workDays, $baseSalary, $salaryType): PayrollSetting {
             return PayrollSetting::query()->create([
                 'company_id' => $context->company->id,
                 'salary_type' => $data['salary_type'],
@@ -76,7 +77,7 @@ class PayrollService
                 'currency' => $currency,
                 'work_days' => $workDays,
                 'work_hours' => (int) $data['work_hours'],
-                'daily_pay' => $this->calculateDailyPay($baseSalary, $workDays),
+                'daily_pay' => $this->calculateDailyPay($baseSalary, $workDays, $salaryType),
                 'attendance_affects_pay' => (bool) ($data['attendance_affects_pay'] ?? false),
                 'commission_enabled' => (bool) ($data['commission_enabled'] ?? false),
             ]);
@@ -108,14 +109,15 @@ class PayrollService
             companyCurrency: $context->company->currency_code,
             fallbackCurrency: $payrollSetting->currency,
         );
+        $salaryType = strtolower((string) ($data['salary_type'] ?? $payrollSetting->salary_type?->value ?? 'monthly'));
 
         $payrollSetting->update([
-            'salary_type' => $data['salary_type'] ?? $payrollSetting->salary_type?->value,
+            'salary_type' => $salaryType,
             'base_salary' => $baseSalary,
             'currency' => $currency,
             'work_days' => $workDays,
             'work_hours' => (int) ($data['work_hours'] ?? $payrollSetting->work_hours),
-            'daily_pay' => $this->calculateDailyPay($baseSalary, $workDays),
+            'daily_pay' => $this->calculateDailyPay($baseSalary, $workDays, $salaryType),
             'attendance_affects_pay' => (bool) ($data['attendance_affects_pay'] ?? $payrollSetting->attendance_affects_pay),
             'commission_enabled' => (bool) ($data['commission_enabled'] ?? $payrollSetting->commission_enabled),
         ]);
@@ -342,7 +344,9 @@ class PayrollService
 
         if (array_key_exists('base_salary', $data)) {
             $updates['base_salary'] = (float) $data['base_salary'];
-            $updates['salary_currency'] = strtoupper((string) ($agent->salary_currency ?: $payrollSetting?->currency ?: $context->company->currency_code ?: 'NGN'));
+            $updates['salary_currency'] = strtoupper((string) ($data['currency_code'] ?? $agent->salary_currency ?: $payrollSetting?->currency ?: $context->company->currency_code ?: 'NGN'));
+        } elseif (array_key_exists('currency_code', $data)) {
+            $updates['salary_currency'] = strtoupper((string) ($data['currency_code'] ?: $agent->salary_currency ?: $payrollSetting?->currency ?: $context->company->currency_code ?: 'NGN'));
         }
 
         if (array_key_exists('salary_type', $data)) {
@@ -560,13 +564,16 @@ class PayrollService
             ->get()
             ->map(static function (AttendancePayrollSummary $summary): array {
                 $monthDate = Carbon::parse((string) $summary->period_start);
+                $isDailyCycle = (string) $summary->cycle_type === 'daily';
 
                 return [
                     'id' => (int) $summary->id,
                     'month' => $monthDate->format('F'),
                     'period_year' => (int) $summary->period_year,
                     'period_month' => (int) $summary->period_month,
-                    'base_salary' => round((float) $summary->daily_rate * (int) $summary->scheduled_work_days, 2),
+                    'base_salary' => $isDailyCycle
+                        ? round((float) $summary->daily_rate, 2)
+                        : round((float) $summary->daily_rate * (int) $summary->scheduled_work_days, 2),
                     'net_pay' => round((float) $summary->salary_payable, 2),
                     'due_date' => $summary->period_end?->toDateString(),
                     'status' => ucfirst((string) $summary->status),
@@ -616,6 +623,10 @@ class PayrollService
             ? (bool) $agent->payroll_attendance_affects_pay
             : (bool) ($payrollSetting?->attendance_affects_pay ?? false);
 
+        if ($salaryType === 'daily') {
+            $attendanceAffectsPay = true;
+        }
+
         $derivedWorkDays = $this->deriveMonthlyWorkDays(
             periodStart: $periodStart,
             periodEnd: $periodEnd,
@@ -635,7 +646,7 @@ class PayrollService
             fallbackHours: (int) ($payrollSetting?->work_hours ?? 8),
         );
 
-        $dailyPay = $workDays > 0 ? round($baseSalary / $workDays, 2) : 0.0;
+        $dailyPay = $this->calculateDailyPay($baseSalary, $workDays, $salaryType);
         $currency = strtoupper((string) ($agent->salary_currency ?: $payrollSetting?->currency ?: 'NGN'));
 
         return [
@@ -715,13 +726,21 @@ class PayrollService
 
     private function resolvePayrollPeriod(Carbon $date, string $salaryType): array
     {
-        $cycleType = strtolower($salaryType) === 'weekly' ? 'weekly' : 'monthly';
-        $periodStart = $cycleType === 'weekly'
-            ? $date->copy()->startOfWeek(Carbon::MONDAY)
-            : $date->copy()->startOfMonth();
-        $periodEnd = $cycleType === 'weekly'
-            ? $date->copy()->endOfWeek(Carbon::SUNDAY)
-            : $date->copy()->endOfMonth();
+        $cycleType = strtolower($salaryType);
+        if (! in_array($cycleType, ['daily', 'weekly', 'monthly'], true)) {
+            $cycleType = 'monthly';
+        }
+
+        $periodStart = match ($cycleType) {
+            'daily' => $date->copy()->startOfDay(),
+            'weekly' => $date->copy()->startOfWeek(Carbon::MONDAY),
+            default => $date->copy()->startOfMonth(),
+        };
+        $periodEnd = match ($cycleType) {
+            'daily' => $date->copy()->endOfDay(),
+            'weekly' => $date->copy()->endOfWeek(Carbon::SUNDAY),
+            default => $date->copy()->endOfMonth(),
+        };
 
         return [
             'cycle_type' => $cycleType,
@@ -761,7 +780,7 @@ class PayrollService
             ->whereIn('status', self::PRESENT_STATUSES)
             ->count();
 
-        $salaryPayable = $effective['attendance_affects_pay']
+        $salaryPayable = ($effective['attendance_affects_pay'] || (string) $effective['salary_type'] === 'daily')
             ? round((float) $effective['daily_pay'] * $attendanceDays, 2)
             : round((float) $effective['base_salary'], 2);
 
@@ -788,6 +807,7 @@ class PayrollService
                     'actual_attendance_days' => $attendanceDays,
                     'actor_user_id' => $actorUserId,
                     'salary_type' => (string) $effective['salary_type'],
+                    'base_salary' => round((float) $effective['base_salary'], 2),
                 ],
             ],
         );
@@ -820,7 +840,7 @@ class PayrollService
                 'assigned_zone' => $agent->assigned_zone,
                 'role' => 'Agent',
                 'status' => ucfirst((string) $summary->status),
-                'base_salary' => round((float) $summary->daily_rate * (int) $summary->scheduled_work_days, 2),
+                'base_salary' => round((float) ($summary->metadata['base_salary'] ?? $summary->salary_payable), 2),
                 'daily_pay' => round((float) $summary->daily_rate, 2),
                 'net_pay' => round((float) $summary->salary_payable, 2),
                 'attendance_days' => (int) $summary->attendance_days,
@@ -934,9 +954,13 @@ class PayrollService
         return $agent;
     }
 
-    private function calculateDailyPay(float $baseSalary, int $workDays): float
+    private function calculateDailyPay(float $baseSalary, int $workDays, string $salaryType = 'monthly'): float
     {
-        return round($baseSalary / $workDays, 2);
+        if ($salaryType === 'daily') {
+            return round($baseSalary, 2);
+        }
+
+        return round($baseSalary / max($workDays, 1), 2);
     }
 
     private function assertSettingInCompany(PayrollSetting $payrollSetting, int $companyId): void

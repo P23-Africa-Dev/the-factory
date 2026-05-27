@@ -96,8 +96,8 @@ function ApprovalModal({
             <div className="ml-auto shrink-0">
               <span
                 className={`text-[10px] font-semibold px-3 py-1 rounded-full ${isPending
-                    ? "bg-amber-400/20 text-amber-300 ring-1 ring-amber-400/40"
-                    : "bg-emerald-400/20 text-emerald-300 ring-1 ring-emerald-400/40"
+                  ? "bg-amber-400/20 text-amber-300 ring-1 ring-amber-400/40"
+                  : "bg-emerald-400/20 text-emerald-300 ring-1 ring-emerald-400/40"
                   }`}
               >
                 {agent.status}
@@ -119,10 +119,10 @@ function ApprovalModal({
               disabled={!canApprove}
               onClick={() => setSelectedAction("approve")}
               className={`relative flex flex-col items-center gap-2 rounded-2xl p-4 border-2 transition-all ${!canApprove
-                  ? "opacity-30 cursor-not-allowed border-gray-100 bg-gray-50"
-                  : selectedAction === "approve"
-                    ? "border-emerald-500 bg-emerald-50"
-                    : "border-gray-100 bg-gray-50 hover:border-emerald-200 hover:bg-emerald-50/40"
+                ? "opacity-30 cursor-not-allowed border-gray-100 bg-gray-50"
+                : selectedAction === "approve"
+                  ? "border-emerald-500 bg-emerald-50"
+                  : "border-gray-100 bg-gray-50 hover:border-emerald-200 hover:bg-emerald-50/40"
                 }`}
             >
               <CheckCircle2
@@ -142,10 +142,10 @@ function ApprovalModal({
               disabled={!canRevoke}
               onClick={() => setSelectedAction("revoke")}
               className={`relative flex flex-col items-center gap-2 rounded-2xl p-4 border-2 transition-all ${!canRevoke
-                  ? "opacity-30 cursor-not-allowed border-gray-100 bg-gray-50"
-                  : selectedAction === "revoke"
-                    ? "border-rose-500 bg-rose-50"
-                    : "border-gray-100 bg-gray-50 hover:border-rose-200 hover:bg-rose-50/40"
+                ? "opacity-30 cursor-not-allowed border-gray-100 bg-gray-50"
+                : selectedAction === "revoke"
+                  ? "border-rose-500 bg-rose-50"
+                  : "border-gray-100 bg-gray-50 hover:border-rose-200 hover:bg-rose-50/40"
                 }`}
             >
               <XCircle
@@ -189,10 +189,10 @@ function ApprovalModal({
               disabled={!selectedAction || approveMutation.isPending}
               onClick={handleSubmit}
               className={`flex-1 py-3 rounded-xl text-[13px] font-semibold text-white transition-all flex items-center justify-center gap-2 ${!selectedAction
-                  ? "bg-gray-200 cursor-not-allowed"
-                  : selectedAction === "approve"
-                    ? "bg-emerald-500 hover:bg-emerald-600"
-                    : "bg-rose-500 hover:bg-rose-600"
+                ? "bg-gray-200 cursor-not-allowed"
+                : selectedAction === "approve"
+                  ? "bg-emerald-500 hover:bg-emerald-600"
+                  : "bg-rose-500 hover:bg-rose-600"
                 }`}
             >
               {approveMutation.isPending ? (
@@ -223,6 +223,8 @@ export function PayrollSidebar({ agent, onEditPayroll, companyId, onApprovalSucc
   const workDays = agent.workDays ? `${agent.workDays}` : "—";
   const workHours = agent.workHours ? `${agent.workHours} hrs` : "—";
   const salaryType = agent.salaryType ? agent.salaryType.charAt(0).toUpperCase() + agent.salaryType.slice(1) : "—";
+  const currency = agent.currency || "—";
+  const currentEarnings = agent.netPay;
   const isApproved = agent.status === "Approved";
 
   return (
@@ -254,6 +256,14 @@ export function PayrollSidebar({ agent, onEditPayroll, companyId, onApprovalSucc
             </div>
             <div>
               <p className="text-[14px] leading-4.5 font-bold text-[#34373C] mb-1">
+                Currency
+              </p>
+              <p className="text-[10px] leading-2.5 font-light text-[#616263]">
+                {currency}
+              </p>
+            </div>
+            <div>
+              <p className="text-[14px] leading-4.5 font-bold text-[#34373C] mb-1">
                 Daily Pay
               </p>
               <p className="text-[10px] leading-2.5 font-light text-[#616263]">
@@ -262,18 +272,18 @@ export function PayrollSidebar({ agent, onEditPayroll, companyId, onApprovalSucc
             </div>
             <div>
               <p className="text-[14px] leading-4.5 font-bold text-[#34373C] mb-1">
-                Work Days
+                Current Earnings
               </p>
               <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-                {workDays}
+                {currentEarnings}
               </p>
             </div>
             <div>
               <p className="text-[14px] font-bold text-[#34373C] mb-1">
-                Work Hours
+                Attendance Accumulation
               </p>
               <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-                {workHours}
+                {agent.attendanceDays} day{agent.attendanceDays === 1 ? "" : "s"}
               </p>
             </div>
             <div>
@@ -286,18 +296,18 @@ export function PayrollSidebar({ agent, onEditPayroll, companyId, onApprovalSucc
             </div>
             <div>
               <p className="text-[14px] font-bold text-[#34373C] mb-1">
-                Role
+                Work Days
               </p>
               <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-                {agent.role}
+                {workDays}
               </p>
             </div>
             <div>
               <p className="text-[14px] font-bold text-[#34373C] mb-1">
-                Commission
+                Work Hours
               </p>
               <p className="text-[10px] leading-2.5 font-light text-[#616263]">
-                {agent.commissionEnabled ? "Enabled" : "Disabled"}
+                {workHours}
               </p>
             </div>
           </div>
@@ -363,8 +373,8 @@ export function PayrollSidebar({ agent, onEditPayroll, companyId, onApprovalSucc
               type="button"
               onClick={() => setApprovalOpen(true)}
               className={`w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl text-[13px] font-semibold transition-all ${isApproved
-                  ? "bg-dash-dark text-white hover:opacity-90"
-                  : "bg-emerald-500 text-white hover:bg-emerald-600"
+                ? "bg-dash-dark text-white hover:opacity-90"
+                : "bg-emerald-500 text-white hover:bg-emerald-600"
                 }`}
             >
               <ShieldCheck size={16} />

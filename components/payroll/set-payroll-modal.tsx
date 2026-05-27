@@ -32,6 +32,7 @@ type FormErrors = Partial<{
   workDays: string;
   workHours: string;
   salaryType: string;
+  currency: string;
 }>;
 
 type ProductErrors = { name?: string; rate?: string }[];
@@ -52,6 +53,7 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
   const [salaryType, setSalaryType] = useState(
     existingPayroll ? capitalize(existingPayroll.salary_type) : "Monthly"
   );
+  const [currency, setCurrency] = useState(existingPayroll?.currency ?? PAYROLL_DEFAULT_CURRENCY);
   const [baseSalary, setBaseSalary] = useState(
     existingPayroll ? String(existingPayroll.base_salary) : "$30,000"
   );
@@ -121,6 +123,12 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
 
     if (!payBasis.trim()) formErrors.payBasis = "Pay basis is required.";
 
+    if (!currency.trim()) {
+      formErrors.currency = "Currency is required.";
+    } else if (!/^[A-Za-z]{3}$/.test(currency.trim())) {
+      formErrors.currency = "Use a valid 3-letter currency code.";
+    }
+
     const daysNumeric = Number(workDays.replace(/[^0-9.]/g, ""));
     if (!workDays.trim()) {
       formErrors.workDays = "Work days is required.";
@@ -163,6 +171,7 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
       if (apiErr.errors.work_days) fe.workDays = apiErr.errors.work_days[0];
       if (apiErr.errors.work_hours) fe.workHours = apiErr.errors.work_hours[0];
       if (apiErr.errors.salary_type) fe.salaryType = apiErr.errors.salary_type[0];
+      if (apiErr.errors.currency) fe.currency = apiErr.errors.currency[0];
       if (apiErr.errors.authorization) toast.error(apiErr.errors.authorization[0]);
       setErrors(fe);
     }
@@ -192,8 +201,9 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
 
     const payload = {
       company_id: companyId,
-      salary_type: salaryType.toLowerCase() as "monthly" | "weekly",
+      salary_type: salaryType.toLowerCase() as "daily" | "monthly" | "weekly",
       base_salary: salaryNumeric,
+      currency: currency.trim().toUpperCase(),
       work_days: daysNumeric,
       work_hours: hoursNumeric,
       attendance_affects_pay: attendanceAffectPay,
@@ -271,11 +281,22 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
                     onChange={(e) => { setSalaryType(e.target.value); clearError("salaryType"); }}
                     className="col-span-2"
                   >
+                    <option>Daily</option>
                     <option>Monthly</option>
                     <option>Weekly</option>
                   </InlineSelect>
                 </FormRow>
                 <FieldError message={errors.salaryType} />
+              </div>
+              <div>
+                <FormRow label="Currency">
+                  <InlineInput
+                    value={currency}
+                    onChange={(e) => { setCurrency(e.target.value); clearError("currency"); }}
+                    className="col-span-2 uppercase"
+                  />
+                </FormRow>
+                <FieldError message={errors.currency} />
               </div>
               <div>
                 <FormRow label="Base Salary">
@@ -298,7 +319,7 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
                 <FieldError message={errors.payBasis} />
               </div>
               <div className="text-[11px] text-gray-500 text-right">
-                Daily pay (derived by backend): {derivedDailyPay ? formatPayrollMoney(Number(derivedDailyPay), PAYROLL_DEFAULT_CURRENCY) : "—"}
+                Daily pay (derived by backend): {derivedDailyPay ? formatPayrollMoney(Number(derivedDailyPay), currency) : "—"}
               </div>
             </div>
 

@@ -139,6 +139,11 @@ class AttendancePayrollService
         $generatedCount = 0;
 
         foreach ($agentIds as $agentId) {
+            $agent = User::query()->find($agentId);
+            if (! $agent instanceof User) {
+                continue;
+            }
+
             $attendanceDays = AttendanceRecord::query()
                 ->where('company_id', $companyId)
                 ->where('user_id', $agentId)
@@ -150,17 +155,37 @@ class AttendancePayrollService
                 ])
                 ->count();
 
-            $dailyRate = (float) $payrollSetting->daily_pay;
+            $salaryType = strtolower((string) ($agent->payroll_salary_type ?: $payrollSetting->salary_type?->value ?: 'monthly'));
+            $baseSalary = $agent->base_salary !== null
+                ? (float) $agent->base_salary
+                : (float) $payrollSetting->base_salary;
+            $currency = strtoupper((string) ($agent->salary_currency ?: $payrollSetting->currency ?: 'NGN'));
+            $effectiveWorkDays = (int) ($agent->payroll_work_days_override ?: $scheduledWorkingDays);
+            if ($effectiveWorkDays < 1) {
+                $effectiveWorkDays = max($scheduledWorkingDays, 1);
+            }
 
-            $salaryPayable = $payrollSetting->attendance_affects_pay
+            $dailyRate = $salaryType === 'daily'
+                ? round($baseSalary, 2)
+                : round($baseSalary / $effectiveWorkDays, 2);
+
+            $attendanceAffectsPay = $agent->payroll_attendance_affects_pay !== null
+                ? (bool) $agent->payroll_attendance_affects_pay
+                : (bool) $payrollSetting->attendance_affects_pay;
+
+            if ($salaryType === 'daily') {
+                $attendanceAffectsPay = true;
+            }
+
+            $salaryPayable = $attendanceAffectsPay
                 ? round($dailyRate * $attendanceDays, 2)
-                : round((float) $payrollSetting->base_salary, 2);
+                : round($baseSalary, 2);
 
             AttendancePayrollSummary::query()->updateOrCreate(
                 [
                     'company_id' => $companyId,
                     'user_id' => $agentId,
-                    'cycle_type' => 'monthly',
+                    'cycle_type' => $salaryType === 'daily' ? 'daily' : 'monthly',
                     'period_year' => $year,
                     'period_month' => $month,
                 ],
@@ -168,18 +193,19 @@ class AttendancePayrollService
                     'payroll_setting_id' => (int) $payrollSetting->id,
                     'period_start' => $periodStart->toDateString(),
                     'period_end' => $periodEnd->toDateString(),
-                    'attendance_days' => $payrollSetting->attendance_affects_pay
+                    'attendance_days' => $attendanceAffectsPay
                         ? $attendanceDays
                         : $scheduledWorkingDays,
-                    'scheduled_work_days' => $scheduledWorkingDays,
+                    'scheduled_work_days' => $effectiveWorkDays,
                     'daily_rate' => $dailyRate,
                     'salary_payable' => $salaryPayable,
-                    'currency' => (string) $payrollSetting->currency,
+                    'currency' => $currency,
                     'generated_at' => now(),
                     'metadata' => [
-                        'attendance_affects_pay' => (bool) $payrollSetting->attendance_affects_pay,
+                        'attendance_affects_pay' => $attendanceAffectsPay,
                         'actual_attendance_days' => $attendanceDays,
                         'actor_user_id' => $actorUserId,
+                        'salary_type' => $salaryType,
                     ],
                 ],
             );
@@ -200,7 +226,7 @@ class AttendancePayrollService
                     'period_year' => $year,
                     'period_month' => $month,
                     'salary_payable' => $salaryPayable,
-                    'currency' => (string) $payrollSetting->currency,
+                    'currency' => $currency,
                 ],
                 'dedupe_key' => 'payroll-monthly-summary:' . $companyId . ':' . $agentId . ':' . $year . '-' . $month,
             ]);

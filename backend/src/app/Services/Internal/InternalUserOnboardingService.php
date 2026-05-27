@@ -55,6 +55,8 @@ class InternalUserOnboardingService
 
         return DB::transaction(function () use ($creator, $company, $data, $role, $supervisorUserId, $prefilledProfile): array {
             $workDays = collect($data['work_days'])->map(fn($d) => strtolower((string) $d))->unique()->values()->all();
+            $salaryType = strtolower((string) ($data['salary_type'] ?? 'monthly'));
+            $currency = strtoupper((string) ($data['currency_code'] ?? $company->currency_code ?? config('internal_onboarding.default_currency', 'USD')));
 
             $user = User::query()->create([
                 'name' => $data['full_name'],
@@ -66,7 +68,8 @@ class InternalUserOnboardingService
                 'assigned_zone' => $data['assigned_zone'],
                 'work_days' => $workDays,
                 'base_salary' => $data['base_salary'],
-                'salary_currency' => strtoupper((string) ($data['currency_code'] ?? $company->currency_code ?? config('internal_onboarding.default_currency', 'USD'))),
+                'payroll_salary_type' => $salaryType,
+                'salary_currency' => $currency,
                 'commission_enabled' => (bool) ($data['commission_enabled'] ?? false),
                 'supervisor_user_id' => $supervisorUserId,
                 'invited_by_user_id' => $creator->id,

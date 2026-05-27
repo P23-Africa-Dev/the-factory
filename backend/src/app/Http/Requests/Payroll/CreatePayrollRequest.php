@@ -19,6 +19,7 @@ class CreatePayrollRequest extends FormRequest
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
             'work_days' => $this->input('work_days', 22),
             'work_hours' => $this->input('work_hours', 8),
+            'salary_type' => $this->input('salary_type') !== null ? strtolower((string) $this->input('salary_type')) : null,
             'attendance_affects_pay' => $this->boolean('attendance_affects_pay'),
             'commission_enabled' => $this->boolean('commission_enabled'),
             'currency' => $this->filled('currency') ? strtoupper((string) $this->input('currency')) : null,

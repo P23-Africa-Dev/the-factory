@@ -732,6 +732,67 @@ class PayrollManagementTest extends TestCase
         ]);
     }
 
+    public function test_admin_can_create_daily_payroll_settings(): void
+    {
+        [$company, $admin] = $this->seedCompanyUsers();
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/payroll', [
+                'company_id' => $company->id,
+                'salary_type' => 'daily',
+                'base_salary' => 8000,
+                'currency' => 'GBP',
+                'work_days' => 22,
+                'work_hours' => 8,
+                'attendance_affects_pay' => true,
+                'commission_enabled' => false,
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.payroll.salary_type', 'daily')
+            ->assertJsonPath('data.payroll.currency', 'GBP')
+            ->assertJsonPath('data.payroll.daily_pay', 8000);
+    }
+
+    public function test_admin_can_override_agent_payroll_currency_and_daily_salary(): void
+    {
+        [$company, $admin,, $agent] = $this->seedCompanyUsers();
+
+        $this->createPayrollSetting($company, [
+            'salary_type' => 'monthly',
+            'base_salary' => 120000,
+            'currency' => 'NGN',
+            'work_days' => 22,
+            'work_hours' => 8,
+            'daily_pay' => 5454.55,
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->patchJson('/api/v1/payroll/agents/' . $agent->id, [
+                'company_id' => $company->id,
+                'base_salary' => 300,
+                'salary_type' => 'daily',
+                'currency_code' => 'USD',
+                'attendance_affects_pay' => true,
+                'work_days_override' => 6,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.salary_type', 'daily')
+            ->assertJsonPath('data.currency', 'USD')
+            ->assertJsonPath('data.daily_pay', 300)
+            ->assertJsonPath('data.attendance_affects_pay', true);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $agent->id,
+            'base_salary' => '300.00',
+            'payroll_salary_type' => 'daily',
+            'salary_currency' => 'USD',
+            'payroll_attendance_affects_pay' => 1,
+            'payroll_work_days_override' => 6,
+        ]);
+    }
+
     private function seedCompanyUsers(string $companyId = 'FAC-PAY001'): array
     {
         $company = Company::create([

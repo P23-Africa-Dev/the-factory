@@ -6,7 +6,7 @@ import { formatPayrollMoney, resolvePayrollCurrency } from "@/lib/payroll/curren
 export type PayrollSettings = {
   id: number;
   company_id: number | string;
-  salary_type: "monthly" | "weekly";
+  salary_type: "daily" | "monthly" | "weekly";
   base_salary: number;
   currency: string;
   work_days: number;
@@ -48,7 +48,7 @@ export type PayrollAgentListItem = {
   net_pay: number;
   attendance_days: number;
   currency: string;
-  salary_type: "monthly" | "weekly" | string;
+  salary_type: "daily" | "monthly" | "weekly" | string;
   attendance_affects_pay: boolean;
 };
 
@@ -83,7 +83,7 @@ export type PayrollAgentProfile = {
   assigned_zone: string | null;
   role: string;
   status: "Approved" | "Pending" | "Revoked";
-  salary_type: string;
+  salary_type: "daily" | "monthly" | "weekly" | string;
   base_salary: number;
   daily_pay: number;
   work_days: number;
@@ -99,7 +99,8 @@ export type PayrollAgentProfile = {
 export type UpdateAgentPayrollPayload = {
   company_id: number | string;
   base_salary?: number;
-  salary_type?: "monthly" | "weekly";
+  salary_type?: "daily" | "monthly" | "weekly";
+  currency_code?: string;
   attendance_affects_pay?: boolean;
   work_days_override?: number | null;
 };
@@ -185,7 +186,7 @@ export function mapPayrollProfileToUi(profile: PayrollAgentProfile, currencyOver
 
 export type CreatePayrollPayload = {
   company_id: number | string;
-  salary_type: "monthly" | "weekly";
+  salary_type: "daily" | "monthly" | "weekly";
   base_salary: number;
   work_days: number;
   work_hours: number;

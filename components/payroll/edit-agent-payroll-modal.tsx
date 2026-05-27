@@ -22,6 +22,7 @@ interface EditAgentPayrollModalProps {
 export function EditAgentPayrollModal({ isOpen, onClose, agent, companyId }: EditAgentPayrollModalProps) {
     const [salaryType, setSalaryType] = useState("monthly");
     const [baseSalary, setBaseSalary] = useState("");
+    const [currencyCode, setCurrencyCode] = useState("USD");
     const [attendanceAffectsPay, setAttendanceAffectsPay] = useState(true);
     const [workDaysOverride, setWorkDaysOverride] = useState("");
     const mutation = useUpdateAgentPayroll(agent ? Number(agent.id) : undefined);
@@ -31,6 +32,7 @@ export function EditAgentPayrollModal({ isOpen, onClose, agent, companyId }: Edi
         setSyncedAgentId(agent.id);
         setSalaryType(agent.salaryType.toLowerCase());
         setBaseSalary(String(Number(agent.baseSalary.replace(/[^0-9.]/g, ""))));
+        setCurrencyCode(agent.currency ?? "USD");
         setAttendanceAffectsPay(agent.attendanceAffectsPay);
         setWorkDaysOverride(String(agent.workDays || ""));
     }
@@ -50,7 +52,8 @@ export function EditAgentPayrollModal({ isOpen, onClose, agent, companyId }: Edi
             {
                 company_id: companyId,
                 base_salary: numericBaseSalary,
-                salary_type: salaryType as "monthly" | "weekly",
+                salary_type: salaryType as "daily" | "monthly" | "weekly",
+                currency_code: currencyCode.trim().toUpperCase(),
                 attendance_affects_pay: attendanceAffectsPay,
                 work_days_override: workDaysOverride.trim() ? Number(workDaysOverride) : null,
             },
@@ -88,9 +91,13 @@ export function EditAgentPayrollModal({ isOpen, onClose, agent, companyId }: Edi
                         <SectionDivider label="Salary" />
                         <FormRow label="Salary Type">
                             <InlineSelect value={salaryType} onChange={(e) => setSalaryType(e.target.value)} className="col-span-2">
+                                <option value="daily">Daily</option>
                                 <option value="monthly">Monthly</option>
                                 <option value="weekly">Weekly</option>
                             </InlineSelect>
+                        </FormRow>
+                        <FormRow label="Currency">
+                            <InlineInput value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)} className="col-span-2 uppercase" />
                         </FormRow>
                         <FormRow label="Base Salary">
                             <InlineInput value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className="col-span-2" />

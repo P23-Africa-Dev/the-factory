@@ -8,6 +8,7 @@ enum PayrollSalaryType: string
 {
     case MONTHLY = 'monthly';
     case WEEKLY = 'weekly';
+    case DAILY = 'daily';
 
     public static function values(): array
     {

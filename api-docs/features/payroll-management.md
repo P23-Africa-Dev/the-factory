@@ -6,10 +6,11 @@ This feature provides company-level payroll configuration with strict tenant iso
 
 Design goals:
 
-1. Owners, admins, and supervisors define a single payroll policy per company.
-2. Agents inherit the company payroll policy through company membership.
-3. Daily pay is automatically derived from base salary and work days.
-4. Attendance and commission toggles are persisted for future payroll extensions.
+3. Owners, admins, and supervisors define a single payroll policy per company.
+4. Agents inherit the company payroll policy through company membership.
+5. Salary type can be daily, weekly, or monthly.
+6. Daily pay is automatically derived from the resolved salary type and work days.
+7. Attendance and commission toggles are persisted for future payroll extensions.
 
 ## Endpoints
 
@@ -49,7 +50,7 @@ Role permissions in company context:
 
 1. `id`
 2. `company_id` unique foreign key to companies
-3. `salary_type` enum: `monthly|weekly`
+3. `salary_type` enum: `daily|monthly|weekly`
 4. `base_salary` decimal(14,2)
 5. `currency` char(3)
 6. `work_days` unsigned small integer (default: 22)
@@ -72,7 +73,8 @@ Daily pay is recalculated whenever payroll settings are created or updated.
 
 Formula:
 
-1. `daily_pay = round(base_salary / work_days, 2)`
+1. `daily_pay = round(resolved_salary_amount / work_days, 2)`
+2. Daily salary types use the configured salary amount as the per-day rate.
 
 Example:
 
@@ -214,7 +216,7 @@ Success 200:
 
 Create and update payload rules:
 
-1. `salary_type` required, enum `monthly|weekly`
+1. `salary_type` required, enum `daily|monthly|weekly`
 2. `base_salary` required, numeric, greater than 0
 3. `work_days` required, integer, greater than 0
 4. `work_hours` required, integer, between 4 and 12
