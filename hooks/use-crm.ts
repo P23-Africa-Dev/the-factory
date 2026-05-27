@@ -6,6 +6,7 @@ import {
     addLeadActivity,
     addLeadNote,
     createCrmLabel,
+    deleteCrmLabel,
     createCrmPipeline,
     createLead,
     getAgentUploadsOverview,
@@ -318,6 +319,24 @@ export function useReorderCrmLabels(basePath: ApiRoleBasePath = "/admin") {
     return useMutation({
         mutationFn: (payload: { company_id: number | string; ordered_label_ids: Array<number | string> }) =>
             reorderCrmLabels(payload, token, basePath),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+        },
+    });
+}
+
+export function useDeleteCrmLabel(basePath: ApiRoleBasePath = "/admin") {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({
+            labelId,
+            payload,
+        }: {
+            labelId: number | string;
+            payload: { company_id?: number | string; force?: boolean };
+        }) => deleteCrmLabel(labelId, payload, token, basePath),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
         },

@@ -625,6 +625,66 @@ class LeadService
     }
 
     /**
+     * @return array{deleted_label_id:int,deleted_leads_count:int,reassigned_to_label_slug:string|null,reassigned_to_label_name:string|null}
+     */
+    public function deleteLabel(User $user, int $labelId, array $payload): array
+    {
+        $context = $this->companyContextService->resolve($user, $payload['company_id'] ?? null);
+        $this->ensureCanManage((string) $context['role']);
+        $companyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($companyId);
+
+        $label = LeadLabel::query()
+            ->where('company_id', $companyId)
+            ->findOrFail($labelId);
+
+        $assignedCount = Lead::query()
+            ->where('company_id', $companyId)
+            ->where('status', $label->slug)
+            ->count();
+
+        $fallbackLabel = LeadLabel::query()
+            ->where('company_id', $companyId)
+            ->where('id', '!=', $label->id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->first();
+
+        $forceDelete = (bool) ($payload['force'] ?? false);
+
+        if ($assignedCount > 0 && ! $forceDelete) {
+            throw ValidationException::withMessages([
+                'label' => ["This label is currently assigned to {$assignedCount} leads. Confirm deletion to continue."],
+                'label_usage_count' => [(string) $assignedCount],
+            ]);
+        }
+
+        if ($assignedCount > 0 && ! $fallbackLabel) {
+            throw ValidationException::withMessages([
+                'label' => ['This label is in use and cannot be deleted because no fallback label is available. Create another label first.'],
+            ]);
+        }
+
+        DB::transaction(function () use ($companyId, $label, $assignedCount, $fallbackLabel): void {
+            if ($assignedCount > 0 && $fallbackLabel !== null) {
+                Lead::query()
+                    ->where('company_id', $companyId)
+                    ->where('status', $label->slug)
+                    ->update(['status' => $fallbackLabel->slug]);
+            }
+
+            $label->delete();
+        });
+
+        return [
+            'deleted_label_id' => (int) $label->id,
+            'deleted_leads_count' => (int) $assignedCount,
+            'reassigned_to_label_slug' => $assignedCount > 0 ? $fallbackLabel?->slug : null,
+            'reassigned_to_label_name' => $assignedCount > 0 ? $fallbackLabel?->name : null,
+        ];
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $rows
      * @return array{imported_count:int,failed_rows:array<int,array<string,mixed>>}
      */

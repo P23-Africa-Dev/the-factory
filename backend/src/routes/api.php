@@ -271,6 +271,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
                 Route::patch('/labels/{label}', [LeadController::class, 'updateLabel'])
                     ->middleware('throttle:20,1')
                     ->name('labels.update');
+                Route::post('/labels/{label}/delete', [LeadController::class, 'deleteLabel'])
+                    ->middleware('throttle:20,1')
+                    ->name('labels.delete');
                 Route::post('/labels/reorder', [LeadController::class, 'reorderLabels'])
                     ->middleware('throttle:20,1')
                     ->name('labels.reorder');
@@ -524,6 +527,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::patch('/labels/{label}', [LeadController::class, 'updateLabel'])
             ->middleware('throttle:20,1')
             ->name('labels.update');
+        Route::post('/labels/{label}/delete', [LeadController::class, 'deleteLabel'])
+            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->name('labels.delete');
         Route::post('/labels/reorder', [LeadController::class, 'reorderLabels'])
             ->middleware('throttle:20,1')
             ->name('labels.reorder');

@@ -426,6 +426,20 @@ export function updateCrmLabel(
     });
 }
 
+export function deleteCrmLabel(
+    labelId: number | string,
+    payload: { company_id?: number | string; force?: boolean },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ deleted_label_id: number; deleted_leads_count: number; reassigned_to_label_slug?: string | null; reassigned_to_label_name?: string | null }>> {
+    return apiRequest<{ deleted_label_id: number; deleted_leads_count: number; reassigned_to_label_slug?: string | null; reassigned_to_label_name?: string | null }>({
+        method: "POST",
+        path: withBase(basePath, `/crm/labels/${labelId}/delete`),
+        body: payload,
+        token,
+    });
+}
+
 export function reorderCrmLabels(
     payload: { company_id: number | string; ordered_label_ids: Array<number | string> },
     token: string,
