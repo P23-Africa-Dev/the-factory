@@ -7,6 +7,7 @@ import { getActiveCompanyContext } from "@/lib/company-context";
 import { useAgentUploadsOverview, useCrmLabels, useCrmPipelines, useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { ImportLeadsModal, LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
+import { CRMPageSkeleton } from "@/components/crm/crm-page-skeleton";
 import { useDroppable } from "@dnd-kit/core";
 import {
   DndContext,
@@ -741,37 +742,35 @@ function AgentUploadsCard({
   leadListUrl,
   totalUploadedLeads = 0,
   topAgentAvatarUrl,
-  recentLeadNames,
+  topAgentName,
 }: {
   basePath?: string;
   leadListUrl?: string;
   totalUploadedLeads?: number;
   topAgentAvatarUrl?: string | null;
-  recentLeadNames?: string[];
+  topAgentName?: string | null;
 }) {
   const router = useRouter();
-  const previewText = (recentLeadNames ?? []).slice(0, 2).join(", ");
 
   return (
     <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex items-center gap-5 min-w-0 sm:min-w-70">
-      {/* Avatar with ring */}
+      {/* Avatar with gradient ring */}
       <div className="relative shrink-0">
         <div
-          className="w-20 h-20 rounded-full"
+          className="w-20 h-20 rounded-full p-0.75"
           style={{
-            background: "conic-gradient(#FD6046 0% 60%, #F3F4F6 60% 100%)",
-            padding: "3px",
+            background: "linear-gradient(135deg, #FD6046 0%, #FFBCAD 100%)",
           }}
         >
-          <div className="w-full h-full rounded-full overflow-hidden bg-white">
+          <div className="w-full h-full rounded-full overflow-hidden bg-[#EEF3F8]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={topAgentAvatarUrl || "/images/avatar/agent.png"}
+              src={topAgentAvatarUrl || "/avatars/male-avatar.png"}
               alt="Agent"
               className="w-full h-full object-cover"
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).src =
-                  "https://i.pravatar.cc/150?u=agent-crm";
+                  "/avatars/male-avatar.png";
               }}
             />
           </div>
@@ -785,7 +784,12 @@ function AgentUploadsCard({
           <span className="text-[#9CA3AF] text-[13px] font-medium">Leads</span>
         </div>
         <p className="text-[#6B7280] text-[12px]">
-          Uploaded by your Agents{previewText ? ` • ${previewText}` : ""}
+          Uploaded by{" "}
+          {topAgentName ? (
+            <span className="font-bold text-[#0B1215]">{topAgentName}</span>
+          ) : (
+            "your Agents"
+          )}
         </p>
         <button onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)} className="flex items-center gap-1 text-[12px] font-semibold text-[#0B1215] mt-1 hover:opacity-70 transition-opacity">
           View Leads
@@ -867,6 +871,8 @@ export default function CRMPage() {
       throw new Error("status update failed");
     }
   }
+
+  if (isLoading) return <CRMPageSkeleton />;
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
@@ -959,7 +965,7 @@ export default function CRMPage() {
             leadListUrl={leadListUrl}
             totalUploadedLeads={agentUploadsOverview?.total_uploaded_leads ?? 0}
             topAgentAvatarUrl={agentUploadsOverview?.top_agent?.avatar_url ?? null}
-            recentLeadNames={(agentUploadsOverview?.recent_leads ?? []).map((lead) => lead.name)}
+            topAgentName={agentUploadsOverview?.top_agent?.name ?? null}
           />
         </div>
 
