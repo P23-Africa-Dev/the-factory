@@ -403,7 +403,7 @@ export function WeeklyTasksAgents() {
       <div className="ticket-cutout w-full lg:w-89 rounded-[20px] pt-4 px-4 sm:px-7 text-dash-dark h-fit flex flex-col relative border border-dash-dark/5 bg-white mt-4 lg:mt-20">
         <div className="flex justify-between items-start mb-3 px-[11.5px]">
           <h3 className="text-dash-dark font-medium text-sm tracking-tight">
-            Self Task
+            Meeting
           </h3>
           <FilterSelect
             value={filter}
