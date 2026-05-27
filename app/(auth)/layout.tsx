@@ -51,7 +51,7 @@ export default function AuthLayout({
           alt="3D Objects"
           width={532}
           height={531}
-          className="absolute bottom-0 left-[240px] md:left-auto md:-right-[60px] lg:-right-[240px] w-[532px] h-[531px] md:w-[280px] md:h-[280px] lg:w-[532px] lg:h-[531px] object-contain object-bottom z-10 pointer-events-none"
+          className="absolute bottom-0 left-[260px] w-[532px] h-[531px] md:w-[280px] md:h-[280px] lg:w-[532px] lg:h-[531px] object-contain object-bottom z-10 pointer-events-none"
         />
       </div>
 
