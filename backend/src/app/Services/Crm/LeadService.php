@@ -33,9 +33,14 @@ class LeadService
     {
         $context = $this->companyContextService->resolve($user, $filters['company_id'] ?? null);
         $companyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
         $this->ensureDefaultCrmSetup($companyId);
 
         $query = $this->baseQuery($companyId);
+
+        if ($role === 'agent') {
+            $this->applyAgentLeadScope($query, (int) $user->id);
+        }
 
         if (! empty($filters['status'])) {
             $query->where('status', (string) $filters['status']);
@@ -81,12 +86,15 @@ class LeadService
     public function create(User $user, array $data): Lead
     {
         $context = $this->companyContextService->resolve($user, $data['company_id'] ?? null);
-        $this->ensureCanManage((string) $context['role']);
+        $role = (string) $context['role'];
+        $this->ensureCanCreateLeads($role);
 
         $companyId = (int) $context['company']->id;
         $this->ensureDefaultCrmSetup($companyId);
 
-        $assignedToUserId = isset($data['assigned_to_user_id']) ? (int) $data['assigned_to_user_id'] : null;
+        $assignedToUserId = $role === 'agent'
+            ? (int) $user->id
+            : (isset($data['assigned_to_user_id']) ? (int) $data['assigned_to_user_id'] : null);
         $pipelineId = (int) ($data['pipeline_id'] ?? 0);
 
         $this->assertPipelineInCompany($companyId, $pipelineId);
@@ -130,8 +138,13 @@ class LeadService
     {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
         $this->ensureDefaultCrmSetup($resolvedCompanyId);
         $this->assertLeadInCompany($lead, $resolvedCompanyId);
+
+        if ($role === 'agent') {
+            $this->assertAgentCanAccessLead($lead, (int) $user->id);
+        }
 
         return $this->baseQuery($resolvedCompanyId)
             ->whereKey($lead->id)
@@ -141,11 +154,45 @@ class LeadService
     public function update(User $user, Lead $lead, array $data): Lead
     {
         $context = $this->companyContextService->resolve($user, $data['company_id'] ?? null);
-        $this->ensureCanManage((string) $context['role']);
+        $role = (string) $context['role'];
 
         $companyId = (int) $context['company']->id;
         $this->ensureDefaultCrmSetup($companyId);
         $this->assertLeadInCompany($lead, $companyId);
+
+        if ($role === 'agent') {
+            $this->assertAgentCanAccessLead($lead, (int) $user->id);
+
+            $allowedFields = ['company_id', 'pipeline_id', 'status'];
+            $forbiddenFields = collect(array_keys($data))
+                ->reject(static fn(string $field): bool => in_array($field, $allowedFields, true))
+                ->values()
+                ->all();
+
+            if ($forbiddenFields !== []) {
+                throw ValidationException::withMessages([
+                    'authorization' => ['Agents can only update lead status and pipeline.'],
+                    'forbidden_fields' => $forbiddenFields,
+                ]);
+            }
+
+            if (array_key_exists('pipeline_id', $data)) {
+                $this->assertPipelineInCompany($companyId, (int) $data['pipeline_id']);
+            }
+
+            if (array_key_exists('status', $data) && $data['status'] !== null) {
+                $this->assertLabelExists($companyId, (string) $data['status']);
+            }
+
+            $lead->update([
+                'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
+                'status' => array_key_exists('status', $data) ? (string) $data['status'] : $lead->status,
+            ]);
+
+            return $this->findForUser($user, $lead->fresh(), $companyId);
+        }
+
+        $this->ensureCanManage($role);
 
         if (array_key_exists('assigned_to_user_id', $data) && $data['assigned_to_user_id'] !== null) {
             $this->assertMemberInCompany($companyId, (int) $data['assigned_to_user_id'], 'assigned_to_user_id');
@@ -194,8 +241,13 @@ class LeadService
     {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
         $this->ensureDefaultCrmSetup($resolvedCompanyId);
         $this->assertLeadInCompany($lead, $resolvedCompanyId);
+
+        if ($role === 'agent') {
+            $this->assertAgentCanAccessLead($lead, (int) $user->id);
+        }
 
         $leadNote = LeadNote::create([
             'lead_id' => $lead->id,
@@ -220,8 +272,13 @@ class LeadService
     {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
         $this->ensureDefaultCrmSetup($resolvedCompanyId);
         $this->assertLeadInCompany($lead, $resolvedCompanyId);
+
+        if ($role === 'agent') {
+            $this->assertAgentCanAccessLead($lead, (int) $user->id);
+        }
 
         $activity = LeadActivity::create([
             'lead_id' => $lead->id,
@@ -250,6 +307,7 @@ class LeadService
     {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
         $this->ensureDefaultCrmSetup($resolvedCompanyId);
 
         $labels = LeadLabel::query()
@@ -257,8 +315,12 @@ class LeadService
             ->orderBy('sort_order')
             ->get(['slug', 'name', 'color']);
 
-        $counts = Lead::query()
-            ->where('company_id', $resolvedCompanyId)
+        $countsQuery = Lead::query()->where('company_id', $resolvedCompanyId);
+        if ($role === 'agent') {
+            $this->applyAgentLeadScope($countsQuery, (int) $user->id);
+        }
+
+        $counts = $countsQuery
             ->selectRaw('status, COUNT(*) as total')
             ->groupBy('status')
             ->pluck('total', 'status')
@@ -283,10 +345,15 @@ class LeadService
     {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
         $this->ensureDefaultCrmSetup($resolvedCompanyId);
 
         $baseQuery = Lead::query()->where('company_id', $resolvedCompanyId);
         $this->applyAgentUploadedSourceFilter($baseQuery);
+
+        if ($role === 'agent') {
+            $this->applyAgentLeadScope($baseQuery, (int) $user->id);
+        }
 
         $totalUploadedLeads = (int) (clone $baseQuery)->count();
 
@@ -311,6 +378,24 @@ class LeadService
                     'email' => (string) $agent->email,
                     'avatar_url' => AvatarUrlResolver::resolve($agent->avatar, $agent->gender),
                     'total_uploads' => (int) $topUploader->total_uploads,
+                ];
+            }
+        }
+
+        if ($topAgent === null) {
+            $fallbackAgent = $this->resolveFallbackAgentForUploadsOverview(
+                companyId: $resolvedCompanyId,
+                role: $role,
+                actor: $user,
+            );
+
+            if ($fallbackAgent !== null) {
+                $topAgent = [
+                    'id' => (int) $fallbackAgent->id,
+                    'name' => (string) $fallbackAgent->name,
+                    'email' => (string) $fallbackAgent->email,
+                    'avatar_url' => AvatarUrlResolver::resolve($fallbackAgent->avatar, $fallbackAgent->gender),
+                    'total_uploads' => 0,
                 ];
             }
         }
@@ -344,6 +429,25 @@ class LeadService
             'recent_leads' => $recentLeads,
             'source_filter' => 'agent_upload',
         ];
+    }
+
+    private function resolveFallbackAgentForUploadsOverview(int $companyId, string $role, User $actor): ?User
+    {
+        if ($role === 'agent') {
+            return $actor;
+        }
+
+        return User::query()
+            ->select('users.id', 'users.name', 'users.email', 'users.avatar', 'users.gender')
+            ->join('company_users', 'company_users.user_id', '=', 'users.id')
+            ->where('company_users.company_id', $companyId)
+            ->where(function (Builder $builder): void {
+                $builder->where('company_users.role', 'agent')
+                    ->orWhere('users.internal_role', 'agent');
+            })
+            ->orderBy('users.created_at')
+            ->orderBy('users.id')
+            ->first();
     }
 
     public function listPipelines(User $user, ?int $companyId = null): Collection
@@ -527,7 +631,8 @@ class LeadService
     public function importLeads(User $user, array $payload): array
     {
         $context = $this->companyContextService->resolve($user, $payload['company_id'] ?? null);
-        $this->ensureCanManage((string) $context['role']);
+        $role = (string) $context['role'];
+        $this->ensureCanCreateLeads($role);
         $companyId = (int) $context['company']->id;
         $this->ensureDefaultCrmSetup($companyId);
 
@@ -552,6 +657,11 @@ class LeadService
             }
 
             $data = $validation['normalized'];
+            $normalizedSource = $data['source'];
+            if ($role === 'agent' && $normalizedSource === null) {
+                $normalizedSource = 'agent upload';
+            }
+
             $this->create($user, [
                 'company_id' => $companyId,
                 'pipeline_id' => $pipelineId,
@@ -559,10 +669,10 @@ class LeadService
                 'email' => $data['email'],
                 'phone' => $data['phone'],
                 'location' => $data['location'],
-                'source' => $data['source'],
+                'source' => $normalizedSource,
                 'status' => $data['status'],
                 'priority' => $data['priority'],
-                'assigned_to_user_id' => null,
+                'assigned_to_user_id' => $role === 'agent' ? (int) $user->id : null,
             ]);
             $importedCount++;
         }
@@ -597,6 +707,15 @@ class LeadService
         }
     }
 
+    private function ensureCanCreateLeads(string $role): void
+    {
+        if (! in_array($role, ['owner', 'admin', 'supervisor', 'agent'], true)) {
+            throw ValidationException::withMessages([
+                'authorization' => ['Only authenticated company members can create or import CRM leads.'],
+            ]);
+        }
+    }
+
     private function assertLeadInCompany(Lead $lead, int $companyId): void
     {
         if ($lead->company_id !== $companyId) {
@@ -604,6 +723,23 @@ class LeadService
                 'lead' => ['The selected lead is outside your company context.'],
             ]);
         }
+    }
+
+    private function assertAgentCanAccessLead(Lead $lead, int $userId): void
+    {
+        if ((int) $lead->created_by_user_id !== $userId && (int) ($lead->assigned_to_user_id ?? 0) !== $userId) {
+            throw ValidationException::withMessages([
+                'authorization' => ['Agents can only access leads they created or are assigned to.'],
+            ]);
+        }
+    }
+
+    private function applyAgentLeadScope(Builder $query, int $userId): void
+    {
+        $query->where(function (Builder $builder) use ($userId): void {
+            $builder->where('created_by_user_id', $userId)
+                ->orWhere('assigned_to_user_id', $userId);
+        });
     }
 
     private function assertMemberInCompany(int $companyId, int $userId, string $field): void

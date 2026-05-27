@@ -54,11 +54,21 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.lead.priority', 'urgent');
     }
 
-    public function test_agent_cannot_create_lead_but_can_list_show_and_add_notes(): void
+    public function test_agent_can_create_and_only_view_owned_or_assigned_leads(): void
     {
         [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
 
-        $lead = Lead::create([
+        $otherAgent = User::factory()->create(['email_verified_at' => now()]);
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $otherAgent->id,
+            'role' => 'agent',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $assignedLead = Lead::create([
             'company_id' => $company->id,
             'pipeline_id' => $pipelineId,
             'created_by_user_id' => $admin->id,
@@ -68,38 +78,75 @@ class LeadManagementTest extends TestCase
             'priority' => 'medium',
         ]);
 
+        $hiddenLead = Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'assigned_to_user_id' => $otherAgent->id,
+            'name' => 'Hidden Lead',
+            'status' => 'contacted',
+            'priority' => 'medium',
+        ]);
+
         $createResponse = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
             ->postJson('/api/v1/crm/leads', [
                 'company_id' => $company->id,
                 'pipeline_id' => $pipelineId,
-                'name' => 'Agent Attempt',
+                'name' => 'Agent Created',
                 'status' => 'newly_lead',
                 'priority' => 'low',
             ]);
 
-        $createResponse->assertUnprocessable()
-            ->assertJsonValidationErrors(['authorization']);
+        $createResponse->assertCreated()
+            ->assertJsonPath('data.lead.created_by_user_id', $agent->id)
+            ->assertJsonPath('data.lead.assigned_to_user_id', $agent->id);
 
         $listResponse = $this->withToken($agent->createToken('agent-list-token', ['*'])->plainTextToken)
             ->getJson('/api/v1/crm/leads?company_id=' . $company->id);
 
         $listResponse->assertOk()
-            ->assertJsonPath('data.items.0.id', $lead->id);
+            ->assertJsonPath('data.pagination.total', 2);
 
         $showResponse = $this->withToken($agent->createToken('agent-show-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/crm/leads/' . $lead->id . '?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads/' . $assignedLead->id . '?company_id=' . $company->id);
 
         $showResponse->assertOk()
-            ->assertJsonPath('data.lead.id', $lead->id);
+            ->assertJsonPath('data.lead.id', $assignedLead->id);
+
+        $hiddenShowResponse = $this->withToken($agent->createToken('agent-hidden-show-token', ['*'])->plainTextToken)
+            ->getJson('/api/v1/crm/leads/' . $hiddenLead->id . '?company_id=' . $company->id);
+
+        $hiddenShowResponse->assertUnprocessable()
+            ->assertJsonValidationErrors(['authorization']);
 
         $noteResponse = $this->withToken($agent->createToken('agent-note-token', ['*'])->plainTextToken)
-            ->postJson('/api/v1/crm/leads/' . $lead->id . '/notes', [
+            ->postJson('/api/v1/crm/leads/' . $assignedLead->id . '/notes', [
                 'company_id' => $company->id,
                 'note' => 'Spoke with lead, awaiting budget confirmation.',
             ]);
 
         $noteResponse->assertCreated()
-            ->assertJsonPath('data.note.lead_id', $lead->id);
+            ->assertJsonPath('data.note.lead_id', $assignedLead->id);
+
+        $agentCreatedLeadId = (int) $createResponse->json('data.lead.id');
+
+        $updateStatusResponse = $this->withToken($agent->createToken('agent-update-status', ['*'])->plainTextToken)
+            ->patchJson('/api/v1/crm/leads/' . $agentCreatedLeadId, [
+                'company_id' => $company->id,
+                'status' => 'qualified',
+            ]);
+
+        $updateStatusResponse->assertOk()
+            ->assertJsonPath('data.lead.status', 'qualified');
+
+        $forbiddenUpdateResponse = $this->withToken($agent->createToken('agent-update-forbidden', ['*'])->plainTextToken)
+            ->patchJson('/api/v1/crm/leads/' . $agentCreatedLeadId, [
+                'company_id' => $company->id,
+                'name' => 'Attempted Rename',
+            ]);
+
+        $forbiddenUpdateResponse->assertUnprocessable()
+            ->assertJsonValidationErrors(['authorization']);
     }
 
     public function test_crm_pipeline_returns_stage_counts(): void
@@ -294,6 +341,69 @@ class LeadManagementTest extends TestCase
 
         $listResponse->assertOk()
             ->assertJsonPath('data.pagination.total', 2);
+    }
+
+    public function test_agent_upload_overview_falls_back_to_first_created_agent_when_no_uploads_and_switches_to_top_uploader(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $agent->forceFill([
+            'name' => 'First Agent',
+            'created_at' => now()->subMinutes(10),
+            'updated_at' => now()->subMinutes(10),
+        ])->save();
+
+        $laterAgent = User::factory()->create([
+            'name' => 'Top Uploader Agent',
+            'email_verified_at' => now(),
+            'created_at' => now()->subMinutes(5),
+            'updated_at' => now()->subMinutes(5),
+        ]);
+
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $laterAgent->id,
+            'role' => 'agent',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $noUploadResponse = $this->withToken($admin->createToken('admin-no-upload-overview', ['*'])->plainTextToken)
+            ->getJson('/api/v1/crm/leads/agent-uploads-overview?company_id=' . $company->id);
+
+        $noUploadResponse->assertOk()
+            ->assertJsonPath('data.total_uploaded_leads', 0)
+            ->assertJsonPath('data.top_agent.id', $agent->id)
+            ->assertJsonPath('data.top_agent.total_uploads', 0);
+
+        Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $laterAgent->id,
+            'name' => 'Later Agent Upload One',
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+            'source' => 'uploaded by agents',
+        ]);
+
+        Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $laterAgent->id,
+            'name' => 'Later Agent Upload Two',
+            'status' => 'newly_lead',
+            'priority' => 'high',
+            'source' => 'agent_upload',
+        ]);
+
+        $uploadedResponse = $this->withToken($admin->createToken('admin-after-upload-overview', ['*'])->plainTextToken)
+            ->getJson('/api/v1/crm/leads/agent-uploads-overview?company_id=' . $company->id);
+
+        $uploadedResponse->assertOk()
+            ->assertJsonPath('data.total_uploaded_leads', 2)
+            ->assertJsonPath('data.top_agent.id', $laterAgent->id)
+            ->assertJsonPath('data.top_agent.total_uploads', 2);
     }
 
     private function seedCompanyUsers(): array

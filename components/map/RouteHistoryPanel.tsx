@@ -6,6 +6,7 @@ import { X, MapPin, Route, CheckCircle2, Navigation } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { createMapboxTransformRequest, getMapboxPublicToken } from '@/lib/config/public-env';
+import { getCountryFallbackViewport } from '@/lib/map/default-viewport';
 import { useTaskRoute } from '@/hooks/use-tracking';
 
 const MAPBOX_TOKEN = getMapboxPublicToken();
@@ -37,7 +38,7 @@ function RouteMap({
         ? polyline[Math.floor(polyline.length / 2)]
         : start
           ? [start.lng, start.lat]
-          : [3.36, 6.595];
+          : getCountryFallbackViewport().center;
 
     const map = new mapboxgl.Map({
       container: containerRef.current,

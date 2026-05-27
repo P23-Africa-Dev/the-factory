@@ -39,6 +39,7 @@ class AttendancePayrollService
         return AttendancePayrollSummary::query()
             ->with('user:id,name,avatar')
             ->where('company_id', $context->company->id)
+            ->where('cycle_type', 'monthly')
             ->where('period_year', $year)
             ->where('period_month', $month)
             ->latest('id')
@@ -60,6 +61,7 @@ class AttendancePayrollService
             ->with('user:id,name,avatar')
             ->where('company_id', $context->company->id)
             ->where('user_id', $user->id)
+            ->where('cycle_type', 'monthly')
             ->where('period_year', $year)
             ->where('period_month', $month)
             ->first();
@@ -158,6 +160,7 @@ class AttendancePayrollService
                 [
                     'company_id' => $companyId,
                     'user_id' => $agentId,
+                    'cycle_type' => 'monthly',
                     'period_year' => $year,
                     'period_month' => $month,
                 ],

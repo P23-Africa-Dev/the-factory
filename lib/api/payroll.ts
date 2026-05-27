@@ -1,6 +1,7 @@
 "use client";
 
 import { apiRequest, ApiEnvelope } from "./onboarding";
+import { formatPayrollMoney, resolvePayrollCurrency } from "@/lib/payroll/currency";
 
 export type PayrollSettings = {
   id: number;
@@ -41,7 +42,7 @@ export type PayrollAgentListItem = {
   avatar_url: string | null;
   assigned_zone: string | null;
   role: string;
-  status: "Approved" | "Pending";
+  status: "Approved" | "Pending" | "Revoked";
   base_salary: number;
   daily_pay: number;
   net_pay: number;
@@ -71,7 +72,7 @@ export type PayrollHistoryEntry = {
   base_salary: number;
   net_pay: number;
   due_date: string | null;
-  status: "Pending" | "Approved";
+  status: "Pending" | "Approved" | "Revoked";
 };
 
 export type PayrollAgentProfile = {
@@ -81,6 +82,7 @@ export type PayrollAgentProfile = {
   avatar_url: string | null;
   assigned_zone: string | null;
   role: string;
+  status: "Approved" | "Pending" | "Revoked";
   salary_type: string;
   base_salary: number;
   daily_pay: number;
@@ -105,7 +107,8 @@ export type UpdateAgentPayrollPayload = {
 export type PayrollAgentListParams = {
   company_id?: number | string;
   search?: string;
-  status?: "approved" | "pending";
+  status?: "approved" | "pending" | "revoked";
+  date?: string;
   year?: number;
   month?: number;
   per_page?: number;
@@ -119,64 +122,65 @@ export type PayrollOverviewParams = {
 
 export type PayrollAgentProfileParams = {
   company_id?: number | string;
+  date?: string;
   year?: number;
   month?: number;
 };
 
-export function mapPayrollAgentToUi(agent: PayrollAgentListItem) {
+export type PayrollExportParams = {
+  company_id: number | string;
+  search?: string;
+  status?: "approved" | "pending" | "revoked";
+  date?: string;
+  format: "csv" | "xls";
+};
+
+export function mapPayrollAgentToUi(agent: PayrollAgentListItem, currencyOverride?: string) {
+  const displayCurrency = resolvePayrollCurrency(currencyOverride ?? agent.currency);
+
   return {
     id: String(agent.id),
     name: agent.name,
     address: agent.email,
     lga: agent.assigned_zone ?? "Unassigned",
     avatar: agent.avatar_url ?? "/avatars/male-avatar.png",
-    baseSalary: formatMoney(agent.base_salary, agent.currency),
-    netPay: formatMoney(agent.net_pay, agent.currency),
+    baseSalary: formatPayrollMoney(agent.base_salary, displayCurrency),
+    netPay: formatPayrollMoney(agent.net_pay, displayCurrency),
     role: agent.role,
     status: agent.status,
     email: agent.email,
-    currency: agent.currency,
+    currency: displayCurrency,
     salaryType: agent.salary_type,
-    dailyPay: formatMoney(agent.daily_pay, agent.currency),
+    dailyPay: formatPayrollMoney(agent.daily_pay, displayCurrency),
     attendanceDays: agent.attendance_days,
     attendanceAffectsPay: agent.attendance_affects_pay,
-    workDays: agent.attendance_days,
+    workDays: undefined,
     workHours: 0,
   };
 }
 
-export function mapPayrollProfileToUi(profile: PayrollAgentProfile) {
+export function mapPayrollProfileToUi(profile: PayrollAgentProfile, currencyOverride?: string) {
+  const displayCurrency = resolvePayrollCurrency(currencyOverride ?? profile.currency);
+
   return {
     id: String(profile.id),
     name: profile.name,
     address: profile.email,
     lga: profile.assigned_zone ?? "Unassigned",
     avatar: profile.avatar_url ?? "/avatars/male-avatar.png",
-    baseSalary: formatMoney(profile.base_salary, profile.currency),
-    netPay: formatMoney(profile.salary_payable, profile.currency),
+    baseSalary: formatPayrollMoney(profile.base_salary, displayCurrency),
+    netPay: formatPayrollMoney(profile.salary_payable, displayCurrency),
     role: profile.role,
-    status: "Approved" as const,
+    status: profile.status,
     email: profile.email,
-    currency: profile.currency,
+    currency: displayCurrency,
     salaryType: profile.salary_type,
-    dailyPay: formatMoney(profile.daily_pay, profile.currency),
+    dailyPay: formatPayrollMoney(profile.daily_pay, displayCurrency),
     attendanceDays: profile.attendance_days,
     attendanceAffectsPay: profile.attendance_affects_pay,
     workDays: profile.work_days,
     workHours: profile.work_hours,
   };
-}
-
-function formatMoney(amount: number, currency: string) {
-  const formatted = amount.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
-  if (currency === "NGN") return `₦${formatted}`;
-  if (currency === "USD") return `$${formatted}`;
-
-  return `${formatted} ${currency}`;
 }
 
 export type CreatePayrollPayload = {
@@ -315,4 +319,37 @@ export function approvePayrollAgent(
     body: payload,
     token,
   });
+}
+
+export async function downloadPayrollExport(
+  params: PayrollExportParams,
+  token: string
+): Promise<{ blob: Blob; filename: string }> {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, String(value));
+    }
+  });
+
+  const response = await fetch(`/api/v1/payroll/export?${query.toString()}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "text/csv, application/vnd.ms-excel;q=0.9, */*;q=0.8",
+    },
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Payroll export failed with status ${response.status}`);
+  }
+
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const filenameMatch = disposition.match(/filename="?([^\"]+)"?/i);
+
+  return {
+    blob: await response.blob(),
+    filename: filenameMatch?.[1] ?? `payroll-export.${params.format === "xls" ? "xls" : "csv"}`,
+  };
 }

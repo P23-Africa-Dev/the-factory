@@ -44,7 +44,7 @@ const PRIORITY_OPTIONS = [
 export function AddLeadModal({
   onClose,
   apiBasePath = "/admin",
-  defaultStatus = "new",
+  defaultStatus = "newly_lead",
   lead,
 }: {
   onClose: () => void;
@@ -54,6 +54,7 @@ export function AddLeadModal({
 }) {
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const isAgentContext = apiBasePath === "/agent";
 
   const [name, setName] = useState(lead?.name ?? "");
   const [email, setEmail] = useState(lead?.email ?? "");
@@ -90,7 +91,7 @@ export function AddLeadModal({
       : status;
 
   const { data: companyUsers = [], isLoading: loadingUsers } = useInternalUsers({
-    company_id: companyId ?? undefined,
+    company_id: !isAgentContext ? (companyId ?? undefined) : undefined,
   });
 
   const createMutation = useCreateLead(
@@ -168,10 +169,10 @@ export function AddLeadModal({
       email: email.trim() || null,
       phone: phone.trim() || null,
       location: location.trim() || null,
-      source: source.trim() || null,
-      status: effectiveStatus,
+      source: source.trim() || (isAgentContext ? "agent upload" : null),
+      status,
       priority,
-      assigned_to_user_id: assignedToUserId ? Number(assignedToUserId) : null,
+      assigned_to_user_id: isAgentContext ? null : (assignedToUserId ? Number(assignedToUserId) : null),
       next_action: nextAction.trim() || null,
       last_interaction: lastInteraction.trim() || null,
       last_interaction_at: lastInteractionAt || null,

@@ -556,22 +556,145 @@ class PayrollManagementTest extends TestCase
         ]);
 
         $agentsResponse = $this->actingAs($admin, 'sanctum')
-            ->getJson('/api/v1/payroll/agents?company_id=' . $company->id . '&year=2026&month=6&per_page=20');
+            ->getJson('/api/v1/payroll/agents?company_id=' . $company->id . '&date=2026-06-02&per_page=20');
 
         $agentsResponse->assertOk()
             ->assertJsonCount(1, 'data.items')
             ->assertJsonPath('data.items.0.id', $agent->id)
             ->assertJsonPath('data.items.0.attendance_days', 1)
-            ->assertJsonPath('data.items.0.salary_type', 'monthly');
+            ->assertJsonPath('data.items.0.salary_type', 'monthly')
+            ->assertJsonPath('data.items.0.status', 'Pending');
 
         $profileResponse = $this->actingAs($admin, 'sanctum')
-            ->getJson('/api/v1/payroll/agents/' . $agent->id . '?company_id=' . $company->id . '&year=2026&month=6');
+            ->getJson('/api/v1/payroll/agents/' . $agent->id . '?company_id=' . $company->id . '&date=2026-06-02');
 
         $profileResponse->assertOk()
             ->assertJsonPath('data.id', $agent->id)
             ->assertJsonPath('data.attendance_days', 1)
             ->assertJsonPath('data.salary_payable', 120000)
+            ->assertJsonPath('data.status', 'Pending')
             ->assertJsonStructure(['data' => ['history']]);
+    }
+
+    public function test_admin_can_approve_and_revoke_payroll_for_a_period(): void
+    {
+        [$company, $admin,, $agent] = $this->seedCompanyUsers();
+
+        $this->createPayrollSetting($company, [
+            'base_salary' => 120000,
+            'work_days' => 22,
+            'daily_pay' => 5454.55,
+        ]);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'attendance_date' => '2026-06-02',
+            'clock_in_at' => '2026-06-02 09:00:00',
+            'clock_out_at' => '2026-06-02 17:00:00',
+            'status' => 'present',
+            'work_duration_minutes' => 480,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        $approveResponse = $this->actingAs($admin, 'sanctum')
+            ->patchJson('/api/v1/payroll/agents/' . $agent->id . '/approval', [
+                'company_id' => $company->id,
+                'action' => 'approve',
+                'date' => '2026-06-02',
+                'reason' => 'Validated for release',
+            ]);
+
+        $approveResponse->assertOk()
+            ->assertJsonPath('data.id', $agent->id)
+            ->assertJsonPath('data.status', 'Approved');
+
+        $this->assertDatabaseHas('attendance_payroll_summaries', [
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'cycle_type' => 'monthly',
+            'status' => 'approved',
+            'approval_reason' => 'Validated for release',
+        ]);
+
+        $revokeResponse = $this->actingAs($admin, 'sanctum')
+            ->patchJson('/api/v1/payroll/agents/' . $agent->id . '/approval', [
+                'company_id' => $company->id,
+                'action' => 'revoke',
+                'date' => '2026-06-02',
+                'reason' => 'Attendance discrepancy',
+            ]);
+
+        $revokeResponse->assertOk()
+            ->assertJsonPath('data.status', 'Revoked');
+
+        $this->assertDatabaseHas('attendance_payroll_summaries', [
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'cycle_type' => 'monthly',
+            'status' => 'revoked',
+            'approval_reason' => 'Attendance discrepancy',
+        ]);
+    }
+
+    public function test_agents_list_supports_revoked_filter(): void
+    {
+        [$company, $admin,, $agent] = $this->seedCompanyUsers();
+
+        $this->createPayrollSetting($company, [
+            'base_salary' => 120000,
+            'work_days' => 22,
+            'daily_pay' => 5454.55,
+        ]);
+
+        $this->actingAs($admin, 'sanctum')
+            ->patchJson('/api/v1/payroll/agents/' . $agent->id . '/approval', [
+                'company_id' => $company->id,
+                'action' => 'revoke',
+                'date' => '2026-06-02',
+                'reason' => 'Issue found',
+            ])
+            ->assertOk();
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/payroll/agents?company_id=' . $company->id . '&date=2026-06-02&status=revoked');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.status', 'Revoked');
+    }
+
+    public function test_management_can_export_payroll_csv(): void
+    {
+        [$company, $admin,, $agent] = $this->seedCompanyUsers();
+
+        $this->createPayrollSetting($company, [
+            'base_salary' => 120000,
+            'work_days' => 22,
+            'daily_pay' => 5454.55,
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->get('/api/v1/payroll/export?company_id=' . $company->id . '&date=2026-06-02&format=csv');
+
+        $response->assertOk();
+        $this->assertStringContainsString('text/csv', (string) $response->headers->get('content-type'));
+        $this->assertStringContainsString('Name,Email,Zone,Status', $response->streamedContent());
+        $this->assertStringContainsString($agent->email, $response->streamedContent());
+    }
+
+    public function test_agent_cannot_export_payroll(): void
+    {
+        [$company,,, $agent] = $this->seedCompanyUsers();
+
+        $this->createPayrollSetting($company);
+
+        $response = $this->actingAs($agent, 'sanctum')
+            ->get('/api/v1/payroll/export?company_id=' . $company->id . '&date=2026-06-02&format=csv');
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('errors.authorization.0', 'Only owners, admins, and supervisors can manage payroll settings.');
     }
 
     public function test_admin_can_update_agent_payroll_profile(): void

@@ -48,6 +48,7 @@ function ApprovalModal({
   const [selectedAction, setSelectedAction] = useState<ApprovalAction | null>(null);
   const [reason, setReason] = useState("");
   const isPending = agent.status === "Pending";
+  const isApproved = agent.status === "Approved";
 
   const approveMutation = useApprovePayrollAgent(agent.id, {
     onSuccess: () => {
@@ -72,8 +73,8 @@ function ApprovalModal({
     approveMutation.mutate({ company_id: companyId, action: selectedAction, reason: reason.trim() || undefined });
   };
 
-  const canApprove = isPending;
-  const canRevoke = !isPending;
+  const canApprove = !isApproved;
+  const canRevoke = isApproved;
 
   return (
     <div
@@ -94,11 +95,10 @@ function ApprovalModal({
             </div>
             <div className="ml-auto shrink-0">
               <span
-                className={`text-[10px] font-semibold px-3 py-1 rounded-full ${
-                  isPending
+                className={`text-[10px] font-semibold px-3 py-1 rounded-full ${isPending
                     ? "bg-amber-400/20 text-amber-300 ring-1 ring-amber-400/40"
                     : "bg-emerald-400/20 text-emerald-300 ring-1 ring-emerald-400/40"
-                }`}
+                  }`}
               >
                 {agent.status}
               </span>
@@ -118,13 +118,12 @@ function ApprovalModal({
               type="button"
               disabled={!canApprove}
               onClick={() => setSelectedAction("approve")}
-              className={`relative flex flex-col items-center gap-2 rounded-2xl p-4 border-2 transition-all ${
-                !canApprove
+              className={`relative flex flex-col items-center gap-2 rounded-2xl p-4 border-2 transition-all ${!canApprove
                   ? "opacity-30 cursor-not-allowed border-gray-100 bg-gray-50"
                   : selectedAction === "approve"
-                  ? "border-emerald-500 bg-emerald-50"
-                  : "border-gray-100 bg-gray-50 hover:border-emerald-200 hover:bg-emerald-50/40"
-              }`}
+                    ? "border-emerald-500 bg-emerald-50"
+                    : "border-gray-100 bg-gray-50 hover:border-emerald-200 hover:bg-emerald-50/40"
+                }`}
             >
               <CheckCircle2
                 size={28}
@@ -142,13 +141,12 @@ function ApprovalModal({
               type="button"
               disabled={!canRevoke}
               onClick={() => setSelectedAction("revoke")}
-              className={`relative flex flex-col items-center gap-2 rounded-2xl p-4 border-2 transition-all ${
-                !canRevoke
+              className={`relative flex flex-col items-center gap-2 rounded-2xl p-4 border-2 transition-all ${!canRevoke
                   ? "opacity-30 cursor-not-allowed border-gray-100 bg-gray-50"
                   : selectedAction === "revoke"
-                  ? "border-rose-500 bg-rose-50"
-                  : "border-gray-100 bg-gray-50 hover:border-rose-200 hover:bg-rose-50/40"
-              }`}
+                    ? "border-rose-500 bg-rose-50"
+                    : "border-gray-100 bg-gray-50 hover:border-rose-200 hover:bg-rose-50/40"
+                }`}
             >
               <XCircle
                 size={28}
@@ -190,13 +188,12 @@ function ApprovalModal({
               type="button"
               disabled={!selectedAction || approveMutation.isPending}
               onClick={handleSubmit}
-              className={`flex-1 py-3 rounded-xl text-[13px] font-semibold text-white transition-all flex items-center justify-center gap-2 ${
-                !selectedAction
+              className={`flex-1 py-3 rounded-xl text-[13px] font-semibold text-white transition-all flex items-center justify-center gap-2 ${!selectedAction
                   ? "bg-gray-200 cursor-not-allowed"
                   : selectedAction === "approve"
-                  ? "bg-emerald-500 hover:bg-emerald-600"
-                  : "bg-rose-500 hover:bg-rose-600"
-              }`}
+                    ? "bg-emerald-500 hover:bg-emerald-600"
+                    : "bg-rose-500 hover:bg-rose-600"
+                }`}
             >
               {approveMutation.isPending ? (
                 <Loader2 size={15} className="animate-spin" />
@@ -204,10 +201,10 @@ function ApprovalModal({
               {approveMutation.isPending
                 ? "Submitting..."
                 : selectedAction === "approve"
-                ? "Confirm Approval"
-                : selectedAction === "revoke"
-                ? "Confirm Revoke"
-                : "Submit"}
+                  ? "Confirm Approval"
+                  : selectedAction === "revoke"
+                    ? "Confirm Revoke"
+                    : "Submit"}
             </button>
           </div>
         </div>
@@ -365,11 +362,10 @@ export function PayrollSidebar({ agent, onEditPayroll, companyId, onApprovalSucc
             <button
               type="button"
               onClick={() => setApprovalOpen(true)}
-              className={`w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl text-[13px] font-semibold transition-all ${
-                isApproved
+              className={`w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl text-[13px] font-semibold transition-all ${isApproved
                   ? "bg-dash-dark text-white hover:opacity-90"
                   : "bg-emerald-500 text-white hover:bg-emerald-600"
-              }`}
+                }`}
             >
               <ShieldCheck size={16} />
               {isApproved ? "Manage Approval" : "Approve Payroll"}

@@ -12,9 +12,12 @@ use App\Models\AttendanceRecord;
 use App\Models\AttendanceSetting;
 use App\Models\PayrollSetting;
 use App\Models\User;
+use App\Notifications\PayrollStatusNotification;
 use App\Services\Notification\NotificationService;
 use App\Support\AvatarUrlResolver;
 use Carbon\Carbon;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -135,9 +138,7 @@ class PayrollService
         $this->accessService->ensureCanView($context);
 
         $companyId = (int) $context->company->id;
-        $date = ! empty($filters['date'])
-            ? Carbon::parse((string) $filters['date'])->startOfDay()
-            : now()->startOfDay();
+        $date = $this->resolveReferenceDate($filters);
         $yesterday = $date->copy()->subDay();
 
         $payrollSetting = PayrollSetting::query()->where('company_id', $companyId)->first();
@@ -173,12 +174,13 @@ class PayrollService
                 continue;
             }
 
+            $todayPeriod = $this->resolvePayrollPeriod($date, $this->resolveAgentSalaryType($agent, $payrollSetting));
             $effective = $this->resolveEffectivePayrollProfile(
                 agent: $agent,
                 payrollSetting: $payrollSetting,
                 attendanceSetting: $attendanceSetting,
-                periodStart: $date->copy()->startOfMonth(),
-                periodEnd: $date->copy()->endOfMonth(),
+                periodStart: $todayPeriod['period_start'],
+                periodEnd: $todayPeriod['period_end'],
             );
 
             $todayValue += (float) $effective['daily_pay'];
@@ -191,28 +193,37 @@ class PayrollService
                 continue;
             }
 
+            $yesterdayPeriod = $this->resolvePayrollPeriod($yesterday, $this->resolveAgentSalaryType($agent, $payrollSetting));
             $effective = $this->resolveEffectivePayrollProfile(
                 agent: $agent,
                 payrollSetting: $payrollSetting,
                 attendanceSetting: $attendanceSetting,
-                periodStart: $yesterday->copy()->startOfMonth(),
-                periodEnd: $yesterday->copy()->endOfMonth(),
+                periodStart: $yesterdayPeriod['period_start'],
+                periodEnd: $yesterdayPeriod['period_end'],
             );
 
             $yesterdayValue += (float) $effective['daily_pay'];
         }
 
-        $totalPayroll = $agents->reduce(function (float $carry, User $agent) use ($payrollSetting, $attendanceSetting, $date): float {
-            $effective = $this->resolveEffectivePayrollProfile(
+        $totalPayroll = 0.0;
+        $pendingApproval = 0.0;
+
+        foreach ($agents as $agent) {
+            $period = $this->resolvePayrollPeriod($date, $this->resolveAgentSalaryType($agent, $payrollSetting));
+            $summary = $this->ensurePayrollSummaryForPeriod(
+                companyId: $companyId,
                 agent: $agent,
                 payrollSetting: $payrollSetting,
                 attendanceSetting: $attendanceSetting,
-                periodStart: $date->copy()->startOfMonth(),
-                periodEnd: $date->copy()->endOfMonth(),
+                period: $period,
+                actorUserId: null,
             );
 
-            return $carry + (float) $effective['base_salary'];
-        }, 0.0);
+            $totalPayroll += (float) $summary->salary_payable;
+            if ((string) $summary->status === 'pending') {
+                $pendingApproval += (float) $summary->salary_payable;
+            }
+        }
 
         $todayPresentCount = $todayPresentIds
             ->filter(fn(int $agentId): bool => $agentsById->has($agentId))
@@ -225,7 +236,7 @@ class PayrollService
             'payroll_rise' => $todayValue > $yesterdayValue,
             'payroll_fall' => $todayValue < $yesterdayValue,
             'total_commission' => 0.0,
-            'pending_approval' => 0.0,
+            'pending_approval' => round($pendingApproval, 2),
             'total_agents' => $agents->count(),
             'total_payroll' => round($totalPayroll, 2),
             'currency' => strtoupper((string) ($payrollSetting?->currency ?? $context->company->currency_code ?? 'NGN')),
@@ -238,10 +249,7 @@ class PayrollService
         $this->accessService->ensureCanView($context);
 
         $companyId = (int) $context->company->id;
-        $year = (int) ($filters['year'] ?? now()->year);
-        $month = (int) ($filters['month'] ?? now()->month);
-        $periodStart = Carbon::create($year, $month, 1)->startOfMonth();
-        $periodEnd = $periodStart->copy()->endOfMonth();
+        $date = $this->resolveReferenceDate($filters);
 
         $query = $this->agentsQuery($companyId);
 
@@ -258,82 +266,37 @@ class PayrollService
             });
         }
 
-        if (! empty($filters['status'])) {
-            $status = strtolower((string) $filters['status']);
-
-            if ($status === 'approved') {
-                $query->where(function ($sub): void {
-                    $sub->where('users.onboarding_status', 'active')
-                        ->orWhere('users.is_active', true);
-                });
-            }
-
-            if ($status === 'pending') {
-                $query->where(function ($sub): void {
-                    $sub->where('users.onboarding_status', '!=', 'active')
-                        ->orWhereNull('users.onboarding_status')
-                        ->orWhere('users.is_active', false);
-                });
-            }
-        }
-
-        $perPage = (int) ($filters['per_page'] ?? 20);
-        $paginated = $query->paginate($perPage)->withQueryString();
-
-        $items = collect($paginated->items());
-        $agentIds = $items->pluck('id')->map(static fn(mixed $id): int => (int) $id)->all();
-
-        $attendanceCounts = AttendanceRecord::query()
-            ->selectRaw('user_id, COUNT(*) as total')
-            ->where('company_id', $companyId)
-            ->whereIn('user_id', $agentIds)
-            ->whereBetween('attendance_date', [$periodStart->toDateString(), $periodEnd->toDateString()])
-            ->whereIn('status', self::PRESENT_STATUSES)
-            ->groupBy('user_id')
-            ->pluck('total', 'user_id');
-
+        $agents = $query->get();
         $payrollSetting = PayrollSetting::query()->where('company_id', $companyId)->first();
         $attendanceSetting = AttendanceSetting::query()->where('company_id', $companyId)->first();
 
-        $rows = $items->map(function (User $agent) use ($attendanceCounts, $payrollSetting, $attendanceSetting, $periodStart, $periodEnd): array {
-            $effective = $this->resolveEffectivePayrollProfile(
-                agent: $agent,
-                payrollSetting: $payrollSetting,
-                attendanceSetting: $attendanceSetting,
-                periodStart: $periodStart,
-                periodEnd: $periodEnd,
-            );
+        $rows = $this->buildAgentRows(
+            agents: $agents,
+            companyId: $companyId,
+            payrollSetting: $payrollSetting,
+            attendanceSetting: $attendanceSetting,
+            date: $date,
+            actorUserId: $context->role !== 'agent' ? (int) $user->id : null,
+        );
 
-            $attendanceDays = (int) ($attendanceCounts->get((int) $agent->id) ?? 0);
+        if (! empty($filters['status'])) {
+            $needle = strtolower((string) $filters['status']);
+            $rows = $rows
+                ->filter(static fn(array $row): bool => strtolower((string) $row['status']) === $needle)
+                ->values();
+        }
 
-            $netPay = $effective['attendance_affects_pay']
-                ? round((float) $effective['daily_pay'] * $attendanceDays, 2)
-                : round((float) $effective['base_salary'], 2);
-
-            $status = (($agent->onboarding_status === 'active') || ((bool) $agent->is_active === true))
-                ? 'Approved'
-                : 'Pending';
-
-            return [
-                'id' => (int) $agent->id,
-                'name' => (string) $agent->name,
-                'email' => (string) $agent->email,
-                'avatar_url' => AvatarUrlResolver::resolve($agent->avatar, $agent->gender) ?? '/avatars/male-avatar.png',
-                'assigned_zone' => $agent->assigned_zone,
-                'role' => 'Agent',
-                'status' => $status,
-                'base_salary' => round((float) $effective['base_salary'], 2),
-                'daily_pay' => round((float) $effective['daily_pay'], 2),
-                'net_pay' => $netPay,
-                'attendance_days' => $attendanceDays,
-                'currency' => (string) $effective['currency'],
-                'salary_type' => (string) $effective['salary_type'],
-                'attendance_affects_pay' => (bool) $effective['attendance_affects_pay'],
-            ];
-        })->values()->all();
+        $perPage = (int) ($filters['per_page'] ?? 20);
+        $page = max((int) ($filters['page'] ?? 1), 1);
+        $paginated = new LengthAwarePaginator(
+            items: $rows->forPage($page, $perPage)->values()->all(),
+            total: $rows->count(),
+            perPage: $perPage,
+            currentPage: $page,
+        );
 
         return [
-            'items' => $rows,
+            'items' => $paginated->items(),
             'pagination' => [
                 'current_page' => $paginated->currentPage(),
                 'last_page' => $paginated->lastPage(),
@@ -357,14 +320,13 @@ class PayrollService
         }
 
         $agent = $this->resolveAgentInCompany(companyId: (int) $context->company->id, agentId: $targetUserId);
-        $year = (int) ($filters['year'] ?? now()->year);
-        $month = (int) ($filters['month'] ?? now()->month);
+        $date = $this->resolveReferenceDate($filters);
 
         return $this->buildAgentProfilePayload(
             companyId: (int) $context->company->id,
             agent: $agent,
-            year: $year,
-            month: $month,
+            date: $date,
+            actorUserId: $context->role !== 'agent' ? (int) $actor->id : null,
         );
     }
 
@@ -426,9 +388,130 @@ class PayrollService
         return $this->buildAgentProfilePayload(
             companyId: (int) $context->company->id,
             agent: $agent->fresh(),
-            year: (int) now()->year,
-            month: (int) now()->month,
+            date: now(),
+            actorUserId: (int) $actor->id,
         );
+    }
+
+    public function approveAgentPayroll(User $actor, int $agentId, array $data): array
+    {
+        $context = $this->accessService->resolve($actor, $data['company_id'] ?? null);
+        $this->accessService->ensureCanManage($context);
+
+        $agent = $this->resolveAgentInCompany(companyId: (int) $context->company->id, agentId: $agentId);
+        $date = $this->resolveReferenceDate($data);
+        $payrollSetting = PayrollSetting::query()->where('company_id', $context->company->id)->first();
+        $attendanceSetting = AttendanceSetting::query()->where('company_id', $context->company->id)->first();
+        $period = $this->resolvePayrollPeriod($date, $this->resolveAgentSalaryType($agent, $payrollSetting));
+
+        $summary = $this->ensurePayrollSummaryForPeriod(
+            companyId: (int) $context->company->id,
+            agent: $agent,
+            payrollSetting: $payrollSetting,
+            attendanceSetting: $attendanceSetting,
+            period: $period,
+            actorUserId: (int) $actor->id,
+        );
+
+        $action = strtolower((string) $data['action']);
+        $reason = isset($data['reason']) ? trim((string) $data['reason']) : null;
+
+        if ($action === 'approve') {
+            $summary->update([
+                'status' => 'approved',
+                'approved_at' => now(),
+                'approved_by_user_id' => (int) $actor->id,
+                'revoked_at' => null,
+                'revoked_by_user_id' => null,
+                'approval_reason' => $reason,
+            ]);
+        } else {
+            $summary->update([
+                'status' => 'revoked',
+                'revoked_at' => now(),
+                'revoked_by_user_id' => (int) $actor->id,
+                'approved_at' => null,
+                'approved_by_user_id' => null,
+                'approval_reason' => $reason,
+            ]);
+        }
+
+        $label = $this->formatPeriodLabel((string) $period['cycle_type'], $period['period_start'], $period['period_end']);
+        $formattedAmount = $this->formatMoney((float) $summary->salary_payable, (string) $summary->currency);
+
+        $this->notificationService->notifyUser((int) $agent->id, [
+            'company_id' => (int) $context->company->id,
+            'type' => 'payroll.status_updated',
+            'category' => NotificationCategory::PAYROLL->value,
+            'title' => 'Payroll status updated',
+            'message' => sprintf('Your payroll for %s is now %s.', $label, ucfirst((string) $summary->status)),
+            'reference_type' => AttendancePayrollSummary::class,
+            'reference_id' => (int) $summary->id,
+            'action_url' => '/payroll',
+            'action_route' => 'payroll.agents.show',
+            'priority' => NotificationPriority::HIGH->value,
+            'created_by_user_id' => (int) $actor->id,
+            'metadata' => [
+                'period_start' => $period['period_start']->toDateString(),
+                'period_end' => $period['period_end']->toDateString(),
+                'status' => (string) $summary->status,
+                'salary_payable' => (float) $summary->salary_payable,
+                'currency' => (string) $summary->currency,
+                'reason' => $reason,
+            ],
+            'dedupe_key' => sprintf(
+                'payroll-status:%d:%d:%s:%s:%s',
+                (int) $context->company->id,
+                (int) $agent->id,
+                $period['cycle_type'],
+                $period['period_start']->toDateString(),
+                (string) $summary->status,
+            ),
+        ]);
+
+        $agent->notify(new PayrollStatusNotification(
+            status: ucfirst((string) $summary->status),
+            periodLabel: $label,
+            amount: $formattedAmount,
+            reason: $reason,
+        ));
+
+        return $this->buildAgentProfilePayload(
+            companyId: (int) $context->company->id,
+            agent: $agent->fresh(),
+            date: $date,
+            actorUserId: (int) $actor->id,
+        );
+    }
+
+    public function exportAgents(User $user, array $filters): array
+    {
+        $context = $this->accessService->resolve($user, $filters['company_id'] ?? null);
+        $this->accessService->ensureCanManage($context);
+
+        $result = $this->listAgents($user, [
+            ...$filters,
+            'per_page' => 100000,
+            'page' => 1,
+        ]);
+
+        $format = strtolower((string) ($filters['format'] ?? 'csv'));
+        $date = $this->resolveReferenceDate($filters);
+        $filename = sprintf('payroll-%s.%s', $date->format('Y-m-d'), $format === 'xls' ? 'xls' : 'csv');
+
+        if ($format === 'xls') {
+            return [
+                'filename' => $filename,
+                'content_type' => 'application/vnd.ms-excel; charset=UTF-8',
+                'content' => $this->buildExcelTableExport($result['items']),
+            ];
+        }
+
+        return [
+            'filename' => $filename,
+            'content_type' => 'text/csv; charset=UTF-8',
+            'content' => $this->buildCsvExport($result['items']),
+        ];
     }
 
     private function resolveCurrency(?string $preferredCurrency, ?string $companyCurrency, ?string $fallbackCurrency): string
@@ -444,42 +527,39 @@ class PayrollService
         return strtoupper((string) $currency);
     }
 
-    private function buildAgentProfilePayload(int $companyId, User $agent, int $year, int $month): array
+    private function buildAgentProfilePayload(int $companyId, User $agent, Carbon $date, ?int $actorUserId): array
     {
-        $periodStart = Carbon::create($year, $month, 1)->startOfMonth();
-        $periodEnd = $periodStart->copy()->endOfMonth();
-
         $payrollSetting = PayrollSetting::query()->where('company_id', $companyId)->first();
         $attendanceSetting = AttendanceSetting::query()->where('company_id', $companyId)->first();
+        $period = $this->resolvePayrollPeriod($date, $this->resolveAgentSalaryType($agent, $payrollSetting));
 
         $effective = $this->resolveEffectivePayrollProfile(
             agent: $agent,
             payrollSetting: $payrollSetting,
             attendanceSetting: $attendanceSetting,
-            periodStart: $periodStart,
-            periodEnd: $periodEnd,
+            periodStart: $period['period_start'],
+            periodEnd: $period['period_end'],
         );
 
-        $attendanceDays = AttendanceRecord::query()
-            ->where('company_id', $companyId)
-            ->where('user_id', $agent->id)
-            ->whereBetween('attendance_date', [$periodStart->toDateString(), $periodEnd->toDateString()])
-            ->whereIn('status', self::PRESENT_STATUSES)
-            ->count();
-
-        $salaryPayable = $effective['attendance_affects_pay']
-            ? round((float) $effective['daily_pay'] * $attendanceDays, 2)
-            : round((float) $effective['base_salary'], 2);
+        $summary = $this->ensurePayrollSummaryForPeriod(
+            companyId: $companyId,
+            agent: $agent,
+            payrollSetting: $payrollSetting,
+            attendanceSetting: $attendanceSetting,
+            period: $period,
+            actorUserId: $actorUserId,
+        );
 
         $history = AttendancePayrollSummary::query()
             ->where('company_id', $companyId)
             ->where('user_id', $agent->id)
             ->orderByDesc('period_year')
             ->orderByDesc('period_month')
+            ->orderByDesc('period_start')
             ->limit(6)
             ->get()
             ->map(static function (AttendancePayrollSummary $summary): array {
-                $monthDate = Carbon::create((int) $summary->period_year, (int) $summary->period_month, 1);
+                $monthDate = Carbon::parse((string) $summary->period_start);
 
                 return [
                     'id' => (int) $summary->id,
@@ -489,7 +569,7 @@ class PayrollService
                     'base_salary' => round((float) $summary->daily_rate * (int) $summary->scheduled_work_days, 2),
                     'net_pay' => round((float) $summary->salary_payable, 2),
                     'due_date' => $summary->period_end?->toDateString(),
-                    'status' => 'Approved',
+                    'status' => ucfirst((string) $summary->status),
                 ];
             })
             ->values()
@@ -502,6 +582,7 @@ class PayrollService
             'avatar_url' => AvatarUrlResolver::resolve($agent->avatar, $agent->gender) ?? '/avatars/male-avatar.png',
             'assigned_zone' => $agent->assigned_zone,
             'role' => 'Agent',
+            'status' => ucfirst((string) $summary->status),
             'salary_type' => (string) $effective['salary_type'],
             'base_salary' => round((float) $effective['base_salary'], 2),
             'daily_pay' => round((float) $effective['daily_pay'], 2),
@@ -510,8 +591,8 @@ class PayrollService
             'attendance_affects_pay' => (bool) $effective['attendance_affects_pay'],
             'commission_enabled' => (bool) $effective['commission_enabled'],
             'currency' => (string) $effective['currency'],
-            'attendance_days' => $attendanceDays,
-            'salary_payable' => $salaryPayable,
+            'attendance_days' => (int) $summary->attendance_days,
+            'salary_payable' => round((float) $summary->salary_payable, 2),
             'history' => $history,
         ];
     }
@@ -555,7 +636,6 @@ class PayrollService
         );
 
         $dailyPay = $workDays > 0 ? round($baseSalary / $workDays, 2) : 0.0;
-
         $currency = strtoupper((string) ($agent->salary_currency ?: $payrollSetting?->currency ?: 'NGN'));
 
         return [
@@ -617,6 +697,203 @@ class PayrollService
         }
 
         return round($minutes / 60, 2);
+    }
+
+    private function resolveReferenceDate(array $filters): Carbon
+    {
+        return ! empty($filters['date'])
+            ? Carbon::parse((string) $filters['date'])->startOfDay()
+            : now()->startOfDay();
+    }
+
+    private function resolveAgentSalaryType(User $agent, ?PayrollSetting $payrollSetting): string
+    {
+        return $agent->payroll_salary_type
+            ? strtolower((string) $agent->payroll_salary_type)
+            : (string) ($payrollSetting?->salary_type?->value ?? 'monthly');
+    }
+
+    private function resolvePayrollPeriod(Carbon $date, string $salaryType): array
+    {
+        $cycleType = strtolower($salaryType) === 'weekly' ? 'weekly' : 'monthly';
+        $periodStart = $cycleType === 'weekly'
+            ? $date->copy()->startOfWeek(Carbon::MONDAY)
+            : $date->copy()->startOfMonth();
+        $periodEnd = $cycleType === 'weekly'
+            ? $date->copy()->endOfWeek(Carbon::SUNDAY)
+            : $date->copy()->endOfMonth();
+
+        return [
+            'cycle_type' => $cycleType,
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+            'period_year' => (int) $periodStart->year,
+            'period_month' => (int) $periodStart->month,
+        ];
+    }
+
+    private function ensurePayrollSummaryForPeriod(
+        int $companyId,
+        User $agent,
+        ?PayrollSetting $payrollSetting,
+        ?AttendanceSetting $attendanceSetting,
+        array $period,
+        ?int $actorUserId,
+    ): AttendancePayrollSummary {
+        if (! $payrollSetting) {
+            throw ValidationException::withMessages([
+                'payroll' => ['Payroll settings must be configured before payroll can be reviewed or approved.'],
+            ]);
+        }
+
+        $effective = $this->resolveEffectivePayrollProfile(
+            agent: $agent,
+            payrollSetting: $payrollSetting,
+            attendanceSetting: $attendanceSetting,
+            periodStart: $period['period_start'],
+            periodEnd: $period['period_end'],
+        );
+
+        $attendanceDays = AttendanceRecord::query()
+            ->where('company_id', $companyId)
+            ->where('user_id', $agent->id)
+            ->whereBetween('attendance_date', [$period['period_start']->toDateString(), $period['period_end']->toDateString()])
+            ->whereIn('status', self::PRESENT_STATUSES)
+            ->count();
+
+        $salaryPayable = $effective['attendance_affects_pay']
+            ? round((float) $effective['daily_pay'] * $attendanceDays, 2)
+            : round((float) $effective['base_salary'], 2);
+
+        return AttendancePayrollSummary::query()->updateOrCreate(
+            [
+                'company_id' => $companyId,
+                'user_id' => (int) $agent->id,
+                'cycle_type' => (string) $period['cycle_type'],
+                'period_start' => $period['period_start']->toDateString(),
+                'period_end' => $period['period_end']->toDateString(),
+            ],
+            [
+                'payroll_setting_id' => (int) $payrollSetting->id,
+                'period_year' => (int) $period['period_year'],
+                'period_month' => (int) $period['period_month'],
+                'attendance_days' => $attendanceDays,
+                'scheduled_work_days' => (int) $effective['work_days'],
+                'daily_rate' => (float) $effective['daily_pay'],
+                'salary_payable' => $salaryPayable,
+                'currency' => (string) $effective['currency'],
+                'generated_at' => now(),
+                'metadata' => [
+                    'attendance_affects_pay' => (bool) $effective['attendance_affects_pay'],
+                    'actual_attendance_days' => $attendanceDays,
+                    'actor_user_id' => $actorUserId,
+                    'salary_type' => (string) $effective['salary_type'],
+                ],
+            ],
+        );
+    }
+
+    private function buildAgentRows(
+        Collection $agents,
+        int $companyId,
+        ?PayrollSetting $payrollSetting,
+        ?AttendanceSetting $attendanceSetting,
+        Carbon $date,
+        ?int $actorUserId,
+    ): Collection {
+        return $agents->map(function (User $agent) use ($companyId, $payrollSetting, $attendanceSetting, $date, $actorUserId): array {
+            $period = $this->resolvePayrollPeriod($date, $this->resolveAgentSalaryType($agent, $payrollSetting));
+            $summary = $this->ensurePayrollSummaryForPeriod(
+                companyId: $companyId,
+                agent: $agent,
+                payrollSetting: $payrollSetting,
+                attendanceSetting: $attendanceSetting,
+                period: $period,
+                actorUserId: $actorUserId,
+            );
+
+            return [
+                'id' => (int) $agent->id,
+                'name' => (string) $agent->name,
+                'email' => (string) $agent->email,
+                'avatar_url' => AvatarUrlResolver::resolve($agent->avatar, $agent->gender) ?? '/avatars/male-avatar.png',
+                'assigned_zone' => $agent->assigned_zone,
+                'role' => 'Agent',
+                'status' => ucfirst((string) $summary->status),
+                'base_salary' => round((float) $summary->daily_rate * (int) $summary->scheduled_work_days, 2),
+                'daily_pay' => round((float) $summary->daily_rate, 2),
+                'net_pay' => round((float) $summary->salary_payable, 2),
+                'attendance_days' => (int) $summary->attendance_days,
+                'currency' => (string) $summary->currency,
+                'salary_type' => (string) ($summary->metadata['salary_type'] ?? $period['cycle_type']),
+                'attendance_affects_pay' => (bool) ($summary->metadata['attendance_affects_pay'] ?? false),
+            ];
+        })->values();
+    }
+
+    private function formatPeriodLabel(string $cycleType, Carbon $periodStart, Carbon $periodEnd): string
+    {
+        return $cycleType === 'weekly'
+            ? sprintf('%s - %s', $periodStart->format('M j, Y'), $periodEnd->format('M j, Y'))
+            : $periodStart->format('F Y');
+    }
+
+    private function formatMoney(float $amount, string $currency): string
+    {
+        $formatted = number_format($amount, 2);
+
+        return match (strtoupper($currency)) {
+            'NGN' => '₦' . $formatted,
+            'USD' => '$' . $formatted,
+            default => $formatted . ' ' . strtoupper($currency),
+        };
+    }
+
+    private function buildCsvExport(array $rows): string
+    {
+        $handle = fopen('php://temp', 'r+');
+        fputcsv($handle, ['Name', 'Email', 'Zone', 'Status', 'Base Salary', 'Daily Pay', 'Net Pay', 'Attendance Days', 'Currency', 'Salary Type']);
+
+        foreach ($rows as $row) {
+            fputcsv($handle, [
+                $row['name'],
+                $row['email'],
+                $row['assigned_zone'],
+                $row['status'],
+                $row['base_salary'],
+                $row['daily_pay'],
+                $row['net_pay'],
+                $row['attendance_days'],
+                $row['currency'],
+                $row['salary_type'],
+            ]);
+        }
+
+        rewind($handle);
+
+        return (string) stream_get_contents($handle);
+    }
+
+    private function buildExcelTableExport(array $rows): string
+    {
+        $header = ['Name', 'Email', 'Zone', 'Status', 'Base Salary', 'Daily Pay', 'Net Pay', 'Attendance Days', 'Currency', 'Salary Type'];
+        $html = '<table><thead><tr>';
+
+        foreach ($header as $column) {
+            $html .= '<th>' . e($column) . '</th>';
+        }
+
+        $html .= '</tr></thead><tbody>';
+
+        foreach ($rows as $row) {
+            $html .= '<tr>';
+            foreach (['name', 'email', 'assigned_zone', 'status', 'base_salary', 'daily_pay', 'net_pay', 'attendance_days', 'currency', 'salary_type'] as $key) {
+                $html .= '<td>' . e((string) ($row[$key] ?? '')) . '</td>';
+            }
+            $html .= '</tr>';
+        }
+
+        return $html . '</tbody></table>';
     }
 
     private function agentsQuery(int $companyId)

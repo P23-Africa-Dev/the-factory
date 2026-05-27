@@ -115,8 +115,11 @@ export type AttendanceMetricsResponse = {
 export type AttendanceRecordsParams = {
   company_id?: number | string;
   date?: string;
+  from_date?: string;
+  to_date?: string;
   status?: string;
   role?: "agent" | "supervisor";
+  clock_state?: "clocked_in" | "clocked_out";
   search?: string;
   per_page?: number;
   page?: number;

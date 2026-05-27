@@ -14,6 +14,8 @@ import { SetPayrollModal } from "@/components/payroll/set-payroll-modal";
 import { usePayroll, usePayrollAgents, usePayrollAgentProfile, usePayrollOverview } from "@/hooks/use-payroll";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { formatPayrollDateLabel, nextPayrollStatusFilter, type PayrollStatusFilter } from "@/lib/payroll/page-controls";
+import { formatPayrollMoney, PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
 import { ArrowLeft, Search, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -24,26 +26,27 @@ export default function PayrollListPage() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [isPayrollModalOpen, setIsPayrollModalOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "approved" | "pending">("all");
+  const [statusFilter, setStatusFilter] = useState<PayrollStatusFilter>("all");
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const isAgent = role === "agent";
+  const payrollCurrency = PAYROLL_DEFAULT_CURRENCY;
 
-  const { data: overview } = usePayrollOverview({ company_id: companyId ?? undefined });
+  const { data: overview } = usePayrollOverview({ company_id: companyId ?? undefined, date: selectedDate });
   const { data: existingPayroll } = usePayroll(companyId);
   const { data: agentsData, isLoading: isUsersLoading } = usePayrollAgents({
     company_id: companyId ?? undefined,
     search: search || undefined,
     status: statusFilter === "all" ? undefined : statusFilter,
-    year: new Date().getFullYear(),
-    month: new Date().getMonth() + 1,
+    date: selectedDate,
     per_page: 100,
   });
 
   const payrollAgents = useMemo(
-    () => (agentsData?.items ?? []).map(mapPayrollAgentToUi),
-    [agentsData]
+    () => (agentsData?.items ?? []).map((agent) => mapPayrollAgentToUi(agent, payrollCurrency)),
+    [agentsData, payrollCurrency]
   );
 
   useEffect(() => {
@@ -69,20 +72,15 @@ export default function PayrollListPage() {
 
   const selectedAgentProfileQuery = usePayrollAgentProfile(selectedAgentId ?? undefined, {
     company_id: companyId ?? undefined,
-    year: new Date().getFullYear(),
-    month: new Date().getMonth() + 1,
+    date: selectedDate,
   });
 
   const selectedAgent = selectedAgentProfileQuery.data
-    ? mapPayrollProfileToUi(selectedAgentProfileQuery.data)
+    ? mapPayrollProfileToUi(selectedAgentProfileQuery.data, payrollCurrency)
     : selectedAgentSummary;
 
   const handleToggleFilter = () => {
-    setStatusFilter((current) => {
-      if (current === "all") return "approved";
-      if (current === "approved") return "pending";
-      return "all";
-    });
+    setStatusFilter((current) => nextPayrollStatusFilter(current));
   };
 
   return (
@@ -113,23 +111,16 @@ export default function PayrollListPage() {
 
         <div className="flex items-center gap-4.25 flex-wrap">
           <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
-            <Image
-              src={CalendarIcon}
-              alt="Calendar Icon"
-              width={13}
-              height={13}
-            />
-            April 16, 2026
-          </button>
-          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
-            <Image
-              src={FileExportIcon}
-              alt="Export Icon"
-              width={13}
-              height={13}
-              style={{ filter: "invert(40%) sepia(0%) grayscale(100%)" }}
-            />
-            Export
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Image
+                src={CalendarIcon}
+                alt="Calendar Icon"
+                width={13}
+                height={13}
+              />
+              {formatPayrollDateLabel(selectedDate)}
+              <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="sr-only" />
+            </label>
           </button>
           <button onClick={handleToggleFilter} className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
             <SlidersHorizontal size={13} />
@@ -154,7 +145,7 @@ export default function PayrollListPage() {
 
       <div className="px-5 sm:px-8 lg:px-10 py-6 space-y-6">
         <div className="bg-white rounded-[30px] px-6 py-4 text-[13px] text-gray-500 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
-          {overview ? `Total payroll: ${overview.total_payroll}` : "Loading payroll overview..."}
+          {overview ? `Total payroll: ${formatPayrollMoney(overview.total_payroll, payrollCurrency)}` : "Loading payroll overview..."}
         </div>
         <div className="flex flex-col xl:flex-row gap-6">
           <div className="flex-1 min-w-0">
@@ -178,7 +169,7 @@ export default function PayrollListPage() {
             </div>
 
             {selectedAgentProfileQuery.data?.history?.length ? (
-              <PayrollHistory entries={selectedAgentProfileQuery.data.history} />
+              <PayrollHistory entries={selectedAgentProfileQuery.data.history} currency={payrollCurrency} />
             ) : null}
           </div>
         </div>

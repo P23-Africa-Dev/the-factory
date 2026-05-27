@@ -8,7 +8,7 @@ use App\Http\Requests\Concerns\ResolvesCompanyContextId;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class PayrollAgentListRequest extends FormRequest
+class PayrollExportRequest extends FormRequest
 {
     use ResolvesCompanyContextId;
 
@@ -26,9 +26,8 @@ class PayrollAgentListRequest extends FormRequest
         $this->merge([
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
             'status' => $this->input('status') !== null ? strtolower((string) $this->input('status')) : null,
+            'format' => $this->input('format') !== null ? strtolower((string) $this->input('format')) : 'csv',
             'date' => $this->input('date') ?? now()->toDateString(),
-            'year' => $year ?? (int) now()->year,
-            'month' => $month ?? (int) now()->month,
         ]);
     }
 
@@ -44,10 +43,9 @@ class PayrollAgentListRequest extends FormRequest
             'search' => ['nullable', 'string', 'max:255'],
             'status' => ['nullable', Rule::in(['approved', 'pending', 'revoked'])],
             'date' => ['required', 'date'],
+            'format' => ['required', Rule::in(['csv', 'xls'])],
             'year' => ['nullable', 'integer', 'min:2000', 'max:2100'],
             'month' => ['nullable', 'integer', 'min:1', 'max:12'],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'page' => ['nullable', 'integer', 'min:1'],
         ];
     }
 }

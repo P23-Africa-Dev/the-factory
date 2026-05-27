@@ -25,10 +25,8 @@ import {
   Activity,
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useRef, useState, useEffect } from "react";
-import PhoneNumberInput from "@/components/ui/phone-number-input";
-import { useLead, useUpdateLead, useAddLeadNote, useAddLeadActivity } from "@/hooks/use-crm";
-import { useInternalUsers } from "@/hooks/use-internal-users";
+import { useRef, useState, useEffect, useMemo } from "react";
+import { useLead, useUpdateLead, useAddLeadNote, useAddLeadActivity, useCrmLabels } from "@/hooks/use-crm";
 import { useAuthStore } from "@/store/auth";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -86,13 +84,13 @@ const MOCK_LEAD: LeadDetail = {
 };
 
 const STATUS_OPTIONS = [
-  { label: "Contacted", color: "#E879A0" },
-  { label: "New Lead", color: "#2563EB" },
-  { label: "Proposal Sent", color: "#F59E0B" },
-  { label: "Qualified", color: "#10B981" },
-  { label: "Unqualified", color: "#1A1F2C" },
-  { label: "Lost", color: "#EF4444" },
-  { label: "Won", color: "#166534" },
+  { label: "Contacted", color: "#E879A0", value: "contacted" },
+  { label: "New Lead", color: "#2563EB", value: "newly_lead" },
+  { label: "Proposal Sent", color: "#F59E0B", value: "proposal_sent" },
+  { label: "Qualified", color: "#10B981", value: "qualified" },
+  { label: "Unqualified", color: "#1A1F2C", value: "unqualified" },
+  { label: "Lost", color: "#EF4444", value: "lost" },
+  { label: "Won", color: "#166534", value: "won" },
 ];
 
 const PRIORITY_OPTIONS = [
@@ -100,13 +98,6 @@ const PRIORITY_OPTIONS = [
   { label: "Medium", color: "#3B82F6" },
   { label: "High", color: "#F59E0B" },
   { label: "Urgent", color: "#EF4444" },
-];
-
-const ASSIGN_OPTIONS = [
-  { label: "Unassigned", color: "#EF4444" },
-  { label: "Collins Bill", color: "#10B981" },
-  { label: "Lane Wade", color: "#3B82F6" },
-  { label: "Francis N.", color: "#8B5CF6" },
 ];
 
 /* ─── Email Data Model ──────────────────────────────────── */
@@ -310,11 +301,10 @@ function ComposeEmailPanel({
         <button
           onClick={handleSend}
           disabled={!subject.trim() || !body.trim() || isSending}
-          className={`w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-2.5 rounded-[12px] sm:rounded-[14px] text-[13px] font-semibold transition-all shadow-md ${
-            subject.trim() && body.trim() && !isSending
+          className={`w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-2.5 rounded-[12px] sm:rounded-[14px] text-[13px] font-semibold transition-all shadow-md ${subject.trim() && body.trim() && !isSending
               ? "bg-[#0B1215] text-white hover:opacity-90"
               : "bg-gray-100 text-gray-300 cursor-not-allowed"
-          }`}
+            }`}
         >
           {isSending ? (
             <>
@@ -349,20 +339,18 @@ function EmailThreadItem({
   return (
     <div
       onClick={onClick}
-      className={`w-full flex items-start gap-2.5 sm:gap-3.5 p-3 sm:p-4 rounded-[16px] sm:rounded-[18px] transition-all duration-200 text-left group relative cursor-pointer ${
-        !email.isRead
+      className={`w-full flex items-start gap-2.5 sm:gap-3.5 p-3 sm:p-4 rounded-[16px] sm:rounded-[18px] transition-all duration-200 text-left group relative cursor-pointer ${!email.isRead
           ? "bg-blue-50/60 hover:bg-blue-50/90 border border-blue-100/50"
           : "hover:bg-gray-50 border border-transparent hover:border-gray-100"
-      }`}
+        }`}
     >
       {/* Direction indicator */}
       <div className="shrink-0 mt-0.5">
         <div
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-sm ${
-            isSent
+          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-sm ${isSent
               ? "bg-[#0B1215] text-white"
               : "bg-gradient-to-br from-[#3B82F6] to-[#2563EB] text-white"
-          }`}
+            }`}
         >
           {isSent ? (
             <Send size={15} className="rotate-[-30deg]" />
@@ -377,11 +365,10 @@ function EmailThreadItem({
         <div className="flex items-center justify-between gap-2 mb-1">
           <div className="flex items-center gap-2 min-w-0">
             <span
-              className={`text-[13px] truncate ${
-                !email.isRead
+              className={`text-[13px] truncate ${!email.isRead
                   ? "font-semibold text-[#0B1215]"
                   : "font-medium text-[#374151]"
-              }`}
+                }`}
             >
               {isSent ? `To: ${email.to}` : email.from}
             </span>
@@ -395,11 +382,10 @@ function EmailThreadItem({
         </div>
 
         <p
-          className={`text-[12px] truncate mb-1 ${
-            !email.isRead
+          className={`text-[12px] truncate mb-1 ${!email.isRead
               ? "font-medium text-[#0B1215]"
               : "font-normal text-gray-600"
-          }`}
+            }`}
         >
           {email.subject}
         </p>
@@ -503,11 +489,10 @@ function EmailDetailView({
       <div className="flex items-center justify-between py-4 border-b border-gray-50">
         <div className="flex items-center gap-3">
           <div
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-sm ${
-              isSent
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-sm ${isSent
                 ? "bg-[#0B1215] text-white"
                 : "bg-gradient-to-br from-[#3B82F6] to-[#2563EB] text-white"
-            }`}
+              }`}
           >
             {isSent ? (
               <Send size={14} className="rotate-[-30deg]" />
@@ -731,7 +716,7 @@ function EmailPanel({ leadName }: { leadName: string }) {
 
 /* ─── Notes Panel ─────────────────────────────────────── */
 
-function NotesPanel({ leadId, notes = [], basePath = "/admin" }: { leadId: string | number; notes: LeadNote[]; basePath?: "/admin" | "/agent" }) {
+function NotesPanel({ leadId, notes = [], basePath = "/agent" }: { leadId: string | number; notes: LeadNote[]; basePath?: "/admin" | "/agent" }) {
   const [noteContent, setNoteContent] = useState("");
   const { mutate: addNote, isPending } = useAddLeadNote({
     onSuccess: () => {
@@ -799,7 +784,7 @@ function NotesPanel({ leadId, notes = [], basePath = "/admin" }: { leadId: strin
 
 /* ─── Activities Panel ────────────────────────────────── */
 
-function ActivitiesPanel({ leadId, activities = [], basePath = "/admin" }: { leadId: string | number; activities: LeadActivity[]; basePath?: "/admin" | "/agent" }) {
+function ActivitiesPanel({ leadId, activities = [], basePath = "/agent" }: { leadId: string | number; activities: LeadActivity[]; basePath?: "/admin" | "/agent" }) {
   const [activityType, setActivityType] = useState("call");
   const [description, setDescription] = useState("");
   const { mutate: logActivity, isPending } = useAddLeadActivity({
@@ -890,7 +875,7 @@ function ActivitiesPanel({ leadId, activities = [], basePath = "/admin" }: { lea
 
 /* ─── Lead Interaction Panel (Tabs) ─────────────────────── */
 
-function LeadInteractionPanel({ leadId, leadName, notes, activities, basePath = "/admin" }: { leadId: string | number, leadName: string, notes: LeadNote[], activities: LeadActivity[], basePath?: "/admin" | "/agent" }) {
+function LeadInteractionPanel({ leadId, leadName, notes, activities, basePath = "/agent" }: { leadId: string | number, leadName: string, notes: LeadNote[], activities: LeadActivity[], basePath?: "/admin" | "/agent" }) {
   const [activeTab, setActiveTab] = useState<"emails" | "notes" | "activities">("emails");
 
   return (
@@ -937,7 +922,7 @@ function PillDropdown({
 }: {
   value: string;
   color: string;
-  options: { label: string; color: string }[];
+  options: { label: string; color: string; value?: string }[];
   onChange: (label: string, color: string) => void;
   disabled?: boolean;
 }) {
@@ -965,7 +950,7 @@ function PillDropdown({
               <button
                 key={opt.label}
                 onClick={() => {
-                  onChange(opt.label, opt.color);
+                  onChange(opt.value ?? opt.label, opt.color);
                   setOpen(false);
                 }}
                 className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors text-left"
@@ -1140,9 +1125,10 @@ export default function LeadDetailsPage() {
   const leadId = params.id as string;
   const { user } = useAuthStore();
   const companyId = user?.active_company?.id;
-  
+
   // Real data fetching
   const { data: leadData, isLoading } = useLead(leadId, companyId, "/agent");
+  const { data: labels = [] } = useCrmLabels(companyId, "/agent");
   const { mutate: updateLead, isPending: isUpdating } = useUpdateLead({
     onSuccess: () => {
       toast.success("Lead updated successfully");
@@ -1150,16 +1136,12 @@ export default function LeadDetailsPage() {
     }
   }, "/agent");
 
-  // Assignees list
-  const { data: usersData } = useInternalUsers({ company_id: companyId });
-  const internalUsers = usersData || [];
-  
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<EditLeadForm>({
     name: "",
     phone: "",
     location: "",
-    status: "new",
+    status: "newly_lead",
     source: "",
     priority: "medium",
     assigned_to_user_id: "",
@@ -1170,7 +1152,7 @@ export default function LeadDetailsPage() {
     name: lead.name || "",
     phone: lead.phone || "",
     location: lead.location || "",
-    status: lead.status || "new",
+    status: lead.status || "newly_lead",
     source: lead.source || "",
     priority: lead.priority || "medium",
     assigned_to_user_id: lead.assigned_to_user_id ? String(lead.assigned_to_user_id) : "",
@@ -1189,16 +1171,8 @@ export default function LeadDetailsPage() {
 
   const handleSave = () => {
     const payload: UpdateLeadPayload = {
-      name: editForm.name,
-      phone: editForm.phone,
-      location: editForm.location,
       status: editForm.status,
-      source: editForm.source,
-      priority: editForm.priority,
-      next_action: editForm.next_action,
-      assigned_to_user_id: editForm.assigned_to_user_id
-        ? Number(editForm.assigned_to_user_id)
-        : null,
+      company_id: companyId,
     };
     updateLead({ leadId, payload });
   };
@@ -1220,13 +1194,15 @@ export default function LeadDetailsPage() {
     );
   }
 
-  const assignOptions = [
-    { label: "Unassigned", color: "#6B7280", value: "" },
-    ...internalUsers.map(u => ({ label: u.name, color: "#3B82F6", value: String(u.id) }))
-  ];
-
-  const currentAssignee = internalUsers.find(u => u.id === leadData.assigned_to_user_id);
-  const currentAssigneeLabel = currentAssignee ? currentAssignee.name : "Unassigned";
+  const currentAssigneeLabel = leadData.assignee?.name || "Unassigned";
+  const statusOptions = useMemo(() => {
+    if (labels.length > 0) {
+      return labels.map((label) => ({ label: label.name, color: label.color, value: label.slug }));
+    }
+    return STATUS_OPTIONS;
+  }, [labels]);
+  const selectedStatusValue = isEditing ? editForm.status : (leadData.status || "newly_lead");
+  const selectedStatusOption = statusOptions.find((option) => option.value === selectedStatusValue);
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-10">
@@ -1330,58 +1306,32 @@ export default function LeadDetailsPage() {
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Name
                     </label>
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={editForm.name}
-                        onChange={(e) => updateField("name", e.target.value)}
-                        className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
-                      />
-                    ) : (
-                      <p className="text-white text-[16px] font-semibold truncate">
-                        {leadData.name}
-                      </p>
-                    )}
+                    <p className="text-white text-[16px] font-semibold truncate">
+                      {leadData.name}
+                    </p>
                   </div>
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Phone Number
                     </label>
-                    {isEditing ? (
-                      <PhoneNumberInput
-                        variant="dark"
-                        value={editForm.phone}
-                        onChange={(value) => updateField("phone", value)}
-                      />
-                    ) : (
-                      <p className="text-white text-[16px] font-semibold truncate">
-                        {leadData.phone || "N/A"}
-                      </p>
-                    )}
+                    <p className="text-white text-[16px] font-semibold truncate">
+                      {leadData.phone || "N/A"}
+                    </p>
                   </div>
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Location
                     </label>
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={editForm.location}
-                        onChange={(e) => updateField("location", e.target.value)}
-                        className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
-                      />
-                    ) : (
-                      <p className="text-white text-[16px] font-semibold truncate">
-                        {leadData.location || "N/A"}
-                      </p>
-                    )}
+                    <p className="text-white text-[16px] font-semibold truncate">
+                      {leadData.location || "N/A"}
+                    </p>
                   </div>
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Status
                     </label>
                     <p className="text-white text-[16px] font-semibold capitalize">
-                      {(leadData.status || "New Lead").replace('_', ' ')}
+                      {(selectedStatusOption?.label || "New Lead")}
                     </p>
                   </div>
                 </div>
@@ -1409,12 +1359,11 @@ export default function LeadDetailsPage() {
                     Status
                   </label>
                   <PillDropdown
-                    value={isEditing ? (STATUS_OPTIONS.find(o => o.label.toLowerCase().replace(' ', '_') === editForm.status)?.label || "New Lead") : (STATUS_OPTIONS.find(o => o.label.toLowerCase().replace(' ', '_') === leadData.status)?.label || "New Lead")}
-                    color={STATUS_OPTIONS.find(o => o.label.toLowerCase().replace(' ', '_') === (isEditing ? editForm.status : leadData.status))?.color || "#2563EB"}
-                    options={STATUS_OPTIONS}
-                    onChange={(label) => {
-                       const value = label.toLowerCase().replace(' ', '_');
-                        updateField("status", value as ApiLeadStatus);
+                    value={selectedStatusOption?.label || "New Lead"}
+                    color={selectedStatusOption?.color || "#2563EB"}
+                    options={statusOptions}
+                    onChange={(value) => {
+                      updateField("status", value as ApiLeadStatus);
                     }}
                     disabled={!isEditing}
                   />
@@ -1439,55 +1388,25 @@ export default function LeadDetailsPage() {
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Source
                   </label>
-                  {isEditing ? (
-                    <input
-                      type="text"
-                      value={editForm.source}
-                      onChange={(e) => updateField("source", e.target.value)}
-                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-medium w-full outline-none focus:border-blue-500 shadow-sm"
-                    />
-                  ) : (
-                    <p className="text-[#0B1215] text-[16px] font-semibold truncate">
-                      {leadData.source || "Unknown"}
-                    </p>
-                  )}
+                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                    {leadData.source || "Unknown"}
+                  </p>
                 </div>
                 <div className="flex flex-col gap-2">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Assign to
                   </label>
-                  {isEditing ? (
-                     <select 
-                       value={editForm.assigned_to_user_id || ""}
-                       onChange={(e) => updateField("assigned_to_user_id", e.target.value)}
-                       className="bg-white border border-gray-100 rounded-xl px-3 py-1.5 text-[14px] outline-none"
-                     >
-                       {assignOptions.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                       ))}
-                     </select>
-                  ) : (
-                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-[11px] font-medium w-fit" style={{backgroundColor: currentAssignee ? "#3B82F6" : "#EF4444"}}>
-                      {currentAssigneeLabel}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-[11px] font-medium w-fit" style={{ backgroundColor: leadData.assignee ? "#3B82F6" : "#EF4444" }}>
+                    {currentAssigneeLabel}
+                  </div>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Next Action
                   </label>
-                  {isEditing ? (
-                    <input
-                      type="text"
-                      value={editForm.next_action}
-                      onChange={(e) => updateField("next_action", e.target.value)}
-                      className="bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-medium w-full outline-none focus:border-blue-500 shadow-sm"
-                    />
-                  ) : (
-                    <p className="text-[#0B1215] text-[16px] font-semibold truncate">
-                      {leadData.next_action || "None"}
-                    </p>
-                  )}
+                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                    {leadData.next_action || "None"}
+                  </p>
                 </div>
                 <div className="flex flex-col gap-2">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
@@ -1498,9 +1417,9 @@ export default function LeadDetailsPage() {
                     color={PRIORITY_OPTIONS.find(o => o.label.toLowerCase() === (isEditing ? editForm.priority : leadData.priority))?.color || "#3B82F6"}
                     options={PRIORITY_OPTIONS}
                     onChange={(label) => {
-                       updateField("priority", label.toLowerCase() as ApiLeadPriority);
+                      updateField("priority", label.toLowerCase() as ApiLeadPriority);
                     }}
-                    disabled={!isEditing}
+                    disabled
                   />
                 </div>
                 <div className="flex flex-col gap-1">
@@ -1516,11 +1435,11 @@ export default function LeadDetailsPage() {
           </div>
 
           {/* ── RIGHT COLUMN: Interaction Panel ─────── */}
-          <LeadInteractionPanel 
-            leadId={leadId} 
-            leadName={leadData.name} 
-            notes={leadData.notes || []} 
-            activities={leadData.activities || []} 
+          <LeadInteractionPanel
+            leadId={leadId}
+            leadName={leadData.name}
+            notes={leadData.notes || []}
+            activities={leadData.activities || []}
             basePath="/agent"
           />
         </div>
