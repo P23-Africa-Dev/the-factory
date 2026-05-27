@@ -243,6 +243,8 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
                 ),
               }))
             );
+
+            toast.success(getStatusTransitionMessage(previousStatus, nextStatus));
           },
           onError: () => {
             setBoardContainers(snapshot);
@@ -456,6 +458,16 @@ function mapStatusToLabel(status: ApiTaskStatus): string {
   if (status === "completed") return "Completed";
   if (status === "cancelled") return "Cancelled";
   return "Pending";
+}
+
+function getStatusTransitionMessage(from: ApiTaskStatus, to: ApiTaskStatus): string {
+  if (from === "pending" && to === "in_progress") return "Task moved to In Progress successfully.";
+  if (from === "in_progress" && to === "completed") return "Task marked as Completed successfully.";
+  if (from === "in_progress" && to === "pending") return "Task moved back to Pending.";
+  if (from === "completed" && to === "in_progress") return "Task reopened and moved back to In Progress.";
+  if (from === "completed" && to === "pending") return "Task reverted to Pending.";
+
+  return "Task status updated successfully.";
 }
 
 function buildContainers(tasks: TaskApiItem[]): DndContainer[] {

@@ -260,28 +260,13 @@ class TaskService
 
         $current = $task->status?->value;
 
-        if ($this->isTerminalStatus($current)) {
+        if ($this->isLockedTerminalStatus($current)) {
             throw ValidationException::withMessages([
                 'status' => ['Terminal tasks cannot be changed.'],
             ]);
         }
 
-        $allowedTransitions = [
-            TaskStatus::PENDING->value => [TaskStatus::IN_PROGRESS->value, TaskStatus::CANCELLED->value],
-            TaskStatus::IN_PROGRESS->value => [
-                TaskStatus::PAUSED->value,
-                TaskStatus::COMPLETED->value,
-                TaskStatus::CANCELLED->value,
-            ],
-            TaskStatus::PAUSED->value => [TaskStatus::RESUMED->value, TaskStatus::CANCELLED->value],
-            TaskStatus::RESUMED->value => [TaskStatus::IN_PROGRESS->value, TaskStatus::CANCELLED->value],
-        ];
-
-        if (! in_array($status, $allowedTransitions[$current] ?? [], true)) {
-            throw ValidationException::withMessages([
-                'status' => ['Invalid task status transition.'],
-            ]);
-        }
+        $this->assertValidStatusTransition($current, $status);
 
         if ($status === TaskStatus::COMPLETED->value) {
             $proofsCount = $task->proofs()->count();
@@ -306,14 +291,9 @@ class TaskService
             }
         }
 
-        $task->update([
-            'status' => $status,
-            'last_status_updated_by_user_id' => $user->id,
-            'started_at' => $status === TaskStatus::IN_PROGRESS->value && ! $task->started_at ? now() : $task->started_at,
-            'paused_at' => $status === TaskStatus::PAUSED->value ? now() : $task->paused_at,
-            'resumed_at' => $status === TaskStatus::RESUMED->value ? now() : $task->resumed_at,
-            'completed_at' => $status === TaskStatus::COMPLETED->value ? now() : null,
-        ]);
+        if ($current !== $status) {
+            $task->update($this->buildStatusUpdatePayload($task, $user->id, $status));
+        }
 
         $loadedTask = $this->loadTask($task, $context);
         $this->notifyTaskStatusChanged($loadedTask, $user, $status);
@@ -329,37 +309,17 @@ class TaskService
 
         $current = $task->status?->value;
 
-        if ($this->isTerminalStatus($current)) {
+        if ($this->isLockedTerminalStatus($current)) {
             throw ValidationException::withMessages([
                 'status' => ['Terminal tasks cannot be changed.'],
             ]);
         }
 
-        $allowedTransitions = [
-            TaskStatus::PENDING->value => [TaskStatus::IN_PROGRESS->value, TaskStatus::CANCELLED->value],
-            TaskStatus::IN_PROGRESS->value => [
-                TaskStatus::PAUSED->value,
-                TaskStatus::COMPLETED->value,
-                TaskStatus::CANCELLED->value,
-            ],
-            TaskStatus::PAUSED->value => [TaskStatus::RESUMED->value, TaskStatus::CANCELLED->value],
-            TaskStatus::RESUMED->value => [TaskStatus::IN_PROGRESS->value, TaskStatus::CANCELLED->value],
-        ];
+        $this->assertValidStatusTransition($current, $status);
 
-        if (! in_array($status, $allowedTransitions[$current] ?? [], true)) {
-            throw ValidationException::withMessages([
-                'status' => ['Invalid task status transition.'],
-            ]);
+        if ($current !== $status) {
+            $task->update($this->buildStatusUpdatePayload($task, $user->id, $status));
         }
-
-        $task->update([
-            'status' => $status,
-            'last_status_updated_by_user_id' => $user->id,
-            'started_at' => $status === TaskStatus::IN_PROGRESS->value && ! $task->started_at ? now() : $task->started_at,
-            'paused_at' => $status === TaskStatus::PAUSED->value ? now() : $task->paused_at,
-            'resumed_at' => $status === TaskStatus::RESUMED->value ? now() : $task->resumed_at,
-            'completed_at' => $status === TaskStatus::COMPLETED->value ? now() : null,
-        ]);
 
         $loadedTask = $this->loadTask($task, $context);
         $this->notifyTaskStatusChanged($loadedTask, $user, $status);
@@ -765,6 +725,110 @@ class TaskService
             ->pluck('user_id')
             ->map(static fn(mixed $id): int => (int) $id)
             ->all();
+    }
+
+    private function buildStatusUpdatePayload(Task $task, int $updatedByUserId, string $nextStatus): array
+    {
+        $payload = [
+            'status' => $nextStatus,
+            'last_status_updated_by_user_id' => $updatedByUserId,
+            'started_at' => $task->started_at,
+            'paused_at' => $task->paused_at,
+            'resumed_at' => $task->resumed_at,
+            'completed_at' => null,
+        ];
+
+        if ($nextStatus === TaskStatus::PENDING->value) {
+            $payload['started_at'] = null;
+            $payload['paused_at'] = null;
+            $payload['resumed_at'] = null;
+
+            return $payload;
+        }
+
+        if ($nextStatus === TaskStatus::IN_PROGRESS->value) {
+            $payload['started_at'] = $task->started_at ?? now();
+            $payload['paused_at'] = null;
+            $payload['resumed_at'] = null;
+
+            return $payload;
+        }
+
+        if ($nextStatus === TaskStatus::PAUSED->value) {
+            $payload['paused_at'] = now();
+
+            return $payload;
+        }
+
+        if ($nextStatus === TaskStatus::RESUMED->value) {
+            $payload['resumed_at'] = now();
+
+            return $payload;
+        }
+
+        if ($nextStatus === TaskStatus::COMPLETED->value) {
+            $payload['completed_at'] = now();
+
+            return $payload;
+        }
+
+        return $payload;
+    }
+
+    private function assertValidStatusTransition(?string $currentStatus, string $nextStatus): void
+    {
+        if ($currentStatus === null) {
+            throw ValidationException::withMessages([
+                'status' => ['Task status is not initialized.'],
+            ]);
+        }
+
+        if ($currentStatus === $nextStatus) {
+            return;
+        }
+
+        $allowedTransitions = [
+            TaskStatus::PENDING->value => [
+                TaskStatus::IN_PROGRESS->value,
+                TaskStatus::CANCELLED->value,
+            ],
+            TaskStatus::IN_PROGRESS->value => [
+                TaskStatus::PENDING->value,
+                TaskStatus::PAUSED->value,
+                TaskStatus::COMPLETED->value,
+                TaskStatus::CANCELLED->value,
+            ],
+            TaskStatus::PAUSED->value => [
+                TaskStatus::IN_PROGRESS->value,
+                TaskStatus::RESUMED->value,
+                TaskStatus::PENDING->value,
+                TaskStatus::COMPLETED->value,
+                TaskStatus::CANCELLED->value,
+            ],
+            TaskStatus::RESUMED->value => [
+                TaskStatus::IN_PROGRESS->value,
+                TaskStatus::PAUSED->value,
+                TaskStatus::PENDING->value,
+                TaskStatus::COMPLETED->value,
+                TaskStatus::CANCELLED->value,
+            ],
+            TaskStatus::COMPLETED->value => [
+                TaskStatus::IN_PROGRESS->value,
+                TaskStatus::PENDING->value,
+            ],
+            TaskStatus::CANCELLED->value => [],
+        ];
+
+        if (! in_array($nextStatus, $allowedTransitions[$currentStatus] ?? [], true)) {
+            throw ValidationException::withMessages([
+                'status' => ['Invalid task status transition.'],
+            ]);
+        }
+    }
+
+    private function isLockedTerminalStatus(?string $status): bool
+    {
+        return $status === TaskStatus::CANCELLED->value;
     }
 
     private function isTerminalStatus(?string $status): bool
