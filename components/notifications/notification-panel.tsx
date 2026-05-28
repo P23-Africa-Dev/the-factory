@@ -23,6 +23,7 @@ import { useNotifications, useMarkRead, useMarkAllRead, useDeleteNotification } 
 import type { AppNotification, NotificationCategory } from "@/lib/api/notifications";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useAuthStore } from "@/store/auth";
+import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 
 const CATEGORY_CONFIG: Record<
   NotificationCategory,
@@ -294,6 +295,7 @@ export function NotificationPanel({
   const markRead = useMarkRead();
   const markAllRead = useMarkAllRead();
   const deleteNotif = useDeleteNotification();
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
 
   // Refresh on open
   useEffect(() => {
@@ -346,10 +348,11 @@ export function NotificationPanel({
   }
 
   function handleDelete(id: number) {
-    deleteNotif.mutate(id);
+    setDeleteTargetId(id);
   }
 
   return (
+    <>
     <AnimatePresence>
       {open && (
         <>
@@ -486,5 +489,15 @@ export function NotificationPanel({
         </>
       )}
     </AnimatePresence>
+
+    <ConfirmDeleteModal
+      isOpen={deleteTargetId !== null}
+      onClose={() => setDeleteTargetId(null)}
+      onConfirm={() => { if (deleteTargetId !== null) deleteNotif.mutate(deleteTargetId); }}
+      title="Delete Notification"
+      description="Are you sure you want to delete this notification?"
+      confirmLabel="Delete"
+    />
+    </>
   );
 }

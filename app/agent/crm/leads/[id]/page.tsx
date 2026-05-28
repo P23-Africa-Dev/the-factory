@@ -38,6 +38,8 @@ import {
   LeadActivity,
   UpdateLeadPayload,
 } from "@/lib/api/crm";
+import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 /* ─── Mock Lead Data ────────────────────────────────────── */
 
@@ -586,6 +588,7 @@ function EmailPanel({ leadName }: { leadName: string }) {
   const [view, setView] = useState<"list" | "compose" | "detail">("list");
   const [selectedEmail, setSelectedEmail] = useState<EmailMessage | null>(null);
   const [replyTo, setReplyTo] = useState<EmailMessage | null>(null);
+  const [showDeleteEmailConfirm, setShowDeleteEmailConfirm] = useState(false);
 
   const leadEmail = "lane.wade@email.com";
   const unreadCount = emails.filter((e) => !e.isRead).length;
@@ -614,6 +617,11 @@ function EmailPanel({ leadName }: { leadName: string }) {
   };
 
   const handleDelete = () => {
+    if (!selectedEmail) return;
+    setShowDeleteEmailConfirm(true);
+  };
+
+  const confirmDelete = () => {
     if (!selectedEmail) return;
     setEmails((prev) => prev.filter((e) => e.id !== selectedEmail.id));
     setSelectedEmail(null);
@@ -676,15 +684,24 @@ function EmailPanel({ leadName }: { leadName: string }) {
             }}
           />
         ) : view === "detail" && selectedEmail ? (
-          <EmailDetailView
-            email={selectedEmail}
-            onBack={() => {
-              setSelectedEmail(null);
-              setView("list");
-            }}
-            onReply={handleReply}
-            onDelete={handleDelete}
-          />
+          <>
+            <EmailDetailView
+              email={selectedEmail}
+              onBack={() => {
+                setSelectedEmail(null);
+                setView("list");
+              }}
+              onReply={handleReply}
+              onDelete={handleDelete}
+            />
+            <ConfirmDeleteModal
+              isOpen={showDeleteEmailConfirm}
+              onClose={() => setShowDeleteEmailConfirm(false)}
+              onConfirm={confirmDelete}
+              title="Delete Email"
+              description="Are you sure you want to delete this email? This action cannot be undone."
+            />
+          </>
         ) : emails.length === 0 ? (
           /* Empty state */
           <div className="flex-1 flex flex-col items-center justify-center py-20">
@@ -842,18 +859,19 @@ function ActivitiesPanel({ leadId, activities = [], basePath = "/agent" }: { lea
       </div>
 
       <div className="mt-auto border-t border-gray-100 pt-4 space-y-3">
-        <select
+        <SearchableSelect
           value={activityType}
-          onChange={(e) => setActivityType(e.target.value)}
-          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-500"
-        >
-          <option value="call">Call</option>
-          <option value="meeting">Meeting</option>
-          <option value="email">Email Sent</option>
-          <option value="note">Note Added</option>
-          <option value="status_change">Status Change</option>
-          <option value="other">Other</option>
-        </select>
+          onChange={setActivityType}
+          options={[
+            { value: "call", label: "Call" },
+            { value: "meeting", label: "Meeting" },
+            { value: "email", label: "Email Sent" },
+            { value: "note", label: "Note Added" },
+            { value: "status_change", label: "Status Change" },
+            { value: "other", label: "Other" },
+          ]}
+          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-[13px] text-gray-700"
+        />
         <input
           type="text"
           value={description}

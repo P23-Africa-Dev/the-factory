@@ -87,10 +87,12 @@ export function EditAgentPayrollModal({ isOpen, onClose, agent, companyId }: Edi
                     <div className="space-y-4 mb-5">
                         <SectionDivider label="Salary" />
                         <FormRow label="Salary Type">
-                            <InlineSelect value={salaryType} onChange={(e) => setSalaryType(e.target.value)} className="col-span-2">
-                                <option value="monthly">Monthly</option>
-                                <option value="weekly">Weekly</option>
-                            </InlineSelect>
+                            <InlineSelect
+                                value={salaryType}
+                                onChange={(v) => setSalaryType(v)}
+                                options={[{ value: "monthly", label: "Monthly" }, { value: "weekly", label: "Weekly" }]}
+                                className="col-span-2"
+                            />
                         </FormRow>
                         <FormRow label="Base Salary">
                             <InlineInput value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className="col-span-2" />

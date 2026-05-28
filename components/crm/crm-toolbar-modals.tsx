@@ -4,6 +4,7 @@ import type { ChangeEvent, ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
 import { X, ChevronUp, ChevronDown, Upload, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { ApiLeadPriority, ApiRoleBasePath, CrmLabel, CrmPipeline, ImportLeadRow } from "@/lib/api/crm";
 import {
     useCreateCrmLabel,
@@ -335,16 +336,12 @@ export function ImportLeadsModal({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                         <label className="block text-[12px] font-semibold text-gray-500 mb-1">Target Pipeline</label>
-                        <select
+                        <SearchableSelect
                             value={pipelineId}
-                            onChange={(e) => setPipelineId(e.target.value)}
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
-                        >
-                            <option value="">Select pipeline</option>
-                            {pipelines.map((pipeline) => (
-                                <option key={pipeline.id} value={String(pipeline.id)}>{pipeline.name}</option>
-                            ))}
-                        </select>
+                            onChange={setPipelineId}
+                            options={[{ value: "", label: "Select pipeline" }, ...pipelines.map((p) => ({ value: String(p.id), label: p.name }))]}
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-white"
+                        />
                     </div>
                     <div>
                         <label className="block text-[12px] font-semibold text-gray-500 mb-1">Label Keys</label>

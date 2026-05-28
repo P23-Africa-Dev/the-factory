@@ -18,6 +18,7 @@ import { useInternalUsers } from '@/hooks/use-internal-users';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { getAuthTokenFromDocument } from '@/lib/auth/session';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { createMapboxTransformRequest, getMapboxPublicToken } from '@/lib/config/public-env';
 import { toast } from 'sonner';
 import { LocationPermissionGate } from '@/components/tracking/LocationPermissionGate';
@@ -567,23 +568,14 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                     {latestReassignment?.to_user?.name ?? 'New owner'}
                   </div>
                 ) : null}
-                <select
+                <SearchableSelect
                   value={selectedAgentId}
-                  onChange={(event) => setSelectedAgentId(event.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-white"
+                  onChange={setSelectedAgentId}
+                  options={loadingInternalUsers ? [] : eligibleUsers.map((c) => ({ value: String(c.id), label: `${c.name} (${c.email})` }))}
+                  placeholder={loadingInternalUsers ? "Loading agents…" : "Select agent"}
                   disabled={hasPendingReassignment}
-                >
-                  <option value="">Select agent</option>
-                  {loadingInternalUsers ? (
-                    <option value="" disabled>Loading agents...</option>
-                  ) : (
-                    eligibleUsers.map((candidate) => (
-                      <option key={candidate.id} value={String(candidate.id)}>
-                        {candidate.name} ({candidate.email})
-                      </option>
-                    ))
-                  )}
-                </select>
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-white"
+                />
                 <textarea
                   value={reassignmentReason}
                   onChange={(event) => setReassignmentReason(event.target.value)}

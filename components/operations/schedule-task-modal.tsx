@@ -7,6 +7,7 @@ import { useAuthStore } from "@/store/auth";
 import { useInternalUsers } from "@/hooks/use-projects";
 import { useCreateSelfTask, useCreateTask } from "@/hooks/use-tasks";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { geocodeAddressWithMapbox } from "@/lib/utils/geocoding";
 import type { TaskApiItem } from "@/lib/api/tasks";
 
@@ -260,25 +261,14 @@ export function ScheduleTaskModal({
                             Agent Name
                         </label>
                         {canDelegate ? (
-                            <div className="relative">
-                                <User className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-                                <select
-                                    value={form.assignTo}
-                                    onChange={(event) => updateField("assignTo", event.target.value)}
-                                    className="w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm outline-none transition-colors focus:border-[#094B5C]"
-                                >
-                                    <option value="">Select company agent</option>
-                                    {loadingAgents ? (
-                                        <option disabled>Loading agents...</option>
-                                    ) : (
-                                        agents.map((agent) => (
-                                            <option key={agent.id} value={String(agent.id)}>
-                                                {agent.name}
-                                            </option>
-                                        ))
-                                    )}
-                                </select>
-                            </div>
+                            <SearchableSelect
+                                value={form.assignTo}
+                                onChange={(v) => updateField("assignTo", v)}
+                                options={loadingAgents ? [] : agents.map((a) => ({ value: String(a.id), label: a.name }))}
+                                placeholder={loadingAgents ? "Loading agents…" : "Select company agent"}
+                                leftIcon={<User size={14} className="text-gray-400" />}
+                                className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm"
+                            />
                         ) : (
                             <div className="flex items-center rounded-xl border border-gray-200 bg-gray-100 px-3 py-2.5 text-sm text-gray-700">
                                 <User size={14} className="mr-2 text-gray-500" />

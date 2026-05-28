@@ -31,6 +31,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Search, Plus, Edit2 } from "lucide-react";
 import { formatDistanceToNowStrict, parseISO } from "date-fns";
 import { toast } from "sonner";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 const STAGES: Array<{ id: ApiLeadStatus; title: string; color: string }> = [
     { id: "new", title: "New Leads", color: "#2563EB" },
@@ -166,24 +167,12 @@ function LeadCard({
 
             <div className="flex items-center justify-between mt-4">
                 {!disabled && companyUsers ? (
-                    <select
-                        value={item.assignedToUserId ?? ""}
-                        onChange={(e) => {
-                            e.stopPropagation();
-                            onAssigneeChange?.(item.id, e.target.value);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className="text-[#8C93A1] text-[12px] bg-transparent outline-none cursor-pointer hover:text-[#0B1215] max-w-[120px] truncate border-none focus:ring-0 p-0"
-                        title="Assign User"
-                    >
-                        <option value="">Unassigned</option>
-                        {companyUsers.map((user) => (
-                            <option key={user.id} value={user.id}>
-                                {user.name}
-                            </option>
-                        ))}
-                    </select>
+                    <SearchableSelect
+                        value={String(item.assignedToUserId ?? "")}
+                        onChange={(v) => onAssigneeChange?.(item.id, v)}
+                        options={[{ value: "", label: "Unassigned" }, ...companyUsers.map((u) => ({ value: String(u.id), label: u.name }))]}
+                        className="text-[#8C93A1] text-[12px] bg-transparent cursor-pointer hover:text-[#0B1215] max-w-30 p-0"
+                    />
                 ) : (
                     <span className="text-[#8C93A1] text-[12px] truncate max-w-[120px]">
                         {item.assignedBy ?? "Unassigned"}

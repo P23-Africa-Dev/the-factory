@@ -11,6 +11,7 @@ import { useAttendanceMetrics, useAttendanceRecords, usePayrollSummaries, useGen
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import type { ManagementAttendanceRecord } from '@/lib/api/attendance';
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 type AttendanceItem = {
   id: number | string;
@@ -403,11 +404,12 @@ export default function AttendanceListPage() {
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[11px] font-bold text-gray-400 px-1">Role</label>
-              <select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value as 'all' | 'agent' | 'supervisor'); setPage(1); }} className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer">
-                <option value="all">All Roles</option>
-                <option value="agent">Field Agent</option>
-                <option value="supervisor">Supervisor</option>
-              </select>
+              <SearchableSelect
+                value={roleFilter}
+                onChange={(v) => { setRoleFilter(v as 'all' | 'agent' | 'supervisor'); setPage(1); }}
+                options={[{ value: "all", label: "All Roles" }, { value: "agent", label: "Field Agent" }, { value: "supervisor", label: "Supervisor" }]}
+                className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
+              />
             </div>
             {(statusFilter !== 'all' || roleFilter !== 'all') && (
               <div className="flex flex-col justify-end">
@@ -497,15 +499,12 @@ export default function AttendanceListPage() {
             </div>
             <div className="flex items-center gap-3">
               {/* Month/Year pickers */}
-              <select
-                value={payrollMonth}
-                onChange={(e) => setPayrollMonth(Number(e.target.value))}
-                className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-[13px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 shadow-sm"
-              >
-                {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map((m, i) => (
-                  <option key={m} value={i + 1}>{m}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                value={String(payrollMonth)}
+                onChange={(v) => setPayrollMonth(Number(v))}
+                options={["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map((m, i) => ({ value: String(i + 1), label: m }))}
+                className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-[13px] text-dash-dark shadow-sm"
+              />
               <input
                 type="number"
                 value={payrollYear}

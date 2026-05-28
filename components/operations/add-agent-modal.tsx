@@ -263,19 +263,16 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 <FormRow label="Role" labelClassName="w-28">
                   <InlineSelect
                     value={role}
-                    onChange={(e) => {
-                      setRole(e.target.value as "supervisor" | "agent" | "");
+                    onChange={(v) => {
+                      setRole(v as "supervisor" | "agent" | "");
                       setSupervisorId("");
                       clearError("role");
                       clearError("supervisorId");
                     }}
+                    options={[...ROLE_OPTIONS]}
+                    placeholder="Select role"
                     className="col-span-2"
-                  >
-                    <option value="" disabled>Select role</option>
-                    {ROLE_OPTIONS.map((r) => (
-                      <option key={r.value} value={r.value}>{r.label}</option>
-                    ))}
-                  </InlineSelect>
+                  />
                 </FormRow>
                 <FieldError message={errors.role} />
               </div>
@@ -285,16 +282,11 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                   <FormRow label="Supervisor" labelClassName="w-28">
                     <InlineSelect
                       value={supervisorId}
-                      onChange={(e) => { setSupervisorId(e.target.value); clearError("supervisorId"); }}
+                      onChange={(v) => { setSupervisorId(v); clearError("supervisorId"); }}
+                      options={supervisors.map((s) => ({ value: String(s.id), label: s.name }))}
+                      placeholder={loadingSupervisors ? "Loading…" : "Select supervisor"}
                       className="col-span-2"
-                    >
-                      <option value="" disabled>
-                        {loadingSupervisors ? "Loading…" : "Select supervisor"}
-                      </option>
-                      {supervisors.map((s) => (
-                        <option key={s.id} value={String(s.id)}>{s.name}</option>
-                      ))}
-                    </InlineSelect>
+                    />
                   </FormRow>
                   <FieldError message={errors.supervisorId} />
                 </div>

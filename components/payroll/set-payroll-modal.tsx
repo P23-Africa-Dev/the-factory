@@ -268,12 +268,10 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
                 <FormRow label="Salary Type">
                   <InlineSelect
                     value={salaryType}
-                    onChange={(e) => { setSalaryType(e.target.value); clearError("salaryType"); }}
+                    onChange={(v) => { setSalaryType(v); clearError("salaryType"); }}
+                    options={[{ value: "Monthly", label: "Monthly" }, { value: "Weekly", label: "Weekly" }]}
                     className="col-span-2"
-                  >
-                    <option>Monthly</option>
-                    <option>Weekly</option>
-                  </InlineSelect>
+                  />
                 </FormRow>
                 <FieldError message={errors.salaryType} />
               </div>

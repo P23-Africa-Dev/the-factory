@@ -21,6 +21,7 @@ import { useInternalUsers } from "@/hooks/use-projects";
 import { useCreateTask } from "@/hooks/use-tasks";
 import type { DndItem, TaskCategory } from "@/types/operations";
 import type { ApiTaskPriority } from "@/lib/api/tasks";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { geocodeAddressWithMapbox } from "@/lib/utils/geocoding";
 
@@ -338,20 +339,13 @@ export function CreateTaskModal({
           {/* Task Type */}
           <div>
             <FieldLabel required>Task Type</FieldLabel>
-            <InputWrap icon={<ChevronDown size={13} />}>
-              <select
-                value={form.taskType}
-                onChange={(e) => set("taskType", e.target.value)}
-                className={`${INPUT_CLS(errors.taskType)} pl-4 pr-9 appearance-none cursor-pointer`}
-              >
-                <option value="" disabled>
-                  Select task type
-                </option>
-                {Object.keys(TASK_TYPES).map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-            </InputWrap>
+            <SearchableSelect
+              value={form.taskType}
+              onChange={(v) => set("taskType", v)}
+              options={Object.keys(TASK_TYPES).map((t) => ({ value: t, label: t }))}
+              placeholder="Select task type"
+              className={`${INPUT_CLS(errors.taskType)} px-4 cursor-pointer`}
+            />
             {errors.taskType && (
               <p className="text-red-400 text-[11px] mt-1">{errors.taskType}</p>
             )}
@@ -377,26 +371,14 @@ export function CreateTaskModal({
           {/* Assign To */}
           <div>
             <FieldLabel required>Assign To</FieldLabel>
-            <InputWrap icon={<User size={13} />}>
-              <select
-                value={form.assignTo}
-                onChange={(e) => set("assignTo", e.target.value)}
-                className={`${INPUT_CLS(errors.assignTo)} pl-9 pr-4 appearance-none cursor-pointer`}
-              >
-                <option value="" disabled>
-                  Select agent
-                </option>
-                {loadingAgents ? (
-                  <option disabled>Loading...</option>
-                ) : (
-                  agents.map((a) => (
-                    <option key={a.id} value={a.id.toString()}>
-                      {a.name}
-                    </option>
-                  ))
-                )}
-              </select>
-            </InputWrap>
+            <SearchableSelect
+              value={form.assignTo}
+              onChange={(v) => set("assignTo", v)}
+              options={loadingAgents ? [] : agents.map((a) => ({ value: a.id.toString(), label: a.name }))}
+              placeholder={loadingAgents ? "Loading…" : "Select agent"}
+              leftIcon={<User size={13} className="text-gray-400" />}
+              className={`${INPUT_CLS(errors.assignTo)} pl-9 pr-4 cursor-pointer`}
+            />
             {errors.assignTo && (
               <p className="text-red-400 text-[11px] mt-1">{errors.assignTo}</p>
             )}
@@ -474,34 +456,23 @@ export function CreateTaskModal({
 
             <div>
               <FieldLabel required>Priority</FieldLabel>
-              <InputWrap
-                icon={
+              <SearchableSelect
+                value={form.priority}
+                onChange={(v) => set("priority", v as Priority)}
+                options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))}
+                placeholder="Select"
+                leftIcon={
                   form.priority ? (
                     <span
                       className="w-2.5 h-2.5 rounded-full"
-                      style={{
-                        backgroundColor:
-                          PRIORITY_COLORS[form.priority as Priority],
-                      }}
+                      style={{ backgroundColor: PRIORITY_COLORS[form.priority as Priority] }}
                     />
                   ) : (
-                    <AlertCircle size={13} />
+                    <AlertCircle size={13} className="text-gray-400" />
                   )
                 }
-              >
-                <select
-                  value={form.priority}
-                  onChange={(e) => set("priority", e.target.value as Priority)}
-                  className={`${INPUT_CLS(errors.priority)} pl-9 pr-4 appearance-none cursor-pointer`}
-                >
-                  <option value="" disabled>
-                    Select
-                  </option>
-                  {PRIORITY_OPTIONS.map((p) => (
-                    <option key={p}>{p}</option>
-                  ))}
-                </select>
-              </InputWrap>
+                className={`${INPUT_CLS(errors.priority)} pl-9 pr-4 cursor-pointer`}
+              />
               {errors.priority && (
                 <p className="text-red-400 text-[11px] mt-1">
                   {errors.priority}

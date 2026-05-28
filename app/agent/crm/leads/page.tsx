@@ -18,6 +18,8 @@ import { getActiveCompanyContext } from "@/lib/company-context";
 import { useCrmLabels, useCrmPipelines, useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { ImportLeadsModal } from "@/components/crm/crm-toolbar-modals";
+import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { ApiLeadStatus } from "@/lib/api/crm";
 import { toast } from "sonner";
 
@@ -104,6 +106,8 @@ export default function AllLeadsPage() {
   const [showFilter, setShowFilter] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   const sourceParam = (searchParams.get("source") ?? "").trim().toLowerCase();
   const agentUploadScope = [
@@ -237,26 +241,18 @@ export default function AllLeadsPage() {
 
         {showFilter && (
           <div className="bg-white rounded-[14px] border border-gray-100 p-3 flex flex-wrap items-center gap-2">
-            <select
-              value={selectedPipelineId ?? ""}
-              onChange={(e) => setSelectedPipelineId(e.target.value ? Number(e.target.value) : null)}
-              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px]"
-            >
-              <option value="">All Pipelines</option>
-              {pipelines.map((pipeline) => (
-                <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>
-              ))}
-            </select>
-            <select
+            <SearchableSelect
+              value={String(selectedPipelineId ?? "")}
+              onChange={(v) => setSelectedPipelineId(v ? Number(v) : null)}
+              options={[{ value: "", label: "All Pipelines" }, ...pipelines.map((p) => ({ value: String(p.id), label: p.name }))]}
+              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px] bg-white min-w-32"
+            />
+            <SearchableSelect
               value={selectedLabel}
-              onChange={(e) => setSelectedLabel(e.target.value)}
-              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px]"
-            >
-              <option value="all">All Labels</option>
-              {labels.map((label) => (
-                <option key={label.id} value={label.slug}>{label.name}</option>
-              ))}
-            </select>
+              onChange={setSelectedLabel}
+              options={[{ value: "all", label: "All Labels" }, ...labels.map((l) => ({ value: l.slug, label: l.name }))]}
+              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px] bg-white min-w-28"
+            />
             <button
               onClick={() => {
                 setSelectedPipelineId(null);
@@ -468,7 +464,7 @@ export default function AllLeadsPage() {
                     <button
                       className={`p-1 rounded-md transition-colors ${isSelected ? "hover:bg-white/10" : "hover:bg-gray-100"
                         }`}
-                      onClick={() => deleteLead(lead.id)}
+                      onClick={() => setDeleteTargetId(lead.id)}
                     >
                       <Trash2
                         size={14}
@@ -490,10 +486,7 @@ export default function AllLeadsPage() {
             </span>
             {selected.size > 0 && (
               <button
-                onClick={() => {
-                  selected.forEach((id) => deleteLead(id));
-                  setSelected(new Set());
-                }}
+                onClick={() => setShowBulkDeleteConfirm(true)}
                 className="flex items-center gap-1.5 text-[12px] font-medium text-red-500 hover:text-red-600 transition-colors"
               >
                 <Trash2 size={13} />
@@ -521,6 +514,25 @@ export default function AllLeadsPage() {
           apiBasePath="/agent"
         />
       )}
+
+      <ConfirmDeleteModal
+        isOpen={deleteTargetId !== null}
+        onClose={() => setDeleteTargetId(null)}
+        onConfirm={() => { if (deleteTargetId) deleteLead(deleteTargetId); }}
+        title="Delete Lead"
+        description="Are you sure you want to delete this lead? This action cannot be undone."
+      />
+
+      <ConfirmDeleteModal
+        isOpen={showBulkDeleteConfirm}
+        onClose={() => setShowBulkDeleteConfirm(false)}
+        onConfirm={() => {
+          selected.forEach((id) => deleteLead(id));
+          setSelected(new Set());
+        }}
+        title={`Delete ${selected.size} Lead${selected.size === 1 ? "" : "s"}`}
+        description={`Are you sure you want to delete ${selected.size} selected lead${selected.size === 1 ? "" : "s"}? This action cannot be undone.`}
+      />
     </div>
   );
 }
