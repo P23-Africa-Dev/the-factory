@@ -38,9 +38,7 @@ export function SearchableSelect({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => { setMounted(true); }, []);
+  const [mounted] = useState(() => typeof document !== "undefined");
 
   const selected = options.find((o) => o.value === value);
 

@@ -1195,6 +1195,13 @@ export default function LeadDetailsPage() {
     updateLead({ leadId, payload });
   };
 
+  const statusOptions = useMemo(() => {
+    if (labels.length > 0) {
+      return labels.map((label) => ({ label: label.name, color: label.color, value: label.slug }));
+    }
+    return STATUS_OPTIONS;
+  }, [labels]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#F4F7F9] p-4 flex items-center justify-center">
@@ -1213,12 +1220,6 @@ export default function LeadDetailsPage() {
   }
 
   const currentAssigneeLabel = leadData.assignee?.name || "Unassigned";
-  const statusOptions = useMemo(() => {
-    if (labels.length > 0) {
-      return labels.map((label) => ({ label: label.name, color: label.color, value: label.slug }));
-    }
-    return STATUS_OPTIONS;
-  }, [labels]);
   const selectedStatusValue = isEditing ? editForm.status : (leadData.status || "newly_lead");
   const selectedStatusOption = statusOptions.find((option) => option.value === selectedStatusValue);
 

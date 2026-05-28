@@ -432,11 +432,6 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
   const dragOriginRef = useRef<string | null>(null);
   const [activeTabId, setActiveTabId] = useState<string>(() => initialContainers[0]?.id ?? "newly_lead");
 
-  useEffect(() => {
-    if (initialContainers.length > 0 && !initialContainers.some(c => c.id === activeTabId)) {
-      setActiveTabId(initialContainers[0].id);
-    }
-  }, [initialContainers, activeTabId]);
 
   const resolvedActiveTabId =
     containers.length > 0 && !containers.some((c) => c.id === activeTabId)
