@@ -74,6 +74,7 @@ Export columns:
 - `Salary Type`
 - `Currency`
 - `Base Salary`
+- `Formatted Salary`
 - `Daily Pay`
 - `Attendance Count`
 - `Accumulated Pay`
@@ -87,6 +88,14 @@ Export columns:
 Notes:
 - Exports are streamed and chunked for large datasets.
 - Generated files follow `payroll-export-YYYY-MM-DD.<ext>` naming.
+- XLSX export requires PHP `ext-zip` enabled on the backend runtime.
+- Backend must have writable `storage/app/exports` for temporary workbook files.
+
+### Supported Currency Catalog
+
+- `GET /api/v1/currencies`
+- Returns `currencies` and `default_currency` for all salary-entry dropdowns.
+- Current supported list: `NGN`, `USD`, `GBP`, `EUR`, `CAD`, `AED`, `KES`, `ZAR`, `GHS`.
 
 ## Payroll Calculation Rules
 
@@ -123,6 +132,7 @@ The agent profile response includes:
 
 - `company_id` is always resolved through the company context helper.
 - Payroll settings require positive salary and work-day values.
+- Payroll and agent currency updates must use supported currencies from the catalog endpoint.
 - Agent payroll updates require at least one editable field.
 - Agents can only request their own payroll profile.
 - Company boundaries are enforced on all payroll reads and writes.

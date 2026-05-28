@@ -16,10 +16,12 @@ use App\Models\User;
 use App\Notifications\PayrollStatusNotification;
 use App\Services\Notification\NotificationService;
 use App\Support\AvatarUrlResolver;
+use App\Support\CurrencyCatalog;
 use Carbon\Carbon;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Common\Entity\Style\Style;
@@ -33,6 +35,7 @@ class PayrollService
         'Salary Type',
         'Currency',
         'Base Salary',
+        'Formatted Salary',
         'Daily Pay',
         'Attendance Count',
         'Accumulated Pay',
@@ -262,7 +265,10 @@ class PayrollService
             'pending_approval' => round($pendingApproval, 2),
             'total_agents' => $agents->count(),
             'total_payroll' => round($totalPayroll, 2),
-            'currency' => strtoupper((string) ($payrollSetting?->currency ?? $context->company->currency_code ?? 'NGN')),
+            'currency' => CurrencyCatalog::normalize(
+                currency: $payrollSetting?->currency,
+                fallbackCurrency: $context->company->currency_code,
+            ),
         ];
     }
 
@@ -365,9 +371,15 @@ class PayrollService
 
         if (array_key_exists('base_salary', $data)) {
             $updates['base_salary'] = (float) $data['base_salary'];
-            $updates['salary_currency'] = strtoupper((string) ($data['currency_code'] ?? $agent->salary_currency ?: $payrollSetting?->currency ?: $context->company->currency_code ?: 'NGN'));
+            $updates['salary_currency'] = CurrencyCatalog::normalize(
+                currency: $data['currency_code'] ?? $agent->salary_currency,
+                fallbackCurrency: $payrollSetting?->currency ?? $context->company->currency_code,
+            );
         } elseif (array_key_exists('currency_code', $data)) {
-            $updates['salary_currency'] = strtoupper((string) ($data['currency_code'] ?: $agent->salary_currency ?: $payrollSetting?->currency ?: $context->company->currency_code ?: 'NGN'));
+            $updates['salary_currency'] = CurrencyCatalog::normalize(
+                currency: $data['currency_code'] ?: $agent->salary_currency,
+                fallbackCurrency: $payrollSetting?->currency ?? $context->company->currency_code,
+            );
         }
 
         if (array_key_exists('salary_type', $data)) {
@@ -543,15 +555,10 @@ class PayrollService
 
     private function resolveCurrency(?string $preferredCurrency, ?string $companyCurrency, ?string $fallbackCurrency): string
     {
-        $currency = $preferredCurrency ?: $companyCurrency ?: $fallbackCurrency;
-
-        if (! $currency) {
-            throw ValidationException::withMessages([
-                'currency' => ['Currency is required either in request payload or company settings.'],
-            ]);
-        }
-
-        return strtoupper((string) $currency);
+        return CurrencyCatalog::normalize(
+            currency: $preferredCurrency,
+            fallbackCurrency: $companyCurrency ?? $fallbackCurrency,
+        );
     }
 
     private function buildAgentProfilePayload(int $companyId, User $agent, Carbon $date, ?int $actorUserId): array
@@ -670,7 +677,10 @@ class PayrollService
         );
 
         $dailyPay = $this->calculateDailyPay($baseSalary, $workDays, $salaryType);
-        $currency = strtoupper((string) ($agent->salary_currency ?: $payrollSetting?->currency ?: 'NGN'));
+        $currency = CurrencyCatalog::normalize(
+            currency: $agent->salary_currency,
+            fallbackCurrency: $payrollSetting?->currency,
+        );
 
         return [
             'salary_type' => $salaryType,
@@ -889,6 +899,13 @@ class PayrollService
         return match (strtoupper($currency)) {
             'NGN' => '₦' . $formatted,
             'USD' => '$' . $formatted,
+            'GBP' => '£' . $formatted,
+            'EUR' => '€' . $formatted,
+            'CAD' => 'CA$' . $formatted,
+            'AED' => 'AED ' . $formatted,
+            'KES' => 'KSh ' . $formatted,
+            'ZAR' => 'R ' . $formatted,
+            'GHS' => 'GH₵' . $formatted,
             default => $formatted . ' ' . strtoupper($currency),
         };
     }
@@ -910,6 +927,7 @@ class PayrollService
                 $row['salary_type'],
                 $row['currency'],
                 $row['base_salary'],
+                $row['formatted_salary'],
                 $row['daily_pay'],
                 $row['attendance_count'],
                 $row['accumulated_pay'],
@@ -927,61 +945,121 @@ class PayrollService
 
     private function streamXlsxExport(int $companyId, User $actor, array $filters): void
     {
-        $tmpFile = tempnam(sys_get_temp_dir(), 'payroll-export-');
+        if (! extension_loaded('zip') || ! class_exists(\ZipArchive::class)) {
+            Log::error('Payroll XLSX export failed: zip extension missing.', [
+                'company_id' => $companyId,
+                'actor_user_id' => (int) $actor->id,
+            ]);
+
+            throw ValidationException::withMessages([
+                'export' => ['XLSX export is unavailable because the server zip extension is not enabled.'],
+            ]);
+        }
+
+        $exportDir = storage_path('app/exports');
+        if (! is_dir($exportDir)) {
+            @mkdir($exportDir, 0775, true);
+        }
+
+        if (! is_dir($exportDir) || ! is_writable($exportDir)) {
+            Log::error('Payroll XLSX export failed: export temp directory is not writable.', [
+                'company_id' => $companyId,
+                'actor_user_id' => (int) $actor->id,
+                'export_dir' => $exportDir,
+            ]);
+
+            throw ValidationException::withMessages([
+                'export' => ['XLSX export failed because the export temp directory is not writable.'],
+            ]);
+        }
+
+        $tmpFile = tempnam($exportDir, 'payroll-export-');
         if ($tmpFile === false) {
+            Log::error('Payroll XLSX export failed: unable to allocate temp file.', [
+                'company_id' => $companyId,
+                'actor_user_id' => (int) $actor->id,
+                'export_dir' => $exportDir,
+            ]);
+
             throw ValidationException::withMessages([
                 'export' => ['Unable to prepare export file. Please try again.'],
             ]);
         }
 
-        $writer = new XlsxWriter();
-        $writer->openToFile($tmpFile);
-        $writer->setCreator('Factory23 Payroll');
+        $writer = null;
 
-        $sheet = $writer->getCurrentSheet();
-        $sheet->setName('Payroll Export');
-        $sheet->setColumnWidth(26, 1);
-        $sheet->setColumnWidth(14, 2, 4);
-        $sheet->setColumnWidth(16, 5, 8);
-        $sheet->setColumnWidth(22, 9, 11);
-        $sheet->setColumnWidth(14, 12, 14);
+        try {
+            $writer = new XlsxWriter();
+            $writer->openToFile($tmpFile);
+            $writer->setCreator('Factory23 Payroll');
 
-        $headerStyle = (new Style())->setFontBold();
-        $columnStyles = [];
-        foreach (array_keys(self::EXPORT_HEADERS) as $index) {
-            $columnStyles[$index] = $headerStyle;
+            $sheet = $writer->getCurrentSheet();
+            $sheet->setName('Payroll Export');
+            $sheet->setColumnWidth(26, 1);
+            $sheet->setColumnWidth(14, 2, 4);
+            $sheet->setColumnWidth(18, 5, 9);
+            $sheet->setColumnWidth(22, 10, 12);
+            $sheet->setColumnWidth(14, 13, 15);
+
+            $headerStyle = (new Style())->setFontBold();
+            $columnStyles = [];
+            foreach (array_keys(self::EXPORT_HEADERS) as $index) {
+                $columnStyles[$index] = $headerStyle;
+            }
+
+            $writer->addRow(Row::fromValuesWithStyles(self::EXPORT_HEADERS, null, $columnStyles));
+
+            $this->streamExportRows($companyId, $actor, $filters, function (array $row) use ($writer): void {
+                $writer->addRow(Row::fromValues([
+                    $row['employee_name'],
+                    $row['role'],
+                    $row['salary_type'],
+                    $row['currency'],
+                    $row['base_salary'],
+                    $row['formatted_salary'],
+                    $row['daily_pay'],
+                    $row['attendance_count'],
+                    $row['accumulated_pay'],
+                    $row['attendance_affect_pay'],
+                    $row['payroll_status'],
+                    $row['created_date'],
+                    $row['project_count'],
+                    $row['completed_tasks'],
+                    $row['pending_tasks'],
+                ]));
+            });
+
+            $writer->close();
+
+            $reader = fopen($tmpFile, 'rb');
+            if (is_resource($reader)) {
+                fpassthru($reader);
+                fclose($reader);
+            }
+        } catch (\Throwable $exception) {
+            Log::error('Payroll XLSX export failed.', [
+                'company_id' => $companyId,
+                'actor_user_id' => (int) $actor->id,
+                'exception_class' => $exception::class,
+                'exception_message' => $exception->getMessage(),
+            ]);
+
+            throw ValidationException::withMessages([
+                'export' => ['Unable to generate the Excel export file.'],
+            ]);
+        } finally {
+            if ($writer instanceof XlsxWriter) {
+                try {
+                    $writer->close();
+                } catch (\Throwable) {
+                    // ignore close failures during cleanup
+                }
+            }
+
+            if (is_file($tmpFile)) {
+                @unlink($tmpFile);
+            }
         }
-
-        $writer->addRow(Row::fromValuesWithStyles(self::EXPORT_HEADERS, null, $columnStyles));
-
-        $this->streamExportRows($companyId, $actor, $filters, function (array $row) use ($writer): void {
-            $writer->addRow(Row::fromValues([
-                $row['employee_name'],
-                $row['role'],
-                $row['salary_type'],
-                $row['currency'],
-                $row['base_salary'],
-                $row['daily_pay'],
-                $row['attendance_count'],
-                $row['accumulated_pay'],
-                $row['attendance_affect_pay'],
-                $row['payroll_status'],
-                $row['created_date'],
-                $row['project_count'],
-                $row['completed_tasks'],
-                $row['pending_tasks'],
-            ]));
-        });
-
-        $writer->close();
-
-        $reader = fopen($tmpFile, 'rb');
-        if (is_resource($reader)) {
-            fpassthru($reader);
-            fclose($reader);
-        }
-
-        @unlink($tmpFile);
     }
 
     private function streamExportRows(int $companyId, User $actor, array $filters, callable $emit): void
@@ -1022,6 +1100,8 @@ class PayrollService
                     continue;
                 }
 
+                $resolvedCurrency = CurrencyCatalog::normalize((string) ($row['currency'] ?? null));
+
                 $agentTaskStats = $taskStats[(int) $row['id']] ?? [
                     'project_count' => null,
                     'completed_tasks' => null,
@@ -1032,11 +1112,21 @@ class PayrollService
                     'employee_name' => (string) ($row['name'] ?? ''),
                     'role' => (string) ($row['role'] ?? 'Agent'),
                     'salary_type' => strtoupper((string) ($row['salary_type'] ?? 'monthly')),
-                    'currency' => strtoupper((string) ($row['currency'] ?? 'NGN')),
+                    'currency' => $resolvedCurrency,
                     'base_salary' => round((float) ($row['base_salary'] ?? 0), 2),
-                    'daily_pay' => round((float) ($row['daily_pay'] ?? 0), 2),
+                    'formatted_salary' => $this->formatMoney(
+                        (float) ($row['base_salary'] ?? 0),
+                        $resolvedCurrency,
+                    ),
+                    'daily_pay' => $this->formatMoney(
+                        (float) ($row['daily_pay'] ?? 0),
+                        $resolvedCurrency,
+                    ),
                     'attendance_count' => (int) ($row['attendance_days'] ?? 0),
-                    'accumulated_pay' => round((float) ($row['net_pay'] ?? 0), 2),
+                    'accumulated_pay' => $this->formatMoney(
+                        (float) ($row['net_pay'] ?? 0),
+                        $resolvedCurrency,
+                    ),
                     'attendance_affect_pay' => (bool) ($row['attendance_affects_pay'] ?? false) ? 'Yes' : 'No',
                     'payroll_status' => (string) ($row['status'] ?? 'Pending'),
                     'created_date' => (string) ($row['created_date'] ?? $date->toDateString()),

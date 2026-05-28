@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\Auth\ResendOtpController;
 use App\Http\Controllers\Api\V1\Auth\ResetPasswordController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
+use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
 use App\Http\Controllers\Api\V1\Enterprise\BookDemoController;
@@ -47,6 +48,9 @@ Route::get('/health', HealthController::class)->name('health');
 Route::get('/avatars', [AvatarController::class, 'index'])
     ->middleware('throttle:30,1')
     ->name('avatars.index');
+Route::get('/currencies', [CurrencyController::class, 'index'])
+    ->middleware('throttle:60,1')
+    ->name('currencies.index');
 
 Route::prefix('auth')->name('auth.')->group(function (): void {
     Route::post('/register', RegisterController::class)

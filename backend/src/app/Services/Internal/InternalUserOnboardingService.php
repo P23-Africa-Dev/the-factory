@@ -10,6 +10,7 @@ use App\Models\InternalUserInvitation;
 use App\Models\User;
 use App\Notifications\InternalUserOnboardingInviteNotification;
 use App\Services\Notification\NotificationService;
+use App\Support\CurrencyCatalog;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -56,7 +57,10 @@ class InternalUserOnboardingService
         return DB::transaction(function () use ($creator, $company, $data, $role, $supervisorUserId, $prefilledProfile): array {
             $workDays = collect($data['work_days'])->map(fn($d) => strtolower((string) $d))->unique()->values()->all();
             $salaryType = strtolower((string) ($data['salary_type'] ?? 'monthly'));
-            $currency = strtoupper((string) ($data['currency_code'] ?? $company->currency_code ?? config('internal_onboarding.default_currency', 'USD')));
+            $currency = CurrencyCatalog::normalize(
+                currency: $data['currency_code'] ?? null,
+                fallbackCurrency: $company->currency_code ?? config('internal_onboarding.default_currency', 'USD'),
+            );
 
             $user = User::query()->create([
                 'name' => $data['full_name'],

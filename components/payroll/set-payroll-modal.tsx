@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import { SectionDivider } from "@/components/payroll/payroll/section-divider";
@@ -13,6 +13,7 @@ import {
   type ProductEntry,
 } from "@/components/payroll/payroll/commission-modal";
 import { useCreatePayroll, useUpdatePayroll } from "@/hooks/use-payroll";
+import { useSupportedCurrencies } from "@/hooks/use-currencies";
 import { useAuthStore } from "@/store/auth";
 import type { PayrollSettings } from "@/lib/api/payroll";
 import type { ApiRequestError } from "@/lib/api/onboarding";
@@ -77,12 +78,25 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
   const [errors, setErrors] = useState<FormErrors>({});
   const [productErrors, setProductErrors] = useState<ProductErrors>([]);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [backendFieldErrors, setBackendFieldErrors] = useState<
-    Record<string, string[]> | null
-  >(null);
 
   const createMutation = useCreatePayroll();
   const updateMutation = useUpdatePayroll(existingPayroll?.id);
+  const { data: currenciesData, isLoading: loadingCurrencies } = useSupportedCurrencies();
+
+  const currencyOptions = currenciesData?.currencies;
+  const currencyOptionList = currencyOptions ?? [];
+  const supportedCurrencyCodes = useMemo(
+    () => new Set((currencyOptions ?? []).map((item) => item.code)),
+    [currencyOptions]
+  );
+  const fallbackCurrencyCode = (currenciesData?.default_currency ?? PAYROLL_DEFAULT_CURRENCY).toUpperCase();
+  const normalizedCurrencyCode = currency.trim().toUpperCase();
+  const selectedCurrencyCode = useMemo(
+    () => (normalizedCurrencyCode && (supportedCurrencyCodes.size === 0 || supportedCurrencyCodes.has(normalizedCurrencyCode))
+      ? normalizedCurrencyCode
+      : fallbackCurrencyCode),
+    [fallbackCurrencyCode, normalizedCurrencyCode, supportedCurrencyCodes]
+  );
 
   const isPending = createMutation.isPending || updateMutation.isPending;
   const salaryNumericPreview = Number(baseSalary.replace(/[^0-9.]/g, ""));
@@ -113,6 +127,10 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
   const validate = (): { formErrors: FormErrors; productErrors: ProductErrors } => {
     const formErrors: FormErrors = {};
     const prodErrs: ProductErrors = [];
+    const normalizedCurrency = selectedCurrencyCode;
+    const currencyIsSupported = supportedCurrencyCodes.size > 0
+      ? supportedCurrencyCodes.has(normalizedCurrency)
+      : /^[A-Z]{3}$/.test(normalizedCurrency);
 
     const salaryNumeric = Number(baseSalary.replace(/[^0-9.]/g, ""));
     if (!baseSalary.trim()) {
@@ -125,8 +143,8 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
 
     if (!currency.trim()) {
       formErrors.currency = "Currency is required.";
-    } else if (!/^[A-Za-z]{3}$/.test(currency.trim())) {
-      formErrors.currency = "Use a valid 3-letter currency code.";
+    } else if (!currencyIsSupported) {
+      formErrors.currency = "Select a supported currency.";
     }
 
     const daysNumeric = Number(workDays.replace(/[^0-9.]/g, ""));
@@ -165,7 +183,6 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
     toast.error(msg);
     setApiError(msg);
     if (apiErr.errors) {
-      setBackendFieldErrors(apiErr.errors);
       const fe: FormErrors = {};
       if (apiErr.errors.base_salary) fe.baseSalary = apiErr.errors.base_salary[0];
       if (apiErr.errors.work_days) fe.workDays = apiErr.errors.work_days[0];
@@ -203,7 +220,7 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
       company_id: companyId,
       salary_type: salaryType.toLowerCase() as "daily" | "monthly" | "weekly",
       base_salary: salaryNumeric,
-      currency: currency.trim().toUpperCase(),
+      currency: selectedCurrencyCode,
       work_days: daysNumeric,
       work_hours: hoursNumeric,
       attendance_affects_pay: attendanceAffectPay,
@@ -211,7 +228,6 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
     };
 
     setApiError(null);
-    setBackendFieldErrors(null);
 
     if (existingPayroll) {
       updateMutation.mutate(payload, {
@@ -290,11 +306,26 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
               </div>
               <div>
                 <FormRow label="Currency">
-                  <InlineInput
-                    value={currency}
-                    onChange={(e) => { setCurrency(e.target.value); clearError("currency"); }}
-                    className="col-span-2 uppercase"
-                  />
+                  <InlineSelect
+                    value={selectedCurrencyCode}
+                    onChange={(e) => {
+                      setCurrency(e.target.value);
+                      clearError("currency");
+                    }}
+                    className="col-span-2"
+                  >
+                    {currencyOptionList.length === 0 ? (
+                      <option value={PAYROLL_DEFAULT_CURRENCY}>
+                        {loadingCurrencies ? "Loading currencies..." : "No currencies available"}
+                      </option>
+                    ) : (
+                      currencyOptionList.map((currencyOption) => (
+                        <option key={currencyOption.code} value={currencyOption.code}>
+                          {currencyOption.label}
+                        </option>
+                      ))
+                    )}
+                  </InlineSelect>
                 </FormRow>
                 <FieldError message={errors.currency} />
               </div>

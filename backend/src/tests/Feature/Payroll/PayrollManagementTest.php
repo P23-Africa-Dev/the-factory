@@ -681,7 +681,7 @@ class PayrollManagementTest extends TestCase
         $response->assertOk();
         $this->assertStringContainsString('text/csv', (string) $response->headers->get('content-type'));
         $content = $response->streamedContent();
-        $this->assertStringContainsString('Employee Name,Role,Salary Type,Currency,Base Salary,Daily Pay,Attendance Count,Accumulated Pay,Attendance Affect Pay,Payroll Status,Created Date,Project Count,Completed Tasks,Pending Tasks', $content);
+        $this->assertStringContainsString('Employee Name,Role,Salary Type,Currency,Base Salary,Formatted Salary,Daily Pay,Attendance Count,Accumulated Pay,Attendance Affect Pay,Payroll Status,Created Date,Project Count,Completed Tasks,Pending Tasks', $content);
         $this->assertStringContainsString($agent->email, $content);
     }
 
@@ -820,6 +820,24 @@ class PayrollManagementTest extends TestCase
             ->assertJsonPath('data.payroll.daily_pay', 8000);
     }
 
+    public function test_admin_cannot_create_payroll_with_unsupported_currency(): void
+    {
+        [$company, $admin] = $this->seedCompanyUsers();
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/payroll', [
+                'company_id' => $company->id,
+                'salary_type' => 'monthly',
+                'base_salary' => 100000,
+                'currency' => 'JPY',
+                'work_days' => 22,
+                'work_hours' => 8,
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonStructure(['errors' => ['currency']]);
+    }
+
     public function test_admin_can_override_agent_payroll_currency_and_daily_salary(): void
     {
         [$company, $admin,, $agent] = $this->seedCompanyUsers();
@@ -857,6 +875,24 @@ class PayrollManagementTest extends TestCase
             'payroll_attendance_affects_pay' => 1,
             'payroll_work_days_override' => 6,
         ]);
+    }
+
+    public function test_admin_cannot_set_unsupported_currency_on_agent_payroll_profile(): void
+    {
+        [$company, $admin,, $agent] = $this->seedCompanyUsers();
+
+        $this->createPayrollSetting($company, [
+            'currency' => 'NGN',
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->patchJson('/api/v1/payroll/agents/' . $agent->id, [
+                'company_id' => $company->id,
+                'currency_code' => 'JPY',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonStructure(['errors' => ['currency_code']]);
     }
 
     private function seedCompanyUsers(string $companyId = 'FAC-PAY001'): array

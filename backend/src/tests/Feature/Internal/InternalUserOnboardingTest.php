@@ -61,7 +61,7 @@ class InternalUserOnboardingTest extends TestCase
                 $actionUrl = (string) $mailMessage->actionUrl;
                 $frontendBase = rtrim((string) config('internal_onboarding.frontend_onboarding_url'), '/');
 
-                if (! str_starts_with($actionUrl, $frontendBase.'?')) {
+                if (! str_starts_with($actionUrl, $frontendBase . '?')) {
                     return false;
                 }
 
@@ -154,6 +154,27 @@ class InternalUserOnboardingTest extends TestCase
             'gender' => 'female',
             'avatar' => 'female_02',
         ]);
+    }
+
+    public function test_supervisor_cannot_create_internal_user_with_unsupported_currency(): void
+    {
+        [$company, $supervisor, $existingSupervisor] = $this->seedCompanyWithManagerAndSupervisor();
+        $token = $supervisor->createToken('supervisor-token', ['*'])->plainTextToken;
+
+        $response = $this->withToken($token)->postJson('/api/v1/internal-users', [
+            'company_id' => $company->id,
+            'full_name' => 'Unsupported Currency Agent',
+            'email' => 'unsupported-currency-agent@factory.local',
+            'role' => 'agent',
+            'assigned_zone' => 'South Zone',
+            'work_days' => ['monday', 'tuesday', 'wednesday'],
+            'base_salary' => 150000,
+            'currency_code' => 'JPY',
+            'supervisor_user_id' => $existingSupervisor->id,
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonStructure(['errors' => ['currency_code']]);
     }
 
     public function test_gender_prefill_auto_assigns_avatar_when_creator_omits_it(): void
@@ -918,7 +939,7 @@ class InternalUserOnboardingTest extends TestCase
             ['invitation' => 123, 'token' => str_repeat('a', 64)],
         );
 
-        $tamperedUrl = $signedUrl.'&token='.str_repeat('b', 64);
+        $tamperedUrl = $signedUrl . '&token=' . str_repeat('b', 64);
 
         $this->get($tamperedUrl)->assertForbidden();
     }

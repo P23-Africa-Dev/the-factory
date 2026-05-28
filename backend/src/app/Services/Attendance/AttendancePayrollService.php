@@ -13,6 +13,7 @@ use App\Models\AttendanceSetting;
 use App\Models\PayrollSetting;
 use App\Models\User;
 use App\Services\Notification\NotificationService;
+use App\Support\CurrencyCatalog;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Support\Facades\DB;
@@ -159,7 +160,10 @@ class AttendancePayrollService
             $baseSalary = $agent->base_salary !== null
                 ? (float) $agent->base_salary
                 : (float) $payrollSetting->base_salary;
-            $currency = strtoupper((string) ($agent->salary_currency ?: $payrollSetting->currency ?: 'NGN'));
+            $currency = CurrencyCatalog::normalize(
+                currency: $agent->salary_currency,
+                fallbackCurrency: $payrollSetting->currency,
+            );
             $effectiveWorkDays = (int) ($agent->payroll_work_days_override ?: $scheduledWorkingDays);
             if ($effectiveWorkDays < 1) {
                 $effectiveWorkDays = max($scheduledWorkingDays, 1);

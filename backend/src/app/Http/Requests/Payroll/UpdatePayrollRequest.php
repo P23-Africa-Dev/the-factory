@@ -6,6 +6,7 @@ namespace App\Http\Requests\Payroll;
 
 use App\Enums\PayrollSalaryType;
 use App\Http\Requests\Concerns\ResolvesCompanyContextId;
+use App\Support\CurrencyCatalog;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -55,7 +56,7 @@ class UpdatePayrollRequest extends FormRequest
             'company_id' => ['required', 'integer', 'exists:companies,id'],
             'salary_type' => ['sometimes', 'required', 'string', Rule::in(PayrollSalaryType::values())],
             'base_salary' => ['sometimes', 'required', 'numeric', 'gt:0'],
-            'currency' => ['sometimes', 'nullable', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
+            'currency' => ['sometimes', 'nullable', 'string', 'size:3', Rule::in(CurrencyCatalog::codes())],
             'work_days' => ['sometimes', 'required', 'integer', 'gt:0', 'max:31'],
             'work_hours' => ['sometimes', 'required', 'integer', 'between:4,12'],
             'attendance_affects_pay' => ['sometimes', 'boolean'],

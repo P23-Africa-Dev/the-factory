@@ -221,7 +221,7 @@ Create and update payload rules:
 2. `base_salary` required, numeric, greater than 0
 3. `work_days` required, integer, greater than 0
 4. `work_hours` required, integer, between 4 and 12
-5. `currency` optional, 3-letter uppercase code; if omitted, company currency is used
+5. `currency` optional, must be one of the supported currency catalog values (`NGN`, `USD`, `GBP`, `EUR`, `CAD`, `AED`, `KES`, `ZAR`, `GHS`); if omitted, company currency is used with safe fallback to configured default
 6. `attendance_affects_pay` optional boolean
 7. `commission_enabled` optional boolean
 8. `company_id` optional; if omitted, latest active company context is used
@@ -236,6 +236,12 @@ Export payload rules:
 6. `attendance_affects_pay` optional boolean
 7. `attendance_min` optional integer `>= 0`
 8. `attendance_max` optional integer `>= attendance_min`
+
+Currency catalog endpoint:
+
+1. `GET /api/v1/currencies`
+2. Returns `{ currencies: [{ code, name, symbol, label }], default_currency }`
+3. Used by onboarding and payroll forms for dropdown rendering
 
 ## Payroll Export
 
@@ -253,21 +259,24 @@ Export columns:
 3. `Salary Type`
 4. `Currency`
 5. `Base Salary`
-6. `Daily Pay`
-7. `Attendance Count`
-8. `Accumulated Pay`
-9. `Attendance Affect Pay`
-10. `Payroll Status`
-11. `Created Date`
-12. `Project Count`
-13. `Completed Tasks`
-14. `Pending Tasks`
+6. `Formatted Salary`
+7. `Daily Pay`
+8. `Attendance Count`
+9. `Accumulated Pay`
+10. `Attendance Affect Pay`
+11. `Payroll Status`
+12. `Created Date`
+13. `Project Count`
+14. `Completed Tasks`
+15. `Pending Tasks`
 
 Operational notes:
 
 1. Exports stream rows in chunks to avoid memory spikes.
 2. Filters are applied before row emission.
 3. Default filename format is `payroll-export-YYYY-MM-DD.<ext>`.
+4. XLSX export requires PHP `ext-zip` enabled in the runtime container.
+5. Runtime must allow writes to `storage/app/exports` for temporary workbook generation.
 
 ## Multi-Tenant Guarantees
 

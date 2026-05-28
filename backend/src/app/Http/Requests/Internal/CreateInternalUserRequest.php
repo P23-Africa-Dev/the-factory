@@ -6,6 +6,7 @@ namespace App\Http\Requests\Internal;
 
 use App\Enums\PayrollSalaryType;
 use App\Http\Requests\Concerns\ResolvesCompanyContextId;
+use App\Support\CurrencyCatalog;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -42,7 +43,7 @@ class CreateInternalUserRequest extends FormRequest
             'work_days.*' => ['string', Rule::in(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])],
             'base_salary' => ['required', 'numeric', 'min:0'],
             'salary_type' => ['nullable', 'string', Rule::in(PayrollSalaryType::values())],
-            'currency_code' => ['nullable', 'string', 'size:3', 'regex:/^[A-Za-z]{3}$/'],
+            'currency_code' => ['nullable', 'string', 'size:3', Rule::in(CurrencyCatalog::codes())],
             'commission_enabled' => ['nullable', 'boolean'],
             'supervisor_user_id' => ['nullable', 'integer', 'exists:users,id'],
             'assign_agent_ids' => ['nullable', 'array', 'max:100'],
