@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\Internal\InternalLoginController;
 use App\Http\Controllers\Api\V1\Internal\InternalOnboardingController;
 use App\Http\Controllers\Api\V1\Internal\InternalUserController;
+use App\Http\Controllers\Api\V1\Map\MapProviderController;
 use App\Http\Controllers\Api\V1\Notification\NotificationController;
 use App\Http\Controllers\Api\V1\Notification\NotificationPreferenceController;
 use App\Http\Controllers\Api\V1\Notification\PushSubscriptionController;
@@ -51,6 +52,9 @@ Route::get('/avatars', [AvatarController::class, 'index'])
 Route::get('/currencies', [CurrencyController::class, 'index'])
     ->middleware('throttle:60,1')
     ->name('currencies.index');
+Route::get('/map/provider', MapProviderController::class)
+    ->middleware('throttle:60,1')
+    ->name('map.provider');
 
 Route::prefix('auth')->name('auth.')->group(function (): void {
     Route::post('/register', RegisterController::class)
