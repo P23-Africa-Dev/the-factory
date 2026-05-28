@@ -6,10 +6,6 @@ return [
     'default' => env('PAYROLL_DEFAULT_CURRENCY', env('INTERNAL_DEFAULT_CURRENCY', 'USD')),
 
     'supported' => [
-        'NGN' => [
-            'name' => 'Nigerian Naira',
-            'symbol' => 'NGN',
-        ],
         'USD' => [
             'name' => 'US Dollar',
             'symbol' => '$',
@@ -18,13 +14,17 @@ return [
             'name' => 'British Pound',
             'symbol' => 'GBP',
         ],
-        'EUR' => [
-            'name' => 'Euro',
-            'symbol' => 'EUR',
-        ],
         'CAD' => [
             'name' => 'Canadian Dollar',
             'symbol' => 'CA$',
+        ],
+        'NGN' => [
+            'name' => 'Nigerian Naira',
+            'symbol' => 'NGN',
+        ],
+        'EUR' => [
+            'name' => 'Euro',
+            'symbol' => 'EUR',
         ],
         'AED' => [
             'name' => 'UAE Dirham',

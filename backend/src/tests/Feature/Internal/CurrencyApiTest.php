@@ -41,6 +41,6 @@ class CurrencyApiTest extends TestCase
         $response = $this->getJson('/api/v1/currencies');
 
         $response->assertOk()
-            ->assertJsonPath('data.default_currency', 'NGN');
+            ->assertJsonPath('data.default_currency', 'USD');
     }
 }

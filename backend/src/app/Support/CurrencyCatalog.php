@@ -6,6 +6,8 @@ namespace App\Support;
 
 final class CurrencyCatalog
 {
+    private const PRIORITY_CODES = ['USD', 'GBP', 'CAD'];
+
     /**
      * @return array<string, array{name:string, symbol:string}>
      */
@@ -30,7 +32,20 @@ final class CurrencyCatalog
             ];
         }
 
-        return $normalized;
+        $ordered = [];
+
+        foreach (self::PRIORITY_CODES as $priorityCode) {
+            if (isset($normalized[$priorityCode])) {
+                $ordered[$priorityCode] = $normalized[$priorityCode];
+                unset($normalized[$priorityCode]);
+            }
+        }
+
+        foreach ($normalized as $code => $meta) {
+            $ordered[$code] = $meta;
+        }
+
+        return $ordered;
     }
 
     /**
@@ -43,6 +58,10 @@ final class CurrencyCatalog
 
     public static function defaultCode(): string
     {
+        if (self::isSupported('USD')) {
+            return 'USD';
+        }
+
         $configured = strtoupper((string) config('currency.default', 'USD'));
         if (self::isSupported($configured)) {
             return $configured;
