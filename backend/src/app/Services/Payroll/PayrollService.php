@@ -11,18 +11,42 @@ use App\Models\AttendancePayrollSummary;
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceSetting;
 use App\Models\PayrollSetting;
+use App\Models\Task;
 use App\Models\User;
 use App\Notifications\PayrollStatusNotification;
 use App\Services\Notification\NotificationService;
 use App\Support\AvatarUrlResolver;
+use App\Support\CurrencyCatalog;
 use Carbon\Carbon;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use OpenSpout\Common\Entity\Row;
+use OpenSpout\Common\Entity\Style\Style;
+use OpenSpout\Writer\XLSX\Writer as XlsxWriter;
 
 class PayrollService
 {
+    private const EXPORT_HEADERS = [
+        'Employee Name',
+        'Role',
+        'Salary Type',
+        'Currency',
+        'Base Salary',
+        'Formatted Salary',
+        'Daily Pay',
+        'Attendance Count',
+        'Accumulated Pay',
+        'Attendance Affect Pay',
+        'Payroll Status',
+        'Created Date',
+        'Project Count',
+        'Completed Tasks',
+        'Pending Tasks',
+    ];
+
     private const PRESENT_STATUSES = [
         AttendanceStatus::PRESENT->value,
         AttendanceStatus::LATE->value,
@@ -64,11 +88,12 @@ class PayrollService
             companyCurrency: $context->company->currency_code,
             fallbackCurrency: null,
         );
+        $salaryType = strtolower((string) $data['salary_type']);
 
         $workDays = (int) $data['work_days'];
         $baseSalary = (float) $data['base_salary'];
 
-        $setting = DB::transaction(function () use ($context, $data, $currency, $workDays, $baseSalary): PayrollSetting {
+        $setting = DB::transaction(function () use ($context, $data, $currency, $workDays, $baseSalary, $salaryType): PayrollSetting {
             return PayrollSetting::query()->create([
                 'company_id' => $context->company->id,
                 'salary_type' => $data['salary_type'],
@@ -76,7 +101,7 @@ class PayrollService
                 'currency' => $currency,
                 'work_days' => $workDays,
                 'work_hours' => (int) $data['work_hours'],
-                'daily_pay' => $this->calculateDailyPay($baseSalary, $workDays),
+                'daily_pay' => $this->calculateDailyPay($baseSalary, $workDays, $salaryType),
                 'attendance_affects_pay' => (bool) ($data['attendance_affects_pay'] ?? false),
                 'commission_enabled' => (bool) ($data['commission_enabled'] ?? false),
             ]);
@@ -108,14 +133,15 @@ class PayrollService
             companyCurrency: $context->company->currency_code,
             fallbackCurrency: $payrollSetting->currency,
         );
+        $salaryType = strtolower((string) ($data['salary_type'] ?? $payrollSetting->salary_type?->value ?? 'monthly'));
 
         $payrollSetting->update([
-            'salary_type' => $data['salary_type'] ?? $payrollSetting->salary_type?->value,
+            'salary_type' => $salaryType,
             'base_salary' => $baseSalary,
             'currency' => $currency,
             'work_days' => $workDays,
             'work_hours' => (int) ($data['work_hours'] ?? $payrollSetting->work_hours),
-            'daily_pay' => $this->calculateDailyPay($baseSalary, $workDays),
+            'daily_pay' => $this->calculateDailyPay($baseSalary, $workDays, $salaryType),
             'attendance_affects_pay' => (bool) ($data['attendance_affects_pay'] ?? $payrollSetting->attendance_affects_pay),
             'commission_enabled' => (bool) ($data['commission_enabled'] ?? $payrollSetting->commission_enabled),
         ]);
@@ -239,7 +265,10 @@ class PayrollService
             'pending_approval' => round($pendingApproval, 2),
             'total_agents' => $agents->count(),
             'total_payroll' => round($totalPayroll, 2),
-            'currency' => strtoupper((string) ($payrollSetting?->currency ?? $context->company->currency_code ?? 'NGN')),
+            'currency' => CurrencyCatalog::normalize(
+                currency: $payrollSetting?->currency,
+                fallbackCurrency: $context->company->currency_code,
+            ),
         ];
     }
 
@@ -342,7 +371,15 @@ class PayrollService
 
         if (array_key_exists('base_salary', $data)) {
             $updates['base_salary'] = (float) $data['base_salary'];
-            $updates['salary_currency'] = strtoupper((string) ($agent->salary_currency ?: $payrollSetting?->currency ?: $context->company->currency_code ?: 'NGN'));
+            $updates['salary_currency'] = CurrencyCatalog::normalize(
+                currency: $data['currency_code'] ?? $agent->salary_currency,
+                fallbackCurrency: $payrollSetting?->currency ?? $context->company->currency_code,
+            );
+        } elseif (array_key_exists('currency_code', $data)) {
+            $updates['salary_currency'] = CurrencyCatalog::normalize(
+                currency: $data['currency_code'] ?: $agent->salary_currency,
+                fallbackCurrency: $payrollSetting?->currency ?? $context->company->currency_code,
+            );
         }
 
         if (array_key_exists('salary_type', $data)) {
@@ -489,42 +526,39 @@ class PayrollService
         $context = $this->accessService->resolve($user, $filters['company_id'] ?? null);
         $this->accessService->ensureCanManage($context);
 
-        $result = $this->listAgents($user, [
-            ...$filters,
-            'per_page' => 100000,
-            'page' => 1,
-        ]);
-
         $format = strtolower((string) ($filters['format'] ?? 'csv'));
-        $date = $this->resolveReferenceDate($filters);
-        $filename = sprintf('payroll-%s.%s', $date->format('Y-m-d'), $format === 'xls' ? 'xls' : 'csv');
-
         if ($format === 'xls') {
+            $format = 'xlsx';
+        }
+
+        $date = $this->resolveReferenceDate($filters);
+        $filename = sprintf('payroll-export-%s.%s', $date->format('Y-m-d'), $format === 'xlsx' ? 'xlsx' : 'csv');
+
+        if ($format === 'xlsx') {
             return [
                 'filename' => $filename,
-                'content_type' => 'application/vnd.ms-excel; charset=UTF-8',
-                'content' => $this->buildExcelTableExport($result['items']),
+                'content_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'stream' => function () use ($context, $user, $filters): void {
+                    $this->streamXlsxExport((int) $context->company->id, $user, $filters);
+                },
             ];
         }
 
         return [
             'filename' => $filename,
             'content_type' => 'text/csv; charset=UTF-8',
-            'content' => $this->buildCsvExport($result['items']),
+            'stream' => function () use ($context, $user, $filters): void {
+                $this->streamCsvExport((int) $context->company->id, $user, $filters);
+            },
         ];
     }
 
     private function resolveCurrency(?string $preferredCurrency, ?string $companyCurrency, ?string $fallbackCurrency): string
     {
-        $currency = $preferredCurrency ?: $companyCurrency ?: $fallbackCurrency;
-
-        if (! $currency) {
-            throw ValidationException::withMessages([
-                'currency' => ['Currency is required either in request payload or company settings.'],
-            ]);
-        }
-
-        return strtoupper((string) $currency);
+        return CurrencyCatalog::normalize(
+            currency: $preferredCurrency,
+            fallbackCurrency: $companyCurrency ?? $fallbackCurrency,
+        );
     }
 
     private function buildAgentProfilePayload(int $companyId, User $agent, Carbon $date, ?int $actorUserId): array
@@ -560,13 +594,16 @@ class PayrollService
             ->get()
             ->map(static function (AttendancePayrollSummary $summary): array {
                 $monthDate = Carbon::parse((string) $summary->period_start);
+                $isDailyCycle = (string) $summary->cycle_type === 'daily';
 
                 return [
                     'id' => (int) $summary->id,
                     'month' => $monthDate->format('F'),
                     'period_year' => (int) $summary->period_year,
                     'period_month' => (int) $summary->period_month,
-                    'base_salary' => round((float) $summary->daily_rate * (int) $summary->scheduled_work_days, 2),
+                    'base_salary' => $isDailyCycle
+                        ? round((float) $summary->daily_rate, 2)
+                        : round((float) $summary->daily_rate * (int) $summary->scheduled_work_days, 2),
                     'net_pay' => round((float) $summary->salary_payable, 2),
                     'due_date' => $summary->period_end?->toDateString(),
                     'status' => ucfirst((string) $summary->status),
@@ -616,6 +653,10 @@ class PayrollService
             ? (bool) $agent->payroll_attendance_affects_pay
             : (bool) ($payrollSetting?->attendance_affects_pay ?? false);
 
+        if ($salaryType === 'daily') {
+            $attendanceAffectsPay = true;
+        }
+
         $derivedWorkDays = $this->deriveMonthlyWorkDays(
             periodStart: $periodStart,
             periodEnd: $periodEnd,
@@ -635,8 +676,11 @@ class PayrollService
             fallbackHours: (int) ($payrollSetting?->work_hours ?? 8),
         );
 
-        $dailyPay = $workDays > 0 ? round($baseSalary / $workDays, 2) : 0.0;
-        $currency = strtoupper((string) ($agent->salary_currency ?: $payrollSetting?->currency ?: 'NGN'));
+        $dailyPay = $this->calculateDailyPay($baseSalary, $workDays, $salaryType);
+        $currency = CurrencyCatalog::normalize(
+            currency: $agent->salary_currency,
+            fallbackCurrency: $payrollSetting?->currency,
+        );
 
         return [
             'salary_type' => $salaryType,
@@ -715,13 +759,21 @@ class PayrollService
 
     private function resolvePayrollPeriod(Carbon $date, string $salaryType): array
     {
-        $cycleType = strtolower($salaryType) === 'weekly' ? 'weekly' : 'monthly';
-        $periodStart = $cycleType === 'weekly'
-            ? $date->copy()->startOfWeek(Carbon::MONDAY)
-            : $date->copy()->startOfMonth();
-        $periodEnd = $cycleType === 'weekly'
-            ? $date->copy()->endOfWeek(Carbon::SUNDAY)
-            : $date->copy()->endOfMonth();
+        $cycleType = strtolower($salaryType);
+        if (! in_array($cycleType, ['daily', 'weekly', 'monthly'], true)) {
+            $cycleType = 'monthly';
+        }
+
+        $periodStart = match ($cycleType) {
+            'daily' => $date->copy()->startOfDay(),
+            'weekly' => $date->copy()->startOfWeek(Carbon::MONDAY),
+            default => $date->copy()->startOfMonth(),
+        };
+        $periodEnd = match ($cycleType) {
+            'daily' => $date->copy()->endOfDay(),
+            'weekly' => $date->copy()->endOfWeek(Carbon::SUNDAY),
+            default => $date->copy()->endOfMonth(),
+        };
 
         return [
             'cycle_type' => $cycleType,
@@ -761,7 +813,7 @@ class PayrollService
             ->whereIn('status', self::PRESENT_STATUSES)
             ->count();
 
-        $salaryPayable = $effective['attendance_affects_pay']
+        $salaryPayable = ($effective['attendance_affects_pay'] || (string) $effective['salary_type'] === 'daily')
             ? round((float) $effective['daily_pay'] * $attendanceDays, 2)
             : round((float) $effective['base_salary'], 2);
 
@@ -788,6 +840,7 @@ class PayrollService
                     'actual_attendance_days' => $attendanceDays,
                     'actor_user_id' => $actorUserId,
                     'salary_type' => (string) $effective['salary_type'],
+                    'base_salary' => round((float) $effective['base_salary'], 2),
                 ],
             ],
         );
@@ -820,13 +873,14 @@ class PayrollService
                 'assigned_zone' => $agent->assigned_zone,
                 'role' => 'Agent',
                 'status' => ucfirst((string) $summary->status),
-                'base_salary' => round((float) $summary->daily_rate * (int) $summary->scheduled_work_days, 2),
+                'base_salary' => round((float) ($summary->metadata['base_salary'] ?? $summary->salary_payable), 2),
                 'daily_pay' => round((float) $summary->daily_rate, 2),
                 'net_pay' => round((float) $summary->salary_payable, 2),
                 'attendance_days' => (int) $summary->attendance_days,
                 'currency' => (string) $summary->currency,
                 'salary_type' => (string) ($summary->metadata['salary_type'] ?? $period['cycle_type']),
                 'attendance_affects_pay' => (bool) ($summary->metadata['attendance_affects_pay'] ?? false),
+                'created_date' => $summary->generated_at?->toDateString() ?? $summary->created_at?->toDateString(),
             ];
         })->values();
     }
@@ -845,55 +899,304 @@ class PayrollService
         return match (strtoupper($currency)) {
             'NGN' => '₦' . $formatted,
             'USD' => '$' . $formatted,
+            'GBP' => '£' . $formatted,
+            'EUR' => '€' . $formatted,
+            'CAD' => 'CA$' . $formatted,
+            'AED' => 'AED ' . $formatted,
+            'KES' => 'KSh ' . $formatted,
+            'ZAR' => 'R ' . $formatted,
+            'GHS' => 'GH₵' . $formatted,
             default => $formatted . ' ' . strtoupper($currency),
         };
     }
 
-    private function buildCsvExport(array $rows): string
+    private function streamCsvExport(int $companyId, User $actor, array $filters): void
     {
-        $handle = fopen('php://temp', 'r+');
-        fputcsv($handle, ['Name', 'Email', 'Zone', 'Status', 'Base Salary', 'Daily Pay', 'Net Pay', 'Attendance Days', 'Currency', 'Salary Type']);
+        $out = fopen('php://output', 'wb');
+        if (! is_resource($out)) {
+            return;
+        }
 
-        foreach ($rows as $row) {
-            fputcsv($handle, [
-                $row['name'],
-                $row['email'],
-                $row['assigned_zone'],
-                $row['status'],
-                $row['base_salary'],
-                $row['daily_pay'],
-                $row['net_pay'],
-                $row['attendance_days'],
-                $row['currency'],
+        fwrite($out, "\xEF\xBB\xBF");
+        fputcsv($out, self::EXPORT_HEADERS);
+
+        $this->streamExportRows($companyId, $actor, $filters, function (array $row) use ($out): void {
+            fputcsv($out, [
+                $row['employee_name'],
+                $row['role'],
                 $row['salary_type'],
+                $row['currency'],
+                $row['base_salary'],
+                $row['formatted_salary'],
+                $row['daily_pay'],
+                $row['attendance_count'],
+                $row['accumulated_pay'],
+                $row['attendance_affect_pay'],
+                $row['payroll_status'],
+                $row['created_date'],
+                $row['project_count'],
+                $row['completed_tasks'],
+                $row['pending_tasks'],
+            ]);
+        });
+
+        fclose($out);
+    }
+
+    private function streamXlsxExport(int $companyId, User $actor, array $filters): void
+    {
+        if (! extension_loaded('zip') || ! class_exists(\ZipArchive::class)) {
+            Log::error('Payroll XLSX export failed: zip extension missing.', [
+                'company_id' => $companyId,
+                'actor_user_id' => (int) $actor->id,
+            ]);
+
+            throw ValidationException::withMessages([
+                'export' => ['XLSX export is unavailable because the server zip extension is not enabled.'],
             ]);
         }
 
-        rewind($handle);
+        $exportDir = storage_path('app/exports');
+        if (! is_dir($exportDir)) {
+            @mkdir($exportDir, 0775, true);
+        }
 
-        return (string) stream_get_contents($handle);
+        if (! is_dir($exportDir) || ! is_writable($exportDir)) {
+            Log::error('Payroll XLSX export failed: export temp directory is not writable.', [
+                'company_id' => $companyId,
+                'actor_user_id' => (int) $actor->id,
+                'export_dir' => $exportDir,
+            ]);
+
+            throw ValidationException::withMessages([
+                'export' => ['XLSX export failed because the export temp directory is not writable.'],
+            ]);
+        }
+
+        $tmpFile = tempnam($exportDir, 'payroll-export-');
+        if ($tmpFile === false) {
+            Log::error('Payroll XLSX export failed: unable to allocate temp file.', [
+                'company_id' => $companyId,
+                'actor_user_id' => (int) $actor->id,
+                'export_dir' => $exportDir,
+            ]);
+
+            throw ValidationException::withMessages([
+                'export' => ['Unable to prepare export file. Please try again.'],
+            ]);
+        }
+
+        $writer = null;
+
+        try {
+            $writer = new XlsxWriter();
+            $writer->openToFile($tmpFile);
+            $writer->setCreator('Factory23 Payroll');
+
+            $sheet = $writer->getCurrentSheet();
+            $sheet->setName('Payroll Export');
+            $sheet->setColumnWidth(26, 1);
+            $sheet->setColumnWidth(14, 2, 4);
+            $sheet->setColumnWidth(18, 5, 9);
+            $sheet->setColumnWidth(22, 10, 12);
+            $sheet->setColumnWidth(14, 13, 15);
+
+            $headerStyle = (new Style())->setFontBold();
+            $columnStyles = [];
+            foreach (array_keys(self::EXPORT_HEADERS) as $index) {
+                $columnStyles[$index] = $headerStyle;
+            }
+
+            $writer->addRow(Row::fromValuesWithStyles(self::EXPORT_HEADERS, null, $columnStyles));
+
+            $this->streamExportRows($companyId, $actor, $filters, function (array $row) use ($writer): void {
+                $writer->addRow(Row::fromValues([
+                    $row['employee_name'],
+                    $row['role'],
+                    $row['salary_type'],
+                    $row['currency'],
+                    $row['base_salary'],
+                    $row['formatted_salary'],
+                    $row['daily_pay'],
+                    $row['attendance_count'],
+                    $row['accumulated_pay'],
+                    $row['attendance_affect_pay'],
+                    $row['payroll_status'],
+                    $row['created_date'],
+                    $row['project_count'],
+                    $row['completed_tasks'],
+                    $row['pending_tasks'],
+                ]));
+            });
+
+            $writer->close();
+
+            $reader = fopen($tmpFile, 'rb');
+            if (is_resource($reader)) {
+                fpassthru($reader);
+                fclose($reader);
+            }
+        } catch (\Throwable $exception) {
+            Log::error('Payroll XLSX export failed.', [
+                'company_id' => $companyId,
+                'actor_user_id' => (int) $actor->id,
+                'exception_class' => $exception::class,
+                'exception_message' => $exception->getMessage(),
+            ]);
+
+            throw ValidationException::withMessages([
+                'export' => ['Unable to generate the Excel export file.'],
+            ]);
+        } finally {
+            if ($writer instanceof XlsxWriter) {
+                try {
+                    $writer->close();
+                } catch (\Throwable) {
+                    // ignore close failures during cleanup
+                }
+            }
+
+            if (is_file($tmpFile)) {
+                @unlink($tmpFile);
+            }
+        }
     }
 
-    private function buildExcelTableExport(array $rows): string
+    private function streamExportRows(int $companyId, User $actor, array $filters, callable $emit): void
     {
-        $header = ['Name', 'Email', 'Zone', 'Status', 'Base Salary', 'Daily Pay', 'Net Pay', 'Attendance Days', 'Currency', 'Salary Type'];
-        $html = '<table><thead><tr>';
+        $date = $this->resolveReferenceDate($filters);
+        $payrollSetting = PayrollSetting::query()->where('company_id', $companyId)->first();
+        $attendanceSetting = AttendanceSetting::query()->where('company_id', $companyId)->first();
 
-        foreach ($header as $column) {
-            $html .= '<th>' . e($column) . '</th>';
+        $query = $this->agentsQuery($companyId);
+
+        if (! empty($filters['search'])) {
+            $search = '%' . trim((string) $filters['search']) . '%';
+            $query->where(function ($sub) use ($search): void {
+                $sub->where('users.name', 'like', $search)
+                    ->orWhere('users.email', 'like', $search)
+                    ->orWhere('users.assigned_zone', 'like', $search);
+            });
         }
 
-        $html .= '</tr></thead><tbody>';
+        if (! empty($filters['role']) && strtolower((string) $filters['role']) !== 'agent') {
+            return;
+        }
 
-        foreach ($rows as $row) {
-            $html .= '<tr>';
-            foreach (['name', 'email', 'assigned_zone', 'status', 'base_salary', 'daily_pay', 'net_pay', 'attendance_days', 'currency', 'salary_type'] as $key) {
-                $html .= '<td>' . e((string) ($row[$key] ?? '')) . '</td>';
+        $query->orderBy('users.id')->chunkById(250, function (Collection $agents) use ($companyId, $payrollSetting, $attendanceSetting, $date, $actor, $filters, $emit): void {
+            $rows = $this->buildAgentRows(
+                agents: $agents,
+                companyId: $companyId,
+                payrollSetting: $payrollSetting,
+                attendanceSetting: $attendanceSetting,
+                date: $date,
+                actorUserId: (int) $actor->id,
+            );
+
+            $taskStats = $this->buildTaskStatsForAgents($companyId, $agents->pluck('id')->map(static fn(mixed $id): int => (int) $id)->all());
+
+            foreach ($rows as $row) {
+                if (! $this->passesExportFilters($row, $filters)) {
+                    continue;
+                }
+
+                $resolvedCurrency = CurrencyCatalog::normalize((string) ($row['currency'] ?? null));
+
+                $agentTaskStats = $taskStats[(int) $row['id']] ?? [
+                    'project_count' => null,
+                    'completed_tasks' => null,
+                    'pending_tasks' => null,
+                ];
+
+                $emit([
+                    'employee_name' => (string) ($row['name'] ?? ''),
+                    'role' => (string) ($row['role'] ?? 'Agent'),
+                    'salary_type' => strtoupper((string) ($row['salary_type'] ?? 'monthly')),
+                    'currency' => $resolvedCurrency,
+                    'base_salary' => round((float) ($row['base_salary'] ?? 0), 2),
+                    'formatted_salary' => $this->formatMoney(
+                        (float) ($row['base_salary'] ?? 0),
+                        $resolvedCurrency,
+                    ),
+                    'daily_pay' => $this->formatMoney(
+                        (float) ($row['daily_pay'] ?? 0),
+                        $resolvedCurrency,
+                    ),
+                    'attendance_count' => (int) ($row['attendance_days'] ?? 0),
+                    'accumulated_pay' => $this->formatMoney(
+                        (float) ($row['net_pay'] ?? 0),
+                        $resolvedCurrency,
+                    ),
+                    'attendance_affect_pay' => (bool) ($row['attendance_affects_pay'] ?? false) ? 'Yes' : 'No',
+                    'payroll_status' => (string) ($row['status'] ?? 'Pending'),
+                    'created_date' => (string) ($row['created_date'] ?? $date->toDateString()),
+                    'project_count' => $agentTaskStats['project_count'] ?? null,
+                    'completed_tasks' => $agentTaskStats['completed_tasks'] ?? null,
+                    'pending_tasks' => $agentTaskStats['pending_tasks'] ?? null,
+                ]);
             }
-            $html .= '</tr>';
+        }, 'users.id');
+    }
+
+    private function passesExportFilters(array $row, array $filters): bool
+    {
+        if (! empty($filters['status']) && strtolower((string) $row['status']) !== strtolower((string) $filters['status'])) {
+            return false;
         }
 
-        return $html . '</tbody></table>';
+        if (! empty($filters['salary_type']) && strtolower((string) $row['salary_type']) !== strtolower((string) $filters['salary_type'])) {
+            return false;
+        }
+
+        if (array_key_exists('attendance_affects_pay', $filters) && $filters['attendance_affects_pay'] !== null) {
+            if ((bool) $row['attendance_affects_pay'] !== (bool) $filters['attendance_affects_pay']) {
+                return false;
+            }
+        }
+
+        $attendanceCount = (int) ($row['attendance_days'] ?? 0);
+        if (array_key_exists('attendance_min', $filters) && $filters['attendance_min'] !== null && $attendanceCount < (int) $filters['attendance_min']) {
+            return false;
+        }
+
+        if (array_key_exists('attendance_max', $filters) && $filters['attendance_max'] !== null && $attendanceCount > (int) $filters['attendance_max']) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function buildTaskStatsForAgents(int $companyId, array $agentIds): array
+    {
+        if ($agentIds === []) {
+            return [];
+        }
+
+        $stats = Task::query()
+            ->selectRaw('assigned_agent_id as agent_id')
+            ->selectRaw('COUNT(DISTINCT project_id) as project_count')
+            ->selectRaw("SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks")
+            ->selectRaw("SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_tasks")
+            ->where('company_id', $companyId)
+            ->whereIn('assigned_agent_id', $agentIds)
+            ->groupBy('assigned_agent_id')
+            ->get();
+
+        $result = [];
+        foreach ($stats as $row) {
+            $agentId = (int) ($row->agent_id ?? 0);
+            if ($agentId < 1) {
+                continue;
+            }
+
+            $result[$agentId] = [
+                'project_count' => (int) ($row->project_count ?? 0),
+                'completed_tasks' => (int) ($row->completed_tasks ?? 0),
+                'pending_tasks' => (int) ($row->pending_tasks ?? 0),
+            ];
+        }
+
+        return $result;
     }
 
     private function agentsQuery(int $companyId)
@@ -934,9 +1237,13 @@ class PayrollService
         return $agent;
     }
 
-    private function calculateDailyPay(float $baseSalary, int $workDays): float
+    private function calculateDailyPay(float $baseSalary, int $workDays, string $salaryType = 'monthly'): float
     {
-        return round($baseSalary / $workDays, 2);
+        if ($salaryType === 'daily') {
+            return round($baseSalary, 2);
+        }
+
+        return round($baseSalary / max($workDays, 1), 2);
     }
 
     private function assertSettingInCompany(PayrollSetting $payrollSetting, int $companyId): void

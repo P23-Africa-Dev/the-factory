@@ -12,6 +12,7 @@ export type CreateInternalUserPayload = {
   assigned_zone: string;
   work_days: string[];
   base_salary: number;
+  salary_type?: "daily" | "monthly" | "weekly";
   currency_code?: string;
   commission_enabled?: boolean;
   supervisor_user_id?: number;
@@ -39,6 +40,9 @@ export type InternalUserListItem = {
   role: InternalUserRole;
   internal_role?: InternalUserRole;
   assigned_zone?: string | null;
+  base_salary?: number | null;
+  payroll_salary_type?: "daily" | "monthly" | "weekly" | null;
+  salary_currency?: string | null;
   phone_number?: string | null;
   avatar_key?: string | null;
   avatar_url?: string | null;

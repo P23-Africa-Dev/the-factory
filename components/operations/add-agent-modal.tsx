@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { Toggle } from "@/components/ui/toggle";
@@ -14,9 +14,11 @@ import {
 } from "@/components/operations/agent-details-modal";
 import { useCreateInternalUser } from "@/hooks/use-internal-users";
 import { useInternalUsers } from "@/hooks/use-projects";
+import { useSupportedCurrencies } from "@/hooks/use-currencies";
 import { useAuthStore } from "@/store/auth";
 import type { ApiRequestError } from "@/lib/api/onboarding";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
 
 const ROLE_OPTIONS = [
   { label: "Supervisor", value: "supervisor" },
@@ -37,7 +39,9 @@ type FormErrors = Partial<{
   name: string;
   email: string;
   role: string;
+  salaryType: string;
   salary: string;
+  currency: string;
   workDays: string;
   supervisorId: string;
   phone: string;
@@ -57,6 +61,8 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"supervisor" | "agent" | "">("");
+  const [salaryType, setSalaryType] = useState<"daily" | "weekly" | "monthly">("monthly");
+  const [currencyCode, setCurrencyCode] = useState(PAYROLL_DEFAULT_CURRENCY);
   const [salary, setSalary] = useState("");
   const [workDays, setWorkDays] = useState<string[]>(["monday", "tuesday", "wednesday", "thursday", "friday"]);
   const [supervisorId, setSupervisorId] = useState("");
@@ -71,6 +77,22 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const [errors, setErrors] = useState<FormErrors>({});
 
   const createMutation = useCreateInternalUser();
+  const { data: currenciesData, isLoading: loadingCurrencies } = useSupportedCurrencies();
+
+  const currencyOptions = currenciesData?.currencies;
+  const currencyOptionList = currencyOptions ?? [];
+  const supportedCurrencyCodes = useMemo(
+    () => new Set((currencyOptions ?? []).map((currency) => currency.code)),
+    [currencyOptions]
+  );
+  const fallbackCurrencyCode = (currenciesData?.default_currency ?? PAYROLL_DEFAULT_CURRENCY).toUpperCase();
+  const normalizedCurrencyCode = currencyCode.trim().toUpperCase();
+  const selectedCurrencyCode = useMemo(
+    () => (normalizedCurrencyCode && (supportedCurrencyCodes.size === 0 || supportedCurrencyCodes.has(normalizedCurrencyCode))
+      ? normalizedCurrencyCode
+      : fallbackCurrencyCode),
+    [fallbackCurrencyCode, normalizedCurrencyCode, supportedCurrencyCodes]
+  );
 
   const { data: supervisors = [], isLoading: loadingSupervisors } = useInternalUsers(
     { role: "supervisor", company_id: companyId ?? undefined },
@@ -94,6 +116,11 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
 
   const validate = (): FormErrors => {
     const e: FormErrors = {};
+    const normalizedCurrency = selectedCurrencyCode;
+    const currencyIsSupported = supportedCurrencyCodes.size > 0
+      ? supportedCurrencyCodes.has(normalizedCurrency)
+      : /^[A-Z]{3}$/.test(normalizedCurrency);
+
     if (!name.trim()) e.name = "Full name is required.";
     if (!email.trim()) {
       e.email = "Email is required.";
@@ -101,6 +128,12 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       e.email = "Enter a valid email address.";
     }
     if (!role) e.role = "Role is required.";
+    if (!salaryType) e.salaryType = "Salary type is required.";
+    if (!currencyCode.trim()) {
+      e.currency = "Currency is required.";
+    } else if (!currencyIsSupported) {
+      e.currency = "Select a supported currency.";
+    }
     if (salary) {
       const numeric = salary.replace(/,/g, "");
       if (isNaN(Number(numeric)) || Number(numeric) < 0)
@@ -127,7 +160,9 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       if (apiErr.errors.full_name) fe.name = apiErr.errors.full_name[0];
       if (apiErr.errors.email) fe.email = apiErr.errors.email[0];
       if (apiErr.errors.role) fe.role = apiErr.errors.role[0];
+      if (apiErr.errors.salary_type) fe.salaryType = apiErr.errors.salary_type[0];
       if (apiErr.errors.base_salary) fe.salary = apiErr.errors.base_salary[0];
+      if (apiErr.errors.currency_code) fe.currency = apiErr.errors.currency_code[0];
       if (apiErr.errors.work_days) fe.workDays = apiErr.errors.work_days[0];
       if (apiErr.errors.supervisor_user_id) fe.supervisorId = apiErr.errors.supervisor_user_id[0];
       if (apiErr.errors.phone_number) fe.phone = apiErr.errors.phone_number[0];
@@ -164,6 +199,8 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       assigned_zone: "",
       work_days: workDays,
       base_salary: baseSalaryNum,
+      salary_type: salaryType,
+      currency_code: selectedCurrencyCode,
       commission_enabled: commissionEnabled,
       ...(role === "agent" && supervisorId
         ? { supervisor_user_id: Number(supervisorId) }
@@ -193,9 +230,9 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
-        <div 
-          className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 cursor-pointer" 
-          onClick={onClose} 
+        <div
+          className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 cursor-pointer"
+          onClick={onClose}
         />
 
         <div className="relative bg-white rounded-t-[28px] sm:rounded-[28px] w-full sm:w-[440px] shadow-[0px_8px_32px_rgba(0,0,0,0.15)] overflow-hidden flex flex-col max-h-[90dvh] sm:max-h-[calc(100vh-80px)] transition-all duration-300 ease-out">
@@ -277,6 +314,50 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 <FieldError message={errors.role} />
               </div>
 
+              <div>
+                <FormRow label="Salary Type" labelClassName="w-28">
+                  <InlineSelect
+                    value={salaryType}
+                    onChange={(e) => {
+                      setSalaryType(e.target.value as "daily" | "weekly" | "monthly");
+                      clearError("salaryType");
+                    }}
+                    className="col-span-2"
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </InlineSelect>
+                </FormRow>
+                <FieldError message={errors.salaryType} />
+              </div>
+
+              <div>
+                <FormRow label="Currency" labelClassName="w-28">
+                  <InlineSelect
+                    value={selectedCurrencyCode}
+                    onChange={(e) => {
+                      setCurrencyCode(e.target.value);
+                      clearError("currency");
+                    }}
+                    className="col-span-2"
+                  >
+                    {currencyOptionList.length === 0 ? (
+                      <option value={PAYROLL_DEFAULT_CURRENCY}>
+                        {loadingCurrencies ? "Loading currencies..." : "No currencies available"}
+                      </option>
+                    ) : (
+                      currencyOptionList.map((currency) => (
+                        <option key={currency.code} value={currency.code}>
+                          {currency.label}
+                        </option>
+                      ))
+                    )}
+                  </InlineSelect>
+                </FormRow>
+                <FieldError message={errors.currency} />
+              </div>
+
               {role === "agent" && (
                 <div>
                   <FormRow label="Supervisor" labelClassName="w-28">
@@ -329,11 +410,10 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                         key={day.value}
                         type="button"
                         onClick={() => toggleWorkDay(day.value)}
-                        className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all border ${
-                          selected
-                            ? "bg-dash-dark text-white border-dash-dark"
-                            : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
-                        }`}
+                        className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all border ${selected
+                          ? "bg-dash-dark text-white border-dash-dark"
+                          : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
+                          }`}
                       >
                         {day.label}
                       </button>

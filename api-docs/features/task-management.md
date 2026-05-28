@@ -418,6 +418,24 @@ Validation failure 422 example:
 }
 ```
 
+Supported transitions:
+
+1. `pending -> in_progress`
+2. `in_progress -> completed`
+3. `in_progress -> pending` (reopen)
+4. `completed -> in_progress` (reopen)
+5. `completed -> pending` (revert)
+6. `in_progress -> paused`
+7. `paused -> resumed`
+8. `resumed -> in_progress`
+9. `pending|in_progress|paused|resumed -> cancelled`
+
+Notes:
+
+1. `cancelled` remains terminal and cannot transition further.
+2. Moving away from `completed` clears `completed_at`.
+3. Moving to `pending` resets lifecycle timestamps (`started_at`, `paused_at`, `resumed_at`).
+
 ### 6) Upload Task Proof
 
 `POST /api/v1/tasks/101/proofs`

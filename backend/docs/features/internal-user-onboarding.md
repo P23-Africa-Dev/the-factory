@@ -72,6 +72,7 @@ Request:
   "avatar_key": "male_02",
   "assigned_zone": "Lagos Mainland",
   "work_days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+  "salary_type": "monthly",
   "base_salary": 150000,
   "currency_code": "NGN",
   "commission_enabled": true,
@@ -196,14 +197,15 @@ Create user:
 3. role required in supervisor|agent
 4. assigned_zone required
 5. work_days required array of weekday values
-6. base_salary required numeric min 0
-7. currency_code optional 3-letter ISO
-8. role=agent requires supervisor_user_id
-9. phone_number optional E.164 format
-10. gender optional male|female
-11. avatar_key optional but must match selected gender if provided
-12. role=supervisor supports optional assign_agent_ids
-13. if gender is provided and avatar_key is omitted, random gender avatar is auto-assigned
+6. salary_type optional daily|weekly|monthly
+7. base_salary required numeric min 0
+8. currency_code optional 3-letter ISO
+9. role=agent requires supervisor_user_id
+10. phone_number optional E.164 format
+11. gender optional male|female
+12. avatar_key optional but must match selected gender if provided
+13. role=supervisor supports optional assign_agent_ids
+14. if gender is provided and avatar_key is omitted, random gender avatar is auto-assigned
 
 Complete onboarding:
 

@@ -680,8 +680,74 @@ class PayrollManagementTest extends TestCase
 
         $response->assertOk();
         $this->assertStringContainsString('text/csv', (string) $response->headers->get('content-type'));
-        $this->assertStringContainsString('Name,Email,Zone,Status', $response->streamedContent());
-        $this->assertStringContainsString($agent->email, $response->streamedContent());
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('Employee Name,Role,Salary Type,Currency,Base Salary,Formatted Salary,Daily Pay,Attendance Count,Accumulated Pay,Attendance Affect Pay,Payroll Status,Created Date,Project Count,Completed Tasks,Pending Tasks', $content);
+        $this->assertStringContainsString($agent->email, $content);
+    }
+
+    public function test_management_can_export_payroll_xlsx(): void
+    {
+        [$company, $admin] = $this->seedCompanyUsers();
+
+        $this->createPayrollSetting($company, [
+            'base_salary' => 120000,
+            'work_days' => 22,
+            'daily_pay' => 5454.55,
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->get('/api/v1/payroll/export?company_id=' . $company->id . '&date=2026-06-02&format=xlsx');
+
+        $response->assertOk();
+        $this->assertStringContainsString(
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            (string) $response->headers->get('content-type')
+        );
+        $this->assertStringContainsString('.xlsx', (string) $response->headers->get('content-disposition'));
+        $this->assertStringStartsWith('PK', $response->streamedContent());
+    }
+
+    public function test_management_export_respects_attendance_filters(): void
+    {
+        [$company, $admin,, $agentA] = $this->seedCompanyUsers();
+        $agentB = User::factory()->create(['email_verified_at' => now()]);
+
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $agentB->id,
+            'role' => 'agent',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->createPayrollSetting($company, [
+            'base_salary' => 120000,
+            'work_days' => 22,
+            'daily_pay' => 5454.55,
+            'attendance_affects_pay' => true,
+        ]);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentA->id,
+            'attendance_date' => '2026-06-02',
+            'clock_in_at' => '2026-06-02 09:00:00',
+            'clock_out_at' => '2026-06-02 17:00:00',
+            'status' => 'present',
+            'work_duration_minutes' => 480,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->get('/api/v1/payroll/export?company_id=' . $company->id . '&date=2026-06-02&format=csv&attendance_min=1');
+
+        $response->assertOk();
+        $content = $response->streamedContent();
+
+        $this->assertStringContainsString($agentA->email, $content);
+        $this->assertStringNotContainsString($agentB->email, $content);
     }
 
     public function test_agent_cannot_export_payroll(): void
@@ -730,6 +796,103 @@ class PayrollManagementTest extends TestCase
             'payroll_attendance_affects_pay' => 1,
             'payroll_work_days_override' => 20,
         ]);
+    }
+
+    public function test_admin_can_create_daily_payroll_settings(): void
+    {
+        [$company, $admin] = $this->seedCompanyUsers();
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/payroll', [
+                'company_id' => $company->id,
+                'salary_type' => 'daily',
+                'base_salary' => 8000,
+                'currency' => 'GBP',
+                'work_days' => 22,
+                'work_hours' => 8,
+                'attendance_affects_pay' => true,
+                'commission_enabled' => false,
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.payroll.salary_type', 'daily')
+            ->assertJsonPath('data.payroll.currency', 'GBP')
+            ->assertJsonPath('data.payroll.daily_pay', 8000);
+    }
+
+    public function test_admin_cannot_create_payroll_with_unsupported_currency(): void
+    {
+        [$company, $admin] = $this->seedCompanyUsers();
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/payroll', [
+                'company_id' => $company->id,
+                'salary_type' => 'monthly',
+                'base_salary' => 100000,
+                'currency' => 'JPY',
+                'work_days' => 22,
+                'work_hours' => 8,
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonStructure(['errors' => ['currency']]);
+    }
+
+    public function test_admin_can_override_agent_payroll_currency_and_daily_salary(): void
+    {
+        [$company, $admin,, $agent] = $this->seedCompanyUsers();
+
+        $this->createPayrollSetting($company, [
+            'salary_type' => 'monthly',
+            'base_salary' => 120000,
+            'currency' => 'NGN',
+            'work_days' => 22,
+            'work_hours' => 8,
+            'daily_pay' => 5454.55,
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->patchJson('/api/v1/payroll/agents/' . $agent->id, [
+                'company_id' => $company->id,
+                'base_salary' => 300,
+                'salary_type' => 'daily',
+                'currency_code' => 'USD',
+                'attendance_affects_pay' => true,
+                'work_days_override' => 6,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.salary_type', 'daily')
+            ->assertJsonPath('data.currency', 'USD')
+            ->assertJsonPath('data.daily_pay', 300)
+            ->assertJsonPath('data.attendance_affects_pay', true);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $agent->id,
+            'base_salary' => '300.00',
+            'payroll_salary_type' => 'daily',
+            'salary_currency' => 'USD',
+            'payroll_attendance_affects_pay' => 1,
+            'payroll_work_days_override' => 6,
+        ]);
+    }
+
+    public function test_admin_cannot_set_unsupported_currency_on_agent_payroll_profile(): void
+    {
+        [$company, $admin,, $agent] = $this->seedCompanyUsers();
+
+        $this->createPayrollSetting($company, [
+            'currency' => 'NGN',
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->patchJson('/api/v1/payroll/agents/' . $agent->id, [
+                'company_id' => $company->id,
+                'currency_code' => 'JPY',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonStructure(['errors' => ['currency_code']]);
     }
 
     private function seedCompanyUsers(string $companyId = 'FAC-PAY001'): array

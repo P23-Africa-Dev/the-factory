@@ -13,7 +13,10 @@ The CRM module exposes company-scoped lead management for owners/admins/supervis
 5. `POST /api/v1/admin/crm/leads/{lead}/notes`
 6. `POST /api/v1/admin/crm/leads/{lead}/activities`
 7. `GET /api/v1/admin/crm/leads/pipeline`
-8. Agent-compatible aliases are available under `/api/v1/agent/crm/*` for read/pipeline/note/activity workflows.
+8. `POST /api/v1/admin/crm/labels`
+9. `PATCH /api/v1/admin/crm/labels/{label}`
+10. `POST /api/v1/admin/crm/labels/{label}/delete`
+11. Agent-compatible aliases are available under `/api/v1/agent/crm/*` for read/pipeline/note/activity workflows.
 
 ## Auth And Context
 
@@ -26,6 +29,8 @@ The CRM module exposes company-scoped lead management for owners/admins/supervis
 1. Create/update validates stage/status and lead ownership constraints.
 2. Notes and activities are write-audited with actor and timestamps.
 3. Pipeline endpoint accepts optional date/stage filters.
+4. Label delete accepts optional `force` boolean. When the label is currently assigned to leads and `force` is not set, the API responds with `422` plus `label_usage_count` for confirmation UX.
+5. Forced label delete reassigns affected leads to the next available label before deleting the target label.
 
 ## Response Notes
 

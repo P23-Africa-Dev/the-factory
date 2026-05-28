@@ -23,6 +23,7 @@ class InternalUserResource extends JsonResource
             'assigned_zone' => $this->assigned_zone,
             'work_days' => $this->work_days ?? [],
             'base_salary' => $this->base_salary,
+            'payroll_salary_type' => $this->payroll_salary_type,
             'salary_currency' => $this->salary_currency,
             'commission_enabled' => (bool) $this->commission_enabled,
             'supervisor_user_id' => $this->supervisor_user_id,

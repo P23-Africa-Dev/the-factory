@@ -156,7 +156,7 @@ export function useApprovePayrollAgent(userId: number | string | undefined, opti
   });
 }
 
-export function usePayrollExport(options?: { onSuccess?: () => void }) {
+export function usePayrollExport(options?: { onSuccess?: () => void; onError?: (error: Error) => void }) {
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
   return useMutation({
@@ -169,10 +169,15 @@ export function usePayrollExport(options?: { onSuccess?: () => void }) {
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      window.URL.revokeObjectURL(url);
+      window.setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+      }, 500);
     },
     onSuccess: () => {
       options?.onSuccess?.();
+    },
+    onError: (error: Error) => {
+      options?.onError?.(error);
     },
   });
 }

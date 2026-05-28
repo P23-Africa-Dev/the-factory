@@ -254,6 +254,22 @@ class LeadController extends Controller
         );
     }
 
+    public function deleteLabel(Request $request, int $label): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'force' => ['sometimes', 'boolean'],
+        ]);
+        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+
+        $result = $this->leadService->deleteLabel($request->user(), $label, $validated);
+
+        return $this->success(
+            message: 'CRM label deleted successfully.',
+            data: $result,
+        );
+    }
+
     public function import(Request $request): JsonResponse
     {
         $validated = $request->validate([

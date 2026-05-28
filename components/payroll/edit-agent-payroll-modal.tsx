@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import { SectionDivider } from "@/components/payroll/payroll/section-divider";
@@ -8,9 +8,11 @@ import { FormRow } from "@/components/payroll/payroll/form-row";
 import { InlineInput } from "@/components/payroll/payroll/inline-input";
 import { InlineSelect } from "@/components/payroll/payroll/inline-select";
 import { useUpdateAgentPayroll } from "@/hooks/use-payroll";
+import { useSupportedCurrencies } from "@/hooks/use-currencies";
 import type { PayrollAgentProfileView } from "@/components/payroll/payroll-sidebar";
 import { toast } from "sonner";
 import type { ApiRequestError } from "@/lib/api/onboarding";
+import { PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
 
 interface EditAgentPayrollModalProps {
     isOpen: boolean;
@@ -22,15 +24,33 @@ interface EditAgentPayrollModalProps {
 export function EditAgentPayrollModal({ isOpen, onClose, agent, companyId }: EditAgentPayrollModalProps) {
     const [salaryType, setSalaryType] = useState("monthly");
     const [baseSalary, setBaseSalary] = useState("");
+    const [currencyCode, setCurrencyCode] = useState(PAYROLL_DEFAULT_CURRENCY);
     const [attendanceAffectsPay, setAttendanceAffectsPay] = useState(true);
     const [workDaysOverride, setWorkDaysOverride] = useState("");
-    const mutation = useUpdateAgentPayroll(agent ? Number(agent.id) : undefined);
     const [syncedAgentId, setSyncedAgentId] = useState<string | null>(null);
+    const mutation = useUpdateAgentPayroll(agent ? Number(agent.id) : undefined);
+    const { data: currenciesData, isLoading: loadingCurrencies } = useSupportedCurrencies();
+
+    const currencyOptions = currenciesData?.currencies;
+    const currencyOptionList = currencyOptions ?? [];
+    const supportedCurrencyCodes = useMemo(
+        () => new Set((currencyOptions ?? []).map((item) => item.code)),
+        [currencyOptions]
+    );
+    const fallbackCurrencyCode = (currenciesData?.default_currency ?? PAYROLL_DEFAULT_CURRENCY).toUpperCase();
+    const normalizedCurrencyCode = currencyCode.trim().toUpperCase();
+    const selectedCurrencyCode = useMemo(
+        () => (normalizedCurrencyCode && (supportedCurrencyCodes.size === 0 || supportedCurrencyCodes.has(normalizedCurrencyCode))
+            ? normalizedCurrencyCode
+            : fallbackCurrencyCode),
+        [fallbackCurrencyCode, normalizedCurrencyCode, supportedCurrencyCodes]
+    );
 
     if (agent && agent.id !== syncedAgentId) {
         setSyncedAgentId(agent.id);
         setSalaryType(agent.salaryType.toLowerCase());
         setBaseSalary(String(Number(agent.baseSalary.replace(/[^0-9.]/g, ""))));
+        setCurrencyCode((agent.currency ?? PAYROLL_DEFAULT_CURRENCY).toUpperCase());
         setAttendanceAffectsPay(agent.attendanceAffectsPay);
         setWorkDaysOverride(String(agent.workDays || ""));
     }
@@ -46,11 +66,22 @@ export function EditAgentPayrollModal({ isOpen, onClose, agent, companyId }: Edi
             return;
         }
 
+        const normalizedCurrency = selectedCurrencyCode;
+        const currencyIsSupported = supportedCurrencyCodes.size > 0
+            ? supportedCurrencyCodes.has(normalizedCurrency)
+            : /^[A-Z]{3}$/.test(normalizedCurrency);
+
+        if (!currencyIsSupported) {
+            toast.error("Select a supported currency.");
+            return;
+        }
+
         mutation.mutate(
             {
                 company_id: companyId,
                 base_salary: numericBaseSalary,
-                salary_type: salaryType as "monthly" | "weekly",
+                salary_type: salaryType as "daily" | "monthly" | "weekly",
+                currency_code: selectedCurrencyCode,
                 attendance_affects_pay: attendanceAffectsPay,
                 work_days_override: workDaysOverride.trim() ? Number(workDaysOverride) : null,
             },
@@ -91,6 +122,14 @@ export function EditAgentPayrollModal({ isOpen, onClose, agent, companyId }: Edi
                                 value={salaryType}
                                 onChange={(v) => setSalaryType(v)}
                                 options={[{ value: "monthly", label: "Monthly" }, { value: "weekly", label: "Weekly" }]}
+                                className="col-span-2"
+                            />
+                        </FormRow>
+                        <FormRow label="Currency">
+                            <InlineSelect 
+                                value={selectedCurrencyCode} 
+                                onChange={(v) => setCurrencyCode(v)} 
+                                options={currencyOptionList.length === 0 ? [{ value: PAYROLL_DEFAULT_CURRENCY, label: loadingCurrencies ? "Loading currencies..." : "No currencies available" }] : currencyOptionList.map((currencyOption) => ({ value: currencyOption.code, label: currencyOption.label }))}
                                 className="col-span-2"
                             />
                         </FormRow>

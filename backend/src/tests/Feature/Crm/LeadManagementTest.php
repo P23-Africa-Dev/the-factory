@@ -406,6 +406,117 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.top_agent.total_uploads', 2);
     }
 
+    public function test_admin_can_delete_unused_crm_label(): void
+    {
+        [$company, $admin] = $this->seedCompanyUsers();
+
+        $token = $admin->createToken('admin-delete-unused-label', ['*'])->plainTextToken;
+
+        $createLabel = $this->withToken($token)
+            ->postJson('/api/v1/crm/labels', [
+                'company_id' => $company->id,
+                'name' => 'Unused Label',
+                'color' => '#1D4ED8',
+            ]);
+
+        $createLabel->assertCreated();
+        $labelId = (int) $createLabel->json('data.label.id');
+
+        $deleteResponse = $this->withToken($token)
+            ->postJson('/api/v1/crm/labels/' . $labelId . '/delete', [
+                'company_id' => $company->id,
+            ]);
+
+        $deleteResponse->assertOk()
+            ->assertJsonPath('data.deleted_label_id', $labelId)
+            ->assertJsonPath('data.deleted_leads_count', 0);
+
+        $this->assertDatabaseMissing('lead_labels', [
+            'id' => $labelId,
+            'company_id' => $company->id,
+        ]);
+    }
+
+    public function test_admin_must_confirm_before_deleting_in_use_crm_label_and_force_delete_reassigns_leads(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $token = $admin->createToken('admin-delete-used-label', ['*'])->plainTextToken;
+
+        $createLabel = $this->withToken($token)
+            ->postJson('/api/v1/crm/labels', [
+                'company_id' => $company->id,
+                'name' => 'Needs Follow Up',
+                'color' => '#DC2626',
+            ]);
+
+        $createLabel->assertCreated();
+        $labelId = (int) $createLabel->json('data.label.id');
+        $labelSlug = (string) $createLabel->json('data.label.slug');
+
+        $lead = Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Label In Use Lead',
+            'status' => $labelSlug,
+            'priority' => 'high',
+        ]);
+
+        $withoutForceResponse = $this->withToken($token)
+            ->postJson('/api/v1/crm/labels/' . $labelId . '/delete', [
+                'company_id' => $company->id,
+            ]);
+
+        $withoutForceResponse->assertUnprocessable()
+            ->assertJsonValidationErrors(['label', 'label_usage_count'])
+            ->assertJsonPath('errors.label_usage_count.0', '1');
+
+        $forceResponse = $this->withToken($token)
+            ->postJson('/api/v1/crm/labels/' . $labelId . '/delete', [
+                'company_id' => $company->id,
+                'force' => true,
+            ]);
+
+        $forceResponse->assertOk()
+            ->assertJsonPath('data.deleted_label_id', $labelId)
+            ->assertJsonPath('data.deleted_leads_count', 1);
+
+        $lead->refresh();
+        $this->assertNotSame($labelSlug, $lead->status);
+
+        $this->assertDatabaseMissing('lead_labels', [
+            'id' => $labelId,
+            'company_id' => $company->id,
+        ]);
+    }
+
+    public function test_agent_cannot_delete_crm_label(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $adminToken = $admin->createToken('admin-create-label-for-agent-delete', ['*'])->plainTextToken;
+        $labelResponse = $this->withToken($adminToken)
+            ->postJson('/api/v1/crm/labels', [
+                'company_id' => $company->id,
+                'name' => 'Agent Restricted Label',
+                'color' => '#7C3AED',
+            ]);
+
+        $labelResponse->assertCreated();
+        $labelId = (int) $labelResponse->json('data.label.id');
+
+        $agentToken = $agent->createToken('agent-delete-label-attempt', ['*'])->plainTextToken;
+        $deleteResponse = $this->withToken($agentToken)
+            ->postJson('/api/v1/crm/labels/' . $labelId . '/delete', [
+                'company_id' => $company->id,
+            ]);
+
+        $deleteResponse->assertUnprocessable()
+            ->assertJsonValidationErrors(['authorization']);
+    }
+
     private function seedCompanyUsers(): array
     {
         $company = Company::create([

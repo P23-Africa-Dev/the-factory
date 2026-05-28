@@ -6,10 +6,11 @@ This feature provides company-level payroll configuration with strict tenant iso
 
 Design goals:
 
-1. Owners, admins, and supervisors define a single payroll policy per company.
-2. Agents inherit the company payroll policy through company membership.
-3. Daily pay is automatically derived from base salary and work days.
-4. Attendance and commission toggles are persisted for future payroll extensions.
+3. Owners, admins, and supervisors define a single payroll policy per company.
+4. Agents inherit the company payroll policy through company membership.
+5. Salary type can be daily, weekly, or monthly.
+6. Daily pay is automatically derived from the resolved salary type and work days.
+7. Attendance and commission toggles are persisted for future payroll extensions.
 
 ## Endpoints
 
@@ -18,6 +19,7 @@ Authenticated via `auth:sanctum`:
 1. `POST /api/v1/payroll`
 2. `GET /api/v1/payroll`
 3. `PUT /api/v1/payroll/{id}`
+4. `GET /api/v1/payroll/export`
 
 ## Authentication
 
@@ -49,7 +51,7 @@ Role permissions in company context:
 
 1. `id`
 2. `company_id` unique foreign key to companies
-3. `salary_type` enum: `monthly|weekly`
+3. `salary_type` enum: `daily|monthly|weekly`
 4. `base_salary` decimal(14,2)
 5. `currency` char(3)
 6. `work_days` unsigned small integer (default: 22)
@@ -72,7 +74,8 @@ Daily pay is recalculated whenever payroll settings are created or updated.
 
 Formula:
 
-1. `daily_pay = round(base_salary / work_days, 2)`
+1. `daily_pay = round(resolved_salary_amount / work_days, 2)`
+2. Daily salary types use the configured salary amount as the per-day rate.
 
 Example:
 
@@ -214,14 +217,66 @@ Success 200:
 
 Create and update payload rules:
 
-1. `salary_type` required, enum `monthly|weekly`
+1. `salary_type` required, enum `daily|monthly|weekly`
 2. `base_salary` required, numeric, greater than 0
 3. `work_days` required, integer, greater than 0
 4. `work_hours` required, integer, between 4 and 12
-5. `currency` optional, 3-letter uppercase code; if omitted, company currency is used
+5. `currency` optional, must be one of the supported currency catalog values (`NGN`, `USD`, `GBP`, `EUR`, `CAD`, `AED`, `KES`, `ZAR`, `GHS`); if omitted, company currency is used with safe fallback to configured default
 6. `attendance_affects_pay` optional boolean
 7. `commission_enabled` optional boolean
 8. `company_id` optional; if omitted, latest active company context is used
+
+Export payload rules:
+
+1. `format` required, enum `csv|xlsx`
+2. `date` optional `Y-m-d` (or `year`+`month`)
+3. `search` optional string
+4. `status` optional enum `approved|pending|revoked`
+5. `salary_type` optional enum `daily|weekly|monthly`
+6. `attendance_affects_pay` optional boolean
+7. `attendance_min` optional integer `>= 0`
+8. `attendance_max` optional integer `>= attendance_min`
+
+Currency catalog endpoint:
+
+1. `GET /api/v1/currencies`
+2. Returns `{ currencies: [{ code, name, symbol, label }], default_currency }`
+3. Used by onboarding and payroll forms for dropdown rendering
+
+## Payroll Export
+
+`GET /api/v1/payroll/export`
+
+Supported formats:
+
+1. `csv`
+2. `xlsx`
+
+Behavior:
+
+1. Exports are streamed in chunks for large datasets.
+2. Applied filters are preserved in export results.
+3. Filename format: `payroll-export-YYYY-MM-DD.<ext>`.
+4. XLSX export requires PHP `ext-zip` on the API runtime.
+5. API runtime must have writable `storage/app/exports` temporary directory.
+
+Export columns:
+
+1. `Employee Name`
+2. `Role`
+3. `Salary Type`
+4. `Currency`
+5. `Base Salary`
+6. `Formatted Salary`
+7. `Daily Pay`
+8. `Attendance Count`
+9. `Accumulated Pay`
+10. `Attendance Affect Pay`
+11. `Payroll Status`
+12. `Created Date`
+13. `Project Count`
+14. `Completed Tasks`
+15. `Pending Tasks`
 
 ## Multi-Tenant Guarantees
 

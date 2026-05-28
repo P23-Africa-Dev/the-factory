@@ -51,13 +51,60 @@ Query params:
 - `status`
 - `per_page`
 
+### Payroll Export
+
+- `GET /api/v1/payroll/export`
+
+Query params:
+- `company_id`
+- `format` (`csv` or `xlsx`)
+- `date` optional, defaults to today
+- `year` optional
+- `month` optional
+- `search` optional
+- `status` optional (`approved`, `pending`, `revoked`)
+- `salary_type` optional (`daily`, `weekly`, `monthly`)
+- `attendance_affects_pay` optional boolean
+- `attendance_min` optional integer
+- `attendance_max` optional integer
+
+Export columns:
+- `Employee Name`
+- `Role`
+- `Salary Type`
+- `Currency`
+- `Base Salary`
+- `Formatted Salary`
+- `Daily Pay`
+- `Attendance Count`
+- `Accumulated Pay`
+- `Attendance Affect Pay`
+- `Payroll Status`
+- `Created Date`
+- `Project Count`
+- `Completed Tasks`
+- `Pending Tasks`
+
+Notes:
+- Exports are streamed and chunked for large datasets.
+- Generated files follow `payroll-export-YYYY-MM-DD.<ext>` naming.
+- XLSX export requires PHP `ext-zip` enabled on the backend runtime.
+- Backend must have writable `storage/app/exports` for temporary workbook files.
+
+### Supported Currency Catalog
+
+- `GET /api/v1/currencies`
+- Returns `currencies` and `default_currency` for all salary-entry dropdowns.
+- Current supported list: `NGN`, `USD`, `GBP`, `EUR`, `CAD`, `AED`, `KES`, `ZAR`, `GHS`.
+
 ## Payroll Calculation Rules
 
 - Base payroll settings are stored in `payroll_settings`.
 - Per-agent overrides are stored on the `users` table.
 - `attendance_affects_pay` determines whether the agent’s payable salary is derived from attendance presence or from the base salary directly.
+- Per-agent `salary_type`, `base_salary`, and `salary_currency` overrides take priority over company defaults.
 - `work_days_override` replaces the default work-day denominator when present.
-- `daily_pay` is computed from `base_salary / work_days`.
+- `daily_pay` is computed from the resolved salary type. Daily salaries use the configured daily amount directly.
 - Attendance payroll summaries are generated from attendance records and the active payroll settings.
 
 ## Agent Payroll Profile Shape
@@ -85,6 +132,8 @@ The agent profile response includes:
 
 - `company_id` is always resolved through the company context helper.
 - Payroll settings require positive salary and work-day values.
+- Payroll and agent currency updates must use supported currencies from the catalog endpoint.
 - Agent payroll updates require at least one editable field.
 - Agents can only request their own payroll profile.
 - Company boundaries are enforced on all payroll reads and writes.
+- Export downloads require management roles (owner, admin, supervisor).

@@ -5,10 +5,12 @@ import { useMemo, useRef, useState } from "react";
 import { X, ChevronUp, ChevronDown, Upload, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ApiRequestError } from "@/lib/api/onboarding";
 import type { ApiLeadPriority, ApiRoleBasePath, CrmLabel, CrmPipeline, ImportLeadRow } from "@/lib/api/crm";
 import {
     useCreateCrmLabel,
     useCreateCrmPipeline,
+    useDeleteCrmLabel,
     useImportCrmLeads,
     useReorderCrmLabels,
     useUpdateCrmLabel,
@@ -132,6 +134,7 @@ export function LabelManagerModal({ companyId, apiBasePath, labels, onClose }: B
 
     const createLabel = useCreateCrmLabel(apiBasePath);
     const updateLabel = useUpdateCrmLabel(apiBasePath);
+    const deleteLabel = useDeleteCrmLabel(apiBasePath);
     const reorderLabels = useReorderCrmLabels(apiBasePath);
 
     const sorted = useMemo(() => [...labels].sort((a, b) => a.sort_order - b.sort_order), [labels]);
@@ -179,6 +182,50 @@ export function LabelManagerModal({ companyId, apiBasePath, labels, onClose }: B
         }
     };
 
+    const deleteExistingLabel = async (label: CrmLabel) => {
+        try {
+            const result = await deleteLabel.mutateAsync({
+                labelId: label.id,
+                payload: { company_id: companyId, force: false },
+            });
+
+            const movedCount = result.data?.deleted_leads_count ?? 0;
+            if (movedCount > 0) {
+                toast.success(`${label.name} deleted. ${movedCount} leads were moved to ${result.data.reassigned_to_label_name ?? "another label"}.`);
+            } else {
+                toast.success("Label deleted");
+            }
+        } catch (err) {
+            if (err instanceof ApiRequestError) {
+                const usageCountRaw = err.errors?.label_usage_count?.[0] ?? "0";
+                const usageCount = Number.parseInt(usageCountRaw, 10);
+
+                if (Number.isFinite(usageCount) && usageCount > 0) {
+                    const confirmed = window.confirm(
+                        `This label is currently assigned to ${usageCount} leads. Are you sure you want to delete it?`
+                    );
+
+                    if (!confirmed) return;
+
+                    try {
+                        const forceResult = await deleteLabel.mutateAsync({
+                            labelId: label.id,
+                            payload: { company_id: companyId, force: true },
+                        });
+                        const movedCount = forceResult.data?.deleted_leads_count ?? usageCount;
+                        toast.success(`${label.name} deleted. ${movedCount} leads were reassigned.`);
+                        return;
+                    } catch (forceErr) {
+                        toast.error(forceErr instanceof Error ? forceErr.message : "Failed to delete label");
+                        return;
+                    }
+                }
+            }
+
+            toast.error(err instanceof Error ? err.message : "Failed to delete label");
+        }
+    };
+
     return (
         <ModalShell title="Manage Labels" onClose={onClose}>
             <div className="space-y-3 mb-5">
@@ -201,6 +248,7 @@ export function LabelManagerModal({ companyId, apiBasePath, labels, onClose }: B
                                 <button onClick={() => moveLabel(label.id, "up")} className="p-2 rounded-md border border-gray-200 text-gray-500"><ChevronUp size={14} /></button>
                                 <button onClick={() => moveLabel(label.id, "down")} className="p-2 rounded-md border border-gray-200 text-gray-500"><ChevronDown size={14} /></button>
                                 <button onClick={() => saveLabel(label)} className="px-3 py-2 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-600">Save</button>
+                                <button onClick={() => deleteExistingLabel(label)} className="px-3 py-2 rounded-lg border border-red-200 text-[12px] font-semibold text-red-600">Delete</button>
                             </div>
                             <p className="text-[11px] text-gray-400 mt-1">Key: {label.slug}</p>
                         </div>

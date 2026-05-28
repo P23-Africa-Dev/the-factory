@@ -16,11 +16,10 @@ import { usePayroll, usePayrollAgents, usePayrollAgentProfile, usePayrollExport,
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { formatPayrollDateLabel, nextPayrollStatusFilter, type PayrollStatusFilter } from "@/lib/payroll/page-controls";
-import { PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
 import { Search, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export default function FinancePage() {
@@ -31,17 +30,20 @@ export default function FinancePage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<PayrollStatusFilter>("all");
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const dateInputRef = useRef<HTMLInputElement | null>(null);
 
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const isAgent = role === "agent";
-  const payrollCurrency = PAYROLL_DEFAULT_CURRENCY;
 
   const { data: overview } = usePayrollOverview({ company_id: companyId ?? undefined, date: selectedDate });
   const { data: existingPayroll } = usePayroll(companyId);
   const exportMutation = usePayrollExport({
     onSuccess: () => {
-      toast.success("Payroll export started.");
+      toast.success("Payroll export downloaded.");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Payroll export failed.");
     },
   });
   const { data: agentsData, isLoading: isUsersLoading } = usePayrollAgents({
@@ -53,8 +55,8 @@ export default function FinancePage() {
   });
 
   const payrollAgents = useMemo(
-    () => (agentsData?.items ?? []).map((agent) => mapPayrollAgentToUi(agent, payrollCurrency)),
-    [agentsData, payrollCurrency]
+    () => (agentsData?.items ?? []).map((agent) => mapPayrollAgentToUi(agent)),
+    [agentsData]
   );
 
   useEffect(() => {
@@ -84,14 +86,14 @@ export default function FinancePage() {
   });
 
   const selectedAgent = selectedAgentProfileQuery.data
-    ? mapPayrollProfileToUi(selectedAgentProfileQuery.data, payrollCurrency)
+    ? mapPayrollProfileToUi(selectedAgentProfileQuery.data)
     : selectedAgentSummary;
 
   const handleToggleFilter = () => {
     setStatusFilter((current) => nextPayrollStatusFilter(current));
   };
 
-  const handleExport = (format: "csv" | "xls") => {
+  const handleExport = (format: "csv" | "xlsx") => {
     if (!companyId || isAgent) {
       return;
     }
@@ -133,22 +135,20 @@ export default function FinancePage() {
         </div>
 
         <div className="flex items-center gap-4.25 flex-wrap">
-          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <Image
-                src={CalendarIcon}
-                alt="Calendar Icon"
-                width={13}
-                height={13}
-              />
-              {formatPayrollDateLabel(selectedDate)}
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="sr-only"
-              />
-            </label>
+          <button
+            type="button"
+            onClick={() => dateInputRef.current?.showPicker?.() ?? dateInputRef.current?.click()}
+            className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all"
+          >
+            <Image src={CalendarIcon} alt="Calendar Icon" width={13} height={13} />
+            {formatPayrollDateLabel(selectedDate)}
+            <input
+              ref={dateInputRef}
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="sr-only"
+            />
           </button>
           {!isAgent && (
             <div className="flex items-center rounded-[10px] border border-gray-200 overflow-hidden text-[10px] text-gray-500 transition-all">
@@ -169,7 +169,7 @@ export default function FinancePage() {
               </button>
               <button
                 type="button"
-                onClick={() => handleExport("xls")}
+                onClick={() => handleExport("xlsx")}
                 className="border-l border-gray-200 px-2.5 py-[8.5px] hover:bg-gray-50 disabled:opacity-50"
                 disabled={exportMutation.isPending}
               >
@@ -199,7 +199,7 @@ export default function FinancePage() {
       </div>
       {/* Main Content */}
       <div className="px-5 sm:px-8 lg:px-10 py-6 space-y-6">
-        <PaymentOverview overview={overview ?? null} currency={payrollCurrency} />
+        <PaymentOverview overview={overview ?? null} currency={overview?.currency ?? existingPayroll?.currency ?? "USD"} />
 
         {/* Payroll List + Sidebar */}
         <div className="flex flex-col xl:flex-row gap-6">

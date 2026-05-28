@@ -547,6 +547,57 @@ class TaskManagementTest extends TestCase
         ]);
     }
 
+    public function test_management_can_move_completed_task_backward_to_in_progress_and_pending(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $task = Task::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Reopenable Task',
+            'description' => 'Management should be able to reopen completed tasks.',
+            'status' => 'completed',
+            'started_at' => now()->subHour(),
+            'completed_at' => now()->subMinutes(10),
+        ]);
+
+        $token = $admin->createToken('admin-token', ['*'])->plainTextToken;
+
+        $reopenResponse = $this->withToken($token)
+            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
+                'company_id' => $company->id,
+                'status' => 'in_progress',
+            ]);
+
+        $reopenResponse->assertOk()
+            ->assertJsonPath('data.task.status', 'in_progress')
+            ->assertJsonPath('data.task.completed_at', null);
+
+        $task->refresh();
+        $this->assertSame('in_progress', $task->status?->value);
+        $this->assertNull($task->completed_at);
+        $this->assertNotNull($task->started_at);
+
+        $revertResponse = $this->withToken($token)
+            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
+                'company_id' => $company->id,
+                'status' => 'pending',
+            ]);
+
+        $revertResponse->assertOk()
+            ->assertJsonPath('data.task.status', 'pending')
+            ->assertJsonPath('data.task.started_at', null)
+            ->assertJsonPath('data.task.completed_at', null);
+
+        $this->assertDatabaseHas('tasks', [
+            'id' => $task->id,
+            'status' => 'pending',
+            'started_at' => null,
+            'completed_at' => null,
+        ]);
+    }
+
     public function test_management_can_pause_and_resume_task_via_admin_endpoint(): void
     {
         [$company, $admin, $agent] = $this->seedCompanyUsers();
@@ -654,6 +705,45 @@ class TaskManagementTest extends TestCase
 
         $statusResponse->assertOk()
             ->assertJsonPath('data.task.status', 'completed');
+    }
+
+    public function test_agent_can_move_assigned_completed_task_backward_to_in_progress_and_pending(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $task = Task::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Agent Reopen Task',
+            'description' => 'Assigned agent should reopen completed task for correction.',
+            'status' => 'completed',
+            'started_at' => now()->subHour(),
+            'completed_at' => now()->subMinutes(5),
+            'minimum_photos_required' => 0,
+            'visit_verification_required' => false,
+        ]);
+
+        $token = $agent->createToken('agent-token', ['*'])->plainTextToken;
+
+        $reopenResponse = $this->withToken($token)->patchJson('/api/v1/tasks/' . $task->id . '/status', [
+            'company_id' => $company->id,
+            'status' => 'in_progress',
+        ]);
+
+        $reopenResponse->assertOk()
+            ->assertJsonPath('data.task.status', 'in_progress')
+            ->assertJsonPath('data.task.completed_at', null);
+
+        $revertResponse = $this->withToken($token)->patchJson('/api/v1/tasks/' . $task->id . '/status', [
+            'company_id' => $company->id,
+            'status' => 'pending',
+        ]);
+
+        $revertResponse->assertOk()
+            ->assertJsonPath('data.task.status', 'pending')
+            ->assertJsonPath('data.task.started_at', null)
+            ->assertJsonPath('data.task.completed_at', null);
     }
 
     public function test_agent_can_create_self_task_only_for_self(): void

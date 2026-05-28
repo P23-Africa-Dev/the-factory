@@ -118,10 +118,18 @@ class PayrollController extends Controller
 
         return response()->streamDownload(
             static function () use ($export): void {
-                echo $export['content'];
+                $stream = $export['stream'] ?? null;
+                if (is_callable($stream)) {
+                    $stream();
+                }
             },
             $export['filename'],
-            ['Content-Type' => $export['content_type']],
+            [
+                'Content-Type' => $export['content_type'],
+                'Cache-Control' => 'no-store, no-cache, must-revalidate',
+                'Pragma' => 'no-cache',
+                'X-Content-Type-Options' => 'nosniff',
+            ],
         );
     }
 
