@@ -300,19 +300,16 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 <FormRow label="Role" labelClassName="w-28">
                   <InlineSelect
                     value={role}
-                    onChange={(e) => {
-                      setRole(e.target.value as "supervisor" | "agent" | "");
+                    onChange={(v) => {
+                      setRole(v as "supervisor" | "agent" | "");
                       setSupervisorId("");
                       clearError("role");
                       clearError("supervisorId");
                     }}
+                    options={[...ROLE_OPTIONS]}
+                    placeholder="Select role"
                     className="col-span-2"
-                  >
-                    <option value="" disabled>Select role</option>
-                    {ROLE_OPTIONS.map((r) => (
-                      <option key={r.value} value={r.value}>{r.label}</option>
-                    ))}
-                  </InlineSelect>
+                  />
                 </FormRow>
                 <FieldError message={errors.role} />
               </div>
@@ -321,16 +318,10 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 <FormRow label="Salary Type" labelClassName="w-28">
                   <InlineSelect
                     value={salaryType}
-                    onChange={(e) => {
-                      setSalaryType(e.target.value as "daily" | "weekly" | "monthly");
-                      clearError("salaryType");
-                    }}
+                    onChange={(v) => { setSalaryType(v as "daily" | "weekly" | "monthly"); clearError("salaryType"); }}
+                    options={[{ value: "daily", label: "Daily" }, { value: "weekly", label: "Weekly" }, { value: "monthly", label: "Monthly" }]}
                     className="col-span-2"
-                  >
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                  </InlineSelect>
+                  />
                 </FormRow>
                 <FieldError message={errors.salaryType} />
               </div>
@@ -339,24 +330,12 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 <FormRow label="Currency" labelClassName="w-28">
                   <InlineSelect
                     value={selectedCurrencyCode}
-                    onChange={(e) => {
-                      setCurrencyCode(e.target.value);
-                      clearError("currency");
-                    }}
+                    onChange={(v) => { setCurrencyCode(v); clearError("currency"); }}
+                    options={currencyOptionList.length === 0
+                      ? [{ value: PAYROLL_DEFAULT_CURRENCY, label: loadingCurrencies ? "Loading currencies..." : "No currencies available" }]
+                      : currencyOptionList.map((c) => ({ value: c.code, label: c.label }))}
                     className="col-span-2"
-                  >
-                    {currencyOptionList.length === 0 ? (
-                      <option value={PAYROLL_DEFAULT_CURRENCY}>
-                        {loadingCurrencies ? "Loading currencies..." : "No currencies available"}
-                      </option>
-                    ) : (
-                      currencyOptionList.map((currency) => (
-                        <option key={currency.code} value={currency.code}>
-                          {currency.label}
-                        </option>
-                      ))
-                    )}
-                  </InlineSelect>
+                  />
                 </FormRow>
                 <FieldError message={errors.currency} />
               </div>
@@ -366,16 +345,11 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                   <FormRow label="Supervisor" labelClassName="w-28">
                     <InlineSelect
                       value={supervisorId}
-                      onChange={(e) => { setSupervisorId(e.target.value); clearError("supervisorId"); }}
+                      onChange={(v) => { setSupervisorId(v); clearError("supervisorId"); }}
+                      options={supervisors.map((s) => ({ value: String(s.id), label: s.name }))}
+                      placeholder={loadingSupervisors ? "Loading…" : "Select supervisor"}
                       className="col-span-2"
-                    >
-                      <option value="" disabled>
-                        {loadingSupervisors ? "Loading…" : "Select supervisor"}
-                      </option>
-                      {supervisors.map((s) => (
-                        <option key={s.id} value={String(s.id)}>{s.name}</option>
-                      ))}
-                    </InlineSelect>
+                    />
                   </FormRow>
                   <FieldError message={errors.supervisorId} />
                 </div>

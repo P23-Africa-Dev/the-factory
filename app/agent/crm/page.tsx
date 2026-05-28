@@ -8,6 +8,7 @@ import { useAgentUploadsOverview, useCrmLabels, useCrmPipelines, useLeads, useUp
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { ImportLeadsModal } from "@/components/crm/crm-toolbar-modals";
 import { CRMPageSkeleton } from "@/components/crm/crm-page-skeleton";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useDroppable } from "@dnd-kit/core";
 import {
   DndContext,
@@ -431,11 +432,6 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
   const dragOriginRef = useRef<string | null>(null);
   const [activeTabId, setActiveTabId] = useState<string>(() => initialContainers[0]?.id ?? "newly_lead");
 
-  useEffect(() => {
-    if (initialContainers.length > 0 && !initialContainers.some(c => c.id === activeTabId)) {
-      setActiveTabId(initialContainers[0].id);
-    }
-  }, [initialContainers, activeTabId]);
 
   const resolvedActiveTabId =
     containers.length > 0 && !containers.some((c) => c.id === activeTabId)
@@ -928,26 +924,18 @@ export default function CRMPage() {
 
         {showFilter && (
           <div className="bg-white rounded-[14px] border border-gray-100 p-3 flex flex-wrap items-center gap-2">
-            <select
-              value={selectedPipelineId ?? ""}
-              onChange={(e) => setSelectedPipelineId(e.target.value ? Number(e.target.value) : null)}
-              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px]"
-            >
-              <option value="">All Pipelines</option>
-              {pipelines.map((pipeline) => (
-                <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>
-              ))}
-            </select>
-            <select
+            <SearchableSelect
+              value={String(selectedPipelineId ?? "")}
+              onChange={(v) => setSelectedPipelineId(v ? Number(v) : null)}
+              options={[{ value: "", label: "All Pipelines" }, ...pipelines.map((p) => ({ value: String(p.id), label: p.name }))]}
+              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px] bg-white min-w-32"
+            />
+            <SearchableSelect
               value={selectedLabel}
-              onChange={(e) => setSelectedLabel(e.target.value)}
-              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px]"
-            >
-              <option value="all">All Labels</option>
-              {labels.map((label) => (
-                <option key={label.id} value={label.slug}>{label.name}</option>
-              ))}
-            </select>
+              onChange={setSelectedLabel}
+              options={[{ value: "all", label: "All Labels" }, ...labels.map((l) => ({ value: l.slug, label: l.name }))]}
+              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px] bg-white min-w-28"
+            />
             <button
               onClick={() => {
                 setSelectedPipelineId(null);

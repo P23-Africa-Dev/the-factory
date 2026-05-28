@@ -10,6 +10,7 @@ import { AddAgentModal } from "./add-agent-modal";
 import { useInternalUsersPaginated } from "@/hooks/use-internal-users";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 function mapToAgentItem(input: {
   id: number;
@@ -195,56 +196,32 @@ export function AgentView({ basePath }: { basePath: string }) {
         <div className="flex flex-wrap gap-3 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="flex flex-col gap-1">
             <label className="text-[11px] font-bold text-gray-400 px-1">Role</label>
-            <select
+            <SearchableSelect
               value={roleFilter}
-              onChange={(e) => {
-                setRoleFilter(e.target.value as "all" | "agent" | "supervisor");
-                setPage(1);
-              }}
-              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
-            >
-              <option value="all">All Roles</option>
-              <option value="agent">Field Agent</option>
-              <option value="supervisor">Supervisor</option>
-            </select>
+              onChange={(v) => { setRoleFilter(v as "all" | "agent" | "supervisor"); setPage(1); }}
+              options={[{ value: "all", label: "All Roles" }, { value: "agent", label: "Field Agent" }, { value: "supervisor", label: "Supervisor" }]}
+              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
+            />
           </div>
 
           <div className="flex flex-col gap-1">
             <label className="text-[11px] font-bold text-gray-400 px-1">Status</label>
-            <select
+            <SearchableSelect
               value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value as "all" | "active" | "offline" | "pending");
-                setPage(1);
-              }}
-              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
-            >
-              <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="offline">Offline</option>
-              <option value="pending">Pending Onboarding</option>
-            </select>
+              onChange={(v) => { setStatusFilter(v as "all" | "active" | "offline" | "pending"); setPage(1); }}
+              options={[{ value: "all", label: "All Status" }, { value: "active", label: "Active" }, { value: "offline", label: "Offline" }, { value: "pending", label: "Pending Onboarding" }]}
+              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
+            />
           </div>
 
           <div className="flex flex-col gap-1">
             <label className="text-[11px] font-bold text-gray-400 px-1">Zone</label>
-            <select
+            <SearchableSelect
               value={zoneFilter}
-              onChange={(e) => {
-                setZoneFilter(e.target.value);
-                setPage(1);
-              }}
-              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
-            >
-              <option value="all">All Zones</option>
-              {zones
-                .filter((zone) => zone !== "all")
-                .map((zone) => (
-                  <option key={zone} value={zone}>
-                    {zone}
-                  </option>
-                ))}
-            </select>
+              onChange={(v) => { setZoneFilter(v); setPage(1); }}
+              options={[{ value: "all", label: "All Zones" }, ...zones.filter((z) => z !== "all").map((z) => ({ value: z, label: z }))]}
+              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
+            />
           </div>
 
           {(roleFilter !== "all" || statusFilter !== "all" || zoneFilter !== "all" || search.trim() !== "") && (

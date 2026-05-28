@@ -303,17 +303,10 @@ export function AddLeadModal({
               <FormRow label="Pipeline" labelClassName="w-28">
                 <InlineSelect
                   value={pipelineId}
-                  onChange={(e) => {
-                    setPipelineId(e.target.value);
-                    clearError("pipelineId");
-                  }}
+                  onChange={(v) => { setPipelineId(v); clearError("pipelineId"); }}
+                  options={[{ value: "", label: "Select Pipeline" }, ...pipelines.map((p) => ({ value: String(p.id), label: p.name }))]}
                   className="col-span-2"
-                >
-                  <option value="">Select Pipeline</option>
-                  {pipelines.map((pipeline) => (
-                    <option key={pipeline.id} value={String(pipeline.id)}>{pipeline.name}</option>
-                  ))}
-                </InlineSelect>
+                />
               </FormRow>
               <FieldError message={errors.pipelineId} />
             </div>
@@ -334,16 +327,10 @@ export function AddLeadModal({
               <FormRow label="Status" labelClassName="w-28">
                 <InlineSelect
                   value={status}
-                  onChange={(e) => {
-                    setStatus(e.target.value as ApiLeadStatus);
-                    clearError("status");
-                  }}
+                  onChange={(v) => { setStatus(v as ApiLeadStatus); clearError("status"); }}
+                  options={labels.map((l) => ({ value: l.slug, label: l.name }))}
                   className="col-span-2"
-                >
-                  {labels.map((label) => (
-                    <option key={label.id} value={label.slug}>{label.name}</option>
-                  ))}
-                </InlineSelect>
+                />
               </FormRow>
               <FieldError message={errors.status} />
             </div>
@@ -352,16 +339,10 @@ export function AddLeadModal({
               <FormRow label="Priority" labelClassName="w-28">
                 <InlineSelect
                   value={priority}
-                  onChange={(e) => {
-                    setPriority(e.target.value as ApiLeadPriority);
-                    clearError("priority");
-                  }}
+                  onChange={(v) => { setPriority(v as ApiLeadPriority); clearError("priority"); }}
+                  options={[...PRIORITY_OPTIONS]}
                   className="col-span-2"
-                >
-                  {PRIORITY_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </InlineSelect>
+                />
               </FormRow>
               <FieldError message={errors.priority} />
             </div>
@@ -370,17 +351,10 @@ export function AddLeadModal({
               <FormRow label="Assignee" labelClassName="w-28">
                 <InlineSelect
                   value={assignedToUserId}
-                  onChange={(e) => {
-                    setAssignedToUserId(e.target.value);
-                    clearError("assignedToUserId");
-                  }}
+                  onChange={(v) => { setAssignedToUserId(v); clearError("assignedToUserId"); }}
+                  options={[{ value: "", label: "Unassigned" }, ...companyUsers.map((u) => ({ value: String(u.id), label: u.name }))]}
                   className="col-span-2"
-                >
-                  <option value="">Unassigned</option>
-                  {companyUsers.map((u) => (
-                    <option key={u.id} value={String(u.id)}>{u.name}</option>
-                  ))}
-                </InlineSelect>
+                />
               </FormRow>
               <FieldError message={errors.assignedToUserId} />
             </div>

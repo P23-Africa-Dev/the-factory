@@ -294,13 +294,10 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
                 <FormRow label="Salary Type">
                   <InlineSelect
                     value={salaryType}
-                    onChange={(e) => { setSalaryType(e.target.value); clearError("salaryType"); }}
+                    onChange={(v) => { setSalaryType(v); clearError("salaryType"); }}
+                    options={[{ value: "Monthly", label: "Monthly" }, { value: "Weekly", label: "Weekly" }]}
                     className="col-span-2"
-                  >
-                    <option>Daily</option>
-                    <option>Monthly</option>
-                    <option>Weekly</option>
-                  </InlineSelect>
+                  />
                 </FormRow>
                 <FieldError message={errors.salaryType} />
               </div>
@@ -308,24 +305,13 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
                 <FormRow label="Currency">
                   <InlineSelect
                     value={selectedCurrencyCode}
-                    onChange={(e) => {
-                      setCurrency(e.target.value);
+                    onChange={(v) => {
+                      setCurrency(v);
                       clearError("currency");
                     }}
+                    options={currencyOptionList.length === 0 ? [{ value: PAYROLL_DEFAULT_CURRENCY, label: loadingCurrencies ? "Loading currencies..." : "No currencies available" }] : currencyOptionList.map((currencyOption) => ({ value: currencyOption.code, label: currencyOption.label }))}
                     className="col-span-2"
-                  >
-                    {currencyOptionList.length === 0 ? (
-                      <option value={PAYROLL_DEFAULT_CURRENCY}>
-                        {loadingCurrencies ? "Loading currencies..." : "No currencies available"}
-                      </option>
-                    ) : (
-                      currencyOptionList.map((currencyOption) => (
-                        <option key={currencyOption.code} value={currencyOption.code}>
-                          {currencyOption.label}
-                        </option>
-                      ))
-                    )}
-                  </InlineSelect>
+                  />
                 </FormRow>
                 <FieldError message={errors.currency} />
               </div>

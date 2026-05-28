@@ -7,6 +7,7 @@ import { useLeads, useUpdateLead } from "@/hooks/use-crm";
 import type { ApiLeadStatus, ApiRoleBasePath, LeadApiItem } from "@/lib/api/crm";
 import { Search, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 const STATUSES: Array<{ value: ApiLeadStatus; label: string }> = [
     { value: "new", label: "New" },
@@ -35,17 +36,12 @@ function LeadStatusCell({
     }
 
     return (
-        <select
-            className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-[12px] text-[#344054] outline-none"
+        <SearchableSelect
             value={value}
-            onChange={(event) => onUpdate(lead, event.target.value as ApiLeadStatus)}
-        >
-            {STATUSES.map((status) => (
-                <option key={status.value} value={status.value}>
-                    {status.label}
-                </option>
-            ))}
-        </select>
+            onChange={(v) => onUpdate(lead, v as ApiLeadStatus)}
+            options={STATUSES.map((s) => ({ value: s.value, label: s.label }))}
+            className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-[12px] text-[#344054]"
+        />
     );
 }
 

@@ -166,20 +166,16 @@ export function AgentDetailsModal({
             <FormRow label="Gender">
               <InlineSelect
                 value={details.gender}
-                onChange={(e) => {
-                  set("gender", e.target.value as "male" | "female" | "");
+                onChange={(v) => {
+                  set("gender", v as "male" | "female" | "");
                   set("avatarKey", "");
                   onClearError?.("gender");
                   onClearError?.("avatarKey");
                 }}
+                options={[{ value: "male", label: "Male" }, { value: "female", label: "Female" }]}
+                placeholder="E.g Male"
                 className="col-span-2"
-              >
-                <option value="" disabled>
-                  E.g Male
-                </option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-              </InlineSelect>
+              />
             </FormRow>
             {errors.gender && (
               <p className="text-[11px] text-red-500 mt-0.5 text-right">{errors.gender}</p>

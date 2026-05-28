@@ -12,6 +12,7 @@ import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableCont
 import { useAttendanceMetrics, useAttendanceRecords } from "@/hooks/use-attendance";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { ManagementAttendanceRecord } from "@/lib/api/attendance";
 
 type AttendanceItem = {
@@ -562,52 +563,32 @@ export function AttendanceView({ basePath }: { basePath: string }) {
 
           <div className="flex flex-col gap-1">
             <label className="text-[11px] font-bold text-gray-400 px-1">Status</label>
-            <select
+            <SearchableSelect
               value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value as "all" | "present" | "late" | "clocked_out" | "absent");
-                setPage(1);
-              }}
-              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
-            >
-              <option value="all">All Status</option>
-              <option value="present">Present</option>
-              <option value="late">Late</option>
-              <option value="clocked_out">Clocked Out</option>
-              <option value="absent">Absent</option>
-            </select>
+              onChange={(v) => { setStatusFilter(v as "all" | "present" | "late" | "clocked_out" | "absent"); setPage(1); }}
+              options={[{ value: "all", label: "All Status" }, { value: "present", label: "Present" }, { value: "late", label: "Late" }, { value: "clocked_out", label: "Clocked Out" }, { value: "absent", label: "Absent" }]}
+              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
+            />
           </div>
 
           <div className="flex flex-col gap-1">
             <label className="text-[11px] font-bold text-gray-400 px-1">Clock</label>
-            <select
+            <SearchableSelect
               value={clockStateFilter}
-              onChange={(e) => {
-                setClockStateFilter(e.target.value as "all" | "clocked_in" | "clocked_out");
-                setPage(1);
-              }}
-              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
-            >
-              <option value="all">All</option>
-              <option value="clocked_in">Clocked In</option>
-              <option value="clocked_out">Clocked Out</option>
-            </select>
+              onChange={(v) => { setClockStateFilter(v as "all" | "clocked_in" | "clocked_out"); setPage(1); }}
+              options={[{ value: "all", label: "All" }, { value: "clocked_in", label: "Clocked In" }, { value: "clocked_out", label: "Clocked Out" }]}
+              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
+            />
           </div>
 
           <div className="flex flex-col gap-1">
             <label className="text-[11px] font-bold text-gray-400 px-1">Role</label>
-            <select
+            <SearchableSelect
               value={roleFilter}
-              onChange={(e) => {
-                setRoleFilter(e.target.value as "all" | "agent" | "supervisor");
-                setPage(1);
-              }}
-              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer"
-            >
-              <option value="all">All Roles</option>
-              <option value="agent">Field Agent</option>
-              <option value="supervisor">Supervisor</option>
-            </select>
+              onChange={(v) => { setRoleFilter(v as "all" | "agent" | "supervisor"); setPage(1); }}
+              options={[{ value: "all", label: "All Roles" }, { value: "agent", label: "Field Agent" }, { value: "supervisor", label: "Supervisor" }]}
+              className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
+            />
           </div>
 
           {(search.trim() !== "" || statusFilter !== "all" || roleFilter !== "all" || clockStateFilter !== "all" || periodFilter !== "day") && (

@@ -5,17 +5,16 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   placeholder?: string;
 }
 
-export default function Select({ 
-  className = "", 
-  options = [], 
-  placeholder, 
-  ...props 
-}: SelectProps) {
+const Select = React.forwardRef<HTMLSelectElement, SelectProps>(function Select(
+  { className = "", options = [], placeholder, children, ...props },
+  ref
+) {
   return (
     <div className="relative w-full">
       <select
-        className={`w-full h-[60px] px-7 rounded-full border shadow-[0px_1px_2px_0px_#0000004D] border-gray-200 text-xs text-[#34373C] outline-none focus:border-[#A9AAAB] transition-colors appearance-none bg-white cursor-pointer ${
-          props.value === "" ? "text-[#A9AAAB]" : ""
+        ref={ref}
+        className={`w-full h-15 px-7 rounded-full border shadow-[0px_1px_2px_0px_#0000004D] border-gray-200 text-xs text-[#34373C] outline-none focus:border-[#A9AAAB] transition-colors appearance-none bg-white cursor-pointer ${
+          !props.value ? "text-[#A9AAAB]" : ""
         } ${className}`}
         {...props}
       >
@@ -29,7 +28,7 @@ export default function Select({
             {opt.label}
           </option>
         ))}
-        {props.children}
+        {children}
       </select>
       <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none text-[#A9AAAB]">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -38,4 +37,6 @@ export default function Select({
       </div>
     </div>
   );
-}
+});
+
+export default Select;

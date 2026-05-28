@@ -13,6 +13,7 @@ import {
   useResendInternalInvite,
 } from '@/hooks/use-internal-user-onboarding';
 import { toast } from 'sonner';
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 type Agent = {
   id: string;
@@ -366,15 +367,21 @@ export default function AllAgentsPage() {
           <div className="flex flex-wrap gap-3 mb-4 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="flex flex-col gap-1">
               <label className="text-[11px] font-bold text-gray-400 px-1">Zone</label>
-              <select value={zoneFilter} onChange={(e) => handleFilter('zone', e.target.value)} className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer">
-                {zones.map((z) => <option key={z}>{z}</option>)}
-              </select>
+              <SearchableSelect
+                value={zoneFilter}
+                onChange={(v) => handleFilter('zone', v)}
+                options={zones.map((z) => ({ value: z, label: z }))}
+                className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
+              />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[11px] font-bold text-gray-400 px-1">Role</label>
-              <select value={roleFilter} onChange={(e) => handleFilter('role', e.target.value)} className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark outline-none cursor-pointer">
-                {ROLES.map((r) => <option key={r}>{r}</option>)}
-              </select>
+              <SearchableSelect
+                value={roleFilter}
+                onChange={(v) => handleFilter('role', v)}
+                options={ROLES.map((r) => ({ value: r, label: r }))}
+                className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
+              />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[11px] font-bold text-gray-400 px-1">Status</label>

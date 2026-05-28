@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils/sample";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useAuthStore } from "@/store/auth";
 import { getAuthTokenFromDocument, getCompanyId } from "@/lib/auth/session";
 import {
@@ -176,26 +177,20 @@ function EditableSelect({
 }) {
   return (
     <div>
-      <select
+      <SearchableSelect
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={onChange}
+        options={options}
+        placeholder="Select…"
         disabled={disabled}
         className={cn(
-          "w-full text-sm font-medium text-gray-800 bg-white rounded-xl px-3.5 py-2.5 border outline-none transition-all appearance-none",
-          "focus:ring-2 focus:ring-[#4fd1c5]/30 focus:border-[#4fd1c5]",
+          "w-full text-sm font-medium text-gray-800 bg-white rounded-xl px-3.5 py-2.5 border outline-none transition-all",
           disabled
             ? "bg-gray-50 text-gray-400 border-black/5 cursor-not-allowed"
             : "border-black/10 hover:border-[#4fd1c5]/50",
           error && "border-red-400",
         )}
-      >
-        <option value="">Select…</option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      />
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
     </div>
   );

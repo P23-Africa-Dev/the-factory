@@ -118,26 +118,20 @@ export function EditAgentPayrollModal({ isOpen, onClose, agent, companyId }: Edi
                     <div className="space-y-4 mb-5">
                         <SectionDivider label="Salary" />
                         <FormRow label="Salary Type">
-                            <InlineSelect value={salaryType} onChange={(e) => setSalaryType(e.target.value)} className="col-span-2">
-                                <option value="daily">Daily</option>
-                                <option value="monthly">Monthly</option>
-                                <option value="weekly">Weekly</option>
-                            </InlineSelect>
+                            <InlineSelect
+                                value={salaryType}
+                                onChange={(v) => setSalaryType(v)}
+                                options={[{ value: "monthly", label: "Monthly" }, { value: "weekly", label: "Weekly" }]}
+                                className="col-span-2"
+                            />
                         </FormRow>
                         <FormRow label="Currency">
-                            <InlineSelect value={selectedCurrencyCode} onChange={(e) => setCurrencyCode(e.target.value)} className="col-span-2">
-                                {currencyOptionList.length === 0 ? (
-                                    <option value={PAYROLL_DEFAULT_CURRENCY}>
-                                        {loadingCurrencies ? "Loading currencies..." : "No currencies available"}
-                                    </option>
-                                ) : (
-                                    currencyOptionList.map((currencyOption) => (
-                                        <option key={currencyOption.code} value={currencyOption.code}>
-                                            {currencyOption.label}
-                                        </option>
-                                    ))
-                                )}
-                            </InlineSelect>
+                            <InlineSelect 
+                                value={selectedCurrencyCode} 
+                                onChange={(v) => setCurrencyCode(v)} 
+                                options={currencyOptionList.length === 0 ? [{ value: PAYROLL_DEFAULT_CURRENCY, label: loadingCurrencies ? "Loading currencies..." : "No currencies available" }] : currencyOptionList.map((currencyOption) => ({ value: currencyOption.code, label: currencyOption.label }))}
+                                className="col-span-2"
+                            />
                         </FormRow>
                         <FormRow label="Base Salary">
                             <InlineInput value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className="col-span-2" />

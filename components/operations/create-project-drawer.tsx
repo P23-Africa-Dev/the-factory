@@ -8,6 +8,7 @@ import type { Project } from "@/types/operations";
 import { useAuthStore } from "@/store/auth";
 import type { ApiProjectType, ApiProjectStatus, ApiProjectPriority } from "@/lib/api/projects";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 const PRIORITY_OPTIONS = ["High", "Medium", "Low"] as const;
 const STATUS_OPTIONS = ["In progress", "Pending", "Completed"] as const;
@@ -279,63 +280,25 @@ export function CreateProjectDrawer({
 
           {/* Category */}
           <Row label="Category">
-            <div className="relative">
-              <select
-                value={form.category}
-                onChange={(e) => set("category", e.target.value)}
-                className={`${FIELD} appearance-none pr-9 cursor-pointer`}
-              >
-                <option value="" disabled>
-                  Select category
-                </option>
-                {CATEGORY_OPTIONS.map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-              <ChevronDown
-                size={14}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              />
-            </div>
+            <SearchableSelect
+              value={form.category}
+              onChange={(v) => set("category", v)}
+              options={CATEGORY_OPTIONS.map((c) => ({ value: c, label: c }))}
+              placeholder="Select category"
+              className={`${FIELD} pr-4 cursor-pointer`}
+            />
           </Row>
 
           {/* Project Lead — populated from internal-users API */}
           <Row label="Project Lead">
-            <div className="relative">
-              <User
-                size={13}
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              />
-              {loadingSupervisors ? (
-                <div className={`${FIELD} flex items-center gap-2 pl-9`}>
-                  <Loader2 size={14} className="animate-spin text-gray-400" />
-                  <span className="text-gray-400 text-[13px]">Loading leads...</span>
-                </div>
-              ) : (
-                <select
-                  value={form.lead}
-                  onChange={(e) => set("lead", e.target.value)}
-                  className={`${FIELD} appearance-none pl-9 pr-9 cursor-pointer`}
-                >
-                  <option value="" disabled>
-                    {supervisors.length === 0
-                      ? "No supervisors available"
-                      : "Assign a lead"}
-                  </option>
-                  {supervisors.map((s) => (
-                    <option key={s.id} value={String(s.id)}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {!loadingSupervisors && (
-                <ChevronDown
-                  size={14}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                />
-              )}
-            </div>
+            <SearchableSelect
+              value={form.lead}
+              onChange={(v) => set("lead", v)}
+              options={loadingSupervisors ? [] : supervisors.map((s) => ({ value: String(s.id), label: s.name }))}
+              placeholder={loadingSupervisors ? "Loading leads…" : supervisors.length === 0 ? "No supervisors available" : "Assign a lead"}
+              leftIcon={<User size={13} className="text-gray-400" />}
+              className={`${FIELD} pl-9 pr-4 cursor-pointer`}
+            />
           </Row>
 
           <Row label="Assigned Team IDs">
@@ -423,44 +386,23 @@ export function CreateProjectDrawer({
 
           {/* Priority */}
           <Row label="Priority">
-            <div className="relative">
-              <select
-                required
-                value={form.priority}
-                onChange={(e) => set("priority", e.target.value as Priority)}
-                className={`${FIELD} appearance-none pr-9 cursor-pointer`}
-              >
-                <option value="" disabled>
-                  Select priority
-                </option>
-                {PRIORITY_OPTIONS.map((p) => (
-                  <option key={p}>{p}</option>
-                ))}
-              </select>
-              <ChevronDown
-                size={14}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              />
-            </div>
+            <SearchableSelect
+              value={form.priority}
+              onChange={(v) => set("priority", v as Priority)}
+              options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))}
+              placeholder="Select priority"
+              className={`${FIELD} pr-4 cursor-pointer`}
+            />
           </Row>
 
           {/* Status */}
           <Row label="Status">
-            <div className="relative">
-              <select
-                value={form.status}
-                onChange={(e) => set("status", e.target.value as Status)}
-                className={`${FIELD} appearance-none pr-9 cursor-pointer`}
-              >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-              <ChevronDown
-                size={14}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              />
-            </div>
+            <SearchableSelect
+              value={form.status}
+              onChange={(v) => set("status", v as Status)}
+              options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
+              className={`${FIELD} pr-4 cursor-pointer`}
+            />
           </Row>
 
           {/* <Divider label="Settings" /> */}
