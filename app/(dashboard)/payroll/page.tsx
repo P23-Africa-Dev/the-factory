@@ -40,7 +40,10 @@ export default function FinancePage() {
   const { data: existingPayroll } = usePayroll(companyId);
   const exportMutation = usePayrollExport({
     onSuccess: () => {
-      toast.success("Payroll export started.");
+      toast.success("Payroll export downloaded.");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Payroll export failed.");
     },
   });
   const { data: agentsData, isLoading: isUsersLoading } = usePayrollAgents({
@@ -90,7 +93,7 @@ export default function FinancePage() {
     setStatusFilter((current) => nextPayrollStatusFilter(current));
   };
 
-  const handleExport = (format: "csv" | "xls") => {
+  const handleExport = (format: "csv" | "xlsx") => {
     if (!companyId || isAgent) {
       return;
     }
@@ -166,7 +169,7 @@ export default function FinancePage() {
               </button>
               <button
                 type="button"
-                onClick={() => handleExport("xls")}
+                onClick={() => handleExport("xlsx")}
                 className="border-l border-gray-200 px-2.5 py-[8.5px] hover:bg-gray-50 disabled:opacity-50"
                 disabled={exportMutation.isPending}
               >

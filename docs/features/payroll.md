@@ -51,6 +51,43 @@ Query params:
 - `status`
 - `per_page`
 
+### Payroll Export
+
+- `GET /api/v1/payroll/export`
+
+Query params:
+- `company_id`
+- `format` (`csv` or `xlsx`)
+- `date` optional, defaults to today
+- `year` optional
+- `month` optional
+- `search` optional
+- `status` optional (`approved`, `pending`, `revoked`)
+- `salary_type` optional (`daily`, `weekly`, `monthly`)
+- `attendance_affects_pay` optional boolean
+- `attendance_min` optional integer
+- `attendance_max` optional integer
+
+Export columns:
+- `Employee Name`
+- `Role`
+- `Salary Type`
+- `Currency`
+- `Base Salary`
+- `Daily Pay`
+- `Attendance Count`
+- `Accumulated Pay`
+- `Attendance Affect Pay`
+- `Payroll Status`
+- `Created Date`
+- `Project Count`
+- `Completed Tasks`
+- `Pending Tasks`
+
+Notes:
+- Exports are streamed and chunked for large datasets.
+- Generated files follow `payroll-export-YYYY-MM-DD.<ext>` naming.
+
 ## Payroll Calculation Rules
 
 - Base payroll settings are stored in `payroll_settings`.
@@ -89,3 +126,4 @@ The agent profile response includes:
 - Agent payroll updates require at least one editable field.
 - Agents can only request their own payroll profile.
 - Company boundaries are enforced on all payroll reads and writes.
+- Export downloads require management roles (owner, admin, supervisor).

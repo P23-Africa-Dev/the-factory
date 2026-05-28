@@ -680,8 +680,74 @@ class PayrollManagementTest extends TestCase
 
         $response->assertOk();
         $this->assertStringContainsString('text/csv', (string) $response->headers->get('content-type'));
-        $this->assertStringContainsString('Name,Email,Zone,Status', $response->streamedContent());
-        $this->assertStringContainsString($agent->email, $response->streamedContent());
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('Employee Name,Role,Salary Type,Currency,Base Salary,Daily Pay,Attendance Count,Accumulated Pay,Attendance Affect Pay,Payroll Status,Created Date,Project Count,Completed Tasks,Pending Tasks', $content);
+        $this->assertStringContainsString($agent->email, $content);
+    }
+
+    public function test_management_can_export_payroll_xlsx(): void
+    {
+        [$company, $admin] = $this->seedCompanyUsers();
+
+        $this->createPayrollSetting($company, [
+            'base_salary' => 120000,
+            'work_days' => 22,
+            'daily_pay' => 5454.55,
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->get('/api/v1/payroll/export?company_id=' . $company->id . '&date=2026-06-02&format=xlsx');
+
+        $response->assertOk();
+        $this->assertStringContainsString(
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            (string) $response->headers->get('content-type')
+        );
+        $this->assertStringContainsString('.xlsx', (string) $response->headers->get('content-disposition'));
+        $this->assertStringStartsWith('PK', $response->streamedContent());
+    }
+
+    public function test_management_export_respects_attendance_filters(): void
+    {
+        [$company, $admin,, $agentA] = $this->seedCompanyUsers();
+        $agentB = User::factory()->create(['email_verified_at' => now()]);
+
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $agentB->id,
+            'role' => 'agent',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->createPayrollSetting($company, [
+            'base_salary' => 120000,
+            'work_days' => 22,
+            'daily_pay' => 5454.55,
+            'attendance_affects_pay' => true,
+        ]);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentA->id,
+            'attendance_date' => '2026-06-02',
+            'clock_in_at' => '2026-06-02 09:00:00',
+            'clock_out_at' => '2026-06-02 17:00:00',
+            'status' => 'present',
+            'work_duration_minutes' => 480,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->get('/api/v1/payroll/export?company_id=' . $company->id . '&date=2026-06-02&format=csv&attendance_min=1');
+
+        $response->assertOk();
+        $content = $response->streamedContent();
+
+        $this->assertStringContainsString($agentA->email, $content);
+        $this->assertStringNotContainsString($agentB->email, $content);
     }
 
     public function test_agent_cannot_export_payroll(): void

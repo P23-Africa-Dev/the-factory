@@ -1,6 +1,6 @@
 "use client";
 
-import { apiRequest, ApiEnvelope } from "./onboarding";
+import { apiRequest, ApiEnvelope, API_BASE_URL, ApiRequestError } from "./onboarding";
 import { formatPayrollMoney, resolvePayrollCurrency } from "@/lib/payroll/currency";
 
 export type PayrollSettings = {
@@ -131,9 +131,16 @@ export type PayrollAgentProfileParams = {
 export type PayrollExportParams = {
   company_id: number | string;
   search?: string;
+  role?: "agent";
   status?: "approved" | "pending" | "revoked";
+  salary_type?: "daily" | "monthly" | "weekly";
+  attendance_affects_pay?: boolean;
+  attendance_min?: number;
+  attendance_max?: number;
   date?: string;
-  format: "csv" | "xls";
+  year?: number;
+  month?: number;
+  format: "csv" | "xlsx";
 };
 
 export function mapPayrollAgentToUi(agent: PayrollAgentListItem, currencyOverride?: string) {
@@ -333,24 +340,38 @@ export async function downloadPayrollExport(
     }
   });
 
-  const response = await fetch(`/api/v1/payroll/export?${query.toString()}`, {
+  const response = await fetch(`${API_BASE_URL}/payroll/export?${query.toString()}`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${token}`,
-      Accept: "text/csv, application/vnd.ms-excel;q=0.9, */*;q=0.8",
+      Accept: "text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;q=0.9, */*;q=0.8",
     },
-    credentials: "include",
   });
 
   if (!response.ok) {
-    throw new Error(`Payroll export failed with status ${response.status}`);
+    let message = `Payroll export failed with status ${response.status}`;
+    try {
+      const payload = (await response.json()) as ApiEnvelope<unknown>;
+      message = payload.message || message;
+      if (payload.errors) {
+        throw new ApiRequestError(message, response.status, payload.errors);
+      }
+    } catch {
+      // Fall through to generic error when response is not JSON.
+    }
+
+    throw new Error(message);
   }
 
   const disposition = response.headers.get("content-disposition") ?? "";
+  const utf8FilenameMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
   const filenameMatch = disposition.match(/filename="?([^\"]+)"?/i);
+  const filename = utf8FilenameMatch?.[1]
+    ? decodeURIComponent(utf8FilenameMatch[1])
+    : (filenameMatch?.[1] ?? `payroll-export.${params.format === "xlsx" ? "xlsx" : "csv"}`);
 
   return {
     blob: await response.blob(),
-    filename: filenameMatch?.[1] ?? `payroll-export.${params.format === "xls" ? "xls" : "csv"}`,
+    filename,
   };
 }

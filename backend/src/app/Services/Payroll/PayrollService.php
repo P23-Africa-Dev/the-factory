@@ -11,6 +11,7 @@ use App\Models\AttendancePayrollSummary;
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceSetting;
 use App\Models\PayrollSetting;
+use App\Models\Task;
 use App\Models\User;
 use App\Notifications\PayrollStatusNotification;
 use App\Services\Notification\NotificationService;
@@ -20,9 +21,29 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use OpenSpout\Common\Entity\Row;
+use OpenSpout\Common\Entity\Style\Style;
+use OpenSpout\Writer\XLSX\Writer as XlsxWriter;
 
 class PayrollService
 {
+    private const EXPORT_HEADERS = [
+        'Employee Name',
+        'Role',
+        'Salary Type',
+        'Currency',
+        'Base Salary',
+        'Daily Pay',
+        'Attendance Count',
+        'Accumulated Pay',
+        'Attendance Affect Pay',
+        'Payroll Status',
+        'Created Date',
+        'Project Count',
+        'Completed Tasks',
+        'Pending Tasks',
+    ];
+
     private const PRESENT_STATUSES = [
         AttendanceStatus::PRESENT->value,
         AttendanceStatus::LATE->value,
@@ -493,28 +514,30 @@ class PayrollService
         $context = $this->accessService->resolve($user, $filters['company_id'] ?? null);
         $this->accessService->ensureCanManage($context);
 
-        $result = $this->listAgents($user, [
-            ...$filters,
-            'per_page' => 100000,
-            'page' => 1,
-        ]);
-
         $format = strtolower((string) ($filters['format'] ?? 'csv'));
-        $date = $this->resolveReferenceDate($filters);
-        $filename = sprintf('payroll-%s.%s', $date->format('Y-m-d'), $format === 'xls' ? 'xls' : 'csv');
-
         if ($format === 'xls') {
+            $format = 'xlsx';
+        }
+
+        $date = $this->resolveReferenceDate($filters);
+        $filename = sprintf('payroll-export-%s.%s', $date->format('Y-m-d'), $format === 'xlsx' ? 'xlsx' : 'csv');
+
+        if ($format === 'xlsx') {
             return [
                 'filename' => $filename,
-                'content_type' => 'application/vnd.ms-excel; charset=UTF-8',
-                'content' => $this->buildExcelTableExport($result['items']),
+                'content_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'stream' => function () use ($context, $user, $filters): void {
+                    $this->streamXlsxExport((int) $context->company->id, $user, $filters);
+                },
             ];
         }
 
         return [
             'filename' => $filename,
             'content_type' => 'text/csv; charset=UTF-8',
-            'content' => $this->buildCsvExport($result['items']),
+            'stream' => function () use ($context, $user, $filters): void {
+                $this->streamCsvExport((int) $context->company->id, $user, $filters);
+            },
         ];
     }
 
@@ -847,6 +870,7 @@ class PayrollService
                 'currency' => (string) $summary->currency,
                 'salary_type' => (string) ($summary->metadata['salary_type'] ?? $period['cycle_type']),
                 'attendance_affects_pay' => (bool) ($summary->metadata['attendance_affects_pay'] ?? false),
+                'created_date' => $summary->generated_at?->toDateString() ?? $summary->created_at?->toDateString(),
             ];
         })->values();
     }
@@ -869,51 +893,220 @@ class PayrollService
         };
     }
 
-    private function buildCsvExport(array $rows): string
+    private function streamCsvExport(int $companyId, User $actor, array $filters): void
     {
-        $handle = fopen('php://temp', 'r+');
-        fputcsv($handle, ['Name', 'Email', 'Zone', 'Status', 'Base Salary', 'Daily Pay', 'Net Pay', 'Attendance Days', 'Currency', 'Salary Type']);
+        $out = fopen('php://output', 'wb');
+        if (! is_resource($out)) {
+            return;
+        }
 
-        foreach ($rows as $row) {
-            fputcsv($handle, [
-                $row['name'],
-                $row['email'],
-                $row['assigned_zone'],
-                $row['status'],
+        fwrite($out, "\xEF\xBB\xBF");
+        fputcsv($out, self::EXPORT_HEADERS);
+
+        $this->streamExportRows($companyId, $actor, $filters, function (array $row) use ($out): void {
+            fputcsv($out, [
+                $row['employee_name'],
+                $row['role'],
+                $row['salary_type'],
+                $row['currency'],
                 $row['base_salary'],
                 $row['daily_pay'],
-                $row['net_pay'],
-                $row['attendance_days'],
-                $row['currency'],
-                $row['salary_type'],
+                $row['attendance_count'],
+                $row['accumulated_pay'],
+                $row['attendance_affect_pay'],
+                $row['payroll_status'],
+                $row['created_date'],
+                $row['project_count'],
+                $row['completed_tasks'],
+                $row['pending_tasks'],
+            ]);
+        });
+
+        fclose($out);
+    }
+
+    private function streamXlsxExport(int $companyId, User $actor, array $filters): void
+    {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'payroll-export-');
+        if ($tmpFile === false) {
+            throw ValidationException::withMessages([
+                'export' => ['Unable to prepare export file. Please try again.'],
             ]);
         }
 
-        rewind($handle);
+        $writer = new XlsxWriter();
+        $writer->openToFile($tmpFile);
+        $writer->setCreator('Factory23 Payroll');
 
-        return (string) stream_get_contents($handle);
+        $sheet = $writer->getCurrentSheet();
+        $sheet->setName('Payroll Export');
+        $sheet->setColumnWidth(26, 1);
+        $sheet->setColumnWidth(14, 2, 4);
+        $sheet->setColumnWidth(16, 5, 8);
+        $sheet->setColumnWidth(22, 9, 11);
+        $sheet->setColumnWidth(14, 12, 14);
+
+        $headerStyle = (new Style())->setFontBold();
+        $columnStyles = [];
+        foreach (array_keys(self::EXPORT_HEADERS) as $index) {
+            $columnStyles[$index] = $headerStyle;
+        }
+
+        $writer->addRow(Row::fromValuesWithStyles(self::EXPORT_HEADERS, null, $columnStyles));
+
+        $this->streamExportRows($companyId, $actor, $filters, function (array $row) use ($writer): void {
+            $writer->addRow(Row::fromValues([
+                $row['employee_name'],
+                $row['role'],
+                $row['salary_type'],
+                $row['currency'],
+                $row['base_salary'],
+                $row['daily_pay'],
+                $row['attendance_count'],
+                $row['accumulated_pay'],
+                $row['attendance_affect_pay'],
+                $row['payroll_status'],
+                $row['created_date'],
+                $row['project_count'],
+                $row['completed_tasks'],
+                $row['pending_tasks'],
+            ]));
+        });
+
+        $writer->close();
+
+        $reader = fopen($tmpFile, 'rb');
+        if (is_resource($reader)) {
+            fpassthru($reader);
+            fclose($reader);
+        }
+
+        @unlink($tmpFile);
     }
 
-    private function buildExcelTableExport(array $rows): string
+    private function streamExportRows(int $companyId, User $actor, array $filters, callable $emit): void
     {
-        $header = ['Name', 'Email', 'Zone', 'Status', 'Base Salary', 'Daily Pay', 'Net Pay', 'Attendance Days', 'Currency', 'Salary Type'];
-        $html = '<table><thead><tr>';
+        $date = $this->resolveReferenceDate($filters);
+        $payrollSetting = PayrollSetting::query()->where('company_id', $companyId)->first();
+        $attendanceSetting = AttendanceSetting::query()->where('company_id', $companyId)->first();
 
-        foreach ($header as $column) {
-            $html .= '<th>' . e($column) . '</th>';
+        $query = $this->agentsQuery($companyId);
+
+        if (! empty($filters['search'])) {
+            $search = '%' . trim((string) $filters['search']) . '%';
+            $query->where(function ($sub) use ($search): void {
+                $sub->where('users.name', 'like', $search)
+                    ->orWhere('users.email', 'like', $search)
+                    ->orWhere('users.assigned_zone', 'like', $search);
+            });
         }
 
-        $html .= '</tr></thead><tbody>';
+        if (! empty($filters['role']) && strtolower((string) $filters['role']) !== 'agent') {
+            return;
+        }
 
-        foreach ($rows as $row) {
-            $html .= '<tr>';
-            foreach (['name', 'email', 'assigned_zone', 'status', 'base_salary', 'daily_pay', 'net_pay', 'attendance_days', 'currency', 'salary_type'] as $key) {
-                $html .= '<td>' . e((string) ($row[$key] ?? '')) . '</td>';
+        $query->orderBy('users.id')->chunkById(250, function (Collection $agents) use ($companyId, $payrollSetting, $attendanceSetting, $date, $actor, $filters, $emit): void {
+            $rows = $this->buildAgentRows(
+                agents: $agents,
+                companyId: $companyId,
+                payrollSetting: $payrollSetting,
+                attendanceSetting: $attendanceSetting,
+                date: $date,
+                actorUserId: (int) $actor->id,
+            );
+
+            $taskStats = $this->buildTaskStatsForAgents($companyId, $agents->pluck('id')->map(static fn(mixed $id): int => (int) $id)->all());
+
+            foreach ($rows as $row) {
+                if (! $this->passesExportFilters($row, $filters)) {
+                    continue;
+                }
+
+                $agentTaskStats = $taskStats[(int) $row['id']] ?? [
+                    'project_count' => null,
+                    'completed_tasks' => null,
+                    'pending_tasks' => null,
+                ];
+
+                $emit([
+                    'employee_name' => (string) ($row['name'] ?? ''),
+                    'role' => (string) ($row['role'] ?? 'Agent'),
+                    'salary_type' => strtoupper((string) ($row['salary_type'] ?? 'monthly')),
+                    'currency' => strtoupper((string) ($row['currency'] ?? 'NGN')),
+                    'base_salary' => round((float) ($row['base_salary'] ?? 0), 2),
+                    'daily_pay' => round((float) ($row['daily_pay'] ?? 0), 2),
+                    'attendance_count' => (int) ($row['attendance_days'] ?? 0),
+                    'accumulated_pay' => round((float) ($row['net_pay'] ?? 0), 2),
+                    'attendance_affect_pay' => (bool) ($row['attendance_affects_pay'] ?? false) ? 'Yes' : 'No',
+                    'payroll_status' => (string) ($row['status'] ?? 'Pending'),
+                    'created_date' => (string) ($row['created_date'] ?? $date->toDateString()),
+                    'project_count' => $agentTaskStats['project_count'] ?? null,
+                    'completed_tasks' => $agentTaskStats['completed_tasks'] ?? null,
+                    'pending_tasks' => $agentTaskStats['pending_tasks'] ?? null,
+                ]);
             }
-            $html .= '</tr>';
+        }, 'users.id');
+    }
+
+    private function passesExportFilters(array $row, array $filters): bool
+    {
+        if (! empty($filters['status']) && strtolower((string) $row['status']) !== strtolower((string) $filters['status'])) {
+            return false;
         }
 
-        return $html . '</tbody></table>';
+        if (! empty($filters['salary_type']) && strtolower((string) $row['salary_type']) !== strtolower((string) $filters['salary_type'])) {
+            return false;
+        }
+
+        if (array_key_exists('attendance_affects_pay', $filters) && $filters['attendance_affects_pay'] !== null) {
+            if ((bool) $row['attendance_affects_pay'] !== (bool) $filters['attendance_affects_pay']) {
+                return false;
+            }
+        }
+
+        $attendanceCount = (int) ($row['attendance_days'] ?? 0);
+        if (array_key_exists('attendance_min', $filters) && $filters['attendance_min'] !== null && $attendanceCount < (int) $filters['attendance_min']) {
+            return false;
+        }
+
+        if (array_key_exists('attendance_max', $filters) && $filters['attendance_max'] !== null && $attendanceCount > (int) $filters['attendance_max']) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function buildTaskStatsForAgents(int $companyId, array $agentIds): array
+    {
+        if ($agentIds === []) {
+            return [];
+        }
+
+        $stats = Task::query()
+            ->selectRaw('assigned_agent_id as agent_id')
+            ->selectRaw('COUNT(DISTINCT project_id) as project_count')
+            ->selectRaw("SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks")
+            ->selectRaw("SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_tasks")
+            ->where('company_id', $companyId)
+            ->whereIn('assigned_agent_id', $agentIds)
+            ->groupBy('assigned_agent_id')
+            ->get();
+
+        $result = [];
+        foreach ($stats as $row) {
+            $agentId = (int) ($row->agent_id ?? 0);
+            if ($agentId < 1) {
+                continue;
+            }
+
+            $result[$agentId] = [
+                'project_count' => (int) ($row->project_count ?? 0),
+                'completed_tasks' => (int) ($row->completed_tasks ?? 0),
+                'pending_tasks' => (int) ($row->pending_tasks ?? 0),
+            ];
+        }
+
+        return $result;
     }
 
     private function agentsQuery(int $companyId)

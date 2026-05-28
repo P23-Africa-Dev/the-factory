@@ -39,7 +39,10 @@ export default function PayrollListPage() {
 
   const { data: overview } = usePayrollOverview({ company_id: companyId ?? undefined, date: selectedDate });
   const { data: existingPayroll } = usePayroll(companyId);
-  const exportMutation = usePayrollExport({ onSuccess: () => toast.success("Payroll export started.") });
+  const exportMutation = usePayrollExport({
+    onSuccess: () => toast.success("Payroll export downloaded."),
+    onError: (error) => toast.error(error.message || "Payroll export failed."),
+  });
   const { data: agentsData, isLoading: isUsersLoading } = usePayrollAgents({
     company_id: companyId ?? undefined,
     search: search || undefined,
@@ -87,7 +90,7 @@ export default function PayrollListPage() {
     setStatusFilter((current) => nextPayrollStatusFilter(current));
   };
 
-  const handleExport = (format: "csv" | "xls") => {
+  const handleExport = (format: "csv" | "xlsx") => {
     if (!companyId || isAgent) {
       return;
     }
@@ -149,7 +152,7 @@ export default function PayrollListPage() {
                 />
                 CSV
               </button>
-              <button type="button" onClick={() => handleExport("xls")} disabled={exportMutation.isPending} className="border-l border-gray-200 px-2.5 py-[8.5px] hover:bg-gray-50 disabled:opacity-50">
+              <button type="button" onClick={() => handleExport("xlsx")} disabled={exportMutation.isPending} className="border-l border-gray-200 px-2.5 py-[8.5px] hover:bg-gray-50 disabled:opacity-50">
                 Excel
               </button>
             </div>

@@ -19,6 +19,7 @@ Authenticated via `auth:sanctum`:
 1. `POST /api/v1/payroll`
 2. `GET /api/v1/payroll`
 3. `PUT /api/v1/payroll/{id}`
+4. `GET /api/v1/payroll/export`
 
 ## Authentication
 
@@ -224,6 +225,49 @@ Create and update payload rules:
 6. `attendance_affects_pay` optional boolean
 7. `commission_enabled` optional boolean
 8. `company_id` optional; if omitted, latest active company context is used
+
+Export payload rules:
+
+1. `format` required, enum `csv|xlsx`
+2. `date` optional `Y-m-d` (or `year`+`month`)
+3. `search` optional string
+4. `status` optional enum `approved|pending|revoked`
+5. `salary_type` optional enum `daily|weekly|monthly`
+6. `attendance_affects_pay` optional boolean
+7. `attendance_min` optional integer `>= 0`
+8. `attendance_max` optional integer `>= attendance_min`
+
+## Payroll Export
+
+`GET /api/v1/payroll/export`
+
+Supported formats:
+
+1. `csv`
+2. `xlsx`
+
+Behavior:
+
+1. Exports are streamed in chunks for large datasets.
+2. Applied filters are preserved in export results.
+3. Filename format: `payroll-export-YYYY-MM-DD.<ext>`.
+
+Export columns:
+
+1. `Employee Name`
+2. `Role`
+3. `Salary Type`
+4. `Currency`
+5. `Base Salary`
+6. `Daily Pay`
+7. `Attendance Count`
+8. `Accumulated Pay`
+9. `Attendance Affect Pay`
+10. `Payroll Status`
+11. `Created Date`
+12. `Project Count`
+13. `Completed Tasks`
+14. `Pending Tasks`
 
 ## Multi-Tenant Guarantees
 
