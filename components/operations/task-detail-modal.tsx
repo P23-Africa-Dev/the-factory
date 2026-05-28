@@ -30,7 +30,7 @@ import { useActiveTracking } from '@/components/tracking/active-tracking-provide
 import { startTaskTracking } from '@/lib/api/tracking';
 import { ApiRequestError } from '@/lib/api/onboarding';
 import type { GeoReading } from '@/types/tracking';
-import { useMapProvider } from '@/hooks/use-map-provider';
+import { useEffectiveMapProvider } from '@/hooks/use-effective-map-provider';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 
 interface TaskDetailModalProps {
@@ -67,7 +67,13 @@ function TaskLocationMap({
   const googleMarkersRef = useRef<Array<{ setMap: (map: unknown | null) => void }>>([]);
   const mapboxToken = useMemo(() => getMapboxPublicToken(), []);
   const googleApiKey = useMemo(() => getGoogleMapsPublicApiKey(), []);
-  const mapProvider = useMapProvider();
+  const {
+    requestedProvider,
+    effectiveProvider,
+    fallbackReason,
+    hasGoogleMapsApiKey,
+    hasMapboxToken,
+  } = useEffectiveMapProvider();
   const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
 
   useEffect(() => {
@@ -88,7 +94,7 @@ function TaskLocationMap({
       }
     };
 
-    if (mapProvider === 'google') {
+    if (effectiveProvider === 'google') {
       disposeMapbox();
       mapContainerRef.current.innerHTML = '';
 
@@ -217,7 +223,7 @@ function TaskLocationMap({
       cancelled = true;
       disposeMapbox();
     };
-  }, [agentAvatar, agentName, googleApiKey, hasCoordinates, latitude, longitude, mapProvider, mapboxToken]);
+  }, [agentAvatar, agentName, effectiveProvider, googleApiKey, hasCoordinates, latitude, longitude, mapboxToken]);
 
   if (!hasCoordinates) {
     return (
@@ -227,7 +233,7 @@ function TaskLocationMap({
     );
   }
 
-  if (mapProvider === 'google' && !googleApiKey) {
+  if (effectiveProvider === 'google' && !hasGoogleMapsApiKey) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-[#eef0f3] text-[12px] font-medium text-gray-500 px-4 text-center">
         Map preview requires NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.
@@ -235,7 +241,7 @@ function TaskLocationMap({
     );
   }
 
-  if (mapProvider === 'mapbox' && !mapboxToken) {
+  if (effectiveProvider === 'mapbox' && !hasMapboxToken) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-[#eef0f3] text-[12px] font-medium text-gray-500 px-4 text-center">
         Map preview requires NEXT_PUBLIC_MAPBOX_TOKEN.
@@ -243,7 +249,17 @@ function TaskLocationMap({
     );
   }
 
-  return <div ref={mapContainerRef} className="h-full w-full" />;
+  return (
+    <div className="h-full w-full relative">
+      <div ref={mapContainerRef} className="h-full w-full" />
+
+      {fallbackReason === 'missing_google_api_key' && requestedProvider === 'google' && (
+        <div className="absolute bottom-2 left-2 right-2 rounded-md bg-black/75 px-2.5 py-1.5 text-[10px] font-medium text-white">
+          Google map is selected by admin, but NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is missing. Showing Mapbox fallback.
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailModalProps) {
@@ -289,14 +305,11 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
     onSuccess: () => toast.success('Task reassignment rejected.'),
   });
 
-  useEffect(() => {
-    const assigneeId = detailQuery.data?.assignee?.id;
-    if (assigneeId) {
-      setSelectedAgentId(String(assigneeId));
-    }
-  }, [detailQuery.data?.assignee?.id]);
-
   if (!isOpen || !task) return null;
+
+  const resolvedSelectedAgentId =
+    selectedAgentId ||
+    (detailQuery.data?.assignee?.id ? String(detailQuery.data.assignee.id) : '');
 
   const apiStatus = detailQuery.data?.status;
   const boardStatus = toBoardStatus(apiStatus ?? status);
@@ -442,12 +455,12 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
       return;
     }
 
-    if (!selectedAgentId) {
+    if (!resolvedSelectedAgentId) {
       toast.error('Select an agent to assign this task.');
       return;
     }
 
-    if (Number(selectedAgentId) === Number(detailQuery.data?.assigned_agent_id)) {
+    if (Number(resolvedSelectedAgentId) === Number(detailQuery.data?.assigned_agent_id)) {
       toast.error('Select a different user for reassignment.');
       return;
     }
@@ -456,7 +469,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
       taskId,
       payload: {
         company_id: companyId,
-        to_user_id: Number(selectedAgentId),
+        to_user_id: Number(resolvedSelectedAgentId),
         reason: reassignmentReason.trim() ? reassignmentReason.trim() : undefined,
       },
     });
@@ -684,7 +697,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                   </div>
                 ) : null}
                 <select
-                  value={selectedAgentId}
+                  value={resolvedSelectedAgentId}
                   onChange={(event) => setSelectedAgentId(event.target.value)}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-white"
                   disabled={hasPendingReassignment}

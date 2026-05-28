@@ -1,15 +1,19 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { X, MapPin, Route, CheckCircle2, Navigation } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
-import { createMapboxTransformRequest, getMapboxPublicToken } from '@/lib/config/public-env';
+import {
+  createMapboxTransformRequest,
+  getGoogleMapsPublicApiKey,
+  getMapboxPublicToken,
+} from '@/lib/config/public-env';
 import { getCountryFallbackViewport } from '@/lib/map/default-viewport';
 import { useTaskRoute } from '@/hooks/use-tracking';
-
-const MAPBOX_TOKEN = getMapboxPublicToken();
+import { useEffectiveMapProvider } from '@/hooks/use-effective-map-provider';
+import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 
 function RouteMap({
   polyline,
@@ -28,10 +32,133 @@ function RouteMap({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
+  const googleMapRef = useRef<unknown | null>(null);
+  const googleOverlaysRef = useRef<Array<{ setMap: (map: unknown | null) => void }>>([]);
+  const mapboxToken = useMemo(() => getMapboxPublicToken(), []);
+  const googleApiKey = useMemo(() => getGoogleMapsPublicApiKey(), []);
+  const { effectiveProvider, hasGoogleMapsApiKey, hasMapboxToken } = useEffectiveMapProvider();
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current || !MAPBOX_TOKEN) return;
-    mapboxgl.accessToken = MAPBOX_TOKEN;
+    if (!containerRef.current) return;
+
+    let cancelled = false;
+
+    const disposeGoogle = () => {
+      googleOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
+      googleOverlaysRef.current = [];
+      googleMapRef.current = null;
+    };
+
+    const disposeMapbox = () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
+
+    if (effectiveProvider === 'google') {
+      disposeMapbox();
+      containerRef.current.innerHTML = '';
+
+      if (!googleApiKey) {
+        return () => {
+          cancelled = true;
+          disposeGoogle();
+        };
+      }
+
+      loadGoogleMapsApi(googleApiKey)
+        .then((google) => {
+          if (cancelled || !containerRef.current) {
+            return;
+          }
+
+          const center =
+            polyline.length > 0
+              ? { lat: polyline[Math.floor(polyline.length / 2)][1], lng: polyline[Math.floor(polyline.length / 2)][0] }
+              : start
+                ? { lat: start.lat, lng: start.lng }
+                : { lat: getCountryFallbackViewport().center[1], lng: getCountryFallbackViewport().center[0] };
+
+          const map = new google.maps.Map(containerRef.current, {
+            center,
+            zoom: 13,
+            disableDefaultUI: true,
+            zoomControl: true,
+            fullscreenControl: false,
+            streetViewControl: false,
+            mapTypeControl: false,
+          });
+
+          googleMapRef.current = map;
+
+          const overlays: Array<{ setMap: (map: unknown | null) => void }> = [];
+
+          if (polyline.length >= 2) {
+            const trail = new google.maps.Polyline({
+              map,
+              path: polyline.map((point) => ({ lat: point[1], lng: point[0] })),
+              geodesic: true,
+              strokeColor: '#3B82F6',
+              strokeOpacity: 0.85,
+              strokeWeight: 4,
+            });
+            overlays.push(trail);
+
+            const bounds = new google.maps.LatLngBounds();
+            polyline.forEach((point) => bounds.extend({ lat: point[1], lng: point[0] }));
+            map.fitBounds(bounds, 40);
+          }
+
+          const addPoint = (
+            point: { lat: number; lng: number } | null,
+            fillColor: string,
+            scale = 7,
+          ) => {
+            if (!point) return;
+            const marker = new google.maps.Marker({
+              map,
+              position: point,
+              icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale,
+                fillColor,
+                fillOpacity: 1,
+                strokeColor: '#FFFFFF',
+                strokeWeight: 2.5,
+              },
+            });
+            overlays.push(marker);
+          };
+
+          addPoint(start, '#2563EB');
+          addPoint(near, '#D97706');
+          addPoint(arrival, '#16A34A');
+          addPoint(end, '#334155');
+          addPoint(destination, '#DC2626', 8);
+
+          googleOverlaysRef.current = overlays;
+        })
+        .catch(() => {
+          // Render fallback state in JSX when API key is missing/invalid.
+        });
+
+      return () => {
+        cancelled = true;
+        disposeGoogle();
+      };
+    }
+
+    if (!mapboxToken) {
+      return () => {
+        cancelled = true;
+        disposeMapbox();
+      };
+    }
+
+    disposeGoogle();
+
+    mapboxgl.accessToken = mapboxToken;
 
     const center: [number, number] =
       polyline.length > 0
@@ -120,9 +247,28 @@ function RouteMap({
       }
     });
 
-    return () => { map.remove(); mapRef.current = null; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => {
+      cancelled = true;
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [arrival, destination, effectiveProvider, end, googleApiKey, mapboxToken, near, polyline, start]);
+
+  if (effectiveProvider === 'google' && !hasGoogleMapsApiKey) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-[#eef0f3] text-[12px] font-medium text-gray-500 px-4 text-center">
+        Route map requires NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.
+      </div>
+    );
+  }
+
+  if (effectiveProvider === 'mapbox' && !hasMapboxToken) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-[#eef0f3] text-[12px] font-medium text-gray-500 px-4 text-center">
+        Route map requires NEXT_PUBLIC_MAPBOX_TOKEN.
+      </div>
+    );
+  }
 
   return <div ref={containerRef} className="w-full h-full" />;
 }
@@ -146,6 +292,7 @@ function formatTime(iso: string): string {
 }
 
 export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPanelProps) {
+  const providerState = useEffectiveMapProvider();
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
 
@@ -208,6 +355,11 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
             end={end}
             destination={destination}
           />
+        )}
+        {providerState.fallbackReason === 'missing_google_api_key' && providerState.requestedProvider === 'google' && (
+          <div className="absolute bottom-2 left-2 right-2 rounded-md bg-black/75 px-2.5 py-1.5 text-[10px] font-medium text-white">
+            Google map is selected by admin, but NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is missing. Showing Mapbox fallback.
+          </div>
         )}
         {isError && (
           <div className="absolute inset-0 flex items-center justify-center text-[12px] text-gray-400">

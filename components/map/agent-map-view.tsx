@@ -1,13 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import {
+    getGoogleMapsPublicApiKey,
     MAPBOX_PUBLIC_TOKEN_ENV,
     createMapboxTransformRequest,
     getMapboxPublicToken,
 } from '@/lib/config/public-env';
+import { useEffectiveMapProvider, type EffectiveMapProviderState } from '@/hooks/use-effective-map-provider';
 import { useActiveTracking } from '@/components/tracking/active-tracking-provider';
 import { useTrackingStore } from '@/store/tracking';
 import { useTrackingWebSocket } from '@/hooks/use-tracking-ws';
@@ -15,20 +17,55 @@ import {
     areSamePoint,
     buildTaskTrail,
     createAgentMarkerElement,
-    createPulseMarkerElement,
     createStaticMarkerElement,
     resolveVisualTaskState,
     sanitizePolyline,
     updateAgentMarkerElement,
-    VISUAL_PALETTE,
 } from '@/lib/tracking/map-visualization';
 import { fetchDirectionsRoute, clearDirectionsCache } from '@/lib/tracking/directions';
 import {
     getCountryFallbackViewport,
     resolvePrivacySafeViewport,
 } from '@/lib/map/default-viewport';
+import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 
 const MARKER_ANIMATION_MS = 700;
+
+type GoogleLatLng = { lat: number; lng: number };
+
+type GoogleLatLngBoundsLike = {
+    extend: (point: GoogleLatLng) => void;
+};
+
+type GoogleMapLike = {
+    setCenter: (point: GoogleLatLng) => void;
+    setZoom: (zoom: number) => void;
+    panTo: (point: GoogleLatLng) => void;
+    fitBounds: (bounds: GoogleLatLngBoundsLike, padding?: number) => void;
+};
+
+type GooglePolylineLike = {
+    setMap: (map: GoogleMapLike | null) => void;
+    setPath: (path: GoogleLatLng[]) => void;
+};
+
+type GoogleMarkerLike = {
+    setMap: (map: GoogleMapLike | null) => void;
+    setPosition: (point: GoogleLatLng) => void;
+    setIcon: (icon: Record<string, unknown>) => void;
+};
+
+type GoogleMapsNamespaceLike = {
+    maps: {
+        Map: new (container: HTMLElement, options: Record<string, unknown>) => GoogleMapLike;
+        Marker: new (options: Record<string, unknown>) => GoogleMarkerLike;
+        Polyline: new (options: Record<string, unknown>) => GooglePolylineLike;
+        LatLngBounds: new () => GoogleLatLngBoundsLike;
+        SymbolPath: {
+            CIRCLE: unknown;
+        };
+    };
+};
 
 function getDestinationMarkerKind(status: 'in_progress' | 'near_destination' | 'arrived' | 'completed') {
     if (status === 'completed') return 'completed' as const;
@@ -37,7 +74,7 @@ function getDestinationMarkerKind(status: 'in_progress' | 'near_destination' | '
     return 'destination' as const;
 }
 
-export function AgentMapView() {
+function MapboxAgentMapView({ providerState }: { providerState: EffectiveMapProviderState }) {
     const mapContainer = useRef<HTMLDivElement>(null);
     const mapRef = useRef<mapboxgl.Map | null>(null);
     const mapLoadedRef = useRef(false);
@@ -414,5 +451,288 @@ export function AgentMapView() {
         );
     }
 
-    return <div ref={mapContainer} className="w-full" style={{ height: 'calc(100vh - 64px)' }} />;
+    return (
+        <div className="relative w-full" style={{ height: 'calc(100vh - 64px)' }}>
+            <div ref={mapContainer} className="w-full h-full" />
+
+            {providerState.fallbackReason === 'missing_google_api_key' && providerState.requestedProvider === 'google' && (
+                <div className="absolute bottom-3 left-3 right-3 rounded-md bg-black/75 px-2.5 py-1.5 text-[10px] font-medium text-white">
+                    Google map is selected by admin, but NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is missing. Showing Mapbox fallback.
+                </div>
+            )}
+        </div>
+    );
+}
+
+function GoogleAgentMapView({ providerState }: { providerState: EffectiveMapProviderState }) {
+    const mapContainer = useRef<HTMLDivElement>(null);
+    const googleRef = useRef<GoogleMapsNamespaceLike | null>(null);
+    const mapRef = useRef<GoogleMapLike | null>(null);
+    const routeLineRef = useRef<GooglePolylineLike | null>(null);
+    const connectorLineRef = useRef<GooglePolylineLike | null>(null);
+    const agentMarkerRef = useRef<GoogleMarkerLike | null>(null);
+    const originMarkerRef = useRef<GoogleMarkerLike | null>(null);
+    const destinationMarkerRef = useRef<GoogleMarkerLike | null>(null);
+    const hasInitialFitRef = useRef(false);
+    const lastFitTaskIdRef = useRef<number | null>(null);
+    const googleApiKey = useMemo(() => getGoogleMapsPublicApiKey(), []);
+    const { activeTaskId } = useActiveTracking();
+    const activeTask = useTrackingStore((s) =>
+        activeTaskId ? s.liveTasks[activeTaskId] ?? null : null
+    );
+
+    useTrackingWebSocket();
+
+    const clearOverlays = useCallback(() => {
+        routeLineRef.current?.setMap(null);
+        connectorLineRef.current?.setMap(null);
+        agentMarkerRef.current?.setMap(null);
+        originMarkerRef.current?.setMap(null);
+        destinationMarkerRef.current?.setMap(null);
+
+        routeLineRef.current = null;
+        connectorLineRef.current = null;
+        agentMarkerRef.current = null;
+        originMarkerRef.current = null;
+        destinationMarkerRef.current = null;
+    }, []);
+
+    useEffect(() => {
+        if (!mapContainer.current || mapRef.current || !googleApiKey) return;
+
+        let cancelled = false;
+
+        loadGoogleMapsApi(googleApiKey)
+            .then((google) => {
+                const googleMaps = google as GoogleMapsNamespaceLike;
+
+                if (cancelled || !mapContainer.current) return;
+
+                googleRef.current = googleMaps;
+
+                const initialViewport = getCountryFallbackViewport();
+
+                mapRef.current = new googleMaps.maps.Map(mapContainer.current, {
+                    center: { lat: initialViewport.center[1], lng: initialViewport.center[0] },
+                    zoom: initialViewport.zoom,
+                    disableDefaultUI: false,
+                    fullscreenControl: false,
+                    mapTypeControl: false,
+                    streetViewControl: false,
+                });
+            })
+            .catch(() => {
+                // Key/network failures surface through fallback UI.
+            });
+
+        return () => {
+            cancelled = true;
+            clearOverlays();
+            mapRef.current = null;
+            googleRef.current = null;
+            hasInitialFitRef.current = false;
+            lastFitTaskIdRef.current = null;
+        };
+    }, [clearOverlays, googleApiKey]);
+
+    useEffect(() => {
+        const map = mapRef.current;
+        const google = googleRef.current;
+
+        if (!map || !google) return;
+
+        if (!activeTask) {
+            clearOverlays();
+            hasInitialFitRef.current = false;
+            lastFitTaskIdRef.current = null;
+
+            let cancelled = false;
+            resolvePrivacySafeViewport().then((viewport) => {
+                if (cancelled || !mapRef.current || useTrackingStore.getState().activeTrackingTaskId) {
+                    return;
+                }
+
+                mapRef.current.setCenter({ lat: viewport.center[1], lng: viewport.center[0] });
+                mapRef.current.setZoom(viewport.zoom);
+            });
+
+            return () => {
+                cancelled = true;
+            };
+        }
+
+        if (lastFitTaskIdRef.current !== null && lastFitTaskIdRef.current !== activeTask.taskId) {
+            hasInitialFitRef.current = false;
+        }
+        lastFitTaskIdRef.current = activeTask.taskId;
+
+        const trail = sanitizePolyline(buildTaskTrail(activeTask));
+        const originPoint = trail[0] ?? activeTask.lastPosition;
+        const markerKind = getDestinationMarkerKind(activeTask.status);
+
+        if (!routeLineRef.current) {
+            routeLineRef.current = new google.maps.Polyline({
+                map,
+                geodesic: true,
+                strokeColor: '#0095FF',
+                strokeOpacity: 0.92,
+                strokeWeight: 4,
+            });
+        }
+
+        routeLineRef.current.setPath(trail.map((point: [number, number]) => ({ lat: point[1], lng: point[0] })));
+
+        if (activeTask.destination && !areSamePoint(activeTask.lastPosition, [activeTask.destination.lng, activeTask.destination.lat])) {
+            if (!connectorLineRef.current) {
+                connectorLineRef.current = new google.maps.Polyline({
+                    map,
+                    geodesic: true,
+                    strokeColor: '#0EA5E9',
+                    strokeOpacity: 0.75,
+                    strokeWeight: 3,
+                    icons: [{
+                        icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
+                        offset: '0',
+                        repeat: '12px',
+                    }],
+                });
+            }
+
+            connectorLineRef.current.setPath([
+                { lat: activeTask.lastPosition[1], lng: activeTask.lastPosition[0] },
+                { lat: activeTask.destination.lat, lng: activeTask.destination.lng },
+            ]);
+        } else if (connectorLineRef.current) {
+            connectorLineRef.current.setMap(null);
+            connectorLineRef.current = null;
+        }
+
+        if (!originMarkerRef.current) {
+            originMarkerRef.current = new google.maps.Marker({
+                map,
+                position: { lat: originPoint[1], lng: originPoint[0] },
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 7,
+                    fillColor: '#2563EB',
+                    fillOpacity: 1,
+                    strokeColor: '#FFFFFF',
+                    strokeWeight: 2,
+                },
+            });
+        } else {
+            originMarkerRef.current.setPosition({ lat: originPoint[1], lng: originPoint[0] });
+        }
+
+        if (!agentMarkerRef.current) {
+            agentMarkerRef.current = new google.maps.Marker({
+                map,
+                position: { lat: activeTask.lastPosition[1], lng: activeTask.lastPosition[0] },
+                title: activeTask.agentName,
+                label: {
+                    text: (activeTask.agentName || 'A').slice(0, 1).toUpperCase(),
+                    color: '#FFFFFF',
+                    fontWeight: '700',
+                },
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 12,
+                    fillColor: '#0F172A',
+                    fillOpacity: 0.93,
+                    strokeColor: '#FFFFFF',
+                    strokeWeight: 2,
+                },
+            });
+        } else {
+            agentMarkerRef.current.setPosition({ lat: activeTask.lastPosition[1], lng: activeTask.lastPosition[0] });
+        }
+
+        if (activeTask.destination) {
+            const destinationColor =
+                markerKind === 'completed'
+                    ? '#334155'
+                    : markerKind === 'arrived'
+                        ? '#16A34A'
+                        : markerKind === 'near'
+                            ? '#D97706'
+                            : '#DC2626';
+
+            if (!destinationMarkerRef.current) {
+                destinationMarkerRef.current = new google.maps.Marker({
+                    map,
+                    position: { lat: activeTask.destination.lat, lng: activeTask.destination.lng },
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 8,
+                        fillColor: destinationColor,
+                        fillOpacity: 1,
+                        strokeColor: '#FFFFFF',
+                        strokeWeight: 3,
+                    },
+                });
+            } else {
+                destinationMarkerRef.current.setPosition({ lat: activeTask.destination.lat, lng: activeTask.destination.lng });
+                destinationMarkerRef.current.setIcon({
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 8,
+                    fillColor: destinationColor,
+                    fillOpacity: 1,
+                    strokeColor: '#FFFFFF',
+                    strokeWeight: 3,
+                });
+            }
+        } else if (destinationMarkerRef.current) {
+            destinationMarkerRef.current.setMap(null);
+            destinationMarkerRef.current = null;
+        }
+
+        if (!hasInitialFitRef.current && activeTask.destination) {
+            const bounds = new google.maps.LatLngBounds();
+            bounds.extend({ lat: activeTask.lastPosition[1], lng: activeTask.lastPosition[0] });
+            bounds.extend({ lat: activeTask.destination.lat, lng: activeTask.destination.lng });
+            trail.slice(-40).forEach((point) => bounds.extend({ lat: point[1], lng: point[0] }));
+            map.fitBounds(bounds, 80);
+            hasInitialFitRef.current = true;
+            return;
+        }
+
+        hasInitialFitRef.current = true;
+        map.panTo({ lat: activeTask.lastPosition[1], lng: activeTask.lastPosition[0] });
+    }, [activeTask, clearOverlays]);
+
+    if (!googleApiKey) {
+        return (
+            <div className="flex items-center justify-center bg-dash-bg" style={{ height: 'calc(100vh - 64px)' }}>
+                <div className="bg-white rounded-3xl p-10 shadow-lg max-w-md text-center space-y-4">
+                    <h2 className="text-xl font-bold text-dash-dark">Google Maps API Key Required</h2>
+                    <div className="bg-gray-900 text-green-400 text-sm font-mono rounded-xl p-4 text-left">
+                        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=...
+                    </div>
+                    <p className="text-xs text-gray-400">Add it to your Next.js environment and restart the dev server.</p>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="relative w-full" style={{ height: 'calc(100vh - 64px)' }}>
+            <div ref={mapContainer} className="w-full h-full" />
+
+            {providerState.fallbackReason === 'missing_mapbox_token' && providerState.requestedProvider === 'mapbox' && (
+                <div className="absolute bottom-3 left-3 right-3 rounded-md bg-black/75 px-3 py-2 text-[11px] font-medium text-white">
+                    Mapbox is selected by admin, but NEXT_PUBLIC_MAPBOX_TOKEN is missing. Showing Google fallback.
+                </div>
+            )}
+        </div>
+    );
+}
+
+export function AgentMapView() {
+    const providerState = useEffectiveMapProvider();
+
+    if (providerState.effectiveProvider === 'google') {
+        return <GoogleAgentMapView providerState={providerState} />;
+    }
+
+    return <MapboxAgentMapView providerState={providerState} />;
 }
