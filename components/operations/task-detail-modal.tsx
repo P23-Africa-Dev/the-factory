@@ -18,8 +18,11 @@ import { useInternalUsers } from '@/hooks/use-internal-users';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { getAuthTokenFromDocument } from '@/lib/auth/session';
-import { SearchableSelect } from '@/components/ui/searchable-select';
-import { createMapboxTransformRequest, getMapboxPublicToken } from '@/lib/config/public-env';
+import {
+  createMapboxTransformRequest,
+  getGoogleMapsPublicApiKey,
+  getMapboxPublicToken,
+} from '@/lib/config/public-env';
 import { toast } from 'sonner';
 import { LocationPermissionGate } from '@/components/tracking/LocationPermissionGate';
 import { CompleteTaskSheet } from '@/components/tracking/CompleteTaskSheet';
@@ -27,6 +30,8 @@ import { useActiveTracking } from '@/components/tracking/active-tracking-provide
 import { startTaskTracking } from '@/lib/api/tracking';
 import { ApiRequestError } from '@/lib/api/onboarding';
 import type { GeoReading } from '@/types/tracking';
+import { useMapProvider } from '@/hooks/use-map-provider';
+import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 
 interface TaskDetailModalProps {
   isOpen: boolean;
@@ -57,14 +62,115 @@ function TaskLocationMap({
   agentAvatar?: string | null;
 }) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
-  const token = useMemo(() => getMapboxPublicToken(), []);
+  const mapboxMapRef = useRef<mapboxgl.Map | null>(null);
+  const googleMapRef = useRef<unknown | null>(null);
+  const googleMarkersRef = useRef<Array<{ setMap: (map: unknown | null) => void }>>([]);
+  const mapboxToken = useMemo(() => getMapboxPublicToken(), []);
+  const googleApiKey = useMemo(() => getGoogleMapsPublicApiKey(), []);
+  const mapProvider = useMapProvider();
   const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
 
   useEffect(() => {
-    if (!mapContainerRef.current || mapRef.current || !token || !hasCoordinates) return;
+    if (!mapContainerRef.current || !hasCoordinates) return;
 
-    mapboxgl.accessToken = token;
+    let cancelled = false;
+
+    const disposeGoogle = () => {
+      googleMarkersRef.current.forEach((marker) => marker.setMap(null));
+      googleMarkersRef.current = [];
+      googleMapRef.current = null;
+    };
+
+    const disposeMapbox = () => {
+      if (mapboxMapRef.current) {
+        mapboxMapRef.current.remove();
+        mapboxMapRef.current = null;
+      }
+    };
+
+    if (mapProvider === 'google') {
+      disposeMapbox();
+      mapContainerRef.current.innerHTML = '';
+
+      if (!googleApiKey) {
+        return () => {
+          disposeGoogle();
+        };
+      }
+
+      loadGoogleMapsApi(googleApiKey)
+        .then((google) => {
+          if (cancelled || !mapContainerRef.current) return;
+
+          const lat = latitude as number;
+          const lng = longitude as number;
+
+          const map = new google.maps.Map(mapContainerRef.current, {
+            center: { lat, lng },
+            zoom: 13.5,
+            disableDefaultUI: true,
+            zoomControl: true,
+            mapTypeControl: false,
+            fullscreenControl: false,
+            streetViewControl: false,
+          });
+
+          googleMapRef.current = map;
+
+          const destinationMarker = new google.maps.Marker({
+            map,
+            position: { lat, lng },
+            title: 'Destination',
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: '#DC2626',
+              fillOpacity: 1,
+              strokeColor: '#FFFFFF',
+              strokeWeight: 3,
+            },
+          });
+
+          const agentMarker = new google.maps.Marker({
+            map,
+            position: { lat, lng },
+            title: agentName,
+            label: {
+              text: (agentName || 'A').slice(0, 1).toUpperCase(),
+              color: '#FFFFFF',
+              fontWeight: '700',
+            },
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 12,
+              fillColor: '#0F172A',
+              fillOpacity: 0.92,
+              strokeColor: '#FFFFFF',
+              strokeWeight: 2,
+            },
+          });
+
+          googleMarkersRef.current = [destinationMarker, agentMarker];
+        })
+        .catch(() => {
+          // Ignore here; fallback text is shown by render path when key is missing.
+        });
+
+      return () => {
+        cancelled = true;
+        disposeGoogle();
+      };
+    }
+
+    disposeGoogle();
+
+    if (!mapboxToken) {
+      return () => {
+        disposeMapbox();
+      };
+    }
+
+    mapboxgl.accessToken = mapboxToken;
 
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
@@ -75,9 +181,11 @@ function TaskLocationMap({
       transformRequest: createMapboxTransformRequest(),
     });
 
-    mapRef.current = map;
+    mapboxMapRef.current = map;
 
     map.on('load', () => {
+      if (cancelled) return;
+
       const destination = document.createElement('div');
       destination.style.cssText =
         'width:16px;height:16px;border-radius:999px;background:#DC2626;border:3px solid white;box-shadow:0 2px 8px rgba(220,38,38,0.45);';
@@ -106,10 +214,10 @@ function TaskLocationMap({
     });
 
     return () => {
-      map.remove();
-      mapRef.current = null;
+      cancelled = true;
+      disposeMapbox();
     };
-  }, [agentAvatar, agentName, hasCoordinates, latitude, longitude, token]);
+  }, [agentAvatar, agentName, googleApiKey, hasCoordinates, latitude, longitude, mapProvider, mapboxToken]);
 
   if (!hasCoordinates) {
     return (
@@ -119,7 +227,15 @@ function TaskLocationMap({
     );
   }
 
-  if (!token) {
+  if (mapProvider === 'google' && !googleApiKey) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-[#eef0f3] text-[12px] font-medium text-gray-500 px-4 text-center">
+        Map preview requires NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.
+      </div>
+    );
+  }
+
+  if (mapProvider === 'mapbox' && !mapboxToken) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-[#eef0f3] text-[12px] font-medium text-gray-500 px-4 text-center">
         Map preview requires NEXT_PUBLIC_MAPBOX_TOKEN.
@@ -146,7 +262,6 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
     status: 'pending',
   });
   const [selectedAgentId, setSelectedAgentId] = useState('');
-  const [prevAssigneeId, setPrevAssigneeId] = useState<number | undefined>();
   const [reassignmentReason, setReassignmentReason] = useState('');
   const [showLocationGate, setShowLocationGate] = useState(false);
   const [commencing, setCommencing] = useState(false);
@@ -174,12 +289,12 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
     onSuccess: () => toast.success('Task reassignment rejected.'),
   });
 
-  const assigneeId = detailQuery.data?.assignee?.id;
-
-  if (assigneeId && assigneeId !== prevAssigneeId) {
-    setPrevAssigneeId(assigneeId);
-    setSelectedAgentId(String(assigneeId));
-  }
+  useEffect(() => {
+    const assigneeId = detailQuery.data?.assignee?.id;
+    if (assigneeId) {
+      setSelectedAgentId(String(assigneeId));
+    }
+  }, [detailQuery.data?.assignee?.id]);
 
   if (!isOpen || !task) return null;
 
@@ -568,14 +683,23 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                     {latestReassignment?.to_user?.name ?? 'New owner'}
                   </div>
                 ) : null}
-                <SearchableSelect
+                <select
                   value={selectedAgentId}
-                  onChange={setSelectedAgentId}
-                  options={loadingInternalUsers ? [] : eligibleUsers.map((c) => ({ value: String(c.id), label: `${c.name} (${c.email})` }))}
-                  placeholder={loadingInternalUsers ? "Loading agents…" : "Select agent"}
-                  disabled={hasPendingReassignment}
+                  onChange={(event) => setSelectedAgentId(event.target.value)}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-white"
-                />
+                  disabled={hasPendingReassignment}
+                >
+                  <option value="">Select agent</option>
+                  {loadingInternalUsers ? (
+                    <option value="" disabled>Loading agents...</option>
+                  ) : (
+                    eligibleUsers.map((candidate) => (
+                      <option key={candidate.id} value={String(candidate.id)}>
+                        {candidate.name} ({candidate.email})
+                      </option>
+                    ))
+                  )}
+                </select>
                 <textarea
                   value={reassignmentReason}
                   onChange={(event) => setReassignmentReason(event.target.value)}

@@ -1,9 +1,25 @@
 export const MAPBOX_PUBLIC_TOKEN_ENV = 'NEXT_PUBLIC_MAPBOX_TOKEN';
 export const MAPBOX_ALLOWED_HOSTS_ENV = 'NEXT_PUBLIC_MAPBOX_ALLOWED_HOSTS';
+export const GOOGLE_MAPS_PUBLIC_API_KEY_ENV = 'NEXT_PUBLIC_GOOGLE_MAPS_API_KEY';
+export const MAP_PROVIDER_ENV = 'NEXT_PUBLIC_MAP_PROVIDER';
 export const TRACKING_WS_URL_ENV = 'NEXT_PUBLIC_TRACKING_WS_URL';
 
 export function getMapboxPublicToken(): string {
     return process.env.NEXT_PUBLIC_MAPBOX_TOKEN?.trim() ?? '';
+}
+
+export function getGoogleMapsPublicApiKey(): string {
+    return process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ?? '';
+}
+
+export function getDefaultMapProvider(): 'mapbox' | 'google' {
+    const configured = process.env.NEXT_PUBLIC_MAP_PROVIDER?.trim().toLowerCase();
+
+    if (configured === 'google') {
+        return 'google';
+    }
+
+    return 'mapbox';
 }
 
 function resolveMapboxAllowedHosts(): Set<string> {
