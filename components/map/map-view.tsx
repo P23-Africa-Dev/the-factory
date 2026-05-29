@@ -806,7 +806,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
     loadGoogleMapsApi(googleApiKey)
       .then((google) => {
-        const googleMaps = google as GoogleMapsNamespaceLike;
+        const googleMaps = google as unknown as GoogleMapsNamespaceLike;
 
         if (cancelled || !mapContainer.current) {
           return;

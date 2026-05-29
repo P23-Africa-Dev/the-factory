@@ -9,7 +9,7 @@ import { useDashboardOverview } from "@/hooks/use-dashboard";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { cn } from "@/lib/utils/sample";
 import { useAuthStore } from "@/store/auth";
-import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -280,7 +280,7 @@ export function WeeklyTasks() {
         <div className="w-full h-px bg-[#D9D6D6] mb-3.75" />
 
         <div className="mb-6.5 relative px-5">
-          <p className="text-[14px] font-medium text-[#34373C]">Ongoing Task</p>
+          <p className="text-[14px] font-medium text-[#34373C]">Ongoing Meeting</p>
 
           <div className="w-full h-5 bg-[#F5F5F5] rounded-full p-1.5 shadow-inner ring-1 ring-dash-dark/5 mt-6.5">
             <div className="w-[20%] h-full bg-[#FD6046] rounded-full shadow-lg relative">
@@ -302,7 +302,7 @@ export function WeeklyTasks() {
         </div>
 
         <button className="w-full bg-[#D056DC] text-white py-5 rounded-4xl mb-4 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
-          View All Task
+          View All Meetings
           <Image
             src={ArrowUp}
             alt="Arrow Up Right Icon"
@@ -479,22 +479,25 @@ export function WeeklyTasksAgents() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-10 text-gray-300 w-full grow">
-              <p className="text-[11px] font-medium">No tasks for this day</p>
+            <div
+              className="rounded-[40px] px-4 py-5 flex items-center justify-center text-white w-full"
+              style={{ backgroundColor: "#7BB6B8" }}
+            >
+              <p className="text-[13px] font-semibold opacity-90">No meetings for this day</p>
             </div>
           )}
         </div>
 
-        {/* <div className="flex justify-end mb-4 px-4">
+        <div className="flex justify-end mb-4 px-4">
           <button className="w-10 h-10 rounded-full border-2 border-[#7BB6B8] flex items-center justify-center text-[#7BB6B8] hover:bg-[#7BB6B8]/5 transition-all">
             <Plus size={24} />
           </button>
-        </div> */}
+        </div>
 
         <div className="w-full h-px bg-[#D9D6D6] mb-2.75" />
 
         <div className="mb-6.5 relative px-5">
-          <p className="text-[14px] font-medium text-[#34373C]">Ongoing Task</p>
+          <p className="text-[14px] font-medium text-[#34373C]">Ongoing Meeting</p>
 
           <div className="w-full h-5 bg-[#F5F5F5] rounded-full p-1.5 shadow-inner ring-1 ring-dash-dark/5 mt-6.5">
             <div className="h-full bg-[#FD6046] rounded-full shadow-lg relative" style={{ width: `${progressPercent}%` }}>
@@ -522,7 +525,7 @@ export function WeeklyTasksAgents() {
         </div>
 
         <button onClick={() => router.push(tasksRoute)} className="w-full bg-[#8B2FA1] text-white py-5 rounded-4xl mb-4 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
-          View All Task
+          View All Meetings
           <Image
             src={ArrowUp}
             alt="Arrow Up Right Icon"

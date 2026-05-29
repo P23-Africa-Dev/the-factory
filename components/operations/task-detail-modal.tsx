@@ -33,6 +33,14 @@ import type { GeoReading } from '@/types/tracking';
 import { useEffectiveMapProvider } from '@/hooks/use-effective-map-provider';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 
+type TaskGoogleMaps = {
+  maps: {
+    Map: new (el: HTMLElement, opts: Record<string, unknown>) => { [key: string]: unknown };
+    Marker: new (opts: Record<string, unknown>) => { setMap: (map: unknown) => void; [key: string]: unknown };
+    SymbolPath: { CIRCLE: number };
+  };
+};
+
 interface TaskDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -105,8 +113,9 @@ function TaskLocationMap({
       }
 
       loadGoogleMapsApi(googleApiKey)
-        .then((google) => {
-          if (cancelled || !mapContainerRef.current) return;
+        .then((raw) => {
+          if (cancelled || !mapContainerRef.current || !raw) return;
+          const google = raw as unknown as TaskGoogleMaps;
 
           const lat = latitude as number;
           const lng = longitude as number;
