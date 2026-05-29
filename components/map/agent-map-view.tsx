@@ -504,7 +504,7 @@ function GoogleAgentMapView({ providerState }: { providerState: EffectiveMapProv
 
         loadGoogleMapsApi(googleApiKey)
             .then((google) => {
-                const googleMaps = google as GoogleMapsNamespaceLike;
+                const googleMaps = google as unknown as GoogleMapsNamespaceLike;
 
                 if (cancelled || !mapContainer.current) return;
 

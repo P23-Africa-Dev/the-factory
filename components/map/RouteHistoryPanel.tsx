@@ -15,6 +15,19 @@ import { useTaskRoute } from '@/hooks/use-tracking';
 import { useEffectiveMapProvider } from '@/hooks/use-effective-map-provider';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 
+type RouteGoogleMaps = {
+  maps: {
+    Map: new (el: HTMLElement, opts: Record<string, unknown>) => {
+      fitBounds: (bounds: unknown, padding?: unknown) => void;
+      [key: string]: unknown;
+    };
+    Polyline: new (opts: Record<string, unknown>) => { setMap: (m: unknown) => void };
+    Marker: new (opts: Record<string, unknown>) => { setMap: (m: unknown) => void };
+    LatLngBounds: new () => { extend: (pt: unknown) => void };
+    SymbolPath: { CIRCLE: number };
+  };
+};
+
 function RouteMap({
   polyline,
   start,
@@ -68,10 +81,11 @@ function RouteMap({
       }
 
       loadGoogleMapsApi(googleApiKey)
-        .then((google) => {
-          if (cancelled || !containerRef.current) {
+        .then((raw) => {
+          if (cancelled || !containerRef.current || !raw) {
             return;
           }
+          const google = raw as RouteGoogleMaps;
 
           const center =
             polyline.length > 0
