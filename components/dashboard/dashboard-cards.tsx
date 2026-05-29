@@ -9,7 +9,7 @@ import { useDashboardOverview } from "@/hooks/use-dashboard";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { cn } from "@/lib/utils/sample";
 import { useAuthStore } from "@/store/auth";
-import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -479,17 +479,20 @@ export function WeeklyTasksAgents() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-10 text-gray-300 w-full grow">
-              <p className="text-[11px] font-medium">No meetings for this day</p>
+            <div
+              className="rounded-[40px] px-4 py-5 flex items-center justify-center text-white w-full"
+              style={{ backgroundColor: "#7BB6B8" }}
+            >
+              <p className="text-[13px] font-semibold opacity-90">No meetings for this day</p>
             </div>
           )}
         </div>
 
-        {/* <div className="flex justify-end mb-4 px-4">
+        <div className="flex justify-end mb-4 px-4">
           <button className="w-10 h-10 rounded-full border-2 border-[#7BB6B8] flex items-center justify-center text-[#7BB6B8] hover:bg-[#7BB6B8]/5 transition-all">
             <Plus size={24} />
           </button>
-        </div> */}
+        </div>
 
         <div className="w-full h-px bg-[#D9D6D6] mb-2.75" />
 
