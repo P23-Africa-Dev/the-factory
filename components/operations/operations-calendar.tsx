@@ -172,7 +172,7 @@ export function OperationsCalendar() {
         <>
             <div className="relative flex min-h-[430px] flex-col">
                 <div className="mb-4 flex items-center justify-between px-2">
-                    <h3 className="text-[17px] font-extrabold tracking-tight text-[#094B5C]">Schedule Self Task</h3>
+                    <h3 className="text-[17px] font-extrabold tracking-tight text-[#094B5C]">Schedule Self Meeting</h3>
                     <MoreVertical size={20} className="cursor-pointer text-[#094B5C]" strokeWidth={2.5} />
                 </div>
 
@@ -240,13 +240,13 @@ export function OperationsCalendar() {
                         ))
                     ) : (
                         <div className="rounded-[20px] border border-dashed border-gray-200 px-4 py-6 text-center text-[12px] font-medium text-gray-400">
-                            No self tasks scheduled for this day.
+                            No self meeting scheduled for this day.
                         </div>
                     )}
                 </div>
 
                 <div className="mb-2 border-t border-[#D9D6D6] pt-3">
-                    <p className="mb-2 px-1 text-[13px] font-semibold text-[#34373C]">Upcoming Self Tasks</p>
+                    <p className="mb-2 px-1 text-[13px] font-semibold text-[#34373C]">Upcoming Self Meetings</p>
                     {upcomingTasks.length > 0 ? (
                         <div className="space-y-2">
                             {upcomingTasks.map((task) => (
@@ -277,7 +277,7 @@ export function OperationsCalendar() {
                 isOpen={showCreateModal}
                 onClose={() => setShowCreateModal(false)}
                 defaultDate={selectedDate}
-                title="Schedule Self Task"
+                title="Schedule Self Meeting"
             />
         </>
     );
