@@ -1,20 +1,25 @@
-let googleMapsPromise: Promise<any> | null = null;
+interface GoogleWindow extends Window {
+  google?: { maps: object };
+  [key: string]: unknown;
+}
+
+let googleMapsPromise: Promise<GoogleWindow["google"]> | null = null;
 
 function hasGoogleMaps(): boolean {
     if (typeof window === 'undefined') {
         return false;
     }
 
-    return !!(window as any).google?.maps;
+    return !!(window as GoogleWindow).google?.maps;
 }
 
-export function loadGoogleMapsApi(apiKey: string): Promise<any> {
+export function loadGoogleMapsApi(apiKey: string): Promise<GoogleWindow["google"]> {
     if (!apiKey) {
         return Promise.reject(new Error('Missing Google Maps API key.'));
     }
 
     if (hasGoogleMaps()) {
-        return Promise.resolve((window as any).google);
+        return Promise.resolve((window as GoogleWindow).google);
     }
 
     if (googleMapsPromise) {
@@ -30,9 +35,9 @@ export function loadGoogleMapsApi(apiKey: string): Promise<any> {
         const callbackName = `factory23GoogleMapsInit_${Date.now()}`;
         const script = document.createElement('script');
 
-        (window as any)[callbackName] = () => {
-            resolve((window as any).google);
-            delete (window as any)[callbackName];
+        (window as GoogleWindow)[callbackName] = () => {
+            resolve((window as GoogleWindow).google);
+            delete (window as GoogleWindow)[callbackName];
         };
 
         script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&loading=async&callback=${callbackName}`;
@@ -40,7 +45,7 @@ export function loadGoogleMapsApi(apiKey: string): Promise<any> {
         script.defer = true;
         script.onerror = () => {
             googleMapsPromise = null;
-            delete (window as any)[callbackName];
+            delete (window as GoogleWindow)[callbackName];
             reject(new Error('Failed to load Google Maps JavaScript API.'));
         };
 
