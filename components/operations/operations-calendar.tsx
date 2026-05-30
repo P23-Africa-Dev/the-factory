@@ -4,8 +4,8 @@ import React, { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, MoreVertical } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
-import { useTasks } from '@/hooks/use-tasks';
-import { ScheduleTaskModal } from './schedule-task-modal';
+import { useMeetings } from '@/hooks/use-meetings';
+import { ScheduleMeetingModal } from './schedule-meeting-modal';
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTHS = [
@@ -13,6 +13,11 @@ const MONTHS = [
     'July', 'August', 'September', 'October', 'November', 'December',
 ];
 const TASK_COLORS = ['#7EB5AE', '#E1A6E7', '#9CC7F9'] as const;
+
+type OperationsCalendarProps = {
+    projectId?: string | number;
+    taskId?: string | number;
+};
 
 function toDateKey(date: Date): string {
     const year = date.getFullYear();
@@ -49,42 +54,53 @@ function formatDateLabel(value?: string): string {
     });
 }
 
-export function OperationsCalendar() {
+export function OperationsCalendar({ projectId, taskId }: OperationsCalendarProps) {
     const user = useAuthStore((s) => s.user);
-    const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+    const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [month, setMonth] = useState(selectedDate.getMonth());
     const [year, setYear] = useState(selectedDate.getFullYear());
     const [showCreateModal, setShowCreateModal] = useState(false);
 
-    const { data: tasksData, isPending } = useTasks({
-        company_id: companyId ?? undefined,
+    const canManageMeetings = role === 'owner' || role === 'admin' || role === 'supervisor';
+
+    const { data: meetingsData, isPending } = useMeetings({
+        company_id: canManageMeetings ? (companyId ?? undefined) : undefined,
+        project_id: projectId,
+        task_id: taskId,
+        per_page: 100,
     });
 
     const viewerId = Number(user?.id ?? 0);
+    const hasMeetingContext = projectId != null || taskId != null;
 
-    const selfTasks = useMemo(() => {
-        return (tasksData?.tasks ?? []).filter((task) => {
-            if (task.project_id !== null && task.project_id !== undefined) {
+    const selfMeetings = useMemo(() => {
+        const meetings = meetingsData?.meetings ?? [];
+
+        if (hasMeetingContext) {
+            return meetings;
+        }
+
+        return meetings.filter((meeting) => {
+            if (meeting.project_id !== null && meeting.project_id !== undefined) {
                 return false;
             }
 
-            const createdBy = Number(task.created_by_user_id ?? 0);
-            const assignedAgentId = Number(task.assigned_agent_id ?? 0);
+            const createdBy = Number(meeting.created_by_user_id ?? 0);
 
-            return viewerId > 0 && (createdBy === viewerId || assignedAgentId === viewerId);
+            return viewerId > 0 && createdBy === viewerId;
         });
-    }, [tasksData?.tasks, viewerId]);
+    }, [hasMeetingContext, meetingsData?.meetings, viewerId]);
 
-    const tasksByDate = useMemo(() => {
+    const meetingsByDate = useMemo(() => {
         const grouped: Record<string, Array<{ id: number; time: string; title: string; desc: string; bg: string; shadow: string }>> = {};
 
-        selfTasks.forEach((task, index) => {
-            if (!task.due_date) {
+        selfMeetings.forEach((meeting, index) => {
+            if (!meeting.start_at) {
                 return;
             }
 
-            const dueDate = new Date(task.due_date);
+            const dueDate = new Date(meeting.start_at);
             if (Number.isNaN(dueDate.getTime())) {
                 return;
             }
@@ -93,32 +109,34 @@ export function OperationsCalendar() {
             const color = TASK_COLORS[index % TASK_COLORS.length];
             grouped[dateKey] ??= [];
             grouped[dateKey].push({
-                id: task.id,
-                time: formatTimeLabel(task.due_date),
-                title: task.title,
-                desc: `Status: ${formatStatusLabel(task.status)}`,
+                id: meeting.id,
+                time: formatTimeLabel(meeting.start_at),
+                title: meeting.title,
+                desc: `Status: ${formatStatusLabel(meeting.status)}`,
                 bg: color,
                 shadow: color === '#7EB5AE' ? 'rgba(126,181,174,0.35)' : color === '#E1A6E7' ? 'rgba(225,166,231,0.35)' : 'rgba(156,199,249,0.35)',
             });
         });
 
         return grouped;
-    }, [selfTasks]);
+    }, [selfMeetings]);
 
-    const dayTasks = tasksByDate[toDateKey(selectedDate)] ?? [];
+    const dayTasks = meetingsByDate[toDateKey(selectedDate)] ?? [];
 
-    const upcomingTasks = useMemo(() => {
+    const upcomingMeetings = useMemo(() => {
         const now = new Date();
 
-        return selfTasks
-            .filter((task) => {
-                if (!task.due_date) return false;
-                const dueDate = new Date(task.due_date);
+        return selfMeetings
+            .filter((meeting) => {
+                if (!meeting.start_at) return false;
+                const dueDate = new Date(meeting.start_at);
                 return !Number.isNaN(dueDate.getTime()) && dueDate >= now;
             })
-            .sort((a, b) => new Date(a.due_date ?? '').getTime() - new Date(b.due_date ?? '').getTime())
+            .sort((a, b) => new Date(a.start_at ?? '').getTime() - new Date(b.start_at ?? '').getTime())
             .slice(0, 2);
-    }, [selfTasks]);
+    }, [selfMeetings]);
+
+    const modalSourcePage = taskId != null ? 'task' : projectId != null ? 'project' : 'operations';
 
     const prevMonth = () => {
         if (month === 0) {
@@ -206,8 +224,8 @@ export function OperationsCalendar() {
                                 </span>
                                 <div
                                     className={`flex h-8 w-8 items-center justify-center rounded-full text-[15px] transition-all ${selected
-                                            ? 'bg-[#F26442] font-semibold text-white shadow-lg'
-                                            : 'font-medium text-gray-300 hover:bg-gray-100 hover:text-[#094B5C]'
+                                        ? 'bg-[#F26442] font-semibold text-white shadow-lg'
+                                        : 'font-medium text-gray-300 hover:bg-gray-100 hover:text-[#094B5C]'
                                         }`}
                                 >
                                     {day}
@@ -218,9 +236,13 @@ export function OperationsCalendar() {
                 </div>
 
                 <div className="mb-3 space-y-2">
-                    {isPending ? (
+                    {!canManageMeetings ? (
+                        <div className="rounded-[20px] border border-dashed border-gray-200 px-4 py-6 text-center text-[12px] font-medium text-gray-400">
+                            Meeting management is available for owners, admins, and supervisors.
+                        </div>
+                    ) : isPending ? (
                         <div className="rounded-[20px] border border-gray-100 bg-gray-50 px-4 py-3 text-[12px] text-gray-500">
-                            Loading self tasks...
+                            Loading meetings...
                         </div>
                     ) : dayTasks.length > 0 ? (
                         dayTasks.map((item) => (
@@ -247,37 +269,41 @@ export function OperationsCalendar() {
 
                 <div className="mb-2 border-t border-[#D9D6D6] pt-3">
                     <p className="mb-2 px-1 text-[13px] font-semibold text-[#34373C]">Upcoming Self Meetings</p>
-                    {upcomingTasks.length > 0 ? (
+                    {upcomingMeetings.length > 0 ? (
                         <div className="space-y-2">
-                            {upcomingTasks.map((task) => (
-                                <div key={task.id} className="rounded-[16px] bg-[#F8FAFB] px-4 py-3">
-                                    <p className="text-[12px] font-bold text-[#0B1215]">{task.title}</p>
+                            {upcomingMeetings.map((meeting) => (
+                                <div key={meeting.id} className="rounded-[16px] bg-[#F8FAFB] px-4 py-3">
+                                    <p className="text-[12px] font-bold text-[#0B1215]">{meeting.title}</p>
                                     <p className="mt-1 text-[11px] text-gray-500">
-                                        {formatDateLabel(task.due_date)} • {formatStatusLabel(task.status)}
+                                        {formatDateLabel(meeting.start_at)} • {formatStatusLabel(meeting.status)}
                                     </p>
                                 </div>
                             ))}
                         </div>
                     ) : (
-                        <p className="px-1 text-[11px] text-gray-400">No upcoming standalone tasks.</p>
+                        <p className="px-1 text-[11px] text-gray-400">No upcoming standalone meetings.</p>
                     )}
                 </div>
 
                 <div className="absolute bottom-[50px] right-2">
                     <button
+                        disabled={!canManageMeetings}
                         onClick={() => setShowCreateModal(true)}
-                        className="flex h-8 w-8 items-center justify-center rounded-full border-[2px] border-[#7EB5AE] text-[#7EB5AE] shadow-sm transition-all hover:bg-[#7EB5AE] hover:text-white"
+                        className="flex h-8 w-8 items-center justify-center rounded-full border-[2px] border-[#7EB5AE] text-[#7EB5AE] shadow-sm transition-all hover:bg-[#7EB5AE] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
                         <Plus size={10} strokeWidth={2.5} />
                     </button>
                 </div>
             </div>
 
-            <ScheduleTaskModal
+            <ScheduleMeetingModal
                 isOpen={showCreateModal}
                 onClose={() => setShowCreateModal(false)}
                 defaultDate={selectedDate}
-                title="Schedule Self Meeting"
+                title={projectId != null ? 'Schedule Project Meeting' : taskId != null ? 'Schedule Task Meeting' : 'Schedule Self Meeting'}
+                sourcePage={modalSourcePage}
+                projectId={projectId}
+                taskId={taskId}
             />
         </>
     );

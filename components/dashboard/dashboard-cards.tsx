@@ -6,6 +6,7 @@ import happyIcon from "@/assets/images/happy.png";
 import SearchListIcon from "@/assets/images/search-list-icon.png";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { useDashboardOverview } from "@/hooks/use-dashboard";
+import { useMeetings } from "@/hooks/use-meetings";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { cn } from "@/lib/utils/sample";
 import { useAuthStore } from "@/store/auth";
@@ -13,6 +14,7 @@ import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { ScheduleMeetingModal } from "@/components/operations/schedule-meeting-modal";
 
 export function TopCustomers() {
   const customers = [
@@ -326,6 +328,7 @@ export function WeeklyTasksAgents() {
   const [filter, setFilter] = useState<TaskFilter>("Daily");
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [showCreateMeetingModal, setShowCreateMeetingModal] = useState(false);
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const basePath = role === "agent" ? "/agent" : "/admin";
@@ -333,6 +336,13 @@ export function WeeklyTasksAgents() {
   const { data: overview } = useDashboardOverview({
     company_id: companyId ?? undefined,
     basePath,
+  });
+
+  const canManageMeetings = role === "owner" || role === "admin" || role === "supervisor";
+
+  const { data: meetingsData } = useMeetings({
+    company_id: canManageMeetings ? (companyId ?? undefined) : undefined,
+    per_page: 100,
   });
 
   const formattedDate = selectedDate.toLocaleDateString("en-US", {
@@ -344,12 +354,12 @@ export function WeeklyTasksAgents() {
   const tasksByDate = useMemo(() => {
     const grouped: Record<string, Array<{ time: string; title: string; desc: string; color: string }>> = {};
 
-    (overview?.calendar_task_feed ?? []).forEach((task, index) => {
-      if (!task.due_at) {
+    (meetingsData?.meetings ?? []).forEach((meeting, index) => {
+      if (!meeting.start_at) {
         return;
       }
 
-      const dueDate = new Date(task.due_at);
+      const dueDate = new Date(meeting.start_at);
       if (Number.isNaN(dueDate.getTime())) {
         return;
       }
@@ -357,15 +367,15 @@ export function WeeklyTasksAgents() {
       const dateKey = toDateKey(dueDate);
       grouped[dateKey] ??= [];
       grouped[dateKey].push({
-        time: formatTimeLabel(task.due_at),
-        title: task.title,
-        desc: task.status ? `Status: ${formatPipelineLabel(task.status)}` : "Scheduled task",
+        time: formatTimeLabel(meeting.start_at),
+        title: meeting.title,
+        desc: meeting.status ? `Status: ${formatPipelineLabel(meeting.status)}` : "Scheduled meeting",
         color: TASK_COLORS[index % TASK_COLORS.length],
       });
     });
 
     return grouped;
-  }, [overview?.calendar_task_feed]);
+  }, [meetingsData?.meetings]);
 
   const dayTasks = tasksByDate[toDateKey(selectedDate)] ?? [];
   const ongoingTask = overview?.ongoing_tasks?.[0] ?? null;
@@ -489,7 +499,7 @@ export function WeeklyTasksAgents() {
         </div>
 
         <div className="flex justify-end mb-4 px-4">
-          <button className="w-10 h-10 rounded-full border-2 border-[#7BB6B8] flex items-center justify-center text-[#7BB6B8] hover:bg-[#7BB6B8]/5 transition-all">
+          <button disabled={!canManageMeetings} onClick={() => setShowCreateMeetingModal(true)} className="w-10 h-10 rounded-full border-2 border-[#7BB6B8] flex items-center justify-center text-[#7BB6B8] hover:bg-[#7BB6B8]/5 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
             <Plus size={24} />
           </button>
         </div>
@@ -535,6 +545,14 @@ export function WeeklyTasksAgents() {
           />
         </button>
       </div>
+
+      <ScheduleMeetingModal
+        isOpen={showCreateMeetingModal}
+        onClose={() => setShowCreateMeetingModal(false)}
+        defaultDate={selectedDate}
+        title="Schedule Meeting"
+        sourcePage="dashboard"
+      />
     </div>
   );
 }

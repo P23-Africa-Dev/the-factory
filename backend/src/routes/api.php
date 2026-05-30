@@ -12,6 +12,8 @@ use App\Http\Controllers\Api\V1\Auth\ResendOtpController;
 use App\Http\Controllers\Api\V1\Auth\ResetPasswordController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
+use App\Http\Controllers\Api\V1\Calendar\CalendarIntegrationController;
+use App\Http\Controllers\Api\V1\Calendar\MeetingController;
 use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
@@ -55,6 +57,9 @@ Route::get('/currencies', [CurrencyController::class, 'index'])
 Route::get('/map/provider', MapProviderController::class)
     ->middleware('throttle:60,1')
     ->name('map.provider');
+Route::get('/calendar/integration/callback', [CalendarIntegrationController::class, 'callback'])
+    ->middleware('throttle:30,1')
+    ->name('calendar.integration.callback');
 
 Route::prefix('auth')->name('auth.')->group(function (): void {
     Route::post('/register', RegisterController::class)
@@ -164,6 +169,36 @@ Route::middleware('auth:sanctum')->group(function (): void {
             ->name('push-subscriptions.refresh');
         Route::delete('/push-subscriptions', [PushSubscriptionController::class, 'destroy'])
             ->name('push-subscriptions.destroy');
+    });
+
+    Route::prefix('calendar/integration')->name('calendar.integration.')->group(function (): void {
+        Route::get('/status', [CalendarIntegrationController::class, 'status'])->name('status');
+        Route::post('/connect-url', [CalendarIntegrationController::class, 'connectUrl'])
+            ->middleware('throttle:20,1')
+            ->name('connect-url');
+        Route::delete('/disconnect', [CalendarIntegrationController::class, 'disconnect'])
+            ->middleware('throttle:20,1')
+            ->name('disconnect');
+    });
+
+    Route::prefix('meetings')->name('meetings.')->group(function (): void {
+        Route::get('/', [MeetingController::class, 'index'])->name('index');
+        Route::get('/attendees', [MeetingController::class, 'attendees'])
+            ->middleware('throttle:30,1')
+            ->name('attendees');
+        Route::post('/', [MeetingController::class, 'store'])
+            ->middleware('throttle:20,1')
+            ->name('store');
+        Route::get('/{meeting}', [MeetingController::class, 'show'])->name('show');
+        Route::patch('/{meeting}', [MeetingController::class, 'update'])
+            ->middleware('throttle:20,1')
+            ->name('update');
+        Route::delete('/{meeting}', [MeetingController::class, 'destroy'])
+            ->middleware('throttle:20,1')
+            ->name('destroy');
+        Route::post('/{meeting}/resync', [MeetingController::class, 'resync'])
+            ->middleware('throttle:20,1')
+            ->name('resync');
     });
 
     // Canonical management endpoints.

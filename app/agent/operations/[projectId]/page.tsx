@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { ChevronLeft, SlidersHorizontal, BookmarkPlus } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { TaskBoard } from "@/components/operations/task-board";
@@ -138,7 +138,9 @@ function CustomLabel({
 // ─── Page content ─────────────────────────────────────────────────────────────
 function ProjectTasksContent() {
   const router = useRouter();
+  const params = useParams<{ projectId?: string }>();
   const basePath = "/agent";
+  const projectId = params?.projectId ?? undefined;
 
   const { containers, addItem, moveItem, moveToContainer, moveBetweenContainers, findContainer } =
     useDragAndDrop(INITIAL_DATA);
@@ -272,7 +274,7 @@ function ProjectTasksContent() {
           </div>
 
           {/* Calendar */}
-          <OperationsCalendar />
+          <OperationsCalendar projectId={projectId} />
         </div>
       </div>
 

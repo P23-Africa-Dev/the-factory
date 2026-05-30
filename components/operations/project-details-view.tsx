@@ -425,7 +425,7 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
             </div>
           </div>
 
-          <OperationsCalendar />
+          <OperationsCalendar projectId={projectId} />
         </div>
       </div>
 

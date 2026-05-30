@@ -218,4 +218,19 @@ class User extends Authenticatable
     {
         return $this->hasMany(AttendancePayrollSummary::class);
     }
+
+    public function ownedCalendarConnections(): HasMany
+    {
+        return $this->hasMany(CompanyCalendarConnection::class, 'owner_user_id');
+    }
+
+    public function createdMeetings(): HasMany
+    {
+        return $this->hasMany(Meeting::class, 'created_by_user_id');
+    }
+
+    public function meetingAttendances(): HasMany
+    {
+        return $this->hasMany(MeetingAttendee::class);
+    }
 }

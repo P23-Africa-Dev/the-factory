@@ -71,4 +71,14 @@ class Company extends Model
     {
         return $this->hasMany(AttendancePayrollSummary::class);
     }
+
+    public function calendarConnection(): HasOne
+    {
+        return $this->hasOne(CompanyCalendarConnection::class);
+    }
+
+    public function meetings(): HasMany
+    {
+        return $this->hasMany(Meeting::class);
+    }
 }
