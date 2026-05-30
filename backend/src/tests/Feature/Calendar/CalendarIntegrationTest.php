@@ -25,6 +25,9 @@ class CalendarIntegrationTest extends TestCase
         config()->set('services.google_calendar.client_secret', 'google-client-secret');
         config()->set('services.google_calendar.redirect_uri', 'http://localhost:8080/api/v1/calendar/integration/callback');
         config()->set('services.google_calendar.scopes', [
+            'openid',
+            'email',
+            'profile',
             'https://www.googleapis.com/auth/calendar',
             'https://www.googleapis.com/auth/calendar.events',
         ]);
@@ -50,6 +53,9 @@ class CalendarIntegrationTest extends TestCase
             'https://accounts.google.com/o/oauth2/v2/auth?',
             (string) $response->json('data.authorization_url'),
         );
+        $this->assertStringContainsString('openid', (string) $response->json('data.authorization_url'));
+        $this->assertStringContainsString('email', (string) $response->json('data.authorization_url'));
+        $this->assertStringContainsString('profile', (string) $response->json('data.authorization_url'));
     }
 
     public function test_admin_can_request_google_calendar_connect_url(): void
@@ -72,6 +78,9 @@ class CalendarIntegrationTest extends TestCase
             'https://accounts.google.com/o/oauth2/v2/auth?',
             (string) $response->json('data.authorization_url'),
         );
+        $this->assertStringContainsString('openid', (string) $response->json('data.authorization_url'));
+        $this->assertStringContainsString('email', (string) $response->json('data.authorization_url'));
+        $this->assertStringContainsString('profile', (string) $response->json('data.authorization_url'));
     }
 
     public function test_agent_cannot_request_google_calendar_connect_url(): void
