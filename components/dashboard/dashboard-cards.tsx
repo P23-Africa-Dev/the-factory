@@ -364,33 +364,28 @@ export function WeeklyTasksAgents() {
     day: "numeric",
   });
 
-  const tasksByDate = useMemo(() => {
-    const grouped: Record<string, Array<{ time: string; title: string; desc: string; color: string }>> = {};
+  const upcomingMeetings = useMemo(() => {
+    const now = Date.now();
 
-    (meetingsData?.meetings ?? []).forEach((meeting, index) => {
-      if (!meeting.start_at) {
-        return;
-      }
-
-      const dueDate = new Date(meeting.start_at);
-      if (Number.isNaN(dueDate.getTime())) {
-        return;
-      }
-
-      const dateKey = toDateKey(dueDate);
-      grouped[dateKey] ??= [];
-      grouped[dateKey].push({
+    return (meetingsData?.meetings ?? [])
+      .filter((meeting) => meeting.status === "scheduled" && Boolean(meeting.start_at))
+      .map((meeting) => {
+        const start = new Date(meeting.start_at);
+        return {
+          meeting,
+          startsAt: start,
+        };
+      })
+      .filter(({ startsAt }) => !Number.isNaN(startsAt.getTime()) && startsAt.getTime() >= now)
+      .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
+      .slice(0, 2)
+      .map(({ meeting }, index) => ({
         time: formatTimeLabel(meeting.start_at),
         title: meeting.title,
         desc: meeting.status ? `Status: ${formatPipelineLabel(meeting.status)}` : "Scheduled meeting",
         color: TASK_COLORS[index % TASK_COLORS.length],
-      });
-    });
-
-    return grouped;
+      }));
   }, [meetingsData?.meetings]);
-
-  const dayTasks = tasksByDate[toDateKey(selectedDate)] ?? [];
   const ongoingTask = overview?.ongoing_tasks?.[0] ?? null;
   const progressPercent = Math.max(
     0,
@@ -479,9 +474,9 @@ export function WeeklyTasksAgents() {
         </div>
 
         <div className="space-y-3 mb-4 min-h-[160px] flex flex-col justify-center">
-          {dayTasks.length > 0 ? (
+          {upcomingMeetings.length > 0 ? (
             <div className="space-y-3 w-full">
-              {dayTasks.map((task, i) => (
+              {upcomingMeetings.map((task, i) => (
                 <div
                   key={i}
                   className="rounded-[40px] px-4 py-3 flex items-center gap-4 text-white animate-in fade-in slide-in-from-right-4 duration-300 w-full"

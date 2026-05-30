@@ -8,10 +8,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Meeting extends Model
 {
     use HasFactory;
+    use SoftDeletes;
 
     protected $fillable = [
         'company_id',
@@ -26,6 +28,8 @@ class Meeting extends Model
         'end_at',
         'status',
         'source_page',
+        'reminder_config',
+        'meeting_settings',
         'google_event_id',
         'google_calendar_id',
         'google_meet_url',
@@ -41,6 +45,8 @@ class Meeting extends Model
         return [
             'start_at' => 'datetime',
             'end_at' => 'datetime',
+            'reminder_config' => 'array',
+            'meeting_settings' => 'array',
             'synced_at' => 'datetime',
             'external_updated_at' => 'datetime',
         ];
@@ -69,5 +75,10 @@ class Meeting extends Model
     public function attendees(): HasMany
     {
         return $this->hasMany(MeetingAttendee::class);
+    }
+
+    public function reminders(): HasMany
+    {
+        return $this->hasMany(MeetingReminder::class);
     }
 }

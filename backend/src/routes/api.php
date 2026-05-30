@@ -193,6 +193,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::patch('/{meeting}', [MeetingController::class, 'update'])
             ->middleware('throttle:20,1')
             ->name('update');
+        Route::post('/{meeting}/cancel', [MeetingController::class, 'cancel'])
+            ->middleware('throttle:20,1')
+            ->name('cancel');
         Route::delete('/{meeting}', [MeetingController::class, 'destroy'])
             ->middleware('throttle:20,1')
             ->name('destroy');

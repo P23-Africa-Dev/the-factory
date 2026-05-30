@@ -36,6 +36,9 @@ Schedule::command('tracking:prune')->dailyAt('02:00');
 // Dispatch due soon, overdue, and project deadline notification reminders.
 Schedule::command('notifications:dispatch-scheduled')->everyFifteenMinutes();
 
+// Dispatch due meeting reminders every minute.
+Schedule::command('meetings:dispatch-reminders')->everyMinute();
+
 // Auto close attendance records at/after configured company closing times.
 Schedule::command('attendance:auto-clockout')->everyTenMinutes();
 

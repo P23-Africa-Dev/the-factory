@@ -1,0 +1,26 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('meetings', function (Blueprint $table): void {
+            $table->json('reminder_config')->nullable()->after('source_page');
+            $table->json('meeting_settings')->nullable()->after('reminder_config');
+            $table->softDeletes();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('meetings', function (Blueprint $table): void {
+            $table->dropColumn(['reminder_config', 'meeting_settings', 'deleted_at']);
+        });
+    }
+};

@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services\Calendar;
 
-use App\Jobs\CancelMeetingInGoogleJob;
-use App\Jobs\SyncMeetingToGoogleJob;
+use App\Enums\NotificationCategory;
+use App\Enums\NotificationPriority;
+use App\Jobs\SendMeetingLifecycleEmailJob;
 use App\Models\CompanyCalendarConnection;
 use App\Models\Meeting;
 use App\Models\MeetingAttendee;
 use App\Models\User;
 use App\Services\Company\CompanyContextService;
+use App\Services\Notification\NotificationService;
 use App\Support\AvatarUrlResolver;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +23,12 @@ use Illuminate\Validation\ValidationException;
  */
 class MeetingService
 {
-    public function __construct(private readonly CompanyContextService $companyContextService) {}
+    public function __construct(
+        private readonly CompanyContextService $companyContextService,
+        private readonly MeetingSyncService $meetingSyncService,
+        private readonly MeetingReminderService $meetingReminderService,
+        private readonly NotificationService $notificationService,
+    ) {}
 
     public function listForUser(User $user, array $filters): Paginator
     {
@@ -30,9 +37,11 @@ class MeetingService
         $this->ensureMeetingAccessRole((string) $context['role']);
 
         $query = Meeting::query()
-            ->with(['attendees', 'creator'])
+            ->with(['attendees', 'creator', 'reminders'])
             ->where('company_id', $companyId)
             ->latest('start_at');
+
+        $this->applyMeetingVisibilityScope($query, $user, (string) $context['role']);
 
         if (! empty($filters['status'])) {
             $query->where('status', (string) $filters['status']);
@@ -91,6 +100,7 @@ class MeetingService
                 'end_at' => $data['end_at'],
                 'status' => 'scheduled',
                 'source_page' => $data['source_page'] ?? 'api',
+                'meeting_settings' => $data['meeting_settings'] ?? null,
                 'sync_status' => 'pending',
             ]);
 
@@ -100,13 +110,22 @@ class MeetingService
                 organizerEmail: $connection?->organizer_email,
             );
 
+            $this->meetingReminderService->syncForMeeting(
+                meeting: $meeting,
+                reminders: isset($data['reminders']) && is_array($data['reminders']) ? $data['reminders'] : [],
+            );
+
             return $meeting;
         });
 
-        SyncMeetingToGoogleJob::dispatch((int) $meeting->id);
+        $this->meetingSyncService->syncMeeting((int) $meeting->id);
+
+        $meeting = $this->loadMeeting($meeting->fresh());
+        $this->dispatchLifecycleEmails('created', $meeting, (string) $context['company']->name);
+        $this->notifyInternalAttendees($meeting, $companyId, 'created', $user->id);
 
         return [
-            'meeting' => $this->loadMeeting($meeting),
+            'meeting' => $meeting,
             'integration' => [
                 'connected' => true,
                 'status' => 'active',
@@ -123,6 +142,7 @@ class MeetingService
         $this->ensureMeetingAccessRole((string) $context['role']);
 
         $this->assertMeetingBelongsToCompany($meeting, $resolvedCompanyId);
+        $this->assertCanViewMeeting($user, $meeting, (string) $context['role']);
 
         return $this->loadMeeting($meeting);
     }
@@ -131,7 +151,8 @@ class MeetingService
     {
         $context = $this->companyContextService->resolve($user, $data['company_id'] ?? null);
         $companyId = (int) $context['company']->id;
-        $this->ensureManagementRole((string) $context['role']);
+        $this->assertCanManageMeeting($user, $meeting, (string) $context['role']);
+        $this->assertEditableByActor($user, $meeting, (string) $context['role']);
 
         $this->assertMeetingBelongsToCompany($meeting, $companyId);
         $connection = $this->activeConnection($companyId);
@@ -148,6 +169,7 @@ class MeetingService
                 'start_at' => $data['start_at'] ?? $meeting->start_at,
                 'end_at' => $data['end_at'] ?? $meeting->end_at,
                 'status' => $data['status'] ?? $meeting->status,
+                'meeting_settings' => array_key_exists('meeting_settings', $data) ? $data['meeting_settings'] : $meeting->meeting_settings,
                 'sync_status' => $hasActiveIntegration ? 'pending' : 'pending_setup',
                 'sync_error_message' => null,
             ]);
@@ -159,14 +181,25 @@ class MeetingService
                     organizerEmail: $connection?->organizer_email,
                 );
             }
+
+            if (array_key_exists('reminders', $data)) {
+                $this->meetingReminderService->syncForMeeting(
+                    meeting: $meeting,
+                    reminders: is_array($data['reminders']) ? $data['reminders'] : [],
+                );
+            }
         });
 
         if ($hasActiveIntegration) {
-            SyncMeetingToGoogleJob::dispatch((int) $meeting->id);
+            $this->meetingSyncService->syncMeeting((int) $meeting->id);
         }
 
+        $freshMeeting = $this->loadMeeting($meeting->fresh());
+        $this->dispatchLifecycleEmails('updated', $freshMeeting, (string) $context['company']->name);
+        $this->notifyInternalAttendees($freshMeeting, $companyId, 'updated', $user->id);
+
         return [
-            'meeting' => $this->loadMeeting($meeting->fresh()),
+            'meeting' => $freshMeeting,
             'integration' => [
                 'connected' => $hasActiveIntegration,
                 'status' => $hasActiveIntegration ? 'active' : 'not_connected',
@@ -182,7 +215,7 @@ class MeetingService
     {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
-        $this->ensureManagementRole((string) $context['role']);
+        $this->assertCanManageMeeting($user, $meeting, (string) $context['role']);
 
         $this->assertMeetingBelongsToCompany($meeting, $resolvedCompanyId);
         $connection = $this->activeConnection($resolvedCompanyId);
@@ -195,11 +228,17 @@ class MeetingService
         ]);
 
         if ($hasActiveIntegration) {
-            CancelMeetingInGoogleJob::dispatch((int) $meeting->id);
+            $this->meetingSyncService->cancelMeeting((int) $meeting->id);
         }
 
+        $this->meetingReminderService->cancelForMeeting($meeting, 'Meeting cancelled.');
+
+        $freshMeeting = $this->loadMeeting($meeting->fresh());
+        $this->dispatchLifecycleEmails('cancelled', $freshMeeting, (string) $context['company']->name);
+        $this->notifyInternalAttendees($freshMeeting, $resolvedCompanyId, 'cancelled', $user->id);
+
         return [
-            'meeting' => $this->loadMeeting($meeting->fresh()),
+            'meeting' => $freshMeeting,
             'integration' => [
                 'connected' => $hasActiveIntegration,
                 'status' => $hasActiveIntegration ? 'active' : 'not_connected',
@@ -215,7 +254,7 @@ class MeetingService
     {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
-        $this->ensureManagementRole((string) $context['role']);
+        $this->assertCanManageMeeting($user, $meeting, (string) $context['role']);
 
         $this->assertMeetingBelongsToCompany($meeting, $resolvedCompanyId);
         $connection = $this->activeConnection($resolvedCompanyId);
@@ -227,7 +266,7 @@ class MeetingService
         ]);
 
         if ($hasActiveIntegration) {
-            SyncMeetingToGoogleJob::dispatch((int) $meeting->id);
+            $this->meetingSyncService->syncMeeting((int) $meeting->id);
         }
 
         return [
@@ -240,6 +279,39 @@ class MeetingService
             'warnings' => $hasActiveIntegration
                 ? []
                 : ['Owner must connect Google Calendar to enable sync.'],
+        ];
+    }
+
+    public function delete(User $user, Meeting $meeting, ?int $companyId = null): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
+
+        $this->assertMeetingBelongsToCompany($meeting, $resolvedCompanyId);
+        $this->assertCanManageMeeting($user, $meeting, $role);
+
+        $connection = $this->activeConnection($resolvedCompanyId);
+        if ($connection !== null) {
+            $this->meetingSyncService->cancelMeeting((int) $meeting->id);
+        }
+
+        $snapshot = $this->loadMeeting($meeting);
+        $this->meetingReminderService->deleteForMeeting($meeting);
+
+        $meeting->forceDelete();
+
+        $this->dispatchLifecycleEmails('deleted', $snapshot, (string) $context['company']->name);
+        $this->notifyInternalAttendees($snapshot, $resolvedCompanyId, 'deleted', $user->id);
+
+        return [
+            'meeting' => $snapshot,
+            'integration' => [
+                'connected' => $connection !== null,
+                'status' => $connection !== null ? 'active' : 'not_connected',
+                'requires_owner_action' => $connection === null,
+            ],
+            'warnings' => [],
         ];
     }
 
@@ -304,6 +376,75 @@ class MeetingService
 
         throw ValidationException::withMessages([
             'authorization' => ['Only company members can access meetings.'],
+        ]);
+    }
+
+    private function applyMeetingVisibilityScope($query, User $user, string $role): void
+    {
+        if (in_array($role, ['owner', 'admin'], true)) {
+            return;
+        }
+
+        $query->where(function ($innerQuery) use ($user): void {
+            $innerQuery->where('created_by_user_id', $user->id)
+                ->orWhereHas('attendees', function ($attendeeQuery) use ($user): void {
+                    $attendeeQuery
+                        ->where('user_id', $user->id)
+                        ->orWhere('email', $user->email);
+                });
+        });
+    }
+
+    private function assertCanViewMeeting(User $user, Meeting $meeting, string $role): void
+    {
+        if (in_array($role, ['owner', 'admin'], true)) {
+            return;
+        }
+
+        $isCreator = (int) $meeting->created_by_user_id === (int) $user->id;
+        $isInvited = $meeting->attendees()
+            ->where(function ($query) use ($user): void {
+                $query->where('user_id', $user->id)
+                    ->orWhere('email', $user->email);
+            })
+            ->exists();
+
+        if ($isCreator || $isInvited) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'authorization' => ['You can only view meetings you created or were invited to.'],
+        ]);
+    }
+
+    private function assertCanManageMeeting(User $user, Meeting $meeting, string $role): void
+    {
+        if (in_array($role, ['owner', 'admin'], true)) {
+            return;
+        }
+
+        if ((int) $meeting->created_by_user_id === (int) $user->id) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'authorization' => ['Only owners/admins or the meeting creator can manage this meeting.'],
+        ]);
+    }
+
+    private function assertEditableByActor(User $user, Meeting $meeting, string $role): void
+    {
+        if (in_array($role, ['owner', 'admin'], true)) {
+            return;
+        }
+
+        if ((int) $meeting->created_by_user_id === (int) $user->id && $meeting->start_at?->isFuture()) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'authorization' => ['Meeting creators can only edit meetings before the start time.'],
         ]);
     }
 
@@ -393,6 +534,98 @@ class MeetingService
 
     private function loadMeeting(Meeting $meeting): Meeting
     {
-        return $meeting->load(['attendees', 'creator']);
+        return $meeting->load(['attendees', 'creator', 'reminders']);
+    }
+
+    private function dispatchLifecycleEmails(string $eventType, Meeting $meeting, string $organizationName): void
+    {
+        $emails = collect($meeting->attendees)
+            ->pluck('email')
+            ->filter(static fn($email): bool => is_string($email) && trim($email) !== '')
+            ->map(static fn($email): string => strtolower(trim((string) $email)))
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($emails === []) {
+            return;
+        }
+
+        SendMeetingLifecycleEmailJob::dispatch(
+            eventType: $eventType,
+            organizationName: $organizationName,
+            meeting: [
+                'id' => $meeting->id,
+                'title' => $meeting->title,
+                'description' => $meeting->description,
+                'timezone' => $meeting->timezone,
+                'start_at' => $meeting->start_at?->toIso8601String(),
+                'end_at' => $meeting->end_at?->toIso8601String(),
+                'google_meet_url' => $meeting->google_meet_url,
+                'organizer_name' => $meeting->creator?->name,
+                'organizer_email' => $meeting->creator?->email,
+            ],
+            attendees: $meeting->attendees
+                ->map(static fn($attendee): array => [
+                    'email' => $attendee->email,
+                    'display_name' => $attendee->display_name,
+                ])
+                ->values()
+                ->all(),
+            recipientEmails: $emails,
+        );
+    }
+
+    private function notifyInternalAttendees(Meeting $meeting, int $companyId, string $eventType, int $actorUserId): void
+    {
+        $recipientUserIds = collect($meeting->attendees)
+            ->pluck('user_id')
+            ->filter(static fn($id): bool => $id !== null)
+            ->map(static fn($id): int => (int) $id)
+            ->filter(static fn($id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($recipientUserIds === []) {
+            return;
+        }
+
+        $title = match ($eventType) {
+            'created' => 'Meeting scheduled',
+            'updated' => 'Meeting updated',
+            'cancelled' => 'Meeting cancelled',
+            'deleted' => 'Meeting deleted',
+            default => 'Meeting update',
+        };
+
+        $message = match ($eventType) {
+            'created' => "A meeting titled '{$meeting->title}' has been scheduled.",
+            'updated' => "Meeting '{$meeting->title}' has been updated.",
+            'cancelled' => "Meeting '{$meeting->title}' has been cancelled.",
+            'deleted' => "Meeting '{$meeting->title}' has been deleted.",
+            default => "Meeting '{$meeting->title}' has changed.",
+        };
+
+        $this->notificationService->notifyUsers($recipientUserIds, [
+            'company_id' => $companyId,
+            'type' => 'meeting.' . $eventType,
+            'category' => NotificationCategory::SYSTEM->value,
+            'title' => $title,
+            'message' => $message,
+            'reference_type' => Meeting::class,
+            'reference_id' => (int) $meeting->id,
+            'action_url' => '/dashboard',
+            'action_route' => 'dashboard',
+            'priority' => NotificationPriority::HIGH->value,
+            'metadata' => [
+                'meeting_id' => (int) $meeting->id,
+                'event_type' => $eventType,
+                'start_at' => $meeting->start_at?->toIso8601String(),
+                'status' => $meeting->status,
+            ],
+            'created_by_user_id' => $actorUserId,
+            'dedupe_key' => 'meeting:' . $eventType . ':' . $meeting->id . ':' . now()->format('YmdHi'),
+        ]);
     }
 }

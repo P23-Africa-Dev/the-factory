@@ -103,6 +103,24 @@ class MeetingController extends Controller
 
     public function destroy(Request $request, Meeting $meeting): JsonResponse
     {
+        $result = $this->meetingService->delete(
+            $request->user(),
+            $meeting,
+            $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
+        return $this->success(
+            message: 'Meeting deleted successfully.',
+            data: [
+                'meeting' => new MeetingResource($result['meeting']),
+                'integration' => $result['integration'],
+                'warnings' => $result['warnings'],
+            ],
+        );
+    }
+
+    public function cancel(Request $request, Meeting $meeting): JsonResponse
+    {
         $result = $this->meetingService->cancel(
             $request->user(),
             $meeting,

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
     cancelMeeting,
     createMeeting,
+    deleteMeeting,
     getMeeting,
     listMeetings,
     resyncMeeting,
@@ -92,6 +93,20 @@ export function useCancelMeeting(options?: { onSuccess?: (meeting: MeetingItem) 
     return useMutation({
         mutationFn: ({ meetingId, companyId }: { meetingId: number | string; companyId: number | string }) =>
             cancelMeeting(meetingId, { company_id: companyId }, token),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries({ queryKey: MEETING_KEYS.all });
+            options?.onSuccess?.(res.data.meeting);
+        },
+    });
+}
+
+export function useDeleteMeeting(options?: { onSuccess?: (meeting: MeetingItem) => void }) {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({ meetingId, companyId }: { meetingId: number | string; companyId: number | string }) =>
+            deleteMeeting(meetingId, { company_id: companyId }, token),
         onSuccess: (res) => {
             queryClient.invalidateQueries({ queryKey: MEETING_KEYS.all });
             options?.onSuccess?.(res.data.meeting);

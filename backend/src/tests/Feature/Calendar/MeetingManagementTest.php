@@ -4,15 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Calendar;
 
-use App\Jobs\CancelMeetingInGoogleJob;
-use App\Jobs\SyncMeetingToGoogleJob;
 use App\Models\Company;
 use App\Models\CompanyCalendarConnection;
 use App\Models\Meeting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class MeetingManagementTest extends TestCase
@@ -47,7 +45,15 @@ class MeetingManagementTest extends TestCase
 
     public function test_owner_can_create_meeting_with_pending_sync_when_connection_active(): void
     {
-        Queue::fake();
+        Http::fake([
+            'https://www.googleapis.com/calendar/v3/calendars/*/events?conferenceDataVersion=1&sendUpdates=all' => Http::response([
+                'id' => 'event-owner-123',
+                'organizer' => ['email' => 'owner@factory23.test'],
+                'hangoutLink' => 'https://meet.google.com/event-owner-123',
+                'htmlLink' => 'https://calendar.google.com/event?eid=owner123',
+                'updated' => now()->toIso8601String(),
+            ], 200),
+        ]);
 
         [$company, $owner] = $this->seedCompanyUsers();
 
@@ -80,7 +86,7 @@ class MeetingManagementTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('data.meeting.sync_status', 'pending')
+            ->assertJsonPath('data.meeting.sync_status', 'synced')
             ->assertJsonPath('data.integration.connected', true)
             ->assertJsonPath('data.warnings', []);
 
@@ -92,14 +98,22 @@ class MeetingManagementTest extends TestCase
             'is_organizer' => true,
         ]);
 
-        Queue::assertPushed(SyncMeetingToGoogleJob::class, function (SyncMeetingToGoogleJob $job) use ($meetingId): bool {
-            return $job->meetingId === $meetingId;
-        });
+        $this->assertNotNull($response->json('data.meeting.google_event_id'));
+        $this->assertSame('primary', $response->json('data.meeting.google_calendar_id'));
+        $this->assertSame('https://meet.google.com/event-owner-123', $response->json('data.meeting.google_meet_url'));
     }
 
     public function test_admin_can_create_meeting_with_connection_active(): void
     {
-        Queue::fake();
+        Http::fake([
+            'https://www.googleapis.com/calendar/v3/calendars/*/events?conferenceDataVersion=1&sendUpdates=all' => Http::response([
+                'id' => 'event-admin-123',
+                'organizer' => ['email' => 'owner@factory23.test'],
+                'hangoutLink' => 'https://meet.google.com/event-admin-123',
+                'htmlLink' => 'https://calendar.google.com/event?eid=admin123',
+                'updated' => now()->toIso8601String(),
+            ], 200),
+        ]);
 
         [$company, $owner, $admin] = $this->seedCompanyUsers();
 
@@ -129,15 +143,21 @@ class MeetingManagementTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('data.meeting.sync_status', 'pending')
+            ->assertJsonPath('data.meeting.sync_status', 'synced')
             ->assertJsonPath('data.integration.connected', true);
-
-        Queue::assertPushed(SyncMeetingToGoogleJob::class);
     }
 
     public function test_supervisor_can_create_meeting_with_connection_active(): void
     {
-        Queue::fake();
+        Http::fake([
+            'https://www.googleapis.com/calendar/v3/calendars/*/events?conferenceDataVersion=1&sendUpdates=all' => Http::response([
+                'id' => 'event-supervisor-123',
+                'organizer' => ['email' => 'owner@factory23.test'],
+                'hangoutLink' => 'https://meet.google.com/event-supervisor-123',
+                'htmlLink' => 'https://calendar.google.com/event?eid=supervisor123',
+                'updated' => now()->toIso8601String(),
+            ], 200),
+        ]);
 
         [$company, $owner, $admin] = $this->seedCompanyUsers();
         $supervisor = User::factory()->create(['email_verified_at' => now()]);
@@ -170,15 +190,21 @@ class MeetingManagementTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('data.meeting.sync_status', 'pending')
+            ->assertJsonPath('data.meeting.sync_status', 'synced')
             ->assertJsonPath('data.integration.connected', true);
-
-        Queue::assertPushed(SyncMeetingToGoogleJob::class);
     }
 
     public function test_agent_can_create_meeting_with_connection_active(): void
     {
-        Queue::fake();
+        Http::fake([
+            'https://www.googleapis.com/calendar/v3/calendars/*/events?conferenceDataVersion=1&sendUpdates=all' => Http::response([
+                'id' => 'event-agent-123',
+                'organizer' => ['email' => 'owner@factory23.test'],
+                'hangoutLink' => 'https://meet.google.com/event-agent-123',
+                'htmlLink' => 'https://calendar.google.com/event?eid=agent123',
+                'updated' => now()->toIso8601String(),
+            ], 200),
+        ]);
 
         [$company, $owner, $admin, $agent] = $this->seedCompanyUsers();
 
@@ -208,15 +234,15 @@ class MeetingManagementTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('data.meeting.sync_status', 'pending')
+            ->assertJsonPath('data.meeting.sync_status', 'synced')
             ->assertJsonPath('data.integration.connected', true);
-
-        Queue::assertPushed(SyncMeetingToGoogleJob::class);
     }
 
-    public function test_owner_can_cancel_meeting_and_dispatch_google_cancel_job_when_connected(): void
+    public function test_owner_can_cancel_meeting_and_sync_google_cancel_when_connected(): void
     {
-        Queue::fake();
+        Http::fake([
+            'https://www.googleapis.com/calendar/v3/calendars/primary/events/event-123?sendUpdates=all' => Http::response([], 204),
+        ]);
 
         [$company, $owner] = $this->seedCompanyUsers();
 
@@ -254,11 +280,7 @@ class MeetingManagementTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.meeting.status', 'cancelled')
-            ->assertJsonPath('data.meeting.sync_status', 'pending');
-
-        Queue::assertPushed(CancelMeetingInGoogleJob::class, function (CancelMeetingInGoogleJob $job) use ($meeting): bool {
-            return $job->meetingId === (int) $meeting->id;
-        });
+            ->assertJsonPath('data.meeting.sync_status', 'synced');
     }
 
     public function test_agent_cannot_create_meeting_when_calendar_not_connected(): void

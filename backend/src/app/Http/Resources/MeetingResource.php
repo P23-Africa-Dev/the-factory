@@ -25,6 +25,8 @@ class MeetingResource extends JsonResource
             'end_at' => $this->end_at?->toIso8601String(),
             'status' => $this->status,
             'source_page' => $this->source_page,
+            'reminder_config' => $this->reminder_config ?? [],
+            'meeting_settings' => $this->meeting_settings,
             'google_event_id' => $this->google_event_id,
             'google_calendar_id' => $this->google_calendar_id,
             'google_meet_url' => $this->google_meet_url,
@@ -52,6 +54,25 @@ class MeetingResource extends JsonResource
                 'name' => $this->creator->name,
                 'email' => $this->creator->email,
             ] : null),
+            'reminders' => $this->whenLoaded('reminders', function (): array {
+                return $this->reminders
+                    ->map(fn($reminder): array => [
+                        'id' => $reminder->id,
+                        'recipient_user_id' => $reminder->recipient_user_id,
+                        'recipient_email' => $reminder->recipient_email,
+                        'recipient_name' => $reminder->recipient_name,
+                        'offset_minutes' => $reminder->offset_minutes,
+                        'custom_remind_at' => $reminder->custom_remind_at?->toIso8601String(),
+                        'remind_at' => $reminder->remind_at?->toIso8601String(),
+                        'status' => $reminder->status,
+                        'attempts' => (int) $reminder->attempts,
+                        'next_retry_at' => $reminder->next_retry_at?->toIso8601String(),
+                        'sent_at' => $reminder->sent_at?->toIso8601String(),
+                        'last_error' => $reminder->last_error,
+                    ])
+                    ->values()
+                    ->all();
+            }),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

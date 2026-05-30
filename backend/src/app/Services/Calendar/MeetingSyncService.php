@@ -6,6 +6,7 @@ namespace App\Services\Calendar;
 
 use App\Models\CompanyCalendarConnection;
 use App\Models\Meeting;
+use Illuminate\Support\Facades\Log;
 
 class MeetingSyncService
 {
@@ -29,10 +30,21 @@ class MeetingSyncService
                 'sync_error_message' => 'Owner must connect Google Calendar to enable sync.',
             ]);
 
+            Log::warning('Meeting sync skipped because Google Calendar is not connected.', [
+                'meeting_id' => $meeting->id,
+                'company_id' => $meeting->company_id,
+            ]);
+
             return;
         }
 
         try {
+            Log::info('Syncing meeting to Google Calendar.', [
+                'meeting_id' => $meeting->id,
+                'company_id' => $meeting->company_id,
+                'google_calendar_owner' => $connection->organizer_email,
+            ]);
+
             $event = $this->googleCalendarEventService->upsertMeeting($meeting, $connection);
 
             $meeting->update([
@@ -45,10 +57,27 @@ class MeetingSyncService
                 'synced_at' => now(),
                 'external_updated_at' => $event['external_updated_at'] ?? null,
             ]);
+
+            Log::info('Meeting synced to Google Calendar successfully.', [
+                'meeting_id' => $meeting->id,
+                'google_event_id' => $event['event_id'],
+                'google_calendar_id' => $event['calendar_id'],
+            ]);
         } catch (\Throwable $exception) {
             $meeting->update([
                 'sync_status' => 'failed',
                 'sync_error_message' => $exception->getMessage(),
+            ]);
+
+            $connection->update([
+                'last_error_message' => $exception->getMessage(),
+                'last_error_at' => now(),
+            ]);
+
+            Log::error('Meeting sync to Google Calendar failed.', [
+                'meeting_id' => $meeting->id,
+                'company_id' => $meeting->company_id,
+                'error' => $exception->getMessage(),
             ]);
 
             throw $exception;
@@ -71,10 +100,21 @@ class MeetingSyncService
                 'sync_error_message' => 'Owner must connect Google Calendar to enable sync.',
             ]);
 
+            Log::warning('Meeting cancel skipped because Google Calendar is not connected.', [
+                'meeting_id' => $meeting->id,
+                'company_id' => $meeting->company_id,
+            ]);
+
             return;
         }
 
         try {
+            Log::info('Cancelling meeting in Google Calendar.', [
+                'meeting_id' => $meeting->id,
+                'company_id' => $meeting->company_id,
+                'google_calendar_owner' => $connection->organizer_email,
+            ]);
+
             $this->googleCalendarEventService->cancelMeeting($meeting, $connection);
 
             $meeting->update([
@@ -82,10 +122,26 @@ class MeetingSyncService
                 'sync_error_message' => null,
                 'synced_at' => now(),
             ]);
+
+            Log::info('Meeting cancelled in Google Calendar successfully.', [
+                'meeting_id' => $meeting->id,
+                'google_event_id' => $meeting->google_event_id,
+            ]);
         } catch (\Throwable $exception) {
             $meeting->update([
                 'sync_status' => 'failed',
                 'sync_error_message' => $exception->getMessage(),
+            ]);
+
+            $connection->update([
+                'last_error_message' => $exception->getMessage(),
+                'last_error_at' => now(),
+            ]);
+
+            Log::error('Meeting cancellation in Google Calendar failed.', [
+                'meeting_id' => $meeting->id,
+                'company_id' => $meeting->company_id,
+                'error' => $exception->getMessage(),
             ]);
 
             throw $exception;

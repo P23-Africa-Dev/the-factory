@@ -13,6 +13,25 @@ export type MeetingAttendee = {
     is_organizer?: boolean;
 };
 
+export type MeetingReminder = {
+    id: number;
+    recipient_user_id?: number | null;
+    recipient_email: string;
+    recipient_name?: string | null;
+    offset_minutes?: number | null;
+    custom_remind_at?: string | null;
+    remind_at: string;
+    status: "pending" | "queued" | "sent" | "failed" | "cancelled";
+    attempts: number;
+    next_retry_at?: string | null;
+    sent_at?: string | null;
+    last_error?: string | null;
+};
+
+export type MeetingSettings = {
+    [key: string]: unknown;
+};
+
 export type MeetingItem = {
     id: number;
     company_id: number;
@@ -27,6 +46,13 @@ export type MeetingItem = {
     end_at: string;
     status: MeetingStatus;
     source_page: "dashboard" | "operations" | "project" | "task" | "api";
+    reminder_config?: Array<{
+        offset_minutes?: number | null;
+        custom_remind_at?: string | null;
+        remind_at: string;
+        label?: string;
+    }>;
+    meeting_settings?: MeetingSettings | null;
     google_event_id?: string | null;
     google_calendar_id?: string | null;
     google_meet_url?: string | null;
@@ -36,6 +62,7 @@ export type MeetingItem = {
     synced_at?: string | null;
     external_updated_at?: string | null;
     attendees?: MeetingAttendee[];
+    reminders?: MeetingReminder[];
 };
 
 export type MeetingsListParams = {
@@ -68,6 +95,11 @@ export type CreateMeetingPayload = {
     start_at: string;
     end_at: string;
     source_page?: "dashboard" | "operations" | "project" | "task" | "api";
+    meeting_settings?: MeetingSettings | null;
+    reminders?: Array<{
+        offset_minutes?: number;
+        remind_at?: string;
+    }>;
     attendees?: Array<{
         email: string;
         display_name?: string;
@@ -168,6 +200,19 @@ export function updateMeeting(
 }
 
 export function cancelMeeting(
+    meetingId: number | string,
+    payload: { company_id: number | string },
+    token: string
+): Promise<ApiEnvelope<MeetingMutationData>> {
+    return apiRequest<MeetingMutationData>({
+        method: "POST",
+        path: `/meetings/${meetingId}/cancel`,
+        body: payload,
+        token,
+    });
+}
+
+export function deleteMeeting(
     meetingId: number | string,
     payload: { company_id: number | string },
     token: string

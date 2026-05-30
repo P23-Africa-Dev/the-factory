@@ -104,12 +104,19 @@ class MeetingSyncServiceTest extends TestCase
 
         app(MeetingSyncService::class)->syncMeeting((int) $meeting->id);
 
+        Http::assertSent(function ($request): bool {
+            $data = $request->data();
+
+            return ($data['attendees'][0]['responseStatus'] ?? null) === 'needsAction'
+                && ! isset($data['attendees'][0]['response_status']);
+        });
+
         $meeting->refresh();
         $connection->refresh();
 
         $this->assertSame('synced', $meeting->sync_status);
         $this->assertSame('event-123', $meeting->google_event_id);
-        $this->assertSame('owner@factory23.test', $meeting->google_calendar_id);
+        $this->assertSame('primary', $meeting->google_calendar_id);
         $this->assertNotNull($meeting->google_meet_url);
         $this->assertNull($meeting->sync_error_message);
         $this->assertSame('active', $connection->status);
