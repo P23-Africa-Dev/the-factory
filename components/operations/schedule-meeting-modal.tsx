@@ -162,6 +162,39 @@ export function ScheduleMeetingModal({
     const canConnectIntegration = canConnectGoogleCalendar(role);
     const integration = integrationStatusQuery.data;
 
+    useEffect(() => {
+        if (!isOpen) {
+            return;
+        }
+
+        const handleOAuthMessage = (event: MessageEvent) => {
+            const payload = event.data as {
+                type?: string;
+                status?: "success" | "error";
+                message?: string;
+            };
+
+            if (!payload || payload.type !== "google-calendar-oauth") {
+                return;
+            }
+
+            if (payload.status === "success") {
+                toast.success(payload.message || "Google Calendar connected successfully.");
+                integrationStatusQuery.refetch();
+                return;
+            }
+
+            toast.error(payload.message || "Google Calendar connection failed. Please retry.");
+            integrationStatusQuery.refetch();
+        };
+
+        window.addEventListener("message", handleOAuthMessage);
+
+        return () => {
+            window.removeEventListener("message", handleOAuthMessage);
+        };
+    }, [integrationStatusQuery, isOpen]);
+
     const effectiveSourcePage =
         sourcePage === "operations"
             ? taskId != null
@@ -253,7 +286,7 @@ export function ScheduleMeetingModal({
                         return;
                     }
 
-                    toast.info("Complete Google sign-in, then refresh this dialog to verify connection.");
+                    toast.info("Complete Google sign-in in the popup. Connection status will update automatically.");
                 },
                 onError: (error: unknown) => {
                     const apiError = error as { message?: string };

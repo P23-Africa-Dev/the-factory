@@ -23,7 +23,7 @@ class CalendarIntegrationTest extends TestCase
 
         config()->set('services.google_calendar.client_id', 'google-client-id');
         config()->set('services.google_calendar.client_secret', 'google-client-secret');
-        config()->set('services.google_calendar.redirect_uri', 'http://localhost/api/v1/calendar/integration/callback');
+        config()->set('services.google_calendar.redirect_uri', 'http://localhost:8080/api/v1/calendar/integration/callback');
         config()->set('services.google_calendar.scopes', [
             'https://www.googleapis.com/auth/calendar',
             'https://www.googleapis.com/auth/calendar.events',
@@ -192,6 +192,39 @@ class CalendarIntegrationTest extends TestCase
             'organizer_google_user_id' => 'google-sub-123',
             'status' => 'active',
         ]);
+    }
+
+    public function test_oauth_callback_returns_popup_html_for_browser_requests(): void
+    {
+        [$company, $owner] = $this->seedCompanyUsers();
+
+        $connectUrlResponse = $this->withToken($owner->createToken('owner-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/calendar/integration/connect-url', [
+                'company_id' => $company->company_id,
+            ]);
+
+        $state = $this->extractStateFromAuthorizationUrl((string) $connectUrlResponse->json('data.authorization_url'));
+
+        Http::fake([
+            'https://oauth2.googleapis.com/token' => Http::response([
+                'access_token' => 'oauth-access-token',
+                'refresh_token' => 'oauth-refresh-token',
+                'expires_in' => 3600,
+                'scope' => 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+                'token_type' => 'Bearer',
+            ], 200),
+            'https://www.googleapis.com/oauth2/v3/userinfo' => Http::response([
+                'sub' => 'google-sub-123',
+                'email' => 'owner@factory23.test',
+            ], 200),
+        ]);
+
+        $callbackResponse = $this->get('/api/v1/calendar/integration/callback?code=oauth-code&state=' . urlencode($state));
+
+        $callbackResponse->assertOk();
+        $callbackResponse->assertHeader('Content-Type', 'text/html; charset=UTF-8');
+        $callbackResponse->assertSee('google-calendar-oauth', false);
+        $callbackResponse->assertSee('Google Calendar connected successfully. You can close this window.', false);
     }
 
     public function test_oauth_callback_persists_connection_for_admin(): void

@@ -25,7 +25,7 @@ class MeetingSyncServiceTest extends TestCase
 
         config()->set('services.google_calendar.client_id', 'google-client-id');
         config()->set('services.google_calendar.client_secret', 'google-client-secret');
-        config()->set('services.google_calendar.redirect_uri', 'http://localhost/api/v1/calendar/integration/callback');
+        config()->set('services.google_calendar.redirect_uri', 'http://localhost:8080/api/v1/calendar/integration/callback');
     }
 
     public function test_sync_meeting_sets_pending_setup_when_no_owner_connection(): void
