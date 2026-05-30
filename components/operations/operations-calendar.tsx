@@ -5,6 +5,9 @@ import { ChevronLeft, ChevronRight, Plus, MoreVertical } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { useMeetings } from '@/hooks/use-meetings';
+import { useCalendarIntegrationStatus } from '@/hooks/use-calendar-integration';
+import { canAccessMeetingCreation, canConnectGoogleCalendar, getMeetingAccessNotice, getMeetingCreationTooltip } from '@/lib/calendar-permissions';
+import { CalendarTooltip } from '@/components/ui/calendar-tooltip';
 import { ScheduleMeetingModal } from './schedule-meeting-modal';
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -61,11 +64,23 @@ export function OperationsCalendar({ projectId, taskId }: OperationsCalendarProp
     const [month, setMonth] = useState(selectedDate.getMonth());
     const [year, setYear] = useState(selectedDate.getFullYear());
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [createModalKey, setCreateModalKey] = useState(0);
 
-    const canManageMeetings = role === 'owner' || role === 'admin' || role === 'supervisor';
+    // Fetch integration status so the calendar can reflect organization-level setup state
+    const integrationStatusQuery = useCalendarIntegrationStatus(
+        companyId ?? undefined
+    );
+    const calendarConnected = integrationStatusQuery.data?.connected === true;
+    const canAccessMeetings = canAccessMeetingCreation(role, calendarConnected);
+    const isCreateDisabled = !canAccessMeetings;
+    const createTooltip = getMeetingCreationTooltip(role, calendarConnected);
+    const meetingAccessNotice = getMeetingAccessNotice(role, calendarConnected);
+    const meetingAccessNoticeTitle = canConnectGoogleCalendar(role) && !calendarConnected
+        ? 'Google Calendar Not Connected'
+        : 'Meeting creation unavailable';
 
     const { data: meetingsData, isPending } = useMeetings({
-        company_id: canManageMeetings ? (companyId ?? undefined) : undefined,
+        company_id: companyId ?? undefined,
         project_id: projectId,
         task_id: taskId,
         per_page: 100,
@@ -236,9 +251,12 @@ export function OperationsCalendar({ projectId, taskId }: OperationsCalendarProp
                 </div>
 
                 <div className="mb-3 space-y-2">
-                    {!canManageMeetings ? (
-                        <div className="rounded-[20px] border border-dashed border-gray-200 px-4 py-6 text-center text-[12px] font-medium text-gray-400">
-                            Meeting management is available for owners, admins, and supervisors.
+                    {meetingAccessNotice && !integrationStatusQuery.isPending ? (
+                        <div className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-4 text-[11px] text-amber-800">
+                            <p className="font-bold mb-1 text-amber-900">{meetingAccessNoticeTitle}</p>
+                            <p className="leading-relaxed">
+                                {meetingAccessNotice}
+                            </p>
                         </div>
                     ) : isPending ? (
                         <div className="rounded-[20px] border border-gray-100 bg-gray-50 px-4 py-3 text-[12px] text-gray-500">
@@ -286,17 +304,29 @@ export function OperationsCalendar({ projectId, taskId }: OperationsCalendarProp
                 </div>
 
                 <div className="absolute bottom-[50px] right-2">
-                    <button
-                        disabled={!canManageMeetings}
-                        onClick={() => setShowCreateModal(true)}
-                        className="flex h-8 w-8 items-center justify-center rounded-full border-[2px] border-[#7EB5AE] text-[#7EB5AE] shadow-sm transition-all hover:bg-[#7EB5AE] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                        <Plus size={10} strokeWidth={2.5} />
-                    </button>
+                    {isCreateDisabled && createTooltip ? (
+                        <CalendarTooltip message={createTooltip} side="left">
+                            <button
+                                disabled
+                                className="flex h-8 w-8 items-center justify-center rounded-full border-[2px] border-[#7EB5AE] text-[#7EB5AE] shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                <Plus size={10} strokeWidth={2.5} />
+                            </button>
+                        </CalendarTooltip>
+                    ) : (
+                        <button
+                            disabled={isCreateDisabled}
+                            onClick={() => { setCreateModalKey((k) => k + 1); setShowCreateModal(true); }}
+                            className="flex h-8 w-8 items-center justify-center rounded-full border-[2px] border-[#7EB5AE] text-[#7EB5AE] shadow-sm transition-all hover:bg-[#7EB5AE] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            <Plus size={10} strokeWidth={2.5} />
+                        </button>
+                    )}
                 </div>
             </div>
 
             <ScheduleMeetingModal
+                key={createModalKey}
                 isOpen={showCreateModal}
                 onClose={() => setShowCreateModal(false)}
                 defaultDate={selectedDate}

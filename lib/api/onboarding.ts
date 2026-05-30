@@ -8,7 +8,7 @@ export type ApiEnvelope<TData> = {
 };
 
 type ApiRequestOptions = {
-  method: "GET" | "POST" | "PATCH" | "PUT";
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   path: string;
   body?: unknown;
   token?: string;
@@ -82,23 +82,23 @@ export type WorkspacePayload = {
   country: string;
   team_size: "solo" | "2-10" | "11-50" | "51-200" | "201-500" | "500+";
   purpose:
-    | "personal"
-    | "startup"
-    | "enterprise"
-    | "freelancing"
-    | "education"
-    | "non_profit"
-    | "other";
+  | "personal"
+  | "startup"
+  | "enterprise"
+  | "freelancing"
+  | "education"
+  | "non_profit"
+  | "other";
   user_type:
-    | "developer"
-    | "designer"
-    | "product_manager"
-    | "marketing"
-    | "sales"
-    | "operations"
-    | "founder"
-    | "student"
-    | "other";
+  | "developer"
+  | "designer"
+  | "product_manager"
+  | "marketing"
+  | "sales"
+  | "operations"
+  | "founder"
+  | "student"
+  | "other";
 };
 
 type RegisterResponse = {

@@ -50,7 +50,7 @@ class CompanyCalendarConnectionService
         $context = $this->companyContextService->resolve($user, $companyId);
         $role = (string) $context['role'];
 
-        $this->ensureOwner($role);
+        $this->ensureCalendarAdmin($role);
 
         $resolvedCompanyId = (int) $context['company']->id;
 
@@ -62,7 +62,7 @@ class CompanyCalendarConnectionService
         $context = $this->companyContextService->resolve($user, $companyId);
         $role = (string) $context['role'];
 
-        $this->ensureOwner($role);
+        $this->ensureCalendarAdmin($role);
 
         $resolvedCompanyId = (int) $context['company']->id;
         $connection = CompanyCalendarConnection::query()
@@ -95,7 +95,7 @@ class CompanyCalendarConnectionService
             ]);
         }
 
-        $this->ensureUserIsOwnerForCompany($userId, $companyId);
+        $this->ensureUserIsCalendarAdminForCompany($userId, $companyId);
 
         $exchangePayload = $this->oauthService->exchangeCodeForOrganizer($code);
 
@@ -147,42 +147,42 @@ class CompanyCalendarConnectionService
 
     private function ensureCanViewIntegration(string $role): void
     {
-        if (in_array($role, ['owner', 'admin', 'supervisor'], true)) {
+        if (in_array($role, ['owner', 'admin', 'supervisor', 'agent'], true)) {
             return;
         }
 
         throw ValidationException::withMessages([
-            'authorization' => ['Only management users can view calendar integration status.'],
+            'authorization' => ['Only company members can view calendar integration status.'],
         ]);
     }
 
-    private function ensureOwner(string $role): void
+    private function ensureCalendarAdmin(string $role): void
     {
-        if ($role === 'owner') {
+        if (in_array($role, ['owner', 'admin'], true)) {
             return;
         }
 
         throw ValidationException::withMessages([
-            'authorization' => ['Only company owners can connect or disconnect Google Calendar integration.'],
+            'authorization' => ['Only company owners or admins can connect or disconnect Google Calendar integration.'],
         ]);
     }
 
-    private function ensureUserIsOwnerForCompany(int $userId, int $companyId): void
+    private function ensureUserIsCalendarAdminForCompany(int $userId, int $companyId): void
     {
-        $isOwner = DB::table('company_users')
+        $isCalendarAdmin = DB::table('company_users')
             ->join('companies', 'companies.id', '=', 'company_users.company_id')
             ->where('company_users.user_id', $userId)
             ->where('company_users.company_id', $companyId)
-            ->where('company_users.role', 'owner')
+            ->whereIn('company_users.role', ['owner', 'admin'])
             ->where('companies.status', 'active')
             ->exists();
 
-        if ($isOwner) {
+        if ($isCalendarAdmin) {
             return;
         }
 
         throw ValidationException::withMessages([
-            'integration' => ['Only the current company owner can complete Google Calendar connection.'],
+            'integration' => ['Only the current company owner or admin can complete Google Calendar connection.'],
         ]);
     }
 }

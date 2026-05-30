@@ -7,8 +7,11 @@ import SearchListIcon from "@/assets/images/search-list-icon.png";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { useDashboardOverview } from "@/hooks/use-dashboard";
 import { useMeetings } from "@/hooks/use-meetings";
+import { useCalendarIntegrationStatus } from "@/hooks/use-calendar-integration";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { canAccessMeetingCreation, canConnectGoogleCalendar, getMeetingAccessNotice, getMeetingCreationTooltip } from "@/lib/calendar-permissions";
 import { cn } from "@/lib/utils/sample";
+import { CalendarTooltip } from "@/components/ui/calendar-tooltip";
 import { useAuthStore } from "@/store/auth";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
 import Image from "next/image";
@@ -329,6 +332,7 @@ export function WeeklyTasksAgents() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showCreateMeetingModal, setShowCreateMeetingModal] = useState(false);
+  const [meetingModalKey, setMeetingModalKey] = useState(0);
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const basePath = role === "agent" ? "/agent" : "/admin";
@@ -338,10 +342,19 @@ export function WeeklyTasksAgents() {
     basePath,
   });
 
-  const canManageMeetings = role === "owner" || role === "admin" || role === "supervisor";
+  // Fetch integration status so the widget can reflect organization-level setup state
+  const integrationStatusQuery = useCalendarIntegrationStatus(companyId ?? undefined);
+  const calendarConnected = integrationStatusQuery.data?.connected === true;
+  const canAccessMeetings = canAccessMeetingCreation(role, calendarConnected);
+  const isCreateMeetingDisabled = !canAccessMeetings;
+  const createMeetingTooltip = getMeetingCreationTooltip(role, calendarConnected);
+  const meetingAccessNotice = getMeetingAccessNotice(role, calendarConnected);
+  const meetingAccessNoticeTitle = canConnectGoogleCalendar(role) && !calendarConnected
+    ? "Google Calendar Not Connected"
+    : "Meeting creation unavailable";
 
   const { data: meetingsData } = useMeetings({
-    company_id: canManageMeetings ? (companyId ?? undefined) : undefined,
+    company_id: companyId ?? undefined,
     per_page: 100,
   });
 
@@ -489,19 +502,43 @@ export function WeeklyTasksAgents() {
               ))}
             </div>
           ) : (
-            <div
-              className="rounded-[40px] px-4 py-5 flex items-center justify-center text-white w-full"
-              style={{ backgroundColor: "#7BB6B8" }}
-            >
-              <p className="text-[13px] font-semibold opacity-90">No meetings for this day</p>
-            </div>
+            meetingAccessNotice && !integrationStatusQuery.isPending ? (
+              <div className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-5 text-amber-800 w-full">
+                <p className="text-[13px] font-bold text-amber-900">{meetingAccessNoticeTitle}</p>
+                <p className="mt-1 text-[11px] leading-relaxed">
+                  {meetingAccessNotice}
+                </p>
+              </div>
+            ) : (
+              <div
+                className="rounded-[40px] px-4 py-5 flex items-center justify-center text-white w-full"
+                style={{ backgroundColor: "#7BB6B8" }}
+              >
+                <p className="text-[13px] font-semibold opacity-90">No meetings for this day</p>
+              </div>
+            )
           )}
         </div>
 
         <div className="flex justify-end mb-4 px-4">
-          <button disabled={!canManageMeetings} onClick={() => setShowCreateMeetingModal(true)} className="w-10 h-10 rounded-full border-2 border-[#7BB6B8] flex items-center justify-center text-[#7BB6B8] hover:bg-[#7BB6B8]/5 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-            <Plus size={24} />
-          </button>
+          {isCreateMeetingDisabled && createMeetingTooltip ? (
+            <CalendarTooltip message={createMeetingTooltip} side="left">
+              <button
+                disabled
+                className="w-10 h-10 rounded-full border-2 border-[#7BB6B8] flex items-center justify-center text-[#7BB6B8] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus size={24} />
+              </button>
+            </CalendarTooltip>
+          ) : (
+            <button
+              disabled={isCreateMeetingDisabled}
+              onClick={() => { setMeetingModalKey((k) => k + 1); setShowCreateMeetingModal(true); }}
+              className="w-10 h-10 rounded-full border-2 border-[#7BB6B8] flex items-center justify-center text-[#7BB6B8] hover:bg-[#7BB6B8]/5 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Plus size={24} />
+            </button>
+          )}
         </div>
 
         <div className="w-full h-px bg-[#D9D6D6] mb-2.75" />
@@ -547,6 +584,7 @@ export function WeeklyTasksAgents() {
       </div>
 
       <ScheduleMeetingModal
+        key={meetingModalKey}
         isOpen={showCreateMeetingModal}
         onClose={() => setShowCreateMeetingModal(false)}
         defaultDate={selectedDate}

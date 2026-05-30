@@ -19,10 +19,8 @@ class MeetingManagementTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_owner_can_create_meeting_with_pending_setup_when_owner_not_connected(): void
+    public function test_owner_cannot_create_meeting_when_calendar_not_connected(): void
     {
-        Queue::fake();
-
         [$company, $owner] = $this->seedCompanyUsers();
 
         $response = $this->withToken($owner->createToken('owner-token', ['*'])->plainTextToken)
@@ -39,14 +37,12 @@ class MeetingManagementTest extends TestCase
                 ],
             ]);
 
-        $response->assertCreated()
-            ->assertJsonPath('success', true)
-            ->assertJsonPath('data.meeting.sync_status', 'pending_setup')
-            ->assertJsonPath('data.integration.connected', false)
-            ->assertJsonPath('data.warnings.0', 'Owner must connect Google Calendar to enable sync.');
-
-        Queue::assertNotPushed(SyncMeetingToGoogleJob::class);
-        Queue::assertNotPushed(CancelMeetingInGoogleJob::class);
+        $response->assertUnprocessable()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath(
+                'errors.google_calendar.0',
+                'Google Calendar has not been configured for this organization. Please contact your Account Administrator (Owner or Admin) to complete the Google Calendar setup before creating meetings.',
+            );
     }
 
     public function test_owner_can_create_meeting_with_pending_sync_when_connection_active(): void
@@ -101,6 +97,123 @@ class MeetingManagementTest extends TestCase
         });
     }
 
+    public function test_admin_can_create_meeting_with_connection_active(): void
+    {
+        Queue::fake();
+
+        [$company, $owner, $admin] = $this->seedCompanyUsers();
+
+        CompanyCalendarConnection::create([
+            'company_id' => $company->id,
+            'owner_user_id' => $owner->id,
+            'organizer_email' => 'owner@factory23.test',
+            'organizer_google_user_id' => 'google-owner-123',
+            'access_token_encrypted' => 'access-token',
+            'refresh_token_encrypted' => 'refresh-token',
+            'token_expires_at' => now()->addHour(),
+            'scopes' => ['https://www.googleapis.com/auth/calendar'],
+            'status' => 'active',
+            'connected_at' => now(),
+        ]);
+
+        $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/meetings', [
+                'company_id' => $company->company_id,
+                'title' => 'Admin Planning Review',
+                'description' => 'Admin created planning review.',
+                'timezone' => 'Africa/Lagos',
+                'start_at' => now()->addDays(2)->setHour(11)->setMinute(0)->toIso8601String(),
+                'end_at' => now()->addDays(2)->setHour(12)->setMinute(0)->toIso8601String(),
+                'source_page' => 'dashboard',
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.meeting.sync_status', 'pending')
+            ->assertJsonPath('data.integration.connected', true);
+
+        Queue::assertPushed(SyncMeetingToGoogleJob::class);
+    }
+
+    public function test_supervisor_can_create_meeting_with_connection_active(): void
+    {
+        Queue::fake();
+
+        [$company, $owner, $admin] = $this->seedCompanyUsers();
+        $supervisor = User::factory()->create(['email_verified_at' => now()]);
+
+        $this->attachCompanyRole($company->id, $supervisor->id, 'supervisor');
+
+        CompanyCalendarConnection::create([
+            'company_id' => $company->id,
+            'owner_user_id' => $owner->id,
+            'organizer_email' => 'owner@factory23.test',
+            'organizer_google_user_id' => 'google-owner-123',
+            'access_token_encrypted' => 'access-token',
+            'refresh_token_encrypted' => 'refresh-token',
+            'token_expires_at' => now()->addHour(),
+            'scopes' => ['https://www.googleapis.com/auth/calendar'],
+            'status' => 'active',
+            'connected_at' => now(),
+        ]);
+
+        $response = $this->withToken($supervisor->createToken('supervisor-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/meetings', [
+                'company_id' => $company->company_id,
+                'title' => 'Supervisor Team Meeting',
+                'description' => 'Supervisor created team meeting.',
+                'timezone' => 'Africa/Lagos',
+                'start_at' => now()->addDays(3)->setHour(14)->setMinute(0)->toIso8601String(),
+                'end_at' => now()->addDays(3)->setHour(15)->setMinute(0)->toIso8601String(),
+                'source_page' => 'operations',
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.meeting.sync_status', 'pending')
+            ->assertJsonPath('data.integration.connected', true);
+
+        Queue::assertPushed(SyncMeetingToGoogleJob::class);
+    }
+
+    public function test_agent_can_create_meeting_with_connection_active(): void
+    {
+        Queue::fake();
+
+        [$company, $owner, $admin, $agent] = $this->seedCompanyUsers();
+
+        CompanyCalendarConnection::create([
+            'company_id' => $company->id,
+            'owner_user_id' => $owner->id,
+            'organizer_email' => 'owner@factory23.test',
+            'organizer_google_user_id' => 'google-owner-123',
+            'access_token_encrypted' => 'access-token',
+            'refresh_token_encrypted' => 'refresh-token',
+            'token_expires_at' => now()->addHour(),
+            'scopes' => ['https://www.googleapis.com/auth/calendar'],
+            'status' => 'active',
+            'connected_at' => now(),
+        ]);
+
+        $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/meetings', [
+                'company_id' => $company->company_id,
+                'title' => 'Agent Follow-up Call',
+                'description' => 'Agent created follow-up meeting.',
+                'timezone' => 'Africa/Lagos',
+                'start_at' => now()->addDays(4)->setHour(10)->setMinute(0)->toIso8601String(),
+                'end_at' => now()->addDays(4)->setHour(11)->setMinute(0)->toIso8601String(),
+                'source_page' => 'agent',
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.meeting.sync_status', 'pending')
+            ->assertJsonPath('data.integration.connected', true);
+
+        Queue::assertPushed(SyncMeetingToGoogleJob::class);
+    }
+
     public function test_owner_can_cancel_meeting_and_dispatch_google_cancel_job_when_connected(): void
     {
         Queue::fake();
@@ -148,7 +261,7 @@ class MeetingManagementTest extends TestCase
         });
     }
 
-    public function test_agent_cannot_create_meeting(): void
+    public function test_agent_cannot_create_meeting_when_calendar_not_connected(): void
     {
         [$company,,, $agent] = $this->seedCompanyUsers();
 
@@ -163,7 +276,10 @@ class MeetingManagementTest extends TestCase
             ]);
 
         $response->assertUnprocessable()
-            ->assertJsonPath('errors.authorization.0', 'Only owners, admins, and supervisors can manage meetings.');
+            ->assertJsonPath(
+                'errors.google_calendar.0',
+                'Google Calendar has not been configured for this organization. Please contact your Account Administrator (Owner or Admin) to complete the Google Calendar setup before creating meetings.',
+            );
     }
 
     public function test_management_user_can_list_company_meetings(): void
@@ -189,6 +305,31 @@ class MeetingManagementTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonCount(1, 'data.items')
             ->assertJsonPath('data.items.0.title', 'Visible Meeting');
+    }
+
+    public function test_agent_can_list_company_meetings(): void
+    {
+        [$company, $owner, $admin, $agent] = $this->seedCompanyUsers();
+
+        Meeting::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $owner->id,
+            'title' => 'Visible Agent Meeting',
+            'timezone' => 'Africa/Lagos',
+            'start_at' => now()->addDay(),
+            'end_at' => now()->addDay()->addHour(),
+            'status' => 'scheduled',
+            'source_page' => 'api',
+            'sync_status' => 'pending',
+        ]);
+
+        $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
+            ->getJson('/api/v1/meetings?company_id=' . $company->company_id);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.title', 'Visible Agent Meeting');
     }
 
     public function test_management_user_cannot_fetch_meeting_from_another_company(): void

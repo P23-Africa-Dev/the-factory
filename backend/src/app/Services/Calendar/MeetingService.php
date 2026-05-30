@@ -27,7 +27,7 @@ class MeetingService
     {
         $context = $this->companyContextService->resolve($user, $filters['company_id'] ?? null);
         $companyId = (int) $context['company']->id;
-        $this->ensureManagementRole((string) $context['role']);
+        $this->ensureMeetingAccessRole((string) $context['role']);
 
         $query = Meeting::query()
             ->with(['attendees', 'creator'])
@@ -63,12 +63,21 @@ class MeetingService
     {
         $context = $this->companyContextService->resolve($user, $data['company_id'] ?? null);
         $companyId = (int) $context['company']->id;
-        $this->ensureManagementRole((string) $context['role']);
+        $this->ensureMeetingAccessRole((string) $context['role']);
 
         $connection = $this->activeConnection($companyId);
-        $hasActiveIntegration = $connection !== null;
 
-        $meeting = DB::transaction(function () use ($data, $companyId, $user, $connection, $hasActiveIntegration): Meeting {
+        // Block meeting creation until an admin has connected Google Calendar.
+        if ($connection === null) {
+            throw ValidationException::withMessages([
+                'google_calendar' => [
+                    'Google Calendar has not been configured for this organization. '
+                        . 'Please contact your Account Administrator (Owner or Admin) to complete the Google Calendar setup before creating meetings.',
+                ],
+            ]);
+        }
+
+        $meeting = DB::transaction(function () use ($data, $companyId, $user, $connection): Meeting {
             $meeting = Meeting::create([
                 'company_id' => $companyId,
                 'created_by_user_id' => $user->id,
@@ -82,7 +91,7 @@ class MeetingService
                 'end_at' => $data['end_at'],
                 'status' => 'scheduled',
                 'source_page' => $data['source_page'] ?? 'api',
-                'sync_status' => $hasActiveIntegration ? 'pending' : 'pending_setup',
+                'sync_status' => 'pending',
             ]);
 
             $this->syncAttendees(
@@ -94,20 +103,16 @@ class MeetingService
             return $meeting;
         });
 
-        if ($hasActiveIntegration) {
-            SyncMeetingToGoogleJob::dispatch((int) $meeting->id);
-        }
+        SyncMeetingToGoogleJob::dispatch((int) $meeting->id);
 
         return [
             'meeting' => $this->loadMeeting($meeting),
             'integration' => [
-                'connected' => $hasActiveIntegration,
-                'status' => $hasActiveIntegration ? 'active' : 'not_connected',
-                'requires_owner_action' => ! $hasActiveIntegration,
+                'connected' => true,
+                'status' => 'active',
+                'requires_owner_action' => false,
             ],
-            'warnings' => $hasActiveIntegration
-                ? []
-                : ['Owner must connect Google Calendar to enable sync.'],
+            'warnings' => [],
         ];
     }
 
@@ -115,7 +120,7 @@ class MeetingService
     {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
-        $this->ensureManagementRole((string) $context['role']);
+        $this->ensureMeetingAccessRole((string) $context['role']);
 
         $this->assertMeetingBelongsToCompany($meeting, $resolvedCompanyId);
 
@@ -244,7 +249,7 @@ class MeetingService
     public function listAttendeeCandidates(User $user, ?int $companyId = null): array
     {
         $context = $this->companyContextService->resolve($user, $companyId);
-        $this->ensureManagementRole((string) $context['role']);
+        $this->ensureMeetingAccessRole((string) $context['role']);
 
         $company = $context['company'];
 
@@ -288,6 +293,17 @@ class MeetingService
 
         throw ValidationException::withMessages([
             'authorization' => ['Only owners, admins, and supervisors can manage meetings.'],
+        ]);
+    }
+
+    private function ensureMeetingAccessRole(string $role): void
+    {
+        if (in_array($role, ['owner', 'admin', 'supervisor', 'agent'], true)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'authorization' => ['Only company members can access meetings.'],
         ]);
     }
 
