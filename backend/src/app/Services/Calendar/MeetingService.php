@@ -299,7 +299,11 @@ class MeetingService
         $snapshot = $this->loadMeeting($meeting);
         $this->meetingReminderService->deleteForMeeting($meeting);
 
-        $meeting->forceDelete();
+        if ((string) config('meetings.deletion_mode', 'soft') === 'hard') {
+            $meeting->forceDelete();
+        } else {
+            $meeting->delete();
+        }
 
         $this->dispatchLifecycleEmails('deleted', $snapshot, (string) $context['company']->name);
         $this->notifyInternalAttendees($snapshot, $resolvedCompanyId, 'deleted', $user->id);

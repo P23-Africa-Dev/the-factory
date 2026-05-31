@@ -6,7 +6,7 @@ import happyIcon from "@/assets/images/happy.png";
 import SearchListIcon from "@/assets/images/search-list-icon.png";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { useDashboardOverview } from "@/hooks/use-dashboard";
-import { useMeetings } from "@/hooks/use-meetings";
+import { useMeetingDetail, useMeetings } from "@/hooks/use-meetings";
 import { useCalendarIntegrationStatus } from "@/hooks/use-calendar-integration";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { canAccessMeetingCreation, canConnectGoogleCalendar, getMeetingAccessNotice, getMeetingCreationTooltip } from "@/lib/calendar-permissions";
@@ -18,6 +18,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ScheduleMeetingModal } from "@/components/operations/schedule-meeting-modal";
+import { MeetingDetailsModal } from "@/components/dashboard/meeting-details-modal";
 
 export function TopCustomers() {
   const customers = [
@@ -241,6 +242,37 @@ function formatPipelineLabel(status: string): string {
     .join(" ");
 }
 
+function formatRemainingTime(value: string | null): string {
+  if (!value) {
+    return "Starting soon";
+  }
+
+  const start = new Date(value);
+  if (Number.isNaN(start.getTime())) {
+    return "Starting soon";
+  }
+
+  const diffMs = start.getTime() - Date.now();
+  if (diffMs <= 0) {
+    return "In progress";
+  }
+
+  const totalMinutes = Math.floor(diffMs / 60000);
+  if (totalMinutes < 60) {
+    return `${totalMinutes}m left`;
+  }
+
+  const totalHours = Math.floor(totalMinutes / 60);
+  if (totalHours < 24) {
+    const remMinutes = totalMinutes % 60;
+    return remMinutes === 0 ? `${totalHours}h left` : `${totalHours}h ${remMinutes}m left`;
+  }
+
+  const days = Math.floor(totalHours / 24);
+  const remHours = totalHours % 24;
+  return remHours === 0 ? `${days}d left` : `${days}d ${remHours}h left`;
+}
+
 export function WeeklyTasks() {
   const [filter, setFilter] = useState<TaskFilter>("Daily");
 
@@ -333,6 +365,7 @@ export function WeeklyTasksAgents() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showCreateMeetingModal, setShowCreateMeetingModal] = useState(false);
   const [meetingModalKey, setMeetingModalKey] = useState(0);
+  const [selectedMeetingId, setSelectedMeetingId] = useState<number | null>(null);
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const basePath = role === "agent" ? "/agent" : "/admin";
@@ -358,6 +391,19 @@ export function WeeklyTasksAgents() {
     per_page: 100,
   });
 
+  const selectedMeetingSummary = useMemo(() => {
+    if (selectedMeetingId === null) {
+      return null;
+    }
+
+    return (meetingsData?.meetings ?? []).find((meeting) => meeting.id === selectedMeetingId) ?? null;
+  }, [meetingsData?.meetings, selectedMeetingId]);
+
+  const meetingDetailQuery = useMeetingDetail(selectedMeetingId ?? 0, companyId ?? undefined);
+  const selectedMeeting = selectedMeetingId !== null
+    ? meetingDetailQuery.data ?? selectedMeetingSummary
+    : null;
+
   const formattedDate = selectedDate.toLocaleDateString("en-US", {
     weekday: "short",
     month: "long",
@@ -380,9 +426,16 @@ export function WeeklyTasksAgents() {
       .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
       .slice(0, 2)
       .map(({ meeting }, index) => ({
+        id: meeting.id,
         time: formatTimeLabel(meeting.start_at),
+        date: new Date(meeting.start_at).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
         title: meeting.title,
-        desc: meeting.status ? `Status: ${formatPipelineLabel(meeting.status)}` : "Scheduled meeting",
+        organizer: meeting.creator?.name ?? "Organizer",
+        status: formatPipelineLabel(meeting.status),
+        remaining: formatRemainingTime(meeting.start_at ?? null),
         color: TASK_COLORS[index % TASK_COLORS.length],
       }));
   }, [meetingsData?.meetings]);
@@ -478,9 +531,10 @@ export function WeeklyTasksAgents() {
             <div className="space-y-3 w-full">
               {upcomingMeetings.map((task, i) => (
                 <div
-                  key={i}
-                  className="rounded-[40px] px-4 py-3 flex items-center gap-4 text-white animate-in fade-in slide-in-from-right-4 duration-300 w-full"
+                  key={task.id}
+                  className="rounded-[40px] px-4 py-3 flex items-center gap-4 text-white animate-in fade-in slide-in-from-right-4 duration-300 w-full cursor-pointer"
                   style={{ backgroundColor: task.color }}
+                  onClick={() => setSelectedMeetingId(task.id)}
                 >
                   <div className="text-[16px] font-bold whitespace-nowrap min-w-[50px]">
                     {task.time}
@@ -490,7 +544,10 @@ export function WeeklyTasksAgents() {
                       {task.title}
                     </p>
                     <p className="text-[10px] opacity-80 leading-tight mt-0.5">
-                      {task.desc}
+                      {task.date} • Organizer: {task.organizer}
+                    </p>
+                    <p className="text-[10px] opacity-80 leading-tight mt-0.5">
+                      Status: {task.status} • {task.remaining}
                     </p>
                   </div>
                 </div>
@@ -585,6 +642,12 @@ export function WeeklyTasksAgents() {
         defaultDate={selectedDate}
         title="Schedule Meeting"
         sourcePage="dashboard"
+      />
+
+      <MeetingDetailsModal
+        isOpen={selectedMeetingId !== null}
+        onClose={() => setSelectedMeetingId(null)}
+        meeting={selectedMeeting ?? null}
       />
     </div>
   );

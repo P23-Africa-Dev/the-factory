@@ -37,7 +37,7 @@ class StoreMeetingRequest extends FormRequest
             'timezone' => ['required', 'string', 'max:64'],
             'start_at' => ['required', 'date'],
             'end_at' => ['required', 'date', 'after:start_at'],
-            'source_page' => ['required', 'string', Rule::in(['dashboard', 'operations', 'project', 'task', 'api'])],
+            'source_page' => ['required', 'string', Rule::in(['dashboard', 'operations', 'project', 'task', 'api', 'agent'])],
             'meeting_settings' => ['nullable', 'array'],
             'reminders' => ['nullable', 'array', 'max:20'],
             'reminders.*.offset_minutes' => ['nullable', 'integer', 'min:1'],

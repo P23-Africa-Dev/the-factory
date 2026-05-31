@@ -17,12 +17,22 @@ import { useMeetingAttendeeCandidates } from "@/hooks/use-meeting-attendees";
 import type { MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
 import type { MeetingItem } from "@/lib/api/meetings";
 
+const REMINDER_PRESETS = [
+    { label: "5 minutes before", value: 5 },
+    { label: "15 minutes before", value: 15 },
+    { label: "30 minutes before", value: 30 },
+    { label: "1 hour before", value: 60 },
+    { label: "3 hours before", value: 180 },
+    { label: "1 day before", value: 1440 },
+    { label: "3 days before", value: 4320 },
+] as const;
+
 type ScheduleMeetingModalProps = {
     isOpen: boolean;
     onClose: () => void;
     defaultDate?: Date;
     title?: string;
-    sourcePage?: "dashboard" | "operations" | "project" | "task" | "api";
+    sourcePage?: "dashboard" | "operations" | "project" | "task" | "api" | "agent";
     projectId?: number | string;
     taskId?: number | string;
     onCreated?: (meeting: MeetingItem) => void;
@@ -90,6 +100,8 @@ type FormState = {
     externalAttendees: Array<{ email: string; display_name?: string }>;
     selectedInternalAttendeeIds: number[];
     internalSearch: string;
+    selectedReminderOffsets: number[];
+    customReminderInput: string;
     errors: Record<string, string>;
 };
 
@@ -106,6 +118,8 @@ function buildDefaultFormState(defaultDate?: Date): FormState {
         externalAttendees: [],
         selectedInternalAttendeeIds: [],
         internalSearch: "",
+        selectedReminderOffsets: [],
+        customReminderInput: "",
         errors: {},
     };
 }
@@ -155,6 +169,8 @@ export function ScheduleMeetingModal({
         externalAttendees,
         selectedInternalAttendeeIds,
         internalSearch,
+        selectedReminderOffsets,
+        customReminderInput,
         errors,
     } = form;
 
@@ -226,6 +242,19 @@ export function ScheduleMeetingModal({
                 ? prev.selectedInternalAttendeeIds.filter((id) => id !== candidate.id)
                 : [...prev.selectedInternalAttendeeIds, candidate.id],
         }));
+    };
+
+    const toggleReminderOffset = (offsetMinutes: number) => {
+        setForm((prev) => {
+            const exists = prev.selectedReminderOffsets.includes(offsetMinutes);
+
+            return {
+                ...prev,
+                selectedReminderOffsets: exists
+                    ? prev.selectedReminderOffsets.filter((value) => value !== offsetMinutes)
+                    : [...prev.selectedReminderOffsets, offsetMinutes].sort((a, b) => a - b),
+            };
+        });
     };
 
     const addExternalEmails = (value: string): void => {
@@ -357,6 +386,16 @@ export function ScheduleMeetingModal({
             return accumulator;
         }, []);
 
+        const reminders = selectedReminderOffsets.map((offsetMinutes) => ({ offset_minutes: offsetMinutes }));
+
+        const normalizedCustomReminder = customReminderInput.trim();
+        if (normalizedCustomReminder !== "") {
+            const parsedCustomReminder = new Date(normalizedCustomReminder);
+            if (!Number.isNaN(parsedCustomReminder.getTime())) {
+                reminders.push({ remind_at: parsedCustomReminder.toISOString() });
+            }
+        }
+
         createMeetingMutation.mutate(
             {
                 company_id: companyId,
@@ -369,6 +408,7 @@ export function ScheduleMeetingModal({
                 end_at: endDate.toISOString(),
                 source_page: effectiveSourcePage,
                 attendees,
+                reminders,
             },
             {
                 onSuccess: (response) => {
@@ -642,6 +682,53 @@ export function ScheduleMeetingModal({
                             {errors.end_at && (
                                 <p className="mt-1 text-[11px] text-red-500">{errors.end_at}</p>
                             )}
+                        </div>
+                    </div>
+
+                    {/* Reminder schedule */}
+                    <div className="rounded-2xl border border-gray-100 bg-gray-50 px-3 py-3">
+                        <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#0B1215]">
+                            Reminder Schedule
+                        </p>
+                        <p className="mb-2 text-[10px] text-gray-500">
+                            Select one or more reminders for this meeting.
+                        </p>
+
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {REMINDER_PRESETS.map((preset) => {
+                                const checked = selectedReminderOffsets.includes(preset.value);
+
+                                return (
+                                    <label
+                                        key={preset.value}
+                                        className="flex cursor-pointer items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-[11px] text-[#0B1215]"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() => toggleReminderOffset(preset.value)}
+                                            className="h-3.5 w-3.5 rounded border-gray-300 text-[#094B5C] focus:ring-[#094B5C]"
+                                        />
+                                        <span>{preset.label}</span>
+                                    </label>
+                                );
+                            })}
+                        </div>
+
+                        <div className="mt-2">
+                            <label
+                                htmlFor="custom-reminder"
+                                className="mb-1 block text-[10px] font-semibold text-gray-600"
+                            >
+                                Custom reminder time
+                            </label>
+                            <input
+                                id="custom-reminder"
+                                type="datetime-local"
+                                value={customReminderInput}
+                                onChange={(event) => setField("customReminderInput", event.target.value)}
+                                className="w-full rounded-xl border border-gray-200 bg-white py-2.5 px-3 text-[12px] outline-none transition-colors focus:border-[#094B5C]"
+                            />
                         </div>
                     </div>
 

@@ -87,6 +87,7 @@ export function OperationsCalendar({ projectId, taskId }: OperationsCalendarProp
     });
 
     const viewerId = Number(user?.id ?? 0);
+    const viewerEmail = String(user?.email ?? '').trim().toLowerCase();
     const hasMeetingContext = projectId != null || taskId != null;
 
     const selfMeetings = useMemo(() => {
@@ -102,10 +103,17 @@ export function OperationsCalendar({ projectId, taskId }: OperationsCalendarProp
             }
 
             const createdBy = Number(meeting.created_by_user_id ?? 0);
+            const invited = (meeting.attendees ?? []).some((attendee) => {
+                const attendeeUserId = attendee.user_id != null ? Number(attendee.user_id) : 0;
+                const attendeeEmail = String(attendee.email ?? '').trim().toLowerCase();
 
-            return viewerId > 0 && createdBy === viewerId;
+                return (viewerId > 0 && attendeeUserId === viewerId)
+                    || (viewerEmail !== '' && attendeeEmail === viewerEmail);
+            });
+
+            return (viewerId > 0 && createdBy === viewerId) || invited;
         });
-    }, [hasMeetingContext, meetingsData?.meetings, viewerId]);
+    }, [hasMeetingContext, meetingsData?.meetings, viewerEmail, viewerId]);
 
     const meetingsByDate = useMemo(() => {
         const grouped: Record<string, Array<{ id: number; time: string; title: string; desc: string; bg: string; shadow: string }>> = {};

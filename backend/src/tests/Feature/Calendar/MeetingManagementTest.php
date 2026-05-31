@@ -404,6 +404,62 @@ class MeetingManagementTest extends TestCase
             ->assertJsonPath('data.items.3.company_role', 'agent');
     }
 
+    public function test_meeting_delete_uses_soft_delete_when_configured(): void
+    {
+        config()->set('meetings.deletion_mode', 'soft');
+
+        [$company, $owner] = $this->seedCompanyUsers();
+
+        $meeting = Meeting::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $owner->id,
+            'title' => 'Soft Delete Meeting',
+            'timezone' => 'Africa/Lagos',
+            'start_at' => now()->addDays(2),
+            'end_at' => now()->addDays(2)->addHour(),
+            'status' => 'scheduled',
+            'source_page' => 'api',
+            'sync_status' => 'pending_setup',
+        ]);
+
+        $this->withToken($owner->createToken('owner-token', ['*'])->plainTextToken)
+            ->deleteJson('/api/v1/meetings/' . $meeting->id, [
+                'company_id' => $company->company_id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $this->assertSoftDeleted('meetings', ['id' => $meeting->id]);
+    }
+
+    public function test_meeting_delete_uses_force_delete_in_hard_mode(): void
+    {
+        config()->set('meetings.deletion_mode', 'hard');
+
+        [$company, $owner] = $this->seedCompanyUsers();
+
+        $meeting = Meeting::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $owner->id,
+            'title' => 'Hard Delete Meeting',
+            'timezone' => 'Africa/Lagos',
+            'start_at' => now()->addDays(2),
+            'end_at' => now()->addDays(2)->addHour(),
+            'status' => 'scheduled',
+            'source_page' => 'api',
+            'sync_status' => 'pending_setup',
+        ]);
+
+        $this->withToken($owner->createToken('owner-token', ['*'])->plainTextToken)
+            ->deleteJson('/api/v1/meetings/' . $meeting->id, [
+                'company_id' => $company->company_id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $this->assertDatabaseMissing('meetings', ['id' => $meeting->id]);
+    }
+
     private function seedCompanyUsers(string $companyId = 'FAC-MEETBASE'): array
     {
         $company = Company::create([

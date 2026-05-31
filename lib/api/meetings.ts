@@ -45,7 +45,7 @@ export type MeetingItem = {
     start_at: string;
     end_at: string;
     status: MeetingStatus;
-    source_page: "dashboard" | "operations" | "project" | "task" | "api";
+    source_page: "dashboard" | "operations" | "project" | "task" | "api" | "agent";
     reminder_config?: Array<{
         offset_minutes?: number | null;
         custom_remind_at?: string | null;
@@ -62,7 +62,14 @@ export type MeetingItem = {
     synced_at?: string | null;
     external_updated_at?: string | null;
     attendees?: MeetingAttendee[];
+    creator?: {
+        id: number;
+        name: string;
+        email: string;
+    } | null;
     reminders?: MeetingReminder[];
+    created_at?: string;
+    updated_at?: string;
 };
 
 export type MeetingsListParams = {
@@ -94,7 +101,7 @@ export type CreateMeetingPayload = {
     timezone: string;
     start_at: string;
     end_at: string;
-    source_page?: "dashboard" | "operations" | "project" | "task" | "api";
+    source_page?: "dashboard" | "operations" | "project" | "task" | "api" | "agent";
     meeting_settings?: MeetingSettings | null;
     reminders?: Array<{
         offset_minutes?: number;
