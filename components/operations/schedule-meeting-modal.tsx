@@ -15,7 +15,7 @@ import {
 } from "@/hooks/use-calendar-integration";
 import { useMeetingAttendeeCandidates } from "@/hooks/use-meeting-attendees";
 import type { MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
-import type { MeetingItem } from "@/lib/api/meetings";
+import type { CreateMeetingPayload, MeetingItem } from "@/lib/api/meetings";
 
 const REMINDER_PRESETS = [
     { label: "5 minutes before", value: 5 },
@@ -386,7 +386,9 @@ export function ScheduleMeetingModal({
             return accumulator;
         }, []);
 
-        const reminders = selectedReminderOffsets.map((offsetMinutes) => ({ offset_minutes: offsetMinutes }));
+        const reminders: NonNullable<CreateMeetingPayload["reminders"]> = selectedReminderOffsets.map((offsetMinutes) => ({
+            offset_minutes: offsetMinutes,
+        }));
 
         const normalizedCustomReminder = customReminderInput.trim();
         if (normalizedCustomReminder !== "") {
