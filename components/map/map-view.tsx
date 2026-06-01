@@ -120,6 +120,51 @@ function formatEta(etaSeconds: number | null | undefined): string {
   return rem > 0 ? `${hours}h ${rem}m` : `${hours}h`;
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function buildAgentPopupHtml(params: { name: string; avatarUrl?: string; location: string; statusLabel: string }): string {
+  const name = escapeHtml(params.name || 'Agent');
+  const location = escapeHtml(params.location || 'No location details');
+  const statusLabel = escapeHtml(params.statusLabel || 'On field');
+  const initials = escapeHtml(getAgentInitials(params.name) ?? '');
+  const avatarUrl = params.avatarUrl ? escapeHtml(params.avatarUrl) : '';
+
+  return `
+    <div style="display:flex; align-items:center; gap:12px; min-width:240px; max-width:320px; padding:12px 14px; border-radius:18px; background:rgba(255,255,255,0.96); border:1px solid rgba(148,163,184,0.18); box-shadow:0 18px 48px rgba(15,23,42,0.16); backdrop-filter:blur(18px);">
+      <div style="width:52px; height:52px; border-radius:9999px; overflow:hidden; background:#E2E8F0; flex:0 0 auto; display:flex; align-items:center; justify-content:center;">
+        ${avatarUrl ? `<img src="${avatarUrl}" alt="${name} avatar" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
+        <div style="width:100%; height:100%; display:${avatarUrl ? 'none' : 'flex'}; align-items:center; justify-content:center; font-size:14px; font-weight:800; color:#0F172A; background:linear-gradient(135deg, #E2E8F0, #F8FAFC);">${initials || '•'}</div>
+      </div>
+      <div style="min-width:0; flex:1; font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+        <div style="font-size:14px; font-weight:700; color:#0F172A; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
+        <div style="margin-top:4px; font-size:12px; line-height:1.45; color:#475569; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${location}</div>
+        <div style="margin-top:6px; font-size:11px; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; color:#0EA5E9;">${statusLabel}</div>
+      </div>
+    </div>
+  `;
+}
+
+function buildDestinationPopupHtml(params: { title: string; location: string; statusLabel: string }): string {
+  const title = escapeHtml(params.title || 'Destination');
+  const location = escapeHtml(params.location || 'No location details');
+  const statusLabel = escapeHtml(params.statusLabel || 'Destination');
+
+  return `
+    <div style="min-width:220px; max-width:300px; padding:12px 14px; border-radius:18px; background:rgba(255,255,255,0.96); border:1px solid rgba(148,163,184,0.18); box-shadow:0 18px 48px rgba(15,23,42,0.16); backdrop-filter:blur(18px); font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+      <div style="font-size:14px; font-weight:700; color:#0F172A; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${title}</div>
+      <div style="margin-top:5px; font-size:12px; line-height:1.45; color:#475569; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${location}</div>
+      <div style="margin-top:6px; font-size:11px; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; color:#DC2626;">${statusLabel}</div>
+    </div>
+  `;
+}
+
 function getDestinationMarkerKind(status: LiveTaskState['status']): 'destination' | 'near' | 'arrived' | 'completed' {
   if (status === 'completed') return 'completed';
   if (status === 'near_destination') return 'near';
@@ -164,6 +209,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   // Flips true after map 'load' fires so the sync effect knows the map is ready
   const [mapVersion, setMapVersion] = useState(0);
   const [isInitialHydrating, setIsInitialHydrating] = useState(false);
+  const hoverPopupRef = useRef<mapboxgl.Popup | null>(null);
 
   const liveTasks = useTrackingStore((s) => s.liveTasks);
 
@@ -198,6 +244,37 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       setSearchBusy(false);
     }
   }, []);
+
+  const showHoverPopup = useCallback((position: [number, number], html: string) => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current) return;
+
+    if (!hoverPopupRef.current) {
+      hoverPopupRef.current = new mapboxgl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 18,
+        className: 'custom-dark-popup',
+      });
+    }
+
+    hoverPopupRef.current.setLngLat(position).setHTML(html).addTo(map);
+  }, []);
+
+  const hideHoverPopup = useCallback(() => {
+    hoverPopupRef.current?.remove();
+  }, []);
+
+  const bindHoverPopup = useCallback(
+    (element: HTMLElement, getPosition: () => [number, number], getHtml: () => string) => {
+      if (element.dataset.hoverBound === 'true') return;
+
+      element.dataset.hoverBound = 'true';
+      element.addEventListener('mouseenter', () => showHoverPopup(getPosition(), getHtml()));
+      element.addEventListener('mouseleave', hideHoverPopup);
+    },
+    [hideHoverPopup, showHoverPopup]
+  );
 
   const animateMarkerTo = useCallback((taskId: number, marker: mapboxgl.Marker, target: [number, number]) => {
     const cached = markerPositionRef.current.get(taskId);
@@ -355,17 +432,12 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       }).addTo(map);
     }
 
-    const popupHtml = `
-      <div style="background-color: #0A192F; border-radius: 16px; padding: 12px; display: flex; align-items: center; gap: 16px; min-width: 240px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);">
-         <div style="width: 64px; height: 64px; border-radius: 12px; overflow: hidden; background: #1E293B; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
-            ${agentAvatarUrl ? `<img src="${agentAvatarUrl}" style="width: 100%; height: 100%; object-fit: cover;" />` : `<div style="color: white; font-weight: bold; font-size: 20px;">#</div>`}
-         </div>
-         <div style="flex: 1;">
-            <div style="color: white; font-weight: 700; font-size: 14px; margin-bottom: 4px; font-family: sans-serif;">${agentName || 'Agent'}</div>
-            <div style="color: #94A3B8; font-size: 11px; line-height: 1.4; font-family: sans-serif;">${taskAddress || taskTitle || 'No location details'}</div>
-         </div>
-      </div>
-    `;
+     const popupHtml = buildAgentPopupHtml({
+      name: agentName,
+      avatarUrl: agentAvatarUrl,
+      location: taskAddress || taskTitle || 'No location details',
+      statusLabel: getStatusLabel(selectedTask.status),
+     });
     popupRef.current.setLngLat(lastPosition).setHTML(popupHtml);
   }, [selectedTask, mapVersion]);
 
@@ -463,6 +535,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       if (pulseMarkerRef.current) pulseMarkerRef.current.remove();
       popupRef.current = null;
       pulseMarkerRef.current = null;
+      if (hoverPopupRef.current) hoverPopupRef.current.remove();
+      hoverPopupRef.current = null;
       directionRoutesRef.current.clear();
       clearDirectionsCache();
 
@@ -572,17 +646,26 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         if (!existingDestinationMarker) {
           const el = createStaticMarkerElement(markerKind);
           el.dataset.kind = markerKind;
-          el.title =
-            markerKind === 'destination'
-              ? `Destination - ${task.agentName || `Task ${task.taskId}`}`
-              : markerKind === 'near'
-                ? `Near destination - ${task.agentName || `Task ${task.taskId}`}`
-                : markerKind === 'arrived'
-                  ? `Arrival reached - ${task.agentName || `Task ${task.taskId}`}`
-                  : `Completed - ${task.agentName || `Task ${task.taskId}`}`;
           const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
             .setLngLat(destinationPoint)
             .addTo(map);
+          bindHoverPopup(
+            el,
+            () => destinationPoint,
+            () =>
+              buildDestinationPopupHtml({
+                title:
+                  markerKind === 'destination'
+                    ? `Destination - ${task.agentName || `Task ${task.taskId}`}`
+                    : markerKind === 'near'
+                      ? `Near destination - ${task.agentName || `Task ${task.taskId}`}`
+                      : markerKind === 'arrived'
+                        ? `Arrival reached - ${task.agentName || `Task ${task.taskId}`}`
+                        : `Completed - ${task.agentName || `Task ${task.taskId}`}`,
+                location: task.taskAddress || task.taskTitle || 'No location details',
+                statusLabel: getStatusLabel(task.status),
+              })
+          );
           destinationMarkersRef.current.set(task.taskId, marker);
         } else {
           const existingKind = existingDestinationMarker.getElement().dataset.kind;
@@ -593,6 +676,23 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
               .setLngLat(destinationPoint)
               .addTo(map);
+            bindHoverPopup(
+              el,
+              () => destinationPoint,
+              () =>
+                buildDestinationPopupHtml({
+                  title:
+                    markerKind === 'destination'
+                      ? `Destination - ${task.agentName || `Task ${task.taskId}`}`
+                      : markerKind === 'near'
+                        ? `Near destination - ${task.agentName || `Task ${task.taskId}`}`
+                        : markerKind === 'arrived'
+                          ? `Arrival reached - ${task.agentName || `Task ${task.taskId}`}`
+                          : `Completed - ${task.agentName || `Task ${task.taskId}`}`,
+                  location: task.taskAddress || task.taskTitle || 'No location details',
+                  statusLabel: getStatusLabel(task.status),
+                })
+            );
             destinationMarkersRef.current.set(task.taskId, marker);
           } else {
             existingDestinationMarker.setLngLat(destinationPoint);
@@ -608,7 +708,21 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           visualState,
           stale,
         });
-        el.title = `${task.agentName || `Task ${task.taskId}`} - ${getStatusLabel(task.status)}`;
+        el.dataset.agentName = task.agentName;
+        el.dataset.avatarUrl = task.agentAvatarUrl ?? '';
+        el.dataset.location = task.taskAddress || task.taskTitle || 'No location details';
+        el.dataset.statusLabel = getStatusLabel(task.status);
+        bindHoverPopup(
+          el,
+          () => task.lastPosition,
+          () =>
+            buildAgentPopupHtml({
+              name: el.dataset.agentName ?? task.agentName,
+              avatarUrl: el.dataset.avatarUrl || undefined,
+              location: el.dataset.location || task.taskAddress || task.taskTitle || 'No location details',
+              statusLabel: el.dataset.statusLabel ?? getStatusLabel(task.status),
+            })
+        );
         if (!compact) {
           el.addEventListener('click', () => {
             setSelectedTaskId(task.taskId);
@@ -630,10 +744,10 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           visualState,
           stale,
         });
-        existingAgentMarker.getElement().setAttribute(
-          'title',
-          `${task.agentName || `Task ${task.taskId}`} - ${getStatusLabel(task.status)}`
-        );
+        existingAgentMarker.getElement().dataset.agentName = task.agentName;
+        existingAgentMarker.getElement().dataset.avatarUrl = task.agentAvatarUrl ?? '';
+        existingAgentMarker.getElement().dataset.location = task.taskAddress || task.taskTitle || 'No location details';
+        existingAgentMarker.getElement().dataset.statusLabel = getStatusLabel(task.status);
         animateMarkerTo(task.taskId, existingAgentMarker, task.lastPosition);
       }
     });
@@ -687,7 +801,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         }
       }
     });
-  }, [tasks, tick, compact, mapVersion, nowMs, animateMarkerTo, selectedTaskId]);
+  }, [tasks, tick, compact, mapVersion, nowMs, animateMarkerTo, selectedTaskId, bindHoverPopup]);
 
   // ── Fetch Mapbox Directions routes for tasks with destinations ───────────────
   useEffect(() => {
@@ -1366,6 +1480,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
                     name={task.agentName}
                     avatarUrl={task.agentAvatarUrl}
                     sizeClassName="w-12 h-12"
+                    allowInitialsFallback={false}
                   />
                   <div className="flex-1 min-w-0">
                     <p
@@ -1441,11 +1556,13 @@ function AgentAvatar({
   avatarUrl,
   sizeClassName,
   initialsClassName = 'text-[12px]',
+  allowInitialsFallback = true,
 }: {
   name: string;
   avatarUrl?: string;
   sizeClassName: string;
   initialsClassName?: string;
+  allowInitialsFallback?: boolean;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
 
@@ -1461,12 +1578,12 @@ function AgentAvatar({
           alt={name || 'Agent'}
           onError={() => setImageFailed(true)}
         />
-      ) : initials ? (
+      ) : initials && allowInitialsFallback ? (
         <span className={`${initialsClassName} font-bold text-gray-500`}>
           {initials}
         </span>
       ) : (
-        <span className={`${initialsClassName} font-bold text-gray-500`}>#</span>
+        <span aria-hidden="true" className="block w-full h-full bg-transparent" />
       )}
     </div>
   );
