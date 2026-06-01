@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import { Loader2, Search, Users, X } from "lucide-react";
+import { Check, ChevronDown, Loader2, Search, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -146,8 +146,10 @@ type FormState = {
 
 function buildDefaultFormState(defaultDate?: Date): FormState {
     const nextStart = defaultStart(defaultDate);
-    const resolvedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Africa/Lagos";
     const timezoneOptions = getTimeZoneOptions();
+    const defaultTimezone = timezoneOptions.includes("Europe/London")
+        ? "Europe/London"
+        : timezoneOptions[0] ?? "Europe/London";
 
     return {
         meetingTitle: "",
@@ -155,7 +157,7 @@ function buildDefaultFormState(defaultDate?: Date): FormState {
         meetingDate: toInputDate(nextStart),
         startTime: toInputTime(nextStart),
         endTime: toInputTime(defaultEnd(nextStart)),
-        timezone: timezoneOptions.includes(resolvedTimezone) ? resolvedTimezone : "Africa/Lagos",
+        timezone: defaultTimezone,
         externalEmailInput: "",
         externalAttendees: [],
         selectedInternalAttendeeIds: [],
@@ -223,6 +225,19 @@ export function ScheduleMeetingModal({
     const canConnectIntegration = canConnectGoogleCalendar(role);
     const integration = integrationStatusQuery.data;
     const timezoneOptions = useMemo(() => getTimeZoneOptions(), []);
+    const [isTimezoneDropdownOpen, setIsTimezoneDropdownOpen] = useState(false);
+    const [timezoneSearch, setTimezoneSearch] = useState("");
+    const timezoneDropdownRef = useRef<HTMLDivElement | null>(null);
+
+    const filteredTimezoneOptions = useMemo(() => {
+        const query = timezoneSearch.trim().toLowerCase();
+
+        if (query === "") {
+            return timezoneOptions;
+        }
+
+        return timezoneOptions.filter((option) => option.toLowerCase().includes(query));
+    }, [timezoneOptions, timezoneSearch]);
 
     useEffect(() => {
         if (!isOpen) {
@@ -256,6 +271,28 @@ export function ScheduleMeetingModal({
             window.removeEventListener("message", handleOAuthMessage);
         };
     }, [integrationStatusQuery, isOpen]);
+
+    useEffect(() => {
+        if (!isTimezoneDropdownOpen) {
+            return;
+        }
+
+        const handleOutsideClick = (event: MouseEvent) => {
+            if (!timezoneDropdownRef.current) {
+                return;
+            }
+
+            if (!timezoneDropdownRef.current.contains(event.target as Node)) {
+                setIsTimezoneDropdownOpen(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleOutsideClick);
+
+        return () => {
+            document.removeEventListener("mousedown", handleOutsideClick);
+        };
+    }, [isTimezoneDropdownOpen]);
 
     const effectiveSourcePage =
         sourcePage === "operations"
@@ -786,24 +823,67 @@ export function ScheduleMeetingModal({
                             >
                                 Timezone
                             </label>
-                            <select
-                                id="meeting-timezone"
-                                value={timezone}
-                                onChange={(event) => {
-                                    setField("timezone", event.target.value);
-                                    clearError("timezone");
-                                }}
-                                className={[
-                                    "w-full rounded-xl border bg-gray-50 py-2.5 px-3 text-sm outline-none transition-colors focus:border-[#094B5C]",
-                                    errors.timezone ? "border-red-400" : "border-gray-200",
-                                ].join(" ")}
-                            >
-                                {timezoneOptions.map((option) => (
-                                    <option key={option} value={option}>
-                                        {option}
-                                    </option>
-                                ))}
-                            </select>
+                            <div className="relative" ref={timezoneDropdownRef}>
+                                <button
+                                    id="meeting-timezone"
+                                    type="button"
+                                    onClick={() => setIsTimezoneDropdownOpen((prev) => !prev)}
+                                    className={[
+                                        "flex w-full items-center justify-between rounded-xl border bg-gray-50 py-2.5 px-3 text-sm text-[#0B1215] outline-none transition-colors focus:border-[#094B5C]",
+                                        errors.timezone ? "border-red-400" : "border-gray-200",
+                                    ].join(" ")}
+                                    aria-haspopup="listbox"
+                                    aria-expanded={isTimezoneDropdownOpen}
+                                >
+                                    <span className="truncate">{timezone}</span>
+                                    <ChevronDown size={16} className="text-gray-500" />
+                                </button>
+
+                                {isTimezoneDropdownOpen && (
+                                    <div className="absolute z-30 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-xl">
+                                        <div className="border-b border-gray-100 px-2 py-2">
+                                            <div className="relative">
+                                                <Search
+                                                    className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+                                                    size={14}
+                                                />
+                                                <input
+                                                    autoFocus
+                                                    value={timezoneSearch}
+                                                    onChange={(event) => setTimezoneSearch(event.target.value)}
+                                                    placeholder="Search timezone..."
+                                                    className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-8 pr-2 text-[12px] text-[#0B1215] outline-none transition-colors focus:border-[#094B5C]"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="max-h-48 overflow-y-auto py-1">
+                                            {filteredTimezoneOptions.length === 0 ? (
+                                                <p className="px-3 py-2 text-[11px] text-gray-500">No timezone found.</p>
+                                            ) : (
+                                                filteredTimezoneOptions.map((option) => (
+                                                    <button
+                                                        key={option}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setField("timezone", option);
+                                                            clearError("timezone");
+                                                            setTimezoneSearch("");
+                                                            setIsTimezoneDropdownOpen(false);
+                                                        }}
+                                                        className="flex w-full items-center justify-between px-3 py-2 text-left text-[12px] text-[#0B1215] hover:bg-[#F2F7F8]"
+                                                        role="option"
+                                                        aria-selected={timezone === option}
+                                                    >
+                                                        <span className="truncate">{option}</span>
+                                                        {timezone === option && <Check size={14} className="text-[#094B5C]" />}
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                             {errors.timezone && (
                                 <p className="mt-1 text-[11px] text-red-500">{errors.timezone}</p>
                             )}
