@@ -30,6 +30,24 @@ const REMINDER_PRESETS = [
     { label: "3 days before", value: 4320 },
 ] as const;
 
+const COMMON_TIMEZONES = [
+    "Africa/Lagos",
+    "UTC",
+    "Africa/Nairobi",
+    "Africa/Cairo",
+    "Europe/London",
+    "Europe/Berlin",
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles",
+    "Asia/Dubai",
+    "Asia/Kolkata",
+    "Asia/Singapore",
+    "Asia/Tokyo",
+    "Australia/Sydney",
+] as const;
+
 type ScheduleMeetingModalProps = {
     isOpen: boolean;
     onClose: () => void;
@@ -92,6 +110,24 @@ function isValidEmail(email: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function getTimeZoneOptions(): string[] {
+    const base = [...COMMON_TIMEZONES];
+    const intlWithSupportedValues = Intl as typeof Intl & {
+        supportedValuesOf?: (key: string) => string[];
+    };
+
+    if (typeof Intl !== "undefined" && typeof intlWithSupportedValues.supportedValuesOf === "function") {
+        try {
+            const list = intlWithSupportedValues.supportedValuesOf("timeZone");
+            return Array.from(new Set([...base, ...list])).sort((a, b) => a.localeCompare(b));
+        } catch {
+            return base;
+        }
+    }
+
+    return base;
+}
+
 type FormState = {
     meetingTitle: string;
     meetingDescription: string;
@@ -110,13 +146,16 @@ type FormState = {
 
 function buildDefaultFormState(defaultDate?: Date): FormState {
     const nextStart = defaultStart(defaultDate);
+    const resolvedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Africa/Lagos";
+    const timezoneOptions = getTimeZoneOptions();
+
     return {
         meetingTitle: "",
         meetingDescription: "",
         meetingDate: toInputDate(nextStart),
         startTime: toInputTime(nextStart),
         endTime: toInputTime(defaultEnd(nextStart)),
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Africa/Lagos",
+        timezone: timezoneOptions.includes(resolvedTimezone) ? resolvedTimezone : "Africa/Lagos",
         externalEmailInput: "",
         externalAttendees: [],
         selectedInternalAttendeeIds: [],
@@ -183,6 +222,7 @@ export function ScheduleMeetingModal({
     const isSubmitting = createMeetingMutation.isPending;
     const canConnectIntegration = canConnectGoogleCalendar(role);
     const integration = integrationStatusQuery.data;
+    const timezoneOptions = useMemo(() => getTimeZoneOptions(), []);
 
     useEffect(() => {
         if (!isOpen) {
@@ -746,7 +786,7 @@ export function ScheduleMeetingModal({
                             >
                                 Timezone
                             </label>
-                            <input
+                            <select
                                 id="meeting-timezone"
                                 value={timezone}
                                 onChange={(event) => {
@@ -757,8 +797,13 @@ export function ScheduleMeetingModal({
                                     "w-full rounded-xl border bg-gray-50 py-2.5 px-3 text-sm outline-none transition-colors focus:border-[#094B5C]",
                                     errors.timezone ? "border-red-400" : "border-gray-200",
                                 ].join(" ")}
-                                placeholder="e.g. Africa/Lagos"
-                            />
+                            >
+                                {timezoneOptions.map((option) => (
+                                    <option key={option} value={option}>
+                                        {option}
+                                    </option>
+                                ))}
+                            </select>
                             {errors.timezone && (
                                 <p className="mt-1 text-[11px] text-red-500">{errors.timezone}</p>
                             )}

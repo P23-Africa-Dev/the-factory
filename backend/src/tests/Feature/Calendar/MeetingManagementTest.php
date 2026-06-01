@@ -93,6 +93,21 @@ class MeetingManagementTest extends TestCase
             ->assertJsonPath('data.integration.connected', true)
             ->assertJsonPath('data.warnings', []);
 
+        Http::assertSent(static function ($request): bool {
+            if (! str_contains($request->url(), 'https://www.googleapis.com/calendar/v3/calendars/')) {
+                return false;
+            }
+
+            if (! str_contains($request->url(), '/events?conferenceDataVersion=1&sendUpdates=all')) {
+                return false;
+            }
+
+            $payload = $request->data();
+
+            return ($payload['start']['timeZone'] ?? null) === 'Africa/Lagos'
+                && ($payload['end']['timeZone'] ?? null) === 'Africa/Lagos';
+        });
+
         $meetingId = (int) $response->json('data.meeting.id');
 
         $this->assertDatabaseHas('meeting_attendees', [
@@ -104,6 +119,26 @@ class MeetingManagementTest extends TestCase
         $this->assertNotNull($response->json('data.meeting.google_event_id'));
         $this->assertSame('primary', $response->json('data.meeting.google_calendar_id'));
         $this->assertSame('https://meet.google.com/event-owner-123', $response->json('data.meeting.google_meet_url'));
+    }
+
+    public function test_owner_cannot_create_meeting_with_invalid_timezone(): void
+    {
+        [$company, $owner] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($owner->createToken('owner-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/meetings', [
+                'company_id' => $company->company_id,
+                'title' => 'Invalid Timezone Meeting',
+                'description' => 'Should fail validation',
+                'timezone' => 'Africa/Lagoss',
+                'start_at' => now()->addDay()->setHour(9)->setMinute(0)->toIso8601String(),
+                'end_at' => now()->addDay()->setHour(10)->setMinute(0)->toIso8601String(),
+                'source_page' => 'operations',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('errors.timezone.0', 'The timezone field must be a valid timezone.');
     }
 
     public function test_admin_can_create_meeting_with_connection_active(): void

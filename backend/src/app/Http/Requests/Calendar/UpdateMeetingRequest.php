@@ -33,7 +33,7 @@ class UpdateMeetingRequest extends FormRequest
             'title' => ['sometimes', 'required', 'string', 'min:3', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string', 'max:5000'],
             'location' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'timezone' => ['sometimes', 'required', 'string', 'max:64'],
+            'timezone' => ['sometimes', 'required', 'string', 'max:64', 'timezone'],
             'start_at' => ['sometimes', 'required', 'date'],
             'end_at' => ['sometimes', 'required', 'date', 'after:start_at'],
             'status' => ['sometimes', 'required', 'string', Rule::in(['scheduled', 'cancelled', 'completed'])],

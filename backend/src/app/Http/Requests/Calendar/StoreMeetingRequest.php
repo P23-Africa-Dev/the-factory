@@ -34,7 +34,7 @@ class StoreMeetingRequest extends FormRequest
             'title' => ['required', 'string', 'min:3', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'location' => ['nullable', 'string', 'max:255'],
-            'timezone' => ['required', 'string', 'max:64'],
+            'timezone' => ['required', 'string', 'max:64', 'timezone'],
             'start_at' => ['required', 'date'],
             'end_at' => ['required', 'date', 'after:start_at'],
             'source_page' => ['required', 'string', Rule::in(['dashboard', 'operations', 'project', 'task', 'api', 'agent'])],
