@@ -37,7 +37,7 @@ class PasswordResetService
         $broker = Password::broker('users');
         $token = $broker->createToken($user);
 
-        $frontendBaseUrl = rtrim((string) env('FRONTEND_URL', config('app.url')), '/');
+        $frontendBaseUrl = rtrim((string) env('FRONTEND_URL', config('app.frontend_url')), '/');
         $query = http_build_query([
             'email' => $user->email,
             'portal' => $effectivePortal,
