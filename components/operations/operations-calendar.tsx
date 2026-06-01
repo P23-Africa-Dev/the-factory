@@ -213,7 +213,7 @@ export function OperationsCalendar({ projectId, taskId }: OperationsCalendarProp
         <>
             <div className="relative flex min-h-[430px] flex-col">
                 <div className="mb-4 flex items-center justify-between px-2">
-                    <h3 className="text-[17px] font-extrabold tracking-tight text-[#094B5C]">Schedule Self Meeting</h3>
+                    <h3 className="text-[17px] font-extrabold tracking-tight text-[#094B5C]">Schedule Meeting</h3>
                     <MoreVertical size={20} className="cursor-pointer text-[#094B5C]" strokeWidth={2.5} />
                 </div>
 
@@ -338,7 +338,7 @@ export function OperationsCalendar({ projectId, taskId }: OperationsCalendarProp
                 isOpen={showCreateModal}
                 onClose={() => setShowCreateModal(false)}
                 defaultDate={selectedDate}
-                title={projectId != null ? 'Schedule Project Meeting' : taskId != null ? 'Schedule Task Meeting' : 'Schedule Self Meeting'}
+                title={projectId != null ? 'Schedule Project Meeting' : taskId != null ? 'Schedule Task Meeting' : 'Schedule Meeting'}
                 sourcePage={modalSourcePage}
                 projectId={projectId}
                 taskId={taskId}
