@@ -2,10 +2,14 @@ import ResetPasswordForm from "@/components/forms/reset-password-form";
 
 type ResetPasswordPageProps = {
     params: Promise<{ token: string }>;
+    searchParams: Promise<{ email?: string; portal?: string }>;
 };
 
-export default async function ResetPasswordPage({ params }: ResetPasswordPageProps) {
+export default async function ResetPasswordPage({ params, searchParams }: ResetPasswordPageProps) {
     const { token } = await params;
+    const query = await searchParams;
+    const email = (query.email ?? "").trim();
+    const portal = query.portal === "agent" ? "agent" : "management";
 
     return (
         <div className="w-full max-w-[460px] flex flex-col gap-8 md:mt-0 lg:-mt-12">
@@ -18,7 +22,7 @@ export default async function ResetPasswordPage({ params }: ResetPasswordPagePro
                 </p>
             </div>
 
-            <ResetPasswordForm token={token} />
+            <ResetPasswordForm token={token} email={email} portal={portal} />
         </div>
     );
 }

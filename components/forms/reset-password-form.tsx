@@ -6,7 +6,7 @@ import { resetPassword, validateResetPasswordToken } from "@/lib/api/auth";
 import { ApiRequestError } from "@/lib/api/onboarding";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -30,14 +30,13 @@ type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;
 
 type ResetPasswordFormProps = {
     token: string;
+    email: string;
+    portal: "management" | "agent";
 };
 
-export default function ResetPasswordForm({ token }: ResetPasswordFormProps) {
+export default function ResetPasswordForm({ token, email, portal }: ResetPasswordFormProps) {
     const router = useRouter();
-    const searchParams = useSearchParams();
-    const email = (searchParams.get("email") ?? "").trim().toLowerCase();
-    const requestedPortal = (searchParams.get("portal") ?? "").trim();
-    const portal = requestedPortal === "agent" ? "agent" : "management";
+    const normalizedEmail = email.trim().toLowerCase();
     const loginPath = portal === "agent" ? "/agent/login" : "/login";
 
     const [globalError, setGlobalError] = useState("");
@@ -63,7 +62,7 @@ export default function ResetPasswordForm({ token }: ResetPasswordFormProps) {
         let mounted = true;
 
         async function validateToken() {
-            if (!email) {
+            if (!normalizedEmail) {
                 if (mounted) {
                     setGlobalError("The reset link is incomplete. Please request a new password reset link.");
                     setIsTokenValid(false);
@@ -76,7 +75,7 @@ export default function ResetPasswordForm({ token }: ResetPasswordFormProps) {
             setGlobalError("");
 
             try {
-                await validateResetPasswordToken(token, { email, portal });
+                await validateResetPasswordToken(token, { email: normalizedEmail, portal });
                 if (mounted) {
                     setIsTokenValid(true);
                 }
@@ -101,7 +100,7 @@ export default function ResetPasswordForm({ token }: ResetPasswordFormProps) {
         return () => {
             mounted = false;
         };
-    }, [email, portal, token]);
+    }, [normalizedEmail, portal, token]);
 
     const canSubmit = useMemo(() => isValid && isTokenValid && !loading, [isValid, isTokenValid, loading]);
 
@@ -111,7 +110,7 @@ export default function ResetPasswordForm({ token }: ResetPasswordFormProps) {
 
         try {
             const response = await resetPassword({
-                email,
+                email: normalizedEmail,
                 token,
                 password: values.password,
                 password_confirmation: values.password_confirmation,

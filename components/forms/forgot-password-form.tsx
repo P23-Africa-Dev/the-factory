@@ -6,7 +6,6 @@ import { forgotPassword } from "@/lib/api/auth";
 import { ApiRequestError } from "@/lib/api/onboarding";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -18,11 +17,16 @@ const forgotPasswordSchema = z.object({
 
 type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>;
 
-export default function ForgotPasswordForm() {
-  const searchParams = useSearchParams();
-  const prefilledEmail = (searchParams.get("email") ?? "").trim();
-  const requestedPortal = (searchParams.get("portal") ?? "").trim();
-  const portal = requestedPortal === "agent" ? "agent" : "management";
+type ForgotPasswordFormProps = {
+  prefilledEmail?: string;
+  portal?: "management" | "agent";
+};
+
+export default function ForgotPasswordForm({
+  prefilledEmail = "",
+  portal = "management",
+}: ForgotPasswordFormProps) {
+  const normalizedPrefilledEmail = prefilledEmail.trim();
   const [globalError, setGlobalError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -35,7 +39,7 @@ export default function ForgotPasswordForm() {
     resolver: zodResolver(forgotPasswordSchema),
     mode: "onChange",
     defaultValues: {
-      email: prefilledEmail,
+      email: normalizedPrefilledEmail,
     },
   });
 
