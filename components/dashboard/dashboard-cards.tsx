@@ -317,7 +317,7 @@ export function WeeklyTasks() {
         <div className="w-full h-px bg-[#D9D6D6] mb-3.75" />
 
         <div className="mb-6.5 relative px-5">
-          <p className="text-[14px] font-medium text-[#34373C]">Ongoing Meeting</p>
+          <p className="text-[14px] font-medium text-[#34373C]">Ongoing tasks</p>
 
           <div className="w-full h-5 bg-[#F5F5F5] rounded-full p-1.5 shadow-inner ring-1 ring-dash-dark/5 mt-6.5">
             <div className="w-[20%] h-full bg-[#FD6046] rounded-full shadow-lg relative">
@@ -339,7 +339,7 @@ export function WeeklyTasks() {
         </div>
 
         <button className="w-full bg-[#D056DC] text-white py-5 rounded-4xl mb-4 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
-          View All Meetings
+          View All tasks
           <Image
             src={ArrowUp}
             alt="Arrow Up Right Icon"
@@ -448,7 +448,7 @@ export function WeeklyTasksAgents() {
   const badgeText = ongoingTask
     ? `${agentName.split(" ")[0]} ... ${Math.round(progressPercent)}%`
     : "No Active Task";
-  const tasksRoute = role === "agent" ? "/agent/tasks" : "/operations/agents";
+  const tasksRoute = role === "agent" ? "/agent/tasks" : "/projects?tab=tasks";
 
   const handlePrevDay = () => {
     const prev = new Date(selectedDate);
@@ -596,7 +596,7 @@ export function WeeklyTasksAgents() {
         <div className="w-full h-px bg-[#D9D6D6] mb-2.75" />
 
         <div className="mb-6.5 relative px-5">
-          <p className="text-[14px] font-medium text-[#34373C]">Ongoing Meeting</p>
+          <p className="text-[14px] font-medium text-[#34373C]">Ongoing tasks</p>
 
           <div className="w-full h-5 bg-[#F5F5F5] rounded-full p-1.5 shadow-inner ring-1 ring-dash-dark/5 mt-6.5">
             <div className="h-full bg-[#FD6046] rounded-full shadow-lg relative" style={{ width: `${progressPercent}%` }}>
@@ -624,7 +624,7 @@ export function WeeklyTasksAgents() {
         </div>
 
         <button onClick={() => router.push(tasksRoute)} className="w-full bg-[#8B2FA1] text-white py-5 rounded-4xl mb-4 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
-          View All Meetings
+          View All tasks
           <Image
             src={ArrowUp}
             alt="Arrow Up Right Icon"
