@@ -46,3 +46,4 @@ api-docs/.env*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+*.md
