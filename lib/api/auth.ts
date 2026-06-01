@@ -20,11 +20,10 @@ export type LoginResponseData = {
 
 export type ForgotPasswordPayload = {
   email: string;
+  portal?: "management" | "agent";
 };
 
-export type ForgotPasswordResponseData = {
-  email: string;
-};
+export type ForgotPasswordResponseData = null;
 
 export function forgotPassword(
   payload: ForgotPasswordPayload
@@ -38,18 +37,47 @@ export function forgotPassword(
 
 export type ResetPasswordPayload = {
   email: string;
-  otp: string;
+  token: string;
   password: string;
   password_confirmation: string;
+  portal?: "management" | "agent";
 };
+
+export type ValidateResetTokenResponseData = {
+  valid: boolean;
+};
+
+export function validateResetPasswordToken(
+  token: string,
+  params: { email: string; portal?: "management" | "agent" }
+): Promise<ApiEnvelope<ValidateResetTokenResponseData>> {
+  const qs = new URLSearchParams();
+  qs.set("email", params.email);
+  if (params.portal) {
+    qs.set("portal", params.portal);
+  }
+
+  return apiRequest<ValidateResetTokenResponseData>({
+    method: "GET",
+    path: `/auth/reset-password/${encodeURIComponent(token)}?${qs.toString()}`,
+  });
+}
 
 export function resetPassword(
   payload: ResetPasswordPayload
-): Promise<ApiEnvelope<null>> {
-  return apiRequest<null>({
+): Promise<ApiEnvelope<{ redirect_path: string }>> {
+  return apiRequest<{ redirect_path: string }>({
     method: "POST",
     path: "/auth/reset-password",
     body: payload,
+  });
+}
+
+export function logout(token: string): Promise<ApiEnvelope<null>> {
+  return apiRequest<null>({
+    method: "POST",
+    path: "/auth/logout",
+    token,
   });
 }
 

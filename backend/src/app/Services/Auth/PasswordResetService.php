@@ -6,72 +6,79 @@ namespace App\Services\Auth;
 
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
-use App\Enums\VerificationType;
 use App\Models\User;
-use App\Notifications\OtpNotification;
+use App\Notifications\PasswordResetLinkNotification;
 use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Str;
 use Throwable;
 
 class PasswordResetService
 {
     public function __construct(
-        private readonly OtpService $otpService,
         private readonly NotificationService $notificationService,
     ) {}
 
-    public function sendResetCode(string $email, ?string $ipAddress = null): bool
+    public function sendResetLink(string $email, ?string $portal = null, ?string $ipAddress = null): bool
     {
-        /** @var User|null $user */
-        $user = User::query()->where('email', strtolower($email))->first();
+        $normalizedEmail = strtolower(trim($email));
 
-        if (! $user || ! $user->canAuthenticate()) {
+        /** @var User|null $user */
+        $user = User::query()->where('email', $normalizedEmail)->first();
+
+        if (! $user || ! $user->canAuthenticate() || ! $this->matchesPortal($user, $portal)) {
             return true;
         }
 
-        if ($this->otpService->isWithinCooldown($user->email, VerificationType::PASSWORD_RESET->value)) {
-            return false;
-        }
+        $effectivePortal = $this->resolvePortal($user);
 
-        $otp = $this->otpService->generate(
-            email: $user->email,
-            type: VerificationType::PASSWORD_RESET->value,
-            ipAddress: $ipAddress,
-        );
+        /** @var \Illuminate\Auth\Passwords\PasswordBroker $broker */
+        $broker = Password::broker('users');
+        $token = $broker->createToken($user);
+
+        $frontendBaseUrl = rtrim((string) env('FRONTEND_URL', config('app.url')), '/');
+        $query = http_build_query([
+            'email' => $user->email,
+            'portal' => $effectivePortal,
+        ], '', '&', PHP_QUERY_RFC3986);
+        $resetUrl = $frontendBaseUrl . '/reset-password/' . urlencode($token) . '?' . $query;
+        $expiresInMinutes = (int) config('auth.passwords.users.expire', 60);
 
         try {
-            $user->notify(new OtpNotification($otp, VerificationType::PASSWORD_RESET->value));
+            $user->notify(new PasswordResetLinkNotification(
+                resetUrl: $resetUrl,
+                expiresInMinutes: $expiresInMinutes,
+            ));
 
             $this->notificationService->notifyUser((int) $user->id, [
-                'type' => 'auth.password_reset_otp_sent',
+                'type' => 'auth.password_reset_link_sent',
                 'category' => NotificationCategory::AUTH->value,
-                'title' => 'Password reset code sent',
-                'message' => 'A password reset code was sent to your email.',
+                'title' => 'Password reset link sent',
+                'message' => 'A password reset link was sent to your email.',
                 'reference_type' => User::class,
                 'reference_id' => (int) $user->id,
-                'action_url' => '/auth/reset-password',
+                'action_url' => $effectivePortal === 'agent' ? '/agent/login' : '/login',
                 'action_route' => 'auth.reset-password',
                 'priority' => NotificationPriority::NORMAL->value,
                 'created_by_user_id' => (int) $user->id,
                 'metadata' => [
-                    'verification_type' => VerificationType::PASSWORD_RESET->value,
+                    'portal' => $effectivePortal,
                 ],
-                'dedupe_key' => 'auth-password-reset-otp:' . $user->id,
+                'dedupe_key' => 'auth-password-reset-link:' . $user->id,
             ]);
 
-            Log::info('OTP delivery succeeded for password reset.', [
+            Log::info('Password reset link delivery succeeded.', [
                 'email' => $user->email,
                 'user_id' => $user->id,
-                'verification_type' => VerificationType::PASSWORD_RESET->value,
+                'portal' => $effectivePortal,
                 'ip' => $ipAddress,
             ]);
         } catch (Throwable $e) {
-            $this->otpService->invalidateLatestUnused($user->email, VerificationType::PASSWORD_RESET->value);
-
-            Log::error('OTP delivery failed for password reset.', [
+            Log::error('Password reset link delivery failed.', [
                 'email' => $user->email,
                 'user_id' => $user->id,
-                'verification_type' => VerificationType::PASSWORD_RESET->value,
+                'portal' => $effectivePortal,
                 'ip' => $ipAddress,
                 'exception' => $e::class,
                 'message' => $e->getMessage(),
@@ -83,28 +90,56 @@ class PasswordResetService
         return true;
     }
 
-    public function resetPassword(string $email, string $otp, string $password): bool
+    public function validateToken(string $email, string $token, ?string $portal = null): bool
     {
-        $verified = $this->otpService->verify(
-            email: strtolower($email),
-            otp: $otp,
-            type: VerificationType::PASSWORD_RESET->value,
-        );
-
-        if (! $verified) {
-            return false;
-        }
+        $normalizedEmail = strtolower(trim($email));
 
         /** @var User|null $user */
-        $user = User::query()->where('email', strtolower($email))->first();
+        $user = User::query()->where('email', $normalizedEmail)->first();
 
-        if (! $user) {
+        if (! $user || ! $user->canAuthenticate() || ! $this->matchesPortal($user, $portal)) {
             return false;
         }
 
-        $user->update([
+        /** @var \Illuminate\Auth\Passwords\PasswordBroker $broker */
+        $broker = Password::broker('users');
+
+        return $broker->tokenExists($user, $token);
+    }
+
+    public function resetPassword(string $email, string $token, string $password, ?string $portal = null): bool
+    {
+        $normalizedEmail = strtolower(trim($email));
+
+        /** @var User|null $user */
+        $user = User::query()->where('email', $normalizedEmail)->first();
+
+        if (! $user || ! $user->canAuthenticate() || ! $this->matchesPortal($user, $portal)) {
+            return false;
+        }
+
+        /** @var \Illuminate\Auth\Passwords\PasswordBroker $broker */
+        $broker = Password::broker('users');
+
+        $status = $broker->reset([
+            'email' => $normalizedEmail,
+            'token' => $token,
             'password' => $password,
-        ]);
+            'password_confirmation' => $password,
+        ], function (User $user, string $password): void {
+            $user->forceFill([
+                'password' => $password,
+                'remember_token' => Str::random(60),
+            ])->save();
+
+            $user->tokens()->delete();
+        });
+
+        if ($status !== Password::PASSWORD_RESET) {
+            return false;
+        }
+
+        $effectivePortal = $this->resolvePortal($user);
 
         $this->notificationService->notifyUser((int) $user->id, [
             'type' => 'auth.password_reset_completed',
@@ -113,16 +148,36 @@ class PasswordResetService
             'message' => 'Your password has been reset successfully.',
             'reference_type' => User::class,
             'reference_id' => (int) $user->id,
-            'action_url' => '/auth/login',
+            'action_url' => $effectivePortal === 'agent' ? '/agent/login' : '/login',
             'action_route' => 'auth.login',
             'priority' => NotificationPriority::HIGH->value,
             'created_by_user_id' => (int) $user->id,
             'metadata' => [
-                'verification_type' => VerificationType::PASSWORD_RESET->value,
+                'portal' => $effectivePortal,
             ],
             'dedupe_key' => 'auth-password-reset-completed:' . $user->id,
         ]);
 
         return true;
+    }
+
+    private function matchesPortal(User $user, ?string $portal): bool
+    {
+        if ($portal === null || trim($portal) === '') {
+            return true;
+        }
+
+        $normalizedPortal = strtolower(trim($portal));
+
+        return match ($normalizedPortal) {
+            'agent' => $user->internal_role === 'agent',
+            'management' => $user->internal_role !== 'agent',
+            default => false,
+        };
+    }
+
+    private function resolvePortal(User $user): string
+    {
+        return $user->internal_role === 'agent' ? 'agent' : 'management';
     }
 }

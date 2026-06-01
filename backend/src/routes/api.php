@@ -78,7 +78,11 @@ Route::prefix('auth')->name('auth.')->group(function (): void {
         ->middleware('throttle:5,1')
         ->name('forgot-password');
 
-    Route::post('/reset-password', ResetPasswordController::class)
+    Route::get('/reset-password/{token}', [ResetPasswordController::class, 'validateToken'])
+        ->middleware('throttle:20,1')
+        ->name('reset-password.validate');
+
+    Route::post('/reset-password', [ResetPasswordController::class, 'reset'])
         ->middleware('throttle:10,1')
         ->name('reset-password');
 

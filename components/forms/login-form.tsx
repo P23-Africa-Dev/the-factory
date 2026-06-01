@@ -3,8 +3,8 @@
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { loginUser } from "@/lib/api/auth";
 import { ApiRequestError, getMe } from "@/lib/api/onboarding";
 import { setAuthSession } from "@/lib/auth/session";
@@ -25,7 +25,10 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 export default function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const setUser = useAuthStore((s) => s.setUser);
+  const user = useAuthStore((s) => s.user);
+  const hasHydrated = useAuthStore((s) => s._hasHydrated);
   const [showPassword, setShowPassword] = useState(false);
   const [globalError, setGlobalError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -50,6 +53,15 @@ export default function LoginForm() {
   const email = watch("email");
   const password = watch("password");
   const isFilled = terms && email.trim() !== "" && password.trim() !== "";
+  const showResetSuccess = searchParams.get("reset") === "success";
+
+  useEffect(() => {
+    if (!hasHydrated || !user) {
+      return;
+    }
+
+    router.replace(user.active_company?.role === "agent" ? "/agent/dashboard" : "/dashboard");
+  }, [hasHydrated, router, user]);
 
   async function onSubmit(values: LoginFormValues) {
     setGlobalError("");
@@ -208,6 +220,12 @@ export default function LoginForm() {
         </p>
       )}
 
+      {showResetSuccess && (
+        <p className="mb-4 px-1 text-sm text-emerald-600 text-center">
+          Password reset successfully. Please login with your new password.
+        </p>
+      )}
+
       <div className="flex items-center justify-between mb-16 px-2 md:px-7">
         <div className="flex items-center gap-3">
           <div className="relative flex items-center justify-center">
@@ -240,7 +258,13 @@ export default function LoginForm() {
           </label>
         </div>
         <Link
-          href="/forgot-password"
+          href={{
+            pathname: "/forgot-password",
+            query: {
+              email: email.trim(),
+              portal: "management",
+            },
+          }}
           className="text-sm font-bold text-[#34373C] hover:underline"
         >
           Forgot Password?

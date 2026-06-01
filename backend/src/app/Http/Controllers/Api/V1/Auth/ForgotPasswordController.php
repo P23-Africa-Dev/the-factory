@@ -15,24 +15,15 @@ class ForgotPasswordController extends Controller
 
     public function __invoke(ForgotPasswordRequest $request): JsonResponse
     {
-        $sent = $this->passwordResetService->sendResetCode(
+        $this->passwordResetService->sendResetLink(
             email: $request->validated('email'),
+            portal: $request->validated('portal'),
             ipAddress: $request->ip(),
         );
 
-        if (! $sent) {
-            return $this->error(
-                message: 'Unable to deliver password reset code right now. Please try again shortly.',
-                errors: ['email' => ['A reset code was recently sent or delivery failed.']],
-                status: 503,
-            );
-        }
-
         return $this->success(
-            message: 'If the email exists, a password reset code has been sent.',
-            data: [
-                'email' => $this->maskEmail($request->validated('email')),
-            ],
+            message: 'If an account exists with this email, a password reset link has been sent.',
+            data: null,
         );
     }
 }

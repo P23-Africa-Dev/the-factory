@@ -6,6 +6,7 @@ import { forgotPassword } from "@/lib/api/auth";
 import { ApiRequestError } from "@/lib/api/onboarding";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -18,6 +19,10 @@ const forgotPasswordSchema = z.object({
 type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>;
 
 export default function ForgotPasswordForm() {
+  const searchParams = useSearchParams();
+  const prefilledEmail = (searchParams.get("email") ?? "").trim();
+  const requestedPortal = (searchParams.get("portal") ?? "").trim();
+  const portal = requestedPortal === "agent" ? "agent" : "management";
   const [globalError, setGlobalError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -30,7 +35,7 @@ export default function ForgotPasswordForm() {
     resolver: zodResolver(forgotPasswordSchema),
     mode: "onChange",
     defaultValues: {
-      email: "",
+      email: prefilledEmail,
     },
   });
 
@@ -41,7 +46,10 @@ export default function ForgotPasswordForm() {
     setLoading(true);
 
     try {
-      const res = await forgotPassword({ email: values.email.trim() });
+      const res = await forgotPassword({
+        email: values.email.trim(),
+        portal,
+      });
       toast.success(res.message || "Check your email for reset instructions.");
     } catch (err) {
       if (err instanceof ApiRequestError) {
@@ -80,7 +88,10 @@ export default function ForgotPasswordForm() {
 
       <p className="text-center text-xs mt-6 text-[#A9AAAB]">
         Remember your password?{" "}
-        <Link href="/login" className="font-bold text-[#34373C] cursor-pointer hover:underline">
+        <Link
+          href={portal === "agent" ? "/agent/login" : "/login"}
+          className="font-bold text-[#34373C] cursor-pointer hover:underline"
+        >
           Log In.
         </Link>
       </p>

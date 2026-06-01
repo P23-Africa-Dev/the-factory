@@ -43,6 +43,7 @@ Each feature document must include:
 12. [Dashboard Overview API](features/dashboard-overview.md)
 13. [Workforce Summary API](features/workforce-summary.md)
 14. [Rollout Readiness Checklist](features/rollout-readiness-checklist.md)
+15. [Authentication API](features/authentication.md) includes reset-link password recovery endpoints
 
 ## OpenAPI Contract
 

@@ -15,7 +15,7 @@ export default async function DashboardLayout({
   const onboardingDone = cookieStore.get(ONBOARDING_DONE_COOKIE)?.value === "1";
 
   if (!token) {
-    redirect("/login");
+    redirect("/agent/login");
   }
 
   // if (!onboardingDone) {

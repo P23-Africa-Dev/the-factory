@@ -6,7 +6,8 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { clearAuthSession } from "@/lib/auth/session";
+import { clearAuthSession, getAuthTokenFromDocument } from "@/lib/auth/session";
+import { logout } from "@/lib/api/auth";
 import { ChevronDown, Menu, X, LogOut, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils/sample";
@@ -106,8 +107,18 @@ export function Navbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  function handleLogout() {
+  async function handleLogout() {
     const isAgent = user?.active_company?.role === "agent";
+
+    try {
+      const token = getAuthTokenFromDocument();
+      if (token) {
+        await logout(token);
+      }
+    } catch {
+      // Continue local logout cleanup even if API logout fails.
+    }
+
     clearAuthSession();
     clearUser();
     router.push(isAgent ? "/agent/login" : "/login");
