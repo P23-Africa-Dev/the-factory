@@ -1,6 +1,12 @@
 import type { LiveTaskState } from "@/types/tracking";
 
-export type VisualTaskState = "in_progress" | "near_destination" | "arrived" | "completed" | "stale";
+export type VisualTaskState =
+    | "in_progress"
+    | "near_destination"
+    | "arrived"
+    | "completed"
+    | "stale"
+    | "delayed";
 
 type VisualPalette = {
     trail: string;
@@ -51,6 +57,14 @@ export const VISUAL_PALETTE: Record<VisualTaskState, VisualPalette> = {
         markerHalo: "rgba(107, 114, 128, 0.3)",
         markerFill: "#F3F4F6",
         markerText: "#4B5563",
+    },
+    delayed: {
+        trail: "#DC2626",
+        connector: "#F87171",
+        markerBorder: "#DC2626",
+        markerHalo: "rgba(220, 38, 38, 0.32)",
+        markerFill: "#FEE2E2",
+        markerText: "#991B1B",
     },
 };
 
@@ -152,9 +166,11 @@ export function buildTaskTrail(task: LiveTaskState): [number, number][] {
 
 export function resolveVisualTaskState(
     status: LiveTaskState["status"],
-    stale: boolean
+    stale: boolean,
+    operationalStatus?: LiveTaskState["operationalStatus"],
 ): VisualTaskState {
     if (stale) return "stale";
+    if (operationalStatus === "delayed") return "delayed";
     return status;
 }
 

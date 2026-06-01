@@ -552,6 +552,39 @@ class TaskTrackingService
 
         $includePoints = (bool) ($filters['include_points'] ?? true);
         $points = $session->points;
+        $lastSpeedMps = $points->last()?->speed_mps;
+        $distanceToDestination = $session->last_latitude !== null && $session->last_longitude !== null
+            ? $this->calculateDistanceToDestination(
+                session: $session,
+                latitude: (float) $session->last_latitude,
+                longitude: (float) $session->last_longitude,
+            )
+            : null;
+        $distanceRemaining = $session->last_latitude !== null && $session->last_longitude !== null
+            ? $this->calculateDistanceRemainingToArrival(
+                session: $session,
+                latitude: (float) $session->last_latitude,
+                longitude: (float) $session->last_longitude,
+            )
+            : null;
+        $etaSeconds = $this->estimateEtaSeconds($distanceRemaining, $lastSpeedMps !== null ? (float) $lastSpeedMps : null);
+        $routeDeviationMeters = $session->last_latitude !== null && $session->last_longitude !== null
+            ? $this->calculateRouteDeviationMeters(
+                session: $session,
+                latitude: (float) $session->last_latitude,
+                longitude: (float) $session->last_longitude,
+            )
+            : null;
+        $operationalStatus = $this->resolveOperationalStatus(
+            task: $task,
+            proximityState: $this->resolveProximityState($session, $task->status?->value),
+            movementStarted: $session->last_latitude !== null && $session->last_longitude !== null
+                ? $this->distanceFromSessionStart($session, (float) $session->last_latitude, (float) $session->last_longitude)
+                >= max(1.0, (float) config('tracking.min_movement_before_proximity_meters', 20))
+                : false,
+            isOnline: true,
+            etaSeconds: $etaSeconds,
+        );
 
         return [
             'task_id' => $task->id,
@@ -590,24 +623,12 @@ class TaskTrackingService
                 : null,
             'proximity' => [
                 'state' => $this->resolveProximityState($session, $task->status?->value),
-                'distance_to_destination_meters' => $session->last_latitude !== null && $session->last_longitude !== null
-                    ? (($distanceToDestination = $this->calculateDistanceToDestination(
-                        session: $session,
-                        latitude: (float) $session->last_latitude,
-                        longitude: (float) $session->last_longitude,
-                    )) !== null
-                        ? round($distanceToDestination, 2)
-                        : null)
-                    : null,
-                'distance_remaining_meters' => $session->last_latitude !== null && $session->last_longitude !== null
-                    ? (($distanceRemaining = $this->calculateDistanceRemainingToArrival(
-                        session: $session,
-                        latitude: (float) $session->last_latitude,
-                        longitude: (float) $session->last_longitude,
-                    )) !== null
-                        ? round($distanceRemaining, 2)
-                        : null)
-                    : null,
+                'distance_to_destination_meters' => $distanceToDestination !== null ? round($distanceToDestination, 2) : null,
+                'distance_remaining_meters' => $distanceRemaining !== null ? round($distanceRemaining, 2) : null,
+                'speed_mps' => $lastSpeedMps !== null ? round((float) $lastSpeedMps, 3) : null,
+                'eta_seconds' => $etaSeconds,
+                'route_deviation_meters' => $routeDeviationMeters !== null ? round($routeDeviationMeters, 2) : null,
+                'operational_status' => $operationalStatus,
             ],
             'summary' => [
                 'points_count' => $points->count(),
@@ -962,6 +983,15 @@ class TaskTrackingService
             ? max(0, now()->getTimestamp() - $snapshot->last_seen_at->getTimestamp())
             : null;
         $isOnline = $ageSeconds !== null && $ageSeconds <= $staleAfterSeconds;
+        $etaSeconds = $this->estimateEtaSeconds($distanceRemainingMeters, $speedMps);
+        $routeDeviationMeters = $this->calculateRouteDeviationMeters($session, $latitude, $longitude);
+        $operationalStatus = $this->resolveOperationalStatus(
+            task: $task,
+            proximityState: $proximityState,
+            movementStarted: $movementStarted,
+            isOnline: $isOnline,
+            etaSeconds: $etaSeconds,
+        );
 
         return [
             'task_status' => $taskStatus,
@@ -981,7 +1011,10 @@ class TaskTrackingService
             'distance_remaining_meters' => $distanceRemainingMeters !== null
                 ? round($distanceRemainingMeters, 2)
                 : null,
+            'eta_seconds' => $etaSeconds,
+            'route_deviation_meters' => $routeDeviationMeters !== null ? round($routeDeviationMeters, 2) : null,
             'proximity_state' => $proximityState,
+            'operational_status' => $operationalStatus,
             'event_type' => $eventType,
             'task' => [
                 'id' => $task->id,
@@ -1022,6 +1055,8 @@ class TaskTrackingService
                 'distance_remaining_meters' => $distanceRemainingMeters !== null
                     ? round($distanceRemainingMeters, 2)
                     : null,
+                'eta_seconds' => $etaSeconds,
+                'route_deviation_meters' => $routeDeviationMeters !== null ? round($routeDeviationMeters, 2) : null,
                 'recorded_at' => $snapshot->recorded_at?->toIso8601String(),
             ],
             'status' => [
@@ -1031,8 +1066,103 @@ class TaskTrackingService
                 'stale_after_seconds' => $staleAfterSeconds,
                 'age_seconds' => $ageSeconds,
                 'proximity_state' => $proximityState,
+                'operational_status' => $operationalStatus,
             ],
         ];
+    }
+
+    private function estimateEtaSeconds(?float $distanceRemainingMeters, ?float $speedMps): ?int
+    {
+        if ($distanceRemainingMeters === null || $speedMps === null) {
+            return null;
+        }
+
+        if ($distanceRemainingMeters <= 0 || $speedMps <= 0.35) {
+            return null;
+        }
+
+        return (int) max(0, round($distanceRemainingMeters / $speedMps));
+    }
+
+    private function calculateRouteDeviationMeters(TaskTrackingSession $session, float $latitude, float $longitude): ?float
+    {
+        if (
+            $session->start_latitude === null
+            || $session->start_longitude === null
+            || $session->destination_latitude === null
+            || $session->destination_longitude === null
+        ) {
+            return null;
+        }
+
+        $startLat = (float) $session->start_latitude;
+        $startLng = (float) $session->start_longitude;
+        $destLat = (float) $session->destination_latitude;
+        $destLng = (float) $session->destination_longitude;
+
+        // Convert to a local meter plane for stable short-distance projection.
+        $latFactor = 111320.0;
+        $meanLatRad = deg2rad(($startLat + $destLat + $latitude) / 3.0);
+        $lngFactor = 111320.0 * cos($meanLatRad);
+
+        $ax = 0.0;
+        $ay = 0.0;
+        $bx = ($destLng - $startLng) * $lngFactor;
+        $by = ($destLat - $startLat) * $latFactor;
+        $px = ($longitude - $startLng) * $lngFactor;
+        $py = ($latitude - $startLat) * $latFactor;
+
+        $abx = $bx - $ax;
+        $aby = $by - $ay;
+        $abSquared = $abx * $abx + $aby * $aby;
+
+        if ($abSquared <= 0.0001) {
+            return null;
+        }
+
+        $apx = $px - $ax;
+        $apy = $py - $ay;
+        $t = (($apx * $abx) + ($apy * $aby)) / $abSquared;
+        $tClamped = max(0.0, min(1.0, $t));
+
+        $closestX = $ax + ($abx * $tClamped);
+        $closestY = $ay + ($aby * $tClamped);
+
+        return sqrt((($px - $closestX) ** 2) + (($py - $closestY) ** 2));
+    }
+
+    private function resolveOperationalStatus(
+        Task $task,
+        string $proximityState,
+        bool $movementStarted,
+        bool $isOnline,
+        ?int $etaSeconds,
+    ): string {
+        if ($task->status?->value === TaskStatus::COMPLETED->value || $proximityState === 'completed') {
+            return 'completed';
+        }
+
+        if (! $isOnline) {
+            return 'offline';
+        }
+
+        if ($proximityState === 'arrived') {
+            return 'destination_reached';
+        }
+
+        if ($proximityState === 'near_destination') {
+            return 'near_destination';
+        }
+
+        $isDelayedByEta = $etaSeconds !== null
+            && $etaSeconds >= max(60, (int) config('tracking.delayed_eta_threshold_seconds', 1800));
+        $isDelayedByDueAt = $task->due_at !== null && $task->due_at->isPast();
+
+        if ($isDelayedByEta || $isDelayedByDueAt) {
+            return 'delayed';
+        }
+
+        return $movementStarted ? 'en_route' : 'available';
     }
 
     private function publishTrackingEvent(

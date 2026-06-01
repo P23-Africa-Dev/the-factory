@@ -1,0 +1,178 @@
+# Factory23 Real-Time Tracking & Operations Command Center Audit
+
+Date: 2026-06-01
+Scope: Existing production codebase audit before command center upgrades
+
+## 1. Current Architecture
+
+### Backend (Laravel 12)
+
+- Core tracking orchestration is implemented in `App\Services\Task\TaskTrackingService`.
+- REST endpoints for lifecycle actions are exposed via `TaskTrackingController`:
+  - start tracking
+  - record location
+  - complete tracked task
+  - fetch route history
+- Agent location read model is maintained by `App\Services\Tracking\AgentLocationSnapshotService`.
+- Tracking persistence models include:
+  - `TaskTrackingSession`
+  - `TaskLocationPoint`
+  - `AgentLocationSnapshot`
+- Company boundary enforcement is present in service-level checks and request-context resolution.
+
+### Real-Time Layer (Node.js + Redis + WebSocket)
+
+- Realtime relay exists in `backend/realtime-server/src/server.js`.
+- Relay subscribes to Redis channel pattern:
+  - `factory23.tracking.company.*` (prefix configurable)
+- WebSocket auth is token-based (Sanctum introspection against Laravel `/api/v1/user/me`).
+- Relay enforces company isolation and role-aware event visibility in `backend/realtime-server/src/filtering.js`.
+
+### Frontend (Next.js + React + TypeScript)
+
+- Real-time websocket client is already integrated in `hooks/use-tracking-ws.ts`.
+- Live state aggregation is centralized in `store/tracking.ts`.
+- Map surfaces:
+  - `components/map/map-view.tsx` (management/global tracking map)
+  - `components/map/agent-map-view.tsx` (agent-focused view)
+  - `components/dashboard/dashboard-map.tsx` (dashboard widget)
+- Runtime map provider switching exists via `use-effective-map-provider` and shared map loaders.
+
+## 2. Tracking Data Flow
+
+### Lifecycle flow
+
+1. Agent starts tracking via `POST /api/v1/agent/tasks/{task}/start`.
+2. Backend creates `task_tracking_sessions` record and initial `task_location_points` checkpoint.
+3. Backend publishes Redis events (`tracking.task.started`, `tracking.location.updated`, `tracking.agent.location.updated`).
+4. WebSocket relay receives Redis payload and pushes to authorized clients.
+5. Agent sends location updates via `POST /api/v1/agent/tasks/{task}/location`.
+6. Backend validates assignment + active session + task status, persists points per batching rules.
+7. Geofence transitions emit `tracking.task.near_destination` then `tracking.task.arrived`.
+8. Completion via `POST /api/v1/agent/tasks/{task}/complete` writes final checkpoint, proofs, task completion.
+9. Backend publishes `tracking.task.completed`.
+10. Frontend store updates and map views render movement trail, current markers, and route overlays.
+
+## 3. Existing APIs (tracking-related)
+
+### Task tracking APIs
+
+- `POST /api/v1/agent/tasks/{task}/start`
+- `POST /api/v1/agent/tasks/{task}/location`
+- `POST /api/v1/agent/tasks/{task}/complete`
+- `GET /api/v1/agent/tasks/{task}/route`
+- `GET /api/v1/admin/tasks/{task}/route`
+
+### Snapshot/read APIs
+
+- `GET /api/v1/agent/agents/locations`
+- `GET /api/v1/agent/agents/{user}/location`
+- `GET /api/v1/admin/agents/locations`
+- `GET /api/v1/admin/agents/{user}/location`
+
+### Map provider API
+
+- `GET /api/v1/map/provider`
+
+## 4. Existing WebSocket Events
+
+Published by backend and relayed to frontend:
+
+- `tracking.task.started`
+- `tracking.location.updated`
+- `tracking.agent.location.updated`
+- `tracking.task.near_destination`
+- `tracking.task.arrived`
+- `tracking.task.completed`
+
+System-level relay messages include:
+
+- `system.connected`
+- `system.auth_required`
+- `system.error`
+- `system.subscribed_task`
+- `system.unsubscribed_task`
+- `pong`
+
+## 5. Existing Redis Usage
+
+### Channels
+
+- Company stream: `<prefix>.company.{company_id}`
+- Task stream: `<prefix>.task.{task_id}`
+- Default prefix: `factory23.tracking` (configurable)
+
+### Behavior
+
+- Backend publishes tracking lifecycle payloads to both company and task channels.
+- Relay pattern-subscribes company channels and forwards only authorized events.
+
+## 6. Existing Tracking Logic
+
+Implemented in `TaskTrackingService`:
+
+- Assignment guard (`ensureAssignedUser`) before tracking actions.
+- Session guard (single active session per task).
+- Batch ingestion with max points limit.
+- Point persistence throttle by min interval + min distance.
+- Real-time payload enrichment with task, agent, destination, status, location snapshots.
+- Completion guard requiring arrival detection before completion.
+
+## 7. Existing Geofence Logic
+
+Implemented and currently robust against false positives:
+
+- Destination radius from session/config (`arrival_radius_meters`, default currently 75).
+- Near radius (`near_radius_meters`, default 250).
+- Accuracy confidence gates:
+  - near max accuracy threshold
+  - arrival max accuracy threshold
+- Minimum movement before proximity transitions.
+- Dwell-time requirement between near and arrival.
+- No arrival/completion when proximity confidence conditions are not met.
+
+## 8. Existing ETA Logic
+
+Current state:
+
+- Backend and snapshots include distance-to-destination and distance-remaining fields.
+- Speed is captured from telemetry (`speed_mps`) when provided.
+- There is no backend-native ETA and route deviation metric in the current payload contract.
+- Frontend already uses Mapbox Directions route geometry for visual forward-route overlays.
+
+## 9. Existing Map Features
+
+### Implemented
+
+- Mapbox + Google maps are both supported with runtime fallback.
+- Privacy-safe default viewport (regional/country/global fallback), no Lagos hardcode at map default layer.
+- Smooth marker interpolation (Mapbox and agent map).
+- Movement trail rendering from persisted polyline points.
+- Destination and origin markers with state-aware visuals.
+- Forward route overlay from Mapbox Directions API.
+- Sidebar feed with task/agent filtering and focus behavior.
+- Dashboard map widget integration.
+
+### Gaps before upgrade
+
+- Map style still uses light-v11 instead of navigation-day-v1 / navigation-night-v1.
+- Command panel lacks full enterprise status metrics (ETA, deviation, speed, explicit offline/delayed state engine).
+- No explicit clustering/virtualization strategy for 100+ agents in main map renderer.
+- Search UI is currently internal-list filter only; no places geocoding integration.
+
+## 10. Security & Multi-Tenant Findings
+
+- Backend validates company context on tracking operations.
+- Relay filters by company and role before delivery.
+- Agent role visibility is restricted to own events plus explicitly subscribed task IDs.
+- Architecture is compatible with org-level data isolation requirements.
+
+## 11. Upgrade Targets for Command Center Phase
+
+1. Add smart status engine (`available`, `en_route`, `near_destination`, `destination_reached`, `completed`, `delayed`, `offline`) with strict color mapping.
+2. Add ETA + route deviation metrics in backend payload/read models and frontend store.
+3. Switch map styles to navigation day/night with automatic mode changes.
+4. Add place search via geocoding plus internal federated search.
+5. Add map-level clustering/virtualization path for 100+ agents.
+6. Expand command panel detail cards with operational metrics and freshness indicators.
+7. Keep backward compatibility for existing events and route APIs.

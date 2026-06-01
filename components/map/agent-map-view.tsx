@@ -28,6 +28,7 @@ import {
     resolvePrivacySafeViewport,
 } from '@/lib/map/default-viewport';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
+import { getMapboxNavigationStyle, resolveMapAppearance } from '@/lib/map/style-mode';
 
 const MARKER_ANIMATION_MS = 700;
 
@@ -138,7 +139,7 @@ function MapboxAgentMapView({ providerState }: { providerState: EffectiveMapProv
 
         const map = new mapboxgl.Map({
             container: mapContainer.current,
-            style: 'mapbox://styles/mapbox/light-v11',
+            style: getMapboxNavigationStyle(resolveMapAppearance()),
             center: initialViewport.center,
             zoom: initialViewport.zoom,
             attributionControl: false,

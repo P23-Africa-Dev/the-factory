@@ -6,6 +6,15 @@ export type TrackingEventType =
   | "tracking.task.completed"
   | "tracking.agent.location.updated";
 
+export type OperationalTrackingStatus =
+  | "available"
+  | "en_route"
+  | "near_destination"
+  | "destination_reached"
+  | "completed"
+  | "delayed"
+  | "offline";
+
 export interface LiveTaskState {
   taskId: number;
   trackingSessionId: number;
@@ -15,6 +24,7 @@ export interface LiveTaskState {
   taskTitle: string;
   taskAddress?: string;
   status: "in_progress" | "near_destination" | "arrived" | "completed";
+  operationalStatus?: OperationalTrackingStatus;
   destination?: { lat: number; lng: number; radiusM?: number };
   lastPosition: [number, number]; // [lng, lat] — Mapbox convention
   polyline: [number, number][]; // capped at 2000 pts
@@ -25,6 +35,9 @@ export interface LiveTaskState {
   distanceToDestinationMeters?: number | null;
   distanceRemainingMeters?: number | null;
   movementStarted?: boolean;
+  speedMps?: number | null;
+  etaSeconds?: number | null;
+  routeDeviationMeters?: number | null;
 }
 
 export interface TrackingEnvelope {
@@ -48,7 +61,10 @@ export interface TrackingEnvelope {
       proximity_state?: "in_progress" | "near_destination" | "arrived" | "completed";
       distance_to_destination_meters?: number | null;
       distance_remaining_meters?: number | null;
+      eta_seconds?: number | null;
+      route_deviation_meters?: number | null;
       movement_started?: boolean;
+      operational_status?: OperationalTrackingStatus;
       task_status?: string;
       arrival_recorded_at?: string;
       near_recorded_at?: string;
@@ -83,6 +99,8 @@ export interface TrackingEnvelope {
         near_destination?: boolean;
         distance_to_destination_meters?: number | null;
         distance_remaining_meters?: number | null;
+        eta_seconds?: number | null;
+        route_deviation_meters?: number | null;
         recorded_at?: string | null;
       };
       status?: {
@@ -92,6 +110,7 @@ export interface TrackingEnvelope {
         last_seen_at?: string | null;
         stale_after_seconds?: number;
         age_seconds?: number | null;
+        operational_status?: OperationalTrackingStatus;
       };
     };
   };
@@ -127,6 +146,8 @@ export interface AgentLocationSnapshotItem {
     near_destination?: boolean;
     distance_to_destination_meters?: number | null;
     distance_remaining_meters?: number | null;
+    eta_seconds?: number | null;
+    route_deviation_meters?: number | null;
     recorded_at?: string | null;
   };
   status: {
@@ -136,6 +157,7 @@ export interface AgentLocationSnapshotItem {
     stale_after_seconds?: number;
     age_seconds?: number | null;
     last_seen_at?: string | null;
+    operational_status?: OperationalTrackingStatus;
   };
   updated_at?: string | null;
 }
@@ -213,6 +235,10 @@ export interface TaskRoute {
     state: "in_progress" | "near_destination" | "arrived" | "completed";
     distance_to_destination_meters: number | null;
     distance_remaining_meters: number | null;
+    speed_mps?: number | null;
+    eta_seconds?: number | null;
+    route_deviation_meters?: number | null;
+    operational_status?: OperationalTrackingStatus;
   };
   summary: { points_count: number; total_distance_meters: number };
   points: LocationPoint[];

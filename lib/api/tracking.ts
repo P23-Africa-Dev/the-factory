@@ -211,6 +211,8 @@ export type AgentLocationListData = {
       near_destination?: boolean;
       distance_to_destination_meters?: number | null;
       distance_remaining_meters?: number | null;
+      eta_seconds?: number | null;
+      route_deviation_meters?: number | null;
       recorded_at?: string | null;
     };
     status: {
@@ -220,6 +222,14 @@ export type AgentLocationListData = {
       age_seconds: number | null;
       last_seen_at: string | null;
       proximity_state?: "in_progress" | "near_destination" | "arrived" | "completed";
+      operational_status?:
+        | "available"
+        | "en_route"
+        | "near_destination"
+        | "destination_reached"
+        | "completed"
+        | "delayed"
+        | "offline";
     };
     updated_at?: string | null;
   }>;

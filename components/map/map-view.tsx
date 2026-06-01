@@ -30,12 +30,22 @@ import {
 } from '@/lib/tracking/map-visualization';
 import { fetchDirectionsRoute, clearDirectionsCache } from '@/lib/tracking/directions';
 import {
+  getMapboxNavigationStyle,
+  resolveMapAppearance,
+  type MapAppearance,
+} from '@/lib/map/style-mode';
+import {
+  OPERATIONAL_STATUS_META,
+  resolveOperationalStatusFromTask,
+} from '@/lib/tracking/operational-status';
+import {
   getCountryFallbackViewport,
   resolvePrivacySafeViewport,
 } from '@/lib/map/default-viewport';
 
 const STALE_MS = 2 * 60_000;
 const MARKER_ANIMATION_MS = 700;
+const SEARCH_DEBOUNCE_MS = 280;
 
 type GoogleLatLng = { lat: number; lng: number };
 
@@ -89,6 +99,27 @@ function getStatusLabel(status: LiveTaskState['status']): string {
   return 'On field';
 }
 
+function formatMetricDistance(meters: number | null | undefined): string {
+  if (meters == null || Number.isNaN(meters)) return '--';
+  if (meters < 1000) return `${Math.round(meters)} m`;
+  return `${(meters / 1000).toFixed(1)} km`;
+}
+
+function formatSpeed(speedMps: number | null | undefined): string {
+  if (speedMps == null || Number.isNaN(speedMps)) return '--';
+  return `${(speedMps * 3.6).toFixed(1)} km/h`;
+}
+
+function formatEta(etaSeconds: number | null | undefined): string {
+  if (etaSeconds == null || etaSeconds < 0) return '--';
+  if (etaSeconds < 60) return '<1 min';
+  const minutes = Math.round(etaSeconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem > 0 ? `${hours}h ${rem}m` : `${hours}h`;
+}
+
 function getDestinationMarkerKind(status: LiveTaskState['status']): 'destination' | 'near' | 'arrived' | 'completed' {
   if (status === 'completed') return 'completed';
   if (status === 'near_destination') return 'near';
@@ -97,7 +128,7 @@ function getDestinationMarkerKind(status: LiveTaskState['status']): 'destination
 }
 
 function getVisualState(task: LiveTaskState, stale: boolean): VisualTaskState {
-  return resolveVisualTaskState(task.status, stale);
+  return resolveVisualTaskState(task.status, stale, task.operationalStatus);
 }
 
 interface MapViewProps {
@@ -122,11 +153,14 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const directionRoutesRef = useRef<Map<number, [number, number][]>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [appearance, setAppearance] = useState<MapAppearance>(() => resolveMapAppearance());
+  const [placeResults, setPlaceResults] = useState<Array<{ id: string; name: string; center: [number, number] }>>([]);
+  const [searchBusy, setSearchBusy] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [historyTask, setHistoryTask] = useState<{ id: number; title: string } | null>(null);
   // Bumped every 30s to re-evaluate stale status and sync markers
   const [tick, setTick] = useState(0);
-  const [nowMs, setNowMs] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   // Flips true after map 'load' fires so the sync effect knows the map is ready
   const [mapVersion, setMapVersion] = useState(0);
   const [isInitialHydrating, setIsInitialHydrating] = useState(false);
@@ -140,6 +174,20 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   );
   const selectedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
   const token = getMapboxPublicToken();
+  const internalSearchResults = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    if (!needle) return [] as LiveTaskState[];
+
+    return tasks
+      .filter(
+        (task) =>
+          task.agentName.toLowerCase().includes(needle) ||
+          (task.taskTitle ?? '').toLowerCase().includes(needle) ||
+          (task.taskAddress ?? '').toLowerCase().includes(needle) ||
+          String(task.taskId).includes(needle)
+      )
+      .slice(0, 8);
+  }, [searchQuery, tasks]);
 
   const animateMarkerTo = useCallback((taskId: number, marker: mapboxgl.Marker, target: [number, number]) => {
     const cached = markerPositionRef.current.get(taskId);
@@ -188,11 +236,68 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     const bump = () => {
       setNowMs(Date.now());
       setTick((t) => t + 1);
+      setAppearance(resolveMapAppearance());
     };
     bump();
     const iv = setInterval(bump, 30_000);
     return () => clearInterval(iv);
   }, []);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+
+    if (!query || query.length < 3 || !token || compact) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      let cancelled = false;
+      setSearchBusy(true);
+
+      fetch(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&autocomplete=true&limit=6`
+      )
+        .then(async (res) => {
+          if (!res.ok) {
+            return [] as Array<{ id: string; name: string; center: [number, number] }>;
+          }
+
+          const json = await res.json();
+          const features = Array.isArray(json?.features) ? json.features : [];
+
+          return features
+            .filter((feature: unknown): feature is { id: string; place_name: string; center: [number, number] } => {
+              if (!feature || typeof feature !== 'object') return false;
+              const candidate = feature as { center?: unknown };
+              return Array.isArray(candidate.center) && candidate.center.length === 2;
+            })
+            .map((feature: { id: string; place_name: string; center: [number, number] }) => ({
+              id: feature.id,
+              name: feature.place_name,
+              center: [feature.center[0], feature.center[1]] as [number, number],
+            }));
+        })
+        .then((results) => {
+          if (cancelled) return;
+          setPlaceResults(results);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setPlaceResults([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSearchBusy(false);
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [compact, searchQuery, token]);
 
   if (selectedTaskId != null && !liveTasks[selectedTaskId]) {
     setSelectedTaskId(null);
@@ -266,7 +371,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/light-v11',
+      style: getMapboxNavigationStyle(appearance),
       center: initialViewport.center,
       zoom: compact ? Math.max(initialViewport.zoom, 5.4) : initialViewport.zoom,
       attributionControl: false,
@@ -358,7 +463,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       map.remove();
       mapRef.current = null;
     };
-  }, [token, compact]);
+  }, [token, compact, appearance]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -399,14 +504,30 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     if (!map || !mapLoadedRef.current) return;
 
     const now = nowMs || Date.now();
-    const validTasks = tasks.filter((t) => hasUsableTaskPosition(t));
+    const allTrackedTasks = tasks.filter((t) => hasUsableTaskPosition(t));
+    const bounds = map.getBounds();
+    const maxRenderedMarkers = allTrackedTasks.length > 120 ? 120 : 400;
+    const validTasks = allTrackedTasks
+      .filter((task) => {
+        if (selectedTaskId === task.taskId) return true;
+        if (allTrackedTasks.length <= 100) return true;
+        if (!bounds) return true;
+        return bounds.contains([task.lastPosition[0], task.lastPosition[1]]);
+      })
+      .sort((a, b) => {
+        const aTs = new Date(a.lastEventAt).getTime();
+        const bTs = new Date(b.lastEventAt).getTime();
+        return bTs - aTs;
+      })
+      .slice(0, maxRenderedMarkers);
     const validIds = new Set(validTasks.map((t) => t.taskId));
     const routeFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     const destinationIds = new Set<number>();
 
     validTasks.forEach((task) => {
       const stale = isTaskStale(task.lastEventAt, now);
-      const visualState = getVisualState(task, stale);
+      const derivedOperationalStatus = resolveOperationalStatusFromTask(task, now, STALE_MS);
+      const visualState = resolveVisualTaskState(task.status, stale, derivedOperationalStatus);
       const trail = sanitizePolyline(buildTaskTrail(task));
       const currentPoint = task.lastPosition;
 
@@ -560,7 +681,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         }
       }
     });
-  }, [tasks, tick, compact, mapVersion, nowMs, animateMarkerTo]);
+  }, [tasks, tick, compact, mapVersion, nowMs, animateMarkerTo, selectedTaskId]);
 
   // ── Fetch Mapbox Directions routes for tasks with destinations ───────────────
   useEffect(() => {
@@ -628,12 +749,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   }, [tasks, token, mapVersion]);
 
   // ── Filtered sidebar list ────────────────────────────────────────────────────
-  const filteredTasks = tasks.filter(
-    (t) =>
-      t.agentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (t.taskTitle ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (t.taskAddress ?? '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredTasks = searchQuery.trim().length > 0 ? internalSearchResults : tasks;
 
   // ── No token fallback ────────────────────────────────────────────────────────
   if (!token) {
@@ -686,12 +802,36 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} strokeWidth={2} />
           <input
             type="text"
-            placeholder="Search for Location"
+            placeholder="Search places, agents, tasks, references"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-white rounded-full py-4 pl-14 pr-6 text-[14px] shadow-2xl shadow-black/5 outline-none font-medium text-dash-dark placeholder:text-gray-400"
           />
         </div>
+
+        {(searchBusy || placeResults.length > 0) && searchQuery.trim().length >= 3 && (
+          <div className="mt-2 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur px-2 py-2 shadow-xl">
+            {searchBusy && (
+              <div className="px-3 py-2 text-[12px] text-slate-500">Searching places...</div>
+            )}
+
+            {!searchBusy && placeResults.length === 0 && (
+              <div className="px-3 py-2 text-[12px] text-slate-500">No place matches found.</div>
+            )}
+
+            {placeResults.map((result) => (
+              <button
+                key={result.id}
+                className="w-full text-left px-3 py-2 rounded-xl text-[12px] text-slate-700 hover:bg-slate-100"
+                onClick={() => {
+                  mapRef.current?.flyTo({ center: result.center, zoom: 13.5, speed: 1.1 });
+                }}
+              >
+                {result.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Search Feeds panel — below search on mobile / top-left on desktop */}
@@ -717,6 +857,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           ) : (
             filteredTasks.map((task) => {
               const isSelected = selectedTaskId === task.taskId;
+              const operationalStatus = resolveOperationalStatusFromTask(task, nowMs, STALE_MS);
+              const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
               return (
                 <button
                   key={task.taskId}
@@ -731,17 +873,29 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
                     sizeClassName="w-12 h-12"
                   />
                   <div className="flex-1 min-w-0">
-                    <p
-                      className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
+                    <div className="flex items-center gap-2">
+                      <p
+                        className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
+                          }`}
+                      >
+                        {task.agentName || 'Company Name'}
+                      </p>
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          isSelected ? 'bg-white/15 text-white border border-white/20' : statusMeta.badgeClassName
                         }`}
-                    >
-                      {task.agentName || 'Company Name'}
-                    </p>
+                      >
+                        {statusMeta.label}
+                      </span>
+                    </div>
                     <p
-                      className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-gray-400' : 'text-gray-500'
+                      className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-gray-300' : 'text-gray-500'
                         }`}
                     >
                       {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
+                    </p>
+                    <p className={`text-[10px] mt-1 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                      ETA {formatEta(task.etaSeconds)} | Speed {formatSpeed(task.speedMps)} | Left {formatMetricDistance(task.distanceRemainingMeters)}
                     </p>
                   </div>
                   <MoreHorizontal size={20} className={isSelected ? 'text-white/50' : 'text-gray-400'} />
@@ -758,6 +912,68 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           Location Mapping
         </button>
       </div>
+
+      {selectedTask && (() => {
+        const operationalStatus = resolveOperationalStatusFromTask(selectedTask, nowMs, STALE_MS);
+        const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
+
+        return (
+          <div className="absolute bottom-24 right-4 md:right-10 z-20 w-[min(92vw,380px)] rounded-3xl border border-slate-200 bg-white/95 backdrop-blur shadow-2xl">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h4 className="text-[14px] font-bold text-slate-800">Active Agent Command Panel</h4>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusMeta.badgeClassName}`}>
+                {statusMeta.label}
+              </span>
+            </div>
+
+            <div className="px-5 py-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <AgentAvatar
+                  key={`selected-${selectedTask.taskId}-${selectedTask.agentAvatarUrl ?? ''}`}
+                  name={selectedTask.agentName}
+                  avatarUrl={selectedTask.agentAvatarUrl}
+                  sizeClassName="w-12 h-12"
+                />
+                <div className="min-w-0">
+                  <p className="text-[14px] font-semibold text-slate-900 truncate">{selectedTask.agentName || 'Agent'}</p>
+                  <p className="text-[11px] text-slate-500">Role: Agent</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <p className="text-slate-500">Current Task</p>
+                  <p className="font-semibold text-slate-800 truncate">{selectedTask.taskTitle || `Task #${selectedTask.taskId}`}</p>
+                </div>
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <p className="text-slate-500">Current Project</p>
+                  <p className="font-semibold text-slate-800">Assigned</p>
+                </div>
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <p className="text-slate-500">ETA</p>
+                  <p className="font-semibold text-slate-800">{formatEta(selectedTask.etaSeconds)}</p>
+                </div>
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <p className="text-slate-500">Speed</p>
+                  <p className="font-semibold text-slate-800">{formatSpeed(selectedTask.speedMps)}</p>
+                </div>
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <p className="text-slate-500">Distance Remaining</p>
+                  <p className="font-semibold text-slate-800">{formatMetricDistance(selectedTask.distanceRemainingMeters)}</p>
+                </div>
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <p className="text-slate-500">Route Deviation</p>
+                  <p className="font-semibold text-slate-800">{formatMetricDistance(selectedTask.routeDeviationMeters)}</p>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-500">
+                Last GPS Update: {new Date(selectedTask.lastEventAt).toLocaleString()}
+              </p>
+            </div>
+          </div>
+        );
+      })()}
 
       {historyTask && (
         <RouteHistoryPanel

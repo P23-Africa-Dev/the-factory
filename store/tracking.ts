@@ -140,6 +140,21 @@ function buildFromEnvelope(
       payload.data?.distance_remaining_meters ??
       prev?.distanceRemainingMeters ??
       null,
+    speedMps:
+      payload.data?.location?.speed_mps ??
+      payload.data?.speed_mps ??
+      prev?.speedMps ??
+      null,
+    etaSeconds: payload.data?.eta_seconds ?? prev?.etaSeconds ?? null,
+    routeDeviationMeters:
+      payload.data?.route_deviation_meters ??
+      payload.data?.location?.route_deviation_meters ??
+      prev?.routeDeviationMeters ??
+      null,
+    operationalStatus:
+      payload.data?.status?.operational_status ??
+      payload.data?.operational_status ??
+      prev?.operationalStatus,
     movementStarted: payload.data?.movement_started ?? prev?.movementStarted,
     nearDetectedAt:
       payload.data?.near_recorded_at ??
@@ -305,6 +320,12 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
           prev?.distanceRemainingMeters ??
           null,
         movementStarted: prev?.movementStarted,
+        speedMps: route.proximity?.speed_mps ?? prev?.speedMps ?? null,
+        etaSeconds: route.proximity?.eta_seconds ?? prev?.etaSeconds ?? null,
+        routeDeviationMeters:
+          route.proximity?.route_deviation_meters ?? prev?.routeDeviationMeters ?? null,
+        operationalStatus:
+          route.proximity?.operational_status ?? prev?.operationalStatus,
       };
 
       return { liveTasks: { ...s.liveTasks, [taskId]: entry } };
@@ -386,6 +407,12 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             item.location.distance_remaining_meters ??
             prev?.distanceRemainingMeters ??
             null,
+          speedMps: item.location.speed_mps ?? prev?.speedMps ?? null,
+          etaSeconds: item.location.eta_seconds ?? prev?.etaSeconds ?? null,
+          routeDeviationMeters:
+            item.location.route_deviation_meters ?? prev?.routeDeviationMeters ?? null,
+          operationalStatus:
+            item.status.operational_status ?? prev?.operationalStatus,
           movementStarted: prev?.movementStarted,
         };
       }

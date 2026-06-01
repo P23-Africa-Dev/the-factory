@@ -45,8 +45,8 @@ class AgentLocationSnapshotService
         return AgentLocationSnapshot::query()
             ->with([
                 'agent:id,name,email,avatar,internal_role',
-                'task:id,title,status,latitude,longitude,address_full,location_text',
-                'trackingSession:id,task_id,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
+                'task:id,title,status,latitude,longitude,address_full,location_text,due_at',
+                'trackingSession:id,task_id,start_latitude,start_longitude,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
             ])
             ->where('company_id', (int) $payload['company_id'])
             ->where('user_id', (int) $payload['user_id'])
@@ -64,8 +64,8 @@ class AgentLocationSnapshotService
         $query = AgentLocationSnapshot::query()
             ->with([
                 'agent:id,name,email,avatar,internal_role',
-                'task:id,title,status,latitude,longitude,address_full,location_text',
-                'trackingSession:id,task_id,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
+                'task:id,title,status,latitude,longitude,address_full,location_text,due_at',
+                'trackingSession:id,task_id,start_latitude,start_longitude,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
             ])
             ->where('company_id', $companyId)
             ->orderByDesc('last_seen_at');
@@ -128,8 +128,8 @@ class AgentLocationSnapshotService
         $snapshot = AgentLocationSnapshot::query()
             ->with([
                 'agent:id,name,email,avatar,internal_role',
-                'task:id,title,status,latitude,longitude,address_full,location_text',
-                'trackingSession:id,task_id,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
+                'task:id,title,status,latitude,longitude,address_full,location_text,due_at',
+                'trackingSession:id,task_id,start_latitude,start_longitude,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
             ])
             ->where('company_id', $companyId)
             ->where('user_id', $targetUser->id)
@@ -186,6 +186,12 @@ class AgentLocationSnapshotService
             $distanceToDestinationMeters !== null
             ? max(0.0, $distanceToDestinationMeters - max(1.0, $arrivalRadiusMeters))
             : null;
+        $etaSeconds = $this->estimateEtaSeconds($distanceRemainingMeters, $snapshot->speed_mps);
+        $routeDeviationMeters = $this->calculateRouteDeviationMeters(
+            trackingSession: $trackingSession,
+            latitude: (float) $snapshot->latitude,
+            longitude: (float) $snapshot->longitude,
+        );
 
         $taskStatus = $snapshot->task_status ?? $snapshot->task?->status?->value;
         $arrived = (bool) $snapshot->arrived || $trackingSession?->arrival_detected_at !== null;
@@ -193,6 +199,13 @@ class AgentLocationSnapshotService
         $proximityState = $taskStatus === 'completed'
             ? 'completed'
             : ($arrived ? 'arrived' : ($nearDestination ? 'near_destination' : 'in_progress'));
+        $operationalStatus = $this->resolveOperationalStatus(
+            taskStatus: $taskStatus,
+            proximityState: $proximityState,
+            isOnline: $isOnline,
+            etaSeconds: $etaSeconds,
+            dueAtIso: $snapshot->task?->due_at?->toIso8601String(),
+        );
 
         return [
             'agent' => [
@@ -223,6 +236,8 @@ class AgentLocationSnapshotService
                 'near_destination' => $nearDestination,
                 'distance_to_destination_meters' => $distanceToDestinationMeters !== null ? round($distanceToDestinationMeters, 2) : null,
                 'distance_remaining_meters' => $distanceRemainingMeters !== null ? round($distanceRemainingMeters, 2) : null,
+                'eta_seconds' => $etaSeconds,
+                'route_deviation_meters' => $routeDeviationMeters !== null ? round($routeDeviationMeters, 2) : null,
                 'recorded_at' => $snapshot->recorded_at?->toIso8601String(),
             ],
             'status' => [
@@ -232,9 +247,104 @@ class AgentLocationSnapshotService
                 'age_seconds' => $ageSeconds,
                 'last_seen_at' => $lastSeenIso,
                 'proximity_state' => $proximityState,
+                'operational_status' => $operationalStatus,
             ],
             'updated_at' => $snapshot->updated_at?->toIso8601String(),
         ];
+    }
+
+    private function estimateEtaSeconds(?float $distanceRemainingMeters, ?float $speedMps): ?int
+    {
+        if ($distanceRemainingMeters === null || $speedMps === null) {
+            return null;
+        }
+
+        if ($distanceRemainingMeters <= 0 || $speedMps <= 0.35) {
+            return null;
+        }
+
+        return (int) max(0, round($distanceRemainingMeters / $speedMps));
+    }
+
+    private function calculateRouteDeviationMeters(?object $trackingSession, float $latitude, float $longitude): ?float
+    {
+        if (
+            $trackingSession === null
+            || $trackingSession->start_latitude === null
+            || $trackingSession->start_longitude === null
+            || $trackingSession->destination_latitude === null
+            || $trackingSession->destination_longitude === null
+        ) {
+            return null;
+        }
+
+        $startLat = (float) $trackingSession->start_latitude;
+        $startLng = (float) $trackingSession->start_longitude;
+        $destLat = (float) $trackingSession->destination_latitude;
+        $destLng = (float) $trackingSession->destination_longitude;
+
+        $latFactor = 111320.0;
+        $meanLatRad = deg2rad(($startLat + $destLat + $latitude) / 3.0);
+        $lngFactor = 111320.0 * cos($meanLatRad);
+
+        $ax = 0.0;
+        $ay = 0.0;
+        $bx = ($destLng - $startLng) * $lngFactor;
+        $by = ($destLat - $startLat) * $latFactor;
+        $px = ($longitude - $startLng) * $lngFactor;
+        $py = ($latitude - $startLat) * $latFactor;
+
+        $abx = $bx - $ax;
+        $aby = $by - $ay;
+        $abSquared = $abx * $abx + $aby * $aby;
+
+        if ($abSquared <= 0.0001) {
+            return null;
+        }
+
+        $apx = $px - $ax;
+        $apy = $py - $ay;
+        $t = (($apx * $abx) + ($apy * $aby)) / $abSquared;
+        $tClamped = max(0.0, min(1.0, $t));
+
+        $closestX = $ax + ($abx * $tClamped);
+        $closestY = $ay + ($aby * $tClamped);
+
+        return sqrt((($px - $closestX) ** 2) + (($py - $closestY) ** 2));
+    }
+
+    private function resolveOperationalStatus(
+        ?string $taskStatus,
+        string $proximityState,
+        bool $isOnline,
+        ?int $etaSeconds,
+        ?string $dueAtIso,
+    ): string {
+        if ($taskStatus === 'completed' || $proximityState === 'completed') {
+            return 'completed';
+        }
+
+        if (! $isOnline) {
+            return 'offline';
+        }
+
+        if ($proximityState === 'arrived') {
+            return 'destination_reached';
+        }
+
+        if ($proximityState === 'near_destination') {
+            return 'near_destination';
+        }
+
+        $isDelayedByEta = $etaSeconds !== null
+            && $etaSeconds >= max(60, (int) config('tracking.delayed_eta_threshold_seconds', 1800));
+        $isDelayedByDueAt = $dueAtIso !== null && Carbon::parse($dueAtIso)->isPast();
+
+        if ($isDelayedByEta || $isDelayedByDueAt) {
+            return 'delayed';
+        }
+
+        return 'en_route';
     }
 
     private function distanceMeters(float $fromLat, float $fromLng, float $toLat, float $toLng): float
