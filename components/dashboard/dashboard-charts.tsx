@@ -59,8 +59,10 @@ export function MyActivitiesChart() {
       ? metric.current_week_daily
       : activitiesData;
 
+  const hasData = chartData.some((item) => item.value > 0);
+
   const referenceLine =
-    chartData.length > 0
+    hasData
       ? Math.round(
         chartData.reduce((sum, item) => sum + item.value, 0) / chartData.length
       )
@@ -96,40 +98,46 @@ export function MyActivitiesChart() {
       </div>
 
       <div className="flex-1 w-full min-h-25 mt-2 relative z-10">
-        <ResponsiveContainer
-          width="100%"
-          height="100%"
-          minHeight={0}
-          minWidth={0}
-        >
-          <AreaChart
-            data={chartData}
-            margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+        {hasData ? (
+          <ResponsiveContainer
+            width="100%"
+            height="100%"
+            minHeight={0}
+            minWidth={0}
           >
-            <defs>
-              <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="white" stopOpacity={0.4} />
-                <stop offset="95%" stopColor="white" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <ReferenceLine
-              y={referenceLine}
-              stroke="white"
-              strokeDasharray="3 3"
-              strokeOpacity={0.4}
-            />
-            <Area
-              type="monotone"
-              dataKey="value"
-              stroke="white"
-              strokeWidth={4}
-              fillOpacity={1}
-              fill="url(#colorValue)"
-              dot={false}
-              activeDot={{ r: 6, fill: "white", strokeWidth: 0 }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+            <AreaChart
+              data={chartData}
+              margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+            >
+              <defs>
+                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="white" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="white" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <ReferenceLine
+                y={referenceLine}
+                stroke="white"
+                strokeDasharray="3 3"
+                strokeOpacity={0.4}
+              />
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke="white"
+                strokeWidth={4}
+                fillOpacity={1}
+                fill="url(#colorValue)"
+                dot={false}
+                activeDot={{ r: 6, fill: "white", strokeWidth: 0 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="w-full h-full flex items-center">
+            <div className="w-full h-0.75 rounded-full bg-white opacity-50" />
+          </div>
+        )}
       </div>
 
       {/* Decorative dashed lines spanning the card */}
