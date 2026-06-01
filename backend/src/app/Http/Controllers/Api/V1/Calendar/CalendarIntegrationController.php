@@ -57,6 +57,32 @@ class CalendarIntegrationController extends Controller
         );
     }
 
+    public function switchUrl(Request $request): JsonResponse
+    {
+        $data = $this->connectionService->switchAccountConnectUrl(
+            user: $request->user(),
+            companyId: $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
+        return $this->success(
+            message: 'Google Calendar switch-account URL generated successfully.',
+            data: $data,
+        );
+    }
+
+    public function reconnectUrl(Request $request): JsonResponse
+    {
+        $data = $this->connectionService->reconnectUrl(
+            user: $request->user(),
+            companyId: $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
+        return $this->success(
+            message: 'Google Calendar reconnect URL generated successfully.',
+            data: $data,
+        );
+    }
+
     public function callback(Request $request): JsonResponse|Response
     {
         // API clients (tests and SDK integrations) keep the existing JSON behavior.

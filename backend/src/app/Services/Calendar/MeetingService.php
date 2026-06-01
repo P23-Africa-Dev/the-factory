@@ -100,6 +100,8 @@ class MeetingService
                 'end_at' => $data['end_at'],
                 'status' => 'scheduled',
                 'source_page' => $data['source_page'] ?? 'api',
+                'organizer_email_snapshot' => $connection?->organizer_email,
+                'organizer_name_snapshot' => $connection?->organizer_name,
                 'meeting_settings' => $data['meeting_settings'] ?? null,
                 'sync_status' => 'pending',
             ]);
@@ -566,8 +568,8 @@ class MeetingService
                 'start_at' => $meeting->start_at?->toIso8601String(),
                 'end_at' => $meeting->end_at?->toIso8601String(),
                 'google_meet_url' => $meeting->google_meet_url,
-                'organizer_name' => $meeting->creator?->name,
-                'organizer_email' => $meeting->creator?->email,
+                'organizer_name' => $meeting->organizer_name_snapshot ?: $meeting->creator?->name,
+                'organizer_email' => $meeting->organizer_email_snapshot ?: $meeting->creator?->email,
             ],
             attendees: $meeting->attendees
                 ->map(static fn($attendee): array => [

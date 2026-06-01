@@ -46,6 +46,8 @@ export type MeetingItem = {
     end_at: string;
     status: MeetingStatus;
     source_page: "dashboard" | "operations" | "project" | "task" | "api" | "agent";
+    organizer_email_snapshot?: string | null;
+    organizer_name_snapshot?: string | null;
     reminder_config?: Array<{
         offset_minutes?: number | null;
         custom_remind_at?: string | null;

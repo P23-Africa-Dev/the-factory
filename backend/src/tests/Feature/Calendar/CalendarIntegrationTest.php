@@ -125,12 +125,19 @@ class CalendarIntegrationTest extends TestCase
             ->assertJsonPath('data.connected', true)
             ->assertJsonPath('data.status', 'active')
             ->assertJsonPath('data.organizer_email', 'owner@factory23.test')
-            ->assertJsonPath('data.owner_user_id', $owner->id);
+            ->assertJsonPath('data.owner_user_id', $owner->id)
+            ->assertJsonPath('data.connected_google_email', 'owner@factory23.test')
+            ->assertJsonPath('data.token_valid', true)
+            ->assertJsonPath('data.connection_health_status', 'healthy');
     }
 
     public function test_admin_can_disconnect_calendar_integration(): void
     {
         [$company, $owner, $admin] = $this->seedCompanyUsers();
+
+        Http::fake([
+            'https://oauth2.googleapis.com/revoke' => Http::response('', 200),
+        ]);
 
         CompanyCalendarConnection::create([
             'company_id' => $company->id,
@@ -152,12 +159,105 @@ class CalendarIntegrationTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('data.disconnected', true);
+            ->assertJsonPath('data.disconnected', true)
+            ->assertJsonPath('data.access_token_revoked', true)
+            ->assertJsonPath('data.refresh_token_revoked', true);
 
         $this->assertDatabaseHas('company_calendar_connections', [
             'company_id' => $company->id,
             'status' => 'revoked',
+            'access_token_encrypted' => '',
+            'refresh_token_encrypted' => '',
         ]);
+    }
+
+    public function test_owner_can_request_switch_url_and_existing_connection_is_invalidated(): void
+    {
+        [$company, $owner] = $this->seedCompanyUsers();
+
+        CompanyCalendarConnection::create([
+            'company_id' => $company->id,
+            'owner_user_id' => $owner->id,
+            'organizer_email' => 'owner@factory23.test',
+            'organizer_google_user_id' => 'google-owner-123',
+            'access_token_encrypted' => 'access-token',
+            'refresh_token_encrypted' => 'refresh-token',
+            'token_expires_at' => now()->addHour(),
+            'scopes' => ['https://www.googleapis.com/auth/calendar'],
+            'status' => 'active',
+            'connected_at' => now(),
+        ]);
+
+        Http::fake([
+            'https://oauth2.googleapis.com/revoke' => Http::response('', 200),
+        ]);
+
+        $response = $this->withToken($owner->createToken('owner-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/calendar/integration/switch-url', [
+                'company_id' => $company->company_id,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.expires_in_seconds', 300)
+            ->assertJsonStructure([
+                'data' => ['authorization_url', 'expires_in_seconds'],
+            ]);
+
+        $this->assertDatabaseHas('company_calendar_connections', [
+            'company_id' => $company->id,
+            'status' => 'revoked',
+            'access_token_encrypted' => '',
+            'refresh_token_encrypted' => '',
+        ]);
+    }
+
+    public function test_admin_can_request_reconnect_url(): void
+    {
+        [$company,, $admin] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/calendar/integration/reconnect-url', [
+                'company_id' => $company->company_id,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.expires_in_seconds', 300)
+            ->assertJsonStructure([
+                'data' => ['authorization_url', 'expires_in_seconds'],
+            ]);
+    }
+
+    public function test_agent_cannot_manage_switch_or_reconnect_actions(): void
+    {
+        [$company,,, $agent] = $this->seedCompanyUsers();
+
+        $token = $agent->createToken('agent-token', ['*'])->plainTextToken;
+
+        $switchResponse = $this->withToken($token)
+            ->postJson('/api/v1/calendar/integration/switch-url', [
+                'company_id' => $company->company_id,
+            ]);
+
+        $switchResponse->assertUnprocessable()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath(
+                'errors.authorization.0',
+                'Only company owners or admins can connect or disconnect Google Calendar integration.',
+            );
+
+        $reconnectResponse = $this->withToken($token)
+            ->postJson('/api/v1/calendar/integration/reconnect-url', [
+                'company_id' => $company->company_id,
+            ]);
+
+        $reconnectResponse->assertUnprocessable()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath(
+                'errors.authorization.0',
+                'Only company owners or admins can connect or disconnect Google Calendar integration.',
+            );
     }
 
     public function test_oauth_callback_persists_connection_for_owner(): void

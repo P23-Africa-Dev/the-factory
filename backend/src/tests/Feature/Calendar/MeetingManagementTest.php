@@ -61,6 +61,7 @@ class MeetingManagementTest extends TestCase
             'company_id' => $company->id,
             'owner_user_id' => $owner->id,
             'organizer_email' => 'owner@factory23.test',
+            'organizer_name' => 'Calendar Owner',
             'organizer_google_user_id' => 'google-owner-123',
             'access_token_encrypted' => 'access-token',
             'refresh_token_encrypted' => 'refresh-token',
@@ -87,6 +88,8 @@ class MeetingManagementTest extends TestCase
         $response->assertCreated()
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.meeting.sync_status', 'synced')
+            ->assertJsonPath('data.meeting.organizer_email_snapshot', 'owner@factory23.test')
+            ->assertJsonPath('data.meeting.organizer_name_snapshot', 'Calendar Owner')
             ->assertJsonPath('data.integration.connected', true)
             ->assertJsonPath('data.warnings', []);
 

@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -127,6 +128,7 @@ class GoogleCalendarOAuthService
      *     token_expires_at:?string,
      *     scopes:array<int,string>,
      *     organizer_email:string,
+     *     organizer_name:?string,
      *     organizer_google_user_id:string
      * }
      */
@@ -181,6 +183,7 @@ class GoogleCalendarOAuthService
         /** @var array<string,mixed> $profilePayload */
         $profilePayload = $profileResponse->json();
         $organizerEmail = trim((string) ($profilePayload['email'] ?? ''));
+        $organizerName = trim((string) ($profilePayload['name'] ?? ''));
         $organizerGoogleUserId = trim((string) ($profilePayload['sub'] ?? ''));
 
         if ($organizerEmail === '' || $organizerGoogleUserId === '') {
@@ -208,8 +211,50 @@ class GoogleCalendarOAuthService
                 $scopes,
             ))),
             'organizer_email' => $organizerEmail,
+            'organizer_name' => $organizerName !== '' ? $organizerName : null,
             'organizer_google_user_id' => $organizerGoogleUserId,
         ];
+    }
+
+    /**
+     * @return array{access_token_revoked:bool,refresh_token_revoked:bool}
+     */
+    public function revokeTokens(?string $accessToken = null, ?string $refreshToken = null): array
+    {
+        return [
+            'access_token_revoked' => $this->revokeToken($accessToken),
+            'refresh_token_revoked' => $this->revokeToken($refreshToken),
+        ];
+    }
+
+    private function revokeToken(?string $token): bool
+    {
+        $value = trim((string) $token);
+
+        if ($value === '') {
+            return false;
+        }
+
+        try {
+            $response = Http::asForm()
+                ->timeout(20)
+                ->post('https://oauth2.googleapis.com/revoke', ['token' => $value]);
+
+            if ($response->successful() || $response->status() === 400) {
+                return true;
+            }
+
+            Log::warning('Google OAuth token revoke failed.', [
+                'status' => $response->status(),
+                'response' => $response->body(),
+            ]);
+        } catch (\Throwable $exception) {
+            Log::warning('Google OAuth token revoke request failed.', [
+                'message' => $exception->getMessage(),
+            ]);
+        }
+
+        return false;
     }
 
     private function scopes(): array

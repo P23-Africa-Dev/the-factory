@@ -42,7 +42,7 @@ class SendMeetingLifecycleEmailJob implements ShouldQueue
     public function handle(): void
     {
         foreach ($this->recipientEmails as $recipientEmail) {
-            Mail::to($recipientEmail)->send(new MeetingLifecycleMail(
+            Mail::mailer('resend')->to($recipientEmail)->send(new MeetingLifecycleMail(
                 eventType: $this->eventType,
                 organizationName: $this->organizationName,
                 meeting: $this->meeting,

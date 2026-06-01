@@ -10,7 +10,10 @@ import { getActiveCompanyContext } from "@/lib/company-context";
 import { canConnectGoogleCalendar } from "@/lib/calendar-permissions";
 import { useCreateMeeting } from "@/hooks/use-meetings";
 import {
+    useDisconnectCalendarIntegration,
+    useCalendarIntegrationReconnect,
     useCalendarIntegrationStatus,
+    useCalendarIntegrationSwitch,
     useCreateCalendarConnectUrl,
 } from "@/hooks/use-calendar-integration";
 import { useMeetingAttendeeCandidates } from "@/hooks/use-meeting-attendees";
@@ -139,6 +142,9 @@ export function ScheduleMeetingModal({
     const createMeetingMutation = useCreateMeeting();
     const integrationStatusQuery = useCalendarIntegrationStatus(companyId ?? undefined);
     const connectUrlMutation = useCreateCalendarConnectUrl();
+    const disconnectMutation = useDisconnectCalendarIntegration();
+    const switchMutation = useCalendarIntegrationSwitch();
+    const reconnectMutation = useCalendarIntegrationReconnect();
     const attendeeCandidatesQuery = useMeetingAttendeeCandidates(companyId ?? undefined);
 
     // Stable reference for attendee candidates so downstream memos don't re-run on every render
@@ -320,6 +326,89 @@ export function ScheduleMeetingModal({
                 onError: (error: unknown) => {
                     const apiError = error as { message?: string };
                     toast.error(apiError.message || "Failed to start Google Calendar connection.");
+                },
+            }
+        );
+    };
+
+    const openAuthorizationPopup = (authorizationUrl: string, popupName: string) => {
+        const popup = window.open(authorizationUrl, popupName, "width=560,height=720");
+        if (!popup) {
+            window.location.href = authorizationUrl;
+            return;
+        }
+
+        toast.info("Complete Google sign-in in the popup. Connection status will update automatically.");
+    };
+
+    const handleDisconnectGoogleCalendar = () => {
+        if (!companyId) {
+            toast.error("Company context is required.");
+            return;
+        }
+
+        disconnectMutation.mutate(
+            { company_id: companyId },
+            {
+                onSuccess: () => {
+                    toast.success("Google Calendar disconnected successfully.");
+                    integrationStatusQuery.refetch();
+                },
+                onError: (error: unknown) => {
+                    const apiError = error as { message?: string };
+                    toast.error(apiError.message || "Failed to disconnect Google Calendar.");
+                },
+            }
+        );
+    };
+
+    const handleSwitchGoogleCalendar = () => {
+        if (!companyId) {
+            toast.error("Company context is required.");
+            return;
+        }
+
+        switchMutation.mutate(
+            { company_id: companyId },
+            {
+                onSuccess: (response) => {
+                    const authorizationUrl = response.data.authorization_url;
+                    if (!authorizationUrl) {
+                        toast.error("Unable to open Google authorization URL.");
+                        return;
+                    }
+
+                    openAuthorizationPopup(authorizationUrl, "google-calendar-switch");
+                },
+                onError: (error: unknown) => {
+                    const apiError = error as { message?: string };
+                    toast.error(apiError.message || "Failed to start Google Calendar account switch.");
+                },
+            }
+        );
+    };
+
+    const handleReconnectGoogleCalendar = () => {
+        if (!companyId) {
+            toast.error("Company context is required.");
+            return;
+        }
+
+        reconnectMutation.mutate(
+            { company_id: companyId },
+            {
+                onSuccess: (response) => {
+                    const authorizationUrl = response.data.authorization_url;
+                    if (!authorizationUrl) {
+                        toast.error("Unable to open Google authorization URL.");
+                        return;
+                    }
+
+                    openAuthorizationPopup(authorizationUrl, "google-calendar-reconnect");
+                },
+                onError: (error: unknown) => {
+                    const apiError = error as { message?: string };
+                    toast.error(apiError.message || "Failed to start Google Calendar reconnect.");
                 },
             }
         );
@@ -507,13 +596,23 @@ export function ScheduleMeetingModal({
                                 </p>
                             )}
                             {canConnectIntegration && (
-                                <button
-                                    onClick={handleConnectGoogleCalendar}
-                                    disabled={connectUrlMutation.isPending}
-                                    className="mt-2.5 rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
-                                >
-                                    {connectUrlMutation.isPending ? "Preparing..." : "Connect Google Calendar"}
-                                </button>
+                                <div className="mt-2.5 flex flex-wrap gap-2">
+                                    <button
+                                        onClick={handleConnectGoogleCalendar}
+                                        disabled={connectUrlMutation.isPending}
+                                        className="rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                                    >
+                                        {connectUrlMutation.isPending ? "Preparing..." : "Connect Google Calendar"}
+                                    </button>
+
+                                    <button
+                                        onClick={handleReconnectGoogleCalendar}
+                                        disabled={reconnectMutation.isPending}
+                                        className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                                    >
+                                        {reconnectMutation.isPending ? "Preparing..." : "Reconnect"}
+                                    </button>
+                                </div>
                             )}
                         </div>
                     )}
@@ -521,8 +620,42 @@ export function ScheduleMeetingModal({
                     {integration?.connected && (
                         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
                             <p className="text-[11px] font-semibold text-emerald-800">
-                                Connected as {integration.organizer_email ?? "company organizer"}
+                                Connected as {integration.connected_google_email ?? integration.organizer_email ?? "company organizer"}
                             </p>
+                            {integration.google_account_name && (
+                                <p className="mt-0.5 text-[10px] text-emerald-700">Google account: {integration.google_account_name}</p>
+                            )}
+                            <p className="mt-0.5 text-[10px] text-emerald-700">
+                                Health: {integration.connection_health_status ?? "healthy"}
+                            </p>
+                            {canConnectIntegration && (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleSwitchGoogleCalendar}
+                                        disabled={switchMutation.isPending}
+                                        className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                                    >
+                                        {switchMutation.isPending ? "Preparing..." : "Switch Account"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleDisconnectGoogleCalendar}
+                                        disabled={disconnectMutation.isPending}
+                                        className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                                    >
+                                        {disconnectMutation.isPending ? "Disconnecting..." : "Disconnect"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleReconnectGoogleCalendar}
+                                        disabled={reconnectMutation.isPending}
+                                        className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                                    >
+                                        {reconnectMutation.isPending ? "Preparing..." : "Reconnect"}
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
 

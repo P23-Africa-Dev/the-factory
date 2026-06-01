@@ -28,6 +28,8 @@ class Meeting extends Model
         'end_at',
         'status',
         'source_page',
+        'organizer_email_snapshot',
+        'organizer_name_snapshot',
         'reminder_config',
         'meeting_settings',
         'google_event_id',

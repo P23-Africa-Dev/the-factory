@@ -176,6 +176,12 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/connect-url', [CalendarIntegrationController::class, 'connectUrl'])
             ->middleware('throttle:20,1')
             ->name('connect-url');
+        Route::post('/switch-url', [CalendarIntegrationController::class, 'switchUrl'])
+            ->middleware('throttle:20,1')
+            ->name('switch-url');
+        Route::post('/reconnect-url', [CalendarIntegrationController::class, 'reconnectUrl'])
+            ->middleware('throttle:20,1')
+            ->name('reconnect-url');
         Route::delete('/disconnect', [CalendarIntegrationController::class, 'disconnect'])
             ->middleware('throttle:20,1')
             ->name('disconnect');

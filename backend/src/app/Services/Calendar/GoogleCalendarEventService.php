@@ -184,6 +184,7 @@ class GoogleCalendarEventService
         $connection->update([
             'access_token_encrypted' => $newAccessToken,
             'token_expires_at' => $expiresIn > 0 ? now()->addSeconds($expiresIn) : null,
+            'last_token_refresh_at' => now(),
             'status' => 'active',
             'last_error_message' => null,
             'last_error_at' => null,

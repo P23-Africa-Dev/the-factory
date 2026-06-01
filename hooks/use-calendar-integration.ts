@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
     createCalendarConnectUrl,
     disconnectCalendarIntegration,
+    createCalendarReconnectUrl,
+    createCalendarSwitchUrl,
     getCalendarIntegrationStatus,
     type CalendarIntegrationStatus,
 } from "@/lib/api/calendar-integration";
@@ -47,6 +49,42 @@ export function useDisconnectCalendarIntegration(options?: {
         onSuccess: (res) => {
             queryClient.invalidateQueries({ queryKey: CALENDAR_INTEGRATION_KEYS.all });
             options?.onSuccess?.(res.data.disconnected);
+        },
+    });
+}
+
+export function useCalendarIntegrationSwitch() {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: async (payload: { company_id: number | string }) => {
+            if (!token || !payload.company_id) {
+                throw new Error("Authentication and company context are required.");
+            }
+
+            return createCalendarSwitchUrl(payload, token);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: CALENDAR_INTEGRATION_KEYS.all });
+        },
+    });
+}
+
+export function useCalendarIntegrationReconnect() {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: async (payload: { company_id: number | string }) => {
+            if (!token || !payload.company_id) {
+                throw new Error("Authentication and company context are required.");
+            }
+
+            return createCalendarReconnectUrl(payload, token);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: CALENDAR_INTEGRATION_KEYS.all });
         },
     });
 }

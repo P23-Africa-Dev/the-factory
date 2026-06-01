@@ -58,7 +58,7 @@ class SendMeetingReminderEmailJob implements ShouldQueue
         ]);
 
         try {
-            Mail::to($reminder->recipient_email)->send(new MeetingReminderMail(
+            Mail::mailer('resend')->to($reminder->recipient_email)->send(new MeetingReminderMail(
                 organizationName: (string) ($meeting->company?->name ?? 'The Factory'),
                 meeting: [
                     'id' => $meeting->id,
@@ -68,8 +68,8 @@ class SendMeetingReminderEmailJob implements ShouldQueue
                     'start_at' => $meeting->start_at?->toIso8601String(),
                     'end_at' => $meeting->end_at?->toIso8601String(),
                     'google_meet_url' => $meeting->google_meet_url,
-                    'organizer_name' => $meeting->creator?->name,
-                    'organizer_email' => $meeting->creator?->email,
+                    'organizer_name' => $meeting->organizer_name_snapshot ?: $meeting->creator?->name,
+                    'organizer_email' => $meeting->organizer_email_snapshot ?: $meeting->creator?->email,
                 ],
                 remaining: $remaining,
                 recipientEmail: $reminder->recipient_email,
