@@ -71,8 +71,8 @@ export function CompleteTaskSheet({
       if (notes.trim()) formData.append("notes", notes.trim());
       files.forEach((f) => formData.append("files[]", f));
 
-      await completeTaskTracking(taskId, formData, token);
-      toast.success("Task completed successfully.");
+      const response = await completeTaskTracking(taskId, formData, token);
+      toast.success(response.message || "Task completed successfully.");
       onSuccess();
     } catch (err) {
       if (err instanceof ApiRequestError && err.errors) {
@@ -83,7 +83,7 @@ export function CompleteTaskSheet({
         setFieldErrors(mapped);
         toast.error(err.message || "Please fix the errors below.");
       } else {
-        toast.error("Failed to complete task. Please try again.");
+        toast.error(err instanceof Error ? err.message : "Failed to complete task. Please try again.");
       }
     } finally {
       setSubmitting(false);
