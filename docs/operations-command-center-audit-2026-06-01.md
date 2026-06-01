@@ -1,7 +1,7 @@
 # Factory23 Real-Time Tracking & Operations Command Center Audit
 
 Date: 2026-06-01
-Scope: Existing production codebase audit before command center upgrades
+Scope: Existing production codebase audit, updated after initial command center upgrades
 
 ## 1. Current Architecture
 
@@ -116,13 +116,14 @@ Implemented in `TaskTrackingService`:
 - Batch ingestion with max points limit.
 - Point persistence throttle by min interval + min distance.
 - Real-time payload enrichment with task, agent, destination, status, location snapshots.
+- Realtime payload enrichment now includes project metadata, ETA, route deviation, and operational status.
 - Completion guard requiring arrival detection before completion.
 
 ## 7. Existing Geofence Logic
 
 Implemented and currently robust against false positives:
 
-- Destination radius from session/config (`arrival_radius_meters`, default currently 75).
+- Destination radius from session/config (`arrival_radius_meters`, default currently 100).
 - Near radius (`near_radius_meters`, default 250).
 - Accuracy confidence gates:
   - near max accuracy threshold
@@ -137,7 +138,8 @@ Current state:
 
 - Backend and snapshots include distance-to-destination and distance-remaining fields.
 - Speed is captured from telemetry (`speed_mps`) when provided.
-- There is no backend-native ETA and route deviation metric in the current payload contract.
+- Backend tracking payloads and snapshot read models now expose ETA (`eta_seconds`) and route deviation (`route_deviation_meters`).
+- Backend tracking payloads and snapshots now expose operational state (`operational_status`) for command-center visuals.
 - Frontend already uses Mapbox Directions route geometry for visual forward-route overlays.
 
 ## 9. Existing Map Features
@@ -145,20 +147,23 @@ Current state:
 ### Implemented
 
 - Mapbox + Google maps are both supported with runtime fallback.
+- Mapbox management view now uses navigation day/night styles via shared appearance resolution.
 - Privacy-safe default viewport (regional/country/global fallback), no Lagos hardcode at map default layer.
 - Smooth marker interpolation (Mapbox and agent map).
 - Movement trail rendering from persisted polyline points.
 - Destination and origin markers with state-aware visuals.
 - Forward route overlay from Mapbox Directions API.
-- Sidebar feed with task/agent filtering and focus behavior.
+- Sidebar feed with task, agent, project, address, and task-id filtering plus focus behavior.
+- Place geocoding search is available on the Mapbox command-center surface.
+- Command-center feed rows and the selected-agent panel expose ETA, speed, distance remaining, route deviation, and operational status badges.
+- Main Mapbox renderer now applies viewport-bounded task rendering to avoid drawing every agent at once.
 - Dashboard map widget integration.
 
-### Gaps before upgrade
+### Remaining gaps after initial upgrade pass
 
-- Map style still uses light-v11 instead of navigation-day-v1 / navigation-night-v1.
-- Command panel lacks full enterprise status metrics (ETA, deviation, speed, explicit offline/delayed state engine).
-- No explicit clustering/virtualization strategy for 100+ agents in main map renderer.
-- Search UI is currently internal-list filter only; no places geocoding integration.
+- Google fallback view still trails the Mapbox command-center path in selected-agent panel depth and place-search parity.
+- No map-source clustering yet; current scale mitigation is viewport-bounded rendering rather than full clustering/aggregation.
+- Search is stronger on live tracking data and places, but it is not yet expanded into a richer cross-entity operations index.
 
 ## 10. Security & Multi-Tenant Findings
 
@@ -167,12 +172,10 @@ Current state:
 - Agent role visibility is restricted to own events plus explicitly subscribed task IDs.
 - Architecture is compatible with org-level data isolation requirements.
 
-## 11. Upgrade Targets for Command Center Phase
+## 11. Remaining Upgrade Targets for Command Center Phase
 
-1. Add smart status engine (`available`, `en_route`, `near_destination`, `destination_reached`, `completed`, `delayed`, `offline`) with strict color mapping.
-2. Add ETA + route deviation metrics in backend payload/read models and frontend store.
-3. Switch map styles to navigation day/night with automatic mode changes.
-4. Add place search via geocoding plus internal federated search.
-5. Add map-level clustering/virtualization path for 100+ agents.
-6. Expand command panel detail cards with operational metrics and freshness indicators.
-7. Keep backward compatibility for existing events and route APIs.
+1. Bring the Google fallback view closer to the Mapbox command-center feature set.
+2. Add true map-source clustering/aggregation for 100+ concurrent agents.
+3. Expand search into a richer cross-entity operations index beyond live task fields and geocoded places.
+4. Continue refining command panel detail density and enterprise workflow actions.
+5. Keep backward compatibility for existing events and route APIs.

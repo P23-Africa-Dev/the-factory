@@ -1024,6 +1024,13 @@ class TaskTrackingService
                 'location' => $task->location_text,
                 'destination_latitude' => $task->latitude,
                 'destination_longitude' => $task->longitude,
+                'project' => $task->relationLoaded('project') && $task->project !== null
+                    ? [
+                        'id' => $task->project->id,
+                        'name' => $task->project->name,
+                        'status' => $task->project->status?->value,
+                    ]
+                    : null,
             ],
             'destination' => [
                 'latitude' => $session->destination_latitude,

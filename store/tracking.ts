@@ -91,6 +91,7 @@ function buildFromEnvelope(
     agentName: payload.data?.agent?.name ?? "",
     agentAvatarUrl: payload.data?.agent?.avatar_url ?? undefined,
     taskTitle: payload.data?.task?.title ?? "",
+    projectName: payload.data?.task?.project?.name ?? undefined,
     taskAddress: payload.data?.task?.address ?? payload.data?.task?.location ?? undefined,
     status: taskStatus,
     lastPosition: hasCoords ? [lng!, lat!] : [0, 0],
@@ -115,6 +116,7 @@ function buildFromEnvelope(
     agentName: payload.data?.agent?.name ?? base.agentName,
     agentAvatarUrl: payload.data?.agent?.avatar_url ?? base.agentAvatarUrl,
     taskTitle: payload.data?.task?.title ?? base.taskTitle,
+    projectName: payload.data?.task?.project?.name ?? base.projectName,
     taskAddress:
       payload.data?.task?.address ?? payload.data?.task?.location ?? base.taskAddress,
     status: taskStatus,
@@ -283,6 +285,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
         userId: prev?.userId ?? 0,
         agentName: task.assignee?.name ?? prev?.agentName ?? "",
         taskTitle: task.title,
+        projectName: task.project?.name ?? prev?.projectName,
         taskAddress: task.address ?? task.location,
         status:
           route.status === "completed"
@@ -362,6 +365,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
           agentName: item.agent.name ?? prev?.agentName ?? `Agent #${item.agent.id}`,
           agentAvatarUrl: item.agent.avatar_url ?? prev?.agentAvatarUrl,
           taskTitle: item.task.title ?? prev?.taskTitle ?? `Task #${taskId}`,
+          projectName: prev?.projectName,
           taskAddress: item.task.address ?? item.task.location ?? prev?.taskAddress,
           status:
             normalizeProximityState(item.status.proximity_state) ??
@@ -437,6 +441,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             agentName: params.agentName ?? prev?.agentName ?? "",
             agentAvatarUrl: params.agentAvatarUrl ?? prev?.agentAvatarUrl,
             taskTitle: params.taskTitle ?? prev?.taskTitle ?? `Task #${params.taskId}`,
+            projectName: prev?.projectName,
             taskAddress: params.taskAddress ?? prev?.taskAddress,
             status:
               prev?.status === "completed"

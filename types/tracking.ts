@@ -22,6 +22,7 @@ export interface LiveTaskState {
   agentName: string;
   agentAvatarUrl?: string;
   taskTitle: string;
+  projectName?: string;
   taskAddress?: string;
   status: "in_progress" | "near_destination" | "arrived" | "completed";
   operationalStatus?: OperationalTrackingStatus;
@@ -82,6 +83,11 @@ export interface TrackingEnvelope {
         location?: string | null;
         destination_latitude?: number | null;
         destination_longitude?: number | null;
+        project?: {
+          id?: number | null;
+          name?: string | null;
+          status?: string | null;
+        } | null;
       };
       agent?: {
         id?: number;

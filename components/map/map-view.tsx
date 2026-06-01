@@ -183,11 +183,21 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         (task) =>
           task.agentName.toLowerCase().includes(needle) ||
           (task.taskTitle ?? '').toLowerCase().includes(needle) ||
+            (task.projectName ?? '').toLowerCase().includes(needle) ||
           (task.taskAddress ?? '').toLowerCase().includes(needle) ||
           String(task.taskId).includes(needle)
       )
       .slice(0, 8);
   }, [searchQuery, tasks]);
+
+  const handleSearchQueryChange = useCallback((value: string) => {
+    setSearchQuery(value);
+
+    if (value.trim().length < 3) {
+      setPlaceResults([]);
+      setSearchBusy(false);
+    }
+  }, []);
 
   const animateMarkerTo = useCallback((taskId: number, marker: mapboxgl.Marker, target: [number, number]) => {
     const cached = markerPositionRef.current.get(taskId);
@@ -298,10 +308,6 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       clearTimeout(timer);
     };
   }, [compact, searchQuery, token]);
-
-  if (selectedTaskId != null && !liveTasks[selectedTaskId]) {
-    setSelectedTaskId(null);
-  }
 
   // Fly to agent when sidebar selection changes (refs only in effects).
   useEffect(() => {
@@ -804,7 +810,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             type="text"
             placeholder="Search places, agents, tasks, references"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchQueryChange(e.target.value)}
             className="w-full bg-white rounded-full py-4 pl-14 pr-6 text-[14px] shadow-2xl shadow-black/5 outline-none font-medium text-dash-dark placeholder:text-gray-400"
           />
         </div>
@@ -894,6 +900,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
                     >
                       {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
                     </p>
+                      {(task.projectName ?? '').length > 0 && (
+                        <p className={`text-[10px] mt-1 truncate ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                          Project {task.projectName}
+                        </p>
+                      )}
                     <p className={`text-[10px] mt-1 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
                       ETA {formatEta(task.etaSeconds)} | Speed {formatSpeed(task.speedMps)} | Left {formatMetricDistance(task.distanceRemainingMeters)}
                     </p>
@@ -947,7 +958,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
                 </div>
                 <div className="rounded-xl bg-slate-50 px-3 py-2">
                   <p className="text-slate-500">Current Project</p>
-                  <p className="font-semibold text-slate-800">Assigned</p>
+                  <p className="font-semibold text-slate-800 truncate">{selectedTask.projectName ?? 'Unassigned'}</p>
                 </div>
                 <div className="rounded-xl bg-slate-50 px-3 py-2">
                   <p className="text-slate-500">ETA</p>
@@ -1252,12 +1263,17 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     });
   }, [compact, tasks]);
 
-  const filteredTasks = tasks.filter(
-    (task) =>
-      task.agentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (task.taskTitle ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (task.taskAddress ?? '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredTasks = tasks.filter((task) => {
+    const needle = searchQuery.toLowerCase();
+
+    return (
+      task.agentName.toLowerCase().includes(needle) ||
+      (task.taskTitle ?? '').toLowerCase().includes(needle) ||
+      (task.projectName ?? '').toLowerCase().includes(needle) ||
+      (task.taskAddress ?? '').toLowerCase().includes(needle) ||
+      String(task.taskId).includes(needle)
+    );
+  });
 
   if (!googleApiKey) {
     if (compact) {
