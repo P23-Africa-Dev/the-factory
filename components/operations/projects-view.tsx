@@ -538,7 +538,7 @@ function SummaryCards({
   const dotY = 50 + 40 * Math.sin(dotAngle);
 
   return (
-    <div className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar w-screen -mx-4 px-4 pb-2 gap-6 sm:flex-col lg:flex-row sm:justify-between sm:w-full sm:mx-0 sm:px-8 sm:gap-6 lg:gap-0 animate-in fade-in slide-in-from-bottom-2 duration-500 h-auto sm:overflow-visible sm:snap-none sm:pb-0 lg:h-49">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_auto] gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <PerformanceCard
         percent={percent}
         status={performanceStatus}
@@ -546,11 +546,9 @@ function SummaryCards({
         dotX={dotX}
         dotY={dotY}
       />
-      <div className="contents sm:grid sm:grid-cols-3 sm:gap-6 lg:gap-6.25 sm:w-auto">
-        <TotalProjectsCard total={total} />
-        <PendingProjectsCard pending={pending} />
-        <AgentsCard percentage={pendingPercent} onViewAll={onViewNotCommencedTasks} />
-      </div>
+      <TotalProjectsCard total={total} />
+      <PendingProjectsCard pending={pending} />
+      <AgentsCard percentage={pendingPercent} onViewAll={onViewNotCommencedTasks} />
     </div>
   );
 }
@@ -574,7 +572,7 @@ function PerformanceCard({
   dotY: number;
 }) {
   return (
-    <div className="bg-[#0B1C25] rounded-[20px] p-5 sm:p-8 relative flex flex-col sm:flex-row items-center sm:items-center text-center sm:text-left gap-4 sm:gap-6 lg:gap-10 overflow-hidden min-h-45 max-h-60 sm:max-h-52 w-[85vw] sm:w-auto shrink-0 snap-center shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+    <div className="bg-[#0B1C25] rounded-[20px] p-5 sm:p-6 relative flex flex-col sm:flex-row items-center text-center sm:text-left gap-4 sm:gap-6 overflow-hidden shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
       <div className="relative w-28 h-28 sm:w-41.5 sm:h-41.5 shrink-0">
         <svg
           viewBox="0 0 100 100"
@@ -634,7 +632,7 @@ function PerformanceCard({
         <p className="text-[#E8E8E8] font-normal text-[12px] sm:text-[14px] lg:text-[16px] leading-tight mb-0.5">
           Overall Project
         </p>
-        <h2 className="text-[20px] sm:text-[28px] lg:text-[36px] font-semibold leading-[1.1] mb-2 sm:mb-7 tracking-tight">
+        <h2 className="text-[20px] sm:text-[22px] xl:text-[30px] font-semibold leading-[1.1] mb-2 sm:mb-4 tracking-tight">
           Performance
         </h2>
         <p className="text-[11px] sm:text-[14px] font-medium text-[#E8E8E8]/80">
@@ -648,7 +646,7 @@ function PerformanceCard({
 // ─── Total Projects Card ──────────────────────────────────────────────────────
 function TotalProjectsCard({ total }: { total: number }) {
   return (
-    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-[85vw] sm:w-full lg:w-69.75 shrink-0 snap-center">
+    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-full min-w-0">
       <div className="flex items-start justify-between pt-5 sm:pt-6">
         <div>
           <p className="text-[14px] font-medium text-[#2D2D2D]">
@@ -694,7 +692,7 @@ function TotalProjectsCard({ total }: { total: number }) {
 // ─── Pending Projects Card ────────────────────────────────────────────────────
 function PendingProjectsCard({ pending }: { pending: number }) {
   return (
-    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-[85vw] sm:w-full lg:w-69.75 shrink-0 snap-center">
+    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-full min-w-0">
       <div className="flex items-start justify-between pt-5 sm:pt-6">
         <div>
           <p className="text-[14px] font-medium text-[#2D2D2D]">
@@ -753,7 +751,7 @@ function AgentsCard({
   const dotY = 50 + 40 * Math.sin(dotAngle);
 
   return (
-    <div className="bg-[#7BA9A4] rounded-[20px] gap-4 p-5 shadow-sm relative flex flex-col items-center h-full w-[85vw] sm:w-full lg:w-29.75 text-center justify-between shrink-0 snap-center">
+    <div className="bg-[#7BA9A4] rounded-[20px] gap-4 p-5 shadow-sm relative flex flex-col items-center w-full min-w-0 text-center justify-between">
       <p className="text-white font-light text-[8px] leading-[1.4] max-w-20 mx-auto">
         View Agent who hasn&apos;t commenced task
       </p>

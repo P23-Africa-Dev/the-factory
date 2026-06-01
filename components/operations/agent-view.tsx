@@ -5,7 +5,7 @@ import { Search, SlidersHorizontal, BookmarkPlus } from "lucide-react";
 import { AgentCurveChart } from "./agent-curve-chart";
 import { AgentList } from "./agent-list";
 import type { AgentItem } from "./agent-list";
-import { AgentSidebar } from "./agent-sidebar";
+import { AgentInfoCard, AgentLiveDetails } from "./agent-sidebar";
 import { AddAgentModal } from "./add-agent-modal";
 import { useInternalUsersPaginated } from "@/hooks/use-internal-users";
 import { useAuthStore } from "@/store/auth";
@@ -238,9 +238,14 @@ export function AgentView({ basePath }: { basePath: string }) {
       )}
 
       {/* ── Content ───────────────────────────────────────────── */}
-      <div className="flex flex-col xl:flex-row gap-5 mt-2">
-        <div className="flex-1 min-w-0 flex flex-col gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_22.5rem] gap-5 mt-2">
+        {/* Row 1 / Col 1 — Chart */}
+        <div className="xl:col-start-1 xl:row-start-1">
           <AgentCurveChart />
+        </div>
+
+        {/* Row 2 / Col 1 — Agents list */}
+        <div className="xl:col-start-1 xl:row-start-2 min-w-0">
           {isLoading ? (
             <div className="bg-white rounded-3xl p-8 text-[13px] text-gray-400 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
               Loading agents...
@@ -259,7 +264,20 @@ export function AgentView({ basePath }: { basePath: string }) {
             />
           )}
         </div>
-        <AgentSidebar agent={selectedAgent} />
+
+        {/* Row 1 / Col 2 — Agent info */}
+        {selectedAgent && (
+          <div className="xl:col-start-2 xl:row-start-1">
+            <AgentInfoCard agent={selectedAgent} />
+          </div>
+        )}
+
+        {/* Row 2 / Col 2 — Live Details (aligns with agents list) */}
+        {selectedAgent && (
+          <div className="xl:col-start-2 xl:row-start-2">
+            <AgentLiveDetails agent={selectedAgent} />
+          </div>
+        )}
       </div>
 
       {/* ── Modal ─────────────────────────────────────────────── */}
