@@ -268,7 +268,7 @@ export default function AttendanceListPage() {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'late' | 'clocked_out' | 'absent'>('all');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'agent' | 'supervisor'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'agent' | 'supervisor'>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | string | null>(null);
@@ -406,8 +406,8 @@ export default function AttendanceListPage() {
               <label className="text-[11px] font-bold text-gray-400 px-1">Role</label>
               <SearchableSelect
                 value={roleFilter}
-                onChange={(v) => { setRoleFilter(v as 'all' | 'agent' | 'supervisor'); setPage(1); }}
-                options={[{ value: "all", label: "All Roles" }, { value: "agent", label: "Field Agent" }, { value: "supervisor", label: "Supervisor" }]}
+                onChange={(v) => { setRoleFilter(v as 'all' | 'admin' | 'agent' | 'supervisor'); setPage(1); }}
+                options={[{ value: "all", label: "All Roles" }, { value: "admin", label: "Admin" }, { value: "agent", label: "Field Agent" }, { value: "supervisor", label: "Supervisor" }]}
                 className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
               />
             </div>

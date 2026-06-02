@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
     getCountryFallbackViewport,
-    toPrivacySafeRegionalCenter,
 } from "@/lib/map/default-viewport";
 
 describe("default-viewport", () => {
@@ -22,14 +21,11 @@ describe("default-viewport", () => {
         expect(viewport.center).toEqual([0, 20]);
     });
 
-    it("returns an obfuscated regional center instead of exact user coordinates", () => {
-        const center = toPrivacySafeRegionalCenter(51.5074, -0.1278);
+    it("keeps a stable global fallback for unknown countries", () => {
+        const viewport = getCountryFallbackViewport(null);
 
-        expect(center[0]).not.toBe(-0.1278);
-        expect(center[1]).not.toBe(51.5074);
-        expect(center[0]).toBeGreaterThanOrEqual(-180);
-        expect(center[0]).toBeLessThanOrEqual(180);
-        expect(center[1]).toBeGreaterThanOrEqual(-85);
-        expect(center[1]).toBeLessThanOrEqual(85);
+        expect(viewport.granularity).toBe("global");
+        expect(viewport.center).toEqual([0, 20]);
+        expect(viewport.zoom).toBe(1.9);
     });
 });

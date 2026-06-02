@@ -329,7 +329,7 @@ export function AttendanceView({ basePath }: { basePath: string }) {
   const [page, setPage] = useState(1);
   const [date, setDate] = useState(today);
   const [statusFilter, setStatusFilter] = useState<"all" | "present" | "late" | "clocked_out" | "absent">("all");
-  const [roleFilter, setRoleFilter] = useState<"all" | "agent" | "supervisor">("all");
+  const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "agent" | "supervisor">("all");
   const [clockStateFilter, setClockStateFilter] = useState<"all" | "clocked_in" | "clocked_out">("all");
   const [periodFilter, setPeriodFilter] = useState<"day" | "week" | "month" | "range">("day");
   const [fromDate, setFromDate] = useState(today);
@@ -585,8 +585,8 @@ export function AttendanceView({ basePath }: { basePath: string }) {
             <label className="text-[11px] font-bold text-gray-400 px-1">Role</label>
             <SearchableSelect
               value={roleFilter}
-              onChange={(v) => { setRoleFilter(v as "all" | "agent" | "supervisor"); setPage(1); }}
-              options={[{ value: "all", label: "All Roles" }, { value: "agent", label: "Field Agent" }, { value: "supervisor", label: "Supervisor" }]}
+              onChange={(v) => { setRoleFilter(v as "all" | "admin" | "agent" | "supervisor"); setPage(1); }}
+              options={[{ value: "all", label: "All Roles" }, { value: "admin", label: "Admin" }, { value: "agent", label: "Field Agent" }, { value: "supervisor", label: "Supervisor" }]}
               className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
             />
           </div>

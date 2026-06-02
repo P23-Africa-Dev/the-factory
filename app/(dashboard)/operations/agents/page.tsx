@@ -28,10 +28,12 @@ type Agent = {
   active: boolean;
 };
 const PAGE_SIZE = 5;
-const ROLES = ['All Roles', 'Field Agent', 'Supervisor'] as const;
+const ROLES = ['All Roles', 'Admin', 'Field Agent', 'Supervisor'] as const;
 
-function normalizeRole(role?: string): 'agent' | 'supervisor' {
-  return role === 'supervisor' ? 'supervisor' : 'agent';
+function normalizeRole(role?: string): 'admin' | 'agent' | 'supervisor' {
+  if (role === 'admin') return 'admin';
+  if (role === 'supervisor') return 'supervisor';
+  return 'agent';
 }
 
 function mapAgent(user: {
@@ -55,7 +57,7 @@ function mapAgent(user: {
     description: user.email,
     zone: user.assigned_zone ?? 'Unassigned',
     phone: user.phone_number ?? '—',
-    role: internalRole === 'supervisor' ? 'Supervisor' : 'Field Agent',
+    role: internalRole === 'admin' ? 'Admin' : internalRole === 'supervisor' ? 'Supervisor' : 'Field Agent',
     status: isActive ? 'Active (View on Map)' : 'Offline',
     time: isActive ? 'Online' : user.onboarding_status === 'pending_onboarding' ? 'Pending onboarding' : 'Offline',
     avatar: user.avatar_url ?? '/avatars/male-avatar.png',
@@ -220,9 +222,11 @@ export default function AllAgentsPage() {
 
   const roleParam = roleFilter === 'All Roles'
     ? undefined
-    : roleFilter === 'Supervisor'
-      ? 'supervisor'
-      : 'agent';
+    : roleFilter === 'Admin'
+      ? 'admin'
+      : roleFilter === 'Supervisor'
+        ? 'supervisor'
+        : 'agent';
   const statusParam = statusFilter === 'all' ? undefined : statusFilter === 'active' ? 'active' : 'inactive';
   const zoneParam = zoneFilter === 'All Zones' ? undefined : zoneFilter;
 

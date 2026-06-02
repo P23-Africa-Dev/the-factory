@@ -21,6 +21,7 @@ import { getActiveCompanyContext } from "@/lib/company-context";
 import { PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
 
 const ROLE_OPTIONS = [
+  { label: "Admin", value: "admin" },
   { label: "Supervisor", value: "supervisor" },
   { label: "Agent", value: "agent" },
 ] as const;
@@ -60,7 +61,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"supervisor" | "agent" | "">("");
+  const [role, setRole] = useState<"admin" | "supervisor" | "agent" | "">("");
   const [salaryType, setSalaryType] = useState<"daily" | "weekly" | "monthly">("monthly");
   const [currencyCode, setCurrencyCode] = useState(PAYROLL_DEFAULT_CURRENCY);
   const [salary, setSalary] = useState("");
@@ -99,6 +100,10 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   );
 
   const handleFillForAgentToggle = () => {
+    if (role !== "agent") {
+      return;
+    }
+
     const next = !fillForAgent;
     setFillForAgent(next);
     setAgentDetailsModalOpen(next);
@@ -143,7 +148,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
     }
     if (workDays.length === 0) e.workDays = "Select at least one work day.";
     if (role === "agent" && !supervisorId) e.supervisorId = "Supervisor is required for agents.";
-    if (fillForAgent) {
+    if (fillForAgent && role === "agent") {
       if (!agentDetails.phone.trim()) e.phone = "Phone number is required.";
       if (!agentDetails.gender) e.gender = "Gender is required.";
       if (!agentDetails.avatarKey) e.avatarKey = "Select an avatar.";
@@ -195,7 +200,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       company_id: companyId,
       full_name: name.trim(),
       email: email.trim(),
-      role: role as "supervisor" | "agent",
+      role: role as "admin" | "supervisor" | "agent",
       assigned_zone: "",
       work_days: workDays,
       base_salary: baseSalaryNum,
@@ -205,13 +210,13 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       ...(role === "agent" && supervisorId
         ? { supervisor_user_id: Number(supervisorId) }
         : {}),
-      ...(fillForAgent && agentDetails.phone.trim()
+      ...(fillForAgent && role === "agent" && agentDetails.phone.trim()
         ? { phone_number: agentDetails.phone.trim() }
         : {}),
-      ...(fillForAgent && agentDetails.gender
+      ...(fillForAgent && role === "agent" && agentDetails.gender
         ? { gender: agentDetails.gender as "male" | "female" }
         : {}),
-      ...(fillForAgent && agentDetails.avatarKey
+      ...(fillForAgent && role === "agent" && agentDetails.avatarKey
         ? { avatar_key: agentDetails.avatarKey }
         : {}),
     };
@@ -301,8 +306,14 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                   <InlineSelect
                     value={role}
                     onChange={(v) => {
-                      setRole(v as "supervisor" | "agent" | "");
+                      const nextRole = v as "admin" | "supervisor" | "agent" | "";
+                      setRole(nextRole);
                       setSupervisorId("");
+                      if (nextRole !== "agent") {
+                        setFillForAgent(false);
+                        setAgentDetailsModalOpen(false);
+                        setAgentDetails((prev) => ({ ...prev, phone: "", gender: "", avatarKey: "" }));
+                      }
                       clearError("role");
                       clearError("supervisorId");
                     }}
@@ -407,10 +418,13 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
 
               <FormRow label="Fill for Agent" labelClassName="w-28">
                 <Toggle
-                  enabled={fillForAgent}
+                  enabled={role === "agent" && fillForAgent}
                   onToggle={handleFillForAgentToggle}
                 />
               </FormRow>
+              {role !== "agent" && (
+                <p className="text-[11px] text-gray-400">Agent-only profile fields are available when role is Agent.</p>
+              )}
             </div>
 
             {!fillForAgent && (

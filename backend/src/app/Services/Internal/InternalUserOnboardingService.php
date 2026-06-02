@@ -82,7 +82,7 @@ class InternalUserOnboardingService
                 'avatar' => $prefilledProfile['avatar_key'],
             ]);
 
-            $pivotRole = $role === 'supervisor' ? 'supervisor' : 'agent';
+            $pivotRole = $role === 'admin' ? 'admin' : ($role === 'supervisor' ? 'supervisor' : 'agent');
 
             $company->users()->syncWithoutDetaching([
                 $user->id => [
@@ -343,7 +343,7 @@ class InternalUserOnboardingService
         );
 
         return DB::transaction(function () use ($invitation, $user, $data, $resolvedProfile): array {
-            $pivotRole = $invitation->role === 'supervisor' ? 'supervisor' : 'agent';
+            $pivotRole = $invitation->role === 'admin' ? 'admin' : ($invitation->role === 'supervisor' ? 'supervisor' : 'agent');
 
             $avatarKey = $resolvedProfile['avatar_key'];
             $avatarSvg = $resolvedProfile['avatar_svg'];

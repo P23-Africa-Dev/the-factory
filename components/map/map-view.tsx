@@ -176,6 +176,32 @@ function getVisualState(task: LiveTaskState, stale: boolean): VisualTaskState {
   return resolveVisualTaskState(task.status, stale, task.operationalStatus);
 }
 
+function createUserLocationIndicatorElement() {
+  const root = document.createElement('div');
+  root.style.position = 'relative';
+  root.style.width = '18px';
+  root.style.height = '18px';
+  root.style.borderRadius = '9999px';
+  root.style.display = 'flex';
+  root.style.alignItems = 'center';
+  root.style.justifyContent = 'center';
+  root.style.pointerEvents = 'none';
+
+  root.innerHTML = `
+    <div style="position:absolute; width:40px; height:40px; border-radius:9999px; background:rgba(37,99,235,0.2); animation:dashboard-user-pulse 1.8s ease-out infinite;"></div>
+    <div style="position:absolute; width:24px; height:24px; border-radius:9999px; background:rgba(59,130,246,0.35);"></div>
+    <div style="position:relative; width:18px; height:18px; border-radius:9999px; background:#2563EB; border:3px solid #FFFFFF; box-shadow:0 4px 14px rgba(37,99,235,0.4);"></div>
+    <style>
+      @keyframes dashboard-user-pulse {
+        0% { transform: scale(0.7); opacity: .8; }
+        100% { transform: scale(1.35); opacity: 0; }
+      }
+    </style>
+  `;
+
+  return root;
+}
+
 interface MapViewProps {
   compact?: boolean;
 }
@@ -195,6 +221,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const markerPositionRef = useRef<Map<number, [number, number]>>(new Map());
   const popupRef = useRef<mapboxgl.Popup | null>(null);
   const pulseMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const userLocationMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const directionRoutesRef = useRef<Map<number, [number, number][]>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -229,7 +256,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         (task) =>
           task.agentName.toLowerCase().includes(needle) ||
           (task.taskTitle ?? '').toLowerCase().includes(needle) ||
-            (task.projectName ?? '').toLowerCase().includes(needle) ||
+          (task.projectName ?? '').toLowerCase().includes(needle) ||
           (task.taskAddress ?? '').toLowerCase().includes(needle) ||
           String(task.taskId).includes(needle)
       )
@@ -432,12 +459,12 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       }).addTo(map);
     }
 
-     const popupHtml = buildAgentPopupHtml({
+    const popupHtml = buildAgentPopupHtml({
       name: agentName,
       avatarUrl: agentAvatarUrl,
       location: taskAddress || taskTitle || 'No location details',
       statusLabel: getStatusLabel(selectedTask.status),
-     });
+    });
     popupRef.current.setLngLat(lastPosition).setHTML(popupHtml);
   }, [selectedTask, mapVersion]);
 
@@ -533,8 +560,10 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
       if (popupRef.current) popupRef.current.remove();
       if (pulseMarkerRef.current) pulseMarkerRef.current.remove();
+      if (userLocationMarkerRef.current) userLocationMarkerRef.current.remove();
       popupRef.current = null;
       pulseMarkerRef.current = null;
+      userLocationMarkerRef.current = null;
       if (hoverPopupRef.current) hoverPopupRef.current.remove();
       hoverPopupRef.current = null;
       directionRoutesRef.current.clear();
@@ -571,12 +600,35 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         zoom: compact ? Math.max(viewport.zoom - 0.6, 5.4) : viewport.zoom,
         duration: 900,
       });
+
+      if (viewport.granularity === 'gps') {
+        if (!userLocationMarkerRef.current) {
+          userLocationMarkerRef.current = new mapboxgl.Marker({
+            element: createUserLocationIndicatorElement(),
+            anchor: 'center',
+          })
+            .setLngLat(viewport.center)
+            .addTo(mapRef.current);
+        } else {
+          userLocationMarkerRef.current.setLngLat(viewport.center);
+        }
+      } else {
+        userLocationMarkerRef.current?.remove();
+        userLocationMarkerRef.current = null;
+      }
     });
 
     return () => {
       cancelled = true;
     };
   }, [compact, hasActiveTaskPositions, mapVersion]);
+
+  useEffect(() => {
+    if (hasActiveTaskPositions) {
+      userLocationMarkerRef.current?.remove();
+      userLocationMarkerRef.current = null;
+    }
+  }, [hasActiveTaskPositions]);
 
   // ── Sync live tasks → markers + routes ───────────────────────────────────────
   useEffect(() => {
@@ -1001,9 +1053,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
                         {task.agentName || 'Company Name'}
                       </p>
                       <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                          isSelected ? 'bg-white/15 text-white border border-white/20' : statusMeta.badgeClassName
-                        }`}
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${isSelected ? 'bg-white/15 text-white border border-white/20' : statusMeta.badgeClassName
+                          }`}
                       >
                         {statusMeta.label}
                       </span>
@@ -1014,11 +1065,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
                     >
                       {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
                     </p>
-                      {(task.projectName ?? '').length > 0 && (
-                        <p className={`text-[10px] mt-1 truncate ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
-                          Project {task.projectName}
-                        </p>
-                      )}
+                    {(task.projectName ?? '').length > 0 && (
+                      <p className={`text-[10px] mt-1 truncate ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                        Project {task.projectName}
+                      </p>
+                    )}
                     <p className={`text-[10px] mt-1 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
                       ETA {formatEta(task.etaSeconds)} | Speed {formatSpeed(task.speedMps)} | Left {formatMetricDistance(task.distanceRemainingMeters)}
                     </p>
@@ -1124,6 +1175,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const agentMarkersRef = useRef<Map<number, GoogleMarkerLike>>(new Map());
   const destinationMarkersRef = useRef<Map<number, GoogleMarkerLike>>(new Map());
   const routeLinesRef = useRef<Map<number, GooglePolylineLike>>(new Map());
+  const userLocationMarkerRef = useRef<GoogleMarkerLike | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -1176,10 +1228,12 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       routeLinesRef.current.forEach((line) => line.setMap(null));
       destinationMarkersRef.current.forEach((marker) => marker.setMap(null));
       agentMarkersRef.current.forEach((marker) => marker.setMap(null));
+      userLocationMarkerRef.current?.setMap(null);
 
       routeLinesRef.current.clear();
       destinationMarkersRef.current.clear();
       agentMarkersRef.current.clear();
+      userLocationMarkerRef.current = null;
       mapRef.current = null;
       googleRef.current = null;
     };
@@ -1219,12 +1273,42 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
       mapRef.current.setCenter({ lat: viewport.center[1], lng: viewport.center[0] });
       mapRef.current.setZoom(compact ? Math.max(viewport.zoom - 0.6, 5.4) : viewport.zoom);
+
+      if (viewport.granularity === 'gps' && googleRef.current) {
+        if (!userLocationMarkerRef.current) {
+          userLocationMarkerRef.current = new googleRef.current.maps.Marker({
+            map: mapRef.current,
+            position: { lat: viewport.center[1], lng: viewport.center[0] },
+            title: 'Your current location',
+            icon: {
+              path: googleRef.current.maps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: '#2563EB',
+              fillOpacity: 1,
+              strokeColor: '#FFFFFF',
+              strokeWeight: 3,
+            },
+          });
+        } else {
+          userLocationMarkerRef.current.setPosition({ lat: viewport.center[1], lng: viewport.center[0] });
+        }
+      } else {
+        userLocationMarkerRef.current?.setMap(null);
+        userLocationMarkerRef.current = null;
+      }
     });
 
     return () => {
       cancelled = true;
     };
   }, [compact, hasActiveTaskPositions]);
+
+  useEffect(() => {
+    if (hasActiveTaskPositions) {
+      userLocationMarkerRef.current?.setMap(null);
+      userLocationMarkerRef.current = null;
+    }
+  }, [hasActiveTaskPositions]);
 
   useEffect(() => {
     const map = mapRef.current;

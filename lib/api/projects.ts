@@ -246,7 +246,7 @@ export type InternalUser = {
 };
 
 export type InternalUsersParams = {
-  role?: "supervisor" | "agent";
+  role?: "admin" | "supervisor" | "agent";
   company_id?: number | string;
 };
 

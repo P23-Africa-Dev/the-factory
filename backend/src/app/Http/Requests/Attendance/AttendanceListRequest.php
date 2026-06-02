@@ -34,7 +34,7 @@ class AttendanceListRequest extends FormRequest
             'from_date' => ['nullable', 'date'],
             'to_date' => ['nullable', 'date', 'after_or_equal:from_date'],
             'status' => ['nullable', Rule::in(['present', 'late', 'auto_clocked_out', 'clocked_out', 'absent'])],
-            'role' => ['nullable', Rule::in(['agent', 'supervisor'])],
+            'role' => ['nullable', Rule::in(['admin', 'agent', 'supervisor'])],
             'clock_state' => ['nullable', Rule::in(['clocked_in', 'clocked_out'])],
             'search' => ['nullable', 'string', 'max:255'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],

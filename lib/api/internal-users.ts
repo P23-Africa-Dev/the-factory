@@ -2,7 +2,7 @@
 
 import { apiRequest, ApiEnvelope } from "./onboarding";
 
-export type InternalUserRole = "supervisor" | "agent";
+export type InternalUserRole = "admin" | "supervisor" | "agent";
 
 export type CreateInternalUserPayload = {
   company_id: number | string;

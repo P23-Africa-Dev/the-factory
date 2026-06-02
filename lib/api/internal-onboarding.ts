@@ -43,12 +43,12 @@ export type CompleteInvitationData = {
   token: string;
   token_type: "Bearer";
   access_role?: string;
-  internal_role?: "agent" | "supervisor";
+  internal_role?: "agent" | "supervisor" | "admin";
   user: {
     id: number;
     name?: string;
     email: string;
-    internal_role?: "agent" | "supervisor";
+    internal_role?: "agent" | "supervisor" | "admin";
     onboarding_status?: string;
     avatar_url?: string | null;
     avatar_svg?: string | null;

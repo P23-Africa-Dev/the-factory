@@ -14,6 +14,7 @@ class AdminAuthService
      * Allowed users:
      * - Self-serve users (internal_role = null, onboarding completed)
      * - Enterprise users (internal_role = null, enterprise onboarding completed)
+     * - Admins (internal_role = admin, onboarding_status = active)
      * - Supervisors (internal_role = supervisor, onboarding_status = active)
      *
      * All accepted users must also have at least one active company membership.
@@ -28,15 +29,16 @@ class AdminAuthService
         }
 
         $isSupervisor = $user->internal_role === 'supervisor' && $user->onboarding_status === 'active';
+        $isInternalAdmin = $user->internal_role === 'admin' && $user->onboarding_status === 'active';
 
         $hasSelfServeOnboarding = ! $user->internal_role && $user->hasCompletedOnboarding();
         $hasEnterpriseOnboarding = ! $user->internal_role && $user->hasCompletedEnterpriseOnboarding();
 
-        if (! $isSupervisor && ! $hasSelfServeOnboarding && ! $hasEnterpriseOnboarding) {
+        if (! $isSupervisor && ! $isInternalAdmin && ! $hasSelfServeOnboarding && ! $hasEnterpriseOnboarding) {
             return null;
         }
 
-        if (! $this->hasActiveCompanyMembership($user, $isSupervisor)) {
+        if (! $this->hasActiveCompanyMembership($user, $isSupervisor || $isInternalAdmin)) {
             return null;
         }
 
@@ -52,14 +54,16 @@ class AdminAuthService
 
         $userType = $isSupervisor
             ? 'supervisor'
-            : ($hasSelfServeOnboarding ? 'self-serve' : 'enterprise');
+            : ($isInternalAdmin
+                ? 'admin'
+                : ($hasSelfServeOnboarding ? 'self-serve' : 'enterprise'));
 
         return [
             'user' => $user,
             'token' => $token->plainTextToken,
             'user_type' => $userType,
             'access_role' => $isSupervisor ? 'supervisor' : 'admin',
-            'internal_role' => $isSupervisor ? 'supervisor' : null,
+            'internal_role' => $isSupervisor ? 'supervisor' : ($isInternalAdmin ? 'admin' : null),
         ];
     }
 
@@ -76,14 +80,18 @@ class AdminAuthService
             return $user->onboarding_status === 'active' && $this->hasActiveCompanyMembership($user, true);
         }
 
+        if ($user->internal_role === 'admin') {
+            return $user->onboarding_status === 'active' && $this->hasActiveCompanyMembership($user, true);
+        }
+
         return ! $user->internal_role
             && ($user->hasCompletedOnboarding() || $user->hasCompletedEnterpriseOnboarding())
             && $this->hasActiveCompanyMembership($user, false);
     }
 
-    private function hasActiveCompanyMembership(User $user, bool $isSupervisor): bool
+    private function hasActiveCompanyMembership(User $user, bool $isInternalManager): bool
     {
-        $allowedRoles = $isSupervisor
+        $allowedRoles = $isInternalManager
             ? ['owner', 'admin', 'supervisor']
             : ['owner', 'admin'];
 

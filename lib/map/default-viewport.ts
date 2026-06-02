@@ -1,4 +1,4 @@
-export type ViewportGranularity = "proximity" | "country" | "global";
+export type ViewportGranularity = "gps" | "city" | "state" | "country" | "global";
 
 export type ResolvedMapViewport = {
     center: [number, number];
@@ -14,7 +14,9 @@ const GLOBAL_VIEWPORT: ResolvedMapViewport = {
     countryCode: null,
 };
 
-const PROXIMITY_ZOOM = 8.8;
+const GPS_ZOOM = 15.2;
+const CITY_ZOOM = 11.4;
+const STATE_ZOOM = 7.4;
 
 const COUNTRY_VIEWPORTS: Record<string, { center: [number, number]; zoom: number }> = {
     NG: { center: [8.6753, 9.082], zoom: 5.2 },
@@ -107,30 +109,34 @@ function detectCountryCodeFromBrowser(): string | null {
     return inferCountryCodeFromTimezone(timeZone);
 }
 
-function clamp(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
+type IpGeoContext = {
+    latitude: number | null;
+    longitude: number | null;
+    city: string | null;
+    state: string | null;
+    countryCode: string | null;
+};
+
+function isFiniteNumber(input: unknown): input is number {
+    return typeof input === "number" && Number.isFinite(input);
 }
 
-function getDeterministicNoise(a: number, b: number): number {
-    const sine = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
-    return sine - Math.floor(sine);
-}
+function normalizeCoordinatePair(latitude: unknown, longitude: unknown): [number, number] | null {
+    if (!isFiniteNumber(latitude) || !isFiniteNumber(longitude)) {
+        return null;
+    }
 
-export function toPrivacySafeRegionalCenter(latitude: number, longitude: number): [number, number] {
-    const quantizedLat = Math.round(latitude * 4) / 4;
-    const quantizedLng = Math.round(longitude * 4) / 4;
+    if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+        return null;
+    }
 
-    const noiseA = getDeterministicNoise(latitude, longitude) - 0.5;
-    const noiseB = getDeterministicNoise(longitude, latitude) - 0.5;
-
-    const latWithOffset = clamp(quantizedLat + noiseA * 0.36, -85, 85);
-    const lngWithOffset = clamp(quantizedLng + noiseB * 0.36, -180, 180);
-
-    return [Number(lngWithOffset.toFixed(4)), Number(latWithOffset.toFixed(4))];
+    return [Number(longitude.toFixed(6)), Number(latitude.toFixed(6))];
 }
 
 export function getCountryFallbackViewport(countryCode?: string | null): ResolvedMapViewport {
-    const resolvedCountryCode = normalizeCountryCode(countryCode) ?? detectCountryCodeFromBrowser();
+    const resolvedCountryCode = countryCode === undefined
+        ? detectCountryCodeFromBrowser()
+        : normalizeCountryCode(countryCode);
 
     if (resolvedCountryCode && COUNTRY_VIEWPORTS[resolvedCountryCode]) {
         const selected = COUNTRY_VIEWPORTS[resolvedCountryCode];
@@ -145,7 +151,7 @@ export function getCountryFallbackViewport(countryCode?: string | null): Resolve
     return { ...GLOBAL_VIEWPORT };
 }
 
-function requestApproximateBrowserPosition(): Promise<{ latitude: number; longitude: number }> {
+function requestPreciseBrowserPosition(): Promise<{ latitude: number; longitude: number }> {
     return new Promise((resolve, reject) => {
         if (typeof navigator === "undefined" || !navigator.geolocation) {
             reject(new Error("Geolocation unavailable"));
@@ -161,12 +167,72 @@ function requestApproximateBrowserPosition(): Promise<{ latitude: number; longit
             },
             (error) => reject(error),
             {
-                enableHighAccuracy: false,
-                timeout: 5000,
-                maximumAge: 5 * 60_000,
+                enableHighAccuracy: true,
+                timeout: 8000,
+                maximumAge: 60_000,
             }
         );
     });
+}
+
+async function requestIpGeoContext(): Promise<IpGeoContext | null> {
+    try {
+        const response = await fetch("https://ipapi.co/json/", {
+            method: "GET",
+            headers: {
+                Accept: "application/json",
+            },
+        });
+
+        if (!response.ok) {
+            return null;
+        }
+
+        const payload = (await response.json()) as {
+            latitude?: number;
+            longitude?: number;
+            city?: string;
+            region?: string;
+            country_code?: string;
+        };
+
+        return {
+            latitude: isFiniteNumber(payload.latitude) ? payload.latitude : null,
+            longitude: isFiniteNumber(payload.longitude) ? payload.longitude : null,
+            city: payload.city?.trim() || null,
+            state: payload.region?.trim() || null,
+            countryCode: normalizeCountryCode(payload.country_code),
+        };
+    } catch {
+        return null;
+    }
+}
+
+function buildDynamicFallbackViewport(context: {
+    center: [number, number] | null;
+    city: string | null;
+    state: string | null;
+    countryCode: string | null;
+}): ResolvedMapViewport {
+    if (context.center && context.city) {
+        return {
+            center: context.center,
+            zoom: CITY_ZOOM,
+            granularity: "city",
+            countryCode: context.countryCode,
+        };
+    }
+
+    if (context.center && context.state) {
+        return {
+            center: context.center,
+            zoom: STATE_ZOOM,
+            granularity: "state",
+            countryCode: context.countryCode,
+        };
+    }
+
+    return getCountryFallbackViewport(context.countryCode);
 }
 
 export async function resolvePrivacySafeViewport(): Promise<ResolvedMapViewport> {
@@ -182,15 +248,33 @@ export async function resolvePrivacySafeViewport(): Promise<ResolvedMapViewport>
         const detectedCountryCode = detectCountryCodeFromBrowser();
 
         try {
-            const { latitude, longitude } = await requestApproximateBrowserPosition();
-            const center = toPrivacySafeRegionalCenter(latitude, longitude);
+            const { latitude, longitude } = await requestPreciseBrowserPosition();
+            const center = normalizeCoordinatePair(latitude, longitude);
 
-            cachedViewport = {
+            if (center !== null) {
+                cachedViewport = {
+                    center,
+                    zoom: GPS_ZOOM,
+                    granularity: "gps",
+                    countryCode: detectedCountryCode,
+                };
+
+                return cachedViewport;
+            }
+        } catch {
+            // Fallback to dynamic IP-based viewport resolution below.
+        }
+
+        try {
+            const ipContext = await requestIpGeoContext();
+            const center = normalizeCoordinatePair(ipContext?.latitude, ipContext?.longitude);
+
+            cachedViewport = buildDynamicFallbackViewport({
                 center,
-                zoom: PROXIMITY_ZOOM,
-                granularity: "proximity",
-                countryCode: detectedCountryCode,
-            };
+                city: ipContext?.city ?? null,
+                state: ipContext?.state ?? null,
+                countryCode: ipContext?.countryCode ?? detectedCountryCode,
+            });
 
             return cachedViewport;
         } catch {
