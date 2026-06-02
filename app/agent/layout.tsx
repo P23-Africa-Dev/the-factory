@@ -1,6 +1,7 @@
 import { Navbar } from "@/components/layout/navbar";
 import { AgentGuard } from "@/components/auth/agent-guard";
 import { AgentTrackingShell } from "@/components/tracking/AgentTrackingShell";
+import { FloatingAIButton } from "@/components/layout/floating-ai-button";
 import { AUTH_TOKEN_COOKIE, ONBOARDING_DONE_COOKIE } from "@/lib/auth/session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -30,6 +31,7 @@ export default async function DashboardLayout({
           <AgentTrackingShell>{children}</AgentTrackingShell>
         </AgentGuard>
       </main>
+      <FloatingAIButton />
     </div>
   );
 }

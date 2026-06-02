@@ -43,7 +43,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="hidden md:flex gap-4 lg:gap-8 absolute z-30 top-30 right-18 items-end">
+          <div className="hidden md:flex gap-4 lg:gap-8 absolute top-30 right-18 items-end">
             <div className="h-[144px] w-[270px] lg:h-43.25 lg:w-84.25">
               <MyActivitiesChart />
             </div>
