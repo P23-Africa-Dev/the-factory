@@ -51,8 +51,8 @@ function AgentAvatarGrid({
           type="button"
           onClick={() => onSelect(avatar.key)}
           className={`h-14 w-14 rounded-full overflow-hidden border-2 transition-all ${selectedAvatarKey === avatar.key
-              ? "border-[#094B5C] ring-2 ring-offset-1 ring-[#094B5C]/30"
-              : "border-gray-200"
+            ? "border-[#094B5C] ring-2 ring-offset-1 ring-[#094B5C]/30"
+            : "border-gray-200"
             }`}
           title={avatar.key}
         >
@@ -181,8 +181,11 @@ export function AgentDetailsModal({
               <InlineSelect
                 value={details.gender}
                 onChange={(v) => {
-                  set("gender", v as "male" | "female" | "");
-                  set("avatarKey", "");
+                  onDetailsChange({
+                    ...details,
+                    gender: v as "male" | "female" | "",
+                    avatarKey: "",
+                  });
                   onClearError?.("gender");
                   onClearError?.("avatarKey");
                 }}
