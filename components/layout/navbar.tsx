@@ -202,9 +202,11 @@ export function Navbar() {
               </span>
             )}
           </button>
+          {/*
           <button className="hover:text-white transition-all cursor-pointer p-1">
             <Image src={SettingsIcon} alt="Settings" width={20} height={20} />
           </button>
+          */}
         </div>
 
         <div
