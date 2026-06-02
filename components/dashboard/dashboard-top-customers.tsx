@@ -79,7 +79,7 @@ export function TopCustomers() {
   }));
 
   return (
-    <div className="bg-[#09232D] rounded-[20px] p-4 md:p-5 lg:p-6 flex flex-col w-full lg:w-80.75 h-auto lg:h-114 shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
+    <div className="bg-[#09232D] rounded-[20px] p-4 md:p-5 lg:p-6 flex flex-col w-full lg:w-80.75 h-auto lg:h-125 shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
       <div className="flex justify-between items-center mb-2">
         <h3 className="text-white font-medium text-[14px]">Top Leads</h3>
         <FilterSelect
@@ -140,7 +140,7 @@ export function TopCustomers() {
       {/* Customer List */}
       <div className="flex flex-col gap-3">
         {topProspects.length === 0 ? (
-          <div className="p-3 rounded-[15px] text-[11px] text-white/70 text-center bg-white/5">
+          <div className="p-3 rounded-[15px] text-[11px] text-white/70 text-center bg-white/5 mt-6">
             No top prospects yet.
           </div>
         ) : (
