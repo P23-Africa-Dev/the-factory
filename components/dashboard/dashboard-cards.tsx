@@ -526,7 +526,7 @@ export function WeeklyTasksAgents() {
           </button>
         </div>
 
-        <div className="space-y-3 mb-4 min-h-[160px] flex flex-col justify-center">
+        <div className="space-y-3 mb-4 min-h-[100px] flex flex-col justify-center">
           {upcomingMeetings.length > 0 ? (
             <div className="space-y-3 w-full">
               {upcomingMeetings.map((task, i) => (
@@ -572,7 +572,7 @@ export function WeeklyTasksAgents() {
           )}
         </div>
 
-        <div className="flex justify-end mb-4 px-4">
+        <div className="flex justify-end mb-2 px-4">
           {isCreateMeetingDisabled && createMeetingTooltip ? (
             <CalendarTooltip message={createMeetingTooltip} side="left">
               <button
@@ -595,7 +595,7 @@ export function WeeklyTasksAgents() {
 
         <div className="w-full h-px bg-[#D9D6D6] mb-2.75" />
 
-        <div className="mb-6.5 relative px-5">
+        <div className="mb-4 relative px-5">
           <p className="text-[14px] font-medium text-[#34373C]">Ongoing tasks</p>
 
           <div className="w-full h-5 bg-[#F5F5F5] rounded-full p-1.5 shadow-inner ring-1 ring-dash-dark/5 mt-6.5">
@@ -623,7 +623,7 @@ export function WeeklyTasksAgents() {
           </div>
         </div>
 
-        <button onClick={() => router.push(tasksRoute)} className="w-full bg-[#8B2FA1] text-white py-5 rounded-4xl mb-4 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
+        <button onClick={() => router.push(tasksRoute)} className="w-full bg-[#8B2FA1] text-white py-5 rounded-4xl mb-2 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
           View All tasks
           <Image
             src={ArrowUp}
@@ -671,7 +671,7 @@ export function CRMPipeline() {
   }, [overview?.crm_pipeline_snapshot?.stages]);
 
   return (
-    <div onClick={() => router.push(crmRoute)} className="py-3.75 px-2.75 pb-10 bg-[#D056DC] h-fit rounded-[20px] text-white relative overflow-hidden mb-2.5 shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026] cursor-pointer">
+    <div onClick={() => router.push(crmRoute)} className="py-6 px-2.75 pb-10 bg-[#D056DC] h-fit rounded-[20px] text-white relative overflow-hidden mb-2.5 shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026] cursor-pointer">
       <div className="z-20 relative">
         <div className="w-12.75 h-12.75 rounded-[50px] bg-[#D056DC] backdrop-blur-xl flex items-center justify-center mb-2.25 drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)]">
           <Image
@@ -714,7 +714,7 @@ export function CRMPipeline() {
 
 export function AIWorkspace() {
   return (
-    <div className="py-3.75 px-2.75 bg-[#7BB6B8] h-fit rounded-[20px] text-white relative overflow-hidden shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
+    <div className="py-4 px-2.75 bg-[#7BB6B8] h-fit rounded-[20px] text-white relative overflow-hidden shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
       <div className="z-20 relative text-[#09232D]">
         <div className="w-12.75 h-12.75 rounded-[50px] bg-[#09232D] backdrop-blur-xl flex items-center justify-center mb-2.25 drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)]">
           <Image

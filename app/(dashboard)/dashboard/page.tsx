@@ -18,9 +18,9 @@ export default function DashboardPage() {
   const { day, weekDay, month } = getCurrentDateParts();
 
   return (
-    <div className="min-h-full bg-[#09232D] text-white overflow-x-hidden">
+    <div className="min-h-screen bg-dash-bg overflow-x-hidden flex flex-col">
       {/* Header Section with Grid Texture */}
-      <div className="px-6 md:px-12 pt-24 md:pt-16 pb-20 md:pb-48 lg:pb-32 relative hero-grid">
+      <div className="bg-[#09232D] text-white px-6 md:px-12 pt-24 md:pt-16 pb-20 md:pb-48 lg:pb-32 relative hero-grid">
         <div className="max-w-340 mx-auto w-full relative md:flex md:flex-wrap">
           <div className="flex flex-col md:flex-row md:justify-between md:w-10/12 md:items-end gap-10 relative z-10">
             <DashboardGreeting />
@@ -64,8 +64,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Main Content Area (White background) */}
-      <div className="bg-dash-bg pb-2 pt-6 md:pt-4.25 relative z-10 shadow-inner">
+      {/* Main Content Area */}
+      <div className="flex-1 pb-2 pt-6 md:pt-4.25 relative z-10 shadow-inner">
         <div className="max-w-1340 mx-auto gap-4.25 flex flex-col lg:flex-row px-4 md:px-6 lg:px-4 justify-center">
           <TopCustomers />
           {/* <WeeklyTasks /> */}
