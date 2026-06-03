@@ -275,7 +275,7 @@ export async function sendCopilotMessageStream(
         method: "POST",
         headers: {
             "Content-Type": "application/json",
-            "Accept": "text/event-stream",
+            "Accept": "text/event-stream, application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
@@ -284,7 +284,7 @@ export async function sendCopilotMessageStream(
         }),
     });
 
-    if (!response.ok || !response.body) {
+    if (!response.ok) {
         let message = "Unable to start Copilot streaming response.";
         try {
             const errorPayload = await response.json();
@@ -292,6 +292,26 @@ export async function sendCopilotMessageStream(
         } catch { }
 
         throw new ApiRequestError(message, response.status, null);
+    }
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+        const payloadJson = (await response.json()) as ApiEnvelope<CopilotChatResponse>;
+        const doneEvent: StreamEventDone = {
+            thread_id: payloadJson?.data?.thread_id ?? "",
+            message: payloadJson?.data?.response?.content ?? "",
+            tool: payloadJson?.data?.response?.tool ?? null,
+            sources: payloadJson?.data?.response?.sources ?? [],
+            payload: payloadJson?.data?.response?.payload ?? null,
+        };
+
+        handlers.onMeta?.({ thread_id: doneEvent.thread_id });
+        handlers.onDone?.(doneEvent);
+        return doneEvent;
+    }
+
+    if (!response.body) {
+        throw new ApiRequestError("Copilot stream response body is empty.", 500, null);
     }
 
     const reader = response.body.getReader();

@@ -39,7 +39,10 @@ class CopilotController extends Controller
             idempotencyKey: isset($validated['idempotency_key']) ? (string) $validated['idempotency_key'] : null,
         );
 
-        if (! ((bool) ($validated['stream'] ?? false))) {
+        $streamRequested = (bool) ($validated['stream'] ?? false);
+        $streamingEnabled = (bool) config('services.ai.enable_streaming', true);
+
+        if (! $streamRequested || ! $streamingEnabled) {
             return $this->success(
                 message: 'Copilot response generated successfully.',
                 data: $result,

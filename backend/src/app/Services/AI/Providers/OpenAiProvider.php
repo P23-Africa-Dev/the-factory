@@ -25,11 +25,16 @@ class OpenAiProvider implements AiProviderContract
         $timeoutMs = (int) config('services.ai.request_timeout_ms', 30000);
         $baseUrl = rtrim((string) config('services.ai.openai.base_url', 'https://api.openai.com/v1'), '/');
 
+        $configuredMaxTokens = max(64, (int) config('services.ai.max_tokens', 4000));
+        $requestedMaxTokens = (int) ($options['max_tokens'] ?? $configuredMaxTokens);
+        $effectiveMaxTokens = max(64, min($configuredMaxTokens, $requestedMaxTokens));
+
         $response = $this->http
             ->timeout(max(1, (int) ceil($timeoutMs / 1000)))
             ->withToken((string) config('services.ai.openai.api_key'))
             ->post($baseUrl . '/chat/completions', [
                 'model' => (string) ($options['model'] ?? config('services.ai.openai.model', config('services.ai.default_model'))),
+                'max_tokens' => $effectiveMaxTokens,
                 'temperature' => (float) ($options['temperature'] ?? 0.2),
                 'messages' => [
                     ['role' => 'system', 'content' => $systemPrompt],

@@ -70,14 +70,17 @@ class ReadToolRegistry
             ->values()
             ->all();
 
+        $total = method_exists($leads, 'total') ? (int) $leads->total() : count($items);
+
         return [
             'tool' => 'crm.top_leads',
-            'summary' => count($items) > 0
-                ? 'Here are your top leads in the active organization context.'
+            'summary' => $total > 0
+                ? "You currently have {$total} lead(s) in your CRM. Here are the top records in your active scope."
                 : 'No leads were found in your active organization scope.',
             'payload' => [
                 'items' => $items,
                 'count' => count($items),
+                'total' => $total,
             ],
             'sources' => ['crm.top_leads'],
         ];
