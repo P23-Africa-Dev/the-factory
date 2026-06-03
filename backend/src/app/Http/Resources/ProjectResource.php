@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources;
 
+use App\Support\AvatarUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -32,16 +33,24 @@ class ProjectResource extends JsonResource
             'duration_days' => $this->duration_days,
             'territory_zone' => $this->territory_zone,
             'notes' => $this->notes,
-            'manager' => $this->whenLoaded('manager', fn (): ?array => $this->manager ? [
+            'creator' => $this->whenLoaded('creator', fn(): ?array => $this->creator ? [
+                'id' => $this->creator->id,
+                'name' => $this->creator->name,
+                'email' => $this->creator->email,
+                'avatar_url' => AvatarUrlResolver::resolve($this->creator->avatar, $this->creator->gender),
+            ] : null),
+            'manager' => $this->whenLoaded('manager', fn(): ?array => $this->manager ? [
                 'id' => $this->manager->id,
                 'name' => $this->manager->name,
                 'email' => $this->manager->email,
+                'avatar_url' => AvatarUrlResolver::resolve($this->manager->avatar, $this->manager->gender),
             ] : null),
-            'assigned_team' => $this->whenLoaded('teamUsers', fn () => $this->teamUsers->map(fn ($user): array => [
+            'assigned_team' => $this->whenLoaded('teamUsers', fn() => $this->teamUsers->map(fn($user): array => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
                 'role' => $user->pivot->role,
+                'avatar_url' => AvatarUrlResolver::resolve($user->avatar, $user->gender),
             ])->values()->all()),
             'attachments' => ProjectFileResource::collection($this->whenLoaded('files')),
             'task_summary' => [

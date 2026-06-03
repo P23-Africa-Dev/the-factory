@@ -56,4 +56,29 @@ class Company extends Model
     {
         return $this->hasOne(PayrollSetting::class);
     }
+
+    public function attendanceSetting(): HasOne
+    {
+        return $this->hasOne(AttendanceSetting::class);
+    }
+
+    public function attendanceRecords(): HasMany
+    {
+        return $this->hasMany(AttendanceRecord::class);
+    }
+
+    public function attendancePayrollSummaries(): HasMany
+    {
+        return $this->hasMany(AttendancePayrollSummary::class);
+    }
+
+    public function calendarConnection(): HasOne
+    {
+        return $this->hasOne(CompanyCalendarConnection::class);
+    }
+
+    public function meetings(): HasMany
+    {
+        return $this->hasMany(Meeting::class);
+    }
 }

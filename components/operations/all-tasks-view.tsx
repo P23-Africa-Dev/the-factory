@@ -1,36 +1,78 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Search, SlidersHorizontal } from 'lucide-react';
 import { TaskBoard } from './task-board';
 import { TaskDetailModal } from './task-detail-modal';
 import { useAuthStore } from '@/store/auth';
 import { useTasks } from '@/hooks/use-tasks';
+import { getActiveCompanyContext } from '@/lib/company-context';
 import type { DndContainer, DndItem } from '@/types/operations';
 import { TaskBoardSkeleton } from './skeletons/task-board-skeleton';
 import type { TaskApiItem } from '@/lib/api/tasks';
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { OperationsCalendar } from './operations-calendar';
+
+
+// ─── Pie chart label ──────────────────────────────────────────────────────────
+function CustomLabel({
+  cx = 0, cy = 0, midAngle = 0,
+  innerRadius = 0, outerRadius = 0, value = 0,
+}: {
+  cx?: number; cy?: number; midAngle?: number;
+  innerRadius?: number; outerRadius?: number; value?: number;
+}) {
+  if (value === 0) return null;
+  const RADIAN = Math.PI / 180;
+  const radius = innerRadius + (outerRadius - innerRadius) / 2;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  return (
+    <g>
+      <circle cx={x} cy={y} r={22} fill="white" />
+      <text x={x} y={y} textAnchor="middle" dominantBaseline="central"
+        fill="#0B1215" fontSize={13} fontWeight={800}>
+        {value}%
+      </text>
+    </g>
+  );
+}
+
 
 export function AllTasksView() {
+  const searchParams = useSearchParams();
+  const isNotCommencedMode = searchParams.get('status') === 'not_commenced';
+
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState(isNotCommencedMode ? 'Pending' : 'All');
   const [selectedTask, setSelectedTask] = useState<{
     item: DndItem;
     containerId: string;
   } | null>(null);
 
   const user = useAuthStore((s) => s.user);
-  const companyId = user?.active_company?.id;
+  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
 
   const { data: tasksData, isPending } = useTasks({
-    company_id: companyId,
+    company_id: companyId ?? undefined,
+    ...(isNotCommencedMode ? { status: 'pending' as const } : {}),
   });
 
   const containers: DndContainer[] = useMemo(() => {
-    const items = tasksData?.tasks || [];
-    
+    const items = (tasksData?.tasks || []).filter((task) => {
+      if (!isNotCommencedMode) {
+        return true;
+      }
+
+      return isTaskNotCommenced(task);
+    });
+
     const pendingItems = items.filter(t => t.status === "pending").map(mapTaskToDnd);
-    const inProgressItems = items.filter(t => t.status === "in_progress").map(mapTaskToDnd);
+    const inProgressItems = items
+      .filter((t) => t.status === "in_progress" || t.status === "paused" || t.status === "resumed")
+      .map(mapTaskToDnd);
     const completedItems = items.filter(t => t.status === "completed").map(mapTaskToDnd);
     const cancelledItems = items.filter(t => t.status === "cancelled").map(mapTaskToDnd);
 
@@ -60,7 +102,7 @@ export function AllTasksView() {
         items: cancelledItems,
       },
     ];
-  }, [tasksData]);
+  }, [isNotCommencedMode, tasksData]);
 
   // Apply search + status filtering
   const filteredContainers: DndContainer[] = containers
@@ -111,6 +153,25 @@ export function AllTasksView() {
       };
     });
 
+  const stats = useMemo(() => {
+    const pending = containers.find((c) => c.id === "pending")?.items.length ?? 0;
+    const inProgress = containers.find((c) => c.id === "in-progress")?.items.length ?? 0;
+    const completed = containers.find((c) => c.id === "completed")?.items.length ?? 0;
+    const total = pending + inProgress + completed;
+
+    if (total === 0) return [
+      { name: "Pending", value: 0, color: "#BD7A22" },
+      { name: "In Progress", value: 0, color: "#094B5C" },
+      { name: "Complete", value: 0, color: "#4FD1C5" },
+    ];
+
+    return [
+      { name: "Pending", value: Math.round((pending / total) * 100), color: "#BD7A22" },
+      { name: "In Progress", value: Math.round((inProgress / total) * 100), color: "#094B5C" },
+      { name: "Complete", value: Math.round((completed / total) * 100), color: "#4FD1C5" },
+    ];
+  }, [containers]);
+
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Toolbar */}
@@ -119,7 +180,7 @@ export function AllTasksView() {
           <span className="lg:hidden">Tasks Overview</span>
         </h1>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:justify-end min-w-0 mt-2 lg:mt-0 lg:-mt-16 xl:-mt-20 transition-all duration-300 relative z-10">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:justify-end min-w-0 mt-2 transition-all duration-300 relative z-10">
           <div className="relative w-full md:w-[458px] group shrink-0">
             <Search
               className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#09232D] transition-colors"
@@ -144,9 +205,8 @@ export function AllTasksView() {
 
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
-              showFilters ? 'text-white' : 'text-gray-500'
-            }`}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${showFilters ? 'text-white' : 'text-gray-500'
+              }`}
             style={{
               background: showFilters ? '#34373C' : '#F8F8F8',
               border: showFilters
@@ -175,11 +235,10 @@ export function AllTasksView() {
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
-                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${
-                    statusFilter === s
-                      ? 'bg-[#0B1215] text-white'
-                      : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
-                  }`}
+                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${statusFilter === s
+                    ? 'bg-[#0B1215] text-white'
+                    : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
+                    }`}
                 >
                   {s}
                 </button>
@@ -203,19 +262,68 @@ export function AllTasksView() {
       {isPending ? (
         <TaskBoardSkeleton />
       ) : (
-        <div className="mt-2">
-          <TaskBoard
-            containers={displayContainers}
-            activeTab="all"
-            onAddCard={() => {}}
-            findContainer={() => undefined}
-            moveItem={() => {}}
-            moveToContainer={() => {}}
-            moveBetweenContainers={() => {}}
-            onTaskClick={(item, containerId) =>
-              setSelectedTask({ item, containerId })
-            }
-          />
+        <div className="mt-2 flex flex-col xl:flex-row gap-6 items-start animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {/* ── LEFT: header + kanban ─────────────────────────── */}
+          <div className="flex-1 xl:flex-3 min-w-0 flex flex-col gap-5 w-full">
+            <TaskBoard
+              containers={displayContainers}
+              activeTab="all"
+              onAddCard={() => { }}
+              findContainer={() => undefined}
+              moveItem={() => { }}
+              moveToContainer={() => { }}
+              moveBetweenContainers={() => { }}
+              onTaskClick={(item, containerId) =>
+                setSelectedTask({ item, containerId })
+              }
+            />
+          </div>
+          {/* ── RIGHT: stats + calendar ───────────────────────── */}
+          <div className="w-full sm:max-w-sm xl:max-w-85 xl:flex-1 xl:min-w-70 flex flex-col gap-5 xl:shrink-0">
+
+            <div className="bg-[#0A1A22] rounded-[28px] px-5 pt-5 pb-4 shadow-xl overflow-visible">
+              <h3 className="text-gray-400 font-medium text-[13px] mb-1">Task Stats</h3>
+              <div className="flex items-center justify-between gap-2">
+                <div className="w-44 h-44 shrink-0 -ml-4">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }} style={{ overflow: 'visible' }}>
+                      <Pie
+                        data={stats}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={40}
+                        outerRadius={62}
+                        paddingAngle={1}
+                        dataKey="value"
+                        stroke="none"
+                        labelLine={false}
+                        label={(props) => <CustomLabel {...props} />}
+                      >
+                        {stats.map((entry, i) => (
+                          <Cell key={`cell-${i}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="space-y-4 flex-1 pr-2">
+                  {stats.map((stat, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <div
+                        className="w-3.5 h-3.5 rounded-full shrink-0"
+                        style={{ backgroundColor: stat.color }}
+                      />
+                      <span className="text-[12px] text-[#A0B3B8] font-medium whitespace-nowrap">
+                        {stat.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <OperationsCalendar />
+          </div>
         </div>
       )}
 
@@ -233,6 +341,8 @@ export function AllTasksView() {
 function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
   let statusLabel = "Pending";
   if (apiTask.status === "in_progress") statusLabel = "In Progress";
+  if (apiTask.status === "paused") statusLabel = "Paused";
+  if (apiTask.status === "resumed") statusLabel = "Resumed";
   if (apiTask.status === "completed") statusLabel = "Completed";
   if (apiTask.status === "cancelled") statusLabel = "Cancelled";
 
@@ -253,4 +363,13 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     addedDescription: apiTask.description,
     statusLabel,
   };
+}
+
+function isTaskNotCommenced(task: TaskApiItem): boolean {
+  const hasAssignment =
+    (task.assigned_users?.length ?? 0) > 0 ||
+    !!task.assigned_agent_id ||
+    !!task.assignee?.id;
+
+  return hasAssignment && task.status === 'pending' && !task.started_at;
 }

@@ -80,10 +80,10 @@ export function AgentCurveChart() {
     <div className="w-full bg-white rounded-4xl px-6 pt-6 pb-2 shadow-sm">
 
       {/* Header — all one row */}
-      <div className="flex items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-6 min-w-0">
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-6 min-w-0 flex-wrap">
           <h3 className="text-[17px] font-bold text-dash-dark shrink-0">Agent Curve</h3>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-1.5">
               <div className="w-2.5 h-2.5 rounded-full bg-dash-teal shrink-0" />
               <span className="text-[12px] text-gray-400 font-medium">Online</span>
@@ -94,8 +94,7 @@ export function AgentCurveChart() {
             </div>
           </div>
         </div>
-
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 mt-2 md:mt-0">
           <span className="text-[12px] text-gray-400">Sort by:</span>
           <SortDropdown />
         </div>

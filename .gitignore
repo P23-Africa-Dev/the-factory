@@ -32,11 +32,13 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-/backend/.env*
-/frontend/.env*
-/backend/src/.env*
-/backend/src/config/.env*
-/backend/src/vendor
+backend/.env*
+frontend/.env*
+backend/src/.env*
+backend/src/config/.env*
+backend/src/vendor
+api-docs/.env*
+
 
 # vercel
 .vercel
@@ -44,3 +46,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+*.md

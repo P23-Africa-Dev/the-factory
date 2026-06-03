@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\Auth\LoginController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\Enterprise\DemoRequestController;
+use App\Http\Controllers\Admin\MapProviderSettingController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Web\InternalOnboardingRedirectController;
 use Illuminate\Support\Facades\Route;
@@ -39,6 +40,9 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
 
     Route::middleware(['auth:admin', 'admin.active'])->group(function (): void {
         Route::get('/dashboard', DashboardController::class)->name('dashboard');
+        Route::post('/settings/map-provider', [MapProviderSettingController::class, 'update'])
+            ->name('settings.map-provider.update')
+            ->middleware('admin.permission:manage_users');
         Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
 
         Route::prefix('users')->name('users.')->middleware('admin.permission:manage_users')->group(function (): void {

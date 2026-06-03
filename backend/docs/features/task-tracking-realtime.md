@@ -50,6 +50,12 @@ This feature delivers production-ready, task-driven live agent tracking with:
 2. Supports event types (`start`, `movement`, `arrival`, `complete`).
 3. Includes checkpoint flag for important milestones.
 
+### agent_location_snapshots
+
+1. Materialized latest-location row per `(company_id, user_id)`.
+2. Updated from tracking lifecycle writes (`start`, `location`, `complete`).
+3. Includes last event type, task reference, arrival flag, and staleness metadata inputs.
+
 ## Endpoints
 
 All endpoints require `Authorization: Bearer <token>` and `Accept: application/json`.
@@ -58,11 +64,21 @@ All endpoints require `Authorization: Bearer <token>` and `Accept: application/j
 2. `POST /api/v1/tasks/{task}/location`
 3. `POST /api/v1/tasks/{task}/complete`
 4. `GET /api/v1/tasks/{task}/route`
+5. `GET /api/v1/agents/locations`
+6. `GET /api/v1/agents/{user}/location`
 
 Canonical role-scoped equivalents are available under:
 
 1. `/api/v1/agent/tasks/*` for agent actions
 2. `/api/v1/admin/tasks/*` for management route access
+3. `/api/v1/agent/agents/*` and `/api/v1/admin/agents/*` for map snapshot reads
+
+## Map Read Model (Dual Contract)
+
+1. Task execution lifecycle remains canonical through `/tasks/{task}/start|location|complete|route`.
+2. Map/dashboard snapshot reads should use `/agents/locations` or `/agents/{user}/location`.
+3. Snapshot status is derived from `last_seen_at` against `TASK_TRACKING_AGENT_LOCATION_STALE_AFTER_SECONDS`.
+4. Agents can fetch only their own snapshot; management users can fetch company-wide snapshots.
 
 ## Request Contracts
 
@@ -156,12 +172,30 @@ Returns start/arrival/end checkpoints, point timeline, and Mapbox-ready polyline
 }
 ```
 
+`tracking.agent.location.updated` reuses the same envelope and extends `data` with:
+
+1. `agent` summary (`id`, `name`, `internal_role`)
+2. `location` object (lat/lng/accuracy/speed/heading/event/recorded_at)
+3. `status` object (`is_online`, `is_stale`, `last_seen_at`, `stale_after_seconds`, `age_seconds`)
+
 ### Event types
 
 1. `tracking.task.started`
 2. `tracking.location.updated`
 3. `tracking.task.arrived`
 4. `tracking.task.completed`
+5. `tracking.agent.location.updated`
+
+## WebSocket + Polling Strategy
+
+1. Subscribe websocket clients to `factory23.tracking.company.{company_id}` for low-latency updates.
+2. Apply role-aware filtering in relay (`management` sees all company events; `agent` sees self/subscribed tasks).
+3. On websocket reconnect or missed-heartbeat scenarios, refresh state via:
+
+- `GET /api/v1/agents/locations` for map marker snapshots.
+- `GET /api/v1/tasks/{task}/route` for route reconstruction.
+
+4. Recommended fallback polling cadence: 10-15 seconds until websocket state recovers.
 
 ## Validation and Rules
 
@@ -183,6 +217,7 @@ Laravel env keys:
 5. `TASK_TRACKING_REDIS_CHANNEL_PREFIX`
 6. `TASK_TRACKING_RETENTION_DAYS`
 7. `TASK_TRACKING_PRUNE_CHUNK_SIZE`
+8. `TASK_TRACKING_AGENT_LOCATION_STALE_AFTER_SECONDS`
 
 Node relay env keys:
 

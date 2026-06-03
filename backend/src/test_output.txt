@@ -1,0 +1,16 @@
+
+   PASS  Tests\Feature\Profile\ProfileManagementTest
+  ✓ management user can fetch profile with full context                  9.45s  
+  ✓ agent user can fetch profile and country remains read only           0.19s  
+  ✓ profile endpoint handles double slash path variant                   0.19s  
+  ✓ user can update profile identity fields                              0.26s  
+  ✓ owner can update company country from profile                        0.18s  
+  ✓ agent cannot update company country from profile                     0.23s  
+  ✓ immutable profile fields are rejected                                0.23s  
+  ✓ user can select existing catalog avatar                              0.52s  
+  ✓ custom avatar upload replaces previous custom image and cleans old…  0.59s  
+  ✓ profile endpoints reject invalid company context for user            0.35s  
+
+  Tests:    10 passed (43 assertions)
+  Duration: 20.81s
+

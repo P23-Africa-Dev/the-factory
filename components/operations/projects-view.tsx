@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   MoreVertical,
   Search,
@@ -19,13 +20,15 @@ import { CreateProjectDrawer } from "./create-project-drawer";
 import { ProjectCardSkeleton } from "./skeletons/project-card-skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { PaginationData } from "@/lib/api/projects";
+import type { ProjectsAnalyticsData } from "@/lib/api/projects";
 
 const STATUS_FILTERS = ["All", "In progress", "Completed", "Pending"];
 const PRIORITY_FILTERS = ["All", "High", "Medium", "Low"];
 
 interface ProjectsViewProps {
   projects: Project[];
-  onViewProject: (projectId: string) => void;
+  analytics?: ProjectsAnalyticsData | null;
+  onViewProject: (projectId: string, projectName?: string) => void;
   isLoading?: boolean;
   pagination?: PaginationData | null;
   currentPage?: number;
@@ -34,12 +37,15 @@ interface ProjectsViewProps {
 
 export function ProjectsView({
   projects,
+  analytics = null,
   onViewProject,
   isLoading = false,
   pagination = null,
   currentPage = 1,
   onPageChange,
 }: ProjectsViewProps) {
+  const router = useRouter();
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [priorityFilter, setPriorityFilter] = useState("All");
@@ -62,6 +68,10 @@ export function ProjectsView({
     [projects, search, statusFilter, priorityFilter],
   );
 
+  const handleViewNotCommencedTasks = () => {
+    router.push("/tasks?status=not_commenced");
+  };
+
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* ── Toolbar ──────────────────────────────────────────── */}
@@ -71,8 +81,7 @@ export function ProjectsView({
         </h1>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:justify-end min-w-0 mt-2 lg:mt-0 lg:-mt-16 xl:-mt-20 transition-all duration-300 relative z-10">
-          {/* Search */}
-          <div className="relative w-full md:w-[458px] group shrink-0">
+          <div className="relative w-full sm:flex-1 md:max-w-[458px] group">
             <Search
               className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#09232D] transition-colors"
               size={18}
@@ -97,9 +106,8 @@ export function ProjectsView({
           {/* Filter toggle — icon before text */}
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
-              showFilters ? "text-white" : "text-gray-500"
-            }`}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${showFilters ? "text-white" : "text-gray-500"
+              }`}
             style={{
               background: showFilters ? "#34373C" : "#F8F8F8",
               border: showFilters
@@ -143,7 +151,11 @@ export function ProjectsView({
       </div>
 
       {/* ── Summary Cards ────────────────────────────────────── */}
-      <SummaryCards projects={projects} />
+      <SummaryCards
+        projects={projects}
+        analytics={analytics}
+        onViewNotCommencedTasks={handleViewNotCommencedTasks}
+      />
 
       {/* ── Filter panel ─────────────────────────────────────── */}
       {showFilters && (
@@ -157,11 +169,10 @@ export function ProjectsView({
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
-                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${
-                    statusFilter === s
-                      ? "bg-[#0B1215] text-white"
-                      : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
-                  }`}
+                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${statusFilter === s
+                    ? "bg-[#0B1215] text-white"
+                    : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
+                    }`}
                 >
                   {s}
                 </button>
@@ -178,11 +189,10 @@ export function ProjectsView({
                 <button
                   key={p}
                   onClick={() => setPriorityFilter(p)}
-                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${
-                    priorityFilter === p
-                      ? "bg-[#0B1215] text-white"
-                      : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
-                  }`}
+                  className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${priorityFilter === p
+                    ? "bg-[#0B1215] text-white"
+                    : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
+                    }`}
                 >
                   {p}
                 </button>
@@ -255,7 +265,7 @@ export function ProjectsView({
               <ProjectCard
                 key={project.id}
                 project={project}
-                onClick={() => onViewProject(project.id)}
+                onClick={() => onViewProject(project.id, project.name)}
                 onEdit={() => {
                   setEditingProject(project);
                   setShowDrawer(true);
@@ -267,11 +277,11 @@ export function ProjectsView({
       )}
 
       {showDrawer && (
-        <CreateProjectDrawer 
+        <CreateProjectDrawer
           onClose={() => {
             setShowDrawer(false);
             setEditingProject(null);
-          }} 
+          }}
           projectToEdit={editingProject || undefined}
         />
       )}
@@ -363,7 +373,7 @@ function ProjectCard({
             {project.name}
           </h3>
           <div className="absolute right-0 top-0">
-            <button 
+            <button
               onClick={(e) => {
                 e.stopPropagation();
                 setMenuOpen(!menuOpen);
@@ -372,7 +382,7 @@ function ProjectCard({
             >
               <MoreVertical size={18} />
             </button>
-            
+
             {menuOpen && (
               <div className="absolute right-0 top-full mt-1 w-36 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-10 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
                 <button
@@ -487,10 +497,24 @@ function performanceLabel(pct: number) {
   return "Poor";
 }
 
-function SummaryCards({ projects }: { projects: Project[] }) {
+function SummaryCards({
+  projects,
+  analytics,
+  onViewNotCommencedTasks,
+}: {
+  projects: Project[];
+  analytics?: ProjectsAnalyticsData | null;
+  onViewNotCommencedTasks: () => void;
+}) {
   const total = projects.length;
+  const pending = projects.filter((p) => p.status === "Pending").length;
   const completed = projects.filter((p) => p.status === "Completed").length;
-  const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+  const fallbackPercent = total === 0 ? 0 : Math.round((completed / total) * 100);
+  const fallbackPendingPercent = total === 0 ? 0 : Math.round((pending / total) * 100);
+
+  const percent = Math.round(analytics?.project_performance.project_progress ?? fallbackPercent);
+  const pendingPercent = Math.round(analytics?.non_commenced_agents.percentage ?? fallbackPendingPercent);
+  const performanceStatus = analytics?.project_performance.status ?? performanceLabel(percent).toUpperCase();
 
   const [animatedPct, setAnimatedPct] = useState(0);
   useEffect(() => {
@@ -514,37 +538,42 @@ function SummaryCards({ projects }: { projects: Project[] }) {
   const dotY = 50 + 40 * Math.sin(dotAngle);
 
   return (
-    <div className="flex justify-between w-full px-8 animate-in fade-in slide-in-from-bottom-2 duration-500 h-49">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_auto] gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <PerformanceCard
         percent={percent}
+        status={performanceStatus}
         animatedDash={animatedDash}
         dotX={dotX}
         dotY={dotY}
       />
-      <div className="flex gap-6.25">
-        <TotalProjectsCard />
-        <PendingProjectsCard />
-        <AgentsCard />
-      </div>
+      <TotalProjectsCard total={total} />
+      <PendingProjectsCard pending={pending} />
+      <AgentsCard percentage={pendingPercent} onViewAll={onViewNotCommencedTasks} />
     </div>
   );
+}
+
+function formatStatCount(value: number): string {
+  return String(value).padStart(3, "0");
 }
 
 // ─── Performance Card ─────────────────────────────────────────────────────────
 function PerformanceCard({
   percent,
+  status,
   animatedDash,
   dotX,
   dotY,
 }: {
   percent: number;
+  status: string;
   animatedDash: number;
   dotX: number;
   dotY: number;
 }) {
   return (
-    <div className="bg-[#0B1C25] rounded-[20px] p-6 sm:p-8 relative flex items-center gap-6 lg:gap-10 overflow-hidden min-h-45 max-h-52 shrink-0 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
-      <div className="relative w-41.5 h-41.5 shrink-0">
+    <div className="bg-[#0B1C25] rounded-[20px] p-5 sm:p-6 relative flex flex-col sm:flex-row items-center text-center sm:text-left gap-4 sm:gap-6 overflow-hidden shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+      <div className="relative w-28 h-28 sm:w-41.5 sm:h-41.5 shrink-0">
         <svg
           viewBox="0 0 100 100"
           className="w-full h-full"
@@ -590,24 +619,24 @@ function PerformanceCard({
             strokeWidth="4px"
           />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
-          <div className="w-10 h-10 rounded-full bg-[#EF6C55] flex items-center justify-center shadow-lg">
-            <User size={18} className="text-white fill-current" />
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 sm:gap-1">
+          <div className="w-7 h-7 sm:w-10 sm:h-10 rounded-full bg-[#EF6C55] flex items-center justify-center shadow-lg">
+            <User className="text-white fill-current w-3 h-3 sm:w-4.5 sm:h-4.5" />
           </div>
-          <span className="text-white font-semibold text-[40px] leading-none">
+          <span className="text-white font-semibold text-[24px] sm:text-[40px] leading-none">
             {percent}%
           </span>
         </div>
       </div>
       <div className="flex flex-col z-10 text-white min-w-0">
-        <p className="text-[#E8E8E8] font-normal text-[14px] sm:text-[16px] leading-tight mb-0.5">
+        <p className="text-[#E8E8E8] font-normal text-[12px] sm:text-[14px] lg:text-[16px] leading-tight mb-0.5">
           Overall Project
         </p>
-        <h2 className="text-[28px] sm:text-[36px] font-semibold leading-[1.1] mb-7 tracking-tight">
+        <h2 className="text-[20px] sm:text-[22px] xl:text-[30px] font-semibold leading-[1.1] mb-2 sm:mb-4 tracking-tight">
           Performance
         </h2>
-        <p className="text-[14px] font-medium text-[#E8E8E8]">
-          Status: <span>{performanceLabel(percent)}</span>
+        <p className="text-[11px] sm:text-[14px] font-medium text-[#E8E8E8]/80">
+          Status: <span className="text-white font-semibold">{status}</span>
         </p>
       </div>
     </div>
@@ -615,16 +644,16 @@ function PerformanceCard({
 }
 
 // ─── Total Projects Card ──────────────────────────────────────────────────────
-function TotalProjectsCard() {
+function TotalProjectsCard({ total }: { total: number }) {
   return (
-    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-69.75 shrink-0">
+    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-full min-w-0">
       <div className="flex items-start justify-between pt-5 sm:pt-6">
         <div>
           <p className="text-[14px] font-medium text-[#2D2D2D]">
             Total Projects
           </p>
           <h2 className="text-[64px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
-            045
+            {formatStatCount(total)}
           </h2>
         </div>
         <button className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#3AB37E] text-white rounded-full text-[7px] hover:bg-[#27ae60] transition-colors mt-1">
@@ -661,16 +690,16 @@ function TotalProjectsCard() {
 }
 
 // ─── Pending Projects Card ────────────────────────────────────────────────────
-function PendingProjectsCard() {
+function PendingProjectsCard({ pending }: { pending: number }) {
   return (
-    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-69.75 shrink-0">
+    <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-full min-w-0">
       <div className="flex items-start justify-between pt-5 sm:pt-6">
         <div>
           <p className="text-[14px] font-medium text-[#2D2D2D]">
             Pending Projects
           </p>
           <h2 className="text-[64px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
-            015
+            {formatStatCount(pending)}
           </h2>
         </div>
         <button className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#EF8E5B] text-white rounded-full text-[7px] hover:bg-[#d57848] transition-colors mt-1">
@@ -707,13 +736,29 @@ function PendingProjectsCard() {
 }
 
 // ─── Agents Card ──────────────────────────────────────────────────────────────
-function AgentsCard() {
+function AgentsCard({
+  percentage,
+  onViewAll,
+}: {
+  percentage: number;
+  onViewAll: () => void;
+}) {
+  const normalizedPercentage = Math.max(0, Math.min(100, Math.round(percentage)));
+  const progressDash = (normalizedPercentage / 100) * ARC_LENGTH;
+  const accentDash = Math.min(progressDash, 30);
+  const dotAngle = (normalizedPercentage / 100) * 270 * (Math.PI / 180);
+  const dotX = 50 + 40 * Math.cos(dotAngle);
+  const dotY = 50 + 40 * Math.sin(dotAngle);
+
   return (
-    <div className="bg-[#7BA9A4] rounded-[20px] gap-4 p-5 shadow-sm relative flex flex-col items-center h-full w-29.75 text-center justify-between">
+    <div className="bg-[#7BA9A4] rounded-[20px] gap-4 p-5 shadow-sm relative flex flex-col items-center w-full min-w-0 text-center justify-between">
       <p className="text-white font-light text-[8px] leading-[1.4] max-w-20 mx-auto">
         View Agent who hasn&apos;t commenced task
       </p>
-      <button className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#08393A] text-white rounded-full text-[7px] hover:bg-[#d57848] transition-colors">
+      <button
+        onClick={onViewAll}
+        className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#08393A] text-white rounded-full text-[7px] hover:bg-[#d57848] transition-colors"
+      >
         View All
         <Image src={Arrow57Deg} alt="View All" width={7.5} height={7.5} />
       </button>
@@ -742,7 +787,7 @@ function AgentsCard() {
             stroke="white"
             strokeWidth="7"
             strokeLinecap="round"
-            strokeDasharray="81 251.3"
+            strokeDasharray={`${progressDash} ${CIRCUMFERENCE}`}
           />
           <circle
             cx="50"
@@ -752,12 +797,12 @@ function AgentsCard() {
             stroke="#0E2A33"
             strokeWidth="7"
             strokeLinecap="round"
-            strokeDasharray="30 251.3"
-            strokeDashoffset="-81"
+            strokeDasharray={`${accentDash} ${CIRCUMFERENCE}`}
+            strokeDashoffset={`-${progressDash}`}
           />
           <circle
-            cx="32.4"
-            cy="85.9"
+            cx={dotX}
+            cy={dotY}
             r="4.5"
             fill="white"
             stroke="#7BA9A4"
@@ -768,7 +813,7 @@ function AgentsCard() {
           <User size={14} className="text-[#09232D] fill-current" />
         </div>
         <span className="text-white text-[10px] font-bold absolute bottom-0">
-          43%
+          {normalizedPercentage}%
         </span>
       </div>
     </div>

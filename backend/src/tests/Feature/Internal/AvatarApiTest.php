@@ -38,19 +38,22 @@ class AvatarApiTest extends TestCase
         // Unsupported files are ignored by the endpoint.
         Storage::disk('public')->put("{$basePath}/male/readme.txt", 'not-an-avatar');
 
-        $response = $this->getJson('/api/v1/avatars?gender=male');
+        $response = $this->getJson('/api/v1/avatars?gender=male&limit=12');
 
         $response->assertOk()
             ->assertJson(['success' => true])
-            ->assertJsonStructure(['data']);
+            ->assertJsonStructure(['data', 'meta' => ['cursor', 'limit', 'next_cursor', 'has_more', 'total']]);
 
-        $avatarUrls = (array) $response->json('data');
+        // All 17 avatars should be counted in meta.total (txt excluded)
+        $this->assertGreaterThanOrEqual(17, $response->json('meta.total'));
 
-        $this->assertGreaterThanOrEqual(17, count($avatarUrls));
-        $this->assertContains('https://api.thefactory23.com/storage/avatar/male/male_17.svg', $avatarUrls);
-        $this->assertNotContains('https://api.thefactory23.com/storage/avatar/male/readme.txt', $avatarUrls);
+        $avatarData = $response->json('data');
+        $this->assertNotEmpty($avatarData);
 
-        $firstUrl = (string) $avatarUrls[0];
+        $urls = array_column($avatarData, 'url');
+        $this->assertNotContains('https://api.thefactory23.com/storage/avatar/male/readme.txt', $urls);
+
+        $firstUrl = (string) $avatarData[0]['url'];
         $this->assertStringStartsWith('https://api.thefactory23.com/storage/avatar/male/', $firstUrl);
         $this->assertStringEndsWith('.svg', $firstUrl);
         $this->assertStringNotContainsString('localhost:8080', $firstUrl);

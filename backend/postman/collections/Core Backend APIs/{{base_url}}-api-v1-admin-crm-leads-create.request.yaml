@@ -1,0 +1,22 @@
+$kind: http-request
+name: "{{base_url}}/api/v1/admin/crm/leads (create)"
+url: "{{base_url}}/api/v1/admin/crm/leads"
+method: POST
+headers:
+  Content-Type: application/json
+  Accept: application/json
+  Authorization: "Bearer {{access_token}}"
+body:
+  type: json
+  content: |
+    {
+      "company_id": "{{company_id}}",
+      "name": "Acme Retail",
+      "email": "owner@acmeretail.test",
+      "phone": "+2348011112222",
+      "stage": "new",
+      "source": "referral",
+      "estimated_value": 250000
+    }
+settings:
+  disabledSystemHeaders: []

@@ -1,12 +1,22 @@
 <?php
 
 use App\Http\Controllers\Api\V1\Agent\AgentLoginController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceAgentController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceManagementController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceSettingsController;
 use App\Http\Controllers\Api\V1\Auth\AdminLoginController;
+use App\Http\Controllers\Api\V1\Auth\ForgotPasswordController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\ResendOtpController;
+use App\Http\Controllers\Api\V1\Auth\ResetPasswordController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
+use App\Http\Controllers\Api\V1\Calendar\CalendarIntegrationController;
+use App\Http\Controllers\Api\V1\Calendar\MeetingController;
+use App\Http\Controllers\Api\V1\CurrencyController;
+use App\Http\Controllers\Api\V1\Crm\LeadController;
+use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
 use App\Http\Controllers\Api\V1\Enterprise\BookDemoController;
 use App\Http\Controllers\Api\V1\Enterprise\CompleteFirstTimeSetupController;
 use App\Http\Controllers\Api\V1\Enterprise\EnterpriseLoginController;
@@ -16,16 +26,24 @@ use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\Internal\InternalLoginController;
 use App\Http\Controllers\Api\V1\Internal\InternalOnboardingController;
 use App\Http\Controllers\Api\V1\Internal\InternalUserController;
+use App\Http\Controllers\Api\V1\Map\MapProviderController;
+use App\Http\Controllers\Api\V1\Notification\NotificationController;
+use App\Http\Controllers\Api\V1\Notification\NotificationPreferenceController;
+use App\Http\Controllers\Api\V1\Notification\PushSubscriptionController;
 use App\Http\Controllers\Api\V1\Onboarding\WorkspaceController;
 use App\Http\Controllers\Api\V1\Payroll\PayrollController;
 use App\Http\Controllers\Api\V1\Project\ProjectController;
+use App\Http\Controllers\Api\V1\Tracking\AgentLocationController;
 use App\Http\Controllers\Api\V1\Task\AgentTaskController;
+use App\Http\Controllers\Api\V1\Task\AdminTaskStatusController;
 use App\Http\Controllers\Api\V1\Task\TaskAssignmentController;
 use App\Http\Controllers\Api\V1\Task\TaskController;
 use App\Http\Controllers\Api\V1\Task\TaskProofController;
 use App\Http\Controllers\Api\V1\Task\TaskStatusController;
 use App\Http\Controllers\Api\V1\Task\TaskTrackingController;
 use App\Http\Controllers\Api\V1\User\MeController;
+use App\Http\Controllers\Api\V1\User\ProfileController;
+use App\Http\Controllers\Api\V1\Workforce\WorkforceSummaryController;
 use Illuminate\Support\Facades\Route;
 
 // Public
@@ -33,6 +51,15 @@ Route::get('/health', HealthController::class)->name('health');
 Route::get('/avatars', [AvatarController::class, 'index'])
     ->middleware('throttle:30,1')
     ->name('avatars.index');
+Route::get('/currencies', [CurrencyController::class, 'index'])
+    ->middleware('throttle:60,1')
+    ->name('currencies.index');
+Route::get('/map/provider', MapProviderController::class)
+    ->middleware('throttle:60,1')
+    ->name('map.provider');
+Route::get('/calendar/integration/callback', [CalendarIntegrationController::class, 'callback'])
+    ->middleware('throttle:30,1')
+    ->name('calendar.integration.callback');
 
 Route::prefix('auth')->name('auth.')->group(function (): void {
     Route::post('/register', RegisterController::class)
@@ -46,6 +73,18 @@ Route::prefix('auth')->name('auth.')->group(function (): void {
     Route::post('/resend-otp', ResendOtpController::class)
         ->middleware('throttle:3,10')
         ->name('resend-otp');
+
+    Route::post('/forgot-password', ForgotPasswordController::class)
+        ->middleware('throttle:5,1')
+        ->name('forgot-password');
+
+    Route::get('/reset-password/{token}', [ResetPasswordController::class, 'validateToken'])
+        ->middleware('throttle:20,1')
+        ->name('reset-password.validate');
+
+    Route::post('/reset-password', [ResetPasswordController::class, 'reset'])
+        ->middleware('throttle:10,1')
+        ->name('reset-password');
 
     // Unified admin login for self-serve and enterprise users
     Route::post('/login', AdminLoginController::class)
@@ -103,12 +142,76 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::prefix('user')->name('user.')->group(function (): void {
         Route::get('/me', MeController::class)->name('me');
+        Route::get('/profile', [ProfileController::class, 'show'])->name('profile.show');
+        Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar'])
+            ->middleware('throttle:20,1')
+            ->name('profile.avatar.update');
     });
 
     Route::prefix('onboarding')->name('onboarding.')->group(function (): void {
         Route::post('/workspace', [WorkspaceController::class, 'store'])
             ->middleware('throttle:10,1')
             ->name('workspace');
+    });
+
+    Route::prefix('notifications')->name('notifications.')->group(function (): void {
+        Route::get('/', [NotificationController::class, 'index'])->name('index');
+        Route::get('/history', [NotificationController::class, 'history'])->name('history');
+        Route::get('/unread-count', [NotificationController::class, 'unreadCount'])->name('unread-count');
+        Route::patch('/read', [NotificationController::class, 'markRead'])->name('read');
+        Route::patch('/unread', [NotificationController::class, 'markUnread'])->name('unread');
+        Route::patch('/read-all', [NotificationController::class, 'markAllRead'])->name('read-all');
+        Route::delete('/{notification}', [NotificationController::class, 'destroy'])->name('destroy');
+
+        Route::get('/preferences', [NotificationPreferenceController::class, 'index'])->name('preferences.index');
+        Route::put('/preferences', [NotificationPreferenceController::class, 'update'])->name('preferences.update');
+
+        Route::get('/push-subscriptions', [PushSubscriptionController::class, 'index'])->name('push-subscriptions.index');
+        Route::post('/push-subscriptions', [PushSubscriptionController::class, 'store'])->name('push-subscriptions.store');
+        Route::post('/push-subscriptions/refresh', [PushSubscriptionController::class, 'refresh'])
+            ->name('push-subscriptions.refresh');
+        Route::delete('/push-subscriptions', [PushSubscriptionController::class, 'destroy'])
+            ->name('push-subscriptions.destroy');
+    });
+
+    Route::prefix('calendar/integration')->name('calendar.integration.')->group(function (): void {
+        Route::get('/status', [CalendarIntegrationController::class, 'status'])->name('status');
+        Route::post('/connect-url', [CalendarIntegrationController::class, 'connectUrl'])
+            ->middleware('throttle:20,1')
+            ->name('connect-url');
+        Route::post('/switch-url', [CalendarIntegrationController::class, 'switchUrl'])
+            ->middleware('throttle:20,1')
+            ->name('switch-url');
+        Route::post('/reconnect-url', [CalendarIntegrationController::class, 'reconnectUrl'])
+            ->middleware('throttle:20,1')
+            ->name('reconnect-url');
+        Route::delete('/disconnect', [CalendarIntegrationController::class, 'disconnect'])
+            ->middleware('throttle:20,1')
+            ->name('disconnect');
+    });
+
+    Route::prefix('meetings')->name('meetings.')->group(function (): void {
+        Route::get('/', [MeetingController::class, 'index'])->name('index');
+        Route::get('/attendees', [MeetingController::class, 'attendees'])
+            ->middleware('throttle:30,1')
+            ->name('attendees');
+        Route::post('/', [MeetingController::class, 'store'])
+            ->middleware('throttle:20,1')
+            ->name('store');
+        Route::get('/{meeting}', [MeetingController::class, 'show'])->name('show');
+        Route::patch('/{meeting}', [MeetingController::class, 'update'])
+            ->middleware('throttle:20,1')
+            ->name('update');
+        Route::post('/{meeting}/cancel', [MeetingController::class, 'cancel'])
+            ->middleware('throttle:20,1')
+            ->name('cancel');
+        Route::delete('/{meeting}', [MeetingController::class, 'destroy'])
+            ->middleware('throttle:20,1')
+            ->name('destroy');
+        Route::post('/{meeting}/resync', [MeetingController::class, 'resync'])
+            ->middleware('throttle:20,1')
+            ->name('resync');
     });
 
     // Canonical management endpoints.
@@ -121,9 +224,15 @@ Route::middleware('auth:sanctum')->group(function (): void {
                 Route::post('/', [TaskController::class, 'store'])
                     ->middleware('throttle:30,1')
                     ->name('store');
+                Route::get('/reassignments/inbox', [TaskAssignmentController::class, 'inbox'])->name('reassignments.inbox');
+                Route::post('/reassignments/{reassignment}/accept', [TaskAssignmentController::class, 'accept'])
+                    ->name('reassignments.accept');
+                Route::post('/reassignments/{reassignment}/reject', [TaskAssignmentController::class, 'reject'])
+                    ->name('reassignments.reject');
                 Route::get('/{task}', [TaskController::class, 'show'])->name('show');
                 Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
                 Route::patch('/{task}/assign', [TaskAssignmentController::class, 'update'])->name('assign');
+                Route::patch('/{task}/status', [AdminTaskStatusController::class, 'update'])->name('status.update');
                 Route::get('/{task}/proofs/{proof}', [TaskProofController::class, 'show'])->name('proofs.show');
             });
 
@@ -140,12 +249,36 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
             Route::prefix('payroll')->name('payroll.')->group(function (): void {
                 Route::get('/', [PayrollController::class, 'index'])->name('index');
+                Route::get('/overview', [PayrollController::class, 'overview'])->name('overview');
+                Route::get('/export', [PayrollController::class, 'export'])->name('export');
+                Route::get('/agents', [PayrollController::class, 'agents'])->name('agents.index');
+                Route::get('/agents/{user}', [PayrollController::class, 'agentProfile'])->name('agents.show');
+                Route::patch('/agents/{user}', [PayrollController::class, 'updateAgentPayroll'])
+                    ->middleware('throttle:20,1')
+                    ->name('agents.update');
+                Route::patch('/agents/{user}/approval', [PayrollController::class, 'approveAgentPayroll'])
+                    ->middleware('throttle:20,1')
+                    ->name('agents.approval');
                 Route::post('/', [PayrollController::class, 'store'])
                     ->middleware('throttle:20,1')
                     ->name('store');
                 Route::put('/{payrollSetting}', [PayrollController::class, 'update'])
                     ->middleware('throttle:20,1')
                     ->name('update');
+            });
+
+            Route::prefix('attendance')->name('attendance.')->group(function (): void {
+                Route::get('/settings', [AttendanceSettingsController::class, 'show'])->name('settings.show');
+                Route::put('/settings', [AttendanceSettingsController::class, 'update'])
+                    ->middleware('throttle:20,1')
+                    ->name('settings.update');
+                Route::get('/metrics', [AttendanceManagementController::class, 'metrics'])->name('metrics');
+                Route::get('/records', [AttendanceManagementController::class, 'index'])->name('records.index');
+                Route::get('/payroll-summaries', [AttendanceManagementController::class, 'payrollSummaries'])
+                    ->name('payroll-summaries.index');
+                Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
+                    ->middleware('throttle:20,1')
+                    ->name('payroll-summaries.generate');
             });
 
             Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
@@ -169,6 +302,59 @@ Route::middleware('auth:sanctum')->group(function (): void {
                     ->middleware('throttle:30,1')
                     ->name('supervisor.assign');
             });
+
+            Route::prefix('crm')->name('crm.')->group(function (): void {
+                Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
+                Route::post('/leads', [LeadController::class, 'store'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.store');
+                Route::post('/leads/import', [LeadController::class, 'import'])
+                    ->middleware('throttle:20,1')
+                    ->name('leads.import');
+                Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+                Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
+                Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
+                Route::post('/pipelines', [LeadController::class, 'storePipeline'])
+                    ->middleware('throttle:20,1')
+                    ->name('pipelines.store');
+                Route::patch('/pipelines/{pipeline}', [LeadController::class, 'updatePipeline'])
+                    ->middleware('throttle:20,1')
+                    ->name('pipelines.update');
+                Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
+                Route::post('/labels', [LeadController::class, 'storeLabel'])
+                    ->middleware('throttle:20,1')
+                    ->name('labels.store');
+                Route::patch('/labels/{label}', [LeadController::class, 'updateLabel'])
+                    ->middleware('throttle:20,1')
+                    ->name('labels.update');
+                Route::post('/labels/{label}/delete', [LeadController::class, 'deleteLabel'])
+                    ->middleware('throttle:20,1')
+                    ->name('labels.delete');
+                Route::post('/labels/reorder', [LeadController::class, 'reorderLabels'])
+                    ->middleware('throttle:20,1')
+                    ->name('labels.reorder');
+                Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
+                Route::patch('/leads/{lead}', [LeadController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.update');
+                Route::post('/leads/{lead}/notes', [LeadController::class, 'storeNote'])
+                    ->middleware('throttle:60,1')
+                    ->name('leads.notes.store');
+                Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
+                    ->middleware('throttle:60,1')
+                    ->name('leads.activities.store');
+            });
+
+            Route::get('/dashboard/overview', DashboardOverviewController::class)
+                ->name('dashboard.overview');
+
+            Route::get('/workforce/summary', WorkforceSummaryController::class)
+                ->name('workforce.summary');
+
+            Route::prefix('agents')->name('agents.')->group(function (): void {
+                Route::get('/locations', [AgentLocationController::class, 'index'])->name('locations.index');
+                Route::get('/{user}/location', [AgentLocationController::class, 'show'])->name('locations.show');
+            });
         });
 
     // Canonical agent endpoints.
@@ -176,6 +362,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->name('agent-api.')
         ->middleware('access.role:agent')
         ->group(function (): void {
+            Route::prefix('projects')->name('projects.')->group(function (): void {
+                Route::get('/', [ProjectController::class, 'agentIndex'])->name('index');
+                Route::get('/{project}', [ProjectController::class, 'agentShow'])->name('show');
+            });
+
             Route::prefix('tasks')->name('tasks.')->group(function (): void {
                 Route::get('/', [TaskController::class, 'index'])->name('index');
                 Route::post('/self', [AgentTaskController::class, 'storeSelf'])
@@ -191,6 +382,55 @@ Route::middleware('auth:sanctum')->group(function (): void {
                     ->middleware('throttle:60,1')
                     ->name('proofs.store');
             });
+
+            Route::prefix('crm')->name('crm.')->group(function (): void {
+                Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
+                Route::post('/leads', [LeadController::class, 'store'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.store');
+                Route::post('/leads/import', [LeadController::class, 'import'])
+                    ->middleware('throttle:20,1')
+                    ->name('leads.import');
+                Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+                Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
+                Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
+                Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
+                Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
+                Route::patch('/leads/{lead}', [LeadController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.update');
+                Route::post('/leads/{lead}/notes', [LeadController::class, 'storeNote'])
+                    ->middleware('throttle:60,1')
+                    ->name('leads.notes.store');
+                Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
+                    ->middleware('throttle:60,1')
+                    ->name('leads.activities.store');
+            });
+
+            Route::prefix('attendance')->name('attendance.')->group(function (): void {
+                Route::get('/today', [AttendanceAgentController::class, 'today'])->name('today');
+                Route::post('/clock-in', [AttendanceAgentController::class, 'clockIn'])
+                    ->middleware('throttle:20,1')
+                    ->name('clock-in');
+                Route::post('/clock-out', [AttendanceAgentController::class, 'clockOut'])
+                    ->middleware('throttle:20,1')
+                    ->name('clock-out');
+                Route::get('/history', [AttendanceAgentController::class, 'history'])->name('history');
+                Route::get('/stats', [AttendanceAgentController::class, 'stats'])->name('stats');
+                Route::get('/payroll-summary', [AttendanceAgentController::class, 'payrollSummary'])
+                    ->name('payroll-summary');
+            });
+
+            Route::get('/dashboard/overview', DashboardOverviewController::class)
+                ->name('dashboard.overview');
+
+            Route::get('/workforce/summary', WorkforceSummaryController::class)
+                ->name('workforce.summary');
+
+            Route::prefix('agents')->name('agents.')->group(function (): void {
+                Route::get('/locations', [AgentLocationController::class, 'index'])->name('locations.index');
+                Route::get('/{user}/location', [AgentLocationController::class, 'show'])->name('locations.show');
+            });
         });
 
     Route::prefix('tasks')->name('tasks.')->group(function (): void {
@@ -198,6 +438,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/', [TaskController::class, 'store'])
             ->middleware('throttle:30,1')
             ->name('store');
+        Route::get('/reassignments/inbox', [TaskAssignmentController::class, 'inbox'])->name('reassignments.inbox');
+        Route::post('/reassignments/{reassignment}/accept', [TaskAssignmentController::class, 'accept'])
+            ->name('reassignments.accept');
+        Route::post('/reassignments/{reassignment}/reject', [TaskAssignmentController::class, 'reject'])
+            ->name('reassignments.reject');
         Route::get('/{task}', [TaskController::class, 'show'])->name('show');
         Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
         Route::post('/{task}/start', [TaskTrackingController::class, 'start'])->name('start');
@@ -232,12 +477,64 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::prefix('payroll')->name('payroll.')->group(function (): void {
         Route::get('/', [PayrollController::class, 'index'])->name('index');
+        Route::get('/overview', [PayrollController::class, 'overview'])->name('overview');
+        Route::get('/export', [PayrollController::class, 'export'])
+            ->middleware('access.role:management')
+            ->name('export');
+        Route::get('/agents', [PayrollController::class, 'agents'])->name('agents.index');
+        Route::get('/agents/{user}', [PayrollController::class, 'agentProfile'])->name('agents.show');
+        Route::patch('/agents/{user}', [PayrollController::class, 'updateAgentPayroll'])
+            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->name('agents.update');
+        Route::patch('/agents/{user}/approval', [PayrollController::class, 'approveAgentPayroll'])
+            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->name('agents.approval');
         Route::post('/', [PayrollController::class, 'store'])
             ->middleware('throttle:20,1')
             ->name('store');
         Route::put('/{payrollSetting}', [PayrollController::class, 'update'])
             ->middleware('throttle:20,1')
             ->name('update');
+    });
+
+    Route::prefix('attendance')->name('attendance.')->group(function (): void {
+        Route::get('/settings', [AttendanceSettingsController::class, 'show'])
+            ->middleware('access.role:management')
+            ->name('settings.show');
+        Route::put('/settings', [AttendanceSettingsController::class, 'update'])
+            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->name('settings.update');
+        Route::get('/metrics', [AttendanceManagementController::class, 'metrics'])
+            ->middleware('access.role:management')
+            ->name('metrics');
+        Route::get('/records', [AttendanceManagementController::class, 'index'])
+            ->middleware('access.role:management')
+            ->name('records.index');
+        Route::get('/payroll-summaries', [AttendanceManagementController::class, 'payrollSummaries'])
+            ->middleware('access.role:management')
+            ->name('payroll-summaries.index');
+        Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
+            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->name('payroll-summaries.generate');
+
+        Route::get('/today', [AttendanceAgentController::class, 'today'])
+            ->middleware('access.role:agent')
+            ->name('today');
+        Route::post('/clock-in', [AttendanceAgentController::class, 'clockIn'])
+            ->middleware(['access.role:agent', 'throttle:20,1'])
+            ->name('clock-in');
+        Route::post('/clock-out', [AttendanceAgentController::class, 'clockOut'])
+            ->middleware(['access.role:agent', 'throttle:20,1'])
+            ->name('clock-out');
+        Route::get('/history', [AttendanceAgentController::class, 'history'])
+            ->middleware('access.role:agent')
+            ->name('history');
+        Route::get('/stats', [AttendanceAgentController::class, 'stats'])
+            ->middleware('access.role:agent')
+            ->name('stats');
+        Route::get('/payroll-summary', [AttendanceAgentController::class, 'payrollSummary'])
+            ->middleware('access.role:agent')
+            ->name('payroll-summary');
     });
 
     Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
@@ -260,5 +557,58 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::patch('/{user}/supervisor', [InternalUserController::class, 'assignSupervisor'])
             ->middleware('throttle:30,1')
             ->name('supervisor.assign');
+    });
+
+    Route::prefix('crm')->name('crm.')->group(function (): void {
+        Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
+        Route::post('/leads', [LeadController::class, 'store'])
+            ->middleware('throttle:30,1')
+            ->name('leads.store');
+        Route::post('/leads/import', [LeadController::class, 'import'])
+            ->middleware('throttle:20,1')
+            ->name('leads.import');
+        Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+        Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
+        Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
+        Route::post('/pipelines', [LeadController::class, 'storePipeline'])
+            ->middleware('throttle:20,1')
+            ->name('pipelines.store');
+        Route::patch('/pipelines/{pipeline}', [LeadController::class, 'updatePipeline'])
+            ->middleware('throttle:20,1')
+            ->name('pipelines.update');
+        Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
+        Route::post('/labels', [LeadController::class, 'storeLabel'])
+            ->middleware('throttle:20,1')
+            ->name('labels.store');
+        Route::patch('/labels/{label}', [LeadController::class, 'updateLabel'])
+            ->middleware('throttle:20,1')
+            ->name('labels.update');
+        Route::post('/labels/{label}/delete', [LeadController::class, 'deleteLabel'])
+            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->name('labels.delete');
+        Route::post('/labels/reorder', [LeadController::class, 'reorderLabels'])
+            ->middleware('throttle:20,1')
+            ->name('labels.reorder');
+        Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
+        Route::patch('/leads/{lead}', [LeadController::class, 'update'])
+            ->middleware('throttle:30,1')
+            ->name('leads.update');
+        Route::post('/leads/{lead}/notes', [LeadController::class, 'storeNote'])
+            ->middleware('throttle:60,1')
+            ->name('leads.notes.store');
+        Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
+            ->middleware('throttle:60,1')
+            ->name('leads.activities.store');
+    });
+
+    Route::get('/dashboard/overview', DashboardOverviewController::class)
+        ->name('dashboard.overview');
+
+    Route::get('/workforce/summary', WorkforceSummaryController::class)
+        ->name('workforce.summary');
+
+    Route::prefix('agents')->name('agents.')->group(function (): void {
+        Route::get('/locations', [AgentLocationController::class, 'index'])->name('locations.index');
+        Route::get('/{user}/location', [AgentLocationController::class, 'show'])->name('locations.show');
     });
 });

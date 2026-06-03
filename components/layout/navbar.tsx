@@ -5,10 +5,15 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth";
-import { clearAuthSession } from "@/lib/auth/session";
+import { getActiveCompanyContext } from "@/lib/company-context";
+import { clearAuthSession, getAuthTokenFromDocument } from "@/lib/auth/session";
+import { logout } from "@/lib/api/auth";
 import { ChevronDown, Menu, X, LogOut, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils/sample";
+import LogoutModal from "@/components/ui/logout-modal";
+import { NotificationPanel } from "@/components/notifications/notification-panel";
+import { useUnreadCount } from "@/hooks/use-notifications";
 
 // Import local SVG assets
 import DashboardIcon from "@/assets/nav-icons/dashboard.svg";
@@ -27,6 +32,20 @@ function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
   const trimmed = rawAvatar.trim();
   if (!trimmed) return null;
   if (trimmed.startsWith("/")) return trimmed;
+
+  // Support relative storage paths returned by older payloads.
+  if (trimmed.startsWith("avatar/") || trimmed.startsWith("storage/")) {
+    const apiBase =
+      process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
+    const apiOrigin = apiBase.replace(/\/api\/v1\/?$/, "");
+
+    if (trimmed.startsWith("storage/")) {
+      return `${apiOrigin}/${trimmed}`;
+    }
+
+    return `${apiOrigin}/storage/${trimmed}`;
+  }
+
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {
@@ -64,10 +83,16 @@ export function Navbar() {
   const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const user = useAuthStore((s) => s.user);
   const clearUser = useAuthStore((s) => s.clearUser);
-  const basePath = user?.active_company?.role === 'agent' ? '/agent' : '/admin';
+  const isAgent = user?.active_company?.role === 'agent';
+  const basePath = isAgent ? '/agent' : '';
+  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const { data: unreadData } = useUnreadCount(companyId ?? undefined);
+  const unreadCount = unreadData?.unread_count ?? 0;
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -82,8 +107,18 @@ export function Navbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  function handleLogout() {
+  async function handleLogout() {
     const isAgent = user?.active_company?.role === "agent";
+
+    try {
+      const token = getAuthTokenFromDocument();
+      if (token) {
+        await logout(token);
+      }
+    } catch {
+      // Continue local logout cleanup even if API logout fails.
+    }
+
     clearAuthSession();
     clearUser();
     router.push(isAgent ? "/agent/login" : "/login");
@@ -131,7 +166,7 @@ export function Navbar() {
                       : "opacity-60 group-hover:opacity-100",
                   )}
                 />
-                <span>{item.name}</span>
+                <span>{isAgent && item.name === "Payroll" ? "Payroll" : item.name}</span>
                 {item.hasDropdown && (
                   <ChevronDown size={14} className="opacity-40" />
                 )}
@@ -151,18 +186,27 @@ export function Navbar() {
       {/* Right Side Actions */}
       <div className="flex items-center gap-4 lg:gap-8">
         <div className="hidden sm:flex items-center gap-3 lg:gap-5 text-white/60">
-          <button className="hover:text-white transition-all cursor-pointer relative p-1">
+          <button
+            onClick={() => setNotifOpen(true)}
+            className="hover:text-white transition-all cursor-pointer relative p-1"
+          >
             <Image
               src={NotificationIcon}
               alt="Notifications"
               width={20}
               height={20}
             />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-[#0B1215]"></span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-0.5 bg-red-500 text-white text-[9px] font-black rounded-full border-2 border-[#0B1215] flex items-center justify-center leading-none">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
           </button>
+          {/*
           <button className="hover:text-white transition-all cursor-pointer p-1">
             <Image src={SettingsIcon} alt="Settings" width={20} height={20} />
           </button>
+          */}
         </div>
 
         <div
@@ -246,14 +290,21 @@ export function Navbar() {
 
                 {/* Menu items */}
                 <div className="p-1.5">
-                  <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/60 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium">
+                  <Link
+                    href={`${basePath}/profile`}
+                    onClick={() => setProfileOpen(false)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/60 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium"
+                  >
                     <User size={15} />
                     Profile
-                  </button>
+                  </Link>
                   <div className="my-1 border-t border-white/5" />
                   <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-sm font-medium"
+                    onClick={() => {
+                      setProfileOpen(false);
+                      setIsLogoutModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-sm font-medium cursor-pointer"
                   >
                     <LogOut size={15} />
                     Log out
@@ -335,7 +386,7 @@ export function Navbar() {
                         height={22}
                         className={isActive ? "opacity-100" : "opacity-40"}
                       />
-                      <span className="text-lg font-bold">{item.name}</span>
+                      <span className="text-lg font-bold">{isAgent && item.name === "Payroll" ? "Finance" : item.name}</span>
                       {item.hasDropdown && (
                         <ChevronDown
                           size={16}
@@ -375,15 +426,18 @@ export function Navbar() {
                 </div>
 
                 <div className="flex gap-4">
-                  <button className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors">
-                    <Image
-                      src={NotificationIcon}
-                      alt="Notifications"
-                      width={24}
-                      height={24}
-                    />
+                  <button
+                    onClick={() => { setIsMobileMenuOpen(false); setNotifOpen(true); }}
+                    className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer relative"
+                  >
+                    <Image src={NotificationIcon} alt="Notifications" width={24} height={24} />
+                    {unreadCount > 0 && (
+                      <span className="absolute top-2.5 right-2.5 min-w-4 h-4 px-0.5 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center leading-none">
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </span>
+                    )}
                   </button>
-                  <button className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors">
+                  <button className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer">
                     <Image
                       src={SettingsIcon}
                       alt="Settings"
@@ -391,12 +445,30 @@ export function Navbar() {
                       height={24}
                     />
                   </button>
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      setIsLogoutModalOpen(true);
+                    }}
+                    className="flex-1 bg-red-500/10 p-4 rounded-xl flex items-center justify-center text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                  >
+                    <LogOut size={24} />
+                  </button>
                 </div>
               </div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
+      {/* Logout Confirmation Modal Overlay */}
+      <LogoutModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={handleLogout}
+      />
+
+      {/* Notification Panel */}
+      <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} />
     </nav>
   );
 }

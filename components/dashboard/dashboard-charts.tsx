@@ -1,6 +1,9 @@
 "use client";
 
 import ArrowUp from "@/assets/images/arrow-57deg.png";
+import { useDashboardOverview } from "@/hooks/use-dashboard";
+import { getActiveCompanyContext } from "@/lib/company-context";
+import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import {
@@ -36,6 +39,34 @@ const leadsData = [
 
 export function MyActivitiesChart() {
   const [mounted, setMounted] = useState(false);
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const basePath = role === "agent" ? "/agent" : "/admin";
+
+  const { data: overview } = useDashboardOverview({
+    company_id: companyId ?? undefined,
+    basePath,
+  });
+
+  const metric = overview?.activity_metric;
+  const activityScore = metric?.activity_score ?? 0;
+  const direction = metric?.direction ?? "flat";
+
+  const activityValue = `${activityScore > 0 ? "+" : ""}${Math.round(activityScore)}%`;
+
+  const chartData =
+    metric?.current_week_daily?.length === 7
+      ? metric.current_week_daily
+      : activitiesData;
+
+  const hasData = chartData.some((item) => item.value > 0);
+
+  const referenceLine =
+    hasData
+      ? Math.round(
+        chartData.reduce((sum, item) => sum + item.value, 0) / chartData.length
+      )
+      : 0;
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -53,54 +84,60 @@ export function MyActivitiesChart() {
           </h3>
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-4xl font-bold tracking-tighter leading-9">
-              60%
+              {activityValue}
             </span>
             <Image
               src={ArrowUp}
               alt="Arrow Up Right Icon"
               width={18}
               height={18}
-              className="text-white/80 self-end pb-1.5"
+              className={`self-end pb-1.5 ${direction === "down" ? "rotate-90 [filter:brightness(0)_saturate(100%)_invert(24%)_sepia(87%)_saturate(2642%)_hue-rotate(338deg)_brightness(97%)_contrast(104%)]" : ""}`}
             />
           </div>
         </div>
       </div>
 
       <div className="flex-1 w-full min-h-25 mt-2 relative z-10">
-        <ResponsiveContainer
-          width="100%"
-          height="100%"
-          minHeight={0}
-          minWidth={0}
-        >
-          <AreaChart
-            data={activitiesData}
-            margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+        {hasData ? (
+          <ResponsiveContainer
+            width="100%"
+            height="100%"
+            minHeight={0}
+            minWidth={0}
           >
-            <defs>
-              <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="white" stopOpacity={0.4} />
-                <stop offset="95%" stopColor="white" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <ReferenceLine
-              y={45}
-              stroke="white"
-              strokeDasharray="3 3"
-              strokeOpacity={0.4}
-            />
-            <Area
-              type="monotone"
-              dataKey="value"
-              stroke="white"
-              strokeWidth={4}
-              fillOpacity={1}
-              fill="url(#colorValue)"
-              dot={false}
-              activeDot={{ r: 6, fill: "white", strokeWidth: 0 }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+            <AreaChart
+              data={chartData}
+              margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+            >
+              <defs>
+                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="white" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="white" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <ReferenceLine
+                y={referenceLine}
+                stroke="white"
+                strokeDasharray="3 3"
+                strokeOpacity={0.4}
+              />
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke="white"
+                strokeWidth={4}
+                fillOpacity={1}
+                fill="url(#colorValue)"
+                dot={false}
+                activeDot={{ r: 6, fill: "white", strokeWidth: 0 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="w-full h-full flex items-center">
+            <div className="w-full h-0.75 rounded-full bg-white opacity-50" />
+          </div>
+        )}
       </div>
 
       {/* Decorative dashed lines spanning the card */}
@@ -114,6 +151,16 @@ export function MyActivitiesChart() {
 
 export function TotalLeadsChart() {
   const [mounted, setMounted] = useState(false);
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const basePath = role === "agent" ? "/agent" : "/admin";
+
+  const { data: overview } = useDashboardOverview({
+    company_id: companyId ?? undefined,
+    basePath,
+  });
+
+  const totalLeads = overview?.kpis.total_leads ?? 0;
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -130,7 +177,9 @@ export function TotalLeadsChart() {
             Total Leads
           </h3>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-4xl font-bold tracking-tighter">4,100</span>
+            <span className="text-4xl font-bold tracking-tighter">
+              {totalLeads.toLocaleString()}
+            </span>
             <span className="text-dash-dark/40 text-sm font-bold mt-2">
               Leads
             </span>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import {
   X,
   MapPin,
@@ -12,6 +12,7 @@ import {
   Calendar,
   AlertCircle,
   Navigation,
+  CheckCheck,
 } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -20,7 +21,9 @@ import { useInternalUsers } from "@/hooks/use-projects";
 import { useCreateTask } from "@/hooks/use-tasks";
 import type { DndItem, TaskCategory } from "@/types/operations";
 import type { ApiTaskPriority } from "@/lib/api/tasks";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { geocodeAddressWithMapbox } from "@/lib/utils/geocoding";
 
 type StatusType = "pending" | "in-progress" | "completed";
 
@@ -37,25 +40,25 @@ const STATUS_OPTIONS: {
   color: string;
   short: string;
 }[] = [
-  {
-    value: "pending",
-    label: "Pending Task",
-    color: "#BD7A22",
-    short: "Pending",
-  },
-  {
-    value: "in-progress",
-    label: "In Progress",
-    color: "#094B5C",
-    short: "In Progress",
-  },
-  {
-    value: "completed",
-    label: "Completed",
-    color: "#4FD1C5",
-    short: "Completed",
-  },
-];
+    {
+      value: "pending",
+      label: "Pending Task",
+      color: "#BD7A22",
+      short: "Pending",
+    },
+    {
+      value: "in-progress",
+      label: "In Progress",
+      color: "#094B5C",
+      short: "In Progress",
+    },
+    {
+      value: "completed",
+      label: "Completed",
+      color: "#4FD1C5",
+      short: "Completed",
+    },
+  ];
 
 const TASK_TYPES: Record<string, string> = {
   "Sales Visit": "sales_visit",
@@ -151,11 +154,29 @@ export function CreateTaskModal({
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
 
   const set = <K extends keyof typeof form>(key: K, val: (typeof form)[K]) => {
     setForm((p) => ({ ...p, [key]: val }));
     setErrors((p) => ({ ...p, [key]: "" }));
+    if (key === "address") setCoords(null);
   };
+
+  const geocodeAddress = useCallback(async (address: string) => {
+    if (!address.trim()) return;
+    setGeocoding(true);
+    try {
+      const geocoded = await geocodeAddressWithMapbox(address);
+      if (geocoded) {
+        setCoords(geocoded);
+      }
+    } catch {
+      // geocoding failure is non-fatal
+    } finally {
+      setGeocoding(false);
+    }
+  }, []);
 
   const validate = () => {
     const errs: Record<string, string> = {};
@@ -171,12 +192,12 @@ export function CreateTaskModal({
       toast.error("You are not allowed to create management tasks.");
       return;
     }
-    
+
     // If real API mode is requested
     if (companyId) {
       const typeKey = TASK_TYPES[form.taskType] || "general";
       const priorityVal = form.priority.toLowerCase() as ApiTaskPriority;
-      
+
       mutate({
         company_id: companyId,
         project_id: projectId ?? undefined,
@@ -186,6 +207,8 @@ export function CreateTaskModal({
         assigned_agent_id: form.assignTo ? Number(form.assignTo) : undefined,
         location: form.location || undefined,
         address: form.address || undefined,
+        latitude: coords?.lat,
+        longitude: coords?.lng,
         due_date: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
         required_actions: form.requiredActions ? form.requiredActions.split(',').map(s => s.trim()) : undefined,
         priority: form.priority ? priorityVal : undefined,
@@ -205,7 +228,7 @@ export function CreateTaskModal({
               minimum_photos_required: "minPhotos",
               visit_verification_required: "visitVerification"
             };
-            
+
             for (const key in backendErrors) {
               const formKey = ERROR_MAP[key] || key;
               mappedErrors[formKey] = backendErrors[key][0];
@@ -256,6 +279,7 @@ export function CreateTaskModal({
       category: "all",
     });
     setErrors({});
+    setCoords(null);
     onClose();
   };
 
@@ -315,20 +339,13 @@ export function CreateTaskModal({
           {/* Task Type */}
           <div>
             <FieldLabel required>Task Type</FieldLabel>
-            <InputWrap icon={<ChevronDown size={13} />}>
-              <select
-                value={form.taskType}
-                onChange={(e) => set("taskType", e.target.value)}
-                className={`${INPUT_CLS(errors.taskType)} pl-4 pr-9 appearance-none cursor-pointer`}
-              >
-                <option value="" disabled>
-                  Select task type
-                </option>
-                {Object.keys(TASK_TYPES).map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-            </InputWrap>
+            <SearchableSelect
+              value={form.taskType}
+              onChange={(v) => set("taskType", v)}
+              options={Object.keys(TASK_TYPES).map((t) => ({ value: t, label: t }))}
+              placeholder="Select task type"
+              className={`${INPUT_CLS(errors.taskType)} px-4 cursor-pointer`}
+            />
             {errors.taskType && (
               <p className="text-red-400 text-[11px] mt-1">{errors.taskType}</p>
             )}
@@ -354,26 +371,14 @@ export function CreateTaskModal({
           {/* Assign To */}
           <div>
             <FieldLabel required>Assign To</FieldLabel>
-            <InputWrap icon={<User size={13} />}>
-              <select
-                value={form.assignTo}
-                onChange={(e) => set("assignTo", e.target.value)}
-                className={`${INPUT_CLS(errors.assignTo)} pl-9 pr-4 appearance-none cursor-pointer`}
-              >
-                <option value="" disabled>
-                  Select agent
-                </option>
-                {loadingAgents ? (
-                  <option disabled>Loading...</option>
-                ) : (
-                  agents.map((a) => (
-                    <option key={a.id} value={a.id.toString()}>
-                      {a.name}
-                    </option>
-                  ))
-                )}
-              </select>
-            </InputWrap>
+            <SearchableSelect
+              value={form.assignTo}
+              onChange={(v) => set("assignTo", v)}
+              options={loadingAgents ? [] : agents.map((a) => ({ value: a.id.toString(), label: a.name }))}
+              placeholder={loadingAgents ? "Loading…" : "Select agent"}
+              leftIcon={<User size={13} className="text-gray-400" />}
+              className={`${INPUT_CLS(errors.assignTo)} pl-9 pr-4 cursor-pointer`}
+            />
             {errors.assignTo && (
               <p className="text-red-400 text-[11px] mt-1">{errors.assignTo}</p>
             )}
@@ -400,18 +405,34 @@ export function CreateTaskModal({
             <FieldLabel>
               Address{" "}
               <span className="text-gray-400 normal-case font-normal">
-                (GPS Coordinate)
+                (for arrival detection)
               </span>
             </FieldLabel>
-            <InputWrap icon={<Navigation size={13} />}>
+            <InputWrap
+              icon={
+                geocoding ? (
+                  <Loader2 size={13} className="animate-spin text-dash-teal" />
+                ) : coords ? (
+                  <CheckCheck size={13} className="text-green-500" />
+                ) : (
+                  <Navigation size={13} />
+                )
+              }
+            >
               <input
                 type="text"
                 placeholder="e.g. Admiralty Way, Lekki Phase 1, Lagos"
                 value={form.address}
                 onChange={(e) => set("address", e.target.value)}
+                onBlur={(e) => geocodeAddress(e.target.value)}
                 className={`${INPUT_CLS()} pl-9 pr-4`}
               />
             </InputWrap>
+            {coords && (
+              <p className="text-[10px] text-green-600 mt-1 font-medium">
+                GPS locked: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
+              </p>
+            )}
           </div>
 
           {/* Due Date + Priority */}
@@ -435,34 +456,23 @@ export function CreateTaskModal({
 
             <div>
               <FieldLabel required>Priority</FieldLabel>
-              <InputWrap
-                icon={
+              <SearchableSelect
+                value={form.priority}
+                onChange={(v) => set("priority", v as Priority)}
+                options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))}
+                placeholder="Select"
+                leftIcon={
                   form.priority ? (
                     <span
                       className="w-2.5 h-2.5 rounded-full"
-                      style={{
-                        backgroundColor:
-                          PRIORITY_COLORS[form.priority as Priority],
-                      }}
+                      style={{ backgroundColor: PRIORITY_COLORS[form.priority as Priority] }}
                     />
                   ) : (
-                    <AlertCircle size={13} />
+                    <AlertCircle size={13} className="text-gray-400" />
                   )
                 }
-              >
-                <select
-                  value={form.priority}
-                  onChange={(e) => set("priority", e.target.value as Priority)}
-                  className={`${INPUT_CLS(errors.priority)} pl-9 pr-4 appearance-none cursor-pointer`}
-                >
-                  <option value="" disabled>
-                    Select
-                  </option>
-                  {PRIORITY_OPTIONS.map((p) => (
-                    <option key={p}>{p}</option>
-                  ))}
-                </select>
-              </InputWrap>
+                className={`${INPUT_CLS(errors.priority)} pl-9 pr-4 cursor-pointer`}
+              />
               {errors.priority && (
                 <p className="text-red-400 text-[11px] mt-1">
                   {errors.priority}
@@ -508,21 +518,19 @@ export function CreateTaskModal({
                 onClick={() =>
                   set("visitVerification", !form.visitVerification)
                 }
-                className={`mt-1 flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all select-none ${
-                  form.visitVerification
+                className={`mt-1 flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all select-none ${form.visitVerification
                     ? "bg-[#09232d] border-[#0B1215]"
                     : "bg-gray-50 border-gray-200 hover:border-gray-300"
-                }`}
+                  }`}
               >
                 <div
                   className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${form.visitVerification ? "bg-white/20" : "bg-gray-300"}`}
                 >
                   <div
-                    className={`absolute top-0.5 w-4 h-4 rounded-full shadow transition-all ${
-                      form.visitVerification
+                    className={`absolute top-0.5 w-4 h-4 rounded-full shadow transition-all ${form.visitVerification
                         ? "left-4 bg-white"
                         : "left-0.5 bg-white"
-                    }`}
+                      }`}
                   />
                 </div>
                 <span
@@ -545,11 +553,10 @@ export function CreateTaskModal({
                     key={opt.value}
                     type="button"
                     onClick={() => set("status", opt.value)}
-                    className={`py-2.5 px-2 rounded-xl text-[11px] font-bold transition-all border-2 ${
-                      form.status === opt.value
+                    className={`py-2.5 px-2 rounded-xl text-[11px] font-bold transition-all border-2 ${form.status === opt.value
                         ? "text-white shadow-md border-transparent"
                         : "text-gray-500 border-gray-200 bg-gray-50 hover:border-gray-300"
-                    }`}
+                      }`}
                     style={
                       form.status === opt.value
                         ? { backgroundColor: opt.color, borderColor: opt.color }

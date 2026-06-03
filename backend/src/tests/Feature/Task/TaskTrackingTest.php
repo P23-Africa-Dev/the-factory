@@ -86,6 +86,7 @@ class TaskTrackingTest extends TestCase
 
         $startResponse->assertOk()
             ->assertJsonPath('data.task.status', 'in_progress')
+            ->assertJsonPath('data.near_destination', false)
             ->assertJsonPath('data.arrived', false)
             ->assertJsonPath('data.tracking.start.latitude', 6.4);
 
@@ -94,7 +95,7 @@ class TaskTrackingTest extends TestCase
             'started_by_user_id' => $agent->id,
         ]);
 
-        $locationResponse = $this->withToken($token)
+        $nearResponse = $this->withToken($token)
             ->postJson('/api/v1/tasks/' . $task->id . '/location', [
                 'company_id' => $company->id,
                 'points' => [
@@ -111,17 +112,50 @@ class TaskTrackingTest extends TestCase
                 ],
             ]);
 
-        $locationResponse->assertOk()
-            ->assertJsonPath('data.arrived', true)
+        $nearResponse->assertOk()
+            ->assertJsonPath('data.near_destination', true)
+            ->assertJsonPath('data.arrived', false)
+            ->assertJsonPath('data.proximity_state', 'near_destination')
             ->assertJsonPath('data.received_points', 2);
+
+        $arrivalResponse = $this->withToken($token)
+            ->postJson('/api/v1/tasks/' . $task->id . '/location', [
+                'company_id' => $company->id,
+                'points' => [
+                    [
+                        'latitude' => 6.4302,
+                        'longitude' => 3.4202,
+                        'recorded_at' => now()->addMinutes(3)->toISOString(),
+                    ],
+                ],
+            ]);
+
+        $arrivalResponse->assertOk()
+            ->assertJsonPath('data.near_destination', false)
+            ->assertJsonPath('data.arrived', true)
+            ->assertJsonPath('data.proximity_state', 'arrived')
+            ->assertJsonPath('data.received_points', 1);
 
         $this->assertDatabaseHas('task_tracking_sessions', [
             'task_id' => $task->id,
         ]);
 
+        $session = TaskTrackingSession::query()
+            ->where('task_id', $task->id)
+            ->firstOrFail();
+        $this->assertNotNull($session->near_detected_at);
+        $this->assertNotNull($session->arrival_detected_at);
+
+        $this->assertDatabaseHas('task_location_points', [
+            'task_id' => $task->id,
+            'event_type' => 'near_destination',
+            'is_checkpoint' => true,
+        ]);
+
         $this->assertDatabaseHas('task_location_points', [
             'task_id' => $task->id,
             'event_type' => 'arrival',
+            'is_checkpoint' => true,
         ]);
 
         $routeResponse = $this->withToken($token)
@@ -129,7 +163,11 @@ class TaskTrackingTest extends TestCase
 
         $routeResponse->assertOk()
             ->assertJsonPath('data.task_id', $task->id)
-            ->assertJsonPath('data.summary.points_count', 3);
+            ->assertJsonPath('data.summary.points_count', 4)
+            ->assertJsonPath('data.points.0.event_type', 'start')
+            ->assertJsonPath('data.points.2.event_type', 'near_destination')
+            ->assertJsonPath('data.polyline.0.0', 3.39)
+            ->assertJsonPath('data.polyline.0.1', 6.4);
 
         $completeResponse = $this->withToken($token)
             ->withHeader('Accept', 'application/json')
@@ -156,6 +194,16 @@ class TaskTrackingTest extends TestCase
             'task_id' => $task->id,
             'completed_by_user_id' => $agent->id,
         ]);
+
+        $postCompleteLocationResponse = $this->withToken($token)
+            ->postJson('/api/v1/tasks/' . $task->id . '/location', [
+                'company_id' => $company->id,
+                'latitude' => 6.4303,
+                'longitude' => 3.4203,
+            ]);
+
+        $postCompleteLocationResponse->assertUnprocessable()
+            ->assertJsonPath('errors.task.0', 'Location updates are only allowed while task is in progress.');
     }
 
     public function test_agents_from_other_company_cannot_track_task(): void
@@ -179,11 +227,152 @@ class TaskTrackingTest extends TestCase
             ->assertJsonPath('errors.task.0', 'Task does not belong to the active company context.');
     }
 
+    public function test_stationary_agent_does_not_trigger_near_or_arrival_detection(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers('FAC-TRACK-STATIONARY');
+
+        $task = $this->createAssignedTask($company->id, $admin->id, $agent->id, [
+            'status' => 'pending',
+            'latitude' => 6.4300,
+            'longitude' => 3.4200,
+        ]);
+
+        $token = $agent->createToken('stationary-agent-token', ['*'])->plainTextToken;
+
+        $this->withToken($token)
+            ->postJson('/api/v1/tasks/' . $task->id . '/start', [
+                'company_id' => $company->id,
+                'location_permission_granted' => true,
+                'latitude' => 6.4000,
+                'longitude' => 3.3900,
+                'accuracy_meters' => 5,
+            ])
+            ->assertOk();
+
+        $response = $this->withToken($token)
+            ->postJson('/api/v1/tasks/' . $task->id . '/location', [
+                'company_id' => $company->id,
+                'points' => [
+                    [
+                        'latitude' => 6.4000,
+                        'longitude' => 3.3900,
+                        'recorded_at' => now()->addMinute()->toISOString(),
+                    ],
+                    [
+                        'latitude' => 6.4000,
+                        'longitude' => 3.3900,
+                        'recorded_at' => now()->addMinutes(2)->toISOString(),
+                    ],
+                    [
+                        'latitude' => 6.4001,
+                        'longitude' => 3.3901,
+                        'recorded_at' => now()->addMinutes(3)->toISOString(),
+                    ],
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.near_destination', false)
+            ->assertJsonPath('data.arrived', false)
+            ->assertJsonPath('data.proximity_state', 'in_progress');
+
+        $this->assertDatabaseMissing('task_location_points', [
+            'task_id' => $task->id,
+            'event_type' => 'near_destination',
+            'is_checkpoint' => true,
+        ]);
+
+        $this->assertDatabaseMissing('task_location_points', [
+            'task_id' => $task->id,
+            'event_type' => 'arrival',
+            'is_checkpoint' => true,
+        ]);
+
+        $session = TaskTrackingSession::query()
+            ->where('task_id', $task->id)
+            ->firstOrFail();
+        $this->assertNull($session->near_detected_at);
+        $this->assertNull($session->arrival_detected_at);
+    }
+
+    public function test_task_completion_is_blocked_until_arrival_is_detected(): void
+    {
+        Storage::fake('local');
+
+        [$company, $admin, $agent] = $this->seedCompanyUsers('FAC-TRACK-GUARD');
+
+        $task = $this->createAssignedTask($company->id, $admin->id, $agent->id, [
+            'status' => 'pending',
+            'minimum_photos_required' => 1,
+            'latitude' => 6.4300,
+            'longitude' => 3.4200,
+        ]);
+
+        $token = $agent->createToken('completion-guard-token', ['*'])->plainTextToken;
+
+        $this->withToken($token)
+            ->postJson('/api/v1/tasks/' . $task->id . '/start', [
+                'company_id' => $company->id,
+                'location_permission_granted' => true,
+                'latitude' => 6.4000,
+                'longitude' => 3.3900,
+                'accuracy_meters' => 5,
+            ])
+            ->assertOk();
+
+        $blockedCompleteResponse = $this->withToken($token)
+            ->withHeader('Accept', 'application/json')
+            ->post('/api/v1/tasks/' . $task->id . '/complete', [
+                'company_id' => $company->id,
+                'latitude' => 6.4302,
+                'longitude' => 3.4202,
+                'accuracy_meters' => 4,
+                'notes' => 'Attempting completion before arrival.',
+                'files' => [UploadedFile::fake()->image('proof-blocked.jpg', 800, 800)],
+            ]);
+
+        $blockedCompleteResponse->assertUnprocessable()
+            ->assertJsonPath('errors.task.0', 'Task must be marked as arrived before completion.');
+    }
+
+    public function test_route_accepts_legacy_include_points_all_value(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers('FAC-TRACK-LEGACY');
+
+        $task = $this->createAssignedTask($company->id, $admin->id, $agent->id, [
+            'status' => 'pending',
+            'latitude' => 6.4300,
+            'longitude' => 3.4200,
+        ]);
+
+        $token = $agent->createToken('agent-route-legacy-token', ['*'])->plainTextToken;
+
+        $this->withToken($token)
+            ->postJson('/api/v1/tasks/' . $task->id . '/start', [
+                'company_id' => $company->id,
+                'location_permission_granted' => true,
+                'latitude' => 6.4000,
+                'longitude' => 3.3900,
+                'accuracy_meters' => 5,
+            ])
+            ->assertOk();
+
+        $response = $this->withToken($token)
+            ->getJson('/api/v1/tasks/' . $task->id . '/route?company_id=' . $company->id . '&include_points=all');
+
+        $response->assertOk()
+            ->assertJsonPath('data.task_id', $task->id)
+            ->assertJsonPath('data.destination.latitude', 6.43)
+            ->assertJsonPath('data.summary.points_count', 1)
+            ->assertJsonPath('data.points.0.event_type', 'start');
+    }
+
     public function test_multiple_agents_can_be_tracked_simultaneously_on_separate_tasks(): void
     {
         [$company, $admin, $agentOne] = $this->seedCompanyUsers();
 
         $agentTwo = User::factory()->create(['email_verified_at' => now()]);
+        self::assertInstanceOf(User::class, $agentTwo);
         DB::table('company_users')->insert([
             'company_id' => $company->id,
             'user_id' => $agentTwo->id,

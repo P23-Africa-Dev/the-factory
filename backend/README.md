@@ -72,7 +72,15 @@ API becomes available at:
 
 Realtime WebSocket relay becomes available at:
 
+- `ws://localhost:8080/tracking-ws`
+
+Direct relay port for debugging only:
+
 - `ws://localhost:8081`
+
+Relay health endpoint:
+
+- `http://localhost:8081/healthz`
 
 Health route to verify quickly:
 
@@ -163,6 +171,35 @@ Nginx config (`docker/nginx/default.conf`) is already configured for Laravel API
 - Root at `/var/www/html/public`
 - `try_files` fallback to `/index.php`
 - PHP requests proxied to `app:9000`
+- WebSocket upgrade proxy at `/tracking-ws` routed to `realtime:8081`
+
+For frontend clients, always connect through the nginx path instead of the raw relay port:
+
+- Local: `NEXT_PUBLIC_TRACKING_WS_URL=ws://localhost:8080/tracking-ws`
+- Production: `NEXT_PUBLIC_TRACKING_WS_URL=wss://<api-domain>/tracking-ws`
+
+Do not expose or depend on `:8081` in browser configuration.
+
+## 8.1) Mapbox + Tracking Environment Alignment
+
+Frontend Next.js env should define:
+
+- `NEXT_PUBLIC_API_BASE_URL`
+- `NEXT_PUBLIC_MAPBOX_TOKEN`
+- `NEXT_PUBLIC_TRACKING_WS_URL`
+
+Mapbox guidance:
+
+- Use a public token (`pk.*`) only
+- Never place secret Mapbox tokens or bearer auth tokens in `NEXT_PUBLIC_*`
+- Restrict the public token to approved site URLs in the Mapbox dashboard
+
+Tracking env alignment:
+
+- `TASK_TRACKING_REDIS_CHANNEL_PREFIX` in Laravel must match the same variable passed to the realtime relay
+- `TRACKING_WS_AUTH_API_BASE_URL` should point at nginx/container ingress, not the PHP-FPM container directly
+- Frontend location reporter is configured at 30s flush intervals with up to 50 points per batch (`lib/tracking/location-buffer.ts`)
+- Backend `TASK_TRACKING_MAX_BATCH_POINTS=50` must remain aligned with the frontend batch cap to avoid truncation or rejected payloads
 
 ## 9) Production Readiness (What Changes)
 

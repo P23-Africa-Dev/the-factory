@@ -29,7 +29,7 @@ class CreateSelfTaskRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
             'project_id' => ['prohibited'],
             'title' => ['required', 'string', 'min:3', 'max:255'],
             'type' => ['nullable', 'string', Rule::in(TaskType::values())],
@@ -44,6 +44,13 @@ class CreateSelfTaskRequest extends FormRequest
             'priority' => ['nullable', 'string', Rule::in(TaskPriority::values())],
             'minimum_photos_required' => ['nullable', 'integer', 'min:0', 'max:20'],
             'visit_verification_required' => ['nullable', 'boolean'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'company_id.required' => 'Company context is required to create a self task.',
         ];
     }
 }

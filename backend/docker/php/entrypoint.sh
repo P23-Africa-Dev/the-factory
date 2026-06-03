@@ -8,4 +8,7 @@ if [ -d /var/www/html/storage ]; then
     chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 fi
 
+# Ensure the public/storage symlink exists so avatar and file URLs resolve correctly.
+php artisan storage:link --force 2>/dev/null || true
+
 exec "$@"

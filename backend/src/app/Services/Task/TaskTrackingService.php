@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Services\Task;
 
+use App\Enums\NotificationCategory;
+use App\Enums\NotificationPriority;
 use App\Enums\TaskStatus;
 use App\Models\Task;
 use App\Models\TaskLocationPoint;
 use App\Models\TaskProof;
 use App\Models\TaskTrackingSession;
 use App\Models\User;
+use App\Services\Notification\NotificationService;
+use App\Services\Tracking\AgentLocationSnapshotService;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -24,6 +28,8 @@ class TaskTrackingService
     public function __construct(
         private readonly TaskAccessService $accessService,
         private readonly TaskService $taskService,
+        private readonly AgentLocationSnapshotService $agentLocationSnapshotService,
+        private readonly NotificationService $notificationService,
     ) {}
 
     public function start(User $user, Task $task, array $data): array
@@ -77,8 +83,14 @@ class TaskTrackingService
         $accuracy = array_key_exists('accuracy_meters', $data) && $data['accuracy_meters'] !== null
             ? (float) $data['accuracy_meters']
             : null;
+        $speed = array_key_exists('speed_mps', $data) && $data['speed_mps'] !== null
+            ? (float) $data['speed_mps']
+            : null;
+        $heading = array_key_exists('heading_degrees', $data) && $data['heading_degrees'] !== null
+            ? (float) $data['heading_degrees']
+            : null;
 
-        return DB::transaction(function () use ($user, $task, $context, $latitude, $longitude, $accuracy, $recordedAt): array {
+        return DB::transaction(function () use ($user, $task, $context, $latitude, $longitude, $accuracy, $speed, $heading, $recordedAt): array {
             $session = TaskTrackingSession::query()->create([
                 'task_id' => $task->id,
                 'company_id' => $context->company->id,
@@ -109,32 +121,63 @@ class TaskTrackingService
                 eventType: 'start',
                 isCheckpoint: true,
                 accuracyMeters: $accuracy,
-                speedMps: null,
-                headingDegrees: null,
+                speedMps: $speed,
+                headingDegrees: $heading,
             );
 
-            $arrivedNow = $this->markArrivalIfWithinRadius($session, $task, $user, $latitude, $longitude, $recordedAt, $accuracy);
+            $proximity = $this->buildProximitySnapshot(
+                session: $session,
+                latitude: $latitude,
+                longitude: $longitude,
+                accuracyMeters: $accuracy,
+            );
 
-            $payload = [
-                'task_status' => $task->status?->value,
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-                'accuracy_meters' => $accuracy,
-                'arrived' => $arrivedNow,
-                'event_type' => 'start',
-            ];
+            $payload = $this->upsertSnapshotAndBuildRealtimePayload(
+                session: $session,
+                task: $task,
+                userId: $user->id,
+                latitude: $latitude,
+                longitude: $longitude,
+                accuracyMeters: $accuracy,
+                speedMps: $speed,
+                headingDegrees: $heading,
+                eventType: 'start',
+                taskStatus: $task->status?->value,
+                arrived: false,
+                nearDestination: false,
+                movementStarted: $proximity['movement_started'],
+                distanceToDestinationMeters: $proximity['distance_to_destination_meters'],
+                distanceRemainingMeters: $proximity['distance_remaining_meters'],
+                proximityState: $this->resolveProximityState($session, $task->status?->value),
+                recordedAt: $recordedAt,
+            );
 
             $this->publishTrackingEvent('tracking.task.started', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
             $this->publishTrackingEvent('tracking.location.updated', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+            $this->publishTrackingEvent('tracking.agent.location.updated', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
 
-            if ($arrivedNow) {
-                $this->publishTrackingEvent('tracking.task.arrived', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
-            }
+            $this->notifyTrackingEvent(
+                task: $task,
+                actor: $user,
+                type: 'tracking.task.started',
+                title: 'Task tracking started',
+                message: "{$user->name} started tracking for task '{$task->title}'.",
+                priority: NotificationPriority::NORMAL->value,
+            );
 
             return [
                 'task' => $this->loadTaskForResponse($task),
                 'session' => $session->fresh(),
-                'arrived' => $arrivedNow,
+                'arrived' => false,
+                'near_destination' => false,
+                'proximity_state' => 'in_progress',
+                'distance_to_destination_meters' => $proximity['distance_to_destination_meters'] !== null
+                    ? round($proximity['distance_to_destination_meters'], 2)
+                    : null,
+                'distance_remaining_meters' => $proximity['distance_remaining_meters'] !== null
+                    ? round($proximity['distance_remaining_meters'], 2)
+                    : null,
+                'movement_started' => $proximity['movement_started'],
             ];
         });
     }
@@ -173,16 +216,32 @@ class TaskTrackingService
         }
 
         $persistedCount = 0;
-        $arrivedNow = false;
+        $lastDistanceToDestinationMeters = null;
+        $lastDistanceRemainingMeters = null;
+        $movementStarted = false;
 
-        DB::transaction(function () use ($points, $session, $task, $user, &$persistedCount, &$arrivedNow): void {
+        DB::transaction(function () use ($points, $session, $task, $user, &$persistedCount, &$lastDistanceToDestinationMeters, &$lastDistanceRemainingMeters, &$movementStarted): void {
             foreach ($points as $point) {
                 $latitude = (float) $point['latitude'];
                 $longitude = (float) $point['longitude'];
                 $accuracy = isset($point['accuracy_meters']) ? (float) $point['accuracy_meters'] : null;
+                $accuracyForProximity = $accuracy ?? ($session->last_accuracy_meters !== null
+                    ? (float) $session->last_accuracy_meters
+                    : null);
                 $speed = isset($point['speed_mps']) ? (float) $point['speed_mps'] : null;
                 $heading = isset($point['heading_degrees']) ? (float) $point['heading_degrees'] : null;
                 $recordedAt = isset($point['recorded_at']) ? Carbon::parse((string) $point['recorded_at']) : now();
+
+                $proximity = $this->buildProximitySnapshot(
+                    session: $session,
+                    latitude: $latitude,
+                    longitude: $longitude,
+                    accuracyMeters: $accuracyForProximity,
+                );
+
+                $lastDistanceToDestinationMeters = $proximity['distance_to_destination_meters'];
+                $lastDistanceRemainingMeters = $proximity['distance_remaining_meters'];
+                $movementStarted = $proximity['movement_started'];
 
                 $session->last_latitude = $latitude;
                 $session->last_longitude = $longitude;
@@ -192,15 +251,31 @@ class TaskTrackingService
                 $eventType = 'movement';
                 $isCheckpoint = false;
 
-                $justArrived = $this->shouldMarkArrival($session, $latitude, $longitude);
-                if ($justArrived) {
-                    $arrivedNow = true;
-                    $eventType = 'arrival';
-                    $isCheckpoint = true;
+                $justNearDestination = false;
+                $justArrived = false;
 
-                    $session->arrival_detected_at = $recordedAt;
-                    $session->arrival_latitude = $latitude;
-                    $session->arrival_longitude = $longitude;
+                if ($session->arrival_detected_at === null) {
+                    if ($session->near_detected_at === null && $proximity['can_mark_near']) {
+                        $justNearDestination = true;
+                        $eventType = 'near_destination';
+                        $isCheckpoint = true;
+
+                        $session->near_detected_at = $recordedAt;
+                        $session->near_latitude = $latitude;
+                        $session->near_longitude = $longitude;
+                    } elseif (
+                        $session->near_detected_at !== null
+                        && $proximity['can_mark_arrival']
+                        && $this->hasSatisfiedNearDwellTime($session, $recordedAt)
+                    ) {
+                        $justArrived = true;
+                        $eventType = 'arrival';
+                        $isCheckpoint = true;
+
+                        $session->arrival_detected_at = $recordedAt;
+                        $session->arrival_latitude = $latitude;
+                        $session->arrival_longitude = $longitude;
+                    }
                 }
 
                 $shouldPersist = $isCheckpoint || $this->shouldPersistMovementPoint($session, $latitude, $longitude, $recordedAt);
@@ -226,33 +301,81 @@ class TaskTrackingService
                     $session->last_persisted_recorded_at = $recordedAt;
                 }
 
-                $payload = [
-                    'task_status' => $task->status?->value,
-                    'latitude' => $latitude,
-                    'longitude' => $longitude,
-                    'accuracy_meters' => $accuracy,
-                    'speed_mps' => $speed,
-                    'heading_degrees' => $heading,
-                    'arrived' => $session->arrival_detected_at !== null,
-                    'event_type' => $eventType,
-                ];
+                $arrived = $session->arrival_detected_at !== null;
+                $nearDestination = $session->near_detected_at !== null && ! $arrived;
+
+                $payload = $this->upsertSnapshotAndBuildRealtimePayload(
+                    session: $session,
+                    task: $task,
+                    userId: $user->id,
+                    latitude: $latitude,
+                    longitude: $longitude,
+                    accuracyMeters: $accuracyForProximity,
+                    speedMps: $speed,
+                    headingDegrees: $heading,
+                    eventType: $eventType,
+                    taskStatus: $task->status?->value,
+                    arrived: $arrived,
+                    nearDestination: $nearDestination,
+                    movementStarted: $proximity['movement_started'],
+                    distanceToDestinationMeters: $proximity['distance_to_destination_meters'],
+                    distanceRemainingMeters: $proximity['distance_remaining_meters'],
+                    proximityState: $this->resolveProximityState($session, $task->status?->value),
+                    recordedAt: $recordedAt,
+                );
 
                 $this->publishTrackingEvent('tracking.location.updated', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+                $this->publishTrackingEvent('tracking.agent.location.updated', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+
+                if ($justNearDestination) {
+                    $this->publishTrackingEvent('tracking.task.near_destination', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+
+                    $this->notifyTrackingEvent(
+                        task: $task,
+                        actor: $user,
+                        type: 'tracking.task.near_destination',
+                        title: 'Agent near destination',
+                        message: "{$user->name} is near destination for task '{$task->title}'.",
+                        priority: NotificationPriority::HIGH->value,
+                    );
+                }
 
                 if ($justArrived) {
                     $this->publishTrackingEvent('tracking.task.arrived', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+
+                    $this->notifyTrackingEvent(
+                        task: $task,
+                        actor: $user,
+                        type: 'tracking.task.arrived',
+                        title: 'Agent arrived on site',
+                        message: "{$user->name} arrived at task '{$task->title}'.",
+                        priority: NotificationPriority::HIGH->value,
+                    );
                 }
             }
 
             $session->save();
         });
 
+        $freshSession = $session->fresh();
+        $arrived = $freshSession->arrival_detected_at !== null;
+        $nearDestination = $freshSession->near_detected_at !== null && ! $arrived;
+
         return [
             'task' => $this->loadTaskForResponse($task),
-            'session' => $session->fresh(),
+            'session' => $freshSession,
             'received_points' => $points->count(),
             'persisted_points' => $persistedCount,
-            'arrived' => $session->fresh()->arrival_detected_at !== null,
+            'arrived' => $arrived,
+            'near_destination' => $nearDestination,
+            'proximity_state' => $this->resolveProximityState($freshSession, $task->status?->value),
+            'distance_to_destination_meters' => $lastDistanceToDestinationMeters !== null
+                ? round($lastDistanceToDestinationMeters, 2)
+                : null,
+            'distance_remaining_meters' => $lastDistanceRemainingMeters !== null
+                ? round($lastDistanceRemainingMeters, 2)
+                : null,
+            'movement_started' => $movementStarted,
         ];
     }
 
@@ -280,14 +403,23 @@ class TaskTrackingService
             ]);
         }
 
+        if ($session->arrival_detected_at === null) {
+            throw ValidationException::withMessages([
+                'task' => ['Task must be marked as arrived before completion.'],
+            ]);
+        }
+
         $latitude = (float) $data['latitude'];
         $longitude = (float) $data['longitude'];
         $accuracy = array_key_exists('accuracy_meters', $data) && $data['accuracy_meters'] !== null
             ? (float) $data['accuracy_meters']
             : null;
+        $accuracyForProximity = $accuracy ?? ($session->last_accuracy_meters !== null
+            ? (float) $session->last_accuracy_meters
+            : null);
         $recordedAt = isset($data['recorded_at']) ? Carbon::parse((string) $data['recorded_at']) : now();
 
-        return DB::transaction(function () use ($user, $task, $context, $session, $data, $latitude, $longitude, $accuracy, $recordedAt): array {
+        return DB::transaction(function () use ($user, $task, $context, $session, $data, $latitude, $longitude, $accuracy, $accuracyForProximity, $recordedAt): array {
             $proofs = [];
             foreach ($data['files'] as $file) {
                 if (! $file instanceof UploadedFile) {
@@ -315,11 +447,12 @@ class TaskTrackingService
                 companyId: $context->company->id,
             );
 
-            if ($session->arrival_detected_at === null && $this->shouldMarkArrival($session, $latitude, $longitude)) {
-                $session->arrival_detected_at = $recordedAt;
-                $session->arrival_latitude = $latitude;
-                $session->arrival_longitude = $longitude;
-            }
+            $proximity = $this->buildProximitySnapshot(
+                session: $session,
+                latitude: $latitude,
+                longitude: $longitude,
+                accuracyMeters: $accuracyForProximity,
+            );
 
             $session->completed_by_user_id = $user->id;
             $session->end_latitude = $latitude;
@@ -349,18 +482,39 @@ class TaskTrackingService
                 headingDegrees: null,
             );
 
-            $payload = [
-                'task_status' => TaskStatus::COMPLETED->value,
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-                'accuracy_meters' => $accuracy,
-                'proofs_uploaded' => count($proofs),
-                'arrived' => $session->arrival_detected_at !== null,
-                'event_type' => 'complete',
-            ];
+            $payload = $this->upsertSnapshotAndBuildRealtimePayload(
+                session: $session,
+                task: $task,
+                userId: $user->id,
+                latitude: $latitude,
+                longitude: $longitude,
+                accuracyMeters: $accuracyForProximity,
+                speedMps: null,
+                headingDegrees: null,
+                eventType: 'complete',
+                taskStatus: TaskStatus::COMPLETED->value,
+                arrived: true,
+                nearDestination: false,
+                movementStarted: $proximity['movement_started'],
+                distanceToDestinationMeters: $proximity['distance_to_destination_meters'],
+                distanceRemainingMeters: $proximity['distance_remaining_meters'],
+                proximityState: 'completed',
+                recordedAt: $recordedAt,
+            );
+            $payload['proofs_uploaded'] = count($proofs);
 
             $this->publishTrackingEvent('tracking.location.updated', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+            $this->publishTrackingEvent('tracking.agent.location.updated', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
             $this->publishTrackingEvent('tracking.task.completed', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+
+            $this->notifyTrackingEvent(
+                task: $task,
+                actor: $user,
+                type: 'tracking.task.completed',
+                title: 'Task tracking completed',
+                message: "{$user->name} completed task '{$task->title}'.",
+                priority: NotificationPriority::HIGH->value,
+            );
 
             return [
                 'task' => $this->loadTaskForResponse($updatedTask),
@@ -398,6 +552,39 @@ class TaskTrackingService
 
         $includePoints = (bool) ($filters['include_points'] ?? true);
         $points = $session->points;
+        $lastSpeedMps = $points->last()?->speed_mps;
+        $distanceToDestination = $session->last_latitude !== null && $session->last_longitude !== null
+            ? $this->calculateDistanceToDestination(
+                session: $session,
+                latitude: (float) $session->last_latitude,
+                longitude: (float) $session->last_longitude,
+            )
+            : null;
+        $distanceRemaining = $session->last_latitude !== null && $session->last_longitude !== null
+            ? $this->calculateDistanceRemainingToArrival(
+                session: $session,
+                latitude: (float) $session->last_latitude,
+                longitude: (float) $session->last_longitude,
+            )
+            : null;
+        $etaSeconds = $this->estimateEtaSeconds($distanceRemaining, $lastSpeedMps !== null ? (float) $lastSpeedMps : null);
+        $routeDeviationMeters = $session->last_latitude !== null && $session->last_longitude !== null
+            ? $this->calculateRouteDeviationMeters(
+                session: $session,
+                latitude: (float) $session->last_latitude,
+                longitude: (float) $session->last_longitude,
+            )
+            : null;
+        $operationalStatus = $this->resolveOperationalStatus(
+            task: $task,
+            proximityState: $this->resolveProximityState($session, $task->status?->value),
+            movementStarted: $session->last_latitude !== null && $session->last_longitude !== null
+                ? $this->distanceFromSessionStart($session, (float) $session->last_latitude, (float) $session->last_longitude)
+                >= max(1.0, (float) config('tracking.min_movement_before_proximity_meters', 20))
+                : false,
+            isOnline: true,
+            etaSeconds: $etaSeconds,
+        );
 
         return [
             'task_id' => $task->id,
@@ -413,15 +600,35 @@ class TaskTrackingService
                 'longitude' => $session->start_longitude,
                 'recorded_at' => $session->start_recorded_at?->toIso8601String(),
             ],
-            'arrival' => [
-                'latitude' => $session->arrival_latitude,
-                'longitude' => $session->arrival_longitude,
-                'recorded_at' => $session->arrival_detected_at?->toIso8601String(),
-            ],
-            'end' => [
-                'latitude' => $session->end_latitude,
-                'longitude' => $session->end_longitude,
-                'recorded_at' => $session->end_recorded_at?->toIso8601String(),
+            'near' => $session->near_detected_at
+                ? [
+                    'latitude' => $session->near_latitude,
+                    'longitude' => $session->near_longitude,
+                    'recorded_at' => $session->near_detected_at?->toIso8601String(),
+                ]
+                : null,
+            'arrival' => $session->arrival_detected_at
+                ? [
+                    'latitude' => $session->arrival_latitude,
+                    'longitude' => $session->arrival_longitude,
+                    'recorded_at' => $session->arrival_detected_at?->toIso8601String(),
+                ]
+                : null,
+            'end' => $session->end_recorded_at
+                ? [
+                    'latitude' => $session->end_latitude,
+                    'longitude' => $session->end_longitude,
+                    'recorded_at' => $session->end_recorded_at?->toIso8601String(),
+                ]
+                : null,
+            'proximity' => [
+                'state' => $this->resolveProximityState($session, $task->status?->value),
+                'distance_to_destination_meters' => $distanceToDestination !== null ? round($distanceToDestination, 2) : null,
+                'distance_remaining_meters' => $distanceRemaining !== null ? round($distanceRemaining, 2) : null,
+                'speed_mps' => $lastSpeedMps !== null ? round((float) $lastSpeedMps, 3) : null,
+                'eta_seconds' => $etaSeconds,
+                'route_deviation_meters' => $routeDeviationMeters !== null ? round($routeDeviationMeters, 2) : null,
+                'operational_status' => $operationalStatus,
             ],
             'summary' => [
                 'points_count' => $points->count(),
@@ -494,59 +701,130 @@ class TaskTrackingService
         return $distance >= $minDistance;
     }
 
-    private function shouldMarkArrival(TaskTrackingSession $session, float $latitude, float $longitude): bool
+    private function buildProximitySnapshot(
+        TaskTrackingSession $session,
+        float $latitude,
+        float $longitude,
+        ?float $accuracyMeters,
+    ): array {
+        $distanceToDestination = $this->calculateDistanceToDestination($session, $latitude, $longitude);
+        $distanceRemaining = $this->calculateDistanceRemainingToArrival($session, $latitude, $longitude);
+
+        $movementFromStartMeters = $this->distanceFromSessionStart($session, $latitude, $longitude);
+        $minMovementBeforeProximity = max(1.0, (float) config('tracking.min_movement_before_proximity_meters', 20));
+        $movementStarted = $movementFromStartMeters >= $minMovementBeforeProximity;
+
+        $arrivalRadiusMeters = max(1.0, (float) ($session->destination_radius_meters ?? config('tracking.arrival_radius_meters', 75)));
+        $nearRadiusMeters = max(
+            $arrivalRadiusMeters + 1,
+            (float) config('tracking.near_radius_meters', 250),
+        );
+
+        $isWithinNear = $distanceToDestination !== null && $distanceToDestination <= $nearRadiusMeters;
+        $isWithinArrival = $distanceToDestination !== null && $distanceToDestination <= $arrivalRadiusMeters;
+
+        $nearAccuracyOk = $this->isAccuracyWithinThreshold(
+            accuracyMeters: $accuracyMeters,
+            maxAccuracyMeters: (float) config('tracking.near_max_accuracy_meters', 150),
+        );
+
+        $arrivalAccuracyOk = $this->isAccuracyWithinThreshold(
+            accuracyMeters: $accuracyMeters,
+            maxAccuracyMeters: (float) config('tracking.arrival_max_accuracy_meters', 60),
+        );
+
+        return [
+            'distance_to_destination_meters' => $distanceToDestination,
+            'distance_remaining_meters' => $distanceRemaining,
+            'movement_from_start_meters' => $movementFromStartMeters,
+            'movement_started' => $movementStarted,
+            'can_mark_near' => $movementStarted && $isWithinNear && $nearAccuracyOk,
+            'can_mark_arrival' => $movementStarted && $isWithinArrival && $arrivalAccuracyOk,
+            'near_radius_meters' => $nearRadiusMeters,
+            'arrival_radius_meters' => $arrivalRadiusMeters,
+        ];
+    }
+
+    private function hasSatisfiedNearDwellTime(TaskTrackingSession $session, Carbon $recordedAt): bool
     {
+        if (! $session->near_detected_at) {
+            return false;
+        }
+
+        $requiredSeconds = max(0, (int) config('tracking.min_seconds_between_near_and_arrival', 10));
+        if ($requiredSeconds === 0) {
+            return true;
+        }
+
+        return $session->near_detected_at->diffInSeconds($recordedAt) >= $requiredSeconds;
+    }
+
+    private function resolveProximityState(TaskTrackingSession $session, ?string $taskStatus): string
+    {
+        if ($this->isTerminalStatus($taskStatus) || $session->end_recorded_at !== null) {
+            return 'completed';
+        }
+
         if ($session->arrival_detected_at !== null) {
-            return false;
+            return 'arrived';
         }
 
+        if ($session->near_detected_at !== null) {
+            return 'near_destination';
+        }
+
+        return 'in_progress';
+    }
+
+    private function calculateDistanceToDestination(
+        TaskTrackingSession $session,
+        float $latitude,
+        float $longitude,
+    ): ?float {
         if ($session->destination_latitude === null || $session->destination_longitude === null) {
-            return false;
+            return null;
         }
 
-        $distance = $this->distanceMeters(
+        return $this->distanceMeters(
             (float) $session->destination_latitude,
             (float) $session->destination_longitude,
             $latitude,
             $longitude,
         );
-
-        return $distance <= (float) $session->destination_radius_meters;
     }
 
-    private function markArrivalIfWithinRadius(
+    private function calculateDistanceRemainingToArrival(
         TaskTrackingSession $session,
-        Task $task,
-        User $user,
         float $latitude,
         float $longitude,
-        Carbon $recordedAt,
-        ?float $accuracy,
-    ): bool {
-        if (! $this->shouldMarkArrival($session, $latitude, $longitude)) {
+    ): ?float {
+        $distanceToDestination = $this->calculateDistanceToDestination($session, $latitude, $longitude);
+        if ($distanceToDestination === null) {
+            return null;
+        }
+
+        $arrivalRadius = max(1.0, (float) ($session->destination_radius_meters ?? config('tracking.arrival_radius_meters', 75)));
+
+        return max(0.0, $distanceToDestination - $arrivalRadius);
+    }
+
+    private function distanceFromSessionStart(TaskTrackingSession $session, float $latitude, float $longitude): float
+    {
+        return $this->distanceMeters(
+            (float) $session->start_latitude,
+            (float) $session->start_longitude,
+            $latitude,
+            $longitude,
+        );
+    }
+
+    private function isAccuracyWithinThreshold(?float $accuracyMeters, float $maxAccuracyMeters): bool
+    {
+        if ($accuracyMeters === null) {
             return false;
         }
 
-        $session->arrival_detected_at = $recordedAt;
-        $session->arrival_latitude = $latitude;
-        $session->arrival_longitude = $longitude;
-        $session->save();
-
-        $this->createLocationPoint(
-            session: $session,
-            task: $task,
-            user: $user,
-            latitude: $latitude,
-            longitude: $longitude,
-            recordedAt: $recordedAt,
-            eventType: 'arrival',
-            isCheckpoint: true,
-            accuracyMeters: $accuracy,
-            speedMps: null,
-            headingDegrees: null,
-        );
-
-        return true;
+        return $accuracyMeters > 0 && $accuracyMeters <= max(1.0, $maxAccuracyMeters);
     }
 
     private function createLocationPoint(
@@ -665,6 +943,235 @@ class TaskTrackingService
         return $distance;
     }
 
+    private function upsertSnapshotAndBuildRealtimePayload(
+        TaskTrackingSession $session,
+        Task $task,
+        int $userId,
+        float $latitude,
+        float $longitude,
+        ?float $accuracyMeters,
+        ?float $speedMps,
+        ?float $headingDegrees,
+        string $eventType,
+        ?string $taskStatus,
+        bool $arrived,
+        bool $nearDestination,
+        bool $movementStarted,
+        ?float $distanceToDestinationMeters,
+        ?float $distanceRemainingMeters,
+        string $proximityState,
+        Carbon $recordedAt,
+    ): array {
+        $snapshot = $this->agentLocationSnapshotService->upsertFromTrackingEvent([
+            'company_id' => $session->company_id,
+            'task_id' => $task->id,
+            'tracking_session_id' => $session->id,
+            'user_id' => $userId,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'accuracy_meters' => $accuracyMeters,
+            'speed_mps' => $speedMps,
+            'heading_degrees' => $headingDegrees,
+            'event_type' => $eventType,
+            'task_status' => $taskStatus,
+            'arrived' => $arrived,
+            'recorded_at' => $recordedAt->toIso8601String(),
+        ]);
+
+        $staleAfterSeconds = max(60, (int) config('tracking.agent_location_stale_after_seconds', 300));
+        $ageSeconds = $snapshot->last_seen_at
+            ? max(0, now()->getTimestamp() - $snapshot->last_seen_at->getTimestamp())
+            : null;
+        $isOnline = $ageSeconds !== null && $ageSeconds <= $staleAfterSeconds;
+        $etaSeconds = $this->estimateEtaSeconds($distanceRemainingMeters, $speedMps);
+        $routeDeviationMeters = $this->calculateRouteDeviationMeters($session, $latitude, $longitude);
+        $operationalStatus = $this->resolveOperationalStatus(
+            task: $task,
+            proximityState: $proximityState,
+            movementStarted: $movementStarted,
+            isOnline: $isOnline,
+            etaSeconds: $etaSeconds,
+        );
+
+        return [
+            'task_status' => $taskStatus,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'accuracy_meters' => $accuracyMeters,
+            'speed_mps' => $speedMps,
+            'heading_degrees' => $headingDegrees,
+            'arrived' => $arrived,
+            'near_destination' => $nearDestination,
+            'movement_started' => $movementStarted,
+            'near_recorded_at' => $session->near_detected_at?->toIso8601String(),
+            'arrival_recorded_at' => $session->arrival_detected_at?->toIso8601String(),
+            'distance_to_destination_meters' => $distanceToDestinationMeters !== null
+                ? round($distanceToDestinationMeters, 2)
+                : null,
+            'distance_remaining_meters' => $distanceRemainingMeters !== null
+                ? round($distanceRemainingMeters, 2)
+                : null,
+            'eta_seconds' => $etaSeconds,
+            'route_deviation_meters' => $routeDeviationMeters !== null ? round($routeDeviationMeters, 2) : null,
+            'proximity_state' => $proximityState,
+            'operational_status' => $operationalStatus,
+            'event_type' => $eventType,
+            'task' => [
+                'id' => $task->id,
+                'title' => $task->title,
+                'status' => $taskStatus,
+                'address' => $task->address_full,
+                'location' => $task->location_text,
+                'destination_latitude' => $task->latitude,
+                'destination_longitude' => $task->longitude,
+                'project' => $task->relationLoaded('project') && $task->project !== null
+                    ? [
+                        'id' => $task->project->id,
+                        'name' => $task->project->name,
+                        'status' => $task->project->status?->value,
+                    ]
+                    : null,
+            ],
+            'destination' => [
+                'latitude' => $session->destination_latitude,
+                'longitude' => $session->destination_longitude,
+                'radius_meters' => $session->destination_radius_meters,
+                'near_radius_meters' => max(
+                    (float) (($session->destination_radius_meters ?? config('tracking.arrival_radius_meters', 75)) + 1),
+                    (float) config('tracking.near_radius_meters', 250),
+                ),
+            ],
+            'agent' => [
+                'id' => $snapshot->user_id,
+                'name' => $snapshot->agent?->name,
+                'avatar_url' => $snapshot->agent?->avatar,
+                'internal_role' => $snapshot->agent?->internal_role,
+            ],
+            'location' => [
+                'latitude' => $snapshot->latitude,
+                'longitude' => $snapshot->longitude,
+                'accuracy_meters' => $snapshot->accuracy_meters,
+                'speed_mps' => $snapshot->speed_mps,
+                'heading_degrees' => $snapshot->heading_degrees,
+                'event_type' => $snapshot->event_type,
+                'arrived' => $arrived,
+                'near_destination' => $nearDestination,
+                'distance_to_destination_meters' => $distanceToDestinationMeters !== null
+                    ? round($distanceToDestinationMeters, 2)
+                    : null,
+                'distance_remaining_meters' => $distanceRemainingMeters !== null
+                    ? round($distanceRemainingMeters, 2)
+                    : null,
+                'eta_seconds' => $etaSeconds,
+                'route_deviation_meters' => $routeDeviationMeters !== null ? round($routeDeviationMeters, 2) : null,
+                'recorded_at' => $snapshot->recorded_at?->toIso8601String(),
+            ],
+            'status' => [
+                'is_online' => $isOnline,
+                'is_stale' => ! $isOnline,
+                'last_seen_at' => $snapshot->last_seen_at?->toIso8601String(),
+                'stale_after_seconds' => $staleAfterSeconds,
+                'age_seconds' => $ageSeconds,
+                'proximity_state' => $proximityState,
+                'operational_status' => $operationalStatus,
+            ],
+        ];
+    }
+
+    private function estimateEtaSeconds(?float $distanceRemainingMeters, ?float $speedMps): ?int
+    {
+        if ($distanceRemainingMeters === null || $speedMps === null) {
+            return null;
+        }
+
+        if ($distanceRemainingMeters <= 0 || $speedMps <= 0.35) {
+            return null;
+        }
+
+        return (int) max(0, round($distanceRemainingMeters / $speedMps));
+    }
+
+    private function calculateRouteDeviationMeters(TaskTrackingSession $session, float $latitude, float $longitude): ?float
+    {
+        if (
+            $session->start_latitude === null
+            || $session->start_longitude === null
+            || $session->destination_latitude === null
+            || $session->destination_longitude === null
+        ) {
+            return null;
+        }
+
+        $startLat = (float) $session->start_latitude;
+        $startLng = (float) $session->start_longitude;
+        $destLat = (float) $session->destination_latitude;
+        $destLng = (float) $session->destination_longitude;
+
+        // Convert to a local meter plane for stable short-distance projection.
+        $latFactor = 111320.0;
+        $meanLatRad = deg2rad(($startLat + $destLat + $latitude) / 3.0);
+        $lngFactor = 111320.0 * cos($meanLatRad);
+
+        $ax = 0.0;
+        $ay = 0.0;
+        $bx = ($destLng - $startLng) * $lngFactor;
+        $by = ($destLat - $startLat) * $latFactor;
+        $px = ($longitude - $startLng) * $lngFactor;
+        $py = ($latitude - $startLat) * $latFactor;
+
+        $abx = $bx - $ax;
+        $aby = $by - $ay;
+        $abSquared = $abx * $abx + $aby * $aby;
+
+        if ($abSquared <= 0.0001) {
+            return null;
+        }
+
+        $apx = $px - $ax;
+        $apy = $py - $ay;
+        $t = (($apx * $abx) + ($apy * $aby)) / $abSquared;
+        $tClamped = max(0.0, min(1.0, $t));
+
+        $closestX = $ax + ($abx * $tClamped);
+        $closestY = $ay + ($aby * $tClamped);
+
+        return sqrt((($px - $closestX) ** 2) + (($py - $closestY) ** 2));
+    }
+
+    private function resolveOperationalStatus(
+        Task $task,
+        string $proximityState,
+        bool $movementStarted,
+        bool $isOnline,
+        ?int $etaSeconds,
+    ): string {
+        if ($task->status?->value === TaskStatus::COMPLETED->value || $proximityState === 'completed') {
+            return 'completed';
+        }
+
+        if (! $isOnline) {
+            return 'offline';
+        }
+
+        if ($proximityState === 'arrived') {
+            return 'destination_reached';
+        }
+
+        if ($proximityState === 'near_destination') {
+            return 'near_destination';
+        }
+
+        $isDelayedByEta = $etaSeconds !== null
+            && $etaSeconds >= max(60, (int) config('tracking.delayed_eta_threshold_seconds', 1800));
+        $isDelayedByDueAt = $task->due_at !== null && $task->due_at->isPast();
+
+        if ($isDelayedByEta || $isDelayedByDueAt) {
+            return 'delayed';
+        }
+
+        return $movementStarted ? 'en_route' : 'available';
+    }
+
     private function publishTrackingEvent(
         string $event,
         int $companyId,
@@ -704,6 +1211,49 @@ class TaskTrackingService
                 'tracking_session_id' => $trackingSessionId,
                 'exception' => $e::class,
                 'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function notifyTrackingEvent(
+        Task $task,
+        User $actor,
+        string $type,
+        string $title,
+        string $message,
+        string $priority,
+    ): void {
+        $recipientIds = DB::table('company_users')
+            ->where('company_id', $task->company_id)
+            ->whereIn('role', ['owner', 'admin', 'supervisor'])
+            ->pluck('user_id')
+            ->map(static fn(mixed $id): int => (int) $id)
+            ->merge([(int) $task->created_by_user_id, (int) ($task->assigned_agent_id ?? 0)])
+            ->filter(static fn(int $id): bool => $id > 0)
+            ->unique()
+            ->reject(static fn(int $id): bool => $id === (int) $actor->id)
+            ->values()
+            ->all();
+
+        foreach ($recipientIds as $recipientId) {
+            $this->notificationService->notifyUser($recipientId, [
+                'company_id' => (int) $task->company_id,
+                'type' => $type,
+                'category' => NotificationCategory::TRACKING->value,
+                'title' => $title,
+                'message' => $message,
+                'reference_type' => Task::class,
+                'reference_id' => (int) $task->id,
+                'action_url' => '/tasks/' . $task->id,
+                'action_route' => 'tasks.show',
+                'priority' => $priority,
+                'created_by_user_id' => (int) $actor->id,
+                'metadata' => [
+                    'task_id' => (int) $task->id,
+                    'task_status' => $task->status?->value,
+                    'actor_user_id' => (int) $actor->id,
+                ],
+                'dedupe_key' => $type . ':' . $task->id . ':' . $recipientId,
             ]);
         }
     }

@@ -20,6 +20,13 @@ export type ProjectManager = {
   email: string;
 };
 
+export type ProjectCreator = {
+  id: number;
+  name: string;
+  email: string;
+  avatar_url?: string | null;
+};
+
 export type ProjectAttachment = {
   id: number;
   original_name: string;
@@ -41,6 +48,7 @@ export type ProjectApiItem = {
   duration_days?: number | null;
   territory_zone?: string | null;
   notes?: string | null;
+  creator?: ProjectCreator | null;
   manager?: ProjectManager | null;
   assigned_team?: Array<{ id: number; name: string; email?: string }>;
   attachments?: ProjectAttachment[];
@@ -114,9 +122,31 @@ export type PaginationData = {
   last_page?: number;
 };
 
+export type ProjectPerformanceAnalytics = {
+  project_progress: number;
+  task_completion: number;
+  timeline_consumption: number;
+  status: "POOR" | "FAIR" | "GOOD" | "EXCELLENT";
+};
+
+export type NonCommencedAgentsAnalytics = {
+  assigned_agents: number;
+  not_started: number;
+  percentage: number;
+  previous_week_not_started: number;
+  current_week_not_started: number;
+  trend_direction: "improved" | "worsened" | "flat";
+};
+
+export type ProjectsAnalyticsData = {
+  project_performance: ProjectPerformanceAnalytics;
+  non_commenced_agents: NonCommencedAgentsAnalytics;
+};
+
 export type ProjectsListData = {
   items: ProjectApiItem[];
   pagination: PaginationData;
+  analytics?: ProjectsAnalyticsData;
 };
 
 export type ProjectDetailData = {
@@ -125,7 +155,8 @@ export type ProjectDetailData = {
 
 export function listProjects(
   params: ListProjectsParams,
-  token: string
+  token: string,
+  basePath = ""
 ): Promise<ApiEnvelope<ProjectsListData>> {
   const qs = new URLSearchParams();
   if (params.company_id != null) qs.set("company_id", String(params.company_id));
@@ -136,18 +167,19 @@ export function listProjects(
 
   return apiRequest<ProjectsListData>({
     method: "GET",
-    path: `/projects${query}`,
+    path: `${basePath}/projects${query}`,
     token,
   });
 }
 
 export function getProject(
   id: number | string,
-  token: string
+  token: string,
+  basePath = ""
 ): Promise<ApiEnvelope<ProjectDetailData>> {
   return apiRequest<ProjectDetailData>({
     method: "GET",
-    path: `/projects/${id}`,
+    path: `${basePath}/projects/${id}`,
     token,
   });
 }
@@ -214,7 +246,7 @@ export type InternalUser = {
 };
 
 export type InternalUsersParams = {
-  role?: "supervisor" | "agent";
+  role?: "admin" | "supervisor" | "agent";
   company_id?: number | string;
 };
 

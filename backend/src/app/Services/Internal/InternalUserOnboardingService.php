@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Internal;
 
+use App\Enums\NotificationCategory;
+use App\Enums\NotificationPriority;
 use App\Models\InternalUserInvitation;
 use App\Models\User;
 use App\Notifications\InternalUserOnboardingInviteNotification;
+use App\Services\Notification\NotificationService;
+use App\Support\CurrencyCatalog;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -23,7 +27,10 @@ class InternalUserOnboardingService
 
     private ?array $avatarGenderMapCache = null;
 
-    public function __construct(private readonly InternalUserAccessService $accessService) {}
+    public function __construct(
+        private readonly InternalUserAccessService $accessService,
+        private readonly NotificationService $notificationService,
+    ) {}
 
     public function createByManager(User $creator, array $data): array
     {
@@ -49,6 +56,11 @@ class InternalUserOnboardingService
 
         return DB::transaction(function () use ($creator, $company, $data, $role, $supervisorUserId, $prefilledProfile): array {
             $workDays = collect($data['work_days'])->map(fn($d) => strtolower((string) $d))->unique()->values()->all();
+            $salaryType = strtolower((string) ($data['salary_type'] ?? 'monthly'));
+            $currency = CurrencyCatalog::normalize(
+                currency: $data['currency_code'] ?? null,
+                fallbackCurrency: $company->currency_code ?? config('internal_onboarding.default_currency', 'USD'),
+            );
 
             $user = User::query()->create([
                 'name' => $data['full_name'],
@@ -60,7 +72,8 @@ class InternalUserOnboardingService
                 'assigned_zone' => $data['assigned_zone'],
                 'work_days' => $workDays,
                 'base_salary' => $data['base_salary'],
-                'salary_currency' => strtoupper((string) ($data['currency_code'] ?? $company->currency_code ?? config('internal_onboarding.default_currency', 'USD'))),
+                'payroll_salary_type' => $salaryType,
+                'salary_currency' => $currency,
                 'commission_enabled' => (bool) ($data['commission_enabled'] ?? false),
                 'supervisor_user_id' => $supervisorUserId,
                 'invited_by_user_id' => $creator->id,
@@ -69,7 +82,7 @@ class InternalUserOnboardingService
                 'avatar' => $prefilledProfile['avatar_key'],
             ]);
 
-            $pivotRole = $role === 'supervisor' ? 'supervisor' : 'agent';
+            $pivotRole = $role === 'admin' ? 'admin' : ($role === 'supervisor' ? 'supervisor' : 'agent');
 
             $company->users()->syncWithoutDetaching([
                 $user->id => [
@@ -118,6 +131,25 @@ class InternalUserOnboardingService
             }
 
             $invitation->update(['sent_at' => now()]);
+
+            $this->notificationService->notifyUser((int) $user->id, [
+                'company_id' => (int) $company->id,
+                'type' => 'workforce.internal_invitation_sent',
+                'category' => NotificationCategory::WORKFORCE->value,
+                'title' => 'Internal onboarding invitation',
+                'message' => 'You have been invited to complete your internal onboarding setup.',
+                'reference_type' => InternalUserInvitation::class,
+                'reference_id' => (int) $invitation->id,
+                'action_url' => '/internal/onboarding',
+                'action_route' => 'internal.onboarding.complete',
+                'priority' => NotificationPriority::HIGH->value,
+                'created_by_user_id' => (int) $creator->id,
+                'metadata' => [
+                    'invitation_id' => (int) $invitation->id,
+                    'role' => (string) $role,
+                ],
+                'dedupe_key' => 'internal-invite:' . $invitation->id,
+            ]);
 
             return [
                 'user' => $user->fresh(),
@@ -191,6 +223,25 @@ class InternalUserOnboardingService
 
             $invitation->update(['sent_at' => now()]);
 
+            $this->notificationService->notifyUser((int) $user->id, [
+                'company_id' => (int) $company->id,
+                'type' => 'workforce.internal_invitation_resent',
+                'category' => NotificationCategory::WORKFORCE->value,
+                'title' => 'Internal onboarding reminder',
+                'message' => 'Your internal onboarding invitation has been resent.',
+                'reference_type' => InternalUserInvitation::class,
+                'reference_id' => (int) $invitation->id,
+                'action_url' => '/internal/onboarding',
+                'action_route' => 'internal.onboarding.complete',
+                'priority' => NotificationPriority::NORMAL->value,
+                'created_by_user_id' => (int) $actor->id,
+                'metadata' => [
+                    'invitation_id' => (int) $invitation->id,
+                    'role' => (string) $user->internal_role,
+                ],
+                'dedupe_key' => 'internal-invite-resent:' . $invitation->id,
+            ]);
+
             return [
                 'invitation' => $invitation->fresh(),
                 'invite_expires_at' => $invitation->expires_at,
@@ -213,6 +264,24 @@ class InternalUserOnboardingService
         $this->ensureValidSupervisor((int) $company->id, $supervisorUserId);
 
         $agent->update(['supervisor_user_id' => $supervisorUserId]);
+
+        $this->notificationService->notifyUser((int) $agent->id, [
+            'company_id' => (int) $company->id,
+            'type' => 'workforce.supervisor_assigned',
+            'category' => NotificationCategory::WORKFORCE->value,
+            'title' => 'Supervisor assigned',
+            'message' => 'A supervisor has been assigned to your account.',
+            'reference_type' => User::class,
+            'reference_id' => (int) $agent->id,
+            'action_url' => '/user/profile',
+            'action_route' => 'user.profile.show',
+            'priority' => NotificationPriority::NORMAL->value,
+            'created_by_user_id' => (int) $actor->id,
+            'metadata' => [
+                'supervisor_user_id' => $supervisorUserId,
+            ],
+            'dedupe_key' => 'internal-supervisor-assigned:' . $agent->id . ':' . $supervisorUserId,
+        ]);
 
         return $agent->fresh();
     }
@@ -274,7 +343,7 @@ class InternalUserOnboardingService
         );
 
         return DB::transaction(function () use ($invitation, $user, $data, $resolvedProfile): array {
-            $pivotRole = $invitation->role === 'supervisor' ? 'supervisor' : 'agent';
+            $pivotRole = $invitation->role === 'admin' ? 'admin' : ($invitation->role === 'supervisor' ? 'supervisor' : 'agent');
 
             $avatarKey = $resolvedProfile['avatar_key'];
             $avatarSvg = $resolvedProfile['avatar_svg'];
@@ -314,6 +383,27 @@ class InternalUserOnboardingService
                 abilities: ['*'],
                 expiresAt: now()->addDays(30),
             );
+
+            if ($user->invited_by_user_id !== null) {
+                $this->notificationService->notifyUser((int) $user->invited_by_user_id, [
+                    'company_id' => (int) $invitation->company_id,
+                    'type' => 'workforce.internal_onboarding_completed',
+                    'category' => NotificationCategory::WORKFORCE->value,
+                    'title' => 'Internal onboarding completed',
+                    'message' => "{$user->name} has completed internal onboarding.",
+                    'reference_type' => User::class,
+                    'reference_id' => (int) $user->id,
+                    'action_url' => '/internal-users/onboarding-status',
+                    'action_route' => 'internal-users.onboarding-status',
+                    'priority' => NotificationPriority::HIGH->value,
+                    'created_by_user_id' => (int) $user->id,
+                    'metadata' => [
+                        'user_id' => (int) $user->id,
+                        'internal_role' => (string) $user->internal_role,
+                    ],
+                    'dedupe_key' => 'internal-onboarding-complete:' . $user->id,
+                ]);
+            }
 
             return [
                 'user' => $user->fresh(),
@@ -536,6 +626,9 @@ class InternalUserOnboardingService
         }
 
         $fallbackCatalog = config('internal_onboarding.avatar_catalog', []);
+        if (! is_array($fallbackCatalog)) {
+            $fallbackCatalog = [];
+        }
 
         foreach ($fallbackCatalog as $gender => $avatars) {
             if (! isset($catalog[$gender]) || ! is_array($avatars)) {

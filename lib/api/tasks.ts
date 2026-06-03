@@ -1,6 +1,12 @@
 import { apiRequest, ApiEnvelope, ApiRequestError } from "./onboarding";
 
-export type ApiTaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
+export type ApiTaskStatus =
+  | "pending"
+  | "in_progress"
+  | "paused"
+  | "resumed"
+  | "completed"
+  | "cancelled";
 export type ApiTaskPriority = "high" | "medium" | "low";
 
 export type TaskApiItem = {
@@ -20,6 +26,10 @@ export type TaskApiItem = {
   latitude?: number;
   longitude?: number;
   due_date?: string;
+  started_at?: string | null;
+  paused_at?: string | null;
+  resumed_at?: string | null;
+  completed_at?: string | null;
   required_actions?: string[];
   priority?: ApiTaskPriority;
   minimum_photos_required?: number;
@@ -39,13 +49,62 @@ export type TaskApiItem = {
     id: number;
     name: string;
     email: string;
+    avatar_url?: string | null;
   } | null;
+  latest_reassignment?: TaskReassignmentItem | null;
   proofs?: Array<{
     id: number;
     uploaded_by_user_id: number;
     file_url: string | null;
     mime_type: string;
   }>;
+};
+
+export type TaskReassignmentItem = {
+  id: number;
+  task_id: number;
+  company_id: number;
+  requested_by_user_id: number;
+  from_user_id: number;
+  to_user_id: number;
+  status: "pending" | "accepted" | "rejected" | "cancelled";
+  reason?: string | null;
+  response_note?: string | null;
+  requested_at?: string | null;
+  responded_at?: string | null;
+  accepted_at?: string | null;
+  rejected_at?: string | null;
+  cancelled_at?: string | null;
+  tracking_transferred_at?: string | null;
+  expires_at?: string | null;
+  task?: {
+    id: number;
+    title: string;
+    project_id?: number | null;
+    due_date?: string | null;
+    location?: string | null;
+    address?: string | null;
+  } | null;
+  from_user?: {
+    id: number;
+    name: string;
+    email: string;
+  } | null;
+  to_user?: {
+    id: number;
+    name: string;
+    email: string;
+  } | null;
+  requested_by?: {
+    id: number;
+    name: string;
+    email: string;
+  } | null;
+  responded_by?: {
+    id: number;
+    name: string;
+    email: string;
+  } | null;
 };
 
 export type ListTasksParams = {
@@ -94,8 +153,28 @@ export type TaskDetailData = {
 
 export type AssignTaskPayload = {
   company_id?: number | string;
+  to_user_id?: number | string;
   assigned_agent_id?: number | string;
   assigned_agent_ids?: Array<number | string>;
+  reason?: string;
+};
+
+export type TaskReassignmentsInboxParams = {
+  company_id?: number | string;
+  status?: "pending" | "accepted" | "rejected" | "cancelled";
+};
+
+export type RespondTaskReassignmentPayload = {
+  company_id?: number | string;
+  response_note?: string;
+};
+
+export type AssignTaskData = {
+  reassignment: TaskReassignmentItem;
+};
+
+export type TaskReassignmentsInboxData = {
+  reassignments: TaskReassignmentItem[];
 };
 
 export type UpdateTaskStatusPayload = {
@@ -158,10 +237,52 @@ export function assignTask(
   taskId: number | string,
   payload: AssignTaskPayload,
   token: string
-): Promise<ApiEnvelope<TaskDetailData>> {
-  return apiRequest<TaskDetailData>({
+): Promise<ApiEnvelope<AssignTaskData>> {
+  return apiRequest<AssignTaskData>({
     method: "PATCH",
     path: `/tasks/${taskId}/assign`,
+    body: payload,
+    token,
+  });
+}
+
+export function listTaskReassignmentInbox(
+  params: TaskReassignmentsInboxParams,
+  token: string
+): Promise<ApiEnvelope<TaskReassignmentsInboxData>> {
+  const qs = new URLSearchParams();
+  if (params.company_id != null) qs.set("company_id", String(params.company_id));
+  if (params.status) qs.set("status", params.status);
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+
+  return apiRequest<TaskReassignmentsInboxData>({
+    method: "GET",
+    path: `/tasks/reassignments/inbox${query}`,
+    token,
+  });
+}
+
+export function acceptTaskReassignment(
+  reassignmentId: number | string,
+  payload: RespondTaskReassignmentPayload,
+  token: string
+): Promise<ApiEnvelope<AssignTaskData>> {
+  return apiRequest<AssignTaskData>({
+    method: "POST",
+    path: `/tasks/reassignments/${reassignmentId}/accept`,
+    body: payload,
+    token,
+  });
+}
+
+export function rejectTaskReassignment(
+  reassignmentId: number | string,
+  payload: RespondTaskReassignmentPayload,
+  token: string
+): Promise<ApiEnvelope<AssignTaskData>> {
+  return apiRequest<AssignTaskData>({
+    method: "POST",
+    path: `/tasks/reassignments/${reassignmentId}/reject`,
     body: payload,
     token,
   });
@@ -175,6 +296,19 @@ export function updateTaskStatus(
   return apiRequest<TaskDetailData>({
     method: "PATCH",
     path: `/tasks/${taskId}/status`,
+    body: payload,
+    token,
+  });
+}
+
+export function updateTaskStatusAdmin(
+  taskId: number | string,
+  payload: UpdateTaskStatusPayload,
+  token: string
+): Promise<ApiEnvelope<TaskDetailData>> {
+  return apiRequest<TaskDetailData>({
+    method: "PATCH",
+    path: `/admin/tasks/${taskId}/status`,
     body: payload,
     token,
   });

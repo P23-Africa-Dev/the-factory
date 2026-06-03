@@ -5,10 +5,20 @@ import ArrowUp from "@/assets/images/arrow-57deg.png";
 import happyIcon from "@/assets/images/happy.png";
 import SearchListIcon from "@/assets/images/search-list-icon.png";
 import { FilterSelect } from "@/components/ui/filter-select";
+import { useDashboardOverview } from "@/hooks/use-dashboard";
+import { useMeetingDetail, useMeetings } from "@/hooks/use-meetings";
+import { useCalendarIntegrationStatus } from "@/hooks/use-calendar-integration";
+import { getActiveCompanyContext } from "@/lib/company-context";
+import { canAccessMeetingCreation, canConnectGoogleCalendar, getMeetingAccessNotice, getMeetingCreationTooltip } from "@/lib/calendar-permissions";
 import { cn } from "@/lib/utils/sample";
+import { CalendarTooltip } from "@/components/ui/calendar-tooltip";
+import { useAuthStore } from "@/store/auth";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
 import Image from "next/image";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { ScheduleMeetingModal } from "@/components/operations/schedule-meeting-modal";
+import { MeetingDetailsModal } from "@/components/dashboard/meeting-details-modal";
 
 export function TopCustomers() {
   const customers = [
@@ -200,6 +210,69 @@ export function TopCustomers() {
 const taskFilterOptions = ["Daily", "Weekly", "Monthly"] as const;
 type TaskFilter = (typeof taskFilterOptions)[number];
 
+const TASK_COLORS = ["#7BB6B8", "#D086E6"] as const;
+
+function toDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatTimeLabel(value: string | null): string {
+  if (!value) {
+    return "--";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "--";
+  }
+
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatPipelineLabel(status: string): string {
+  return status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatRemainingTime(value: string | null): string {
+  if (!value) {
+    return "Starting soon";
+  }
+
+  const start = new Date(value);
+  if (Number.isNaN(start.getTime())) {
+    return "Starting soon";
+  }
+
+  const diffMs = start.getTime() - Date.now();
+  if (diffMs <= 0) {
+    return "In progress";
+  }
+
+  const totalMinutes = Math.floor(diffMs / 60000);
+  if (totalMinutes < 60) {
+    return `${totalMinutes}m left`;
+  }
+
+  const totalHours = Math.floor(totalMinutes / 60);
+  if (totalHours < 24) {
+    const remMinutes = totalMinutes % 60;
+    return remMinutes === 0 ? `${totalHours}h left` : `${totalHours}h ${remMinutes}m left`;
+  }
+
+  const days = Math.floor(totalHours / 24);
+  const remHours = totalHours % 24;
+  return remHours === 0 ? `${days}d left` : `${days}d ${remHours}h left`;
+}
+
 export function WeeklyTasks() {
   const [filter, setFilter] = useState<TaskFilter>("Daily");
 
@@ -244,7 +317,7 @@ export function WeeklyTasks() {
         <div className="w-full h-px bg-[#D9D6D6] mb-3.75" />
 
         <div className="mb-6.5 relative px-5">
-          <p className="text-[14px] font-medium text-[#34373C]">Ongoing Task</p>
+          <p className="text-[14px] font-medium text-[#34373C]">Ongoing tasks</p>
 
           <div className="w-full h-5 bg-[#F5F5F5] rounded-full p-1.5 shadow-inner ring-1 ring-dash-dark/5 mt-6.5">
             <div className="w-[20%] h-full bg-[#FD6046] rounded-full shadow-lg relative">
@@ -266,7 +339,7 @@ export function WeeklyTasks() {
         </div>
 
         <button className="w-full bg-[#D056DC] text-white py-5 rounded-4xl mb-4 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
-          View All Task
+          View All tasks
           <Image
             src={ArrowUp}
             alt="Arrow Up Right Icon"
@@ -280,49 +353,56 @@ export function WeeklyTasks() {
   );
 }
 
-const AGENT_MOCK_TASKS = [
-  {
-    date: "2026-05-12",
-    tasks: [
-      { time: "10 am", title: "Guest: John Doe", desc: "Consultation meeting.", color: "#7BB6B8" },
-    ]
-  },
-  {
-    date: "2026-05-13",
-    tasks: [
-      { time: "11 am", title: "Guest: Sarah Connor", desc: "Project briefing.", color: "#D086E6" },
-    ]
-  },
-  {
-    date: "2026-05-14",
-    tasks: [
-      { time: "9 am", title: "Guest: Lane wade", desc: "Lorem ipsum dolor sit amet consectetur.", color: "#7BB6B8" },
-      { time: "2 pm", title: "Guest: Bayo Williams", desc: "Lorem ipsum dolor sit amet consectetur.", color: "#D086E6" },
-    ]
-  },
-  {
-    date: "2026-05-15",
-    tasks: [
-      { time: "3 pm", title: "Guest: Mike Tyson", desc: "Training session.", color: "#7BB6B8" },
-    ]
-  },
-  {
-    date: "2026-05-16",
-    tasks: [
-      { time: "8 am", title: "Guest: Elon Musk", desc: "Rocket launch prep.", color: "#D086E6" },
-    ]
-  }
-];
-
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"
 ];
 
 export function WeeklyTasksAgents() {
+  const router = useRouter();
   const [filter, setFilter] = useState<TaskFilter>("Daily");
-  const [selectedDate, setSelectedDate] = useState(new Date("2026-05-14"));
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [showCreateMeetingModal, setShowCreateMeetingModal] = useState(false);
+  const [meetingModalKey, setMeetingModalKey] = useState(0);
+  const [selectedMeetingId, setSelectedMeetingId] = useState<number | null>(null);
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const basePath = role === "agent" ? "/agent" : "/admin";
+
+  const { data: overview } = useDashboardOverview({
+    company_id: companyId ?? undefined,
+    basePath,
+  });
+
+  // Fetch integration status so the widget can reflect organization-level setup state
+  const integrationStatusQuery = useCalendarIntegrationStatus(companyId ?? undefined);
+  const calendarConnected = integrationStatusQuery.data?.connected === true;
+  const canAccessMeetings = canAccessMeetingCreation(role, calendarConnected);
+  const isCreateMeetingDisabled = !canAccessMeetings;
+  const createMeetingTooltip = getMeetingCreationTooltip(role, calendarConnected);
+  const meetingAccessNotice = getMeetingAccessNotice(role, calendarConnected);
+  const meetingAccessNoticeTitle = canConnectGoogleCalendar(role) && !calendarConnected
+    ? "Google Calendar Not Connected"
+    : "Meeting creation unavailable";
+
+  const { data: meetingsData } = useMeetings({
+    company_id: companyId ?? undefined,
+    per_page: 100,
+  });
+
+  const selectedMeetingSummary = useMemo(() => {
+    if (selectedMeetingId === null) {
+      return null;
+    }
+
+    return (meetingsData?.meetings ?? []).find((meeting) => meeting.id === selectedMeetingId) ?? null;
+  }, [meetingsData?.meetings, selectedMeetingId]);
+
+  const meetingDetailQuery = useMeetingDetail(selectedMeetingId ?? 0, companyId ?? undefined);
+  const selectedMeeting = selectedMeetingId !== null
+    ? meetingDetailQuery.data ?? selectedMeetingSummary
+    : null;
 
   const formattedDate = selectedDate.toLocaleDateString("en-US", {
     weekday: "short",
@@ -330,8 +410,45 @@ export function WeeklyTasksAgents() {
     day: "numeric",
   });
 
-  const dateString = selectedDate.toISOString().split("T")[0];
-  const dayTasks = AGENT_MOCK_TASKS.find(t => t.date === dateString)?.tasks || [];
+  const upcomingMeetings = useMemo(() => {
+    const now = Date.now();
+
+    return (meetingsData?.meetings ?? [])
+      .filter((meeting) => meeting.status === "scheduled" && Boolean(meeting.start_at))
+      .map((meeting) => {
+        const start = new Date(meeting.start_at);
+        return {
+          meeting,
+          startsAt: start,
+        };
+      })
+      .filter(({ startsAt }) => !Number.isNaN(startsAt.getTime()) && startsAt.getTime() >= now)
+      .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
+      .slice(0, 2)
+      .map(({ meeting }, index) => ({
+        id: meeting.id,
+        time: formatTimeLabel(meeting.start_at),
+        date: new Date(meeting.start_at).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
+        title: meeting.title,
+        organizer: meeting.creator?.name ?? "Organizer",
+        status: formatPipelineLabel(meeting.status),
+        remaining: formatRemainingTime(meeting.start_at ?? null),
+        color: TASK_COLORS[index % TASK_COLORS.length],
+      }));
+  }, [meetingsData?.meetings]);
+  const ongoingTask = overview?.ongoing_tasks?.[0] ?? null;
+  const progressPercent = Math.max(
+    0,
+    Math.min(100, Number(ongoingTask?.progress_percent ?? 0))
+  );
+  const agentName = ongoingTask?.agent?.name ?? "No active task";
+  const badgeText = ongoingTask
+    ? `${agentName.split(" ")[0]} ... ${Math.round(progressPercent)}%`
+    : "No Active Task";
+  const tasksRoute = role === "agent" ? "/agent/tasks" : "/projects?tab=tasks";
 
   const handlePrevDay = () => {
     const prev = new Date(selectedDate);
@@ -357,7 +474,7 @@ export function WeeklyTasksAgents() {
       <div className="ticket-cutout w-full lg:w-89 rounded-[20px] pt-4 px-4 sm:px-7 text-dash-dark h-fit flex flex-col relative border border-dash-dark/5 bg-white mt-4 lg:mt-20">
         <div className="flex justify-between items-start mb-3 px-[11.5px]">
           <h3 className="text-dash-dark font-medium text-sm tracking-tight">
-            Self Task
+            Meeting
           </h3>
           <FilterSelect
             value={filter}
@@ -367,15 +484,15 @@ export function WeeklyTasksAgents() {
         </div>
 
         <div className="flex items-center justify-between bg-[#F8F8F8] rounded-full px-4 py-2 mb-2 mx-2 relative">
-          <button 
+          <button
             onClick={handlePrevDay}
             className="text-gray-400 hover:text-dash-dark transition-colors"
           >
             <ChevronLeft size={18} />
           </button>
-          
+
           <div className="relative">
-            <button 
+            <button
               onClick={() => setShowMonthPicker(!showMonthPicker)}
               className="flex items-center gap-2 text-[12px] font-medium text-[#09232D] hover:opacity-70 transition-all"
             >
@@ -401,7 +518,7 @@ export function WeeklyTasksAgents() {
             )}
           </div>
 
-          <button 
+          <button
             onClick={handleNextDay}
             className="text-gray-400 hover:text-dash-dark transition-colors"
           >
@@ -409,14 +526,15 @@ export function WeeklyTasksAgents() {
           </button>
         </div>
 
-        <div className="space-y-3 mb-4 min-h-[160px] flex flex-col justify-center">
-          {dayTasks.length > 0 ? (
+        <div className="space-y-3 mb-4 min-h-[100px] flex flex-col justify-center">
+          {upcomingMeetings.length > 0 ? (
             <div className="space-y-3 w-full">
-              {dayTasks.map((task, i) => (
-                <div 
-                  key={i} 
-                  className="rounded-[40px] px-4 py-3 flex items-center gap-4 text-white animate-in fade-in slide-in-from-right-4 duration-300 w-full"
+              {upcomingMeetings.map((task, i) => (
+                <div
+                  key={task.id}
+                  className="rounded-[40px] px-4 py-3 flex items-center gap-4 text-white animate-in fade-in slide-in-from-right-4 duration-300 w-full cursor-pointer"
                   style={{ backgroundColor: task.color }}
+                  onClick={() => setSelectedMeetingId(task.id)}
                 >
                   <div className="text-[16px] font-bold whitespace-nowrap min-w-[50px]">
                     {task.time}
@@ -426,42 +544,78 @@ export function WeeklyTasksAgents() {
                       {task.title}
                     </p>
                     <p className="text-[10px] opacity-80 leading-tight mt-0.5">
-                      {task.desc}
+                      {task.date} • Organizer: {task.organizer}
+                    </p>
+                    <p className="text-[10px] opacity-80 leading-tight mt-0.5">
+                      Status: {task.status} • {task.remaining}
                     </p>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-10 text-gray-300 w-full grow">
-              <p className="text-[11px] font-medium">No tasks for this day</p>
-            </div>
+            meetingAccessNotice && !integrationStatusQuery.isPending ? (
+              <div className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-5 text-amber-800 w-full">
+                <p className="text-[13px] font-bold text-amber-900">{meetingAccessNoticeTitle}</p>
+                <p className="mt-1 text-[11px] leading-relaxed">
+                  {meetingAccessNotice}
+                </p>
+              </div>
+            ) : (
+              <div
+                className="rounded-[40px] px-4 py-5 flex items-center justify-center text-white w-full"
+                style={{ backgroundColor: "#7BB6B8" }}
+              >
+                <p className="text-[13px] font-semibold opacity-90">No meetings for this day</p>
+              </div>
+            )
           )}
         </div>
 
-        {/* <div className="flex justify-end mb-4 px-4">
-          <button className="w-10 h-10 rounded-full border-2 border-[#7BB6B8] flex items-center justify-center text-[#7BB6B8] hover:bg-[#7BB6B8]/5 transition-all">
-            <Plus size={24} />
-          </button>
-        </div> */}
+        <div className="flex justify-end mb-2 px-4">
+          {isCreateMeetingDisabled && createMeetingTooltip ? (
+            <CalendarTooltip message={createMeetingTooltip} side="left">
+              <button
+                disabled
+                className="w-10 h-10 rounded-full border-2 border-[#7BB6B8] flex items-center justify-center text-[#7BB6B8] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus size={24} />
+              </button>
+            </CalendarTooltip>
+          ) : (
+            <button
+              disabled={isCreateMeetingDisabled}
+              onClick={() => { setMeetingModalKey((k) => k + 1); setShowCreateMeetingModal(true); }}
+              className="w-10 h-10 rounded-full border-2 border-[#7BB6B8] flex items-center justify-center text-[#7BB6B8] hover:bg-[#7BB6B8]/5 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Plus size={24} />
+            </button>
+          )}
+        </div>
 
         <div className="w-full h-px bg-[#D9D6D6] mb-2.75" />
 
-        <div className="mb-6.5 relative px-5">
-          <p className="text-[14px] font-medium text-[#34373C]">Ongoing Task</p>
+        <div className="mb-4 relative px-5">
+          <p className="text-[14px] font-medium text-[#34373C]">Ongoing tasks</p>
 
           <div className="w-full h-5 bg-[#F5F5F5] rounded-full p-1.5 shadow-inner ring-1 ring-dash-dark/5 mt-6.5">
-            <div className="w-[42%] h-full bg-[#FD6046] rounded-full shadow-lg relative">
+            <div className="h-full bg-[#FD6046] rounded-full shadow-lg relative" style={{ width: `${progressPercent}%` }}>
               <div className="absolute -top-6 -right-1.5 flex items-center gap-1.5  text-white rounded-full text-[9px] font-medium whitespace-nowrap -translate-y-1">
-                <Image
-                  src="/avatars/male-avatar.png"
-                  alt="Attendee"
-                  width={16}
-                  height={16}
-                  className="w-4 h-4 object-cover rounded-full overflow-hidden z-20"
-                />
+                {ongoingTask?.agent?.avatar_url ? (
+                  <Image
+                    src={ongoingTask.agent.avatar_url}
+                    alt={ongoingTask.agent.name}
+                    width={16}
+                    height={16}
+                    className="w-4 h-4 object-cover rounded-full overflow-hidden z-20"
+                  />
+                ) : (
+                  <div className="w-4 h-4 rounded-full bg-white text-[#FD6046] text-[7px] font-bold flex items-center justify-center z-20">
+                    {ongoingTask?.agent?.initials ?? "A"}
+                  </div>
+                )}
                 <div className="bg-[#FD6046] leading-1.5 py-px px-0.75 text-[3px] rounded-r-[3px] absolute left-3.5">
-                  Alex ... 42%
+                  {badgeText}
                 </div>
                 <div className="absolute rotate-180 w-1.5 h-1.75 -bottom-1 right-1 bg-[#FD6046] [clip-path:polygon(50%_0%,100%_100%,0%_100%)]" />
               </div>
@@ -469,8 +623,8 @@ export function WeeklyTasksAgents() {
           </div>
         </div>
 
-        <button className="w-full bg-[#8B2FA1] text-white py-5 rounded-4xl mb-4 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
-          View All Task
+        <button onClick={() => router.push(tasksRoute)} className="w-full bg-[#8B2FA1] text-white py-5 rounded-4xl mb-2 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
+          View All tasks
           <Image
             src={ArrowUp}
             alt="Arrow Up Right Icon"
@@ -480,13 +634,44 @@ export function WeeklyTasksAgents() {
           />
         </button>
       </div>
+
+      <ScheduleMeetingModal
+        key={meetingModalKey}
+        isOpen={showCreateMeetingModal}
+        onClose={() => setShowCreateMeetingModal(false)}
+        defaultDate={selectedDate}
+        title="Schedule Meeting"
+        sourcePage="dashboard"
+      />
+
+      <MeetingDetailsModal
+        isOpen={selectedMeetingId !== null}
+        onClose={() => setSelectedMeetingId(null)}
+        meeting={selectedMeeting ?? null}
+      />
     </div>
   );
 }
 
 export function CRMPipeline() {
+  const router = useRouter();
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const basePath = role === "agent" ? "/agent" : "/admin";
+  const crmRoute = role === "agent" ? "/agent/crm" : "/crm";
+
+  const { data: overview } = useDashboardOverview({
+    company_id: companyId ?? undefined,
+    basePath,
+  });
+
+  const topStages = useMemo(() => {
+    const stages = overview?.crm_pipeline_snapshot?.stages ?? [];
+    return [...stages].sort((a, b) => b.count - a.count).slice(0, 3);
+  }, [overview?.crm_pipeline_snapshot?.stages]);
+
   return (
-    <div className="py-3.75 px-2.75 pb-10 bg-[#D056DC] h-fit rounded-[20px] text-white relative overflow-hidden mb-2.5 shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
+    <div onClick={() => router.push(crmRoute)} className="py-6 px-2.75 pb-10 bg-[#D056DC] h-fit rounded-[20px] text-white relative overflow-hidden mb-2.5 shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026] cursor-pointer">
       <div className="z-20 relative">
         <div className="w-12.75 h-12.75 rounded-[50px] bg-[#D056DC] backdrop-blur-xl flex items-center justify-center mb-2.25 drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)]">
           <Image
@@ -505,6 +690,22 @@ export function CRMPipeline() {
           Get an intelligent review of your current leads, outreach performance,
           and engagement trends.
         </p>
+
+        {/* <div className="mt-3 space-y-1.5">
+          {topStages.length === 0 ? (
+            <p className="text-[8px] text-white/85">No pipeline data available yet.</p>
+          ) : (
+            topStages.map((stage) => (
+              <div
+                key={stage.status}
+                className="flex items-center justify-between rounded-md bg-white/15 px-2 py-1"
+              >
+                <span className="text-[8px] font-medium">{formatPipelineLabel(stage.status)}</span>
+                <span className="text-[8px] font-bold">{stage.count}</span>
+              </div>
+            ))
+          )}
+        </div> */}
       </div>
       <div className="absolute w-40 h-51.5 bg-linear-to-l from-[#C248CE] to-[#F7ABFF] -left-10 -top-10 rounded-[50%_50%_45%_45%/60%_60%_40%_40%] transition-all duration-700 z-0" />
     </div>
@@ -513,7 +714,7 @@ export function CRMPipeline() {
 
 export function AIWorkspace() {
   return (
-    <div className="py-3.75 px-2.75 bg-[#7BB6B8] h-fit rounded-[20px] text-white relative overflow-hidden shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
+    <div className="py-4 px-2.75 bg-[#7BB6B8] h-fit rounded-[20px] text-white relative overflow-hidden shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
       <div className="z-20 relative text-[#09232D]">
         <div className="w-12.75 h-12.75 rounded-[50px] bg-[#09232D] backdrop-blur-xl flex items-center justify-center mb-2.25 drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)]">
           <Image

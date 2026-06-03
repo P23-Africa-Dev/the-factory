@@ -1,167 +1,934 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
-import { Search, MoreHorizontal, RefreshCw, MessageSquare, X } from 'lucide-react';
+import { Search, Radio, RefreshCcw, MoreHorizontal } from 'lucide-react';
+import {
+  getGoogleMapsPublicApiKey,
+  MAPBOX_PUBLIC_TOKEN_ENV,
+  createMapboxTransformRequest,
+  getMapboxPublicToken,
+} from '@/lib/config/public-env';
+import { useEffectiveMapProvider, type EffectiveMapProviderState } from '@/hooks/use-effective-map-provider';
+import { loadGoogleMapsApi } from '@/lib/map/google-loader';
+import { useTrackingStore } from '@/store/tracking';
+import { useTrackingWebSocket } from '@/hooks/use-tracking-ws';
+import { RouteHistoryPanel } from '@/components/map/RouteHistoryPanel';
+import type { LiveTaskState } from '@/types/tracking';
+import {
+  areSamePoint,
+  buildTaskTrail,
+  createAgentMarkerElement,
+  createPulseMarkerElement,
+  createStaticMarkerElement,
+  getAgentInitials,
+  resolveVisualTaskState,
+  sanitizePolyline,
+  updateAgentMarkerElement,
+  VISUAL_PALETTE,
+  type VisualTaskState,
+} from '@/lib/tracking/map-visualization';
+import { fetchDirectionsRoute, clearDirectionsCache } from '@/lib/tracking/directions';
+import {
+  getMapboxNavigationStyle,
+  resolveMapAppearance,
+  type MapAppearance,
+} from '@/lib/map/style-mode';
+import {
+  OPERATIONAL_STATUS_META,
+  resolveOperationalStatusFromTask,
+} from '@/lib/tracking/operational-status';
+import {
+  getCountryFallbackViewport,
+  resolvePrivacySafeViewport,
+} from '@/lib/map/default-viewport';
 
-interface Agent {
-  id: string;
-  name: string;
-  address: string;
-  lat: number;
-  lng: number;
-  avatar: string;
-  status: 'active' | 'idle';
-  zone: string;
+const STALE_MS = 2 * 60_000;
+const MARKER_ANIMATION_MS = 700;
+const SEARCH_DEBOUNCE_MS = 280;
+
+type GoogleLatLng = { lat: number; lng: number };
+
+type GoogleLatLngBoundsLike = {
+  extend: (point: GoogleLatLng) => void;
+};
+
+type GoogleMapLike = {
+  setCenter: (point: GoogleLatLng) => void;
+  setZoom: (zoom: number) => void;
+  panTo: (point: GoogleLatLng) => void;
+  getZoom: () => number;
+  fitBounds: (bounds: GoogleLatLngBoundsLike, padding?: number) => void;
+};
+
+type GooglePolylineLike = {
+  setMap: (map: GoogleMapLike | null) => void;
+  setPath: (path: GoogleLatLng[]) => void;
+  setOptions: (options: Record<string, unknown>) => void;
+};
+
+type GoogleMarkerLike = {
+  setMap: (map: GoogleMapLike | null) => void;
+  setPosition: (point: GoogleLatLng) => void;
+  setIcon: (icon: Record<string, unknown>) => void;
+  setLabel: (label: Record<string, unknown>) => void;
+  addListener: (event: string, handler: () => void) => void;
+};
+
+type GoogleMapsNamespaceLike = {
+  maps: {
+    Map: new (container: HTMLElement, options: Record<string, unknown>) => GoogleMapLike;
+    Marker: new (options: Record<string, unknown>) => GoogleMarkerLike;
+    Polyline: new (options: Record<string, unknown>) => GooglePolylineLike;
+    LatLngBounds: new () => GoogleLatLngBoundsLike;
+    SymbolPath: {
+      CIRCLE: unknown;
+    };
+  };
+};
+
+function isTaskStale(lastEventAt: string, nowMs: number): boolean {
+  if (!lastEventAt || !nowMs) return false;
+  return nowMs - new Date(lastEventAt).getTime() > STALE_MS;
 }
 
-const INITIAL_AGENTS: Agent[] = [
-  { id: '1', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.6018, lng: 3.3515, avatar: '/avatars/female-avatar.png', status: 'active', zone: 'Ikeja LGA' },
-  { id: '2', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.5841, lng: 3.3705, avatar: '/avatars/female-avatar.png', status: 'idle',   zone: 'Agege LGA' },
-  { id: '3', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.5622, lng: 3.3210, avatar: '/avatars/female-avatar.png', status: 'idle',   zone: 'Alimosho LGA' },
-  { id: '4', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.6205, lng: 3.3850, avatar: '/avatars/female-avatar.png', status: 'idle',   zone: 'Kosofe LGA' },
-  { id: '5', name: 'Lane Wade', address: '28, Akinlusi way..', lat: 6.5980, lng: 3.3120, avatar: '/avatars/female-avatar.png', status: 'active', zone: 'Ikeja LGA' },
-];
+function getStatusLabel(status: LiveTaskState['status']): string {
+  if (status === 'near_destination') return 'Near destination';
+  if (status === 'arrived') return 'Arrived';
+  if (status === 'completed') return 'Completed';
+  return 'On field';
+}
 
-const ROUTE_COORDS: [number, number][] = [
-  [3.3515, 6.6018], [3.3600, 6.5950], [3.3650, 6.5850],
-  [3.3705, 6.5841], [3.3720, 6.5760], [3.3730, 6.5700], [3.3850, 6.6205],
-];
+function formatMetricDistance(meters: number | null | undefined): string {
+  if (meters == null || Number.isNaN(meters)) return '--';
+  if (meters < 1000) return `${Math.round(meters)} m`;
+  return `${(meters / 1000).toFixed(1)} km`;
+}
 
-function jitter() { return (Math.random() - 0.5) * 0.0008; }
+function formatSpeed(speedMps: number | null | undefined): string {
+  if (speedMps == null || Number.isNaN(speedMps)) return '--';
+  return `${(speedMps * 3.6).toFixed(1)} km/h`;
+}
 
-function createMarkerEl(agent: Agent): HTMLElement {
-  const el = document.createElement('div');
-  el.style.cssText = 'display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;';
-  el.innerHTML = `
-    <svg width="30" height="36" viewBox="0 0 30 36" fill="none">
-      <path d="M15 0C6.716 0 0 6.716 0 15c0 9.941 13.5 21 15 21S30 24.941 30 15C30 6.716 23.284 0 15 0z" fill="#EF4444"/>
-      <circle cx="15" cy="14" r="6" fill="white"/>
-    </svg>
-    <div style="background:white;border-radius:20px;padding:3px 8px 3px 4px;display:flex;align-items:center;gap:5px;box-shadow:0 2px 8px rgba(0,0,0,0.15);margin-top:4px;white-space:nowrap;">
-      <img src="${agent.avatar}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;border:1.5px solid #e5e7eb;"/>
-      <div style="line-height:1.2;">
-        <div style="font-size:10px;font-weight:700;color:#0B1215;">${agent.name}</div>
-        <div style="font-size:8px;color:#9ca3af;">Active at Kemsi Street</div>
+function formatEta(etaSeconds: number | null | undefined): string {
+  if (etaSeconds == null || etaSeconds < 0) return '--';
+  if (etaSeconds < 60) return '<1 min';
+  const minutes = Math.round(etaSeconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem > 0 ? `${hours}h ${rem}m` : `${hours}h`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function buildAgentPopupHtml(params: { name: string; avatarUrl?: string; location: string; statusLabel: string }): string {
+  const name = escapeHtml(params.name || 'Agent');
+  const location = escapeHtml(params.location || 'No location details');
+  const statusLabel = escapeHtml(params.statusLabel || 'On field');
+  const initials = escapeHtml(getAgentInitials(params.name) ?? '');
+  const avatarUrl = params.avatarUrl ? escapeHtml(params.avatarUrl) : '';
+
+  return `
+    <div style="display:flex; align-items:center; gap:12px; min-width:240px; max-width:320px; padding:12px 14px; border-radius:18px; background:rgba(255,255,255,0.96); border:1px solid rgba(148,163,184,0.18); box-shadow:0 18px 48px rgba(15,23,42,0.16); backdrop-filter:blur(18px);">
+      <div style="width:52px; height:52px; border-radius:9999px; overflow:hidden; background:#E2E8F0; flex:0 0 auto; display:flex; align-items:center; justify-content:center;">
+        ${avatarUrl ? `<img src="${avatarUrl}" alt="${name} avatar" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
+        <div style="width:100%; height:100%; display:${avatarUrl ? 'none' : 'flex'}; align-items:center; justify-content:center; font-size:14px; font-weight:800; color:#0F172A; background:linear-gradient(135deg, #E2E8F0, #F8FAFC);">${initials || '•'}</div>
+      </div>
+      <div style="min-width:0; flex:1; font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+        <div style="font-size:14px; font-weight:700; color:#0F172A; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
+        <div style="margin-top:4px; font-size:12px; line-height:1.45; color:#475569; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${location}</div>
+        <div style="margin-top:6px; font-size:11px; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; color:#0EA5E9;">${statusLabel}</div>
       </div>
     </div>
   `;
-  return el;
+}
+
+function buildDestinationPopupHtml(params: { title: string; location: string; statusLabel: string }): string {
+  const title = escapeHtml(params.title || 'Destination');
+  const location = escapeHtml(params.location || 'No location details');
+  const statusLabel = escapeHtml(params.statusLabel || 'Destination');
+
+  return `
+    <div style="min-width:220px; max-width:300px; padding:12px 14px; border-radius:18px; background:rgba(255,255,255,0.96); border:1px solid rgba(148,163,184,0.18); box-shadow:0 18px 48px rgba(15,23,42,0.16); backdrop-filter:blur(18px); font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+      <div style="font-size:14px; font-weight:700; color:#0F172A; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${title}</div>
+      <div style="margin-top:5px; font-size:12px; line-height:1.45; color:#475569; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${location}</div>
+      <div style="margin-top:6px; font-size:11px; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; color:#DC2626;">${statusLabel}</div>
+    </div>
+  `;
+}
+
+function getDestinationMarkerKind(status: LiveTaskState['status']): 'destination' | 'near' | 'arrived' | 'completed' {
+  if (status === 'completed') return 'completed';
+  if (status === 'near_destination') return 'near';
+  if (status === 'arrived') return 'arrived';
+  return 'destination';
+}
+
+function getVisualState(task: LiveTaskState, stale: boolean): VisualTaskState {
+  return resolveVisualTaskState(task.status, stale, task.operationalStatus);
+}
+
+function createUserLocationIndicatorElement() {
+  const root = document.createElement('div');
+  root.style.position = 'relative';
+  root.style.width = '18px';
+  root.style.height = '18px';
+  root.style.borderRadius = '9999px';
+  root.style.display = 'flex';
+  root.style.alignItems = 'center';
+  root.style.justifyContent = 'center';
+  root.style.pointerEvents = 'none';
+
+  root.innerHTML = `
+    <div style="position:absolute; width:40px; height:40px; border-radius:9999px; background:rgba(37,99,235,0.2); animation:dashboard-user-pulse 1.8s ease-out infinite;"></div>
+    <div style="position:absolute; width:24px; height:24px; border-radius:9999px; background:rgba(59,130,246,0.35);"></div>
+    <div style="position:relative; width:18px; height:18px; border-radius:9999px; background:#2563EB; border:3px solid #FFFFFF; box-shadow:0 4px 14px rgba(37,99,235,0.4);"></div>
+    <style>
+      @keyframes dashboard-user-pulse {
+        0% { transform: scale(0.7); opacity: .8; }
+        100% { transform: scale(1.35); opacity: 0; }
+      }
+    </style>
+  `;
+
+  return root;
 }
 
 interface MapViewProps {
   compact?: boolean;
 }
 
-export function MapView({ compact = false }: MapViewProps) {
+function hasUsableTaskPosition(task: LiveTaskState): boolean {
+  return task.lastPosition[0] !== 0 || task.lastPosition[1] !== 0;
+}
+
+export function MapboxMapView({ compact = false, providerState }: MapViewProps & { providerState: EffectiveMapProviderState }) {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const mapRef       = useRef<mapboxgl.Map | null>(null);
-  const markersRef   = useRef<Map<string, mapboxgl.Marker>>(new Map());
-  const agentsRef    = useRef<Agent[]>(INITIAL_AGENTS);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const mapLoadedRef = useRef(false);
+  const originMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
+  const destinationMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
+  const agentMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
+  const markerAnimationsRef = useRef<Map<number, number>>(new Map());
+  const markerPositionRef = useRef<Map<number, [number, number]>>(new Map());
+  const popupRef = useRef<mapboxgl.Popup | null>(null);
+  const pulseMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const userLocationMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const directionRoutesRef = useRef<Map<number, [number, number][]>>(new Map());
 
-  const [agents, setAgents]               = useState<Agent[]>(INITIAL_AGENTS);
-  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
-  const [searchQuery, setSearchQuery]     = useState('');
-  const [mapReady, setMapReady]           = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [appearance, setAppearance] = useState<MapAppearance>(() => resolveMapAppearance());
+  const [placeResults, setPlaceResults] = useState<Array<{ id: string; name: string; center: [number, number] }>>([]);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [historyTask, setHistoryTask] = useState<{ id: number; title: string } | null>(null);
+  // Bumped every 30s to re-evaluate stale status and sync markers
+  const [tick, setTick] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  // Flips true after map 'load' fires so the sync effect knows the map is ready
+  const [mapVersion, setMapVersion] = useState(0);
+  const [isInitialHydrating, setIsInitialHydrating] = useState(false);
+  const hoverPopupRef = useRef<mapboxgl.Popup | null>(null);
 
-  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "pk.eyJ1IjoiZWxpamFoc2NyaXB0ZGV2IiwiYSI6ImNtbnIzcHhvOTAwM2MycHF3b2JvZG1haG4ifQ.iu2J-8w1siVnexyejD7rjQ";
+  const liveTasks = useTrackingStore((s) => s.liveTasks);
 
-  // ── Init map ────────────────────────────────────────────────────────────────
+  const tasks = useMemo(() => Object.values(liveTasks), [liveTasks]);
+  const hasActiveTaskPositions = useMemo(
+    () => tasks.some((task) => hasUsableTaskPosition(task)),
+    [tasks]
+  );
+  const selectedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
+  const token = getMapboxPublicToken();
+  const internalSearchResults = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    if (!needle) return [] as LiveTaskState[];
+
+    return tasks
+      .filter(
+        (task) =>
+          task.agentName.toLowerCase().includes(needle) ||
+          (task.taskTitle ?? '').toLowerCase().includes(needle) ||
+          (task.projectName ?? '').toLowerCase().includes(needle) ||
+          (task.taskAddress ?? '').toLowerCase().includes(needle) ||
+          String(task.taskId).includes(needle)
+      )
+      .slice(0, 8);
+  }, [searchQuery, tasks]);
+
+  const handleSearchQueryChange = useCallback((value: string) => {
+    setSearchQuery(value);
+
+    if (value.trim().length < 3) {
+      setPlaceResults([]);
+      setSearchBusy(false);
+    }
+  }, []);
+
+  const showHoverPopup = useCallback((position: [number, number], html: string) => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current) return;
+
+    if (!hoverPopupRef.current) {
+      hoverPopupRef.current = new mapboxgl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 18,
+        className: 'custom-dark-popup',
+      });
+    }
+
+    hoverPopupRef.current.setLngLat(position).setHTML(html).addTo(map);
+  }, []);
+
+  const hideHoverPopup = useCallback(() => {
+    hoverPopupRef.current?.remove();
+  }, []);
+
+  const bindHoverPopup = useCallback(
+    (element: HTMLElement, getPosition: () => [number, number], getHtml: () => string) => {
+      if (element.dataset.hoverBound === 'true') return;
+
+      element.dataset.hoverBound = 'true';
+      element.addEventListener('mouseenter', () => showHoverPopup(getPosition(), getHtml()));
+      element.addEventListener('mouseleave', hideHoverPopup);
+    },
+    [hideHoverPopup, showHoverPopup]
+  );
+
+  const animateMarkerTo = useCallback((taskId: number, marker: mapboxgl.Marker, target: [number, number]) => {
+    const cached = markerPositionRef.current.get(taskId);
+    const current = cached ?? [marker.getLngLat().lng, marker.getLngLat().lat] as [number, number];
+
+    if (areSamePoint(current, target)) {
+      marker.setLngLat(target);
+      markerPositionRef.current.set(taskId, target);
+      return;
+    }
+
+    const existingFrame = markerAnimationsRef.current.get(taskId);
+    if (existingFrame) {
+      cancelAnimationFrame(existingFrame);
+      markerAnimationsRef.current.delete(taskId);
+    }
+
+    const startedAt = performance.now();
+
+    const step = (frameNow: number) => {
+      const progress = Math.min((frameNow - startedAt) / MARKER_ANIMATION_MS, 1);
+      const eased = progress < 0.5
+        ? 2 * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+      const nextLng = current[0] + (target[0] - current[0]) * eased;
+      const nextLat = current[1] + (target[1] - current[1]) * eased;
+      marker.setLngLat([nextLng, nextLat]);
+
+      if (progress < 1) {
+        const id = requestAnimationFrame(step);
+        markerAnimationsRef.current.set(taskId, id);
+        return;
+      }
+
+      markerAnimationsRef.current.delete(taskId);
+      markerPositionRef.current.set(taskId, target);
+    };
+
+    const firstFrame = requestAnimationFrame(step);
+    markerAnimationsRef.current.set(taskId, firstFrame);
+  }, []);
+
+  // ── Staleness clock (state, not Date.now() in render — react-hooks/purity) ─
+  useEffect(() => {
+    const bump = () => {
+      setNowMs(Date.now());
+      setTick((t) => t + 1);
+      setAppearance(resolveMapAppearance());
+    };
+    bump();
+    const iv = setInterval(bump, 30_000);
+    return () => clearInterval(iv);
+  }, []);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+
+    if (!query || query.length < 3 || !token || compact) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      let cancelled = false;
+      setSearchBusy(true);
+
+      fetch(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&autocomplete=true&limit=6`
+      )
+        .then(async (res) => {
+          if (!res.ok) {
+            return [] as Array<{ id: string; name: string; center: [number, number] }>;
+          }
+
+          const json = await res.json();
+          const features = Array.isArray(json?.features) ? json.features : [];
+
+          return features
+            .filter((feature: unknown): feature is { id: string; place_name: string; center: [number, number] } => {
+              if (!feature || typeof feature !== 'object') return false;
+              const candidate = feature as { center?: unknown };
+              return Array.isArray(candidate.center) && candidate.center.length === 2;
+            })
+            .map((feature: { id: string; place_name: string; center: [number, number] }) => ({
+              id: feature.id,
+              name: feature.place_name,
+              center: [feature.center[0], feature.center[1]] as [number, number],
+            }));
+        })
+        .then((results) => {
+          if (cancelled) return;
+          setPlaceResults(results);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setPlaceResults([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSearchBusy(false);
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [compact, searchQuery, token]);
+
+  // Fly to agent when sidebar selection changes (refs only in effects).
+  useEffect(() => {
+    if (selectedTaskId == null || !mapRef.current) return;
+    const task = useTrackingStore.getState().liveTasks[selectedTaskId];
+    if (!task) return;
+    const [lng, lat] = task.lastPosition;
+    mapRef.current.flyTo({ center: [lng, lat], zoom: 15.5, speed: 1.2 });
+  }, [selectedTaskId, mapVersion]);
+
+  // Handle Popup & Pulse Marker for Selected Task
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current) return;
+
+    if (!selectedTask) {
+      if (popupRef.current) {
+        popupRef.current.remove();
+        popupRef.current = null;
+      }
+      if (pulseMarkerRef.current) {
+        pulseMarkerRef.current.remove();
+        pulseMarkerRef.current = null;
+      }
+      return;
+    }
+
+    const { lastPosition, agentName, agentAvatarUrl, taskTitle, taskAddress } = selectedTask;
+
+    if (!pulseMarkerRef.current) {
+      const el = createPulseMarkerElement();
+      pulseMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        .setLngLat(lastPosition)
+        .addTo(map);
+    } else {
+      pulseMarkerRef.current.setLngLat(lastPosition);
+    }
+
+    if (!popupRef.current) {
+      popupRef.current = new mapboxgl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        className: 'custom-dark-popup',
+        offset: 20,
+      }).addTo(map);
+    }
+
+    const popupHtml = buildAgentPopupHtml({
+      name: agentName,
+      avatarUrl: agentAvatarUrl,
+      location: taskAddress || taskTitle || 'No location details',
+      statusLabel: getStatusLabel(selectedTask.status),
+    });
+    popupRef.current.setLngLat(lastPosition).setHTML(popupHtml);
+  }, [selectedTask, mapVersion]);
+
+  // ── Init map ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainer.current || mapRef.current || !token) return;
-
     mapboxgl.accessToken = token;
+    const initialViewport = getCountryFallbackViewport();
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/light-v11',
-      center: [3.3600, 6.5950],
-      zoom: compact ? 11.5 : 12.5,
+      style: getMapboxNavigationStyle(appearance),
+      center: initialViewport.center,
+      zoom: compact ? Math.max(initialViewport.zoom, 5.4) : initialViewport.zoom,
       attributionControl: false,
+      transformRequest: createMapboxTransformRequest(),
       ...(compact && { interactive: false }),
     });
-
     mapRef.current = map;
 
     map.on('load', () => {
-      if (!compact) {
-        // Route line
-        map.addSource('route', {
-          type: 'geojson',
-          data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: ROUTE_COORDS } },
-        });
-        map.addLayer({
-          id: 'route-line', type: 'line', source: 'route',
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: { 'line-color': '#3B82F6', 'line-width': 10, 'line-opacity': 0.9 },
-        });
-
-        // Destination pulse
-        const destEl = document.createElement('div');
-        destEl.innerHTML = `
-          <style>.dest-pulse{animation:destpulse 2s infinite}@keyframes destpulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.2);opacity:.7}}</style>
-          <div class="dest-pulse" style="width:44px;height:44px;border-radius:50%;background:rgba(199,119,255,0.15);border:5px solid rgba(199,119,255,0.4);display:flex;align-items:center;justify-content:center;">
-            <div style="width:14px;height:14px;border-radius:50%;background:#9D4EDD;border:2px solid white;"></div>
-          </div>
-        `;
-        new mapboxgl.Marker({ element: destEl, anchor: 'center' }).setLngLat([3.4050, 6.6300]).addTo(map);
-
-        // Navigation arrow
-        const navEl = document.createElement('div');
-        navEl.innerHTML = `
-          <div style="width:34px;height:34px;border-radius:50%;background:#3B82F6;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(59,130,246,0.5);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>
-          </div>
-        `;
-        new mapboxgl.Marker({ element: navEl, anchor: 'center' }).setLngLat([3.3750, 6.5760]).addTo(map);
-      }
-
-      // Agent markers
-      agentsRef.current.forEach((agent) => {
-        const el = createMarkerEl(agent);
-        if (!compact) el.addEventListener('click', () => setSelectedAgent(agent));
-        const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
-          .setLngLat([agent.lng, agent.lat])
-          .addTo(map);
-        markersRef.current.set(agent.id, marker);
+      map.addSource('live-routes', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'route-lines-casing',
+        type: 'line',
+        source: 'live-routes',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#0095FF',
+          'line-width': 12,
+          'line-opacity': 0.3,
+        },
+      });
+      map.addLayer({
+        id: 'route-lines-main',
+        type: 'line',
+        source: 'live-routes',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#0095FF',
+          'line-width': 8,
+          'line-opacity': 1,
+        },
       });
 
-      setMapReady(true);
+      // Forward route layer: road-following path from agent → destination
+      map.addSource('forward-routes', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'forward-route-casing',
+        type: 'line',
+        source: 'forward-routes',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#0095FF',
+          'line-width': 12,
+          'line-opacity': 0.25,
+        },
+      });
+      map.addLayer({
+        id: 'forward-route-main',
+        type: 'line',
+        source: 'forward-routes',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#0095FF',
+          'line-width': 8,
+          'line-opacity': 0.9,
+        },
+      });
+
+      mapLoadedRef.current = true;
+      setMapVersion((v) => v + 1);
     });
 
-    return () => { map.remove(); mapRef.current = null; };
-  }, [token, compact]);
+    return () => {
+      mapLoadedRef.current = false;
+      markerAnimationsRef.current.forEach((frameId) => cancelAnimationFrame(frameId));
+      markerAnimationsRef.current.clear();
+      markerPositionRef.current.clear();
 
-  // ── Animate agents ──────────────────────────────────────────────────────────
+      originMarkersRef.current.forEach((marker) => marker.remove());
+      destinationMarkersRef.current.forEach((marker) => marker.remove());
+      agentMarkersRef.current.forEach((marker) => marker.remove());
+      originMarkersRef.current.clear();
+      destinationMarkersRef.current.clear();
+      agentMarkersRef.current.clear();
+
+      if (popupRef.current) popupRef.current.remove();
+      if (pulseMarkerRef.current) pulseMarkerRef.current.remove();
+      if (userLocationMarkerRef.current) userLocationMarkerRef.current.remove();
+      popupRef.current = null;
+      pulseMarkerRef.current = null;
+      userLocationMarkerRef.current = null;
+      if (hoverPopupRef.current) hoverPopupRef.current.remove();
+      hoverPopupRef.current = null;
+      directionRoutesRef.current.clear();
+      clearDirectionsCache();
+
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [token, compact, appearance]);
+
   useEffect(() => {
-    if (!mapReady || compact) return;
-    const interval = setInterval(() => {
-      setAgents((prev) => {
-        const next = prev.map((a) => ({ ...a, lat: a.lat + jitter(), lng: a.lng + jitter() }));
-        agentsRef.current = next;
-        next.forEach((a) => markersRef.current.get(a.id)?.setLngLat([a.lng, a.lat]));
-        return next;
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current || hasActiveTaskPositions) {
+      return;
+    }
+
+    let cancelled = false;
+
+    resolvePrivacySafeViewport().then((viewport) => {
+      if (cancelled || !mapRef.current) {
+        return;
+      }
+
+      const stillIdle = Object.values(useTrackingStore.getState().liveTasks).every(
+        (task) => !hasUsableTaskPosition(task)
+      );
+
+      if (!stillIdle) {
+        return;
+      }
+
+      mapRef.current.easeTo({
+        center: viewport.center,
+        zoom: compact ? Math.max(viewport.zoom - 0.6, 5.4) : viewport.zoom,
+        duration: 900,
       });
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [mapReady]);
 
-  // ── Fly to agent ────────────────────────────────────────────────────────────
-  const handleAgentClick = useCallback((agent: Agent) => {
-    setSelectedAgent(agent);
-    mapRef.current?.flyTo({ center: [agent.lng, agent.lat], zoom: 14, speed: 1.2 });
-  }, []);
+      if (viewport.granularity === 'gps') {
+        if (!userLocationMarkerRef.current) {
+          userLocationMarkerRef.current = new mapboxgl.Marker({
+            element: createUserLocationIndicatorElement(),
+            anchor: 'center',
+          })
+            .setLngLat(viewport.center)
+            .addTo(mapRef.current);
+        } else {
+          userLocationMarkerRef.current.setLngLat(viewport.center);
+        }
+      } else {
+        userLocationMarkerRef.current?.remove();
+        userLocationMarkerRef.current = null;
+      }
+    });
 
-  const filtered = agents.filter((a) =>
-    a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.address.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+    return () => {
+      cancelled = true;
+    };
+  }, [compact, hasActiveTaskPositions, mapVersion]);
 
+  useEffect(() => {
+    if (hasActiveTaskPositions) {
+      userLocationMarkerRef.current?.remove();
+      userLocationMarkerRef.current = null;
+    }
+  }, [hasActiveTaskPositions]);
+
+  // ── Sync live tasks → markers + routes ───────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current) return;
+
+    const now = nowMs || Date.now();
+    const allTrackedTasks = tasks.filter((t) => hasUsableTaskPosition(t));
+    const bounds = map.getBounds();
+    const maxRenderedMarkers = allTrackedTasks.length > 120 ? 120 : 400;
+    const validTasks = allTrackedTasks
+      .filter((task) => {
+        if (selectedTaskId === task.taskId) return true;
+        if (allTrackedTasks.length <= 100) return true;
+        if (!bounds) return true;
+        return bounds.contains([task.lastPosition[0], task.lastPosition[1]]);
+      })
+      .sort((a, b) => {
+        const aTs = new Date(a.lastEventAt).getTime();
+        const bTs = new Date(b.lastEventAt).getTime();
+        return bTs - aTs;
+      })
+      .slice(0, maxRenderedMarkers);
+    const validIds = new Set(validTasks.map((t) => t.taskId));
+    const routeFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+    const destinationIds = new Set<number>();
+
+    validTasks.forEach((task) => {
+      const stale = isTaskStale(task.lastEventAt, now);
+      const derivedOperationalStatus = resolveOperationalStatusFromTask(task, now, STALE_MS);
+      const visualState = resolveVisualTaskState(task.status, stale, derivedOperationalStatus);
+      const trail = sanitizePolyline(buildTaskTrail(task));
+      const currentPoint = task.lastPosition;
+
+      if (trail.length >= 2) {
+        routeFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: trail },
+          properties: {
+            taskId: task.taskId,
+            status: visualState,
+          },
+        });
+      }
+
+      const originPoint = trail[0] ?? currentPoint;
+      const existingOriginMarker = originMarkersRef.current.get(task.taskId);
+      if (!existingOriginMarker) {
+        const el = createStaticMarkerElement('origin');
+        el.title = `Origin - ${task.agentName || `Task ${task.taskId}`}`;
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+          .setLngLat(originPoint)
+          .addTo(map);
+        originMarkersRef.current.set(task.taskId, marker);
+      } else {
+        existingOriginMarker.setLngLat(originPoint);
+      }
+
+      if (task.destination) {
+        destinationIds.add(task.taskId);
+        const destinationPoint: [number, number] = [task.destination.lng, task.destination.lat];
+        const markerKind = getDestinationMarkerKind(task.status);
+
+        // Forward route rendered via Directions API effect below
+
+        const existingDestinationMarker = destinationMarkersRef.current.get(task.taskId);
+        if (!existingDestinationMarker) {
+          const el = createStaticMarkerElement(markerKind);
+          el.dataset.kind = markerKind;
+          const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+            .setLngLat(destinationPoint)
+            .addTo(map);
+          bindHoverPopup(
+            el,
+            () => destinationPoint,
+            () =>
+              buildDestinationPopupHtml({
+                title:
+                  markerKind === 'destination'
+                    ? `Destination - ${task.agentName || `Task ${task.taskId}`}`
+                    : markerKind === 'near'
+                      ? `Near destination - ${task.agentName || `Task ${task.taskId}`}`
+                      : markerKind === 'arrived'
+                        ? `Arrival reached - ${task.agentName || `Task ${task.taskId}`}`
+                        : `Completed - ${task.agentName || `Task ${task.taskId}`}`,
+                location: task.taskAddress || task.taskTitle || 'No location details',
+                statusLabel: getStatusLabel(task.status),
+              })
+          );
+          destinationMarkersRef.current.set(task.taskId, marker);
+        } else {
+          const existingKind = existingDestinationMarker.getElement().dataset.kind;
+          if (existingKind !== markerKind) {
+            existingDestinationMarker.remove();
+            const el = createStaticMarkerElement(markerKind);
+            el.dataset.kind = markerKind;
+            const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+              .setLngLat(destinationPoint)
+              .addTo(map);
+            bindHoverPopup(
+              el,
+              () => destinationPoint,
+              () =>
+                buildDestinationPopupHtml({
+                  title:
+                    markerKind === 'destination'
+                      ? `Destination - ${task.agentName || `Task ${task.taskId}`}`
+                      : markerKind === 'near'
+                        ? `Near destination - ${task.agentName || `Task ${task.taskId}`}`
+                        : markerKind === 'arrived'
+                          ? `Arrival reached - ${task.agentName || `Task ${task.taskId}`}`
+                          : `Completed - ${task.agentName || `Task ${task.taskId}`}`,
+                  location: task.taskAddress || task.taskTitle || 'No location details',
+                  statusLabel: getStatusLabel(task.status),
+                })
+            );
+            destinationMarkersRef.current.set(task.taskId, marker);
+          } else {
+            existingDestinationMarker.setLngLat(destinationPoint);
+          }
+        }
+      }
+
+      const existingAgentMarker = agentMarkersRef.current.get(task.taskId);
+      if (!existingAgentMarker) {
+        const el = createAgentMarkerElement({
+          name: task.agentName,
+          avatarUrl: task.agentAvatarUrl,
+          visualState,
+          stale,
+        });
+        el.dataset.agentName = task.agentName;
+        el.dataset.avatarUrl = task.agentAvatarUrl ?? '';
+        el.dataset.location = task.taskAddress || task.taskTitle || 'No location details';
+        el.dataset.statusLabel = getStatusLabel(task.status);
+        bindHoverPopup(
+          el,
+          () => task.lastPosition,
+          () =>
+            buildAgentPopupHtml({
+              name: el.dataset.agentName ?? task.agentName,
+              avatarUrl: el.dataset.avatarUrl || undefined,
+              location: el.dataset.location || task.taskAddress || task.taskTitle || 'No location details',
+              statusLabel: el.dataset.statusLabel ?? getStatusLabel(task.status),
+            })
+        );
+        if (!compact) {
+          el.addEventListener('click', () => {
+            setSelectedTaskId(task.taskId);
+            const latest = useTrackingStore.getState().liveTasks[task.taskId];
+            if (!latest) return;
+            map.flyTo({ center: latest.lastPosition, zoom: 15.5, speed: 1.2 });
+          });
+        }
+
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+          .setLngLat(task.lastPosition)
+          .addTo(map);
+        agentMarkersRef.current.set(task.taskId, marker);
+        markerPositionRef.current.set(task.taskId, task.lastPosition);
+      } else {
+        updateAgentMarkerElement(existingAgentMarker.getElement(), {
+          name: task.agentName,
+          avatarUrl: task.agentAvatarUrl,
+          visualState,
+          stale,
+        });
+        existingAgentMarker.getElement().dataset.agentName = task.agentName;
+        existingAgentMarker.getElement().dataset.avatarUrl = task.agentAvatarUrl ?? '';
+        existingAgentMarker.getElement().dataset.location = task.taskAddress || task.taskTitle || 'No location details';
+        existingAgentMarker.getElement().dataset.statusLabel = getStatusLabel(task.status);
+        animateMarkerTo(task.taskId, existingAgentMarker, task.lastPosition);
+      }
+    });
+
+    const routeSource = map.getSource('live-routes') as mapboxgl.GeoJSONSource | undefined;
+    routeSource?.setData({
+      type: 'FeatureCollection',
+      features: routeFeatures,
+    });
+
+    // Also render cached forward routes
+    const forwardFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+    directionRoutesRef.current.forEach((coords, taskId) => {
+      if (validIds.has(taskId) && coords.length >= 2) {
+        forwardFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: coords },
+          properties: { taskId },
+        });
+      }
+    });
+    const forwardSource = map.getSource('forward-routes') as mapboxgl.GeoJSONSource | undefined;
+    forwardSource?.setData({
+      type: 'FeatureCollection',
+      features: forwardFeatures,
+    });
+
+    originMarkersRef.current.forEach((marker, id) => {
+      if (!validIds.has(id)) {
+        marker.remove();
+        originMarkersRef.current.delete(id);
+      }
+    });
+
+    destinationMarkersRef.current.forEach((marker, id) => {
+      if (!destinationIds.has(id)) {
+        marker.remove();
+        destinationMarkersRef.current.delete(id);
+      }
+    });
+
+    agentMarkersRef.current.forEach((marker, id) => {
+      if (!validIds.has(id)) {
+        marker.remove();
+        agentMarkersRef.current.delete(id);
+        markerPositionRef.current.delete(id);
+        const frameId = markerAnimationsRef.current.get(id);
+        if (frameId) {
+          cancelAnimationFrame(frameId);
+          markerAnimationsRef.current.delete(id);
+        }
+      }
+    });
+  }, [tasks, tick, compact, mapVersion, nowMs, animateMarkerTo, selectedTaskId, bindHoverPopup]);
+
+  // ── Fetch Mapbox Directions routes for tasks with destinations ───────────────
+  useEffect(() => {
+    if (!token || !mapLoadedRef.current) return;
+
+    const tasksWithDest = tasks.filter(
+      (t) =>
+        t.destination &&
+        (t.lastPosition[0] !== 0 || t.lastPosition[1] !== 0) &&
+        t.status !== 'completed'
+    );
+
+    let cancelled = false;
+
+    async function fetchAll() {
+      let didChange = false;
+
+      for (const task of tasksWithDest) {
+        if (cancelled) return;
+        if (!task.destination) continue;
+
+        const origin: [number, number] = task.lastPosition;
+        const dest: [number, number] = [task.destination.lng, task.destination.lat];
+
+        // Skip if same point
+        if (areSamePoint(origin, dest)) continue;
+
+        const routeCoords = await fetchDirectionsRoute(origin, dest, token);
+        if (cancelled) return;
+
+        if (routeCoords && routeCoords.length >= 2) {
+          directionRoutesRef.current.set(task.taskId, routeCoords);
+          didChange = true;
+        }
+      }
+
+      // Remove routes for tasks that no longer have destinations
+      const activeIds = new Set(tasksWithDest.map((t) => t.taskId));
+      directionRoutesRef.current.forEach((_, id) => {
+        if (!activeIds.has(id)) {
+          directionRoutesRef.current.delete(id);
+          didChange = true;
+        }
+      });
+
+      // Update the forward-routes source on the map
+      if (didChange && !cancelled && mapRef.current) {
+        const forwardFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+        directionRoutesRef.current.forEach((coords, taskId) => {
+          if (coords.length >= 2) {
+            forwardFeatures.push({
+              type: 'Feature',
+              geometry: { type: 'LineString', coordinates: coords },
+              properties: { taskId },
+            });
+          }
+        });
+        const src = mapRef.current.getSource('forward-routes') as mapboxgl.GeoJSONSource | undefined;
+        src?.setData({ type: 'FeatureCollection', features: forwardFeatures });
+      }
+    }
+
+    fetchAll();
+    return () => { cancelled = true; };
+  }, [tasks, token, mapVersion]);
+
+  // ── Filtered sidebar list ────────────────────────────────────────────────────
+  const filteredTasks = searchQuery.trim().length > 0 ? internalSearchResults : tasks;
+
+  // ── No token fallback ────────────────────────────────────────────────────────
   if (!token) {
     if (compact) {
       return (
         <div className="w-full h-full flex items-center justify-center bg-[#F0F0F0] text-sm text-gray-400">
-          Map requires NEXT_PUBLIC_MAPBOX_TOKEN
+          Map requires {MAPBOX_PUBLIC_TOKEN_ENV}
         </div>
       );
     }
@@ -170,106 +937,737 @@ export function MapView({ compact = false }: MapViewProps) {
         <div className="bg-white rounded-3xl p-10 shadow-lg max-w-md text-center space-y-4">
           <h2 className="text-xl font-bold text-dash-dark">Mapbox Token Required</h2>
           <div className="bg-gray-900 text-green-400 text-sm font-mono rounded-xl p-4 text-left">
-            NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ1...
+            {MAPBOX_PUBLIC_TOKEN_ENV}=...
           </div>
-          <p className="text-xs text-gray-400">Add to .env.local then restart the dev server.</p>
+          <p className="text-xs text-gray-400">Add it to your Next.js environment and restart the dev server.</p>
         </div>
       </div>
     );
   }
 
   if (compact) {
-    return <div ref={mapContainer} className="w-full h-full" />;
+    return (
+      <div className="w-full h-full relative">
+        <div ref={mapContainer} className="w-full h-full" />
+
+        {providerState.fallbackReason === 'missing_google_api_key' && providerState.requestedProvider === 'google' && (
+          <div className="absolute bottom-1 left-1 right-1 rounded bg-black/70 px-2 py-1 text-[9px] font-medium text-white">
+            Google key missing. Showing Mapbox fallback.
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
     <div className="relative w-full overflow-hidden" style={{ height: 'calc(100vh - 64px)' }}>
+      <div className="hidden" aria-hidden="true">
+        <HydrationBridge onHydrationChange={setIsInitialHydrating} />
+      </div>
 
       {/* Map canvas */}
       <div ref={mapContainer} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
 
-      {/* Search — top right */}
-      <div className="absolute top-5 right-5 z-20 w-80">
+      {/* Search — top, full-width on mobile / top-right on desktop */}
+      <div className="absolute top-4 left-4 right-4 md:top-8 md:right-8 md:left-auto md:w-[450px] z-20">
         <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={17} />
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} strokeWidth={2} />
           <input
             type="text"
-            placeholder="Search for Agents or Location"
+            placeholder="Search places, agents, tasks, references"
+            value={searchQuery}
+            onChange={(e) => handleSearchQueryChange(e.target.value)}
+            className="w-full bg-white rounded-full py-4 pl-14 pr-6 text-[14px] shadow-2xl shadow-black/5 outline-none font-medium text-dash-dark placeholder:text-gray-400"
+          />
+        </div>
+
+        {(searchBusy || placeResults.length > 0) && searchQuery.trim().length >= 3 && (
+          <div className="mt-2 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur px-2 py-2 shadow-xl">
+            {searchBusy && (
+              <div className="px-3 py-2 text-[12px] text-slate-500">Searching places...</div>
+            )}
+
+            {!searchBusy && placeResults.length === 0 && (
+              <div className="px-3 py-2 text-[12px] text-slate-500">No place matches found.</div>
+            )}
+
+            {placeResults.map((result) => (
+              <button
+                key={result.id}
+                className="w-full text-left px-3 py-2 rounded-xl text-[12px] text-slate-700 hover:bg-slate-100"
+                onClick={() => {
+                  mapRef.current?.flyTo({ center: result.center, zoom: 13.5, speed: 1.1 });
+                }}
+              >
+                {result.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Search Feeds panel — below search on mobile / top-left on desktop */}
+      <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-auto md:w-[340px] z-20 bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
+        <div className="flex items-center justify-between px-6 py-6 pb-4">
+          <h3 className="text-[18px] font-bold text-dash-dark">Search Feeds</h3>
+          <button className="w-9 h-9 rounded-full bg-[#0A192F] flex items-center justify-center hover:bg-gray-800 transition-colors">
+            <RefreshCcw size={15} className="text-[#38BDF8]" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
+          {isInitialHydrating && filteredTasks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-2">
+              <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
+              <p className="text-[12px] text-gray-400">Loading feeds…</p>
+            </div>
+          ) : filteredTasks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-2">
+              <Radio size={24} className="text-gray-200" />
+              <p className="text-[12px] text-gray-400">No feeds available</p>
+            </div>
+          ) : (
+            filteredTasks.map((task) => {
+              const isSelected = selectedTaskId === task.taskId;
+              const operationalStatus = resolveOperationalStatusFromTask(task, nowMs, STALE_MS);
+              const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
+              return (
+                <button
+                  key={task.taskId}
+                  onClick={() => setSelectedTaskId(task.taskId)}
+                  className={`w-full flex items-center gap-4 px-4 py-3.5 text-left transition-all rounded-[20px] ${isSelected ? 'bg-[#0A192F]' : 'bg-[#F8FAFC] hover:bg-gray-100'
+                    }`}
+                >
+                  <AgentAvatar
+                    key={`${task.taskId}-${task.agentAvatarUrl ?? ""}`}
+                    name={task.agentName}
+                    avatarUrl={task.agentAvatarUrl}
+                    sizeClassName="w-12 h-12"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p
+                        className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
+                          }`}
+                      >
+                        {task.agentName || 'Company Name'}
+                      </p>
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${isSelected ? 'bg-white/15 text-white border border-white/20' : statusMeta.badgeClassName
+                          }`}
+                      >
+                        {statusMeta.label}
+                      </span>
+                    </div>
+                    <p
+                      className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-gray-300' : 'text-gray-500'
+                        }`}
+                    >
+                      {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
+                    </p>
+                    {(task.projectName ?? '').length > 0 && (
+                      <p className={`text-[10px] mt-1 truncate ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                        Project {task.projectName}
+                      </p>
+                    )}
+                    <p className={`text-[10px] mt-1 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                      ETA {formatEta(task.etaSeconds)} | Speed {formatSpeed(task.speedMps)} | Left {formatMetricDistance(task.distanceRemainingMeters)}
+                    </p>
+                  </div>
+                  <MoreHorizontal size={20} className={isSelected ? 'text-white/50' : 'text-gray-400'} />
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Floating Action Button */}
+      <div className="absolute bottom-10 right-10 z-20">
+        <button className="bg-gradient-to-r from-[#D946EF] to-[#9333EA] hover:from-[#C026D3] hover:to-[#7E22CE] text-white px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2">
+          Location Mapping
+        </button>
+      </div>
+
+      {selectedTask && (() => {
+        const operationalStatus = resolveOperationalStatusFromTask(selectedTask, nowMs, STALE_MS);
+        const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
+
+        return (
+          <div className="absolute bottom-24 right-4 md:right-10 z-20 w-[min(92vw,380px)] rounded-3xl border border-slate-200 bg-white/95 backdrop-blur shadow-2xl">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h4 className="text-[14px] font-bold text-slate-800">Active Agent Command Panel</h4>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusMeta.badgeClassName}`}>
+                {statusMeta.label}
+              </span>
+            </div>
+
+            <div className="px-5 py-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <AgentAvatar
+                  key={`selected-${selectedTask.taskId}-${selectedTask.agentAvatarUrl ?? ''}`}
+                  name={selectedTask.agentName}
+                  avatarUrl={selectedTask.agentAvatarUrl}
+                  sizeClassName="w-12 h-12"
+                />
+                <div className="min-w-0">
+                  <p className="text-[14px] font-semibold text-slate-900 truncate">{selectedTask.agentName || 'Agent'}</p>
+                  <p className="text-[11px] text-slate-500">Role: Agent</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <p className="text-slate-500">Current Task</p>
+                  <p className="font-semibold text-slate-800 truncate">{selectedTask.taskTitle || `Task #${selectedTask.taskId}`}</p>
+                </div>
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <p className="text-slate-500">Current Project</p>
+                  <p className="font-semibold text-slate-800 truncate">{selectedTask.projectName ?? 'Unassigned'}</p>
+                </div>
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <p className="text-slate-500">ETA</p>
+                  <p className="font-semibold text-slate-800">{formatEta(selectedTask.etaSeconds)}</p>
+                </div>
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <p className="text-slate-500">Speed</p>
+                  <p className="font-semibold text-slate-800">{formatSpeed(selectedTask.speedMps)}</p>
+                </div>
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <p className="text-slate-500">Distance Remaining</p>
+                  <p className="font-semibold text-slate-800">{formatMetricDistance(selectedTask.distanceRemainingMeters)}</p>
+                </div>
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <p className="text-slate-500">Route Deviation</p>
+                  <p className="font-semibold text-slate-800">{formatMetricDistance(selectedTask.routeDeviationMeters)}</p>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-500">
+                Last GPS Update: {new Date(selectedTask.lastEventAt).toLocaleString()}
+              </p>
+            </div>
+          </div>
+        );
+      })()}
+
+      {historyTask && (
+        <RouteHistoryPanel
+          taskId={historyTask.id}
+          taskTitle={historyTask.title}
+          onClose={() => setHistoryTask(null)}
+        />
+      )}
+
+      {providerState.fallbackReason === 'missing_google_api_key' && providerState.requestedProvider === 'google' && (
+        <div className="absolute bottom-3 left-3 right-3 md:left-8 md:right-auto md:w-[420px] z-20 rounded-md bg-black/75 px-3 py-2 text-[11px] font-medium text-white">
+          Google map is selected by admin, but NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is missing. Showing Mapbox fallback.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GoogleMapView({ compact = false, providerState }: MapViewProps & { providerState: EffectiveMapProviderState }) {
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<GoogleMapLike | null>(null);
+  const googleRef = useRef<GoogleMapsNamespaceLike | null>(null);
+  const agentMarkersRef = useRef<Map<number, GoogleMarkerLike>>(new Map());
+  const destinationMarkersRef = useRef<Map<number, GoogleMarkerLike>>(new Map());
+  const routeLinesRef = useRef<Map<number, GooglePolylineLike>>(new Map());
+  const userLocationMarkerRef = useRef<GoogleMarkerLike | null>(null);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [historyTask, setHistoryTask] = useState<{ id: number; title: string } | null>(null);
+  const [isInitialHydrating, setIsInitialHydrating] = useState(false);
+
+  const liveTasks = useTrackingStore((s) => s.liveTasks);
+  const tasks = useMemo(() => Object.values(liveTasks), [liveTasks]);
+  const hasActiveTaskPositions = useMemo(
+    () => tasks.some((task) => hasUsableTaskPosition(task)),
+    [tasks]
+  );
+  const googleApiKey = useMemo(() => getGoogleMapsPublicApiKey(), []);
+
+  useEffect(() => {
+    if (!mapContainer.current || mapRef.current || !googleApiKey) {
+      return;
+    }
+
+    let cancelled = false;
+
+    loadGoogleMapsApi(googleApiKey)
+      .then((google) => {
+        const googleMaps = google as unknown as GoogleMapsNamespaceLike;
+
+        if (cancelled || !mapContainer.current) {
+          return;
+        }
+
+        googleRef.current = googleMaps;
+        const initialViewport = getCountryFallbackViewport();
+        mapRef.current = new googleMaps.maps.Map(mapContainer.current, {
+          center: { lat: initialViewport.center[1], lng: initialViewport.center[0] },
+          zoom: compact ? Math.max(initialViewport.zoom, 5.4) : initialViewport.zoom,
+          disableDefaultUI: compact,
+          zoomControl: true,
+          fullscreenControl: false,
+          streetViewControl: false,
+          mapTypeControl: false,
+          gestureHandling: compact ? 'none' : 'auto',
+        });
+      })
+      .catch(() => {
+        // Key/network failures surface through fallback UI.
+      });
+
+    return () => {
+      cancelled = true;
+
+      routeLinesRef.current.forEach((line) => line.setMap(null));
+      destinationMarkersRef.current.forEach((marker) => marker.setMap(null));
+      agentMarkersRef.current.forEach((marker) => marker.setMap(null));
+      userLocationMarkerRef.current?.setMap(null);
+
+      routeLinesRef.current.clear();
+      destinationMarkersRef.current.clear();
+      agentMarkersRef.current.clear();
+      userLocationMarkerRef.current = null;
+      mapRef.current = null;
+      googleRef.current = null;
+    };
+  }, [compact, googleApiKey]);
+
+  useEffect(() => {
+    if (selectedTaskId == null || !mapRef.current) return;
+
+    const task = useTrackingStore.getState().liveTasks[selectedTaskId];
+    if (!task) return;
+
+    mapRef.current.panTo({ lat: task.lastPosition[1], lng: task.lastPosition[0] });
+    if (typeof mapRef.current.getZoom === 'function' && mapRef.current.getZoom() < 15) {
+      mapRef.current.setZoom(15);
+    }
+  }, [selectedTaskId]);
+
+  useEffect(() => {
+    if (!mapRef.current || hasActiveTaskPositions) {
+      return;
+    }
+
+    let cancelled = false;
+
+    resolvePrivacySafeViewport().then((viewport) => {
+      if (cancelled || !mapRef.current) {
+        return;
+      }
+
+      const stillIdle = Object.values(useTrackingStore.getState().liveTasks).every(
+        (task) => !hasUsableTaskPosition(task)
+      );
+
+      if (!stillIdle) {
+        return;
+      }
+
+      mapRef.current.setCenter({ lat: viewport.center[1], lng: viewport.center[0] });
+      mapRef.current.setZoom(compact ? Math.max(viewport.zoom - 0.6, 5.4) : viewport.zoom);
+
+      if (viewport.granularity === 'gps' && googleRef.current) {
+        if (!userLocationMarkerRef.current) {
+          userLocationMarkerRef.current = new googleRef.current.maps.Marker({
+            map: mapRef.current,
+            position: { lat: viewport.center[1], lng: viewport.center[0] },
+            title: 'Your current location',
+            icon: {
+              path: googleRef.current.maps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: '#2563EB',
+              fillOpacity: 1,
+              strokeColor: '#FFFFFF',
+              strokeWeight: 3,
+            },
+          });
+        } else {
+          userLocationMarkerRef.current.setPosition({ lat: viewport.center[1], lng: viewport.center[0] });
+        }
+      } else {
+        userLocationMarkerRef.current?.setMap(null);
+        userLocationMarkerRef.current = null;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [compact, hasActiveTaskPositions]);
+
+  useEffect(() => {
+    if (hasActiveTaskPositions) {
+      userLocationMarkerRef.current?.setMap(null);
+      userLocationMarkerRef.current = null;
+    }
+  }, [hasActiveTaskPositions]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const google = googleRef.current;
+
+    if (!map || !google) return;
+
+    const now = Date.now();
+    const validTasks = tasks.filter((task) => hasUsableTaskPosition(task));
+    const validIds = new Set(validTasks.map((task) => task.taskId));
+    const destinationIds = new Set<number>();
+
+    validTasks.forEach((task) => {
+      const stale = isTaskStale(task.lastEventAt, now);
+      const visualState = getVisualState(task, stale);
+      const trail = sanitizePolyline(buildTaskTrail(task));
+
+      const routeLine = routeLinesRef.current.get(task.taskId);
+      if (trail.length >= 2) {
+        if (!routeLine) {
+          const line = new google.maps.Polyline({
+            map,
+            geodesic: true,
+            strokeColor: VISUAL_PALETTE[visualState].trail,
+            strokeOpacity: 0.92,
+            strokeWeight: 4,
+          });
+          line.setPath(trail.map((point) => ({ lat: point[1], lng: point[0] })));
+          routeLinesRef.current.set(task.taskId, line);
+        } else {
+          routeLine.setOptions({ strokeColor: VISUAL_PALETTE[visualState].trail });
+          routeLine.setPath(trail.map((point) => ({ lat: point[1], lng: point[0] })));
+        }
+      } else if (routeLine) {
+        routeLine.setMap(null);
+        routeLinesRef.current.delete(task.taskId);
+      }
+
+      const current = task.lastPosition;
+      const existingAgentMarker = agentMarkersRef.current.get(task.taskId);
+      const initials = getAgentInitials(task.agentName) || 'A';
+
+      if (!existingAgentMarker) {
+        const marker = new google.maps.Marker({
+          map,
+          position: { lat: current[1], lng: current[0] },
+          title: `${task.agentName || `Task ${task.taskId}`} - ${getStatusLabel(task.status)}`,
+          label: {
+            text: initials,
+            color: '#FFFFFF',
+            fontWeight: '700',
+          },
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 11,
+            fillColor: VISUAL_PALETTE[visualState].markerBorder,
+            fillOpacity: 1,
+            strokeColor: '#FFFFFF',
+            strokeWeight: 2,
+          },
+        });
+
+        if (!compact) {
+          marker.addListener('click', () => {
+            setSelectedTaskId(task.taskId);
+            map.panTo({ lat: current[1], lng: current[0] });
+          });
+        }
+
+        agentMarkersRef.current.set(task.taskId, marker);
+      } else {
+        existingAgentMarker.setPosition({ lat: current[1], lng: current[0] });
+        existingAgentMarker.setLabel({
+          text: initials,
+          color: '#FFFFFF',
+          fontWeight: '700',
+        });
+        existingAgentMarker.setIcon({
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 11,
+          fillColor: VISUAL_PALETTE[visualState].markerBorder,
+          fillOpacity: 1,
+          strokeColor: '#FFFFFF',
+          strokeWeight: 2,
+        });
+      }
+
+      if (task.destination) {
+        destinationIds.add(task.taskId);
+        const destinationPoint = { lat: task.destination.lat, lng: task.destination.lng };
+        const markerKind = getDestinationMarkerKind(task.status);
+        const destinationColor =
+          markerKind === 'completed'
+            ? '#334155'
+            : markerKind === 'arrived'
+              ? '#16A34A'
+              : markerKind === 'near'
+                ? '#D97706'
+                : '#DC2626';
+
+        const existingDestinationMarker = destinationMarkersRef.current.get(task.taskId);
+        if (!existingDestinationMarker) {
+          const marker = new google.maps.Marker({
+            map,
+            position: destinationPoint,
+            title: `Destination - ${task.agentName || `Task ${task.taskId}`}`,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: destinationColor,
+              fillOpacity: 1,
+              strokeColor: '#FFFFFF',
+              strokeWeight: 3,
+            },
+          });
+          destinationMarkersRef.current.set(task.taskId, marker);
+        } else {
+          existingDestinationMarker.setPosition(destinationPoint);
+          existingDestinationMarker.setIcon({
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: destinationColor,
+            fillOpacity: 1,
+            strokeColor: '#FFFFFF',
+            strokeWeight: 3,
+          });
+        }
+      }
+    });
+
+    routeLinesRef.current.forEach((line, id) => {
+      if (!validIds.has(id)) {
+        line.setMap(null);
+        routeLinesRef.current.delete(id);
+      }
+    });
+
+    destinationMarkersRef.current.forEach((marker, id) => {
+      if (!destinationIds.has(id)) {
+        marker.setMap(null);
+        destinationMarkersRef.current.delete(id);
+      }
+    });
+
+    agentMarkersRef.current.forEach((marker, id) => {
+      if (!validIds.has(id)) {
+        marker.setMap(null);
+        agentMarkersRef.current.delete(id);
+      }
+    });
+  }, [compact, tasks]);
+
+  const filteredTasks = tasks.filter((task) => {
+    const needle = searchQuery.toLowerCase();
+
+    return (
+      task.agentName.toLowerCase().includes(needle) ||
+      (task.taskTitle ?? '').toLowerCase().includes(needle) ||
+      (task.projectName ?? '').toLowerCase().includes(needle) ||
+      (task.taskAddress ?? '').toLowerCase().includes(needle) ||
+      String(task.taskId).includes(needle)
+    );
+  });
+
+  if (!googleApiKey) {
+    if (compact) {
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-[#F0F0F0] text-sm text-gray-400">
+          Map requires NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center justify-center bg-dash-bg" style={{ height: 'calc(100vh - 64px)' }}>
+        <div className="bg-white rounded-3xl p-10 shadow-lg max-w-md text-center space-y-4">
+          <h2 className="text-xl font-bold text-dash-dark">Google Maps API Key Required</h2>
+          <div className="bg-gray-900 text-green-400 text-sm font-mono rounded-xl p-4 text-left">
+            NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=...
+          </div>
+          <p className="text-xs text-gray-400">Add it to your Next.js environment and restart the dev server.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (compact) {
+    return (
+      <div className="w-full h-full relative">
+        <div ref={mapContainer} className="w-full h-full" />
+
+        {providerState.fallbackReason === 'missing_mapbox_token' && providerState.requestedProvider === 'mapbox' && (
+          <div className="absolute bottom-1 left-1 right-1 rounded bg-black/70 px-2 py-1 text-[9px] font-medium text-white">
+            Mapbox token missing. Showing Google fallback.
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full overflow-hidden" style={{ height: 'calc(100vh - 64px)' }}>
+      <div className="hidden" aria-hidden="true">
+        <HydrationBridge onHydrationChange={setIsInitialHydrating} />
+      </div>
+
+      <div ref={mapContainer} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+
+      <div className="absolute top-4 left-4 right-4 md:top-8 md:right-8 md:left-auto md:w-[450px] z-20">
+        <div className="relative">
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} strokeWidth={2} />
+          <input
+            type="text"
+            placeholder="Search for Location"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white rounded-full py-3.5 pl-11 pr-5 text-[13px] shadow-lg outline-none border border-gray-100"
+            className="w-full bg-white rounded-full py-4 pl-14 pr-6 text-[14px] shadow-2xl shadow-black/5 outline-none font-medium text-dash-dark placeholder:text-gray-400"
           />
         </div>
       </div>
 
-      {/* Search Feeds — left panel */}
-      <div className="absolute top-5 left-5 z-20 w-72 bg-white rounded-3xl shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
-          <h3 className="text-[15px] font-bold text-dash-dark">Search Feeds</h3>
-          <button className="w-8 h-8 bg-dash-dark rounded-full flex items-center justify-center text-white hover:opacity-90 transition-all">
-            <RefreshCw size={13} />
+      <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-auto md:w-[340px] z-20 bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
+        <div className="flex items-center justify-between px-6 py-6 pb-4">
+          <h3 className="text-[18px] font-bold text-dash-dark">Search Feeds</h3>
+          <button className="w-9 h-9 rounded-full bg-[#0A192F] flex items-center justify-center hover:bg-gray-800 transition-colors">
+            <RefreshCcw size={15} className="text-[#38BDF8]" />
           </button>
         </div>
-        <div className="max-h-[60vh] overflow-y-auto divide-y divide-gray-50">
-          {filtered.map((agent) => (
-            <button
-              key={agent.id}
-              onClick={() => handleAgentClick(agent)}
-              className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-all ${
-                selectedAgent?.id === agent.id ? 'bg-dash-dark' : 'hover:bg-gray-50'
-              }`}
-            >
-              <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 border-2 border-white shadow-sm">
-                <img src={agent.avatar} className="w-full h-full object-cover" alt={agent.name} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className={`text-[13px] font-bold truncate ${selectedAgent?.id === agent.id ? 'text-white' : 'text-dash-dark'}`}>
-                  {agent.name}
-                </p>
-                <p className={`text-[11px] truncate mt-0.5 ${selectedAgent?.id === agent.id ? 'text-white/50' : 'text-gray-400'}`}>
-                  {agent.address}
-                </p>
-              </div>
-              <MoreHorizontal size={16} className={selectedAgent?.id === agent.id ? 'text-white/40' : 'text-gray-300'} />
-            </button>
-          ))}
+
+        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
+          {isInitialHydrating && filteredTasks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-2">
+              <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
+              <p className="text-[12px] text-gray-400">Loading feeds…</p>
+            </div>
+          ) : filteredTasks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-2">
+              <Radio size={24} className="text-gray-200" />
+              <p className="text-[12px] text-gray-400">No feeds available</p>
+            </div>
+          ) : (
+            filteredTasks.map((task) => {
+              const isSelected = selectedTaskId === task.taskId;
+              return (
+                <button
+                  key={task.taskId}
+                  onClick={() => setSelectedTaskId(task.taskId)}
+                  className={`w-full flex items-center gap-4 px-4 py-3.5 text-left transition-all rounded-[20px] ${isSelected ? 'bg-[#0A192F]' : 'bg-[#F8FAFC] hover:bg-gray-100'
+                    }`}
+                >
+                  <AgentAvatar
+                    key={`${task.taskId}-${task.agentAvatarUrl ?? ''}`}
+                    name={task.agentName}
+                    avatarUrl={task.agentAvatarUrl}
+                    sizeClassName="w-12 h-12"
+                    allowInitialsFallback={false}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p
+                      className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
+                        }`}
+                    >
+                      {task.agentName || 'Company Name'}
+                    </p>
+                    <p
+                      className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-gray-400' : 'text-gray-500'
+                        }`}
+                    >
+                      {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
+                    </p>
+                  </div>
+                  <MoreHorizontal size={20} className={isSelected ? 'text-white/50' : 'text-gray-400'} />
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
 
-      {/* Agent popup — top right, below search */}
-      {selectedAgent && (
-        <div className="absolute top-20 right-5 z-20 w-60 bg-white rounded-3xl shadow-2xl p-5 animate-in zoom-in-95 fade-in duration-200">
-          <div className="flex items-center justify-between mb-4">
-            <button className="text-[12px] font-semibold text-dash-dark underline underline-offset-2 decoration-gray-300">
-              View Full Profile
-            </button>
-            <div className="flex items-center gap-1.5">
-              <MoreHorizontal size={15} className="text-gray-400" />
-              <button
-                onClick={() => setSelectedAgent(null)}
-                className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 hover:bg-gray-200 transition-all"
-              >
-                <X size={11} />
-              </button>
-            </div>
-          </div>
-          <div className="flex justify-center mb-3">
-            <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-gray-100 shadow-md">
-              <img src={selectedAgent.avatar} className="w-full h-full object-cover" alt={selectedAgent.name} />
-            </div>
-          </div>
-          <div className="text-center space-y-1 mb-4">
-            <h4 className="text-[14px] font-bold text-dash-dark">{selectedAgent.name}</h4>
-            <p className="text-[11px] text-gray-400">{selectedAgent.address}</p>
-            <div className="inline-block px-3.5 py-1.5 bg-[#1A452C] text-[#4ADE80] rounded-full text-[10px] font-bold mt-1">
-              Presently On Field
-            </div>
-          </div>
-          <button className="w-full flex items-center justify-center gap-2 py-2.5 border border-gray-100 rounded-2xl text-[12px] font-semibold text-gray-500 hover:bg-gray-50 transition-all">
-            <MessageSquare size={14} />
-            Send a message
-          </button>
+      <div className="absolute bottom-10 right-10 z-20">
+        <button className="bg-gradient-to-r from-[#D946EF] to-[#9333EA] hover:from-[#C026D3] hover:to-[#7E22CE] text-white px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2">
+          Location Mapping
+        </button>
+      </div>
+
+      {historyTask && (
+        <RouteHistoryPanel
+          taskId={historyTask.id}
+          taskTitle={historyTask.title}
+          onClose={() => setHistoryTask(null)}
+        />
+      )}
+
+      {providerState.fallbackReason === 'missing_mapbox_token' && providerState.requestedProvider === 'mapbox' && (
+        <div className="absolute bottom-3 left-3 right-3 md:left-8 md:right-auto md:w-[420px] z-20 rounded-md bg-black/75 px-3 py-2 text-[11px] font-medium text-white">
+          Mapbox is selected by admin, but NEXT_PUBLIC_MAPBOX_TOKEN is missing. Showing Google fallback.
         </div>
+      )}
+    </div>
+  );
+}
+
+export function MapView(props: MapViewProps) {
+  const providerState = useEffectiveMapProvider();
+
+  if (providerState.effectiveProvider === 'google') {
+    return <GoogleMapView {...props} providerState={providerState} />;
+  }
+
+  return <MapboxMapView {...props} providerState={providerState} />;
+}
+
+function HydrationBridge({
+  onHydrationChange,
+}: {
+  onHydrationChange: (isHydrating: boolean) => void;
+}) {
+  const { isInitialHydrating } = useTrackingWebSocket();
+
+  useEffect(() => {
+    onHydrationChange(isInitialHydrating);
+  }, [isInitialHydrating, onHydrationChange]);
+
+  return null;
+}
+
+function AgentAvatar({
+  name,
+  avatarUrl,
+  sizeClassName,
+  initialsClassName = 'text-[12px]',
+  allowInitialsFallback = true,
+}: {
+  name: string;
+  avatarUrl?: string;
+  sizeClassName: string;
+  initialsClassName?: string;
+  allowInitialsFallback?: boolean;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  const initials = getAgentInitials(name);
+  const showImage = !!avatarUrl && !imageFailed;
+
+  return (
+    <div className={`${sizeClassName} rounded-full overflow-hidden shrink-0 border-2 border-white shadow-sm bg-gray-100 flex items-center justify-center`}>
+      {showImage ? (
+        <img
+          src={avatarUrl}
+          className="w-full h-full object-cover"
+          alt={name || 'Agent'}
+          onError={() => setImageFailed(true)}
+        />
+      ) : initials && allowInitialsFallback ? (
+        <span className={`${initialsClassName} font-bold text-gray-500`}>
+          {initials}
+        </span>
+      ) : (
+        <span aria-hidden="true" className="block w-full h-full bg-transparent" />
       )}
     </div>
   );

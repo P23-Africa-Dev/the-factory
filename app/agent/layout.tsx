@@ -1,5 +1,6 @@
 import { Navbar } from "@/components/layout/navbar";
 import { AgentGuard } from "@/components/auth/agent-guard";
+import { AgentTrackingShell } from "@/components/tracking/AgentTrackingShell";
 import { AUTH_TOKEN_COOKIE, ONBOARDING_DONE_COOKIE } from "@/lib/auth/session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -14,7 +15,7 @@ export default async function DashboardLayout({
   const onboardingDone = cookieStore.get(ONBOARDING_DONE_COOKIE)?.value === "1";
 
   if (!token) {
-    redirect("/login");
+    redirect("/agent/login");
   }
 
   // if (!onboardingDone) {
@@ -25,7 +26,9 @@ export default async function DashboardLayout({
     <div className="min-h-screen flex flex-col">
       <Navbar />
       <main className="flex-1 overflow-auto">
-        <AgentGuard>{children}</AgentGuard>
+        <AgentGuard>
+          <AgentTrackingShell>{children}</AgentTrackingShell>
+        </AgentGuard>
       </main>
     </div>
   );

@@ -4,31 +4,84 @@ import CalendarIcon from "@/assets/images/calendar-icon.png";
 import CardValidationIcon from "@/assets/images/card-validation-icon.png";
 import FileExportIcon from "@/assets/images/file-export-icon.png";
 import { PaymentOverview } from "@/components/payroll/payment-overview";
-import { agents, PayrollList } from "@/components/payroll/payroll-list";
+import {
+  mapPayrollAgentToUi,
+  mapPayrollProfileToUi,
+  PayrollList,
+} from "@/components/payroll/payroll-list";
 import { PayrollSidebar } from "@/components/payroll/payroll-sidebar";
+import { PayrollHistory } from "@/components/payroll/payroll-history";
 import { SetPayrollModal } from "@/components/payroll/set-payroll-modal";
-import { usePayroll } from "@/hooks/use-payroll";
+import { usePayroll, usePayrollAgents, usePayrollAgentProfile, usePayrollOverview } from "@/hooks/use-payroll";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { formatPayrollDateLabel, nextPayrollStatusFilter, type PayrollStatusFilter } from "@/lib/payroll/page-controls";
 import { Search, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export default function FinancePage() {
   const router = useRouter();
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>("2");
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [isPayrollModalOpen, setIsPayrollModalOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<PayrollStatusFilter>("all");
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const dateInputRef = useRef<HTMLInputElement | null>(null);
 
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const isAgent = role === "agent";
 
+  const { data: overview } = usePayrollOverview({ company_id: companyId ?? undefined, date: selectedDate });
   const { data: existingPayroll } = usePayroll(companyId);
+  const { data: agentsData = { items: [] }, isLoading: isUsersLoading } = usePayrollAgents({
+    company_id: companyId ?? undefined,
+    search: search || undefined,
+    status: statusFilter === "all" ? undefined : statusFilter,
+    date: selectedDate,
+    per_page: 100,
+  });
 
-  const selectedAgent = selectedAgentId
-    ? (agents.find((a) => a.id === selectedAgentId) ?? null)
+  const payrollAgents = useMemo(
+    () => (agentsData?.items ?? []).map((agent) => mapPayrollAgentToUi(agent)),
+    [agentsData]
+  );
+
+  useEffect(() => {
+    if (!payrollAgents.length) {
+      if (selectedAgentId !== null) {
+        const timeout = setTimeout(() => setSelectedAgentId(null), 0);
+        return () => clearTimeout(timeout);
+      }
+      return;
+    }
+
+    if (selectedAgentId && payrollAgents.some((agent) => agent.id === selectedAgentId)) {
+      return;
+    }
+
+    const timeout = setTimeout(() => setSelectedAgentId(payrollAgents[0].id), 0);
+    return () => clearTimeout(timeout);
+  }, [payrollAgents, selectedAgentId]);
+
+  const selectedAgentSummary = selectedAgentId
+    ? (payrollAgents.find((a) => a.id === selectedAgentId) ?? null)
     : null;
+
+  const selectedAgentProfileQuery = usePayrollAgentProfile(selectedAgentId ?? undefined, {
+    company_id: companyId ?? undefined,
+    date: selectedDate,
+  });
+
+  const selectedAgent = selectedAgentProfileQuery.data
+    ? mapPayrollProfileToUi(selectedAgentProfileQuery.data)
+    : selectedAgentSummary;
+
+  const handleToggleFilter = () => {
+    setStatusFilter((current) => nextPayrollStatusFilter(current));
+  };
 
   if (!companyId) {
     return (
@@ -50,34 +103,26 @@ export default function FinancePage() {
           />
           <input
             type="text"
-            placeholder="Search for leads"
+            placeholder="Search for agents"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]"
           />
         </div>
 
         <div className="flex items-center gap-4.25 flex-wrap">
-          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
-            <Image
-              src={CalendarIcon}
-              alt="Calendar Icon"
-              width={13}
-              height={13}
-            />
-            April 16, 2026
+          <button
+            type="button"
+            onClick={() => dateInputRef.current?.showPicker?.() ?? dateInputRef.current?.click()}
+            className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all"
+          >
+            <Image src={CalendarIcon} alt="Calendar Icon" width={13} height={13} />
+            {formatPayrollDateLabel(selectedDate)}
+            <input ref={dateInputRef} type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="sr-only" />
           </button>
-          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
-            <Image
-              src={FileExportIcon}
-              alt="Export Icon"
-              width={13}
-              height={13}
-              style={{ filter: "invert(40%) sepia(0%) grayscale(100%)" }}
-            />
-            Export
-          </button>
-          <button className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
+          <button onClick={handleToggleFilter} className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
             <SlidersHorizontal size={13} />
-            Filter
+            Filter: {statusFilter}
           </button>
           {!isAgent && (
             <button
@@ -97,26 +142,28 @@ export default function FinancePage() {
       </div>
       {/* Main Content */}
       <div className="px-5 sm:px-8 lg:px-10 py-6 space-y-6">
-        {isAgent ? (
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700">
-            You have read-only payroll access. Contact your manager to update payroll settings.
-          </div>
-        ) : null}
-        <PaymentOverview />
+        <PaymentOverview overview={overview ?? null} currency={overview?.currency ?? existingPayroll?.currency ?? "USD"} />
 
         {/* Payroll List + Sidebar */}
         <div className="flex flex-col xl:flex-row gap-6">
           <div className="flex-1 min-w-0">
-            <PayrollList
-              selectedId={selectedAgentId}
-              onSelect={setSelectedAgentId}
-              onShowViewAll={() => router.push("/agent/payroll/payroll-list")}
-            />
+            {isUsersLoading ? (
+              <div className="bg-white rounded-[30px] px-6 py-8 text-[13px] text-gray-400 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+                Loading payroll agents...
+              </div>
+            ) : (
+              <PayrollList
+                users={payrollAgents}
+                selectedId={selectedAgentId}
+                onSelect={setSelectedAgentId}
+                onShowViewAll={() => router.push("/agent/payroll/payroll-list")}
+              />
+            )}
           </div>
 
           <div className="w-full xl:w-85 xl:shrink-0 xl:min-w-131.25">
             <div className="drop-shadow-[0px_1px_3px_#0000004D,0px_4px_8px_#00000026]">
-              <PayrollSidebar agent={selectedAgent} payrollSettings={existingPayroll} />
+              <PayrollSidebar agent={selectedAgent} />
             </div>
           </div>
         </div>
@@ -128,6 +175,12 @@ export default function FinancePage() {
         onClose={() => setIsPayrollModalOpen(false)}
         existingPayroll={existingPayroll}
       />
+
+      {selectedAgentProfileQuery.data?.history?.length ? (
+        <div className="px-5 sm:px-8 lg:px-10 pb-6">
+          <PayrollHistory entries={selectedAgentProfileQuery.data.history} currency={selectedAgentProfileQuery.data.currency} />
+        </div>
+      ) : null}
     </div>
   );
 }

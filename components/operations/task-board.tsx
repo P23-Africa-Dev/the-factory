@@ -23,6 +23,8 @@ interface TaskBoardProps {
   activeTab: TaskCategory;
   onAddCard: (containerId: string, item: DndItem) => void;
   onTaskClick?: (item: DndItem, containerId: string) => void;
+  onStatusDrop?: (activeId: string, fromContainerId: string, toContainerId: string) => void;
+  onDragStateChange?: (isDragging: boolean) => void;
   findContainer: (id: string) => DndContainer | undefined;
   moveItem: (activeId: string, overId: string, containerId: string) => void;
   moveToContainer: (activeId: string, overContainerId: string) => void;
@@ -43,8 +45,11 @@ export function TaskBoard({
   moveToContainer,
   moveBetweenContainers,
   onTaskClick,
+  onStatusDrop,
+  onDragStateChange,
 }: TaskBoardProps) {
   const [activeItem, setActiveItem] = useState<DndItem | null>(null);
+  const [dragStartContainerId, setDragStartContainerId] = useState<string | null>(null);
 
   // Filter items per tab
   const filteredContainers = containers.map((c) => ({
@@ -62,8 +67,10 @@ export function TaskBoard({
 
   function handleDragStart(event: DragStartEvent) {
     const { active } = event;
+    onDragStateChange?.(true);
     const container = findContainer(active.id as string);
     const item = container?.items.find((i) => i.id === active.id);
+    setDragStartContainerId(container?.id ?? null);
     setActiveItem(item ?? null);
   }
 
@@ -77,7 +84,10 @@ export function TaskBoard({
     const overContainer = overIsContainer
       ? containers.find((c) => c.id === overId)
       : findContainer(overId);
-    if (!activeContainer || !overContainer) return;
+    if (!activeContainer || !overContainer) {
+      setDragStartContainerId(null);
+      return;
+    }
     if (activeContainer.id === overContainer.id) return;
     if (overIsContainer) {
       moveToContainer(activeId, overId);
@@ -89,7 +99,11 @@ export function TaskBoard({
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     setActiveItem(null);
-    if (!over) return;
+    onDragStateChange?.(false);
+    if (!over) {
+      setDragStartContainerId(null);
+      return;
+    }
     const activeId = active.id as string;
     const overId = over.id as string;
     const activeContainer = findContainer(activeId);
@@ -101,6 +115,22 @@ export function TaskBoard({
     if (activeId !== overId && activeContainer.id === overContainer.id) {
       moveItem(activeId, overId, activeContainer.id);
     }
+
+    if (
+      onStatusDrop &&
+      dragStartContainerId &&
+      dragStartContainerId !== overContainer.id
+    ) {
+      onStatusDrop(activeId, dragStartContainerId, overContainer.id);
+    }
+
+    setDragStartContainerId(null);
+  }
+
+  function handleDragCancel() {
+    setActiveItem(null);
+    setDragStartContainerId(null);
+    onDragStateChange?.(false);
   }
 
   return (
@@ -111,8 +141,9 @@ export function TaskBoard({
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
     >
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {filteredContainers.map((container) => (
           <TaskColumn
             key={container.id}

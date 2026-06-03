@@ -52,7 +52,7 @@ export default function OtpForm() {
       );
 
       router.push(
-        response.data.onboarding_completed ? "/admin/dashboard" : "/complete-onboarding"
+        response.data.onboarding_completed ? "/dashboard" : "/complete-onboarding"
       );
     },
   });

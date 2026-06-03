@@ -7,6 +7,7 @@ import { AllTasksView } from "@/components/operations/all-tasks-view";
 import { useProjects } from "@/hooks/use-projects";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { buildProjectSlug } from "@/lib/utils/route-slugs";
 
 type ProjectsTab = "projects" | "tasks";
 
@@ -24,17 +25,18 @@ function ProjectsContent() {
   const activeTab = (searchParams.get("tab") as ProjectsTab) || "projects";
 
   const user = useAuthStore((s) => s.user);
-  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
-  const canManageProjects = role === "owner" || role === "admin" || role === "supervisor";
+  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
 
   const [page, setPage] = useState(1);
 
   const { data, isPending: isLoading } = useProjects(
-    companyId ? { company_id: companyId, page } : {}
+    companyId ? { company_id: companyId, page } : {},
+    "/agent"
   );
 
   const projects = data?.projects ?? [];
   const pagination = data?.pagination ?? null;
+  const analytics = data?.analytics ?? null;
 
   const handleTabChange = (tab: ProjectsTab) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -42,8 +44,9 @@ function ProjectsContent() {
     router.push(`${pathname}?${params.toString()}`);
   };
 
-  const handleViewProject = (id: string) => {
-    router.push(`/projects/${id}`);
+  const handleViewProject = (id: string, name?: string) => {
+    const slug = buildProjectSlug(id, name);
+    router.push(`/agent/projects/${slug}`);
   };
 
   return (
@@ -56,11 +59,10 @@ function ProjectsContent() {
               <button
                 key={tab.value}
                 onClick={() => handleTabChange(tab.value)}
-                className={`px-5 py-2.5 rounded-full transition-all cursor-pointer ${
-                  activeTab === tab.value
-                    ? "bg-[#09232D] text-white shadow-lg text-[14px] font-extrabold"
-                    : "text-gray-400 hover:text-gray-600 text-[13px] font-medium"
-                }`}
+                className={`px-5 py-2.5 rounded-full transition-all cursor-pointer ${activeTab === tab.value
+                  ? "bg-[#09232D] text-white shadow-lg text-[14px] font-extrabold"
+                  : "text-gray-400 hover:text-gray-600 text-[13px] font-medium"
+                  }`}
               >
                 {tab.label}
               </button>
@@ -72,6 +74,7 @@ function ProjectsContent() {
         {activeTab === "projects" ? (
           <ProjectsViewAgents
             projects={projects}
+            analytics={analytics}
             onViewProject={handleViewProject}
             isLoading={isLoading}
             pagination={pagination}

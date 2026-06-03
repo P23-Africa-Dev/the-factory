@@ -1,6 +1,16 @@
 import AgentLoginForm from "@/components/forms/agent-login-form";
+import { AUTH_TOKEN_COOKIE } from "@/lib/auth/session";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
-export default function AgentLoginPage() {
+export default async function AgentLoginPage() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(AUTH_TOKEN_COOKIE)?.value;
+
+  if (token) {
+    redirect("/agent/dashboard");
+  }
+
   return (
     <div className="w-full max-w-[460px] flex flex-col gap-8">
       <div className="text-left md:text-center flex flex-col gap-3">

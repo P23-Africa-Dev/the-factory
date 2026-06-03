@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { SectionDivider } from "@/components/payroll/payroll/section-divider";
 import { FormRow } from "@/components/payroll/payroll/form-row";
@@ -50,11 +50,10 @@ function AgentAvatarGrid({
           key={avatar.key}
           type="button"
           onClick={() => onSelect(avatar.key)}
-          className={`h-14 w-14 rounded-full overflow-hidden border-2 transition-all ${
-            selectedAvatarKey === avatar.key
-              ? "border-[#094B5C] ring-2 ring-offset-1 ring-[#094B5C]/30"
-              : "border-gray-200"
-          }`}
+          className={`h-14 w-14 rounded-full overflow-hidden border-2 transition-all ${selectedAvatarKey === avatar.key
+            ? "border-[#094B5C] ring-2 ring-offset-1 ring-[#094B5C]/30"
+            : "border-gray-200"
+            }`}
           title={avatar.key}
         >
           {Boolean(avatar.url) && !failedImageKeys.has(avatar.key) ? (
@@ -125,6 +124,21 @@ export function AgentDetailsModal({
   const hasMoreAvatarPages = Boolean(avatarQuery.hasNextPage);
   const isLoadingMoreAvatars = avatarQuery.isFetchingNextPage;
   const visibleAvatars = avatarItems;
+  const currentAvatar = useMemo(
+    () => visibleAvatars.find((avatar) => avatar.key === details.avatarKey) ?? null,
+    [details.avatarKey, visibleAvatars]
+  );
+
+  useEffect(() => {
+    if (!normalizedGender || !isOpen || details.avatarKey || visibleAvatars.length === 0) {
+      return;
+    }
+
+    onDetailsChange({
+      ...details,
+      avatarKey: visibleAvatars[0].key,
+    });
+  }, [details, details.avatarKey, isOpen, normalizedGender, onDetailsChange, visibleAvatars]);
 
   if (!isOpen) return null;
 
@@ -132,8 +146,12 @@ export function AgentDetailsModal({
     onDetailsChange({ ...details, [key]: val });
 
   return (
-    <div className="fixed right-119.75 bottom-3.25 z-[60]">
-      <div className="relative bg-white rounded-3xl w-full max-w-105 p-7 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026]">
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6 pointer-events-none">
+      <div
+        className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs pointer-events-auto sm:hidden"
+      />
+
+      <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full sm:w-[420px] p-7 shadow-[0px_8px_32px_rgba(0,0,0,0.15)] flex flex-col max-h-[90dvh] sm:max-h-none overflow-y-auto sm:overflow-visible bottom-0 sm:absolute sm:right-[480px] sm:bottom-6 pointer-events-auto transition-all duration-300 ease-out">
         <h3 className="text-[20px] font-bold text-[#0B1215] mb-6">Agent Details</h3>
 
         <SectionDivider label="Personal Information" />
@@ -162,20 +180,19 @@ export function AgentDetailsModal({
             <FormRow label="Gender">
               <InlineSelect
                 value={details.gender}
-                onChange={(e) => {
-                  set("gender", e.target.value as "male" | "female" | "");
-                  set("avatarKey", "");
+                onChange={(v) => {
+                  onDetailsChange({
+                    ...details,
+                    gender: v as "male" | "female" | "",
+                    avatarKey: "",
+                  });
                   onClearError?.("gender");
                   onClearError?.("avatarKey");
                 }}
+                options={[{ value: "male", label: "Male" }, { value: "female", label: "Female" }]}
+                placeholder="E.g Male"
                 className="col-span-2"
-              >
-                <option value="" disabled>
-                  E.g Male
-                </option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-              </InlineSelect>
+              />
             </FormRow>
             {errors.gender && (
               <p className="text-[11px] text-red-500 mt-0.5 text-right">{errors.gender}</p>
@@ -186,6 +203,22 @@ export function AgentDetailsModal({
         <SectionDivider label="Profile Picture" />
 
         <div className="pt-2 mb-6">
+          <div className="mb-3">
+            <p className="text-[11px] text-gray-500 mb-1">Avatar Preview</p>
+            <div className="h-16 w-16 rounded-full border border-gray-200 overflow-hidden bg-gray-50 flex items-center justify-center">
+              {currentAvatar?.url ? (
+                <img src={currentAvatar.url} alt="Selected avatar" className="h-full w-full object-cover" />
+              ) : currentAvatar?.svg ? (
+                <div
+                  className="h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
+                  dangerouslySetInnerHTML={{ __html: currentAvatar.svg }}
+                />
+              ) : (
+                <span className="text-[10px] text-gray-400">No avatar</span>
+              )}
+            </div>
+          </div>
+
           <p className="text-[11px] text-gray-500 mb-2">Select an avatar for this user</p>
 
           {!normalizedGender ? (
@@ -224,7 +257,7 @@ export function AgentDetailsModal({
           <button
             type="submit"
             form="add-agent-form"
-            className="w-fit px-9.25 py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer"
+            className="w-full sm:w-auto px-9.25 py-3 sm:py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer flex items-center justify-center gap-2"
           >
             Done
           </button>

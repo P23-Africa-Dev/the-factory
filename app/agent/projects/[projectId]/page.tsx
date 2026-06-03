@@ -2,6 +2,7 @@
 
 import { use } from "react";
 import { ProjectDetailsView } from "@/components/operations/project-details-view";
+import { resolveProjectIdentifier } from "@/lib/utils/route-slugs";
 
 export default function ProjectTasksPage({
   params,
@@ -9,5 +10,7 @@ export default function ProjectTasksPage({
   params: Promise<{ projectId: string }>;
 }) {
   const resolvedParams = use(params);
-  return <ProjectDetailsView projectId={resolvedParams.projectId} basePath="/agent" />;
+  const projectId = resolveProjectIdentifier(resolvedParams.projectId);
+
+  return <ProjectDetailsView projectId={projectId} basePath="/agent" />;
 }

@@ -2,7 +2,7 @@
 
 import { apiRequest, ApiEnvelope } from "./onboarding";
 
-export type InternalUserRole = "supervisor" | "agent";
+export type InternalUserRole = "admin" | "supervisor" | "agent";
 
 export type CreateInternalUserPayload = {
   company_id: number | string;
@@ -12,6 +12,7 @@ export type CreateInternalUserPayload = {
   assigned_zone: string;
   work_days: string[];
   base_salary: number;
+  salary_type?: "daily" | "monthly" | "weekly";
   currency_code?: string;
   commission_enabled?: boolean;
   supervisor_user_id?: number;
@@ -37,6 +38,14 @@ export type InternalUserListItem = {
   name: string;
   email: string;
   role: InternalUserRole;
+  internal_role?: InternalUserRole;
+  assigned_zone?: string | null;
+  base_salary?: number | null;
+  payroll_salary_type?: "daily" | "monthly" | "weekly" | null;
+  salary_currency?: string | null;
+  phone_number?: string | null;
+  avatar_key?: string | null;
+  avatar_url?: string | null;
   onboarding_status?: "active" | "pending_onboarding" | "inactive";
   is_active?: boolean;
   internal_onboarding_completed_at?: string | null;
@@ -50,7 +59,24 @@ export type ListInternalUsersParams = {
   company_id?: number | string;
   role?: InternalUserRole;
   onboarding_status?: "active" | "pending_onboarding" | "inactive";
+  status?: "active" | "pending_onboarding" | "inactive";
+  search?: string;
+  zone?: string;
   include_inactive?: 0 | 1;
+  per_page?: number;
+  page?: number;
+};
+
+export type PaginatedInternalUsersData = {
+  items: InternalUserListItem[];
+  pagination: {
+    next_page_url: string | null;
+    prev_page_url: string | null;
+    per_page: number;
+    current_page?: number;
+    last_page?: number;
+    total?: number;
+  };
 };
 
 export type InternalOnboardingStatusData = {
@@ -105,6 +131,29 @@ export function listInternalUsers(
   });
 
   return apiRequest<InternalUserListItem[]>({
+    method: "GET",
+    path: `/internal-users${query}`,
+    token,
+  });
+}
+
+export function listInternalUsersPaginated(
+  params: ListInternalUsersParams,
+  token: string
+): Promise<ApiEnvelope<PaginatedInternalUsersData>> {
+  const query = buildQuery({
+    company_id: params.company_id,
+    role: params.role,
+    onboarding_status: params.onboarding_status,
+    status: params.status,
+    search: params.search,
+    zone: params.zone,
+    include_inactive: params.include_inactive,
+    per_page: params.per_page,
+    page: params.page,
+  });
+
+  return apiRequest<PaginatedInternalUsersData>({
     method: "GET",
     path: `/internal-users${query}`,
     token,

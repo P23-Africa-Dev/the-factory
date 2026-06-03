@@ -8,6 +8,7 @@ import type { Project } from "@/types/operations";
 import { useAuthStore } from "@/store/auth";
 import type { ApiProjectType, ApiProjectStatus, ApiProjectPriority } from "@/lib/api/projects";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 const PRIORITY_OPTIONS = ["High", "Medium", "Low"] as const;
 const STATUS_OPTIONS = ["In progress", "Pending", "Completed"] as const;
@@ -41,7 +42,7 @@ const EMPTY = {
 
 const FIELD =
   "w-full bg-[#F6F6F6] border border-gray-200 rounded-2xl px-4 py-3.5 text-[13px] text-[#09232D] outline-none focus:ring-2 focus:ring-[#09232D]/10 focus:border-[#09232D]/30 transition-all placeholder:text-gray-300";
-const LABEL = "text-[12px] font-medium text-[#6B7280] w-28 shrink-0";
+const LABEL = "text-[12px] font-medium text-[#6B7280] w-full sm:w-28 sm:shrink-0";
 
 function Row({
   label,
@@ -51,9 +52,9 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4">
       <span className={LABEL}>{label}</span>
-      <div className="flex-1">{children}</div>
+      <div className="flex-1 w-full">{children}</div>
     </div>
   );
 }
@@ -211,10 +212,13 @@ export function CreateProjectDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-white/40" onClick={onClose} />
+    <div className="fixed inset-0 z-50 flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
+      <div 
+        className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 cursor-pointer" 
+        onClick={onClose} 
+      />
 
-      <div className="absolute right-12 bottom-3.25 bg-white rounded-[28px] w-full max-w-100 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
+      <div className="relative bg-white rounded-t-[28px] sm:rounded-[28px] w-full sm:w-[440px] shadow-[0px_8px_32px_rgba(0,0,0,0.15)] overflow-hidden flex flex-col max-h-[90dvh] sm:max-h-[calc(100vh-80px)] transition-all duration-300 ease-out">
         <div className="bg-transparent h-18 relative overflow-hidden flex items-center px-7 shrink-0">
           <div className="absolute top-0 right-0 w-[50%] h-full pointer-events-none">
             <svg
@@ -276,63 +280,25 @@ export function CreateProjectDrawer({
 
           {/* Category */}
           <Row label="Category">
-            <div className="relative">
-              <select
-                value={form.category}
-                onChange={(e) => set("category", e.target.value)}
-                className={`${FIELD} appearance-none pr-9 cursor-pointer`}
-              >
-                <option value="" disabled>
-                  Select category
-                </option>
-                {CATEGORY_OPTIONS.map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-              <ChevronDown
-                size={14}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              />
-            </div>
+            <SearchableSelect
+              value={form.category}
+              onChange={(v) => set("category", v)}
+              options={CATEGORY_OPTIONS.map((c) => ({ value: c, label: c }))}
+              placeholder="Select category"
+              className={`${FIELD} pr-4 cursor-pointer`}
+            />
           </Row>
 
           {/* Project Lead — populated from internal-users API */}
           <Row label="Project Lead">
-            <div className="relative">
-              <User
-                size={13}
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              />
-              {loadingSupervisors ? (
-                <div className={`${FIELD} flex items-center gap-2 pl-9`}>
-                  <Loader2 size={14} className="animate-spin text-gray-400" />
-                  <span className="text-gray-400 text-[13px]">Loading leads...</span>
-                </div>
-              ) : (
-                <select
-                  value={form.lead}
-                  onChange={(e) => set("lead", e.target.value)}
-                  className={`${FIELD} appearance-none pl-9 pr-9 cursor-pointer`}
-                >
-                  <option value="" disabled>
-                    {supervisors.length === 0
-                      ? "No supervisors available"
-                      : "Assign a lead"}
-                  </option>
-                  {supervisors.map((s) => (
-                    <option key={s.id} value={String(s.id)}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {!loadingSupervisors && (
-                <ChevronDown
-                  size={14}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                />
-              )}
-            </div>
+            <SearchableSelect
+              value={form.lead}
+              onChange={(v) => set("lead", v)}
+              options={loadingSupervisors ? [] : supervisors.map((s) => ({ value: String(s.id), label: s.name }))}
+              placeholder={loadingSupervisors ? "Loading leads…" : supervisors.length === 0 ? "No supervisors available" : "Assign a lead"}
+              leftIcon={<User size={13} className="text-gray-400" />}
+              className={`${FIELD} pl-9 pr-4 cursor-pointer`}
+            />
           </Row>
 
           <Row label="Assigned Team IDs">
@@ -363,12 +329,36 @@ export function CreateProjectDrawer({
           </Row>
 
           <Row label="Attachments">
-            <input
-              type="file"
-              multiple
-              onChange={(e) => setAttachments(Array.from(e.target.files ?? []))}
-              className="w-full text-xs text-gray-600"
-            />
+            <div className="space-y-2">
+              <label className="flex flex-col items-center justify-center w-full h-20 border border-dashed border-gray-300 rounded-2xl cursor-pointer bg-[#F6F6F6] hover:bg-gray-100/50 hover:border-gray-400 transition-colors">
+                <div className="flex flex-col items-center justify-center py-4 text-center">
+                  <span className="text-[12px] font-medium text-gray-600">
+                    Click to select files
+                  </span>
+                  <span className="text-[10px] text-gray-400 mt-0.5">
+                    Multiple files supported
+                  </span>
+                </div>
+                <input
+                  type="file"
+                  multiple
+                  onChange={(e) => setAttachments(Array.from(e.target.files ?? []))}
+                  className="hidden"
+                />
+              </label>
+              {attachments.length > 0 && (
+                <div className="text-[11px] text-[#09232D] max-h-20 overflow-y-auto space-y-1">
+                  {attachments.map((file, i) => (
+                    <div key={i} className="flex items-center gap-1.5 bg-gray-100 rounded px-2 py-0.5">
+                      <span className="truncate flex-1">{file.name}</span>
+                      <span className="text-[10px] text-gray-400 shrink-0">
+                        ({(file.size / 1024).toFixed(1)} KB)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </Row>
 
           <Divider label="Timeline" />
@@ -396,44 +386,23 @@ export function CreateProjectDrawer({
 
           {/* Priority */}
           <Row label="Priority">
-            <div className="relative">
-              <select
-                required
-                value={form.priority}
-                onChange={(e) => set("priority", e.target.value as Priority)}
-                className={`${FIELD} appearance-none pr-9 cursor-pointer`}
-              >
-                <option value="" disabled>
-                  Select priority
-                </option>
-                {PRIORITY_OPTIONS.map((p) => (
-                  <option key={p}>{p}</option>
-                ))}
-              </select>
-              <ChevronDown
-                size={14}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              />
-            </div>
+            <SearchableSelect
+              value={form.priority}
+              onChange={(v) => set("priority", v as Priority)}
+              options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))}
+              placeholder="Select priority"
+              className={`${FIELD} pr-4 cursor-pointer`}
+            />
           </Row>
 
           {/* Status */}
           <Row label="Status">
-            <div className="relative">
-              <select
-                value={form.status}
-                onChange={(e) => set("status", e.target.value as Status)}
-                className={`${FIELD} appearance-none pr-9 cursor-pointer`}
-              >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-              <ChevronDown
-                size={14}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              />
-            </div>
+            <SearchableSelect
+              value={form.status}
+              onChange={(v) => set("status", v as Status)}
+              options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
+              className={`${FIELD} pr-4 cursor-pointer`}
+            />
           </Row>
 
           {/* <Divider label="Settings" /> */}
@@ -453,14 +422,21 @@ export function CreateProjectDrawer({
           </Row> */}
         </form>
 
-        <div className="px-7 py-5 shrink-0">
+        <div className="px-7 py-5 sm:py-4 shrink-0 border-t border-gray-100 bg-white">
           <button
             type="submit"
             form="create-project-form"
             disabled={isPending}
-            className="w-fit px-9.25 py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full sm:w-auto px-9.25 py-3 sm:py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {isPending ? (projectToEdit ? "Updating…" : "Creating…") : (projectToEdit ? "Save Changes" : "Create Project")}
+            {isPending ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                <span>{projectToEdit ? "Updating..." : "Creating..."}</span>
+              </>
+            ) : (
+              projectToEdit ? "Save Changes" : "Create Project"
+            )}
           </button>
         </div>
       </div>

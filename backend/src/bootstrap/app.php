@@ -3,6 +3,7 @@
 use App\Http\Middleware\EnsureAdminHasPermission;
 use App\Http\Middleware\EnsureAdminIsActive;
 use App\Http\Middleware\EnsureApiAccessRole;
+use App\Http\Middleware\NormalizeRequestPath;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -26,6 +27,8 @@ return Application::configure(basePath: dirname(__DIR__))
         apiPrefix: 'api/v1',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(NormalizeRequestPath::class);
+
         $middleware->redirectGuestsTo(function (Request $request): string {
             return $request->is('admin/*')
                 ? route('admin.login.show')

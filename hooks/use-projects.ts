@@ -20,6 +20,7 @@ import {
   type PaginationData,
   type InternalUser,
   type InternalUsersParams,
+  type ProjectsAnalyticsData,
 } from "@/lib/api/projects";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { mapApiProject } from "@/types/operations";
@@ -27,8 +28,9 @@ import type { Project } from "@/types/operations";
 
 export const PROJECT_KEYS = {
   all: ["projects"] as const,
-  list: (params: ListProjectsParams) => ["projects", params] as const,
-  detail: (id: number | string) => ["project", id] as const,
+  list: (params: ListProjectsParams, basePath = "") =>
+    ["projects", basePath, params] as const,
+  detail: (id: number | string, basePath = "") => ["project", basePath, id] as const,
 };
 
 export const INTERNAL_USER_KEYS = {
@@ -41,18 +43,20 @@ export const INTERNAL_USER_KEYS = {
 export type ProjectsResult = {
   projects: Project[];
   pagination: PaginationData;
+  analytics: ProjectsAnalyticsData | null;
 };
 
-export function useProjects(params: ListProjectsParams = {}) {
+export function useProjects(params: ListProjectsParams = {}, basePath = "") {
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
   return useQuery({
-    queryKey: PROJECT_KEYS.list(params),
+    queryKey: PROJECT_KEYS.list(params, basePath),
     queryFn: async (): Promise<ProjectsResult> => {
-      const res = await listProjects(params, token);
+      const res = await listProjects(params, token, basePath);
       return {
         projects: res.data.items.map(mapApiProject),
         pagination: res.data.pagination,
+        analytics: res.data.analytics ?? null,
       };
     },
     enabled: !!token,
@@ -62,13 +66,13 @@ export function useProjects(params: ListProjectsParams = {}) {
 
 // ─── Single ───────────────────────────────────────────────────────────────────
 
-export function useProject(id: number | string | null | undefined) {
+export function useProject(id: number | string | null | undefined, basePath = "") {
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
   return useQuery({
-    queryKey: PROJECT_KEYS.detail(id ?? ""),
+    queryKey: PROJECT_KEYS.detail(id ?? "", basePath),
     queryFn: async (): Promise<Project> => {
-      const res = await getProject(id!, token);
+      const res = await getProject(id!, token, basePath);
       return mapApiProject(res.data.project);
     },
     enabled: !!token && !!id,

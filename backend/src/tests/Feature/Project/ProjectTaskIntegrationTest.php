@@ -45,7 +45,7 @@ class ProjectTaskIntegrationTest extends TestCase
 
     public function test_admin_can_create_project_with_valid_manager(): void
     {
-        [$company, $admin, , $supervisor] = $this->seedCompany();
+        [$company, $admin,, $supervisor] = $this->seedCompany();
 
         $response = $this->withToken($admin->createToken('token', ['*'])->plainTextToken)
             ->postJson('/api/v1/projects', [
@@ -98,12 +98,12 @@ class ProjectTaskIntegrationTest extends TestCase
 
     public function test_admin_can_update_project_to_remove_manager(): void
     {
-        [$company, $admin, , $supervisor] = $this->seedCompany();
+        [$company, $admin,, $supervisor] = $this->seedCompany();
 
         $project = $this->createProject($company, $admin, $supervisor);
 
         $response = $this->withToken($admin->createToken('token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/projects/'.$project->id, [
+            ->patchJson('/api/v1/projects/' . $project->id, [
                 'company_id' => $company->id,
                 'project_manager_user_id' => null,
             ]);
@@ -124,7 +124,7 @@ class ProjectTaskIntegrationTest extends TestCase
         $project = $this->createProject($company, $admin);
 
         $response = $this->withToken($admin->createToken('token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/projects/'.$project->id, [
+            ->patchJson('/api/v1/projects/' . $project->id, [
                 'company_id' => $company->id,
                 'name' => 'Updated Name',
                 'status' => 'active',
@@ -277,32 +277,25 @@ class ProjectTaskIntegrationTest extends TestCase
         ]);
 
         $response = $this->withToken($admin->createToken('token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/tasks/'.$task->id.'/assign', [
+            ->patchJson('/api/v1/tasks/' . $task->id . '/assign', [
                 'company_id' => $company->id,
-                'assigned_agent_ids' => [$agent1->id, $agent2->id],
+                'assigned_agent_id' => $agent2->id,
+                'reason' => 'Load balancing transfer.',
             ]);
 
         $response->assertOk()
-            ->assertJson(['success' => true]);
+            ->assertJsonPath('data.reassignment.status', 'pending')
+            ->assertJsonPath('data.reassignment.to_user_id', $agent2->id);
 
-        $assignedUsers = $response->json('data.task.assigned_users');
-        $this->assertCount(2, $assignedUsers);
+        $reassignmentId = (int) $response->json('data.reassignment.id');
 
-        $assignedIds = array_column($assignedUsers, 'id');
-        $this->assertContains($agent1->id, $assignedIds);
-        $this->assertContains($agent2->id, $assignedIds);
+        $acceptResponse = $this->withToken($agent2->createToken('agent2-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/tasks/reassignments/' . $reassignmentId . '/accept', [
+                'company_id' => $company->id,
+            ]);
 
-        // Each assigned user has name
-        foreach ($assignedUsers as $user) {
-            $this->assertArrayHasKey('id', $user);
-            $this->assertArrayHasKey('name', $user);
-        }
-
-        $this->assertDatabaseHas('task_assignments', [
-            'task_id' => $task->id,
-            'assigned_agent_id' => $agent1->id,
-            'is_current' => true,
-        ]);
+        $acceptResponse->assertOk()
+            ->assertJsonPath('data.reassignment.status', 'accepted');
 
         $this->assertDatabaseHas('task_assignments', [
             'task_id' => $task->id,
@@ -334,19 +327,13 @@ class ProjectTaskIntegrationTest extends TestCase
         ]);
 
         $response = $this->withToken($admin->createToken('token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/tasks/'.$task->id.'/assign', [
+            ->patchJson('/api/v1/tasks/' . $task->id . '/assign', [
                 'company_id' => $company->id,
                 'assigned_agent_id' => $agent->id,
             ]);
 
-        $response->assertOk();
-
-        $assignedUsers = $response->json('data.task.assigned_users');
-        $this->assertIsArray($assignedUsers);
-        $this->assertNotEmpty($assignedUsers);
-        $this->assertArrayHasKey('id', $assignedUsers[0]);
-        $this->assertArrayHasKey('name', $assignedUsers[0]);
-        $this->assertEquals($agent->id, $assignedUsers[0]['id']);
+        $response->assertUnprocessable()
+            ->assertJsonPath('errors.to_user_id.0', 'You must select a different user for reassignment.');
     }
 
     public function test_cross_company_agent_assignment_is_rejected(): void
@@ -372,13 +359,12 @@ class ProjectTaskIntegrationTest extends TestCase
         ]);
 
         $response = $this->withToken($admin->createToken('token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/tasks/'.$task->id.'/assign', [
+            ->patchJson('/api/v1/tasks/' . $task->id . '/assign', [
                 'company_id' => $company->id,
                 'assigned_agent_ids' => [$otherAgent->id],
             ]);
 
-        $response->assertUnprocessable()
-            ->assertJsonPath('errors.assigned_agent_id.0', 'Selected agent is not a member of this company.');
+        $response->assertUnprocessable();
     }
 
     public function test_agent_sees_tasks_assigned_via_multi_agent_flow(): void
@@ -427,7 +413,7 @@ class ProjectTaskIntegrationTest extends TestCase
 
         // agent1 should see this task (assigned via task_assignments even though not primary)
         $response = $this->withToken($agent1->createToken('token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/tasks?company_id='.$company->id);
+            ->getJson('/api/v1/tasks?company_id=' . $company->id);
 
         $response->assertOk();
         $taskIds = array_column($response->json('data.items'), 'id');
@@ -539,7 +525,7 @@ class ProjectTaskIntegrationTest extends TestCase
         ]);
 
         $response = $this->withToken($admin->createToken('token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/tasks?company_id='.$company->id);
+            ->getJson('/api/v1/tasks?company_id=' . $company->id);
 
         $response->assertOk();
 

@@ -1,2 +1,14 @@
 name: Factory 23
-values: []
+values:
+	- key: base_url
+		value: http://127.0.0.1:8080
+		enabled: true
+	- key: access_token
+		value: ""
+		enabled: true
+	- key: company_id
+		value: ""
+		enabled: true
+	- key: payroll_id
+		value: ""
+		enabled: true
