@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ScheduleMeetingModal } from "@/components/operations/schedule-meeting-modal";
 import { MeetingDetailsModal } from "@/components/dashboard/meeting-details-modal";
+import { AIChat } from "@/components/dashboard/ai-chat";
 
 export function TopCustomers() {
   const customers = [
@@ -410,8 +411,9 @@ export function WeeklyTasksAgents() {
     day: "numeric",
   });
 
+  const [now] = useState(Date.now);
+
   const upcomingMeetings = useMemo(() => {
-    const now = Date.now();
 
     return (meetingsData?.meetings ?? [])
       .filter((meeting) => meeting.status === "scheduled" && Boolean(meeting.start_at))
@@ -713,6 +715,14 @@ export function CRMPipeline() {
 }
 
 export function AIWorkspace() {
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatKey, setChatKey] = useState(0);
+
+  function openChat() {
+    setChatKey((k) => k + 1);
+    setChatOpen(true);
+  }
+
   return (
     <div className="py-4 px-2.75 bg-[#7BB6B8] h-fit rounded-[20px] text-white relative overflow-hidden shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
       <div className="z-20 relative text-[#09232D]">
@@ -733,11 +743,15 @@ export function AIWorkspace() {
           Generate leads, draft outreach, or get recommendations using single
           line prompt
         </p>
-        <button className="mt-4 text-[10px] w-full font-semibold bg-[#09232D] py-[10.5px] rounded-[10px] flex items-center justify-center gap-1 hover:bg-[#09232D]/90 transition-all text-white">
+        <button
+          onClick={openChat}
+          className="mt-4 text-[10px] w-full font-semibold bg-[#09232D] py-[10.5px] rounded-[10px] flex items-center justify-center gap-1 hover:bg-[#09232D]/90 transition-all text-white"
+        >
           Try AI
         </button>
       </div>
       <div className="absolute w-40 h-51.5 bg-linear-to-l from-[#7BB6B8] to-[#9DD8DA] -left-10 top-20 rounded-[50%_50%_45%_45%/60%_60%_40%_40%] transition-all duration-700 z-0" />
+      <AIChat key={chatKey} open={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   );
 }

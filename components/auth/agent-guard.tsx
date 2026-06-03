@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth";
+import { clearAuthSession } from "@/lib/auth/session";
 
 export function AgentGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -12,6 +13,8 @@ export function AgentGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hasHydrated) return;
     if (!user) {
+      // Also clear the cookie so the login page server doesn't bounce back here.
+      clearAuthSession();
       router.replace("/agent/login");
       return;
     }

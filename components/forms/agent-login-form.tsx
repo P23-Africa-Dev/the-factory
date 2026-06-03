@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { loginAgent } from "@/lib/api/auth";
 import { ApiRequestError, getMe } from "@/lib/api/onboarding";
-import { setAuthSession, setCompanyId } from "@/lib/auth/session";
+import { clearAuthSession, getAuthTokenFromDocument, setAuthSession, setCompanyId } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -27,6 +27,7 @@ export default function AgentLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const setUser = useAuthStore((s) => s.setUser);
+  const clearUser = useAuthStore((s) => s.clearUser);
   const user = useAuthStore((s) => s.user);
   const hasHydrated = useAuthStore((s) => s._hasHydrated);
   const [showPassword, setShowPassword] = useState(false);
@@ -56,12 +57,19 @@ export default function AgentLoginForm() {
   const showResetSuccess = searchParams.get("reset") === "success";
 
   useEffect(() => {
-    if (!hasHydrated || !user) {
+    if (!hasHydrated || !user) return;
+
+    // If zustand has a user but the cookie is gone, the state is stale — clear it
+    // to avoid bouncing between login and dashboard forever.
+    const token = getAuthTokenFromDocument();
+    if (!token) {
+      clearAuthSession();
+      clearUser();
       return;
     }
 
     router.replace(user.active_company?.role === "agent" ? "/agent/dashboard" : "/dashboard");
-  }, [hasHydrated, router, user]);
+  }, [hasHydrated, router, user, clearUser]);
 
   async function onSubmit(values: LoginFormValues) {
     setGlobalError("");

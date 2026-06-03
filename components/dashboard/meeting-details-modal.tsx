@@ -58,7 +58,7 @@ export function MeetingDetailsModal({ isOpen, onClose, meeting }: MeetingDetails
         }
 
         return meeting.attendees.filter((attendee) => attendee.user_id != null);
-    }, [meeting?.attendees]);
+    }, [meeting]);
 
     const externalAttendees = useMemo(() => {
         if (!meeting?.attendees) {
@@ -66,7 +66,7 @@ export function MeetingDetailsModal({ isOpen, onClose, meeting }: MeetingDetails
         }
 
         return meeting.attendees.filter((attendee) => attendee.user_id == null);
-    }, [meeting?.attendees]);
+    }, [meeting]);
 
     if (!isOpen || !meeting) {
         return null;
