@@ -13,10 +13,12 @@ use App\Services\AI\Tools\ActionToolRegistry;
 use App\Services\AI\Tools\ReadToolRegistry;
 use App\Services\Company\CompanyContextService;
 use Illuminate\Support\Facades\Cache;
+use App\Services\AI\AiLoggingService;
 
 class CopilotService
 {
     public function __construct(
+        private readonly AiLoggingService $aiLoggingService,
         private readonly CompanyContextService $companyContextService,
         private readonly IntentClassifier $intentClassifier,
         private readonly ToolPolicyService $toolPolicyService,
@@ -41,6 +43,12 @@ class CopilotService
         $role = (string) $context['role'];
 
         if (! $this->canConsumeCredits($resolvedCompanyId)) {
+            $this->aiLoggingService->cancelled(
+                companyId: $resolvedCompanyId,
+                userId: (int) $user->id,
+                sessionId: $threadId,
+                reason: 'Monthly credit limit exceeded.',
+            );
             return $this->persistAndRespond(
                 user: $user,
                 companyId: $resolvedCompanyId,
@@ -68,6 +76,17 @@ class CopilotService
 
         if (($intentType === 'tool' || $intentType === 'action') && is_string($intent['tool'] ?? null)) {
             $candidateTool = (string) $intent['tool'];
+            $aiLog = $this->aiLoggingService->begin(
+                companyId: $resolvedCompanyId,
+                userId: (int) $user->id,
+                sessionId: $threadId,
+                provider: (string) config('services.ai.provider', 'openai'),
+                model: (string) config('services.ai.exec_model', config('services.ai.default_model', 'gpt-4.1-mini')),
+                userPrompt: $message,
+                sanitizedPrompt: $this->redactSensitiveText($message),
+                intentType: $intentType,
+                toolName: $candidateTool,
+            );
 
             if ($intentType === 'action' && ! (bool) config('services.ai.enable_actions', true)) {
                 $assistantText = 'Copilot write actions are currently disabled by configuration. Read-only answers are still available.';
@@ -121,7 +140,31 @@ class CopilotService
                 ];
             }
         } else {
+            $aiLog = $this->aiLoggingService->begin(
+                companyId: $resolvedCompanyId,
+                userId: (int) $user->id,
+                sessionId: $threadId,
+                provider: (string) config('services.ai.provider', 'openai'),
+                model: (string) config('services.ai.exec_model', config('services.ai.default_model', 'gpt-4.1-mini')),
+                userPrompt: $message,
+                sanitizedPrompt: $this->redactSensitiveText($message),
+                intentType: 'general',
+                toolName: null,
+            );
+            $startMs = microtime(true);
             $assistantText = $this->resolveGeneralResponse($user, $role, (int) $context['company']->id, $message);
+            $execMs = (int) round((microtime(true) - $startMs) * 1000);
+            // Approximate token estimate: 1 token ≈ 4 chars
+            $inputEst = (int) ceil(mb_strlen($message) / 4);
+            $outputEst = (int) ceil(mb_strlen($assistantText) / 4);
+            $this->aiLoggingService->complete($aiLog, $inputEst, $outputEst);
+        }
+
+        // Complete AI log for tool/action paths (general path completes its own log inline above)
+        if (isset($aiLog) && $aiLog instanceof \App\Models\AiLog && $aiLog->status === 'success' && $aiLog->ended_at === null) {
+            $inputEst = (int) ceil(mb_strlen($message) / 4);
+            $outputEst = (int) ceil(mb_strlen($assistantText) / 4);
+            $this->aiLoggingService->complete($aiLog, $inputEst, $outputEst);
         }
 
         if ((bool) config('services.ai.pii_redaction_enabled', true)) {

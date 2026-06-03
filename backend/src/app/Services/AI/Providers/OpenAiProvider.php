@@ -57,25 +57,29 @@ class OpenAiProvider implements AiProviderContract
             return null;
         }
 
-        $timeoutMs = (int) config('services.ai.request_timeout_ms', 30000);
-        $baseUrl = rtrim((string) config('services.ai.openai.base_url', 'https://api.openai.com/v1'), '/');
+        try {
+            $timeoutMs = (int) config('services.ai.request_timeout_ms', 30000);
+            $baseUrl = rtrim((string) config('services.ai.openai.base_url', 'https://api.openai.com/v1'), '/');
 
-        $response = $this->http
-            ->timeout(max(1, (int) ceil($timeoutMs / 1000)))
-            ->withToken((string) config('services.ai.openai.api_key'))
-            ->attach('file', file_get_contents($audio->getRealPath()) ?: '', $audio->getClientOriginalName())
-            ->asMultipart()
-            ->post($baseUrl . '/audio/transcriptions', [
-                ['name' => 'model', 'contents' => (string) ($options['audio_model'] ?? config('services.ai.openai.audio_model', 'gpt-4o-mini-transcribe'))],
-                ['name' => 'prompt', 'contents' => $prompt],
-            ]);
+            $response = $this->http
+                ->timeout(max(1, (int) ceil($timeoutMs / 1000)))
+                ->withToken((string) config('services.ai.openai.api_key'))
+                ->attach('file', file_get_contents($audio->getRealPath()) ?: '', $audio->getClientOriginalName())
+                ->asMultipart()
+                ->post($baseUrl . '/audio/transcriptions', [
+                    ['name' => 'model', 'contents' => (string) ($options['audio_model'] ?? config('services.ai.openai.audio_model', 'gpt-4o-mini-transcribe'))],
+                    ['name' => 'prompt', 'contents' => $prompt],
+                ]);
 
-        if (! $response->successful()) {
+            if (! $response->successful()) {
+                return null;
+            }
+
+            $text = $response->json('text');
+
+            return is_string($text) && trim($text) !== '' ? trim($text) : null;
+        } catch (\Throwable) {
             return null;
         }
-
-        $text = $response->json('text');
-
-        return is_string($text) && trim($text) !== '' ? trim($text) : null;
     }
 }
