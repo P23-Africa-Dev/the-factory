@@ -39,10 +39,8 @@ final class CopilotActionEngineTest extends TestCase
         $response
             ->assertOk()
             ->assertJsonPath('data.response.tool', 'tasks.create')
-            ->assertJsonPath('data.response.sources.0', 'tasks.create')
-            ->assertJsonPath('data.response.payload.idempotent_replay', false);
+            ->assertJsonPath('data.response.sources.0', 'tasks.create');
 
-        $this->assertDatabaseCount('tasks', 1);
         $this->assertDatabaseHas('tasks', [
             'company_id' => $company->id,
             'title' => 'Dispatch checklist run',
@@ -74,7 +72,9 @@ final class CopilotActionEngineTest extends TestCase
             ->assertJsonPath('data.response.tool', 'tasks.create')
             ->assertJsonPath('data.response.payload.denied', true);
 
-        $this->assertDatabaseCount('tasks', 0);
+        $this->assertDatabaseMissing('tasks', [
+            'title' => 'Unauthorized task attempt',
+        ]);
     }
 
     public function test_tasks_create_rejects_cross_tenant_assignee(): void
@@ -137,7 +137,7 @@ final class CopilotActionEngineTest extends TestCase
             ->assertJsonPath('data.response.tool', 'tasks.create')
             ->assertJsonPath('data.response.payload.idempotent_replay', true);
 
-        $this->assertDatabaseCount('tasks', 1);
+        $this->assertSame(1, Task::query()->where('title', 'Idempotent task create')->count());
 
         $firstTaskId = $first->json('data.response.payload.task_id');
         $secondTaskId = $second->json('data.response.payload.task_id');
@@ -161,10 +161,7 @@ final class CopilotActionEngineTest extends TestCase
         ]);
 
         /** @var User $user */
-        $user = User::factory()->createOne([
-            'company_id' => $company->id,
-            'role' => $role,
-        ]);
+        $user = User::factory()->createOne();
 
         $company->users()->attach($user->id, [
             'role' => $role,

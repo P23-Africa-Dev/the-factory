@@ -26,10 +26,7 @@ final class CopilotRoleAccessTest extends TestCase
             'activated_at' => now(),
         ]);
         /** @var User $agent */
-        $agent = User::factory()->createOne([
-            'company_id' => $company->id,
-            'role' => 'agent',
-        ]);
+        $agent = User::factory()->createOne();
 
         $company->users()->attach($agent->id, [
             'role' => 'agent',
@@ -40,16 +37,17 @@ final class CopilotRoleAccessTest extends TestCase
             ->actingAs($agent)
             ->postJson('/api/v1/copilot/chat', [
                 'company_id' => $company->id,
-                'message' => 'Which agents are active right now?',
+                'message' => 'Show active agent locations right now',
             ]);
 
         $response
             ->assertOk()
-            ->assertJsonPath('message.role', 'assistant')
-            ->assertJsonPath('message.sources.0', 'tracking.active_agents');
+            ->assertJsonPath('data.response.tool', 'tracking.active_agents')
+            ->assertJsonPath('data.response.payload.denied', true)
+            ->assertJsonPath('data.response.sources.0', 'tracking.active_agents');
 
-        $content = (string) $response->json('message.content');
+        $content = (string) $response->json('data.response.content');
 
-        $this->assertStringContainsString('do not have permission', strtolower($content));
+        $this->assertStringContainsString('not permitted', strtolower($content));
     }
 }

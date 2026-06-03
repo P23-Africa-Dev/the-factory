@@ -46,21 +46,21 @@ final class CopilotReadFlowTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertJsonPath('message.role', 'assistant')
-            ->assertJsonPath('message.sources.0', 'tasks.overdue')
-            ->assertJsonPath('threadId', $response->json('threadId'));
+            ->assertJsonPath('data.response.tool', 'tasks.overdue')
+            ->assertJsonPath('data.response.sources.0', 'tasks.overdue')
+            ->assertJsonPath('data.thread_id', $response->json('data.thread_id'));
 
         $this
             ->actingAs($admin)
             ->getJson('/api/v1/copilot/threads?company_id=' . $company->id)
             ->assertOk()
-            ->assertJsonCount(1, 'threads');
+            ->assertJsonCount(1, 'data.items');
 
         $this
             ->actingAs($admin)
-            ->getJson('/api/v1/copilot/threads/' . $response->json('threadId') . '?company_id=' . $company->id)
+            ->getJson('/api/v1/copilot/threads/' . $response->json('data.thread_id') . '?company_id=' . $company->id)
             ->assertOk()
-            ->assertJsonCount(2, 'thread.messages');
+            ->assertJsonCount(2, 'data.thread.messages');
     }
 
     /**
@@ -77,10 +77,7 @@ final class CopilotReadFlowTest extends TestCase
             'status' => 'active',
             'activated_at' => now(),
         ]);
-        $admin = User::factory()->createOne([
-            'company_id' => $company->id,
-            'role' => 'admin',
-        ]);
+        $admin = User::factory()->createOne();
 
         $company->users()->attach($admin->id, [
             'role' => 'admin',
