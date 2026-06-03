@@ -9,7 +9,9 @@ use App\Models\AiLog;
 use App\Services\AI\AiLoggingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
+use Throwable;
 
 class AiManagementController extends Controller
 {
@@ -22,9 +24,29 @@ class AiManagementController extends Controller
         $sevenDaysAgo = $now->copy()->subDays(7)->toDateString();
         $thirtyDaysAgo = $now->copy()->subDays(30)->toDateString();
 
-        $statsToday = $this->aiLoggingService->analytics(null, $today . ' 00:00:00', $today . ' 23:59:59');
-        $statsWeek = $this->aiLoggingService->analytics(null, $sevenDaysAgo . ' 00:00:00', $today . ' 23:59:59');
-        $statsMonth = $this->aiLoggingService->analytics(null, $thirtyDaysAgo . ' 00:00:00', $today . ' 23:59:59');
+        $aiLogsReady = $this->aiLogsTableAvailable();
+        $statsToday = $this->emptyStats();
+        $statsWeek = $this->emptyStats();
+        $statsMonth = $this->emptyStats();
+        $avgExecutionByProvider = [
+            'openai' => null,
+            'claude' => null,
+        ];
+
+        if ($aiLogsReady) {
+            $statsToday = $this->aiLoggingService->analytics(null, $today . ' 00:00:00', $today . ' 23:59:59');
+            $statsWeek = $this->aiLoggingService->analytics(null, $sevenDaysAgo . ' 00:00:00', $today . ' 23:59:59');
+            $statsMonth = $this->aiLoggingService->analytics(null, $thirtyDaysAgo . ' 00:00:00', $today . ' 23:59:59');
+
+            $avgExecutionByProvider['openai'] = AiLog::query()
+                ->where('provider', 'openai')
+                ->where('created_at', '>=', $now->copy()->subDays(30))
+                ->avg('execution_ms');
+            $avgExecutionByProvider['claude'] = AiLog::query()
+                ->where('provider', 'claude')
+                ->where('created_at', '>=', $now->copy()->subDays(30))
+                ->avg('execution_ms');
+        }
 
         // Determine AI status
         $openaiConfigured = trim((string) config('services.ai.openai.api_key')) !== '';
@@ -33,9 +55,16 @@ class AiManagementController extends Controller
         $fallbackProvider = (string) config('services.ai.fallback_provider', 'claude');
 
         // Recent failed rate (last 24h)
-        $last24hTotal = AiLog::where('created_at', '>=', $now->copy()->subDay())->count();
-        $last24hFailed = AiLog::where('created_at', '>=', $now->copy()->subDay())
-            ->where('status', 'failed')->count();
+        $last24hTotal = 0;
+        $last24hFailed = 0;
+
+        if ($aiLogsReady) {
+            $last24hTotal = AiLog::query()->where('created_at', '>=', $now->copy()->subDay())->count();
+            $last24hFailed = AiLog::query()->where('created_at', '>=', $now->copy()->subDay())
+                ->where('status', 'failed')
+                ->count();
+        }
+
         $errorRate = $last24hTotal > 0 ? round(($last24hFailed / $last24hTotal) * 100, 1) : 0;
 
         $aiStatus = 'online';
@@ -51,10 +80,12 @@ class AiManagementController extends Controller
             'statsToday',
             'statsWeek',
             'statsMonth',
+            'aiLogsReady',
             'openaiConfigured',
             'claudeConfigured',
             'primaryProvider',
             'fallbackProvider',
+            'avgExecutionByProvider',
             'errorRate',
             'aiStatus',
             'last24hTotal',
@@ -66,6 +97,7 @@ class AiManagementController extends Controller
     {
         $range = $request->input('range', '30');
         $now = Carbon::now();
+        $aiLogsReady = $this->aiLogsTableAvailable();
 
         $from = match ($range) {
             '1' => $now->copy()->subDay(),
@@ -75,20 +107,28 @@ class AiManagementController extends Controller
             default => $now->copy()->subDays(30),
         };
 
-        $stats = $this->aiLoggingService->analytics(
-            companyId: null,
-            from: $from->toDateTimeString(),
-            to: $now->toDateTimeString(),
-        );
+        $stats = $this->emptyStats();
+
+        if ($aiLogsReady) {
+            $stats = $this->aiLoggingService->analytics(
+                companyId: null,
+                from: $from->toDateTimeString(),
+                to: $now->toDateTimeString(),
+            );
+        }
 
         // Daily breakdown for chart
-        $dailyData = AiLog::query()
-            ->where('created_at', '>=', $from)
-            ->selectRaw("DATE(created_at) as day, COUNT(*) as requests, SUM(COALESCE(total_tokens,0)) as tokens, SUM(COALESCE(estimated_cost_usd,0)) as cost")
-            ->groupBy('day')
-            ->orderBy('day')
-            ->get()
-            ->keyBy('day');
+        $dailyData = collect();
+
+        if ($aiLogsReady) {
+            $dailyData = AiLog::query()
+                ->where('created_at', '>=', $from)
+                ->selectRaw("DATE(created_at) as day, COUNT(*) as requests, SUM(COALESCE(total_tokens,0)) as tokens, SUM(COALESCE(estimated_cost_usd,0)) as cost")
+                ->groupBy('day')
+                ->orderBy('day')
+                ->get()
+                ->keyBy('day');
+        }
 
         // Build full date range
         $days = [];
@@ -103,6 +143,33 @@ class AiManagementController extends Controller
             $current->addDay();
         }
 
-        return view('admin.ai.analytics', compact('stats', 'days', 'range'));
+        return view('admin.ai.analytics', compact('stats', 'days', 'range', 'aiLogsReady'));
+    }
+
+    /**
+     * @return array{total_requests:int,successful:int,failed:int,total_tokens:int,input_tokens:int,output_tokens:int,estimated_cost_usd:float,avg_execution_ms:float|null,by_provider:array<string, array{requests:int,tokens:int,cost:float}>}
+     */
+    private function emptyStats(): array
+    {
+        return [
+            'total_requests' => 0,
+            'successful' => 0,
+            'failed' => 0,
+            'input_tokens' => 0,
+            'output_tokens' => 0,
+            'total_tokens' => 0,
+            'estimated_cost_usd' => 0.0,
+            'avg_execution_ms' => null,
+            'by_provider' => [],
+        ];
+    }
+
+    private function aiLogsTableAvailable(): bool
+    {
+        try {
+            return Schema::hasTable('ai_logs');
+        } catch (Throwable) {
+            return false;
+        }
     }
 }

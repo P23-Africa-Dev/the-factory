@@ -88,6 +88,13 @@
 
 @section('content')
 
+    @if (!$aiLogsReady)
+        <div class="alert alert-warning mb-4" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            AI logs storage is not available yet. Run migrations to enable full AI analytics.
+        </div>
+    @endif
+
     {{-- Header row --}}
     <div class="d-flex align-items-center justify-content-between mb-4">
         <div>
@@ -340,7 +347,8 @@
                 <div class="mt-3 pt-2" style="border-top:1px solid var(--border-light)">
                     <div class="d-flex justify-content-between" style="font-size:.85rem;font-weight:600">
                         <span>Total Est. Cost</span>
-                        <span style="color:var(--accent)">${{ number_format($statsMonth['estimated_cost_usd'], 4) }}</span>
+                        <span
+                            style="color:var(--accent)">${{ number_format($statsMonth['estimated_cost_usd'], 4) }}</span>
                     </div>
                 </div>
             </div>
@@ -357,12 +365,7 @@
         </div>
         <div class="row g-3">
             @foreach (['openai' => 'OpenAI', 'claude' => 'Claude'] as $key => $label)
-                @php
-                    use App\Models\AiLog;
-                    $avgMs = AiLog::where('provider', $key)
-                        ->where('created_at', '>=', now()->subDays(30))
-                        ->avg('execution_ms');
-                @endphp
+                @php $avgMs = $avgExecutionByProvider[$key] ?? null; @endphp
                 <div class="col-md-4">
                     <div style="background:var(--surface-hover);border-radius:.65rem;padding:1rem 1.25rem;">
                         <div
