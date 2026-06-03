@@ -4,6 +4,9 @@ use App\Http\Controllers\Api\V1\Agent\AgentLoginController;
 use App\Http\Controllers\Api\V1\Attendance\AttendanceAgentController;
 use App\Http\Controllers\Api\V1\Attendance\AttendanceManagementController;
 use App\Http\Controllers\Api\V1\Attendance\AttendanceSettingsController;
+use App\Http\Controllers\Api\V1\AI\CopilotAutomationController;
+use App\Http\Controllers\Api\V1\AI\CopilotController;
+use App\Http\Controllers\Api\V1\AI\CopilotReportingController;
 use App\Http\Controllers\Api\V1\Auth\AdminLoginController;
 use App\Http\Controllers\Api\V1\Auth\ForgotPasswordController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
@@ -147,6 +150,52 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar'])
             ->middleware('throttle:20,1')
             ->name('profile.avatar.update');
+    });
+
+    Route::prefix('copilot')->name('copilot.')->group(function (): void {
+        Route::post('/chat', [CopilotController::class, 'chat'])
+            ->middleware('throttle:20,1')
+            ->name('chat');
+        Route::get('/threads', [CopilotController::class, 'index'])->name('threads.index');
+        Route::get('/threads/{thread}', [CopilotController::class, 'show'])->name('threads.show');
+        Route::delete('/threads/{thread}', [CopilotController::class, 'destroy'])->name('threads.destroy');
+
+        Route::get('/analytics/context-pack', [CopilotReportingController::class, 'contextPack'])
+            ->middleware('throttle:20,1')
+            ->name('analytics.context-pack');
+
+        Route::post('/reports/weekly-summary', [CopilotReportingController::class, 'queueWeeklySummary'])
+            ->middleware('throttle:10,1')
+            ->name('reports.weekly-summary.queue');
+        Route::get('/reports/weekly-summary/{reportId}', [CopilotReportingController::class, 'weeklySummaryStatus'])
+            ->name('reports.weekly-summary.status');
+        Route::get('/reports/weekly-summary/{reportId}/download', [CopilotReportingController::class, 'downloadWeeklySummary'])
+            ->name('reports.weekly-summary.download');
+
+        Route::post('/automations/preview', [CopilotAutomationController::class, 'preview'])
+            ->middleware('throttle:20,1')
+            ->name('automations.preview');
+        Route::post('/automations', [CopilotAutomationController::class, 'store'])
+            ->middleware('throttle:20,1')
+            ->name('automations.store');
+        Route::get('/automations', [CopilotAutomationController::class, 'index'])
+            ->name('automations.index');
+        Route::post('/automations/{automation}/run', [CopilotAutomationController::class, 'run'])
+            ->middleware('throttle:20,1')
+            ->name('automations.run');
+
+        Route::post('/voice/transcriptions', ['App\\Http\\Controllers\\Api\\V1\\AI\\CopilotInnovationController', 'transcribeVoice'])
+            ->middleware('throttle:20,1')
+            ->name('voice.transcriptions.store');
+        Route::post('/files/analyze', ['App\\Http\\Controllers\\Api\\V1\\AI\\CopilotInnovationController', 'analyzeFile'])
+            ->middleware('throttle:20,1')
+            ->name('files.analyze');
+        Route::post('/meetings/transcripts/summarize', ['App\\Http\\Controllers\\Api\\V1\\AI\\CopilotInnovationController', 'summarizeTranscript'])
+            ->middleware('throttle:20,1')
+            ->name('meetings.transcripts.summarize');
+        Route::get('/forecast/overview', ['App\\Http\\Controllers\\Api\\V1\\AI\\CopilotInnovationController', 'forecastOverview'])
+            ->middleware('throttle:20,1')
+            ->name('forecast.overview');
     });
 
     Route::prefix('onboarding')->name('onboarding.')->group(function (): void {

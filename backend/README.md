@@ -136,7 +136,14 @@ make logs
 make migrate
 make seed
 make test
+make test-ai
 make cache-clear
+```
+
+Run only Copilot feature suites inside the app container (DigitalOcean-friendly profile):
+
+```bash
+docker compose exec app php artisan test --testsuite=Feature --filter=Copilot
 ```
 
 Load optional aliases:
@@ -163,6 +170,14 @@ Set these essentials:
 - `QUEUE_CONNECTION=redis`
 - `SESSION_DRIVER=redis`
 - `TASK_TRACKING_REDIS_CHANNEL_PREFIX=factory23.tracking`
+
+AI provider secrets (server-side only, never frontend-exposed):
+
+- `AI_PROVIDER` (`openai` or `claude`)
+- `AI_FALLBACK_PROVIDER`
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
+- `AI_DEFAULT_MODEL`, `AI_EXEC_MODEL`, `AI_ANALYST_MODEL`
 
 ## 8) Nginx Notes
 

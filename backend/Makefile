@@ -36,6 +36,9 @@ seed:
 test:
 	docker-compose exec app php artisan test
 
+test-ai:
+	docker-compose exec app php artisan test --testsuite=Feature --filter=Copilot
+
 queue-restart:
 	docker-compose exec app php artisan queue:restart
 

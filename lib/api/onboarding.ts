@@ -38,14 +38,16 @@ export async function apiRequest<TData>({
   body,
   token,
 }: ApiRequestOptions): Promise<ApiEnvelope<TData>> {
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
     headers: {
-      "Content-Type": "application/json",
       "Accept": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: body ? (isFormData ? (body as FormData) : JSON.stringify(body)) : undefined,
   });
 
   const payload = (await response.json()) as ApiEnvelope<TData>;

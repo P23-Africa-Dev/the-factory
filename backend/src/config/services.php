@@ -50,4 +50,25 @@ return [
         ))))),
     ],
 
+    'ai' => [
+        'provider' => env('AI_PROVIDER', 'openai'),
+        'fallback_provider' => env('AI_FALLBACK_PROVIDER', 'claude'),
+        'default_model' => env('AI_DEFAULT_MODEL', 'gpt-4.1-mini'),
+        'exec_model' => env('AI_EXEC_MODEL', 'gpt-4.1-mini'),
+        'analyst_model' => env('AI_ANALYST_MODEL', 'claude-3-5-sonnet-latest'),
+        'request_timeout_ms' => (int) env('AI_REQUEST_TIMEOUT_MS', 30000),
+        'openai' => [
+            'api_key' => env('OPENAI_API_KEY'),
+            'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+            'model' => env('OPENAI_MODEL', env('AI_DEFAULT_MODEL', 'gpt-4.1-mini')),
+            'audio_model' => env('OPENAI_AUDIO_MODEL', 'gpt-4o-mini-transcribe'),
+        ],
+        'claude' => [
+            'api_key' => env('ANTHROPIC_API_KEY'),
+            'base_url' => env('ANTHROPIC_BASE_URL', 'https://api.anthropic.com/v1'),
+            'model' => env('CLAUDE_MODEL', env('AI_ANALYST_MODEL', 'claude-3-5-sonnet-latest')),
+            'version' => env('ANTHROPIC_VERSION', '2023-06-01'),
+        ],
+    ],
+
 ];
