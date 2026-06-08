@@ -80,8 +80,10 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
@@ -165,55 +167,85 @@ export function AIChat({ open, onClose }: AIChatProps) {
             open ? "translate-y-0 sm:translate-x-0 opacity-100" : "translate-y-full sm:translate-y-0 sm:translate-x-8 opacity-0"
           }`}
         >
-          <div className="flex-1 bg-[#091519] rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden">
+          <div
+            className="flex-1 bg-[#091519] rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden"
+            style={{
+              backgroundImage: "url('/avatars/12px Flip.png')",
+              backgroundRepeat: "repeat",
+              backgroundSize: "auto",
+            }}
+          >
             {/* Header */}
-          <div className="flex items-center gap-4 px-6 pt-6 pb-4 flex-shrink-0">
-            <button
-              onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center hover:bg-white/5 transition-colors rounded-full flex-shrink-0"
-            >
-              <ChevronLeft className="w-6 h-6 text-white" />
-            </button>
+          <div className="flex-shrink-0">
+            <div className="flex items-center gap-4 px-6 pt-6 pb-4">
+              <button
+                onClick={onClose}
+                className="w-8 h-8 flex items-center justify-center hover:bg-white/5 transition-colors rounded-full flex-shrink-0"
+              >
+                <ChevronLeft className="w-6 h-6 text-white" />
+              </button>
 
-            <div className="flex items-center gap-4 flex-1 min-w-0">
-              <div className="w-14 h-14 rounded-full flex-shrink-0 overflow-hidden bg-[#EBA771]">
-                <Image
-                  src={avatarSrc}
-                  alt={firstName}
-                  width={56}
-                  height={56}
-                  className="w-full h-full object-cover"
-                  unoptimized={avatarSrc.startsWith("http")}
-                />
+              {/* Avatar + name — hidden on sm when search is open */}
+              <div className={`flex items-center gap-4 min-w-0 transition-all duration-300 ${searchOpen ? "flex-0 sm:flex-1 hidden sm:flex" : "flex-1"}`}>
+                <div className="w-14 h-14 rounded-full flex-shrink-0 overflow-hidden bg-[#EBA771]">
+                  <Image
+                    src={avatarSrc}
+                    alt={firstName}
+                    width={56}
+                    height={56}
+                    className="w-full h-full object-cover"
+                    unoptimized={avatarSrc.startsWith("http")}
+                  />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-white/70 text-[16px] font-normal leading-tight">Hello,</p>
+                  <p className="text-white text-[28px] font-semibold leading-tight truncate">{firstName}!</p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-white/70 text-[16px] font-normal leading-tight">Hello,</p>
-                <p className="text-white text-[28px] font-semibold leading-tight truncate">
-                  {firstName}!
-                </p>
+
+              {/* Inline search bar — large screens only */}
+              <div className={`hidden sm:flex flex-1 items-center transition-all duration-300 overflow-hidden ${searchOpen ? "opacity-100 max-w-full" : "opacity-0 max-w-0 pointer-events-none"}`}>
+                <div className="w-full border border-white/20 rounded-full px-5 py-3 flex items-center gap-2 bg-[#091519]">
+                  <Search className="w-4 h-4 text-[#88B3B5] flex-shrink-0" />
+                  <input
+                    ref={searchInputRef}
+                    placeholder="Search..."
+                    className="flex-1 bg-transparent text-white text-sm placeholder:text-[#88B3B5] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <button
+                  onClick={() => {
+                    setSearchOpen((v) => !v);
+                    setTimeout(() => searchInputRef.current?.focus(), 150);
+                  }}
+                  className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${searchOpen ? "bg-[#7BB6B8]/20" : "bg-[#132A33] hover:bg-[#1A3844]"}`}
+                >
+                  <Search className="w-5 h-5 text-[#88B3B5]" />
+                </button>
+                <button className="w-12 h-12 rounded-full bg-[#132A33] flex items-center justify-center hover:bg-[#1A3844] transition-colors">
+                  <MoreVertical className="w-5 h-5 text-[#88B3B5]" />
+                </button>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <button className="w-12 h-12 rounded-full bg-[#132A33] flex items-center justify-center hover:bg-[#1A3844] transition-colors">
-                <Search className="w-5 h-5 text-[#88B3B5]" />
-              </button>
-              <button className="w-12 h-12 rounded-full bg-[#132A33] flex items-center justify-center hover:bg-[#1A3844] transition-colors">
-                <MoreVertical className="w-5 h-5 text-[#88B3B5]" />
-              </button>
+            {/* Below-header search bar — small screens only */}
+            <div className={`sm:hidden overflow-hidden transition-all duration-300 ease-out ${searchOpen ? "max-h-20 opacity-100 pb-3" : "max-h-0 opacity-0"}`}>
+              <div className="mx-6 border border-white/20 rounded-full px-5 py-3 flex items-center gap-2 bg-[#091519]">
+                <Search className="w-4 h-4 text-[#88B3B5] flex-shrink-0" />
+                <input
+                  placeholder="Search..."
+                  className="flex-1 bg-transparent text-white text-sm placeholder:text-[#88B3B5] outline-none"
+                />
+              </div>
             </div>
           </div>
 
           {/* Divider */}
           <div className="px-8 flex-shrink-0">
             <div className="h-[1px] bg-white/10 w-full" />
-          </div>
-
-          {/* Top search bar (decorative, matches screenshot) */}
-          <div className="px-8 py-6 flex-shrink-0">
-            <div className="border border-white/20 rounded-[32px] px-6 py-4">
-              <p className="text-[#88B3B5] text-[15px]">Ask Anything...</p>
-            </div>
           </div>
 
           {/* Messages area */}
