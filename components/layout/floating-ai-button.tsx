@@ -1,10 +1,8 @@
 "use client";
 
 import { AIChat } from "@/components/dashboard/ai-chat";
-import AIIcon from "@/assets/images/ai-icon.png";
-import Image from "next/image";
+import { Sparkles, Wand2, X } from "lucide-react";
 import { useState } from "react";
-import { X } from "lucide-react";
 
 export function FloatingAIButton() {
   const [open, setOpen] = useState(false);
@@ -18,52 +16,34 @@ export function FloatingAIButton() {
   return (
     <>
       {/* FAB */}
-      <div className="fixed bottom-6 right-6 z-[9997] flex flex-col items-end gap-2">
-        {/* Tooltip label */}
-        <div
-          className={`px-3 py-1.5 rounded-full bg-[#09232D] text-white text-xs font-medium shadow-lg transition-all duration-200 whitespace-nowrap ${
-            open ? "opacity-0 scale-90 pointer-events-none" : "opacity-0 group-hover:opacity-100"
-          }`}
-        >
-          AI Assistant
-        </div>
+      <div className="fixed bottom-8 right-8 z-[9997] flex items-center justify-center">
+        {/* Glow rings */}
+        {!open && (
+          <>
+            <span className="absolute w-32 h-32 rounded-full bg-purple-600/10 animate-ping" style={{ animationDuration: "3s" }} />
+            <span className="absolute w-24 h-24 rounded-full bg-purple-600/15 animate-ping" style={{ animationDuration: "3s", animationDelay: "0.4s" }} />
+            <span className="absolute w-20 h-20 rounded-full bg-purple-500/20" />
+          </>
+        )}
 
         <button
           onClick={() => (open ? setOpen(false) : openChat())}
-          className="group relative w-14 h-14 rounded-full shadow-2xl transition-all duration-300 active:scale-95"
           aria-label="Open AI Assistant"
+          className="relative w-16 h-16 rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(168,85,247,0.6)] active:scale-95 transition-transform duration-200"
+          style={{
+            background: open
+              ? "rgba(255,255,255,0.12)"
+              : "linear-gradient(135deg, #9333ea 0%, #a855f7 40%, #c026d3 100%)",
+          }}
         >
-          {/* Outer glow ring */}
-          <span
-            className={`absolute inset-0 rounded-full bg-[#7BB6B8]/30 transition-all duration-300 ${
-              open ? "scale-0 opacity-0" : "scale-110 animate-ping opacity-60"
-            }`}
-            style={{ animationDuration: "2.5s" }}
-          />
-
-          {/* Button body */}
-          <span
-            className={`absolute inset-0 rounded-full transition-all duration-300 ${
-              open
-                ? "bg-white/15 backdrop-blur-sm border border-white/20"
-                : "bg-gradient-to-br from-[#7BB6B8] to-[#09232D] border-2 border-[#7BB6B8]/60 shadow-[0_0_20px_rgba(123,182,184,0.5)]"
-            }`}
-          />
-
-          {/* Icon — switches between AI icon and X */}
-          <span className="absolute inset-0 flex items-center justify-center">
-            {open ? (
-              <X className="w-5 h-5 text-white transition-all duration-200" />
-            ) : (
-              <Image
-                src={AIIcon}
-                alt="AI"
-                width={26}
-                height={26}
-                className="drop-shadow-md transition-all duration-200"
-              />
-            )}
-          </span>
+          {open ? (
+            <X className="w-6 h-6 text-white" />
+          ) : (
+            <span className="relative flex items-center justify-center">
+              <Wand2 className="w-6 h-6 text-white rotate-[-30deg]" strokeWidth={1.8} />
+              <Sparkles className="w-4 h-4 text-white absolute -top-3 -right-3" strokeWidth={1.5} />
+            </span>
+          )}
         </button>
       </div>
 
