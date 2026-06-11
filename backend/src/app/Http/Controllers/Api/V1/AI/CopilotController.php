@@ -54,7 +54,7 @@ class CopilotController extends Controller
 
         return response()->stream(function () use ($result, $chunks, $content): void {
             echo "event: meta\n";
-            echo 'data: ' . json_encode([
+            echo 'data: ' . $this->encodeSseData([
                 'thread_id' => $result['thread_id'],
             ]) . "\n\n";
             @ob_flush();
@@ -66,7 +66,7 @@ class CopilotController extends Controller
                 }
 
                 echo "event: delta\n";
-                echo 'data: ' . json_encode([
+                echo 'data: ' . $this->encodeSseData([
                     'chunk' => $chunk . ' ',
                 ]) . "\n\n";
                 @ob_flush();
@@ -74,7 +74,7 @@ class CopilotController extends Controller
             }
 
             echo "event: done\n";
-            echo 'data: ' . json_encode([
+            echo 'data: ' . $this->encodeSseData([
                 'thread_id' => $result['thread_id'],
                 'message' => $content,
                 'tool' => $result['response']['tool'] ?? null,
@@ -89,6 +89,22 @@ class CopilotController extends Controller
             'Connection' => 'keep-alive',
             'X-Accel-Buffering' => 'no',
         ]);
+    }
+
+    /**
+     * @param array<string,mixed> $data
+     */
+    private function encodeSseData(array $data): string
+    {
+        $encoded = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+
+        if (is_string($encoded)) {
+            return $encoded;
+        }
+
+        $fallback = json_encode(['error' => 'Unable to encode SSE payload.']);
+
+        return is_string($fallback) ? $fallback : '{"error":"Unable to encode SSE payload."}';
     }
 
     public function index(Request $request): JsonResponse

@@ -318,6 +318,8 @@ export async function sendCopilotMessageStream(
     const decoder = new TextDecoder();
     let buffer = "";
     let doneEvent: StreamEventDone | null = null;
+    let lastMeta: StreamEventMeta | null = null;
+    let accumulatedMessage = "";
 
     while (true) {
         const { value, done } = await reader.read();
@@ -344,9 +346,12 @@ export async function sendCopilotMessageStream(
             }
 
             if (eventName === "meta") {
-                handlers.onMeta?.(parsed as StreamEventMeta);
+                lastMeta = parsed as StreamEventMeta;
+                handlers.onMeta?.(lastMeta);
             } else if (eventName === "delta") {
-                handlers.onDelta?.(parsed as StreamEventDelta);
+                const deltaEvent = parsed as StreamEventDelta;
+                accumulatedMessage += deltaEvent.chunk ?? "";
+                handlers.onDelta?.(deltaEvent);
             } else if (eventName === "done") {
                 doneEvent = parsed as StreamEventDone;
                 handlers.onDone?.(doneEvent);
@@ -355,6 +360,18 @@ export async function sendCopilotMessageStream(
     }
 
     if (!doneEvent) {
+        if (lastMeta) {
+            doneEvent = {
+                thread_id: lastMeta.thread_id,
+                message: accumulatedMessage.trim(),
+                tool: null,
+                sources: [],
+                payload: null,
+            };
+            handlers.onDone?.(doneEvent);
+            return doneEvent;
+        }
+
         throw new ApiRequestError("Copilot stream ended unexpectedly.", 500, null);
     }
 
