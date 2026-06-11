@@ -1,0 +1,228 @@
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { useCopilotChat } from "@/hooks/use-copilot-chat";
+
+const {
+    listCopilotThreadsMock,
+    getCopilotThreadMock,
+    deleteCopilotThreadMock,
+    sendCopilotMessageStreamMock,
+    sendCopilotMessageMock,
+    queueWeeklySummaryReportMock,
+    getWeeklySummaryStatusMock,
+} = vi.hoisted(() => ({
+    listCopilotThreadsMock: vi.fn(),
+    getCopilotThreadMock: vi.fn(),
+    deleteCopilotThreadMock: vi.fn(),
+    sendCopilotMessageStreamMock: vi.fn(),
+    sendCopilotMessageMock: vi.fn(),
+    queueWeeklySummaryReportMock: vi.fn(),
+    getWeeklySummaryStatusMock: vi.fn(),
+}));
+
+vi.mock("@/lib/auth/session", () => ({
+    getAuthTokenFromDocument: vi.fn(() => "test-token"),
+}));
+
+vi.mock("@/lib/api/copilot", () => ({
+    listCopilotThreads: listCopilotThreadsMock,
+    getCopilotThread: getCopilotThreadMock,
+    deleteCopilotThread: deleteCopilotThreadMock,
+    sendCopilotMessageStream: sendCopilotMessageStreamMock,
+    sendCopilotMessage: sendCopilotMessageMock,
+    queueWeeklySummaryReport: queueWeeklySummaryReportMock,
+    getWeeklySummaryStatus: getWeeklySummaryStatusMock,
+    downloadWeeklySummaryReport: vi.fn(),
+    transcribeVoiceInput: vi.fn(),
+    analyzeCopilotFile: vi.fn(),
+    summarizeMeetingTranscript: vi.fn(),
+    getForecastOverview: vi.fn(),
+}));
+
+vi.mock("@/store/auth", () => ({
+    useAuthStore: vi.fn((selector: (state: { user: unknown }) => unknown) =>
+        selector({
+            user: {
+                id: 33,
+                active_company: {
+                    company_id: 77,
+                },
+            },
+        })
+    ),
+}));
+
+describe("useCopilotChat", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it("initializes from persisted thread list", async () => {
+        listCopilotThreadsMock.mockResolvedValue({
+            data: {
+                items: [
+                    {
+                        thread_id: "thread-1",
+                        updated_at: "2026-01-01T00:00:00.000Z",
+                        created_at: "2026-01-01T00:00:00.000Z",
+                        message_count: 1,
+                        last_message_preview: "Hello",
+                    },
+                ],
+            },
+        });
+
+        getCopilotThreadMock.mockResolvedValue({
+            data: {
+                thread: {
+                    thread_id: "thread-1",
+                    company_id: 77,
+                    user_id: 33,
+                    created_at: "2026-01-01T00:00:00.000Z",
+                    updated_at: "2026-01-01T00:00:00.000Z",
+                    messages: [
+                        {
+                            id: "m1",
+                            role: "assistant",
+                            content: "Loaded message",
+                            sources: ["tasks.overdue"],
+                            tool: "tasks.overdue",
+                            payload: { count: 1 },
+                            created_at: "2026-01-01T00:00:00.000Z",
+                        },
+                    ],
+                },
+            },
+        });
+
+        const { result } = renderHook(() => useCopilotChat());
+
+        await act(async () => {
+            await result.current.initialize(77);
+        });
+
+        expect(result.current.threadId).toBe("thread-1");
+        expect(result.current.messages).toHaveLength(1);
+        expect(result.current.messages[0].content).toBe("Loaded message");
+    });
+
+    it("streams assistant response and updates final tool metadata", async () => {
+        listCopilotThreadsMock.mockResolvedValue({ data: { items: [] } });
+
+        sendCopilotMessageStreamMock.mockImplementation(async (_payload, _token, handlers) => {
+            handlers.onMeta?.({ thread_id: "thread-stream" });
+            handlers.onDelta?.({ chunk: "Overdue" });
+            handlers.onDelta?.({ chunk: " tasks" });
+            handlers.onDone?.({
+                thread_id: "thread-stream",
+                message: "Overdue tasks: 1",
+                tool: "tasks.overdue",
+                sources: ["tasks.overdue"],
+                payload: { count: 1 },
+            });
+
+            return {
+                thread_id: "thread-stream",
+                message: "Overdue tasks: 1",
+                tool: "tasks.overdue",
+                sources: ["tasks.overdue"],
+                payload: { count: 1 },
+            };
+        });
+
+        const { result } = renderHook(() => useCopilotChat());
+
+        await act(async () => {
+            await result.current.sendMessage({
+                message: "show overdue tasks",
+                companyId: 77,
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.isStreaming).toBe(false);
+        });
+
+        expect(result.current.threadId).toBe("thread-stream");
+        expect(result.current.messages).toHaveLength(2);
+        expect(result.current.messages[0].role).toBe("user");
+        expect(result.current.messages[1].role).toBe("assistant");
+        expect(result.current.messages[1].content).toBe("Overdue tasks: 1");
+        expect(result.current.messages[1].sources).toEqual(["tasks.overdue"]);
+        expect(result.current.messages[1].tool).toBe("tasks.overdue");
+    });
+
+    it("sends action confirmation payload with generated idempotency key", async () => {
+        listCopilotThreadsMock.mockResolvedValue({ data: { items: [] } });
+
+        sendCopilotMessageStreamMock.mockImplementation(async (payload, _token, handlers) => {
+            handlers.onMeta?.({ thread_id: "thread-confirm" });
+            handlers.onDone?.({
+                thread_id: "thread-confirm",
+                message: "Action completed.",
+                tool: "tasks.create",
+                sources: ["tasks.create"],
+                payload: { task_id: 77 },
+            });
+
+            return {
+                thread_id: "thread-confirm",
+                message: "Action completed.",
+                tool: "tasks.create",
+                sources: ["tasks.create"],
+                payload: { task_id: 77 },
+            };
+        });
+
+        const { result } = renderHook(() => useCopilotChat());
+
+        await act(async () => {
+            await result.current.sendMessage({
+                message: "confirm task creation",
+                companyId: 77,
+                actionConfirmed: true,
+                actionArgs: { title: "Dispatch checks" },
+            });
+        });
+
+        const payload = sendCopilotMessageStreamMock.mock.calls[0][0];
+        expect(payload.action_confirmed).toBe(true);
+        expect(payload.action_args).toEqual({ title: "Dispatch checks" });
+        expect(typeof payload.idempotency_key).toBe("string");
+        expect(payload.idempotency_key.length).toBeGreaterThan(10);
+    });
+
+    it("queues weekly report and updates status via polling", async () => {
+        queueWeeklySummaryReportMock.mockResolvedValue({
+            data: {
+                report_id: "weekly-1",
+                status: "queued",
+                queued: true,
+            },
+        });
+
+        getWeeklySummaryStatusMock.mockResolvedValue({
+            data: {
+                report_id: "weekly-1",
+                status: "completed",
+                progress: 100,
+                error: null,
+                available: true,
+            },
+        });
+
+        const { result } = renderHook(() => useCopilotChat());
+
+        await act(async () => {
+            await result.current.queueWeeklyReport(77);
+        });
+
+        await waitFor(() => {
+            expect(result.current.weeklyReport?.status).toBe("completed");
+        });
+
+        expect(queueWeeklySummaryReportMock).toHaveBeenCalledWith("test-token", 77);
+        expect(getWeeklySummaryStatusMock).toHaveBeenCalledWith("weekly-1", "test-token", 77);
+    });
+});

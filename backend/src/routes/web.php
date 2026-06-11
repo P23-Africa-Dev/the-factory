@@ -1,5 +1,8 @@
 <?php
 
+use App\Http\Controllers\Admin\AI\AiHealthController;
+use App\Http\Controllers\Admin\AI\AiLogController;
+use App\Http\Controllers\Admin\AI\AiManagementController;
 use App\Http\Controllers\Admin\Auth\LoginController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\Enterprise\DemoRequestController;
@@ -16,22 +19,6 @@ Route::get('/onboarding/internal/{invitation}/{token}', InternalOnboardingRedire
     ->middleware('signed')
     ->name('internal.onboarding.invite');
 
-// Canonical web auth routes expected by Laravel middleware.
-// Route::middleware('guest:admin')->group(function (): void {
-//     Route::get('/login', [LoginController::class, 'show'])->name('login');
-//     Route::post('/login', [LoginController::class, 'store'])->name('login.store');
-// });
-
-// Route::middleware(['auth:admin', 'admin.active'])->group(function (): void {
-//     Route::get('/dashboard', function () {
-//         return redirect()->route('admin.dashboard');
-//     })->name('dashboard');
-// });
-
-// Route::get('/', function () {
-//     return redirect()->route('admin.dashboard');
-// })->name('home');
-
 Route::prefix('admin')->name('admin.')->group(function (): void {
     Route::middleware('guest:admin')->group(function (): void {
         Route::get('/login', [LoginController::class, 'show'])->name('login.show');
@@ -45,6 +32,16 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
             ->middleware('admin.permission:manage_users');
         Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
 
+        // ── AI Management ──────────────────────────────────────
+        Route::prefix('ai')->name('ai.')->group(function (): void {
+            Route::get('/', [AiManagementController::class, 'index'])->name('index');
+            Route::get('/analytics', [AiManagementController::class, 'analytics'])->name('analytics');
+            Route::get('/logs', [AiLogController::class, 'index'])->name('logs.index');
+            Route::get('/logs/{log}', [AiLogController::class, 'show'])->name('logs.show');
+            Route::get('/health', [AiHealthController::class, 'check'])->name('health');
+        });
+
+        // ── Users ──────────────────────────────────────────────
         Route::prefix('users')->name('users.')->middleware('admin.permission:manage_users')->group(function (): void {
             Route::get('/', [UserManagementController::class, 'index'])->name('index');
             Route::get('/{user}', [UserManagementController::class, 'show'])->name('show');
@@ -55,6 +52,7 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
             Route::delete('/{user}', [UserManagementController::class, 'destroy'])->name('destroy');
         });
 
+        // ── Enterprise ─────────────────────────────────────────
         Route::prefix('enterprise')->name('enterprise.')->middleware('admin.permission:manage_users')->group(function (): void {
             Route::prefix('demo-requests')->name('demo-requests.')->group(function (): void {
                 Route::get('/', [DemoRequestController::class, 'index'])->name('index');
