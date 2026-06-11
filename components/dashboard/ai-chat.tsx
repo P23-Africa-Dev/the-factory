@@ -56,6 +56,67 @@ interface AssigneeOptionsState {
   items: AssigneeOption[];
 }
 
+type EditControlType = "text" | "textarea" | "select" | "date" | "datetime-local" | "number";
+
+interface EditFieldOption {
+  value: string;
+  label: string;
+}
+
+interface EditFieldConfig {
+  key: string;
+  label: string;
+  control: EditControlType;
+  options?: EditFieldOption[];
+}
+
+const TASK_TYPE_OPTIONS: EditFieldOption[] = [
+  { value: "inspection", label: "Inspection" },
+  { value: "sales_visit", label: "Sales Visit" },
+  { value: "delivery", label: "Delivery" },
+  { value: "collection", label: "Collection" },
+  { value: "awareness", label: "Awareness" },
+];
+
+const PROJECT_TYPE_OPTIONS: EditFieldOption[] = [
+  { value: "sales", label: "Sales" },
+  { value: "inspection", label: "Inspection" },
+  { value: "deployment", label: "Deployment" },
+];
+
+const PROJECT_STATUS_OPTIONS: EditFieldOption[] = [
+  { value: "planning", label: "Planning" },
+  { value: "active", label: "Active" },
+  { value: "completed", label: "Completed" },
+];
+
+const PRIORITY_OPTIONS: EditFieldOption[] = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
+const NOTIFICATION_PRIORITY_OPTIONS: EditFieldOption[] = [
+  { value: "low", label: "Low" },
+  { value: "normal", label: "Normal" },
+  { value: "high", label: "High" },
+  { value: "critical", label: "Critical" },
+];
+
+const NOTIFICATION_CATEGORY_OPTIONS: EditFieldOption[] = [
+  { value: "auth", label: "Auth" },
+  { value: "onboarding", label: "Onboarding" },
+  { value: "task", label: "Task" },
+  { value: "project", label: "Project" },
+  { value: "tracking", label: "Tracking" },
+  { value: "attendance", label: "Attendance" },
+  { value: "payroll", label: "Payroll" },
+  { value: "crm", label: "CRM" },
+  { value: "workforce", label: "Workforce" },
+  { value: "profile", label: "Profile" },
+  { value: "system", label: "System" },
+];
+
 function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
   if (!rawAvatar) return null;
   const trimmed = rawAvatar.trim();
@@ -142,13 +203,59 @@ export function AIChat({ open, onClose }: AIChatProps) {
   useEffect(() => {
     for (const msg of messages) {
       const payload = messagePayload(msg);
-      if (msg.role !== "assistant" || payload?.confirmation_required !== true || payload?.tool !== "tasks.create") {
+      if (msg.role !== "assistant" || payload?.confirmation_required !== true) {
+        continue;
+      }
+
+      const tool = String(payload.tool ?? "");
+      const rawArgs = parseRecord(payload.action_args);
+      const argKeys = rawArgs ? Object.keys(rawArgs) : [];
+      const hasUserAssignmentField = argKeys.some((key) => /(^|_)(user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/.test(key));
+
+      if (!["tasks.create", "tasks.reassign", "projects.create"].includes(tool) && !hasUserAssignmentField) {
         continue;
       }
 
       void loadAssigneeOptions(msg.id);
     }
   }, [messages]);
+
+  function toTitleCase(value: string): string {
+    return value
+      .replace(/[_\-]+/g, " ")
+      .replace(/\b\w/g, (ch) => ch.toUpperCase());
+  }
+
+  function asDateInputValue(raw: unknown): string {
+    if (typeof raw !== "string" || raw.trim() === "") {
+      return "";
+    }
+
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      return "";
+    }
+
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  function asDateTimeLocalInputValue(raw: unknown): string {
+    if (typeof raw !== "string" || raw.trim() === "") {
+      return "";
+    }
+
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      return "";
+    }
+
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getDate()).padStart(2, "0");
+    const hour = String(parsed.getHours()).padStart(2, "0");
+    const minute = String(parsed.getMinutes()).padStart(2, "0");
+    return `${year}-${month}-${day}T${hour}:${minute}`;
+  }
 
   function sendMessage(text?: string) {
     const content = (text ?? input).trim();
@@ -369,6 +476,147 @@ export function AIChat({ open, onClose }: AIChatProps) {
     return "";
   }
 
+  function assigneeSelectOptions(msg: Message): EditFieldOption[] {
+    return (assigneeOptions[msg.id]?.items ?? []).map((item) => ({
+      value: item.email,
+      label: item.name,
+    }));
+  }
+
+  function userIdSelectOptions(msg: Message): EditFieldOption[] {
+    return (assigneeOptions[msg.id]?.items ?? []).map((item) => ({
+      value: String(item.id),
+      label: item.name,
+    }));
+  }
+
+  function editFieldsForMessage(msg: Message, args: Record<string, unknown>): EditFieldConfig[] {
+    const payload = messagePayload(msg);
+    const tool = String(payload?.tool ?? "");
+
+    if (tool === "tasks.create") {
+      return [
+        { key: "title", label: "Title", control: "text" },
+        { key: "type", label: "Type", control: "select", options: TASK_TYPE_OPTIONS },
+        { key: "due_date", label: "Due Date", control: "date" },
+        { key: "assignee", label: "Assignee", control: "select", options: assigneeSelectOptions(msg) },
+      ];
+    }
+
+    if (tool === "meetings.schedule") {
+      return [
+        { key: "title", label: "Title", control: "text" },
+        { key: "start_at", label: "Start Time", control: "datetime-local" },
+        { key: "end_at", label: "End Time", control: "datetime-local" },
+        { key: "location", label: "Location", control: "text" },
+        { key: "timezone", label: "Timezone", control: "text" },
+      ];
+    }
+
+    if (tool === "projects.create") {
+      return [
+        { key: "name", label: "Project Name", control: "text" },
+        { key: "type", label: "Type", control: "select", options: PROJECT_TYPE_OPTIONS },
+        { key: "status", label: "Status", control: "select", options: PROJECT_STATUS_OPTIONS },
+        { key: "priority", label: "Priority", control: "select", options: PRIORITY_OPTIONS },
+        { key: "start_date", label: "Start Date", control: "date" },
+        { key: "end_date", label: "End Date", control: "date" },
+        { key: "project_manager_user_id", label: "Project Manager", control: "select", options: userIdSelectOptions(msg) },
+      ];
+    }
+
+    if (tool === "notifications.send") {
+      return [
+        { key: "title", label: "Title", control: "text" },
+        { key: "message", label: "Message", control: "textarea" },
+        { key: "category", label: "Category", control: "select", options: NOTIFICATION_CATEGORY_OPTIONS },
+        { key: "priority", label: "Priority", control: "select", options: NOTIFICATION_PRIORITY_OPTIONS },
+        { key: "type", label: "Type", control: "text" },
+      ];
+    }
+
+    if (tool === "tasks.reassign") {
+      return [
+        { key: "task_id", label: "Task ID", control: "number" },
+        { key: "to_user_id", label: "Reassign To", control: "select", options: userIdSelectOptions(msg) },
+        { key: "reason", label: "Reason", control: "textarea" },
+      ];
+    }
+
+    return Object.entries(args)
+      .filter(([key]) => key !== "company_id")
+      .map(([key]) => {
+        if (/(_at|_date|^date$|due_date)/i.test(key)) {
+          const isDateOnly = /(_date|^date$|due_date)/i.test(key) && !/_at$/i.test(key);
+          return {
+            key,
+            label: toTitleCase(key),
+            control: isDateOnly ? "date" : "datetime-local",
+          } as EditFieldConfig;
+        }
+
+        if (/(^|_)(type|status|priority|category)$/i.test(key)) {
+          return {
+            key,
+            label: toTitleCase(key),
+            control: "select",
+            options: [
+              { value: String(args[key] ?? ""), label: toTitleCase(String(args[key] ?? "current")) },
+            ],
+          } as EditFieldConfig;
+        }
+
+        if (/_id$/i.test(key)) {
+          return {
+            key,
+            label: toTitleCase(key),
+            control: "number",
+          } as EditFieldConfig;
+        }
+
+        if (/(description|message|notes|reason)/i.test(key)) {
+          return {
+            key,
+            label: toTitleCase(key),
+            control: "textarea",
+          } as EditFieldConfig;
+        }
+
+        return {
+          key,
+          label: toTitleCase(key),
+          control: "text",
+        } as EditFieldConfig;
+      });
+  }
+
+  function editFieldValue(msg: Message, args: Record<string, unknown>, field: EditFieldConfig): string {
+    const draft = actionDrafts[msg.id] ?? {};
+    if (Object.prototype.hasOwnProperty.call(draft, field.key)) {
+      return String(draft[field.key] ?? "");
+    }
+
+    if (field.key === "assignee") {
+      return assigneeDropdownValue(msg, args);
+    }
+
+    const raw = args[field.key];
+
+    if (field.control === "date") {
+      return asDateInputValue(raw);
+    }
+
+    if (field.control === "datetime-local") {
+      return asDateTimeLocalInputValue(raw);
+    }
+
+    if (raw === null || raw === undefined) {
+      return "";
+    }
+
+    return String(raw);
+  }
+
   function blockingIssuesForMessage(msg: Message): string[] {
     const blockingCodes = blockingWarningCodesForMessage(msg);
     if (blockingCodes.length === 0) {
@@ -427,6 +675,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
         if (!Number.isNaN(parsed.getTime())) {
           return parsed.toLocaleString();
         }
+
+        return "Not set";
       }
 
       return trimmed;
@@ -921,69 +1171,81 @@ export function AIChat({ open, onClose }: AIChatProps) {
                             );
                           })()}
                           {(() => {
-                            const payload = messagePayload(msg);
-                            if (payload?.tool !== "tasks.create") {
-                              return null;
-                            }
-
                             const args = actionArgsForMessage(msg);
                             if (!args) {
                               return null;
                             }
-
-                            const typeValue = String(args.type ?? "inspection");
-                            const dueValue = String(args.due_date ?? "");
-                            const titleValue = String(args.title ?? "");
-                            const assigneeValue = assigneeDropdownValue(msg, args);
-                            const optionsState = assigneeOptions[msg.id];
-                            const assigneeFallback = typeof args.assigned_agent_id === "number"
-                              ? `Agent #${String(args.assigned_agent_id)}`
-                              : "";
+                            const fields = editFieldsForMessage(msg, args);
+                            if (fields.length === 0) {
+                              return null;
+                            }
 
                             return (
                               <div className="mb-2 rounded-xl border border-[#355C57]/70 bg-[#102322] px-3 py-2">
                                 <p className="text-[11px] font-semibold text-[#9FD3C8] mb-2">Edit before confirm:</p>
                                 <div className="grid grid-cols-1 gap-2">
-                                  <input
-                                    value={titleValue}
-                                    onChange={(e) => updateActionDraft(msg.id, "title", e.target.value)}
-                                    placeholder="Task title"
-                                    className="w-full rounded-lg border border-[#355C57] bg-[#0D1C1C] px-2.5 py-2 text-[12px] text-[#D0E2E3] placeholder:text-[#7EA09B] outline-none focus:border-[#4F8C83]"
-                                  />
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <select
-                                      value={typeValue}
-                                      onChange={(e) => updateActionDraft(msg.id, "type", e.target.value)}
-                                      className="rounded-lg border border-[#355C57] bg-[#0D1C1C] px-2.5 py-2 text-[12px] text-[#D0E2E3] outline-none focus:border-[#4F8C83]"
-                                    >
-                                      <option value="inspection">Inspection</option>
-                                      <option value="sales_visit">Sales Visit</option>
-                                      <option value="delivery">Delivery</option>
-                                      <option value="collection">Collection</option>
-                                      <option value="awareness">Awareness</option>
-                                    </select>
-                                    <input
-                                      value={dueValue}
-                                      onChange={(e) => updateActionDraft(msg.id, "due_date", e.target.value)}
-                                      placeholder="Due date (e.g. tomorrow 5pm)"
-                                      className="rounded-lg border border-[#355C57] bg-[#0D1C1C] px-2.5 py-2 text-[12px] text-[#D0E2E3] placeholder:text-[#7EA09B] outline-none focus:border-[#4F8C83]"
-                                    />
-                                  </div>
-                                  <select
-                                    value={assigneeValue}
-                                    onChange={(e) => updateActionDraft(msg.id, "assignee", e.target.value)}
-                                    className="w-full rounded-lg border border-[#355C57] bg-[#0D1C1C] px-2.5 py-2 text-[12px] text-[#D0E2E3] outline-none focus:border-[#4F8C83]"
-                                  >
-                                    <option value="">{optionsState?.loading ? "Loading assignees..." : "Select assignee"}</option>
-                                    {Array.isArray(optionsState?.items) && optionsState.items.map((option) => (
-                                      <option key={`${msg.id}-assignee-${option.id}`} value={option.email}>
-                                        {option.name}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  {assigneeFallback !== "" && assigneeValue === "" && (
-                                    <p className="text-[11px] text-[#7EA09B]">Current assignment: {assigneeFallback}</p>
-                                  )}
+                                  {fields.map((field) => {
+                                    const value = editFieldValue(msg, args, field);
+                                    const baseClassName = "w-full rounded-lg border border-[#355C57] bg-[#0D1C1C] px-2.5 py-2 text-[12px] text-[#D0E2E3] outline-none focus:border-[#4F8C83]";
+
+                                    if (field.control === "select") {
+                                      const options = field.options ?? [];
+                                      const hasCurrent = value !== "" && !options.some((opt) => opt.value === value);
+
+                                      return (
+                                        <div key={`${msg.id}-edit-${field.key}`} className="grid gap-1">
+                                          <label className="text-[11px] text-[#8CB9B3]">{field.label}</label>
+                                          <select
+                                            value={value}
+                                            onChange={(e) => updateActionDraft(msg.id, field.key, e.target.value)}
+                                            className={baseClassName}
+                                          >
+                                            <option value="">Select {field.label}</option>
+                                            {hasCurrent && <option value={value}>{toTitleCase(value)}</option>}
+                                            {options.map((option) => (
+                                              <option key={`${msg.id}-opt-${field.key}-${option.value}`} value={option.value}>
+                                                {option.label}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      );
+                                    }
+
+                                    if (field.control === "textarea") {
+                                      return (
+                                        <div key={`${msg.id}-edit-${field.key}`} className="grid gap-1">
+                                          <label className="text-[11px] text-[#8CB9B3]">{field.label}</label>
+                                          <textarea
+                                            value={value}
+                                            onChange={(e) => updateActionDraft(msg.id, field.key, e.target.value)}
+                                            rows={3}
+                                            className={`${baseClassName} resize-none`}
+                                          />
+                                        </div>
+                                      );
+                                    }
+
+                                    const inputType = field.control === "datetime-local"
+                                      ? "datetime-local"
+                                      : field.control === "date"
+                                        ? "date"
+                                        : field.control === "number"
+                                          ? "number"
+                                          : "text";
+
+                                    return (
+                                      <div key={`${msg.id}-edit-${field.key}`} className="grid gap-1">
+                                        <label className="text-[11px] text-[#8CB9B3]">{field.label}</label>
+                                        <input
+                                          type={inputType}
+                                          value={value}
+                                          onChange={(e) => updateActionDraft(msg.id, field.key, e.target.value)}
+                                          className={baseClassName}
+                                        />
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             );
