@@ -51,6 +51,25 @@ curl -X POST http://localhost:8080/api/v1/agent/login \
 13. GET /api/v1/admin/workforce/summary
 14. GET /api/v1/agents/locations
 
+## Copilot Endpoints (Implemented)
+
+1. POST /api/v1/copilot/chat
+2. GET /api/v1/copilot/threads
+3. GET /api/v1/copilot/threads/{thread}
+4. DELETE /api/v1/copilot/threads/{thread}
+5. GET /api/v1/copilot/analytics/context-pack
+6. POST /api/v1/copilot/reports/weekly-summary
+7. GET /api/v1/copilot/reports/weekly-summary/{reportId}
+8. GET /api/v1/copilot/reports/weekly-summary/{reportId}/download
+9. POST /api/v1/copilot/automations/preview
+10. POST /api/v1/copilot/automations
+11. GET /api/v1/copilot/automations
+12. POST /api/v1/copilot/automations/{automation}/run
+13. POST /api/v1/copilot/voice/transcriptions
+14. POST /api/v1/copilot/files/analyze
+15. POST /api/v1/copilot/meetings/transcripts/summarize
+16. GET /api/v1/copilot/forecast/overview
+
 ## Project and Task Quick Rules
 
 Projects:
@@ -132,5 +151,5 @@ Task update denied for agent:
 8. docs/frontend-guide/project-management.md
 9. docs/frontend-guide/payroll-management.md
 
-Last Updated: May 16, 2026
+Last Updated: June 3, 2026
 Status: Current
