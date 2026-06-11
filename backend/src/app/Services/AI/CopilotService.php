@@ -14,6 +14,8 @@ use App\Services\AI\Tools\ReadToolRegistry;
 use App\Services\Company\CompanyContextService;
 use Illuminate\Support\Facades\Cache;
 use App\Services\AI\AiLoggingService;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class CopilotService
 {
@@ -68,6 +70,15 @@ class CopilotService
         }
 
         $intent = $this->intentClassifier->classify($message);
+        if (($intent['type'] ?? 'general') === 'general' && $this->looksLikeActionRequest($message)) {
+            $intent = [
+                'type' => 'action',
+                'tool' => null,
+                'confidence' => 0.5,
+                'note' => 'action_like_request_without_resolved_tool',
+            ];
+        }
+
         $intentType = (string) ($intent['type'] ?? 'general');
 
         $assistantText = 'I can help with leads, tasks, projects, meetings, attendance, tracking, and dashboard summaries. Ask things like "How many leads are in my CRM?" or "Show overdue tasks."';
@@ -102,22 +113,24 @@ class CopilotService
             } elseif ($this->toolPolicyService->canUseTool($role, $candidateTool)) {
                 if ($intentType === 'action') {
                     if ($this->actionConfirmationPolicyService->requiresConfirmation($candidateTool) && ! $actionConfirmed) {
+                        $inferredArgs = $this->inferActionArgs($message, $candidateTool, $resolvedCompanyId, $actionArgs, $threadId, (int) $user->id);
                         $toolResult = [
                             'summary' => 'This action requires explicit confirmation. Re-submit the request with action_confirmed=true to proceed.',
                             'sources' => [$candidateTool],
                             'payload' => [
                                 'confirmation_required' => true,
                                 'tool' => $candidateTool,
-                                'action_args' => $actionArgs,
+                                'action_args' => $inferredArgs,
                                 'execution_model' => (string) config('services.ai.exec_model', config('services.ai.default_model')),
                             ],
                         ];
                     } else {
+                        $resolvedActionArgs = $this->inferActionArgs($message, $candidateTool, $resolvedCompanyId, $actionArgs, $threadId, (int) $user->id);
                         $toolResult = $this->executeActionWithIdempotency(
                             user: $user,
                             companyId: $resolvedCompanyId,
                             tool: $candidateTool,
-                            actionArgs: $actionArgs,
+                            actionArgs: $resolvedActionArgs,
                             idempotencyKey: $idempotencyKey,
                         );
                     }
@@ -152,7 +165,15 @@ class CopilotService
                 toolName: null,
             );
             $startMs = microtime(true);
-            $assistantText = $this->resolveGeneralResponse($user, $role, (int) $context['company']->id, $message);
+            $assistantText = $this->resolveGeneralResponse(
+                user: $user,
+                role: $role,
+                companyId: $resolvedCompanyId,
+                companyName: (string) ($context['company']->name ?? 'your active organization'),
+                userId: (int) $user->id,
+                threadId: $threadId,
+                message: $message,
+            );
             $execMs = (int) round((microtime(true) - $startMs) * 1000);
             // Approximate token estimate: 1 token ≈ 4 chars
             $inputEst = (int) ceil(mb_strlen($message) / 4);
@@ -249,10 +270,27 @@ class CopilotService
         ];
     }
 
-    private function resolveGeneralResponse(User $user, string $role, int $companyId, string $message): string
-    {
+    private function resolveGeneralResponse(
+        User $user,
+        string $role,
+        int $companyId,
+        string $companyName,
+        int $userId,
+        ?string $threadId,
+        string $message,
+    ): string {
         $normalized = strtolower(trim($message));
-        $companyName = (string) ($user->activeCompany?->name ?? 'your active organization');
+        $resolvedCompanyName = trim($companyName) !== '' ? $companyName : 'your active organization';
+        $promptContext = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
+        $contextEntities = is_array($promptContext['entities'] ?? null) ? $promptContext['entities'] : [];
+
+        if ($this->looksLikeActionRequest($message)) {
+            return 'This looks like a write action request. Please specify the exact action and required details so I can execute it instead of only describing it.';
+        }
+
+        if ((str_contains($normalized, 'same agent') || str_contains($normalized, 'that agent')) && is_string($contextEntities['agent'] ?? null)) {
+            $message .= ' (same agent refers to: ' . $contextEntities['agent'] . ')';
+        }
 
         if (str_contains($normalized, 'my name') || str_contains($normalized, "what's my name") || str_contains($normalized, 'what is my name')) {
             return "Your name is {$user->name}.";
@@ -266,7 +304,7 @@ class CopilotService
             return sprintf(
                 'You are signed in as %s in %s. I can help you with CRM, tasks, projects, meetings, attendance, tracking, and dashboard operations.',
                 $role,
-                $companyName,
+                $resolvedCompanyName,
             );
         }
 
@@ -274,12 +312,16 @@ class CopilotService
             return 'Factory23 is your operations workspace. Ask for CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.';
         }
 
-        $systemPrompt = 'You are Ask The Factory, an operations copilot. Respond concisely, avoid policy bypass, and stay within role-scoped company context.';
+        $systemPrompt = 'You are Ask The Factory, an operations copilot. Respond concisely, avoid policy bypass, and stay within role-scoped company context. Always refer to the organization by the provided company name, and do not invent code names or numeric company labels.';
         $userPrompt = sprintf(
-            "Company ID: %d\nUser name: %s\nRole: %s\nQuestion: %s",
+            "Company name: %s\nTenant scope ID (internal, do not mention): %d\nUser name: %s\nRole: %s\nConversation summary:\n%s\nRecent conversation:\n%s\nKnown entities: %s\nQuestion: %s",
+            $this->redactSensitiveText($resolvedCompanyName),
             $companyId,
             $this->redactSensitiveText($user->name),
             $role,
+            (string) ($promptContext['summary'] ?? ''),
+            $this->formatRecentMessagesForPrompt($promptContext['recent_messages'] ?? []),
+            json_encode($contextEntities),
             $this->redactSensitiveText($message),
         );
 
@@ -298,6 +340,121 @@ class CopilotService
         }
 
         return 'I can help with leads, tasks, projects, meetings, attendance, tracking, and dashboard summaries. Ask things like "How many leads are in my CRM?" or "Show overdue tasks."';
+    }
+
+    /**
+     * @param array<int,array{role?:string,content?:string}> $recentMessages
+     */
+    private function formatRecentMessagesForPrompt(array $recentMessages): string
+    {
+        return collect($recentMessages)
+            ->map(static fn(array $msg): string => sprintf(
+                '[%s] %s',
+                (string) ($msg['role'] ?? 'assistant'),
+                (string) ($msg['content'] ?? '')
+            ))
+            ->implode("\n");
+    }
+
+    private function looksLikeActionRequest(string $message): bool
+    {
+        $normalized = strtolower(trim($message));
+        if ($normalized === '') {
+            return false;
+        }
+
+        return preg_match('/\b(create|add|start|open|schedule|book|send|notify|assign|reassign|transfer|move|update|change|cancel|delete)\b/i', $normalized) === 1
+            && preg_match('/\b(task|project|meeting|notification|alert)\b/i', $normalized) === 1;
+    }
+
+    private function inferActionArgs(
+        string $message,
+        string $tool,
+        int $companyId,
+        array $actionArgs,
+        ?string $threadId,
+        int $userId,
+    ): array {
+        if ($actionArgs !== []) {
+            return $actionArgs;
+        }
+
+        $context = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
+        $entities = is_array($context['entities'] ?? null) ? $context['entities'] : [];
+        $normalized = trim($message);
+
+        return match ($tool) {
+            'tasks.create' => [
+                'title' => $normalized !== '' ? $normalized : 'Task created by Copilot',
+                'description' => $normalized !== '' ? $normalized : 'Task generated from chat request',
+                'type' => 'inspection',
+                'location' => 'Operations Center',
+                'address' => 'Factory23 Operations Center',
+                'due_date' => now()->addDay()->toDateString(),
+                'assigned_agent_id' => $this->resolveAgentIdFromMessage($message, $companyId, $entities),
+            ],
+            'projects.create' => [
+                'name' => $normalized !== '' ? $normalized : 'New Project',
+                'description' => $normalized !== '' ? $normalized : 'Project created by Copilot',
+                'start_date' => now()->toDateString(),
+            ],
+            'meetings.schedule' => [
+                'title' => $normalized !== '' ? $normalized : 'Operations Meeting',
+                'description' => $normalized,
+                'timezone' => config('app.timezone', 'UTC'),
+                'start_at' => now()->addDay()->setTime(10, 0)->toDateTimeString(),
+                'end_at' => now()->addDay()->setTime(11, 0)->toDateTimeString(),
+                'location' => 'Main Conference Room',
+            ],
+            'notifications.send' => [
+                'title' => 'Copilot Notification',
+                'message' => $normalized !== '' ? $normalized : 'New notification from Copilot',
+                'category' => 'system',
+                'user_ids' => [$userId],
+            ],
+            default => $actionArgs,
+        };
+    }
+
+    /**
+     * @param array<string,string> $entities
+     */
+    private function resolveAgentIdFromMessage(string $message, int $companyId, array $entities): ?int
+    {
+        $candidate = null;
+
+        if (preg_match('/\bagent\s+([a-z][a-z\-]*(?:\s+[a-z][a-z\-]*){0,3})(?=\s+(?:to|for|on|at|by|with)\b|[\.,!?]|$)/i', $message, $m) === 1) {
+            $candidate = trim((string) $m[1]);
+        } elseif (is_string($entities['agent'] ?? null)) {
+            $candidate = trim((string) $entities['agent']);
+        }
+
+        if ($candidate === null || $candidate === '') {
+            return null;
+        }
+
+        return User::query()
+            ->whereHas('companies', static fn($q) => $q->where('companies.id', $companyId))
+            ->where('name', 'like', '%' . $candidate . '%')
+            ->value('id');
+    }
+
+    private function mapActionFailureMessage(Throwable $e, string $tool): string
+    {
+        if ($e instanceof ValidationException) {
+            $firstError = collect($e->errors())
+                ->flatten()
+                ->filter(static fn(mixed $value): bool => is_string($value) && trim($value) !== '')
+                ->first();
+
+            return sprintf(
+                'I could not execute %s because required details are missing or invalid: %s',
+                $tool,
+                is_string($firstError) ? $firstError : $e->getMessage(),
+            );
+        }
+
+        return sprintf('I could not execute %s. No action was applied. Error: %s', $tool, $e->getMessage());
     }
 
     private function executeActionWithIdempotency(

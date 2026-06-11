@@ -145,6 +145,56 @@ final class CopilotActionEngineTest extends TestCase
         $this->assertSame($firstTaskId, $secondTaskId);
     }
 
+    public function test_action_like_request_without_supported_tool_does_not_claim_execution_success(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Delete project Apollo immediately',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', null);
+
+        $content = (string) $response->json('data.response.content');
+        $this->assertStringContainsString('write action request', strtolower($content));
+        $this->assertStringNotContainsString('successfully', strtolower($content));
+    }
+
+    public function test_confirmation_payload_infers_action_args_when_missing(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+        [$sameCompany, $agent] = $this->seedCompanyUser('agent');
+
+        $sameCompany->users()->detach($agent->id);
+        $company->users()->attach($agent->id, [
+            'role' => 'agent',
+            'joined_at' => now(),
+        ]);
+
+        $agent->name = 'John Agent';
+        $agent->save();
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create a task for agent John Agent to inspect the depot.',
+                'action_confirmed' => false,
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.action_args.type', TaskType::INSPECTION->value)
+            ->assertJsonPath('data.response.payload.action_args.assigned_agent_id', $agent->id);
+    }
+
     /**
      * @return array{0: Company, 1: User}
      */
