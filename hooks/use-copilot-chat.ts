@@ -263,7 +263,7 @@ export function useCopilotChat() {
 
     const searchAssignees = useCallback(
         async (query: string, companyId?: string | number, limit = 8): Promise<CopilotAssigneeOption[]> => {
-            if (!token || query.trim() === "") {
+            if (!token) {
                 return [];
             }
 

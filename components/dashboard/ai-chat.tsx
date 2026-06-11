@@ -50,9 +50,9 @@ interface AssigneeOption {
   role: string | null;
 }
 
-interface AssigneeSuggestionState {
-  query: string;
+interface AssigneeOptionsState {
   loading: boolean;
+  loaded: boolean;
   items: AssigneeOption[];
 }
 
@@ -98,7 +98,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [copiedMap, setCopiedMap] = useState<Record<string, boolean>>({});
   const [input, setInput] = useState("");
   const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
-  const [assigneeSuggestions, setAssigneeSuggestions] = useState<Record<string, AssigneeSuggestionState>>({});
+  const [assigneeOptions, setAssigneeOptions] = useState<Record<string, AssigneeOptionsState>>({});
   const [isRunningQuickAction, setIsRunningQuickAction] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -106,8 +106,6 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const voiceInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const assigneeLookupTimersRef = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
-  const assigneeLookupSeqRef = useRef<Record<string, number>>({});
 
   const hasMessages = messages.length > 0;
 
@@ -134,18 +132,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }, [companyId, initialize, open]);
 
   useEffect(() => {
+    setAssigneeOptions({});
+  }, [companyId]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isStreaming]);
 
   useEffect(() => {
-    return () => {
-      Object.values(assigneeLookupTimersRef.current).forEach((timer) => {
-        if (timer) {
-          clearTimeout(timer);
-        }
-      });
-    };
-  }, []);
+    for (const msg of messages) {
+      const payload = messagePayload(msg);
+      if (msg.role !== "assistant" || payload?.confirmation_required !== true || payload?.tool !== "tasks.create") {
+        continue;
+      }
+
+      void loadAssigneeOptions(msg.id);
+    }
+  }, [messages]);
 
   function sendMessage(text?: string) {
     const content = (text ?? input).trim();
@@ -228,90 +231,41 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }));
   }
 
-  function clearAssigneeSuggestions(msgId: string) {
-    setAssigneeSuggestions((prev) => ({
-      ...prev,
-      [msgId]: {
-        query: "",
-        loading: false,
-        items: [],
-      },
-    }));
-  }
-
-  async function runAssigneeLookup(msgId: string, query: string, seq: number) {
-    try {
-      const items = await searchAssignees(query, companyId ?? undefined, 8);
-
-      if ((assigneeLookupSeqRef.current[msgId] ?? 0) !== seq) {
-        return;
-      }
-
-      setAssigneeSuggestions((prev) => ({
-        ...prev,
-        [msgId]: {
-          query,
-          loading: false,
-          items,
-        },
-      }));
-    } catch {
-      if ((assigneeLookupSeqRef.current[msgId] ?? 0) !== seq) {
-        return;
-      }
-
-      setAssigneeSuggestions((prev) => ({
-        ...prev,
-        [msgId]: {
-          query,
-          loading: false,
-          items: [],
-        },
-      }));
-    }
-  }
-
-  function handleAssigneeFieldChange(msgId: string, value: string) {
-    updateActionDraft(msgId, "assignee", value);
-
-    const timer = assigneeLookupTimersRef.current[msgId];
-    if (timer) {
-      clearTimeout(timer);
-    }
-
-    const query = value.trim();
-    if (query.length < 2) {
-      clearAssigneeSuggestions(msgId);
+  async function loadAssigneeOptions(msgId: string) {
+    const current = assigneeOptions[msgId];
+    if (current?.loading === true || current?.loaded === true) {
       return;
     }
 
-    setAssigneeSuggestions((prev) => ({
+    setAssigneeOptions((prev) => ({
       ...prev,
       [msgId]: {
-        query,
         loading: true,
+        loaded: false,
         items: prev[msgId]?.items ?? [],
       },
     }));
 
-    const seq = (assigneeLookupSeqRef.current[msgId] ?? 0) + 1;
-    assigneeLookupSeqRef.current[msgId] = seq;
-
-    assigneeLookupTimersRef.current[msgId] = setTimeout(() => {
-      void runAssigneeLookup(msgId, query, seq);
-    }, 250);
-  }
-
-  function selectAssigneeSuggestion(msgId: string, option: AssigneeOption) {
-    updateActionDraft(msgId, "assignee", option.email);
-    setAssigneeSuggestions((prev) => ({
-      ...prev,
-      [msgId]: {
-        query: option.email,
-        loading: false,
-        items: [],
-      },
-    }));
+    try {
+      const items = await searchAssignees("", companyId ?? undefined, 20);
+      setAssigneeOptions((prev) => ({
+        ...prev,
+        [msgId]: {
+          loading: false,
+          loaded: true,
+          items,
+        },
+      }));
+    } catch {
+      setAssigneeOptions((prev) => ({
+        ...prev,
+        [msgId]: {
+          loading: false,
+          loaded: true,
+          items: [],
+        },
+      }));
+    }
   }
 
   function actionArgsForMessage(msg: Message): Record<string, unknown> | null {
@@ -372,6 +326,49 @@ export function AIChat({ open, onClose }: AIChatProps) {
     return String(draft.assignee ?? "").trim();
   }
 
+  function assigneeDropdownValue(msg: Message, args: Record<string, unknown>): string {
+    const draftValue = assigneeDraftValue(msg);
+    if (draftValue !== "") {
+      return draftValue;
+    }
+
+    const directAssignee = typeof args.assignee === "string" ? args.assignee.trim() : "";
+    if (directAssignee !== "") {
+      return directAssignee;
+    }
+
+    const assignedId = typeof args.assigned_agent_id === "number" ? args.assigned_agent_id : null;
+    if (assignedId === null) {
+      return "";
+    }
+
+    const options = assigneeOptions[msg.id]?.items ?? [];
+    const matched = options.find((item) => item.id === assignedId);
+    return matched?.email ?? "";
+  }
+
+  function assigneeDisplayName(msg: Message, args: Record<string, unknown>): string {
+    const options = assigneeOptions[msg.id]?.items ?? [];
+    const selected = assigneeDropdownValue(msg, args);
+
+    if (selected !== "") {
+      const byEmail = options.find((item) => item.email === selected);
+      if (byEmail) {
+        return byEmail.name;
+      }
+
+      return selected;
+    }
+
+    const assignedId = typeof args.assigned_agent_id === "number" ? args.assigned_agent_id : null;
+    if (assignedId !== null) {
+      const byId = options.find((item) => item.id === assignedId);
+      return byId?.name ?? `Agent #${String(assignedId)}`;
+    }
+
+    return "";
+  }
+
   function blockingIssuesForMessage(msg: Message): string[] {
     const blockingCodes = blockingWarningCodesForMessage(msg);
     if (blockingCodes.length === 0) {
@@ -379,11 +376,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }
 
     const args = actionArgsForMessage(msg);
+    const argsForChecks: Record<string, unknown> = args ?? {};
     const remaining: string[] = [];
 
     for (const code of blockingCodes) {
       if (code === "assignee_unresolved") {
-        const assigneeEdited = assigneeDraftValue(msg) !== "";
+        const assigneeEdited = assigneeDropdownValue(msg, argsForChecks) !== "";
         const hasResolvedId = typeof args?.assigned_agent_id === "number";
         if (!assigneeEdited && !hasResolvedId) {
           remaining.push(code);
@@ -471,7 +469,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         { key: "location", label: "Location", value: formatPreviewValue("location", args.location) },
       ];
 
-      const assigneeEdited = assigneeDraftValue(msg) !== "";
+      const assigneeEdited = assigneeDropdownValue(msg, args) !== "";
       const assigneeResolved = typeof args.assigned_agent_id === "number";
 
       if (warningCodes.includes("assignee_unresolved") && !assigneeEdited && !assigneeResolved) {
@@ -485,7 +483,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         rows.push({
           key: "assigned_agent_id",
           label: "Assignee",
-          value: formatPreviewValue("assignee", args.assignee ?? args.assigned_agent_id),
+          value: formatPreviewValue("assignee", assigneeDisplayName(msg, args)),
         });
       }
 
@@ -936,8 +934,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
                             const typeValue = String(args.type ?? "inspection");
                             const dueValue = String(args.due_date ?? "");
                             const titleValue = String(args.title ?? "");
-                            const assigneeValue = assigneeDraftValue(msg);
-                            const suggestionState = assigneeSuggestions[msg.id];
+                            const assigneeValue = assigneeDropdownValue(msg, args);
+                            const optionsState = assigneeOptions[msg.id];
                             const assigneeFallback = typeof args.assigned_agent_id === "number"
                               ? `Agent #${String(args.assigned_agent_id)}`
                               : "";
@@ -971,38 +969,20 @@ export function AIChat({ open, onClose }: AIChatProps) {
                                       className="rounded-lg border border-[#355C57] bg-[#0D1C1C] px-2.5 py-2 text-[12px] text-[#D0E2E3] placeholder:text-[#7EA09B] outline-none focus:border-[#4F8C83]"
                                     />
                                   </div>
-                                  <input
+                                  <select
                                     value={assigneeValue}
-                                    onChange={(e) => handleAssigneeFieldChange(msg.id, e.target.value)}
-                                    placeholder={assigneeFallback !== "" ? `Assignee name or email (${assigneeFallback})` : "Assignee name or email"}
-                                    className="w-full rounded-lg border border-[#355C57] bg-[#0D1C1C] px-2.5 py-2 text-[12px] text-[#D0E2E3] placeholder:text-[#7EA09B] outline-none focus:border-[#4F8C83]"
-                                  />
-                                  {(suggestionState?.loading === true || (Array.isArray(suggestionState?.items) && suggestionState.items.length > 0) || ((suggestionState?.query?.length ?? 0) >= 2 && suggestionState?.loading === false)) && (
-                                    <div className="rounded-lg border border-[#244643] bg-[#0B1717] p-1.5">
-                                      {suggestionState?.loading === true && (
-                                        <p className="px-2 py-1 text-[11px] text-[#7EA09B]">Searching assignees...</p>
-                                      )}
-
-                                      {suggestionState?.loading === false && Array.isArray(suggestionState.items) && suggestionState.items.length > 0 && (
-                                        <div className="flex flex-col gap-1">
-                                          {suggestionState.items.map((option) => (
-                                            <button
-                                              key={`${msg.id}-assignee-${option.id}`}
-                                              type="button"
-                                              onClick={() => selectAssigneeSuggestion(msg.id, option)}
-                                              className="flex items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-[#12302F]"
-                                            >
-                                              <span className="text-[11px] text-[#D0E2E3]">{option.name}</span>
-                                              <span className="text-[10px] text-[#8FB8B1]">{option.email}</span>
-                                            </button>
-                                          ))}
-                                        </div>
-                                      )}
-
-                                      {suggestionState?.loading === false && Array.isArray(suggestionState.items) && suggestionState.items.length === 0 && (suggestionState.query?.length ?? 0) >= 2 && (
-                                        <p className="px-2 py-1 text-[11px] text-[#7EA09B]">No matching assignees found in your company.</p>
-                                      )}
-                                    </div>
+                                    onChange={(e) => updateActionDraft(msg.id, "assignee", e.target.value)}
+                                    className="w-full rounded-lg border border-[#355C57] bg-[#0D1C1C] px-2.5 py-2 text-[12px] text-[#D0E2E3] outline-none focus:border-[#4F8C83]"
+                                  >
+                                    <option value="">{optionsState?.loading ? "Loading assignees..." : "Select assignee"}</option>
+                                    {Array.isArray(optionsState?.items) && optionsState.items.map((option) => (
+                                      <option key={`${msg.id}-assignee-${option.id}`} value={option.email}>
+                                        {option.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {assigneeFallback !== "" && assigneeValue === "" && (
+                                    <p className="text-[11px] text-[#7EA09B]">Current assignment: {assigneeFallback}</p>
                                   )}
                                 </div>
                               </div>
