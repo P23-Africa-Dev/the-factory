@@ -173,6 +173,27 @@ class CopilotController extends Controller
         );
     }
 
+    public function assignees(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'query' => ['nullable', 'string', 'max:120'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:20'],
+        ]);
+
+        $items = $this->copilotService->lookupAssignees(
+            user: $request->user(),
+            companyId: $this->resolveCompanyContextId($validated['company_id'] ?? null),
+            query: isset($validated['query']) ? (string) $validated['query'] : null,
+            limit: isset($validated['limit']) ? (int) $validated['limit'] : 8,
+        );
+
+        return $this->success(
+            message: 'Copilot assignees fetched successfully.',
+            data: ['items' => $items],
+        );
+    }
+
     public function show(Request $request, string $thread): JsonResponse
     {
         $threadData = $this->copilotService->getThread(

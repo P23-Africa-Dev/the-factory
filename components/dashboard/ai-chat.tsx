@@ -34,6 +34,28 @@ interface AIChatProps {
   onClose: () => void;
 }
 
+interface ConfirmationPreviewRow {
+  key: string;
+  label: string;
+  value: string;
+  warning?: boolean;
+}
+
+type ActionDraftMap = Record<string, Record<string, string>>;
+
+interface AssigneeOption {
+  id: number;
+  name: string;
+  email: string;
+  role: string | null;
+}
+
+interface AssigneeSuggestionState {
+  query: string;
+  loading: boolean;
+  items: AssigneeOption[];
+}
+
 function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
   if (!rawAvatar) return null;
   const trimmed = rawAvatar.trim();
@@ -69,11 +91,14 @@ export function AIChat({ open, onClose }: AIChatProps) {
     runFileAnalysis,
     runTranscriptSummary,
     loadForecastOverview,
+    searchAssignees,
   } = useCopilotChat();
 
   const [actionMap, setActionMap] = useState<Record<string, MessageAction>>({});
   const [copiedMap, setCopiedMap] = useState<Record<string, boolean>>({});
   const [input, setInput] = useState("");
+  const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
+  const [assigneeSuggestions, setAssigneeSuggestions] = useState<Record<string, AssigneeSuggestionState>>({});
   const [isRunningQuickAction, setIsRunningQuickAction] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -81,6 +106,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const voiceInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const assigneeLookupTimersRef = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
+  const assigneeLookupSeqRef = useRef<Record<string, number>>({});
 
   const hasMessages = messages.length > 0;
 
@@ -109,6 +136,16 @@ export function AIChat({ open, onClose }: AIChatProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isStreaming]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(assigneeLookupTimersRef.current).forEach((timer) => {
+        if (timer) {
+          clearTimeout(timer);
+        }
+      });
+    };
+  }, []);
 
   function sendMessage(text?: string) {
     const content = (text ?? input).trim();
@@ -149,6 +186,321 @@ export function AIChat({ open, onClose }: AIChatProps) {
       : null;
   }
 
+  function parseRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+  }
+
+  function sanitizeActionArgs(args: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(args).filter(([key]) => !key.startsWith("__")),
+    );
+  }
+
+  function warningCodesForMessage(msg: Message): string[] {
+    const payload = messagePayload(msg);
+    if (!payload || !Array.isArray(payload.validation_warning_codes)) {
+      return [];
+    }
+
+    return payload.validation_warning_codes
+      .map((code) => String(code))
+      .filter((code) => code.trim() !== "");
+  }
+
+  function blockingWarningCodesForMessage(msg: Message): string[] {
+    const payload = messagePayload(msg);
+    if (!payload || !Array.isArray(payload.blocking_warning_codes)) {
+      return payload?.blocking_confirmation === true ? warningCodesForMessage(msg) : [];
+    }
+
+    return payload.blocking_warning_codes
+      .map((code) => String(code))
+      .filter((code) => code.trim() !== "");
+  }
+
+  function updateActionDraft(msgId: string, field: string, value: string) {
+    setActionDrafts((prev) => ({
+      ...prev,
+      [msgId]: {
+        ...(prev[msgId] ?? {}),
+        [field]: value,
+      },
+    }));
+  }
+
+  function clearAssigneeSuggestions(msgId: string) {
+    setAssigneeSuggestions((prev) => ({
+      ...prev,
+      [msgId]: {
+        query: "",
+        loading: false,
+        items: [],
+      },
+    }));
+  }
+
+  async function runAssigneeLookup(msgId: string, query: string, seq: number) {
+    try {
+      const items = await searchAssignees(query, companyId ?? undefined, 8);
+
+      if ((assigneeLookupSeqRef.current[msgId] ?? 0) !== seq) {
+        return;
+      }
+
+      setAssigneeSuggestions((prev) => ({
+        ...prev,
+        [msgId]: {
+          query,
+          loading: false,
+          items,
+        },
+      }));
+    } catch {
+      if ((assigneeLookupSeqRef.current[msgId] ?? 0) !== seq) {
+        return;
+      }
+
+      setAssigneeSuggestions((prev) => ({
+        ...prev,
+        [msgId]: {
+          query,
+          loading: false,
+          items: [],
+        },
+      }));
+    }
+  }
+
+  function handleAssigneeFieldChange(msgId: string, value: string) {
+    updateActionDraft(msgId, "assignee", value);
+
+    const timer = assigneeLookupTimersRef.current[msgId];
+    if (timer) {
+      clearTimeout(timer);
+    }
+
+    const query = value.trim();
+    if (query.length < 2) {
+      clearAssigneeSuggestions(msgId);
+      return;
+    }
+
+    setAssigneeSuggestions((prev) => ({
+      ...prev,
+      [msgId]: {
+        query,
+        loading: true,
+        items: prev[msgId]?.items ?? [],
+      },
+    }));
+
+    const seq = (assigneeLookupSeqRef.current[msgId] ?? 0) + 1;
+    assigneeLookupSeqRef.current[msgId] = seq;
+
+    assigneeLookupTimersRef.current[msgId] = setTimeout(() => {
+      void runAssigneeLookup(msgId, query, seq);
+    }, 250);
+  }
+
+  function selectAssigneeSuggestion(msgId: string, option: AssigneeOption) {
+    updateActionDraft(msgId, "assignee", option.email);
+    setAssigneeSuggestions((prev) => ({
+      ...prev,
+      [msgId]: {
+        query: option.email,
+        loading: false,
+        items: [],
+      },
+    }));
+  }
+
+  function actionArgsForMessage(msg: Message): Record<string, unknown> | null {
+    const payload = messagePayload(msg);
+    if (!payload) {
+      return null;
+    }
+
+    const actionArgsRaw = parseRecord(payload.action_args);
+    if (!actionArgsRaw) {
+      return null;
+    }
+
+    const baseArgs = sanitizeActionArgs(actionArgsRaw);
+    const draft = actionDrafts[msg.id] ?? {};
+    const tool = String(payload.tool ?? "");
+
+    if (tool === "tasks.create") {
+      const merged: Record<string, unknown> = { ...baseArgs };
+
+      if (Object.prototype.hasOwnProperty.call(draft, "title")) {
+        merged.title = draft.title;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "type")) {
+        merged.type = draft.type;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "due_date")) {
+        merged.due_date = draft.due_date;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "assignee")) {
+        const assignee = (draft.assignee ?? "").trim();
+        if (assignee !== "") {
+          merged.assignee = assignee;
+          delete merged.assigned_agent_id;
+        } else {
+          delete merged.assignee;
+        }
+      }
+
+      return merged;
+    }
+
+    if (Object.keys(draft).length === 0) {
+      return baseArgs;
+    }
+
+    return {
+      ...baseArgs,
+      ...draft,
+    };
+  }
+
+  function assigneeDraftValue(msg: Message): string {
+    const draft = actionDrafts[msg.id] ?? {};
+    return String(draft.assignee ?? "").trim();
+  }
+
+  function blockingIssuesForMessage(msg: Message): string[] {
+    const blockingCodes = blockingWarningCodesForMessage(msg);
+    if (blockingCodes.length === 0) {
+      return [];
+    }
+
+    const args = actionArgsForMessage(msg);
+    const remaining: string[] = [];
+
+    for (const code of blockingCodes) {
+      if (code === "assignee_unresolved") {
+        const assigneeEdited = assigneeDraftValue(msg) !== "";
+        const hasResolvedId = typeof args?.assigned_agent_id === "number";
+        if (!assigneeEdited && !hasResolvedId) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "used_default_title") {
+        const title = String(args?.title ?? "").trim().toLowerCase();
+        if (title === "" || title === "task created by copilot") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "used_default_due_date") {
+        const due = String(args?.due_date ?? "").trim();
+        if (due === "") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      remaining.push(code);
+    }
+
+    return remaining;
+  }
+
+  function formatPreviewValue(key: string, value: unknown): string {
+    if (value === null || value === undefined) {
+      return "Not provided";
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed === "") {
+        return "Not provided";
+      }
+
+      if (key === "due_date") {
+        const parsed = new Date(trimmed);
+        if (!Number.isNaN(parsed.getTime())) {
+          return parsed.toLocaleString();
+        }
+      }
+
+      return trimmed;
+    }
+
+    if (typeof value === "number" || typeof value === "boolean") {
+      return String(value);
+    }
+
+    if (Array.isArray(value)) {
+      const list = value.map((item) => String(item)).filter((item) => item.trim() !== "");
+      return list.length > 0 ? list.join(", ") : "Not provided";
+    }
+
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "[Unserializable value]";
+    }
+  }
+
+  function confirmationPreviewRows(msg: Message): ConfirmationPreviewRow[] {
+    const payload = messagePayload(msg);
+    if (!payload) {
+      return [];
+    }
+
+    const tool = String(payload.tool ?? "");
+    const args = actionArgsForMessage(msg);
+    if (!args) {
+      return [];
+    }
+    const warningCodes = warningCodesForMessage(msg);
+
+    if (tool === "tasks.create") {
+      const rows: ConfirmationPreviewRow[] = [
+        { key: "title", label: "Title", value: formatPreviewValue("title", args.title) },
+        { key: "type", label: "Type", value: formatPreviewValue("type", args.type) },
+        { key: "due_date", label: "Due Date", value: formatPreviewValue("due_date", args.due_date) },
+        { key: "location", label: "Location", value: formatPreviewValue("location", args.location) },
+      ];
+
+      const assigneeEdited = assigneeDraftValue(msg) !== "";
+      const assigneeResolved = typeof args.assigned_agent_id === "number";
+
+      if (warningCodes.includes("assignee_unresolved") && !assigneeEdited && !assigneeResolved) {
+        rows.push({
+          key: "assigned_agent_id",
+          label: "Assignee",
+          value: "Needs correction",
+          warning: true,
+        });
+      } else {
+        rows.push({
+          key: "assigned_agent_id",
+          label: "Assignee",
+          value: formatPreviewValue("assignee", args.assignee ?? args.assigned_agent_id),
+        });
+      }
+
+      return rows;
+    }
+
+    return Object.entries(args)
+      .filter(([key]) => key !== "company_id")
+      .map(([key, value]) => ({
+        key,
+        label: key.replace(/_/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase()),
+        value: formatPreviewValue(key, value),
+      }));
+  }
+
   function findPreviousUserContent(index: number): string {
     for (let i = index - 1; i >= 0; i -= 1) {
       if (messages[i]?.role === "user") {
@@ -166,15 +518,40 @@ export function AIChat({ open, onClose }: AIChatProps) {
     const priorPrompt = findPreviousUserContent(index);
     if (!priorPrompt.trim()) return;
 
+    const actionArgs = actionArgsForMessage(msg);
+    const sanitizedArgs = actionArgs ? sanitizeActionArgs(actionArgs) : undefined;
+    const hasSanitizedArgs = sanitizedArgs ? Object.keys(sanitizedArgs).length > 0 : false;
+
     void sendCopilotMessage({
       message: priorPrompt,
       companyId: companyId ?? undefined,
       actionConfirmed: true,
-      actionArgs:
-        payload.action_args && typeof payload.action_args === "object"
-          ? (payload.action_args as Record<string, unknown>)
-          : undefined,
+      actionArgs: hasSanitizedArgs ? sanitizedArgs : undefined,
     });
+  }
+
+  function handleEditActionDetails(index: number) {
+    const priorPrompt = findPreviousUserContent(index);
+    if (!priorPrompt.trim()) return;
+    setInput(priorPrompt);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function isBlockingConfirmation(msg: Message): boolean {
+    return blockingIssuesForMessage(msg).length > 0;
+  }
+
+  function blockingMessage(msg: Message): string {
+    const issues = blockingIssuesForMessage(msg);
+    if (issues.includes("assignee_unresolved")) {
+      return "Confirmation is blocked until assignee details are corrected.";
+    }
+
+    if (issues.includes("used_default_title") || issues.includes("used_default_due_date")) {
+      return "Confirmation is blocked until title and due date are explicitly set.";
+    }
+
+    return "Confirmation is currently blocked until required fields are corrected.";
   }
 
   async function handleQueueWeeklyReport() {
@@ -523,13 +900,149 @@ export function AIChat({ open, onClose }: AIChatProps) {
                       )}
                       {messagePayload(msg)?.confirmation_required === true && (
                         <div className="pl-1">
-                          <button
-                            onClick={() => handleConfirmAction(index, msg)}
-                            disabled={isStreaming}
-                            className="rounded-full bg-[#2D6F63] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#358372] disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Confirm Action
-                          </button>
+                          {(() => {
+                            const previewRows = confirmationPreviewRows(msg);
+                            if (previewRows.length === 0) {
+                              return null;
+                            }
+
+                            return (
+                              <div className="mb-2 rounded-xl border border-[#2F5E5A]/70 bg-[#152B2A] px-3 py-2">
+                                <p className="text-[11px] font-semibold text-[#A6DFD2] mb-1">Parsed action details:</p>
+                                <div className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1">
+                                  {previewRows.map((row) => (
+                                    <div key={`${msg.id}-preview-${row.key}`} className="contents">
+                                      <span className="text-[11px] text-[#8CB9B3]">{row.label}</span>
+                                      <span className={`text-[11px] ${row.warning ? "text-[#F2B4A6]" : "text-[#C9E5E0]"}`}>
+                                        {row.value}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                          {(() => {
+                            const payload = messagePayload(msg);
+                            if (payload?.tool !== "tasks.create") {
+                              return null;
+                            }
+
+                            const args = actionArgsForMessage(msg);
+                            if (!args) {
+                              return null;
+                            }
+
+                            const typeValue = String(args.type ?? "inspection");
+                            const dueValue = String(args.due_date ?? "");
+                            const titleValue = String(args.title ?? "");
+                            const assigneeValue = assigneeDraftValue(msg);
+                            const suggestionState = assigneeSuggestions[msg.id];
+                            const assigneeFallback = typeof args.assigned_agent_id === "number"
+                              ? `Agent #${String(args.assigned_agent_id)}`
+                              : "";
+
+                            return (
+                              <div className="mb-2 rounded-xl border border-[#355C57]/70 bg-[#102322] px-3 py-2">
+                                <p className="text-[11px] font-semibold text-[#9FD3C8] mb-2">Edit before confirm:</p>
+                                <div className="grid grid-cols-1 gap-2">
+                                  <input
+                                    value={titleValue}
+                                    onChange={(e) => updateActionDraft(msg.id, "title", e.target.value)}
+                                    placeholder="Task title"
+                                    className="w-full rounded-lg border border-[#355C57] bg-[#0D1C1C] px-2.5 py-2 text-[12px] text-[#D0E2E3] placeholder:text-[#7EA09B] outline-none focus:border-[#4F8C83]"
+                                  />
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <select
+                                      value={typeValue}
+                                      onChange={(e) => updateActionDraft(msg.id, "type", e.target.value)}
+                                      className="rounded-lg border border-[#355C57] bg-[#0D1C1C] px-2.5 py-2 text-[12px] text-[#D0E2E3] outline-none focus:border-[#4F8C83]"
+                                    >
+                                      <option value="inspection">Inspection</option>
+                                      <option value="sales_visit">Sales Visit</option>
+                                      <option value="delivery">Delivery</option>
+                                      <option value="collection">Collection</option>
+                                      <option value="awareness">Awareness</option>
+                                    </select>
+                                    <input
+                                      value={dueValue}
+                                      onChange={(e) => updateActionDraft(msg.id, "due_date", e.target.value)}
+                                      placeholder="Due date (e.g. tomorrow 5pm)"
+                                      className="rounded-lg border border-[#355C57] bg-[#0D1C1C] px-2.5 py-2 text-[12px] text-[#D0E2E3] placeholder:text-[#7EA09B] outline-none focus:border-[#4F8C83]"
+                                    />
+                                  </div>
+                                  <input
+                                    value={assigneeValue}
+                                    onChange={(e) => handleAssigneeFieldChange(msg.id, e.target.value)}
+                                    placeholder={assigneeFallback !== "" ? `Assignee name or email (${assigneeFallback})` : "Assignee name or email"}
+                                    className="w-full rounded-lg border border-[#355C57] bg-[#0D1C1C] px-2.5 py-2 text-[12px] text-[#D0E2E3] placeholder:text-[#7EA09B] outline-none focus:border-[#4F8C83]"
+                                  />
+                                  {(suggestionState?.loading === true || (Array.isArray(suggestionState?.items) && suggestionState.items.length > 0) || ((suggestionState?.query?.length ?? 0) >= 2 && suggestionState?.loading === false)) && (
+                                    <div className="rounded-lg border border-[#244643] bg-[#0B1717] p-1.5">
+                                      {suggestionState?.loading === true && (
+                                        <p className="px-2 py-1 text-[11px] text-[#7EA09B]">Searching assignees...</p>
+                                      )}
+
+                                      {suggestionState?.loading === false && Array.isArray(suggestionState.items) && suggestionState.items.length > 0 && (
+                                        <div className="flex flex-col gap-1">
+                                          {suggestionState.items.map((option) => (
+                                            <button
+                                              key={`${msg.id}-assignee-${option.id}`}
+                                              type="button"
+                                              onClick={() => selectAssigneeSuggestion(msg.id, option)}
+                                              className="flex items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-[#12302F]"
+                                            >
+                                              <span className="text-[11px] text-[#D0E2E3]">{option.name}</span>
+                                              <span className="text-[10px] text-[#8FB8B1]">{option.email}</span>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      {suggestionState?.loading === false && Array.isArray(suggestionState.items) && suggestionState.items.length === 0 && (suggestionState.query?.length ?? 0) >= 2 && (
+                                        <p className="px-2 py-1 text-[11px] text-[#7EA09B]">No matching assignees found in your company.</p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                          {Array.isArray(messagePayload(msg)?.validation_warnings) && (messagePayload(msg)?.validation_warnings as unknown[]).length > 0 && (
+                            <div className="mb-2 rounded-xl border border-[#7A5A2A]/60 bg-[#2F2617] px-3 py-2">
+                              <p className="text-[11px] font-semibold text-[#F2D9A6] mb-1">Please review before confirming:</p>
+                              <ul className="space-y-1">
+                                {(messagePayload(msg)?.validation_warnings as unknown[]).map((warning, idx) => (
+                                  <li key={`${msg.id}-warn-${idx}`} className="text-[11px] text-[#EBCFA0] leading-relaxed">
+                                    - {String(warning)}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {isBlockingConfirmation(msg) && (
+                            <p className="mb-2 text-[11px] text-[#F2B4A6]">
+                              {blockingMessage(msg)}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-2">
+                            {isBlockingConfirmation(msg) && (
+                              <button
+                                onClick={() => handleEditActionDetails(index)}
+                                disabled={isStreaming}
+                                className="rounded-full border border-[#7A5A2A]/70 bg-[#2F2617] px-3 py-2 text-[11px] font-semibold text-[#F2D9A6] hover:bg-[#3B2E1D] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Edit Details
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleConfirmAction(index, msg)}
+                              disabled={isStreaming || isBlockingConfirmation(msg)}
+                              className="rounded-full bg-[#2D6F63] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#358372] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Confirm Action
+                            </button>
+                          </div>
                         </div>
                       )}
 

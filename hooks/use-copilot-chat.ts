@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import {
+    CopilotAssigneeOption,
     CopilotMessage,
     CopilotThread,
     WeeklySummaryStatusResponse,
@@ -13,6 +14,7 @@ import {
     getForecastOverview,
     getCopilotThread,
     getWeeklySummaryStatus,
+    lookupCopilotAssignees,
     listCopilotThreads,
     queueWeeklySummaryReport,
     sendCopilotMessageStream,
@@ -259,6 +261,18 @@ export function useCopilotChat() {
         [token]
     );
 
+    const searchAssignees = useCallback(
+        async (query: string, companyId?: string | number, limit = 8): Promise<CopilotAssigneeOption[]> => {
+            if (!token || query.trim() === "") {
+                return [];
+            }
+
+            const res = await lookupCopilotAssignees(token, query, companyId, limit);
+            return Array.isArray(res?.data?.items) ? res.data.items : [];
+        },
+        [token]
+    );
+
     useEffect(() => () => stopWeeklyReportPolling(), [stopWeeklyReportPolling]);
 
     const sendMessage = useCallback(
@@ -378,5 +392,6 @@ export function useCopilotChat() {
         runFileAnalysis,
         runTranscriptSummary,
         loadForecastOverview,
+        searchAssignees,
     };
 }

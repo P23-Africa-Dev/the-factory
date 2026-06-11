@@ -9,6 +9,7 @@ use App\Models\Company;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -193,6 +194,207 @@ final class CopilotActionEngineTest extends TestCase
             ->assertJsonPath('data.response.payload.confirmation_required', true)
             ->assertJsonPath('data.response.payload.action_args.type', TaskType::INSPECTION->value)
             ->assertJsonPath('data.response.payload.action_args.assigned_agent_id', $agent->id);
+    }
+
+    public function test_confirmation_payload_parses_structured_task_prompt_without_oversized_title(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+        [$sameCompany, $agent] = $this->seedCompanyUser('agent');
+
+        $sameCompany->users()->detach($agent->id);
+        $company->users()->attach($agent->id, [
+            'role' => 'agent',
+            'joined_at' => now(),
+        ]);
+
+        $agent->name = 'Agent Elijah';
+        $agent->email = 'agentelijah@yopmail.com';
+        $agent->save();
+
+        $message = 'Create a task for Agent Elijah (email: agentelijah@yopmail.com). Task title: Deliver item to a client at Lekki. Task type: Delivery. Description: Deliver this item to Mr Tony at Lekki. Assign To: Agent Elijah. Location & Address: Km 19 Lekki - Epe Expy, Lekki Penninsula II, Lekki 106104, Lagos. Due Date: 17th of this month.';
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => $message,
+                'action_confirmed' => false,
+            ]);
+
+        $title = (string) $response->json('data.response.payload.action_args.title');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.action_args.type', TaskType::DELIVERY->value)
+            ->assertJsonPath('data.response.payload.action_args.assigned_agent_id', $agent->id)
+            ->assertJsonPath('data.response.payload.action_args.location', 'Km 19 Lekki - Epe Expy')
+            ->assertJsonPath('data.response.payload.action_args.address', 'Km 19 Lekki - Epe Expy, Lekki Penninsula II, Lekki 106104, Lagos');
+
+        $this->assertSame('Deliver item to a client at Lekki', $title);
+        $this->assertLessThanOrEqual(255, mb_strlen($title));
+        $this->assertStringContainsString('Click Confirm Action to proceed', (string) $response->json('data.response.content'));
+    }
+
+    public function test_confirmation_payload_parses_assign_to_without_colon(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+        [$sameCompany, $agent] = $this->seedCompanyUser('agent');
+
+        $sameCompany->users()->detach($agent->id);
+        $company->users()->attach($agent->id, [
+            'role' => 'agent',
+            'joined_at' => now(),
+        ]);
+
+        $agent->name = 'Elijah Stone';
+        $agent->save();
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create a task title: "Deliver package" description: Deliver safely to client in Lekki assign to Elijah Stone due tomorrow evening location & address: Lekki Phase 1, Lagos',
+                'action_confirmed' => false,
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.action_args.assigned_agent_id', $agent->id)
+            ->assertJsonPath('data.response.payload.action_args.title', 'Deliver package');
+    }
+
+    public function test_confirmation_payload_parses_due_in_days_phrase(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create task title: Inventory check description: Verify warehouse inventory due in 3 days location: Main warehouse, Lagos',
+                'action_confirmed' => false,
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.response.tool', 'tasks.create');
+
+        $dueDate = (string) $response->json('data.response.payload.action_args.due_date');
+        $this->assertNotSame('', $dueDate);
+        $this->assertTrue(str_contains($dueDate, '-'));
+    }
+
+    public function test_confirmation_payload_returns_validation_warnings_for_ambiguous_fields(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create task for agent Unknown Person',
+                'action_confirmed' => false,
+            ]);
+
+        $warnings = $response->json('data.response.payload.validation_warnings');
+        $warningCodes = $response->json('data.response.payload.validation_warning_codes');
+        $blockingCodes = $response->json('data.response.payload.blocking_warning_codes');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.blocking_confirmation', true);
+
+        $response->assertJsonMissingPath('data.response.payload.action_args.__inference');
+
+        $this->assertIsArray($warnings);
+        $this->assertNotEmpty($warnings);
+        $this->assertStringContainsString('No matching assignee was found', implode(' ', $warnings));
+        $this->assertIsArray($warningCodes);
+        $this->assertContains('assignee_unresolved', $warningCodes);
+        $this->assertIsArray($blockingCodes);
+        $this->assertContains('assignee_unresolved', $blockingCodes);
+    }
+
+    public function test_strict_confirmation_blocking_can_require_explicit_title_and_due_date(): void
+    {
+        Config::set('services.ai.strict_confirmation_blocking', true);
+        Config::set('services.ai.strict_confirmation_blocking_codes', ['used_default_title', 'used_default_due_date']);
+
+        [$company, $admin] = $this->seedCompanyUser('admin');
+        $this->createCompanyAgent($company, 'Elijah Stone');
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create task assign to Elijah Stone',
+                'action_confirmed' => false,
+            ]);
+
+        $blockingCodes = $response->json('data.response.payload.blocking_warning_codes');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.blocking_confirmation', true);
+
+        $this->assertIsArray($blockingCodes);
+        $this->assertContains('used_default_title', $blockingCodes);
+        $this->assertContains('used_default_due_date', $blockingCodes);
+    }
+
+    public function test_confirmed_action_can_resolve_assignee_from_inline_edit_field(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+        $agent = $this->createCompanyAgent($company, 'Elijah Stone', 'elijah.stone@example.com');
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create task now',
+                'action_confirmed' => true,
+                'action_args' => [
+                    'title' => 'Delivery route handoff',
+                    'type' => 'delivery',
+                    'description' => 'Hand off shipment route plan to the assigned field agent.',
+                    'location' => 'Lekki Hub',
+                    'address' => '12 Admiralty Way, Lekki, Lagos',
+                    'due_date' => 'tomorrow evening',
+                    'assignee' => $agent->email,
+                ],
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create');
+
+        $this->assertDatabaseHas('tasks', [
+            'company_id' => $company->id,
+            'title' => 'Delivery route handoff',
+            'assigned_agent_id' => $agent->id,
+        ]);
+    }
+
+    private function createCompanyAgent(Company $company, string $name, ?string $email = null): User
+    {
+        /** @var User $agent */
+        $agent = User::factory()->createOne([
+            'name' => $name,
+            'email' => $email ?? Str::slug($name, '.') . '@example.com',
+        ]);
+
+        $company->users()->attach($agent->id, [
+            'role' => 'agent',
+            'joined_at' => now(),
+        ]);
+
+        return $agent;
     }
 
     /**

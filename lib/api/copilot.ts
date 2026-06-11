@@ -87,6 +87,13 @@ export type WeeklySummaryStatusResponse = {
     available: boolean;
 };
 
+export type CopilotAssigneeOption = {
+    id: number;
+    name: string;
+    email: string;
+    role: string | null;
+};
+
 function buildQuery(companyId?: number | string): string {
     if (companyId === undefined || companyId === null || String(companyId).trim() === "") {
         return "";
@@ -141,6 +148,34 @@ export function sendCopilotMessage(
             ...payload,
             stream: false,
         },
+        token,
+    });
+}
+
+export function lookupCopilotAssignees(
+    token: string,
+    query: string,
+    companyId?: number | string,
+    limit = 8
+): Promise<ApiEnvelope<{ items: CopilotAssigneeOption[] }>> {
+    const params = new URLSearchParams();
+    const trimmed = query.trim();
+
+    if (trimmed !== "") {
+        params.set("query", trimmed);
+    }
+
+    params.set("limit", String(limit));
+
+    if (companyId !== undefined && companyId !== null && String(companyId).trim() !== "") {
+        params.set("company_id", String(companyId));
+    }
+
+    const suffix = params.toString();
+
+    return apiRequest<{ items: CopilotAssigneeOption[] }>({
+        method: "GET",
+        path: `/copilot/assignees${suffix ? `?${suffix}` : ""}`,
         token,
     });
 }

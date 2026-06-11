@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AI;
 
+use App\Enums\TaskType;
 use App\Models\User;
 use App\Services\AI\Context\ConversationMemoryService;
 use App\Services\AI\Policy\ActionConfirmationPolicyService;
@@ -12,8 +13,10 @@ use App\Services\AI\Providers\AiProviderRouter;
 use App\Services\AI\Tools\ActionToolRegistry;
 use App\Services\AI\Tools\ReadToolRegistry;
 use App\Services\Company\CompanyContextService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use App\Services\AI\AiLoggingService;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -114,25 +117,73 @@ class CopilotService
                 if ($intentType === 'action') {
                     if ($this->actionConfirmationPolicyService->requiresConfirmation($candidateTool) && ! $actionConfirmed) {
                         $inferredArgs = $this->inferActionArgs($message, $candidateTool, $resolvedCompanyId, $actionArgs, $threadId, (int) $user->id);
+                        $validationWarningCodes = $this->inferActionWarningCodes($candidateTool, $inferredArgs);
+                        $validationWarnings = $this->inferActionWarnings($candidateTool, $inferredArgs);
+                        $blockingWarningCodes = $this->determineBlockingWarningCodes($validationWarningCodes);
+                        $blockingConfirmation = $blockingWarningCodes !== [];
                         $toolResult = [
-                            'summary' => 'This action requires explicit confirmation. Re-submit the request with action_confirmed=true to proceed.',
+                            'summary' => $this->buildActionPreviewSummary($candidateTool, $inferredArgs, $validationWarnings, $blockingConfirmation),
                             'sources' => [$candidateTool],
                             'payload' => [
                                 'confirmation_required' => true,
                                 'tool' => $candidateTool,
-                                'action_args' => $inferredArgs,
+                                'action_args' => $this->sanitizeActionArgs($inferredArgs),
+                                'validation_warnings' => $validationWarnings,
+                                'validation_warning_codes' => $validationWarningCodes,
+                                'blocking_warning_codes' => $blockingWarningCodes,
+                                'blocking_confirmation' => $blockingConfirmation,
                                 'execution_model' => (string) config('services.ai.exec_model', config('services.ai.default_model')),
                             ],
                         ];
                     } else {
-                        $resolvedActionArgs = $this->inferActionArgs($message, $candidateTool, $resolvedCompanyId, $actionArgs, $threadId, (int) $user->id);
-                        $toolResult = $this->executeActionWithIdempotency(
-                            user: $user,
-                            companyId: $resolvedCompanyId,
-                            tool: $candidateTool,
-                            actionArgs: $resolvedActionArgs,
-                            idempotencyKey: $idempotencyKey,
+                        $resolvedActionArgs = $this->sanitizeActionArgs(
+                            $this->inferActionArgs($message, $candidateTool, $resolvedCompanyId, $actionArgs, $threadId, (int) $user->id)
                         );
+                        try {
+                            $toolResult = $this->executeActionWithIdempotency(
+                                user: $user,
+                                companyId: $resolvedCompanyId,
+                                tool: $candidateTool,
+                                actionArgs: $resolvedActionArgs,
+                                idempotencyKey: $idempotencyKey,
+                            );
+                        } catch (ValidationException $e) {
+                            $assistantText = $this->mapActionFailureMessage($e, $candidateTool);
+                            $toolResult = [
+                                'summary' => $assistantText,
+                                'sources' => [$candidateTool],
+                                'payload' => [
+                                    'error' => true,
+                                    'tool' => $candidateTool,
+                                    'action_args' => $this->redactValue($resolvedActionArgs),
+                                ],
+                            ];
+
+                            $this->aiLoggingService->fail(
+                                $aiLog,
+                                'action_validation_failed',
+                                $e->getMessage(),
+                                $e,
+                            );
+                        } catch (Throwable $e) {
+                            $assistantText = $this->mapActionFailureMessage($e, $candidateTool);
+                            $toolResult = [
+                                'summary' => $assistantText,
+                                'sources' => [$candidateTool],
+                                'payload' => [
+                                    'error' => true,
+                                    'tool' => $candidateTool,
+                                    'action_args' => $this->redactValue($resolvedActionArgs),
+                                ],
+                            ];
+
+                            $this->aiLoggingService->fail(
+                                $aiLog,
+                                'action_execution_failed',
+                                $e->getMessage(),
+                                $e,
+                            );
+                        }
                     }
                 } else {
                     $toolResult = $this->readToolRegistry->execute($candidateTool, $user, $resolvedCompanyId);
@@ -375,24 +426,16 @@ class CopilotService
         ?string $threadId,
         int $userId,
     ): array {
-        if ($actionArgs !== []) {
-            return $actionArgs;
-        }
-
         $context = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
         $entities = is_array($context['entities'] ?? null) ? $context['entities'] : [];
         $normalized = trim($message);
 
+        if ($actionArgs !== []) {
+            return $this->normalizeProvidedActionArgs($tool, $message, $companyId, $entities, $actionArgs);
+        }
+
         return match ($tool) {
-            'tasks.create' => [
-                'title' => $normalized !== '' ? $normalized : 'Task created by Copilot',
-                'description' => $normalized !== '' ? $normalized : 'Task generated from chat request',
-                'type' => 'inspection',
-                'location' => 'Operations Center',
-                'address' => 'Factory23 Operations Center',
-                'due_date' => now()->addDay()->toDateString(),
-                'assigned_agent_id' => $this->resolveAgentIdFromMessage($message, $companyId, $entities),
-            ],
+            'tasks.create' => $this->inferTaskCreateArgs($message, $companyId, $entities),
             'projects.create' => [
                 'name' => $normalized !== '' ? $normalized : 'New Project',
                 'description' => $normalized !== '' ? $normalized : 'Project created by Copilot',
@@ -414,6 +457,508 @@ class CopilotService
             ],
             default => $actionArgs,
         };
+    }
+
+    /**
+     * @param array<string,string> $entities
+     * @param array<string,mixed> $actionArgs
+     * @return array<string,mixed>
+     */
+    private function normalizeProvidedActionArgs(
+        string $tool,
+        string $message,
+        int $companyId,
+        array $entities,
+        array $actionArgs,
+    ): array {
+        if ($tool !== 'tasks.create') {
+            return $actionArgs;
+        }
+
+        $normalized = $actionArgs;
+
+        if (is_string($normalized['title'] ?? null)) {
+            $title = Str::limit(trim((string) $normalized['title']), 255, '');
+            if ($title !== '') {
+                $normalized['title'] = $title;
+            }
+        }
+
+        if (is_string($normalized['description'] ?? null)) {
+            $description = Str::limit(trim((string) $normalized['description']), 5000, '');
+            if ($description !== '') {
+                $normalized['description'] = $description;
+            }
+        }
+
+        if (is_string($normalized['type'] ?? null)) {
+            $typeResolution = $this->resolveTaskType((string) $normalized['type']);
+            $normalized['type'] = $typeResolution['value'];
+        }
+
+        if (is_string($normalized['location'] ?? null)) {
+            $location = Str::limit(trim((string) $normalized['location']), 255, '');
+            if ($location !== '') {
+                $normalized['location'] = $location;
+            }
+        }
+
+        if (is_string($normalized['address'] ?? null)) {
+            $address = Str::limit(trim((string) $normalized['address']), 1000, '');
+            if ($address !== '') {
+                $normalized['address'] = $address;
+            }
+        }
+
+        if (is_string($normalized['due_date'] ?? null)) {
+            $dueDateText = trim((string) $normalized['due_date']);
+            if ($dueDateText !== '') {
+                $normalized['due_date'] = $this->resolveDueDate($dueDateText);
+            }
+        }
+
+        if (is_string($normalized['assignee'] ?? null)) {
+            $assigneeToken = trim((string) $normalized['assignee']);
+            unset($normalized['assignee']);
+
+            if ($assigneeToken !== '') {
+                $normalized['assigned_agent_id'] = $this->resolveAgentIdFromAssigneeToken($assigneeToken, $companyId);
+            }
+        } elseif (is_string($normalized['assigned_agent_id'] ?? null) && is_numeric($normalized['assigned_agent_id'])) {
+            $normalized['assigned_agent_id'] = (int) $normalized['assigned_agent_id'];
+        }
+
+        if (($normalized['assigned_agent_id'] ?? null) === null) {
+            $fallbackAgent = $this->resolveAgentIdForTaskMessage($message, $companyId, $entities);
+            if ($fallbackAgent !== null) {
+                $normalized['assigned_agent_id'] = $fallbackAgent;
+            }
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param array<string,mixed> $actionArgs
+     * @return array<string,mixed>
+     */
+    private function sanitizeActionArgs(array $actionArgs): array
+    {
+        $sanitized = [];
+
+        foreach ($actionArgs as $key => $value) {
+            if (is_string($key) && str_starts_with($key, '__')) {
+                continue;
+            }
+
+            if (is_array($value)) {
+                $sanitized[$key] = $this->sanitizeActionArgs($value);
+                continue;
+            }
+
+            $sanitized[$key] = $value;
+        }
+
+        return $sanitized;
+    }
+
+    /**
+     * @param array<string,string> $entities
+     * @return array<string,mixed>
+     */
+    private function inferTaskCreateArgs(string $message, int $companyId, array $entities): array
+    {
+        $normalized = trim($message);
+
+        $rawTitle = $this->extractLabeledValue($message, ['task title', 'title'])
+            ?? $this->extractTaskTitleFromSentence($message)
+            ?? 'Task created by Copilot';
+        $title = Str::limit(trim($rawTitle), 255, '');
+        $usedDefaultTitle = strtolower($title) === 'task created by copilot';
+
+        $rawDescription = $this->extractLabeledValue($message, ['description'])
+            ?? $normalized
+            ?? 'Task generated from chat request';
+        $description = Str::limit(trim($rawDescription), 5000, '');
+
+        $rawType = $this->extractLabeledValue($message, ['task type', 'type']);
+        $typeResolution = $this->resolveTaskType($rawType);
+        $type = $typeResolution['value'];
+
+        $address = $this->extractLabeledValue($message, ['location & address', 'address', 'location'])
+            ?? 'Factory23 Operations Center';
+        $location = trim((string) Str::of($address)->before(','));
+        if ($location === '') {
+            $location = 'Operations Center';
+        }
+
+        $dueDateText = $this->extractLabeledValue($message, ['due date', 'due'])
+            ?? $this->extractDueDateHintFromSentence($message);
+        $dueAt = $this->resolveDueDate($dueDateText);
+        $usedDefaultDueDate = ! is_string($dueDateText) || trim($dueDateText) === '';
+
+        $assignedAgentId = $this->resolveAgentIdForTaskMessage($message, $companyId, $entities);
+
+        return [
+            'title' => $title,
+            'description' => $description,
+            'type' => $type,
+            'location' => Str::limit($location, 255, ''),
+            'address' => Str::limit($address, 1000, ''),
+            'due_date' => $dueAt,
+            'assigned_agent_id' => $assignedAgentId,
+            '__inference' => [
+                'used_default_title' => $usedDefaultTitle,
+                'used_default_due_date' => $usedDefaultDueDate,
+                'raw_type_unrecognized' => $typeResolution['raw_unrecognized'],
+                'assignee_unresolved' => $assignedAgentId === null,
+            ],
+        ];
+    }
+
+    private function extractTaskTitleFromSentence(string $message): ?string
+    {
+        if (preg_match('/\b(?:task\s+title|title)\b\s*[:\-]?\s*["“](.+?)["”]/i', $message, $m) === 1) {
+            return trim((string) $m[1]);
+        }
+
+        if (preg_match('/\btask\s+title\s*:\s*([^\.\n]+)/i', $message, $m) === 1) {
+            return trim((string) $m[1]);
+        }
+
+        if (preg_match('/\bcreate\s+(a\s+)?task\b[:\-\s]*(.+?)(?=\.|\n|task\s+type\s*:|description\s*:|assign\s*to\s*:|due\s+date\s*:|$)/i', $message, $m) === 1) {
+            $candidate = trim((string) $m[2]);
+            return $candidate !== '' ? $candidate : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<int,string> $labels
+     */
+    private function extractLabeledValue(string $message, array $labels): ?string
+    {
+        foreach ($labels as $label) {
+            $escaped = preg_quote($label, '/');
+            $pattern = '/\b' . $escaped . '\b\s*:\s*(.+?)(?=\s*(?:[a-z][a-z\s&\/]{1,30}\s*:|\.|;|\n|$))/i';
+            if (preg_match($pattern, $message, $m) === 1) {
+                $value = trim((string) $m[1]);
+                if ($value !== '') {
+                    return $value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{value:string,raw_unrecognized:bool}
+     */
+    private function resolveTaskType(?string $rawType): array
+    {
+        if (! is_string($rawType) || trim($rawType) === '') {
+            return [
+                'value' => TaskType::INSPECTION->value,
+                'raw_unrecognized' => false,
+            ];
+        }
+
+        $normalized = strtolower(trim($rawType));
+        $map = [
+            'sales visit' => TaskType::SALES_VISIT->value,
+            'sales_visit' => TaskType::SALES_VISIT->value,
+            'inspection' => TaskType::INSPECTION->value,
+            'delivery' => TaskType::DELIVERY->value,
+            'collection' => TaskType::COLLECTION->value,
+            'awareness' => TaskType::AWARENESS->value,
+        ];
+
+        if (array_key_exists($normalized, $map)) {
+            return [
+                'value' => $map[$normalized],
+                'raw_unrecognized' => false,
+            ];
+        }
+
+        return [
+            'value' => TaskType::INSPECTION->value,
+            'raw_unrecognized' => true,
+        ];
+    }
+
+    private function resolveDueDate(?string $dueDateText): string
+    {
+        if (is_string($dueDateText) && trim($dueDateText) !== '') {
+            $text = strtolower(trim($dueDateText));
+
+            if (preg_match('/\btomorrow(?:\s+(morning|afternoon|evening|night))?\b/i', $text, $m) === 1) {
+                $candidate = now()->addDay();
+                $part = strtolower((string) ($m[1] ?? ''));
+                $candidate = match ($part) {
+                    'morning' => $candidate->setTime(9, 0),
+                    'afternoon' => $candidate->setTime(14, 0),
+                    'evening' => $candidate->setTime(18, 0),
+                    'night' => $candidate->setTime(20, 0),
+                    default => $candidate->setTime(17, 0),
+                };
+
+                return $candidate->toDateTimeString();
+            }
+
+            if (preg_match('/\btoday(?:\s+(morning|afternoon|evening|night))?\b/i', $text, $m) === 1) {
+                $candidate = now();
+                $part = strtolower((string) ($m[1] ?? ''));
+                $candidate = match ($part) {
+                    'morning' => $candidate->setTime(9, 0),
+                    'afternoon' => $candidate->setTime(14, 0),
+                    'evening' => $candidate->setTime(18, 0),
+                    'night' => $candidate->setTime(20, 0),
+                    default => $candidate->setTime(17, 0),
+                };
+
+                if ($candidate->lessThanOrEqualTo(now())) {
+                    $candidate = $candidate->addDay();
+                }
+
+                return $candidate->toDateTimeString();
+            }
+
+            if (preg_match('/\bin\s+(\d{1,2})\s+days?\b/i', $text, $m) === 1) {
+                $days = max(1, (int) $m[1]);
+                return now()->addDays($days)->setTime(17, 0)->toDateTimeString();
+            }
+
+            if (preg_match('/\b(\d{1,2})(?:st|nd|rd|th)?\s+of\s+this\s+month\b/i', $text, $m) === 1) {
+                $day = max(1, min(28, (int) $m[1]));
+                $candidate = now()->startOfMonth()->addDays($day - 1)->setTime(17, 0);
+                if ($candidate->lessThanOrEqualTo(now())) {
+                    $candidate = $candidate->addMonth();
+                }
+
+                return $candidate->toDateTimeString();
+            }
+
+            try {
+                $candidate = Carbon::parse($text);
+                if ($candidate->hour === 0 && $candidate->minute === 0 && $candidate->second === 0) {
+                    $candidate = $candidate->setTime(17, 0);
+                }
+                if ($candidate->lessThanOrEqualTo(now())) {
+                    $candidate = $candidate->addDay();
+                }
+
+                return $candidate->toDateTimeString();
+            } catch (Throwable) {
+                // Fall through to default below.
+            }
+        }
+
+        return now()->addDay()->setTime(17, 0)->toDateTimeString();
+    }
+
+    /**
+     * @param array<string,string> $entities
+     */
+    private function resolveAgentIdForTaskMessage(string $message, int $companyId, array $entities): ?int
+    {
+        if (preg_match('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i', $message, $emailMatch) === 1) {
+            $email = trim((string) $emailMatch[0]);
+            $byEmail = $this->resolveAgentIdFromAssigneeToken($email, $companyId);
+            if ($byEmail !== null) {
+                return $byEmail;
+            }
+        }
+
+        if (preg_match('/\bassign\s*to\s*:\s*([^\.\n]+)/i', $message, $m) === 1) {
+            $candidate = trim((string) $m[1]);
+            $candidate = preg_replace('/\((.*?)\)/', '', $candidate) ?: $candidate;
+            $candidate = preg_replace('/\bagent\s+/i', '', $candidate) ?: $candidate;
+            $candidate = trim($candidate);
+
+            if ($candidate !== '') {
+                $byName = $this->resolveAgentIdFromAssigneeToken($candidate, $companyId);
+                if ($byName !== null) {
+                    return $byName;
+                }
+            }
+        }
+
+        if (preg_match('/\bassign\s+to\s+([^\.\n,;]+)/i', $message, $m) === 1) {
+            $candidate = trim((string) $m[1]);
+            $candidate = preg_replace('/\((.*?)\)/', '', $candidate) ?: $candidate;
+            $candidate = preg_replace('/\bagent\s+/i', '', $candidate) ?: $candidate;
+            $candidate = trim($candidate);
+
+            if ($candidate !== '') {
+                $byName = $this->resolveAgentIdFromAssigneeToken($candidate, $companyId);
+                if ($byName !== null) {
+                    return $byName;
+                }
+            }
+        }
+
+        return $this->resolveAgentIdFromMessage($message, $companyId, $entities);
+    }
+
+    private function resolveAgentIdFromAssigneeToken(string $token, int $companyId): ?int
+    {
+        $candidate = trim($token);
+        if ($candidate === '') {
+            return null;
+        }
+
+        if (preg_match('/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i', $candidate) === 1) {
+            $byEmail = User::query()
+                ->whereHas('companies', static fn($q) => $q->where('companies.id', $companyId))
+                ->where('email', $candidate)
+                ->value('id');
+
+            return is_numeric($byEmail) ? (int) $byEmail : null;
+        }
+
+        $byName = User::query()
+            ->whereHas('companies', static fn($q) => $q->where('companies.id', $companyId))
+            ->where('name', 'like', '%' . $candidate . '%')
+            ->value('id');
+
+        return is_numeric($byName) ? (int) $byName : null;
+    }
+
+    private function extractDueDateHintFromSentence(string $message): ?string
+    {
+        if (preg_match('/\b(?:due|by|for)\s+(tomorrow(?:\s+(?:morning|afternoon|evening|night))?)\b/i', $message, $m) === 1) {
+            return trim((string) $m[1]);
+        }
+
+        if (preg_match('/\b(?:due|by|for)\s+(today(?:\s+(?:morning|afternoon|evening|night))?)\b/i', $message, $m) === 1) {
+            return trim((string) $m[1]);
+        }
+
+        if (preg_match('/\b(?:due|by|for)\s+(next\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i', $message, $m) === 1) {
+            return trim((string) $m[1]);
+        }
+
+        if (preg_match('/\bin\s+(\d{1,2})\s+days?\b/i', $message, $m) === 1) {
+            return 'in ' . (int) $m[1] . ' days';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string,mixed> $args
+     * @param array<int,string> $warnings
+     */
+    private function buildActionPreviewSummary(string $tool, array $args, array $warnings = [], bool $blockingConfirmation = false): string
+    {
+        if ($tool === 'tasks.create') {
+            $title = (string) ($args['title'] ?? 'Untitled Task');
+            $type = (string) ($args['type'] ?? 'inspection');
+            $location = (string) ($args['location'] ?? 'Operations Center');
+            $due = (string) ($args['due_date'] ?? 'Not set');
+
+            $base = sprintf(
+                'Action ready: create task "%s" (%s) at %s, due %s. Click Confirm Action to proceed.',
+                $title,
+                $type,
+                $location,
+                $due,
+            ) . ($warnings !== []
+                ? ' Notes: ' . implode(' ', array_map(static fn(string $w): string => '[' . $w . ']', $warnings))
+                : '');
+
+            if ($blockingConfirmation) {
+                $base .= ' Confirmation is currently blocked until the required fields are corrected.';
+            }
+
+            return $base;
+        }
+
+        return 'Action is ready. Review and click Confirm Action to proceed.';
+    }
+
+    /**
+     * @param array<string,mixed> $args
+     * @return array<int,string>
+     */
+    private function inferActionWarnings(string $tool, array $args): array
+    {
+        $codes = $this->inferActionWarningCodes($tool, $args);
+        if ($codes === []) {
+            return [];
+        }
+
+        $map = [
+            'assignee_unresolved' => 'No matching assignee was found in your company. Please verify the agent name or email.',
+            'raw_type_unrecognized' => 'Task type was not recognized and defaulted to inspection.',
+            'used_default_due_date' => 'Due date was not clear and defaulted to tomorrow 5:00 PM.',
+            'used_default_title' => 'Task title was not clearly detected; please confirm before proceeding.',
+        ];
+
+        return collect($codes)
+            ->map(static fn(string $code): string => $map[$code] ?? $code)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param array<string,mixed> $args
+     * @return array<int,string>
+     */
+    private function inferActionWarningCodes(string $tool, array $args): array
+    {
+        if ($tool !== 'tasks.create') {
+            return [];
+        }
+
+        $warningCodes = [];
+        $inference = is_array($args['__inference'] ?? null) ? $args['__inference'] : [];
+
+        if (($inference['assignee_unresolved'] ?? false) === true || ($args['assigned_agent_id'] ?? null) === null) {
+            $warningCodes[] = 'assignee_unresolved';
+        }
+
+        if (($inference['raw_type_unrecognized'] ?? false) === true) {
+            $warningCodes[] = 'raw_type_unrecognized';
+        }
+
+        if (($inference['used_default_due_date'] ?? false) === true) {
+            $warningCodes[] = 'used_default_due_date';
+        }
+
+        if (($inference['used_default_title'] ?? false) === true) {
+            $warningCodes[] = 'used_default_title';
+        }
+
+        return $warningCodes;
+    }
+
+    /**
+     * @param array<int,string> $validationWarningCodes
+     * @return array<int,string>
+     */
+    private function determineBlockingWarningCodes(array $validationWarningCodes): array
+    {
+        $blockingCodes = [];
+
+        if (in_array('assignee_unresolved', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'assignee_unresolved';
+        }
+
+        if ((bool) config('services.ai.strict_confirmation_blocking', false)) {
+            $strictCodes = config('services.ai.strict_confirmation_blocking_codes', ['used_default_title', 'used_default_due_date']);
+            if (is_array($strictCodes)) {
+                foreach ($strictCodes as $code) {
+                    if (is_string($code) && in_array($code, $validationWarningCodes, true)) {
+                        $blockingCodes[] = $code;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($blockingCodes));
     }
 
     /**
@@ -516,6 +1061,48 @@ class CopilotService
         $context = $this->companyContextService->resolve($user, $companyId);
 
         return $this->conversationMemoryService->deleteThread((int) $context['company']->id, (int) $user->id, $threadId);
+    }
+
+    /**
+     * @return array<int,array{id:int,name:string,email:string,role:string|null}>
+     */
+    public function lookupAssignees(User $user, ?int $companyId = null, ?string $query = null, int $limit = 8): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $search = trim((string) $query);
+        $boundedLimit = max(1, min(20, $limit));
+
+        $assignees = User::query()
+            ->select(['users.id', 'users.name', 'users.email'])
+            ->selectRaw('company_users.role as company_role')
+            ->join(
+                'company_users',
+                static fn($join) => $join
+                    ->on('company_users.user_id', '=', 'users.id')
+                    ->where('company_users.company_id', '=', $resolvedCompanyId)
+            )
+            ->when($search !== '', function ($query) use ($search): void {
+                $like = '%' . $search . '%';
+                $query->where(static function ($nested) use ($like): void {
+                    $nested->where('users.name', 'like', $like)
+                        ->orWhere('users.email', 'like', $like);
+                });
+            })
+            ->orderByRaw("case when company_users.role = 'agent' then 0 else 1 end")
+            ->orderBy('users.name')
+            ->limit($boundedLimit)
+            ->get();
+
+        return $assignees
+            ->map(static fn(User $assignee): array => [
+                'id' => (int) $assignee->id,
+                'name' => (string) $assignee->name,
+                'email' => (string) ($assignee->email ?? ''),
+                'role' => is_string($assignee->company_role ?? null) ? (string) $assignee->company_role : null,
+            ])
+            ->values()
+            ->all();
     }
 
     private function canConsumeCredits(int $companyId): bool
