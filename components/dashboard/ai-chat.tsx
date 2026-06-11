@@ -15,6 +15,7 @@ import {
   Search,
   ThumbsDown,
   ThumbsUp,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -74,16 +75,31 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [copiedMap, setCopiedMap] = useState<Record<string, boolean>>({});
   const [input, setInput] = useState("");
   const [isRunningQuickAction, setIsRunningQuickAction] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const voiceInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const hasMessages = messages.length > 0;
 
   useEffect(() => {
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 300);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isMenuOpen]);
 
   useEffect(() => {
     if (!open || !companyId) return;
@@ -291,9 +307,90 @@ export function AIChat({ open, onClose }: AIChatProps) {
                 <button className="w-12 h-12 rounded-full bg-[#132A33] flex items-center justify-center hover:bg-[#1A3844] transition-colors">
                   <Search className="w-5 h-5 text-[#88B3B5]" />
                 </button>
-                <button className="w-12 h-12 rounded-full bg-[#132A33] flex items-center justify-center hover:bg-[#1A3844] transition-colors">
-                  <MoreVertical className="w-5 h-5 text-[#88B3B5]" />
-                </button>
+                <div className="relative" ref={menuRef}>
+                  <button
+                    onClick={() => setIsMenuOpen((prev) => !prev)}
+                    className="w-12 h-12 rounded-full bg-[#132A33] flex items-center justify-center hover:bg-[#1A3844] transition-colors"
+                    aria-label="More options"
+                    aria-expanded={isMenuOpen}
+                  >
+                    {isMenuOpen
+                      ? <X className="w-5 h-5 text-[#88B3B5]" />
+                      : <MoreVertical className="w-5 h-5 text-[#88B3B5]" />}
+                  </button>
+
+                  {isMenuOpen && (
+                    <div className="absolute right-0 top-14 z-50 w-56 rounded-2xl bg-[#132A33] border border-white/10 shadow-xl overflow-hidden">
+                      <div className="px-4 py-2.5 border-b border-white/10">
+                        <p className="text-[#88B3B5] text-[11px] font-semibold uppercase tracking-wider">Quick Actions</p>
+                      </div>
+                      <div className="py-1">
+                        <button
+                          onClick={() => { setIsMenuOpen(false); void handleQueueWeeklyReport(); }}
+                          disabled={isQueueingWeeklyReport || isStreaming}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#B9E9DD] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                        >
+                          <LineChart className="w-4 h-4 flex-shrink-0" />
+                          {isQueueingWeeklyReport ? "Queueing report…" : "Generate Weekly Summary"}
+                        </button>
+
+                        {weeklyReport?.status === "completed" && (
+                          <button
+                            onClick={() => { setIsMenuOpen(false); void handleDownloadWeeklyReport(); }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E4FF] hover:bg-white/5 transition-colors text-left"
+                          >
+                            <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
+                            Download Summary
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => { setIsMenuOpen(false); voiceInputRef.current?.click(); }}
+                          disabled={isRunningQuickAction || isStreaming}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#F2D9A6] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                        >
+                          <FileAudio className="w-4 h-4 flex-shrink-0" />
+                          Voice Input
+                        </button>
+
+                        <button
+                          onClick={() => { setIsMenuOpen(false); fileInputRef.current?.click(); }}
+                          disabled={isRunningQuickAction || isStreaming}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E7A0] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                        >
+                          <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
+                          Analyze File
+                        </button>
+
+                        <button
+                          onClick={() => { setIsMenuOpen(false); void handleTranscriptSummaryAction(); }}
+                          disabled={isRunningQuickAction || isStreaming}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#DAB9FF] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                        >
+                          <FileAudio className="w-4 h-4 flex-shrink-0" />
+                          Summarize Transcript
+                        </button>
+
+                        <button
+                          onClick={() => { setIsMenuOpen(false); void handleForecastAction(); }}
+                          disabled={isRunningQuickAction || isStreaming}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#BCE7FF] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                        >
+                          <LineChart className="w-4 h-4 flex-shrink-0" />
+                          Forecast Overview
+                        </button>
+                      </div>
+
+                      {weeklyReport && weeklyReport.status !== "completed" && (
+                        <div className="px-4 py-2.5 border-t border-white/10">
+                          <p className="text-[#9CC6CA] text-[11px]">
+                            Report: {weeklyReport.status} ({weeklyReport.progress}%)
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -302,90 +399,93 @@ export function AIChat({ open, onClose }: AIChatProps) {
               <div className="h-[1px] bg-white/10 w-full" />
             </div>
 
-            {/* Top search bar (decorative, matches screenshot) */}
-            <div className="px-8 py-6 flex-shrink-0">
-              <div className="border border-white/20 rounded-[32px] px-6 py-4 space-y-3">
-                <p className="text-[#88B3B5] text-[15px]">Ask Anything...</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={handleQueueWeeklyReport}
-                    disabled={isQueueingWeeklyReport || isStreaming}
-                    className="rounded-full border border-[#2D6F63] bg-[#113B37] px-3 py-1.5 text-[11px] font-semibold text-[#B9E9DD] hover:bg-[#1B4D47] disabled:opacity-60"
-                  >
-                    {isQueueingWeeklyReport ? "Queueing..." : "Generate Weekly Summary"}
-                  </button>
-                  {weeklyReport && (
-                    <span className="rounded-full border border-[#3D6A78] bg-[#11303A] px-2.5 py-1 text-[11px] text-[#9CC6CA]">
-                      Report {weeklyReport.status} ({weeklyReport.progress}%)
-                    </span>
-                  )}
-                  {weeklyReport?.status === "completed" && (
+            {/* Hidden file inputs — always rendered so menu buttons can trigger them */}
+            <input
+              ref={voiceInputRef}
+              type="file"
+              accept="audio/*"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void handleVoiceFile(file);
+                event.currentTarget.value = "";
+              }}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.xlsx,.xls,.csv"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void handleAnalysisFile(file);
+                event.currentTarget.value = "";
+              }}
+            />
+
+            {/* Landing panel — only visible before the first message */}
+            {!hasMessages && (
+              <div className="px-8 py-6 flex-shrink-0">
+                <div className="border border-white/20 rounded-[32px] px-6 py-5 space-y-4">
+                  <p className="text-[#88B3B5] text-[15px] font-medium">Ask Anything…</p>
+                  <p className="text-white/40 text-[13px] leading-relaxed">
+                    Get summaries, create tasks, schedule meetings, view attendance, or ask anything about your operations.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
                     <button
-                      onClick={handleDownloadWeeklyReport}
-                      className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
+                      onClick={handleQueueWeeklyReport}
+                      disabled={isQueueingWeeklyReport || isStreaming}
+                      className="rounded-full border border-[#2D6F63] bg-[#113B37] px-3 py-1.5 text-[11px] font-semibold text-[#B9E9DD] hover:bg-[#1B4D47] disabled:opacity-60"
                     >
-                      Download Summary
+                      {isQueueingWeeklyReport ? "Queueing..." : "Generate Weekly Summary"}
                     </button>
+                    <button
+                      onClick={() => voiceInputRef.current?.click()}
+                      disabled={isRunningQuickAction || isStreaming}
+                      className="rounded-full border border-[#6B5A3B] bg-[#342A1A] px-3 py-1.5 text-[11px] text-[#F2D9A6] hover:bg-[#433322] disabled:opacity-60"
+                    >
+                      <span className="inline-flex items-center gap-1"><FileAudio className="h-3.5 w-3.5" /> Voice Input</span>
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isRunningQuickAction || isStreaming}
+                      className="rounded-full border border-[#4F5D2A] bg-[#2B3418] px-3 py-1.5 text-[11px] text-[#D8E7A0] hover:bg-[#364221] disabled:opacity-60"
+                    >
+                      <span className="inline-flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5" /> Analyze File</span>
+                    </button>
+                    <button
+                      onClick={handleTranscriptSummaryAction}
+                      disabled={isRunningQuickAction || isStreaming}
+                      className="rounded-full border border-[#5A496E] bg-[#2C2139] px-3 py-1.5 text-[11px] text-[#DAB9FF] hover:bg-[#39294A] disabled:opacity-60"
+                    >
+                      Summarize Transcript
+                    </button>
+                    <button
+                      onClick={handleForecastAction}
+                      disabled={isRunningQuickAction || isStreaming}
+                      className="rounded-full border border-[#355E73] bg-[#132F3C] px-3 py-1.5 text-[11px] text-[#BCE7FF] hover:bg-[#1A3D4D] disabled:opacity-60"
+                    >
+                      <span className="inline-flex items-center gap-1"><LineChart className="h-3.5 w-3.5" /> Forecast</span>
+                    </button>
+                  </div>
+                  {weeklyReport && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="rounded-full border border-[#3D6A78] bg-[#11303A] px-2.5 py-1 text-[11px] text-[#9CC6CA]">
+                        Report: {weeklyReport.status} ({weeklyReport.progress}%)
+                      </span>
+                      {weeklyReport.status === "completed" && (
+                        <button
+                          onClick={handleDownloadWeeklyReport}
+                          className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
+                        >
+                          Download Summary
+                        </button>
+                      )}
+                    </div>
                   )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => voiceInputRef.current?.click()}
-                    disabled={isRunningQuickAction || isStreaming}
-                    className="rounded-full border border-[#6B5A3B] bg-[#342A1A] px-3 py-1.5 text-[11px] text-[#F2D9A6] hover:bg-[#433322] disabled:opacity-60"
-                  >
-                    <span className="inline-flex items-center gap-1"><FileAudio className="h-3.5 w-3.5" /> Voice Input</span>
-                  </button>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isRunningQuickAction || isStreaming}
-                    className="rounded-full border border-[#4F5D2A] bg-[#2B3418] px-3 py-1.5 text-[11px] text-[#D8E7A0] hover:bg-[#364221] disabled:opacity-60"
-                  >
-                    <span className="inline-flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5" /> Analyze File</span>
-                  </button>
-                  <button
-                    onClick={handleTranscriptSummaryAction}
-                    disabled={isRunningQuickAction || isStreaming}
-                    className="rounded-full border border-[#5A496E] bg-[#2C2139] px-3 py-1.5 text-[11px] text-[#DAB9FF] hover:bg-[#39294A] disabled:opacity-60"
-                  >
-                    Summarize Transcript
-                  </button>
-                  <button
-                    onClick={handleForecastAction}
-                    disabled={isRunningQuickAction || isStreaming}
-                    className="rounded-full border border-[#355E73] bg-[#132F3C] px-3 py-1.5 text-[11px] text-[#BCE7FF] hover:bg-[#1A3D4D] disabled:opacity-60"
-                  >
-                    <span className="inline-flex items-center gap-1"><LineChart className="h-3.5 w-3.5" /> Forecast</span>
-                  </button>
-                  <input
-                    ref={voiceInputRef}
-                    type="file"
-                    accept="audio/*"
-                    className="hidden"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) {
-                        void handleVoiceFile(file);
-                      }
-                      event.currentTarget.value = "";
-                    }}
-                  />
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf,.xlsx,.xls,.csv"
-                    className="hidden"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) {
-                        void handleAnalysisFile(file);
-                      }
-                      event.currentTarget.value = "";
-                    }}
-                  />
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Messages area */}
             <div className="flex-1 overflow-y-auto px-8 py-2 space-y-8 scrollbar-thin scrollbar-thumb-white/10">
