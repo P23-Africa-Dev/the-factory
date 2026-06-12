@@ -321,6 +321,26 @@ class CopilotService
         ];
     }
 
+    public function hasThread(User $user, string $threadId, ?int $companyId = null): bool
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+
+        return $this->conversationMemoryService->hasThread((int) $context['company']->id, (int) $user->id, $threadId);
+    }
+
+    public function getThreadPage(User $user, string $threadId, ?int $companyId = null, int $limit = 20, ?string $cursor = null): ?array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+
+        return $this->conversationMemoryService->getThreadMessages(
+            (int) $context['company']->id,
+            (int) $user->id,
+            $threadId,
+            $limit,
+            $cursor,
+        );
+    }
+
     private function resolveGeneralResponse(
         User $user,
         string $role,

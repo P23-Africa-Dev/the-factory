@@ -12,6 +12,7 @@ import {
     deleteCopilotThread,
     downloadWeeklySummaryReport,
     getForecastOverview,
+    getCopilotThreadMessages,
     getCopilotThread,
     getWeeklySummaryStatus,
     lookupCopilotAssignees,
@@ -63,6 +64,12 @@ export function useCopilotChat() {
     const user = useAuthStore((state) => state.user);
     const [threadId, setThreadId] = useState<string | null>(null);
     const [messages, setMessages] = useState<CopilotMessage[]>([]);
+    const [threadPagination, setThreadPagination] = useState<{
+        has_more: boolean;
+        next_cursor: string | null;
+        loaded_count: number;
+    } | null>(null);
+    const [threadMessageCount, setThreadMessageCount] = useState<number | null>(null);
     const [isStreaming, setIsStreaming] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [weeklyReport, setWeeklyReport] = useState<WeeklySummaryStatusResponse | null>(null);
@@ -80,12 +87,15 @@ export function useCopilotChat() {
             const thread = threadRes.data.thread;
             setThreadId(thread.thread_id);
             setMessages(normalizeThreadMessages(thread));
+            setThreadMessageCount(thread.message_count ?? thread.messages.length);
+            setThreadPagination(thread.pagination ?? null);
             if (typeof localStorage !== "undefined") {
                 localStorage.setItem(persistedKey, thread.thread_id);
             }
         },
         [persistedKey, token]
     );
+
 
     const initialize = useCallback(
         async (companyId?: string | number) => {
@@ -127,6 +137,29 @@ export function useCopilotChat() {
             }
         },
         [persistedKey, threadId, token]
+    );
+
+    const loadOlderThreadMessages = useCallback(
+        async (companyId?: string | number) => {
+            if (!token || !threadId || !threadPagination?.next_cursor) {
+                return;
+            }
+
+            const response = await getCopilotThreadMessages(threadId, token, companyId, threadPagination.next_cursor);
+            const olderMessages = response.data.messages.map((message) => ({
+                id: message.id,
+                role: message.role,
+                content: message.content,
+                sources: message.sources ?? [],
+                tool: message.tool ?? null,
+                payload: message.payload ?? null,
+                created_at: message.created_at,
+            }));
+
+            setMessages((prev) => [...olderMessages, ...prev]);
+            setThreadPagination(response.data.pagination);
+        },
+        [threadId, threadPagination?.next_cursor, token]
     );
 
     const stopWeeklyReportPolling = useCallback(() => {
@@ -379,6 +412,8 @@ export function useCopilotChat() {
     return {
         threadId,
         messages,
+        threadPagination,
+        threadMessageCount,
         isStreaming,
         error,
         weeklyReport,
@@ -386,6 +421,7 @@ export function useCopilotChat() {
         initialize,
         sendMessage,
         clearCurrentThread,
+        loadOlderThreadMessages,
         queueWeeklyReport,
         downloadWeeklyReport,
         runVoiceTranscription,
