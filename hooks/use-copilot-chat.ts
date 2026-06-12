@@ -238,17 +238,34 @@ export function useCopilotChat() {
                 return;
             }
 
-            const file = await downloadWeeklySummaryReport(weeklyReport.report_id, token, companyId);
-            if (typeof window !== "undefined") {
-                const blob = new Blob([file.content], { type: "application/json" });
-                const url = URL.createObjectURL(blob);
-                const anchor = document.createElement("a");
-                anchor.href = url;
-                anchor.download = file.filename;
-                document.body.appendChild(anchor);
-                anchor.click();
-                anchor.remove();
-                URL.revokeObjectURL(url);
+            try {
+                const file = await downloadWeeklySummaryReport(weeklyReport.report_id, token, companyId);
+                if (typeof window !== "undefined") {
+                    // Determine MIME type based on file extension
+                    let mimeType = "application/json";
+                    if (file.filename.endsWith(".docx")) {
+                        mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                    } else if (file.filename.endsWith(".doc")) {
+                        mimeType = "application/msword";
+                    } else if (file.filename.endsWith(".txt")) {
+                        mimeType = "text/plain";
+                    } else if (file.filename.endsWith(".pdf")) {
+                        mimeType = "application/pdf";
+                    }
+
+                    const blob = new Blob([file.content], { type: mimeType });
+                    const url = URL.createObjectURL(blob);
+                    const anchor = document.createElement("a");
+                    anchor.href = url;
+                    anchor.download = file.filename;
+                    document.body.appendChild(anchor);
+                    anchor.click();
+                    anchor.remove();
+                    URL.revokeObjectURL(url);
+                }
+            } catch (err) {
+                console.error("Failed to download weekly report:", err);
+                throw err;
             }
         },
         [token, weeklyReport]

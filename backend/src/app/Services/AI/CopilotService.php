@@ -363,7 +363,13 @@ class CopilotService
             $message .= ' (same agent refers to: ' . $contextEntities['agent'] . ')';
         }
 
-        if (str_contains($normalized, 'my name') || str_contains($normalized, "what's my name") || str_contains($normalized, 'what is my name')) {
+        // Only answer when the user explicitly asks about their name.
+        // Avoid matching generic occurrences like 'my name is ...' inside pasted transcripts.
+        if (
+            str_contains($normalized, "what's my name")
+            || str_contains($normalized, 'what is my name')
+            || str_contains($normalized, 'who am i')
+        ) {
             return "Your name is {$user->name}.";
         }
 
