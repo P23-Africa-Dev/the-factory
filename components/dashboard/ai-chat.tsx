@@ -5,9 +5,9 @@ import { getActiveCompanyContext } from "@/lib/company-context";
 import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
 import {
-  Camera,
   ChevronLeft,
   Copy,
+  Paperclip,
   FileAudio,
   FileSpreadsheet,
   LineChart,
@@ -158,12 +158,16 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [actionMap, setActionMap] = useState<Record<string, MessageAction>>({});
   const [copiedMap, setCopiedMap] = useState<Record<string, boolean>>({});
   const [input, setInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
   const [assigneeOptions, setAssigneeOptions] = useState<Record<string, AssigneeOptionsState>>({});
   const [isRunningQuickAction, setIsRunningQuickAction] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const voiceInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -189,7 +193,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
   useEffect(() => {
     if (!open || !companyId) return;
-    void initialize(companyId);
+    setIsInitializing(true);
+    void initialize(companyId).finally(() => setIsInitializing(false));
   }, [companyId, initialize, open]);
 
   useEffect(() => {
@@ -899,122 +904,161 @@ export function AIChat({ open, onClose }: AIChatProps) {
           className={`w-full sm:w-[800px] max-w-full h-full sm:h-[calc(100vh-130px)] bg-[#10232A] p-2 sm:p-3 rounded-t-[32px] sm:rounded-[36px] flex flex-col shadow-2xl transition-transform duration-300 ease-out border border-white/5 ${open ? "translate-y-0 sm:translate-x-0 opacity-100" : "translate-y-full sm:translate-y-0 sm:translate-x-8 opacity-0"
             }`}
         >
-          <div className="flex-1 bg-[#091519] rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden">
+          <div className="flex-1 relative bg-[#091519] rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden">
+            <div
+              className="absolute inset-0 rounded-[24px] sm:rounded-[28px] pointer-events-none"
+              style={{
+                // backgroundImage: "url('/avatars/12px Flip.png')",
+                backgroundRepeat: "repeat",
+                backgroundSize: "auto",
+                opacity: "12px",
+              }}
+            />
             {/* Header */}
-            <div className="flex items-center gap-4 px-6 pt-6 pb-4 flex-shrink-0">
-              <button
-                onClick={onClose}
-                className="w-8 h-8 flex items-center justify-center hover:bg-white/5 transition-colors rounded-full flex-shrink-0"
-              >
-                <ChevronLeft className="w-6 h-6 text-white" />
-              </button>
+            <div className="flex-shrink-0">
+              <div className="flex items-center gap-4 px-6 pt-6 pb-4">
+                <button
+                  onClick={onClose}
+                  className="w-8 h-8 flex items-center justify-center hover:bg-white/5 transition-colors rounded-full flex-shrink-0"
+                >
+                  <ChevronLeft className="w-6 h-6 text-white" />
+                </button>
 
-              <div className="flex items-center gap-4 flex-1 min-w-0">
-                <div className="w-14 h-14 rounded-full flex-shrink-0 overflow-hidden bg-[#EBA771]">
-                  <Image
-                    src={avatarSrc}
-                    alt={firstName}
-                    width={56}
-                    height={56}
-                    className="w-full h-full object-cover"
-                    unoptimized={avatarSrc.startsWith("http")}
-                  />
+                {/* Avatar + name — hidden on sm when search is open */}
+                <div className={`flex items-center gap-4 min-w-0 transition-all duration-300 ${searchOpen ? "flex-0 sm:flex-1 hidden sm:flex" : "flex-1"}`}>
+                  <div className="w-14 h-14 rounded-full flex-shrink-0 overflow-hidden bg-[#EBA771]">
+                    <Image
+                      src={avatarSrc}
+                      alt={firstName}
+                      width={56}
+                      height={56}
+                      className="w-full h-full object-cover"
+                      unoptimized={avatarSrc.startsWith("http")}
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-white/70 text-[16px] font-normal leading-tight">Hello,</p>
+                    <p className="text-white text-[28px] font-semibold leading-tight truncate">{firstName}!</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-white/70 text-[16px] font-normal leading-tight">Hello,</p>
-                  <p className="text-white text-[28px] font-semibold leading-tight truncate">
-                    {firstName}!
-                  </p>
+
+                {/* Inline search bar — large screens only */}
+                <div className={`hidden sm:flex flex-1 items-center transition-all duration-300 overflow-hidden ${searchOpen ? "opacity-100 max-w-full" : "opacity-0 max-w-0 pointer-events-none"}`}>
+                  <div className="w-full border border-white/20 rounded-full px-5 py-3 flex items-center gap-2 bg-[#091519]">
+                    <Search className="w-4 h-4 text-[#88B3B5] flex-shrink-0" />
+                    <input
+                      ref={searchInputRef}
+                      placeholder="Search..."
+                      className="flex-1 bg-transparent text-white text-sm placeholder:text-[#88B3B5] outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <button
+                    onClick={() => {
+                      setSearchOpen((v) => !v);
+                      setTimeout(() => searchInputRef.current?.focus(), 150);
+                    }}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${searchOpen ? "bg-[#7BB6B8]/20" : "bg-[#132A33] hover:bg-[#1A3844]"}`}
+                  >
+                    <Search className="w-5 h-5 text-[#88B3B5]" />
+                  </button>
+                  <div className="relative" ref={menuRef}>
+                    <button
+                      onClick={() => setIsMenuOpen((prev) => !prev)}
+                      className="w-12 h-12 rounded-full bg-[#132A33] flex items-center justify-center hover:bg-[#1A3844] transition-colors"
+                      aria-label="More options"
+                      aria-expanded={isMenuOpen}
+                    >
+                      {isMenuOpen
+                        ? <X className="w-5 h-5 text-[#88B3B5]" />
+                        : <MoreVertical className="w-5 h-5 text-[#88B3B5]" />}
+                    </button>
+
+                    {isMenuOpen && (
+                      <div className="absolute right-0 top-14 z-50 w-56 rounded-2xl bg-[#132A33] border border-white/10 shadow-xl overflow-hidden">
+                        <div className="px-4 py-2.5 border-b border-white/10">
+                          <p className="text-[#88B3B5] text-[11px] font-semibold uppercase tracking-wider">Quick Actions</p>
+                        </div>
+                        <div className="py-1">
+                          <button
+                            onClick={() => { setIsMenuOpen(false); void handleQueueWeeklyReport(); }}
+                            disabled={isQueueingWeeklyReport || isStreaming}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#B9E9DD] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                          >
+                            <LineChart className="w-4 h-4 flex-shrink-0" />
+                            {isQueueingWeeklyReport ? "Queueing report…" : "Generate Weekly Summary"}
+                          </button>
+
+                          {weeklyReport?.status === "completed" && (
+                            <button
+                              onClick={() => { setIsMenuOpen(false); void handleDownloadWeeklyReport(); }}
+                              className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E4FF] hover:bg-white/5 transition-colors text-left"
+                            >
+                              <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
+                              Download Summary
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => { setIsMenuOpen(false); voiceInputRef.current?.click(); }}
+                            disabled={isRunningQuickAction || isStreaming}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#F2D9A6] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                          >
+                            <FileAudio className="w-4 h-4 flex-shrink-0" />
+                            Voice Input
+                          </button>
+
+                          <button
+                            onClick={() => { setIsMenuOpen(false); fileInputRef.current?.click(); }}
+                            disabled={isRunningQuickAction || isStreaming}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E7A0] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                          >
+                            <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
+                            Analyze File
+                          </button>
+
+                          <button
+                            onClick={() => { setIsMenuOpen(false); void handleTranscriptSummaryAction(); }}
+                            disabled={isRunningQuickAction || isStreaming}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#DAB9FF] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                          >
+                            <FileAudio className="w-4 h-4 flex-shrink-0" />
+                            Summarize Transcript
+                          </button>
+
+                          <button
+                            onClick={() => { setIsMenuOpen(false); void handleForecastAction(); }}
+                            disabled={isRunningQuickAction || isStreaming}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#BCE7FF] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                          >
+                            <LineChart className="w-4 h-4 flex-shrink-0" />
+                            Forecast Overview
+                          </button>
+                        </div>
+
+                        {weeklyReport && weeklyReport.status !== "completed" && (
+                          <div className="px-4 py-2.5 border-t border-white/10">
+                            <p className="text-[#9CC6CA] text-[11px]">
+                              Report: {weeklyReport.status} ({weeklyReport.progress}%)
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 flex-shrink-0">
-                <button className="w-12 h-12 rounded-full bg-[#132A33] flex items-center justify-center hover:bg-[#1A3844] transition-colors">
-                  <Search className="w-5 h-5 text-[#88B3B5]" />
-                </button>
-                <div className="relative" ref={menuRef}>
-                  <button
-                    onClick={() => setIsMenuOpen((prev) => !prev)}
-                    className="w-12 h-12 rounded-full bg-[#132A33] flex items-center justify-center hover:bg-[#1A3844] transition-colors"
-                    aria-label="More options"
-                    aria-expanded={isMenuOpen}
-                  >
-                    {isMenuOpen
-                      ? <X className="w-5 h-5 text-[#88B3B5]" />
-                      : <MoreVertical className="w-5 h-5 text-[#88B3B5]" />}
-                  </button>
-
-                  {isMenuOpen && (
-                    <div className="absolute right-0 top-14 z-50 w-56 rounded-2xl bg-[#132A33] border border-white/10 shadow-xl overflow-hidden">
-                      <div className="px-4 py-2.5 border-b border-white/10">
-                        <p className="text-[#88B3B5] text-[11px] font-semibold uppercase tracking-wider">Quick Actions</p>
-                      </div>
-                      <div className="py-1">
-                        <button
-                          onClick={() => { setIsMenuOpen(false); void handleQueueWeeklyReport(); }}
-                          disabled={isQueueingWeeklyReport || isStreaming}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#B9E9DD] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
-                        >
-                          <LineChart className="w-4 h-4 flex-shrink-0" />
-                          {isQueueingWeeklyReport ? "Queueing report…" : "Generate Weekly Summary"}
-                        </button>
-
-                        {weeklyReport?.status === "completed" && (
-                          <button
-                            onClick={() => { setIsMenuOpen(false); void handleDownloadWeeklyReport(); }}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E4FF] hover:bg-white/5 transition-colors text-left"
-                          >
-                            <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
-                            Download Summary
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => { setIsMenuOpen(false); voiceInputRef.current?.click(); }}
-                          disabled={isRunningQuickAction || isStreaming}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#F2D9A6] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
-                        >
-                          <FileAudio className="w-4 h-4 flex-shrink-0" />
-                          Voice Input
-                        </button>
-
-                        <button
-                          onClick={() => { setIsMenuOpen(false); fileInputRef.current?.click(); }}
-                          disabled={isRunningQuickAction || isStreaming}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E7A0] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
-                        >
-                          <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
-                          Analyze File
-                        </button>
-
-                        <button
-                          onClick={() => { setIsMenuOpen(false); void handleTranscriptSummaryAction(); }}
-                          disabled={isRunningQuickAction || isStreaming}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#DAB9FF] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
-                        >
-                          <FileAudio className="w-4 h-4 flex-shrink-0" />
-                          Summarize Transcript
-                        </button>
-
-                        <button
-                          onClick={() => { setIsMenuOpen(false); void handleForecastAction(); }}
-                          disabled={isRunningQuickAction || isStreaming}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#BCE7FF] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
-                        >
-                          <LineChart className="w-4 h-4 flex-shrink-0" />
-                          Forecast Overview
-                        </button>
-                      </div>
-
-                      {weeklyReport && weeklyReport.status !== "completed" && (
-                        <div className="px-4 py-2.5 border-t border-white/10">
-                          <p className="text-[#9CC6CA] text-[11px]">
-                            Report: {weeklyReport.status} ({weeklyReport.progress}%)
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
+              {/* Below-header search bar — small screens only */}
+              <div className={`sm:hidden overflow-hidden transition-all duration-300 ease-out ${searchOpen ? "max-h-20 opacity-100 pb-3" : "max-h-0 opacity-0"}`}>
+                <div className="mx-6 border border-white/20 rounded-full px-5 py-3 flex items-center gap-2 bg-[#091519]">
+                  <Search className="w-4 h-4 text-[#88B3B5] flex-shrink-0" />
+                  <input
+                    placeholder="Search..."
+                    className="flex-1 bg-transparent text-white text-sm placeholder:text-[#88B3B5] outline-none"
+                  />
                 </div>
               </div>
             </div>
@@ -1113,24 +1157,36 @@ export function AIChat({ open, onClose }: AIChatProps) {
             )}
 
             {/* Messages area */}
-            <div className="flex-1 overflow-y-auto px-8 py-2 space-y-8 scrollbar-thin scrollbar-thumb-white/10">
+            <div className="flex-1 overflow-y-auto px-6 py-2 space-y-4 scrollbar-thin scrollbar-thumb-white/10">
+              {isInitializing && !hasMessages && (
+                <div className="flex flex-col gap-3 pt-2">
+                  {[80, 55, 70].map((w, i) => (
+                    <div key={i} className={`h-3 rounded-full bg-white/10 animate-pulse`} style={{ width: `${w}%`, animationDelay: `${i * 120}ms` }} />
+                  ))}
+                  <div className="flex gap-3 mt-2">
+                    {[45, 60].map((w, i) => (
+                      <div key={i} className="h-3 rounded-full bg-white/10 animate-pulse" style={{ width: `${w}%`, animationDelay: `${i * 120}ms` }} />
+                    ))}
+                  </div>
+                </div>
+              )}
               {messages.map((msg, index) => (
                 <div key={msg.id}>
                   {msg.role === "user" ? (
                     /* User message */
-                    <div className="flex justify-end mb-6">
+                    <div className="flex justify-end mb-3">
                       <div className="group relative max-w-[75%]">
-                        <div className="bg-[#5B2155] text-white/90 text-[16px] px-6 py-3.5 rounded-[32px] leading-relaxed shadow-sm">
+                        <div className="bg-[#5B2155] text-white/90 text-[13px] px-4 py-2.5 rounded-[20px] leading-relaxed shadow-sm">
                           {msg.content}
                         </div>
                       </div>
                     </div>
                   ) : (
                     /* AI message */
-                    <div className="flex flex-col gap-4 max-w-[65%]">
-                      <div className="bg-gradient-to-b from-[#333333] to-[#16384B] rounded-[24px] p-7 shadow-sm">
+                    <div className="flex flex-col gap-3 max-w-[65%]">
+                      <div className="bg-gradient-to-b from-[#333333] to-[#16384B] rounded-[20px] p-4 shadow-sm">
                         <div
-                          className="text-[#D0E2E3] text-[15px] leading-[1.8] ai-message-content font-light"
+                          className="text-[#D0E2E3] text-[13px] leading-[1.7] ai-message-content font-light"
                           dangerouslySetInnerHTML={{ __html: msg.content.replace(/\n/g, '<br />') }}
                         />
                       </div>
@@ -1343,27 +1399,31 @@ export function AIChat({ open, onClose }: AIChatProps) {
             </div>
 
             {/* Bottom input */}
-            <div className="px-8 pb-10 pt-4 flex-shrink-0">
-              <div className="flex items-center gap-2 bg-[#DCE0E1] rounded-[48px] p-2 pl-5 shadow-lg">
-                <button className="w-10 h-10 flex items-center justify-center text-[#091519] hover:text-black transition-colors flex-shrink-0">
-                  <Camera className="w-6 h-6" />
+            <div className="px-6 pb-6 pt-3 flex-shrink-0">
+              <div className="flex items-center gap-2 bg-[#DCE0E1] rounded-[40px] p-1.5 pl-4 shadow-lg">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-8 h-8 flex items-center justify-center text-[#091519] hover:text-black transition-colors flex-shrink-0"
+                  title="Upload file"
+                >
+                  <Paperclip className="w-5 h-5" />
                 </button>
-                <div className="flex-1 bg-[#CDD1D2] rounded-[40px] flex items-center px-6 h-[60px] ml-1 border border-black/5 shadow-inner">
+                <div className="flex-1 bg-[#CDD1D2] rounded-[32px] flex items-center px-5 h-[40px] ml-1 border border-black/5 shadow-inner">
                   <input
                     ref={inputRef}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Ask Anything..."
-                    className="flex-1 bg-transparent text-[#091519] text-[16px] placeholder:text-[#091519]/60 font-medium outline-none min-w-0"
+                    className="flex-1 bg-transparent text-[#091519] text-[14px] placeholder:text-[#091519]/60 font-medium outline-none min-w-0"
                   />
                 </div>
                 {input.trim() && (
                   <button
                     onClick={() => sendMessage()}
-                    className="w-14 h-14 rounded-full bg-[#16384B] flex items-center justify-center flex-shrink-0 hover:bg-[#16384B]/80 transition-colors ml-2 mr-1"
+                    className="w-10 h-10 rounded-full bg-[#16384B] flex items-center justify-center flex-shrink-0 hover:bg-[#16384B]/80 transition-colors ml-1 mr-0.5"
                   >
-                    <ChevronLeft className="w-6 h-6 text-white rotate-180" />
+                    <ChevronLeft className="w-5 h-5 text-white rotate-180" />
                   </button>
                 )}
               </div>

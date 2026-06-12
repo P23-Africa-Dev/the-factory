@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { loginUser } from "@/lib/api/auth";
 import { ApiRequestError, getMe } from "@/lib/api/onboarding";
-import { setAuthSession } from "@/lib/auth/session";
+import { clearAuthSession, getAuthTokenFromDocument, setAuthSession } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -27,6 +27,7 @@ export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const setUser = useAuthStore((s) => s.setUser);
+  const clearUser = useAuthStore((s) => s.clearUser);
   const user = useAuthStore((s) => s.user);
   const hasHydrated = useAuthStore((s) => s._hasHydrated);
   const [showPassword, setShowPassword] = useState(false);
@@ -38,7 +39,7 @@ export default function LoginForm() {
     handleSubmit,
     watch,
     setError,
-    formState: { errors },
+    formState: { errors, submitCount },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -52,16 +53,21 @@ export default function LoginForm() {
   const terms = watch("terms");
   const email = watch("email");
   const password = watch("password");
-  const isFilled = terms && email.trim() !== "" && password.trim() !== "";
+  const isFilled = email.trim() !== "" && password.trim() !== "";
   const showResetSuccess = searchParams.get("reset") === "success";
 
   useEffect(() => {
-    if (!hasHydrated || !user) {
+    if (!hasHydrated || !user) return;
+
+    const token = getAuthTokenFromDocument();
+    if (!token) {
+      clearAuthSession();
+      clearUser();
       return;
     }
 
     router.replace(user.active_company?.role === "agent" ? "/agent/dashboard" : "/dashboard");
-  }, [hasHydrated, router, user]);
+  }, [hasHydrated, router, user, clearUser]);
 
   async function onSubmit(values: LoginFormValues) {
     setGlobalError("");
@@ -107,13 +113,35 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col" noValidate>
-      <div className="flex items-start gap-4 mb-9 px-2 md:px-7">
+      <style>{`
+        @keyframes glitch-bounce {
+          0%   { transform: translateX(0) scale(1); }
+          10%  { transform: translateX(-5px) scale(1.06); }
+          20%  { transform: translateX(5px) scale(0.94); }
+          30%  { transform: translateX(-4px) scale(1.04); }
+          40%  { transform: translateX(4px) scale(0.97); }
+          50%  { transform: translateX(-3px) scale(1.02); }
+          60%  { transform: translateX(3px) scale(0.98); }
+          70%  { transform: translateX(-2px) scale(1.01); }
+          80%  { transform: translateX(2px) scale(0.99); }
+          90%  { transform: translateX(-1px) scale(1.005); }
+          100% { transform: translateX(0) scale(1); }
+        }
+        .glitch-bounce { animation: glitch-bounce 0.55s ease-out; }
+      `}</style>
+
+      <div
+        key={errors.terms ? submitCount : 0}
+        className={`flex items-start gap-4 mb-9 px-2 md:px-7 ${errors.terms ? "glitch-bounce" : ""}`}
+      >
         <div className="relative flex items-center justify-center mt-0.5">
           <input
             type="checkbox"
             id="terms"
             {...register("terms")}
-            className="peer w-5 h-5 shrink-0 appearance-none rounded-md border-[1.5px] border-[#A9AAAB] bg-white checked:bg-[#6FA8A6] checked:border-[#6FA8A6] cursor-pointer transition-colors"
+            className={`peer w-5 h-5 shrink-0 appearance-none rounded-md border-[1.5px] bg-white checked:bg-[#6FA8A6] checked:border-[#6FA8A6] cursor-pointer transition-colors ${
+              errors.terms ? "border-red-400" : "border-[#A9AAAB]"
+            }`}
           />
           <svg
             className="absolute text-white pointer-events-none opacity-0 peer-checked:opacity-100 w-3 h-3"
@@ -144,7 +172,9 @@ export default function LoginForm() {
             </Link>
           </label>
           {errors.terms && (
-            <p className="mt-1 px-1 text-xs text-red-500">{errors.terms.message}</p>
+            <p className="mt-1 px-1 text-[11px] font-medium text-red-500">
+              Accept the T&amp;C
+            </p>
           )}
         </div>
       </div>
