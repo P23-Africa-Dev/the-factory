@@ -1170,7 +1170,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.xlsx,.xls,.csv"
+              accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.csv"
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0];
