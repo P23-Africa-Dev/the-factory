@@ -3,9 +3,9 @@
 import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, MapPin, AlertCircle, Clock } from 'lucide-react';
+import { ArrowLeft, MapPin, AlertCircle } from 'lucide-react';
 
-import { useTaskList, useUpdateTaskStatus, useTaskNavigation, type Task, type TaskStatus } from '@/features/tasks';
+import { useTaskList, useUpdateTaskStatus, useTaskNavigation, type Task } from '@/features/tasks';
 import { toast } from '@/lib/toast';
 
 type FilterKey = 'all' | 'pending' | 'in_progress' | 'completed' | 'cancelled';

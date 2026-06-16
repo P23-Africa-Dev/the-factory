@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useCallback, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { Compass, MapPin, AlertCircle, ShieldAlert } from 'lucide-react';
+import { Compass, ShieldAlert } from 'lucide-react';
 
 import { useGeolocation, useStartTask, useTrackingNavigation } from '@/features/tracking';
 import { useTask } from '@/features/tasks';

@@ -18,7 +18,7 @@ export function ClockInModal({ visible, onClose }: ClockInModalProps): React.Rea
 
   const isClockedIn = today?.isClockedIn ?? false;
   const isSubmitting = isClockingIn || isClockingOut;
-  const action = isClockedIn ? 'clock_out' : 'clock_in';
+  const _action = isClockedIn ? 'clock_out' : 'clock_in';
 
   const blockedReason = !today
     ? null

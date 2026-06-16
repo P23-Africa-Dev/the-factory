@@ -17,7 +17,7 @@ export default function AllLeadsPage() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
 
-  const { data: leadsData, isLoading, refetch } = useLeads(
+  const { data: leadsData, isLoading } = useLeads(
     searchQuery.trim() ? { search: searchQuery.trim() } : undefined,
   );
   const { data: labels = [] } = useCrmLabels();

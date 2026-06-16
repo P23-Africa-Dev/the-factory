@@ -24,6 +24,7 @@ export const useTrackingWebSocket = (): void => {
   const removeTask = useTrackingStore((s) => s.removeTask);
   const wsRef = useRef<WebSocket | null>(null);
   const backoffRef = useRef(INITIAL_BACKOFF_MS);
+  const connectRef = useRef<(() => void) | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const disconnectedAtRef = useRef<number | null>(null);
@@ -185,10 +186,14 @@ export const useTrackingWebSocket = (): void => {
 
       retryTimerRef.current = setTimeout(() => {
         backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF_MS);
-        connect();
+        connectRef.current?.();
       }, backoffRef.current);
     };
   }, [setWsStatus, handleEvent, startPolling, stopPolling]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     connect();

@@ -8,7 +8,7 @@
  * - FormData uses Blob instead of file URI
  */
 import { getDb } from '@/lib/db/client';
-import type { LocationQueueEntry, ProofQueueEntry } from '@/lib/db/schema';
+import type { LocationQueueEntry } from '@/lib/db/schema';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
 import { client } from '@/lib/api/client';

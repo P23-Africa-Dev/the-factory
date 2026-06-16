@@ -2,7 +2,7 @@
 
 import React, { Suspense, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Camera, ShieldAlert, X, Search, Clock, ArrowLeft, ArrowRight, Play, CheckCircle } from 'lucide-react';
+import { X } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
@@ -505,7 +505,7 @@ function AddNoteModal({
 }) {
   const [note, setNote] = useState('');
   const [photos, setPhotos] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
+  const [_previews, setPreviews] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -629,7 +629,6 @@ function AddNoteModal({
 // ─── Main Content Component ───────────────────────────────────────────────────
 
 function MapContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
@@ -692,13 +691,13 @@ function MapContent() {
   useEffect(() => {
     if (selectedDestination !== null) return;
     if (!activeTask?.latitude || !activeTask?.longitude) return;
-    setSelectedDestination({
+    setTimeout(() => setSelectedDestination({
       name: activeTask.title,
       address: activeTask.address ?? undefined,
       latitude: activeTask.latitude,
       longitude: activeTask.longitude,
       taskId: Number(activeTask.id),
-    });
+    }), 0);
   }, [activeTask, selectedDestination]);
 
   // Advance idle → destination_selected when destination arrives
@@ -954,7 +953,7 @@ function MapContent() {
           },
         },
       );
-    } catch (err) {
+    } catch (_err) {
       alert('Location error: Could not get your current position. Please try again.');
     }
   }, [selectedDestination, tasks, companyId, startTask, requestPermission, getCurrentPosition]);

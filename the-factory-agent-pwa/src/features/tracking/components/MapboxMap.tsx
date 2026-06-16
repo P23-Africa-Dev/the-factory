@@ -20,6 +20,35 @@ export type MapboxMapProps = {
   dimmed?: boolean;
 };
 
+// Generate GeoJSON Polygon coordinates for a circular geofence
+function getCirclePolygon(center: [number, number], radiusInMeters: number): GeoJSON.Feature<GeoJSON.Polygon> {
+  const coords = {
+    latitude: center[1],
+    longitude: center[0],
+  };
+  const km = radiusInMeters / 1000;
+  const ret = [];
+  const distanceX = km / (111.32 * Math.cos((coords.latitude * Math.PI) / 180));
+  const distanceY = km / 110.574;
+
+  const points = 64;
+  for (let i = 0; i < points; i++) {
+    const theta = (i / points) * (2 * Math.PI);
+    const x = distanceX * Math.cos(theta);
+    const y = distanceY * Math.sin(theta);
+    ret.push([coords.longitude + x, coords.latitude + y]);
+  }
+  ret.push(ret[0]); // Close polygon
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: {
+      type: 'Polygon',
+      coordinates: [ret],
+    },
+  };
+}
+
 export function MapboxMap({
   agentPosition,
   destinationPosition,
@@ -37,6 +66,7 @@ export function MapboxMap({
   // Fallback map view if Mapbox fails
   const fallbackView = (
     <div className="absolute inset-0 bg-[#0A1D25] flex items-center justify-center overflow-hidden">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/assets/default-map-bg.png"
         alt="Map fallback"
@@ -53,7 +83,7 @@ export function MapboxMap({
       const map = new mapboxgl.Map({
         container: mapContainerRef.current,
         style: 'mapbox://styles/mapbox/dark-v11',
-        center: agentPosition || destinationPosition || [8.6753, 9.0820], // Default centered on Nigeria
+        center: agentPosition || destinationPosition || [8.6753, 9.0820],
         zoom: 14,
         attributionControl: false,
       });
@@ -64,7 +94,6 @@ export function MapboxMap({
       });
 
       map.on('load', () => {
-        // Add source and layers for polyline route
         map.addSource('route', {
           type: 'geojson',
           data: {
@@ -92,7 +121,6 @@ export function MapboxMap({
           },
         });
 
-        // Add source and layers for geofence radius
         if (destinationPosition && radiusMeters != null) {
           map.addSource('geofence', {
             type: 'geojson',
@@ -140,11 +168,8 @@ export function MapboxMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-
-    // Wait until map style is loaded
     if (!map.isStyleLoaded()) return;
 
-    // 1. Update Route Polyline
     const routeSource = map.getSource('route') as mapboxgl.GeoJSONSource | undefined;
     if (routeSource) {
       routeSource.setData({
@@ -157,44 +182,29 @@ export function MapboxMap({
       });
     }
 
-    // 2. Update Geofence Radius Circle
     const geofenceSource = map.getSource('geofence') as mapboxgl.GeoJSONSource | undefined;
     if (destinationPosition && radiusMeters != null) {
       const circleGeoJSON = getCirclePolygon(destinationPosition, radiusMeters);
       if (geofenceSource) {
         geofenceSource.setData(circleGeoJSON);
       } else {
-        // If loaded but not added, add it dynamically
         try {
-          map.addSource('geofence', {
-            type: 'geojson',
-            data: circleGeoJSON,
-          });
-
+          map.addSource('geofence', { type: 'geojson', data: circleGeoJSON });
           map.addLayer({
             id: 'geofence-fill',
             type: 'fill',
             source: 'geofence',
-            paint: {
-              'fill-color': arrived ? '#7BB6B8' : '#FD6046',
-              'fill-opacity': 0.15,
-            },
+            paint: { 'fill-color': arrived ? '#7BB6B8' : '#FD6046', 'fill-opacity': 0.15 },
           });
-
           map.addLayer({
             id: 'geofence-outline',
             type: 'line',
             source: 'geofence',
-            paint: {
-              'line-color': arrived ? '#7BB6B8' : '#FD6046',
-              'line-width': 1.5,
-              'line-opacity': 0.6,
-            },
+            paint: { 'line-color': arrived ? '#7BB6B8' : '#FD6046', 'line-width': 1.5, 'line-opacity': 0.6 },
           });
         } catch {}
       }
 
-      // Update color based on arrival status
       if (map.getLayer('geofence-fill')) {
         map.setPaintProperty('geofence-fill', 'fill-color', arrived ? '#7BB6B8' : '#FD6046');
       }
@@ -203,7 +213,6 @@ export function MapboxMap({
       }
     }
 
-    // 3. Update Agent Marker
     if (agentPosition) {
       if (agentMarkerRef.current) {
         agentMarkerRef.current.setLngLat(agentPosition);
@@ -214,19 +223,12 @@ export function MapboxMap({
           .setLngLat(agentPosition)
           .addTo(map);
       }
-
-      // Smoothly ease map camera to agent coordinates
-      map.easeTo({
-        center: agentPosition,
-        zoom: 15,
-        duration: 800,
-      });
+      map.easeTo({ center: agentPosition, zoom: 15, duration: 800 });
     } else if (agentMarkerRef.current) {
       agentMarkerRef.current.remove();
       agentMarkerRef.current = null;
     }
 
-    // 4. Update Destination Pin
     if (destinationPosition) {
       if (destMarkerRef.current) {
         destMarkerRef.current.setLngLat(destinationPosition);
@@ -242,35 +244,6 @@ export function MapboxMap({
       destMarkerRef.current = null;
     }
   }, [agentPosition, destinationPosition, polylineCoords, radiusMeters, arrived]);
-
-  // Generate GeoJSON Polygon coordinates for a circular geofence
-  function getCirclePolygon(center: [number, number], radiusInMeters: number): GeoJSON.Feature<GeoJSON.Polygon> {
-    const coords = {
-      latitude: center[1],
-      longitude: center[0],
-    };
-    const km = radiusInMeters / 1000;
-    const ret = [];
-    const distanceX = km / (111.32 * Math.cos((coords.latitude * Math.PI) / 180));
-    const distanceY = km / 110.574;
-
-    const points = 64;
-    for (let i = 0; i < points; i++) {
-      const theta = (i / points) * (2 * Math.PI);
-      const x = distanceX * Math.cos(theta);
-      const y = distanceY * Math.sin(theta);
-      ret.push([coords.longitude + x, coords.latitude + y]);
-    }
-    ret.push(ret[0]); // Close polygon
-    return {
-      type: 'Feature',
-      properties: {},
-      geometry: {
-        type: 'Polygon',
-        coordinates: [ret],
-      },
-    };
-  }
 
   if (mapError) {
     return (

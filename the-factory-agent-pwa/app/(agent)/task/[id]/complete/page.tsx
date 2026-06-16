@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { Camera, Image as ImageIcon, CheckCircle, ShieldAlert } from 'lucide-react';
+import { Camera, ShieldAlert } from 'lucide-react';
 
 import { useTask, useTaskNavigation, useCompleteTask } from '@/features/tasks';
 import { getDb } from '@/lib/db/client';

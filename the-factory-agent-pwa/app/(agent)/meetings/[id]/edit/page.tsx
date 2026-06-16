@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, use } from 'react';
+import React, { useState, use } from 'react';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { useMeeting, useUpdateMeeting } from '@/features/meetings/queries';
 import { useMeetingNavigation } from '@/features/meetings/navigation';
