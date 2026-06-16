@@ -10,7 +10,7 @@ interface BottomNavBarProps {
 }
 
 const TABS = [
-  { id: 0, label: 'Home', path: '/tasks', activeIcon: '/assets/nav-active-1.svg', defaultIcon: '/assets/nav-default-1.svg' },
+  { id: 0, label: 'Home', path: '/', activeIcon: '/assets/nav-active-1.svg', defaultIcon: '/assets/nav-default-1.svg' },
   { id: 1, label: 'Map', path: '/map', activeIcon: '/assets/nav-active-2.svg', defaultIcon: '/assets/nav-default-2.svg' },
   { id: 2, label: 'CRM', path: '/crm', activeIcon: '/assets/nav-active-3.svg', defaultIcon: '/assets/nav-default-3.svg' },
   { id: 3, label: 'Assistant', path: '/assistant', activeIcon: '/assets/nav-active-4.svg', defaultIcon: '/assets/nav-default-4.svg' },

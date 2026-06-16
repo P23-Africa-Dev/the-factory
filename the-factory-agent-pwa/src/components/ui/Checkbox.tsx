@@ -54,8 +54,8 @@ export const Checkbox: React.FC<CheckboxProps> = ({
       {/* Label — render string or ReactNode without double-wrapping */}
       {label && (
         typeof label === 'string'
-          ? <span className={`text-xs leading-relaxed text-[#FAFAFA]/80 ${labelClassName}`}>{label}</span>
-          : <div className={`text-xs leading-relaxed ${labelClassName}`}>{label}</div>
+          ? <span className={`text-sm leading-relaxed text-[#FAFAFA] font-medium ${labelClassName}`}>{label}</span>
+          : <div className={`text-sm leading-relaxed font-medium ${labelClassName}`}>{label}</div>
       )}
     </label>
   );

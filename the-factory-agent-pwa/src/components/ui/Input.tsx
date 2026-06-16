@@ -26,7 +26,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           <input
             ref={ref}
             type={inputType}
-            className={`flex-1 h-full bg-transparent text-[#FAFAFA] placeholder-[#DEDEDE] text-base outline-none border-none focus:ring-0 ${className}`}
+            className={`flex-1 h-full bg-transparent text-[#FAFAFA] placeholder-[#DEDEDE] text-base outline-none border-none focus:ring-0 [&:-webkit-autofill]:[transition-delay:9999s] [&:-webkit-autofill]:[-webkit-text-fill-color:#FAFAFA] [&:-webkit-autofill]:[box-shadow:0_0_0_30px_#0F2B36_inset] ${className}`}
             {...props}
           />
           {isPassword && (

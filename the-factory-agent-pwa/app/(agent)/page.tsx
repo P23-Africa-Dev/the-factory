@@ -132,11 +132,20 @@ export default function AgentDashboardPage() {
   return (
     <ScreenErrorBoundary screenName="AgentHome">
       <div className="relative min-h-screen bg-[#0A1D25] text-white flex flex-col font-sans select-none overflow-x-hidden pb-10">
-        {/* Ambient background texture */}
-        <div
-          className="absolute inset-0 bg-cover bg-center pointer-events-none opacity-[0.12] z-0"
-          style={{ backgroundImage: "url('/assets/app-background.png')" }}
-        />
+        {/* Ambient background texture and stripes */}
+        <div className="absolute inset-0 z-0 pointer-events-none">
+          <div className="absolute inset-0 bg-gradient-to-br from-[#0A1D25] to-[#051014]" />
+          <div 
+            className="absolute inset-0 opacity-[0.12] bg-cover bg-center"
+            style={{ backgroundImage: "url('/assets/app-background.png')" }}
+          />
+          <div 
+            className="absolute inset-0"
+            style={{
+              background: 'repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.012), rgba(255, 255, 255, 0.012) 17px, transparent 17px, transparent 40px)'
+            }}
+          />
+        </div>
 
         {/* Scroll Content container */}
         <div className="relative z-10 flex flex-col flex-1 px-5 pt-6">
@@ -169,18 +178,18 @@ export default function AgentDashboardPage() {
                 {/* Profile Row */}
                 <div
                   onClick={() => setIsProfileMenuOpen((v) => !v)}
-                  className="flex items-center gap-3.5 cursor-pointer"
+                  className="flex items-center gap-4 cursor-pointer"
                 >
                   <img
                     src="/assets/animoji.png"
                     alt="avatar"
-                    className="w-14 h-14 rounded-full bg-[#0B3343] border border-white/10"
+                    className="w-[60px] h-[60px] rounded-full bg-[#0B3343] border border-white/10"
                   />
                   <div className="flex flex-col justify-center leading-tight">
-                    <span className="text-white/60 font-light text-sm">Hello,</span>
-                    <span className="text-white font-semibold text-2xl mt-0.5">{firstName}!</span>
+                    <span className="text-white font-light text-[16px]">Hello,</span>
+                    <span className="text-white font-medium text-[32px] mt-[-2px] tracking-tight">{firstName}!</span>
                     {userRole && (
-                      <span className="text-[10px] font-semibold tracking-wider text-[#75ADAF] uppercase mt-1">
+                      <span className="text-[10px] font-normal text-[#75ADAF] uppercase mt-[2px]">
                         {userRole}
                       </span>
                     )}
@@ -188,7 +197,7 @@ export default function AgentDashboardPage() {
                 </div>
 
                 {/* Header Actions */}
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
                       setIsProfileMenuOpen(false);
@@ -196,13 +205,13 @@ export default function AgentDashboardPage() {
                     }}
                     className="w-12 h-12 flex items-center justify-center bg-transparent focus:outline-none"
                   >
-                    <img src="/assets/search-icon.png" alt="Search" className="w-10 h-10 object-contain" />
+                    <img src="/assets/search-icon.png" alt="Search" className="w-12 h-12 object-contain" />
                   </button>
                   <button
                     onClick={() => setIsNotificationOpen(true)}
                     className="relative w-12 h-12 flex items-center justify-center bg-transparent focus:outline-none"
                   >
-                    <img src="/assets/notification-icon.png" alt="Notification" className="w-10 h-10 object-contain" />
+                    <img src="/assets/notification-icon.png" alt="Notification" className="w-12 h-12 object-contain" />
                     {unreadCount > 0 && (
                       <div className="absolute top-1 right-1 min-w-4 h-4 bg-[#FD6046] text-white font-bold text-[9px] rounded-full flex items-center justify-center px-1">
                         {unreadCount > 99 ? '99+' : unreadCount}
@@ -245,7 +254,7 @@ export default function AgentDashboardPage() {
           </div>
 
           {/* Calendar strip */}
-          <div className="w-full flex items-center justify-between py-3 px-1.5 bg-white/[0.02] border border-white/5 rounded-2xl mb-5 gap-1.5 overflow-x-auto scrollbar-none">
+          <div className="w-full flex items-center justify-between px-2 mb-5 overflow-visible">
             {calendarDays.map((item, index) => {
               const isActive = selectedDate.toDateString() === item.fullDate.toDateString();
               const hasTasks = tasks.some((t) => isSameDay(t.dueDate, item.fullDate));
@@ -253,18 +262,18 @@ export default function AgentDashboardPage() {
                 <button
                   key={index}
                   onClick={() => setSelectedDate(item.fullDate)}
-                  className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-xl min-w-[38px] transition-all active:scale-95 ${
-                    isActive ? 'bg-[#7BB6B8] text-white' : 'bg-transparent text-white/40'
+                  className={`flex flex-col items-center justify-center w-[42px] h-[65px] rounded-[16px] transition-all active:scale-95 ${
+                    isActive ? 'bg-[#7BB6B8]' : 'bg-transparent'
                   }`}
                 >
-                  <span className={`text-[9px] font-bold uppercase tracking-wider ${isActive ? 'text-white' : 'text-white/40'}`}>
+                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${isActive ? 'text-[#B4DBFF]' : 'text-[#8F9098]'}`}>
                     {item.day}
                   </span>
-                  <span className={`text-sm font-semibold mt-1.5 ${isActive ? 'text-white font-bold' : 'text-white/80'}`}>
+                  <span className={`text-[16px] leading-[22px] font-normal mt-1 ${isActive ? 'text-white' : 'text-[#494A50]'}`}>
                     {item.date}
                   </span>
                   {hasTasks && (
-                    <div className={`w-1.5 h-1.5 rounded-full mt-1.5 ${isActive ? 'bg-white' : 'bg-[#FD6046]'}`} />
+                    <div className={`w-[5px] h-[5px] rounded-full mt-1 ${isActive ? 'bg-white' : 'bg-[#FD6046]'}`} />
                   )}
                 </button>
               );
@@ -272,33 +281,33 @@ export default function AgentDashboardPage() {
           </div>
 
           {/* Action Row Buttons */}
-          <div className="flex gap-2 mb-5">
+          <div className="flex gap-2 mb-5 px-1">
             <button
               onClick={goToTasksList}
-              className="flex-1 h-11 bg-[#0B3343] border border-white/10 hover:border-white/20 rounded-full flex items-center justify-center gap-1.5 px-3 focus:outline-none transition-all active:scale-95 text-xs text-white"
+              className="flex-[1] h-[44px] bg-[#0B3343] border-[0.5px] border-white/15 rounded-full flex items-center justify-center gap-1.5 px-2 focus:outline-none transition-all active:scale-95 text-white relative"
             >
-              <img src="/assets/task-daily-01.png" alt="Task" className="w-4 h-4 flex-shrink-0" />
-              <span className="font-semibold truncate">Task</span>
+              <img src="/assets/task-daily-01.png" alt="Task" className="w-[15px] h-[15px] flex-shrink-0" />
+              <span className="font-normal text-[10px] tracking-wide capitalize truncate">Task</span>
               {pendingTasks.length > 0 && (
-                <span className="min-w-4 h-4 bg-[#FD6046] text-white font-bold text-[8px] rounded-full flex items-center justify-center px-1 flex-shrink-0 ml-0.5">
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] bg-[#FD6046] text-white font-bold text-[9px] rounded-full flex items-center justify-center px-1 flex-shrink-0">
                   {pendingTasks.length}
                 </span>
               )}
             </button>
 
-            <div className="flex-[1.5] h-11 bg-[#113948] rounded-full flex items-center p-1 gap-1 min-w-0">
+            <div className="flex-[1.6] h-[44px] bg-[#113948] rounded-[20px] flex items-center p-1 gap-1 min-w-0">
               <img src="/assets/calendar-icon.png" alt="Calendar" className="w-8 h-8 flex-shrink-0" />
-              <div className="flex-1 bg-[#09232D] h-full rounded-full flex items-center justify-center px-2 min-w-0">
-                <span className="text-[10px] text-white/90 truncate font-medium">{formattedSelectedDate}</span>
+              <div className="flex-1 bg-[#09232D] h-[36px] rounded-[20px] flex items-center justify-center px-1 min-w-0">
+                <span className="text-[10px] text-white tracking-wide truncate font-normal text-center">{formattedSelectedDate}</span>
               </div>
             </div>
 
             <button
               onClick={() => setIsAddLeadOpen(true)}
-              className="flex-1 h-11 bg-[#0B3343] border border-white/10 hover:border-white/20 rounded-full flex items-center justify-center gap-1.5 px-3 focus:outline-none transition-all active:scale-95 text-xs text-white"
+              className="flex-[1] h-[44px] bg-[#0B3343] border-[0.5px] border-white/15 rounded-full flex items-center justify-center gap-1.5 px-2 focus:outline-none transition-all active:scale-95 text-white"
             >
-              <img src="/assets/bookmark-add-02.png" alt="Add Lead" className="w-4 h-4 flex-shrink-0" />
-              <span className="font-semibold truncate">Add Lead</span>
+              <img src="/assets/bookmark-add-02.png" alt="Add Lead" className="w-[15px] h-[15px] flex-shrink-0" />
+              <span className="font-normal text-[10px] tracking-wide capitalize truncate">Add Lead</span>
             </button>
           </div>
 
@@ -306,20 +315,20 @@ export default function AgentDashboardPage() {
           <div className="flex gap-3.5 mb-5 items-stretch">
             {/* Leads card */}
             <div className="flex-1 bg-white rounded-2xl flex flex-col justify-between overflow-hidden shadow-lg p-4 gap-2 text-black">
-              <div className="flex items-center gap-2">
-                <img src="/assets/upload-avatar.png" alt="Leads" className="w-12 h-12 object-contain" />
-                <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3">
+                <img src="/assets/upload-avatar.png" alt="Leads" className="w-[48px] h-[48px] object-contain" />
+                <div className="flex-1 min-w-0 pt-2">
                   {isLoadingTasks ? (
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
                   ) : (
                     <div className="flex items-baseline gap-1">
-                      <span className="font-bold text-2xl text-[#34373C] leading-none">
+                      <span className="font-bold text-[32px] text-[#34373C] leading-[34px] tracking-tight">
                         {tasks.length > 0 ? tasks.length.toLocaleString() : '0'}
                       </span>
-                      <span className="text-[10px] text-gray-500 font-semibold uppercase">Leads</span>
+                      <span className="text-[12px] text-gray-500 font-semibold uppercase">Leads</span>
                     </div>
                   )}
-                  <p className="text-[9px] text-gray-400 font-medium">Uploaded by you</p>
+                  <p className="text-[10px] text-gray-400 font-medium leading-[14px]">Uploaded by you</p>
                 </div>
               </div>
               <button
@@ -355,12 +364,12 @@ export default function AgentDashboardPage() {
 
           {/* Find Location panel */}
           <div
-            className="bg-[#FFFFFF] border-t border-gray-200 rounded-t-[28px] p-5 shadow-xl -mx-5 px-5 flex flex-col gap-4 text-black pb-12"
-            style={{ backgroundImage: "url('/assets/find-location-backgroud.png')", backgroundSize: 'stretch', backgroundRepeat: 'no-repeat' }}
+            className="mt-2 -mx-5 px-5 pt-8 flex flex-col gap-4 text-black pb-12 bg-cover bg-top"
+            style={{ backgroundImage: "url('/assets/find-location-backgroud.png')" }}
           >
             {/* Search row */}
-            <div className="flex items-center bg-white/40 border border-white/50 backdrop-blur-md rounded-full p-1 h-14 gap-2">
-              <img src="/assets/magnifying-icon.png" alt="Search icon" className="w-10 h-10 object-contain ml-1" />
+            <div className="flex items-center bg-transparent mt-8 h-14 gap-2">
+              <img src="/assets/magnifying-icon.png" alt="Search icon" className="w-[48px] h-[48px] object-contain" />
               <div className="flex-1 bg-[#D6D7D7] h-full rounded-full flex items-center px-4">
                 <input
                   type="text"
