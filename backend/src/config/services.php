@@ -57,6 +57,16 @@ return [
         'exec_model' => env('AI_EXEC_MODEL', 'gpt-4.1-mini'),
         'analyst_model' => env('AI_ANALYST_MODEL', 'claude-3-5-sonnet-latest'),
         'request_timeout_ms' => (int) env('AI_REQUEST_TIMEOUT_MS', 30000),
+        'max_tokens' => (int) env('AI_MAX_TOKENS', 4000),
+        'enable_streaming' => filter_var(env('AI_ENABLE_STREAMING', true), FILTER_VALIDATE_BOOL),
+        'enable_actions' => filter_var(env('AI_ENABLE_ACTIONS', true), FILTER_VALIDATE_BOOL),
+        'strict_confirmation_blocking' => filter_var(env('AI_STRICT_CONFIRMATION_BLOCKING', false), FILTER_VALIDATE_BOOL),
+        'strict_confirmation_blocking_codes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
+            'AI_STRICT_CONFIRMATION_BLOCKING_CODES',
+            'used_default_title,used_default_due_date',
+        ))))),
+        'monthly_org_credit_limit' => (int) env('AI_MONTHLY_ORG_CREDIT_LIMIT', 0),
+        'pii_redaction_enabled' => filter_var(env('AI_PII_REDACTION_ENABLED', true), FILTER_VALIDATE_BOOL),
         'openai' => [
             'api_key' => env('OPENAI_API_KEY'),
             'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),

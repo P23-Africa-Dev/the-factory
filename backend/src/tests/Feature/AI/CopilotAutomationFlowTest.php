@@ -188,10 +188,7 @@ final class CopilotAutomationFlowTest extends TestCase
         ]);
 
         /** @var User $user */
-        $user = User::factory()->createOne([
-            'company_id' => $company->id,
-            'role' => $role,
-        ]);
+        $user = User::factory()->createOne();
 
         $company->users()->attach($user->id, [
             'role' => $role,

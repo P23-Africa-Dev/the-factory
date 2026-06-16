@@ -5,9 +5,9 @@ import { getActiveCompanyContext } from "@/lib/company-context";
 import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
 import {
-  Camera,
   ChevronLeft,
   Copy,
+  Paperclip,
   FileAudio,
   FileSpreadsheet,
   LineChart,
@@ -15,6 +15,7 @@ import {
   Search,
   ThumbsDown,
   ThumbsUp,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -32,6 +33,89 @@ interface AIChatProps {
   open: boolean;
   onClose: () => void;
 }
+
+interface ConfirmationPreviewRow {
+  key: string;
+  label: string;
+  value: string;
+  warning?: boolean;
+}
+
+type ActionDraftMap = Record<string, Record<string, string>>;
+
+interface AssigneeOption {
+  id: number;
+  name: string;
+  email: string;
+  role: string | null;
+}
+
+interface AssigneeOptionsState {
+  loading: boolean;
+  loaded: boolean;
+  items: AssigneeOption[];
+}
+
+type EditControlType = "text" | "textarea" | "select" | "date" | "datetime-local" | "number";
+
+interface EditFieldOption {
+  value: string;
+  label: string;
+}
+
+interface EditFieldConfig {
+  key: string;
+  label: string;
+  control: EditControlType;
+  options?: EditFieldOption[];
+}
+
+const TASK_TYPE_OPTIONS: EditFieldOption[] = [
+  { value: "inspection", label: "Inspection" },
+  { value: "sales_visit", label: "Sales Visit" },
+  { value: "delivery", label: "Delivery" },
+  { value: "collection", label: "Collection" },
+  { value: "awareness", label: "Awareness" },
+];
+
+const PROJECT_TYPE_OPTIONS: EditFieldOption[] = [
+  { value: "sales", label: "Sales" },
+  { value: "inspection", label: "Inspection" },
+  { value: "deployment", label: "Deployment" },
+];
+
+const PROJECT_STATUS_OPTIONS: EditFieldOption[] = [
+  { value: "planning", label: "Planning" },
+  { value: "active", label: "Active" },
+  { value: "completed", label: "Completed" },
+];
+
+const PRIORITY_OPTIONS: EditFieldOption[] = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
+const NOTIFICATION_PRIORITY_OPTIONS: EditFieldOption[] = [
+  { value: "low", label: "Low" },
+  { value: "normal", label: "Normal" },
+  { value: "high", label: "High" },
+  { value: "critical", label: "Critical" },
+];
+
+const NOTIFICATION_CATEGORY_OPTIONS: EditFieldOption[] = [
+  { value: "auth", label: "Auth" },
+  { value: "onboarding", label: "Onboarding" },
+  { value: "task", label: "Task" },
+  { value: "project", label: "Project" },
+  { value: "tracking", label: "Tracking" },
+  { value: "attendance", label: "Attendance" },
+  { value: "payroll", label: "Payroll" },
+  { value: "crm", label: "CRM" },
+  { value: "workforce", label: "Workforce" },
+  { value: "profile", label: "Profile" },
+  { value: "system", label: "System" },
+];
 
 function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
   if (!rawAvatar) return null;
@@ -68,16 +152,27 @@ export function AIChat({ open, onClose }: AIChatProps) {
     runFileAnalysis,
     runTranscriptSummary,
     loadForecastOverview,
+    searchAssignees,
   } = useCopilotChat();
 
   const [actionMap, setActionMap] = useState<Record<string, MessageAction>>({});
   const [copiedMap, setCopiedMap] = useState<Record<string, boolean>>({});
   const [input, setInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
+  const [assigneeOptions, setAssigneeOptions] = useState<Record<string, AssigneeOptionsState>>({});
   const [isRunningQuickAction, setIsRunningQuickAction] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const voiceInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const hasMessages = messages.length > 0;
 
   useEffect(() => {
     if (open) {
@@ -86,13 +181,86 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }, [open]);
 
   useEffect(() => {
+    if (!isMenuOpen) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isMenuOpen]);
+
+  useEffect(() => {
     if (!open || !companyId) return;
-    void initialize(companyId);
+    setIsInitializing(true);
+    void initialize(companyId).finally(() => setIsInitializing(false));
   }, [companyId, initialize, open]);
+
+  useEffect(() => {
+    setAssigneeOptions({});
+  }, [companyId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isStreaming]);
+
+  useEffect(() => {
+    for (const msg of messages) {
+      const payload = messagePayload(msg);
+      if (msg.role !== "assistant" || payload?.confirmation_required !== true) {
+        continue;
+      }
+
+      const tool = String(payload.tool ?? "");
+      const rawArgs = parseRecord(payload.action_args);
+      const argKeys = rawArgs ? Object.keys(rawArgs) : [];
+      const hasUserAssignmentField = argKeys.some((key) => /(^|_)(user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/.test(key));
+
+      if (!["tasks.create", "tasks.reassign", "projects.create"].includes(tool) && !hasUserAssignmentField) {
+        continue;
+      }
+
+      void loadAssigneeOptions(msg.id);
+    }
+  }, [messages]);
+
+  function toTitleCase(value: string): string {
+    return value
+      .replace(/[_\-]+/g, " ")
+      .replace(/\b\w/g, (ch) => ch.toUpperCase());
+  }
+
+  function asDateInputValue(raw: unknown): string {
+    if (typeof raw !== "string" || raw.trim() === "") {
+      return "";
+    }
+
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      return "";
+    }
+
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  function asDateTimeLocalInputValue(raw: unknown): string {
+    if (typeof raw !== "string" || raw.trim() === "") {
+      return "";
+    }
+
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      return "";
+    }
+
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getDate()).padStart(2, "0");
+    const hour = String(parsed.getHours()).padStart(2, "0");
+    const minute = String(parsed.getMinutes()).padStart(2, "0");
+    return `${year}-${month}-${day}T${hour}:${minute}`;
+  }
 
   function sendMessage(text?: string) {
     const content = (text ?? input).trim();
@@ -133,6 +301,459 @@ export function AIChat({ open, onClose }: AIChatProps) {
       : null;
   }
 
+  function parseRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+  }
+
+  function sanitizeActionArgs(args: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(args).filter(([key]) => !key.startsWith("__")),
+    );
+  }
+
+  function warningCodesForMessage(msg: Message): string[] {
+    const payload = messagePayload(msg);
+    if (!payload || !Array.isArray(payload.validation_warning_codes)) {
+      return [];
+    }
+
+    return payload.validation_warning_codes
+      .map((code) => String(code))
+      .filter((code) => code.trim() !== "");
+  }
+
+  function blockingWarningCodesForMessage(msg: Message): string[] {
+    const payload = messagePayload(msg);
+    if (!payload || !Array.isArray(payload.blocking_warning_codes)) {
+      return payload?.blocking_confirmation === true ? warningCodesForMessage(msg) : [];
+    }
+
+    return payload.blocking_warning_codes
+      .map((code) => String(code))
+      .filter((code) => code.trim() !== "");
+  }
+
+  function updateActionDraft(msgId: string, field: string, value: string) {
+    setActionDrafts((prev) => ({
+      ...prev,
+      [msgId]: {
+        ...(prev[msgId] ?? {}),
+        [field]: value,
+      },
+    }));
+  }
+
+  async function loadAssigneeOptions(msgId: string) {
+    const current = assigneeOptions[msgId];
+    if (current?.loading === true || current?.loaded === true) {
+      return;
+    }
+
+    setAssigneeOptions((prev) => ({
+      ...prev,
+      [msgId]: {
+        loading: true,
+        loaded: false,
+        items: prev[msgId]?.items ?? [],
+      },
+    }));
+
+    try {
+      const items = await searchAssignees("", companyId ?? undefined, 20);
+      setAssigneeOptions((prev) => ({
+        ...prev,
+        [msgId]: {
+          loading: false,
+          loaded: true,
+          items,
+        },
+      }));
+    } catch {
+      setAssigneeOptions((prev) => ({
+        ...prev,
+        [msgId]: {
+          loading: false,
+          loaded: true,
+          items: [],
+        },
+      }));
+    }
+  }
+
+  function actionArgsForMessage(msg: Message): Record<string, unknown> | null {
+    const payload = messagePayload(msg);
+    if (!payload) {
+      return null;
+    }
+
+    const actionArgsRaw = parseRecord(payload.action_args);
+    if (!actionArgsRaw) {
+      return null;
+    }
+
+    const baseArgs = sanitizeActionArgs(actionArgsRaw);
+    const draft = actionDrafts[msg.id] ?? {};
+    const tool = String(payload.tool ?? "");
+
+    if (tool === "tasks.create") {
+      const merged: Record<string, unknown> = { ...baseArgs };
+
+      if (Object.prototype.hasOwnProperty.call(draft, "title")) {
+        merged.title = draft.title;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "type")) {
+        merged.type = draft.type;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "due_date")) {
+        merged.due_date = draft.due_date;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "assignee")) {
+        const assignee = (draft.assignee ?? "").trim();
+        if (assignee !== "") {
+          merged.assignee = assignee;
+          delete merged.assigned_agent_id;
+        } else {
+          delete merged.assignee;
+        }
+      }
+
+      return merged;
+    }
+
+    if (Object.keys(draft).length === 0) {
+      return baseArgs;
+    }
+
+    return {
+      ...baseArgs,
+      ...draft,
+    };
+  }
+
+  function assigneeDraftValue(msg: Message): string {
+    const draft = actionDrafts[msg.id] ?? {};
+    return String(draft.assignee ?? "").trim();
+  }
+
+  function assigneeDropdownValue(msg: Message, args: Record<string, unknown>): string {
+    const draftValue = assigneeDraftValue(msg);
+    if (draftValue !== "") {
+      return draftValue;
+    }
+
+    const directAssignee = typeof args.assignee === "string" ? args.assignee.trim() : "";
+    if (directAssignee !== "") {
+      return directAssignee;
+    }
+
+    const assignedId = typeof args.assigned_agent_id === "number" ? args.assigned_agent_id : null;
+    if (assignedId === null) {
+      return "";
+    }
+
+    const options = assigneeOptions[msg.id]?.items ?? [];
+    const matched = options.find((item) => item.id === assignedId);
+    return matched?.email ?? "";
+  }
+
+  function assigneeDisplayName(msg: Message, args: Record<string, unknown>): string {
+    const options = assigneeOptions[msg.id]?.items ?? [];
+    const selected = assigneeDropdownValue(msg, args);
+
+    if (selected !== "") {
+      const byEmail = options.find((item) => item.email === selected);
+      if (byEmail) {
+        return byEmail.name;
+      }
+
+      return selected;
+    }
+
+    const assignedId = typeof args.assigned_agent_id === "number" ? args.assigned_agent_id : null;
+    if (assignedId !== null) {
+      const byId = options.find((item) => item.id === assignedId);
+      return byId?.name ?? `Agent #${String(assignedId)}`;
+    }
+
+    return "";
+  }
+
+  function assigneeSelectOptions(msg: Message): EditFieldOption[] {
+    return (assigneeOptions[msg.id]?.items ?? []).map((item) => ({
+      value: item.email,
+      label: item.name,
+    }));
+  }
+
+  function userIdSelectOptions(msg: Message): EditFieldOption[] {
+    return (assigneeOptions[msg.id]?.items ?? []).map((item) => ({
+      value: String(item.id),
+      label: item.name,
+    }));
+  }
+
+  function editFieldsForMessage(msg: Message, args: Record<string, unknown>): EditFieldConfig[] {
+    const payload = messagePayload(msg);
+    const tool = String(payload?.tool ?? "");
+
+    if (tool === "tasks.create") {
+      return [
+        { key: "title", label: "Title", control: "text" },
+        { key: "type", label: "Type", control: "select", options: TASK_TYPE_OPTIONS },
+        { key: "due_date", label: "Due Date", control: "date" },
+        { key: "assignee", label: "Assignee", control: "select", options: assigneeSelectOptions(msg) },
+      ];
+    }
+
+    if (tool === "meetings.schedule") {
+      return [
+        { key: "title", label: "Title", control: "text" },
+        { key: "start_at", label: "Start Time", control: "datetime-local" },
+        { key: "end_at", label: "End Time", control: "datetime-local" },
+        { key: "location", label: "Location", control: "text" },
+        { key: "timezone", label: "Timezone", control: "text" },
+      ];
+    }
+
+    if (tool === "projects.create") {
+      return [
+        { key: "name", label: "Project Name", control: "text" },
+        { key: "type", label: "Type", control: "select", options: PROJECT_TYPE_OPTIONS },
+        { key: "status", label: "Status", control: "select", options: PROJECT_STATUS_OPTIONS },
+        { key: "priority", label: "Priority", control: "select", options: PRIORITY_OPTIONS },
+        { key: "start_date", label: "Start Date", control: "date" },
+        { key: "end_date", label: "End Date", control: "date" },
+        { key: "project_manager_user_id", label: "Project Manager", control: "select", options: userIdSelectOptions(msg) },
+      ];
+    }
+
+    if (tool === "notifications.send") {
+      return [
+        { key: "title", label: "Title", control: "text" },
+        { key: "message", label: "Message", control: "textarea" },
+        { key: "category", label: "Category", control: "select", options: NOTIFICATION_CATEGORY_OPTIONS },
+        { key: "priority", label: "Priority", control: "select", options: NOTIFICATION_PRIORITY_OPTIONS },
+        { key: "type", label: "Type", control: "text" },
+      ];
+    }
+
+    if (tool === "tasks.reassign") {
+      return [
+        { key: "task_id", label: "Task ID", control: "number" },
+        { key: "to_user_id", label: "Reassign To", control: "select", options: userIdSelectOptions(msg) },
+        { key: "reason", label: "Reason", control: "textarea" },
+      ];
+    }
+
+    return Object.entries(args)
+      .filter(([key]) => key !== "company_id")
+      .map(([key]) => {
+        if (/(_at|_date|^date$|due_date)/i.test(key)) {
+          const isDateOnly = /(_date|^date$|due_date)/i.test(key) && !/_at$/i.test(key);
+          return {
+            key,
+            label: toTitleCase(key),
+            control: isDateOnly ? "date" : "datetime-local",
+          } as EditFieldConfig;
+        }
+
+        if (/(^|_)(type|status|priority|category)$/i.test(key)) {
+          return {
+            key,
+            label: toTitleCase(key),
+            control: "select",
+            options: [
+              { value: String(args[key] ?? ""), label: toTitleCase(String(args[key] ?? "current")) },
+            ],
+          } as EditFieldConfig;
+        }
+
+        if (/_id$/i.test(key)) {
+          return {
+            key,
+            label: toTitleCase(key),
+            control: "number",
+          } as EditFieldConfig;
+        }
+
+        if (/(description|message|notes|reason)/i.test(key)) {
+          return {
+            key,
+            label: toTitleCase(key),
+            control: "textarea",
+          } as EditFieldConfig;
+        }
+
+        return {
+          key,
+          label: toTitleCase(key),
+          control: "text",
+        } as EditFieldConfig;
+      });
+  }
+
+  function editFieldValue(msg: Message, args: Record<string, unknown>, field: EditFieldConfig): string {
+    const draft = actionDrafts[msg.id] ?? {};
+    if (Object.prototype.hasOwnProperty.call(draft, field.key)) {
+      return String(draft[field.key] ?? "");
+    }
+
+    if (field.key === "assignee") {
+      return assigneeDropdownValue(msg, args);
+    }
+
+    const raw = args[field.key];
+
+    if (field.control === "date") {
+      return asDateInputValue(raw);
+    }
+
+    if (field.control === "datetime-local") {
+      return asDateTimeLocalInputValue(raw);
+    }
+
+    if (raw === null || raw === undefined) {
+      return "";
+    }
+
+    return String(raw);
+  }
+
+  function blockingIssuesForMessage(msg: Message): string[] {
+    const blockingCodes = blockingWarningCodesForMessage(msg);
+    if (blockingCodes.length === 0) {
+      return [];
+    }
+
+    const args = actionArgsForMessage(msg);
+    const argsForChecks: Record<string, unknown> = args ?? {};
+    const remaining: string[] = [];
+
+    for (const code of blockingCodes) {
+      if (code === "assignee_unresolved") {
+        const assigneeEdited = assigneeDropdownValue(msg, argsForChecks) !== "";
+        const hasResolvedId = typeof args?.assigned_agent_id === "number";
+        if (!assigneeEdited && !hasResolvedId) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "used_default_title") {
+        const title = String(args?.title ?? "").trim().toLowerCase();
+        if (title === "" || title === "task created by copilot") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "used_default_due_date") {
+        const due = String(args?.due_date ?? "").trim();
+        if (due === "") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      remaining.push(code);
+    }
+
+    return remaining;
+  }
+
+  function formatPreviewValue(key: string, value: unknown): string {
+    if (value === null || value === undefined) {
+      return "Not provided";
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed === "") {
+        return "Not provided";
+      }
+
+      if (key === "due_date") {
+        const parsed = new Date(trimmed);
+        if (!Number.isNaN(parsed.getTime())) {
+          return parsed.toLocaleString();
+        }
+
+        return "Not set";
+      }
+
+      return trimmed;
+    }
+
+    if (typeof value === "number" || typeof value === "boolean") {
+      return String(value);
+    }
+
+    if (Array.isArray(value)) {
+      const list = value.map((item) => String(item)).filter((item) => item.trim() !== "");
+      return list.length > 0 ? list.join(", ") : "Not provided";
+    }
+
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "[Unserializable value]";
+    }
+  }
+
+  function confirmationPreviewRows(msg: Message): ConfirmationPreviewRow[] {
+    const payload = messagePayload(msg);
+    if (!payload) {
+      return [];
+    }
+
+    const tool = String(payload.tool ?? "");
+    const args = actionArgsForMessage(msg);
+    if (!args) {
+      return [];
+    }
+    const warningCodes = warningCodesForMessage(msg);
+
+    if (tool === "tasks.create") {
+      const rows: ConfirmationPreviewRow[] = [
+        { key: "title", label: "Title", value: formatPreviewValue("title", args.title) },
+        { key: "type", label: "Type", value: formatPreviewValue("type", args.type) },
+        { key: "due_date", label: "Due Date", value: formatPreviewValue("due_date", args.due_date) },
+        { key: "location", label: "Location", value: formatPreviewValue("location", args.location) },
+      ];
+
+      const assigneeEdited = assigneeDropdownValue(msg, args) !== "";
+      const assigneeResolved = typeof args.assigned_agent_id === "number";
+
+      if (warningCodes.includes("assignee_unresolved") && !assigneeEdited && !assigneeResolved) {
+        rows.push({
+          key: "assigned_agent_id",
+          label: "Assignee",
+          value: "Needs correction",
+          warning: true,
+        });
+      } else {
+        rows.push({
+          key: "assigned_agent_id",
+          label: "Assignee",
+          value: formatPreviewValue("assignee", assigneeDisplayName(msg, args)),
+        });
+      }
+
+      return rows;
+    }
+
+    return Object.entries(args)
+      .filter(([key]) => key !== "company_id")
+      .map(([key, value]) => ({
+        key,
+        label: key.replace(/_/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase()),
+        value: formatPreviewValue(key, value),
+      }));
+  }
+
   function findPreviousUserContent(index: number): string {
     for (let i = index - 1; i >= 0; i -= 1) {
       if (messages[i]?.role === "user") {
@@ -150,15 +771,40 @@ export function AIChat({ open, onClose }: AIChatProps) {
     const priorPrompt = findPreviousUserContent(index);
     if (!priorPrompt.trim()) return;
 
+    const actionArgs = actionArgsForMessage(msg);
+    const sanitizedArgs = actionArgs ? sanitizeActionArgs(actionArgs) : undefined;
+    const hasSanitizedArgs = sanitizedArgs ? Object.keys(sanitizedArgs).length > 0 : false;
+
     void sendCopilotMessage({
       message: priorPrompt,
       companyId: companyId ?? undefined,
       actionConfirmed: true,
-      actionArgs:
-        payload.action_args && typeof payload.action_args === "object"
-          ? (payload.action_args as Record<string, unknown>)
-          : undefined,
+      actionArgs: hasSanitizedArgs ? sanitizedArgs : undefined,
     });
+  }
+
+  function handleEditActionDetails(index: number) {
+    const priorPrompt = findPreviousUserContent(index);
+    if (!priorPrompt.trim()) return;
+    setInput(priorPrompt);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function isBlockingConfirmation(msg: Message): boolean {
+    return blockingIssuesForMessage(msg).length > 0;
+  }
+
+  function blockingMessage(msg: Message): string {
+    const issues = blockingIssuesForMessage(msg);
+    if (issues.includes("assignee_unresolved")) {
+      return "Confirmation is blocked until assignee details are corrected.";
+    }
+
+    if (issues.includes("used_default_title") || issues.includes("used_default_due_date")) {
+      return "Confirmation is blocked until title and due date are explicitly set.";
+    }
+
+    return "Confirmation is currently blocked until required fields are corrected.";
   }
 
   async function handleQueueWeeklyReport() {
@@ -258,42 +904,162 @@ export function AIChat({ open, onClose }: AIChatProps) {
           className={`w-full sm:w-[800px] max-w-full h-full sm:h-[calc(100vh-130px)] bg-[#10232A] p-2 sm:p-3 rounded-t-[32px] sm:rounded-[36px] flex flex-col shadow-2xl transition-transform duration-300 ease-out border border-white/5 ${open ? "translate-y-0 sm:translate-x-0 opacity-100" : "translate-y-full sm:translate-y-0 sm:translate-x-8 opacity-0"
             }`}
         >
-          <div className="flex-1 bg-[#091519] rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden">
+          <div className="flex-1 relative bg-[#091519] rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden">
+            <div
+              className="absolute inset-0 rounded-[24px] sm:rounded-[28px] pointer-events-none"
+              style={{
+                // backgroundImage: "url('/avatars/12px Flip.png')",
+                backgroundRepeat: "repeat",
+                backgroundSize: "auto",
+                opacity: "12px",
+              }}
+            />
             {/* Header */}
-            <div className="flex items-center gap-4 px-6 pt-6 pb-4 flex-shrink-0">
-              <button
-                onClick={onClose}
-                className="w-8 h-8 flex items-center justify-center hover:bg-white/5 transition-colors rounded-full flex-shrink-0"
-              >
-                <ChevronLeft className="w-6 h-6 text-white" />
-              </button>
+            <div className="flex-shrink-0">
+              <div className="flex items-center gap-4 px-6 pt-6 pb-4">
+                <button
+                  onClick={onClose}
+                  className="w-8 h-8 flex items-center justify-center hover:bg-white/5 transition-colors rounded-full flex-shrink-0"
+                >
+                  <ChevronLeft className="w-6 h-6 text-white" />
+                </button>
 
-              <div className="flex items-center gap-4 flex-1 min-w-0">
-                <div className="w-14 h-14 rounded-full flex-shrink-0 overflow-hidden bg-[#EBA771]">
-                  <Image
-                    src={avatarSrc}
-                    alt={firstName}
-                    width={56}
-                    height={56}
-                    className="w-full h-full object-cover"
-                    unoptimized={avatarSrc.startsWith("http")}
-                  />
+                {/* Avatar + name — hidden on sm when search is open */}
+                <div className={`flex items-center gap-4 min-w-0 transition-all duration-300 ${searchOpen ? "flex-0 sm:flex-1 hidden sm:flex" : "flex-1"}`}>
+                  <div className="w-14 h-14 rounded-full flex-shrink-0 overflow-hidden bg-[#EBA771]">
+                    <Image
+                      src={avatarSrc}
+                      alt={firstName}
+                      width={56}
+                      height={56}
+                      className="w-full h-full object-cover"
+                      unoptimized={avatarSrc.startsWith("http")}
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-white/70 text-[16px] font-normal leading-tight">Hello,</p>
+                    <p className="text-white text-[28px] font-semibold leading-tight truncate">{firstName}!</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-white/70 text-[16px] font-normal leading-tight">Hello,</p>
-                  <p className="text-white text-[28px] font-semibold leading-tight truncate">
-                    {firstName}!
-                  </p>
+
+                {/* Inline search bar — large screens only */}
+                <div className={`hidden sm:flex flex-1 items-center transition-all duration-300 overflow-hidden ${searchOpen ? "opacity-100 max-w-full" : "opacity-0 max-w-0 pointer-events-none"}`}>
+                  <div className="w-full border border-white/20 rounded-full px-5 py-3 flex items-center gap-2 bg-[#091519]">
+                    <Search className="w-4 h-4 text-[#88B3B5] flex-shrink-0" />
+                    <input
+                      ref={searchInputRef}
+                      placeholder="Search..."
+                      className="flex-1 bg-transparent text-white text-sm placeholder:text-[#88B3B5] outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <button
+                    onClick={() => {
+                      setSearchOpen((v) => !v);
+                      setTimeout(() => searchInputRef.current?.focus(), 150);
+                    }}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${searchOpen ? "bg-[#7BB6B8]/20" : "bg-[#132A33] hover:bg-[#1A3844]"}`}
+                  >
+                    <Search className="w-5 h-5 text-[#88B3B5]" />
+                  </button>
+                  <div className="relative" ref={menuRef}>
+                    <button
+                      onClick={() => setIsMenuOpen((prev) => !prev)}
+                      className="w-12 h-12 rounded-full bg-[#132A33] flex items-center justify-center hover:bg-[#1A3844] transition-colors"
+                      aria-label="More options"
+                      aria-expanded={isMenuOpen}
+                    >
+                      {isMenuOpen
+                        ? <X className="w-5 h-5 text-[#88B3B5]" />
+                        : <MoreVertical className="w-5 h-5 text-[#88B3B5]" />}
+                    </button>
+
+                    {isMenuOpen && (
+                      <div className="absolute right-0 top-14 z-50 w-56 rounded-2xl bg-[#132A33] border border-white/10 shadow-xl overflow-hidden">
+                        <div className="px-4 py-2.5 border-b border-white/10">
+                          <p className="text-[#88B3B5] text-[11px] font-semibold uppercase tracking-wider">Quick Actions</p>
+                        </div>
+                        <div className="py-1">
+                          <button
+                            onClick={() => { setIsMenuOpen(false); void handleQueueWeeklyReport(); }}
+                            disabled={isQueueingWeeklyReport || isStreaming}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#B9E9DD] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                          >
+                            <LineChart className="w-4 h-4 flex-shrink-0" />
+                            {isQueueingWeeklyReport ? "Queueing report…" : "Generate Weekly Summary"}
+                          </button>
+
+                          {weeklyReport?.status === "completed" && (
+                            <button
+                              onClick={() => { setIsMenuOpen(false); void handleDownloadWeeklyReport(); }}
+                              className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E4FF] hover:bg-white/5 transition-colors text-left"
+                            >
+                              <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
+                              Download Summary
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => { setIsMenuOpen(false); voiceInputRef.current?.click(); }}
+                            disabled={isRunningQuickAction || isStreaming}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#F2D9A6] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                          >
+                            <FileAudio className="w-4 h-4 flex-shrink-0" />
+                            Voice Input
+                          </button>
+
+                          <button
+                            onClick={() => { setIsMenuOpen(false); fileInputRef.current?.click(); }}
+                            disabled={isRunningQuickAction || isStreaming}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E7A0] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                          >
+                            <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
+                            Analyze File
+                          </button>
+
+                          <button
+                            onClick={() => { setIsMenuOpen(false); void handleTranscriptSummaryAction(); }}
+                            disabled={isRunningQuickAction || isStreaming}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#DAB9FF] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                          >
+                            <FileAudio className="w-4 h-4 flex-shrink-0" />
+                            Summarize Transcript
+                          </button>
+
+                          <button
+                            onClick={() => { setIsMenuOpen(false); void handleForecastAction(); }}
+                            disabled={isRunningQuickAction || isStreaming}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#BCE7FF] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                          >
+                            <LineChart className="w-4 h-4 flex-shrink-0" />
+                            Forecast Overview
+                          </button>
+                        </div>
+
+                        {weeklyReport && weeklyReport.status !== "completed" && (
+                          <div className="px-4 py-2.5 border-t border-white/10">
+                            <p className="text-[#9CC6CA] text-[11px]">
+                              Report: {weeklyReport.status} ({weeklyReport.progress}%)
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 flex-shrink-0">
-                <button className="w-12 h-12 rounded-full bg-[#132A33] flex items-center justify-center hover:bg-[#1A3844] transition-colors">
-                  <Search className="w-5 h-5 text-[#88B3B5]" />
-                </button>
-                <button className="w-12 h-12 rounded-full bg-[#132A33] flex items-center justify-center hover:bg-[#1A3844] transition-colors">
-                  <MoreVertical className="w-5 h-5 text-[#88B3B5]" />
-                </button>
+              {/* Below-header search bar — small screens only */}
+              <div className={`sm:hidden overflow-hidden transition-all duration-300 ease-out ${searchOpen ? "max-h-20 opacity-100 pb-3" : "max-h-0 opacity-0"}`}>
+                <div className="mx-6 border border-white/20 rounded-full px-5 py-3 flex items-center gap-2 bg-[#091519]">
+                  <Search className="w-4 h-4 text-[#88B3B5] flex-shrink-0" />
+                  <input
+                    placeholder="Search..."
+                    className="flex-1 bg-transparent text-white text-sm placeholder:text-[#88B3B5] outline-none"
+                  />
+                </div>
               </div>
             </div>
 
@@ -302,110 +1068,125 @@ export function AIChat({ open, onClose }: AIChatProps) {
               <div className="h-[1px] bg-white/10 w-full" />
             </div>
 
-            {/* Top search bar (decorative, matches screenshot) */}
-            <div className="px-8 py-6 flex-shrink-0">
-              <div className="border border-white/20 rounded-[32px] px-6 py-4 space-y-3">
-                <p className="text-[#88B3B5] text-[15px]">Ask Anything...</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={handleQueueWeeklyReport}
-                    disabled={isQueueingWeeklyReport || isStreaming}
-                    className="rounded-full border border-[#2D6F63] bg-[#113B37] px-3 py-1.5 text-[11px] font-semibold text-[#B9E9DD] hover:bg-[#1B4D47] disabled:opacity-60"
-                  >
-                    {isQueueingWeeklyReport ? "Queueing..." : "Generate Weekly Summary"}
-                  </button>
-                  {weeklyReport && (
-                    <span className="rounded-full border border-[#3D6A78] bg-[#11303A] px-2.5 py-1 text-[11px] text-[#9CC6CA]">
-                      Report {weeklyReport.status} ({weeklyReport.progress}%)
-                    </span>
-                  )}
-                  {weeklyReport?.status === "completed" && (
+            {/* Hidden file inputs — always rendered so menu buttons can trigger them */}
+            <input
+              ref={voiceInputRef}
+              type="file"
+              accept="audio/*"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void handleVoiceFile(file);
+                event.currentTarget.value = "";
+              }}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.xlsx,.xls,.csv"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void handleAnalysisFile(file);
+                event.currentTarget.value = "";
+              }}
+            />
+
+            {/* Landing panel — only visible before the first message */}
+            {!hasMessages && (
+              <div className="px-8 py-6 flex-shrink-0">
+                <div className="border border-white/20 rounded-[32px] px-6 py-5 space-y-4">
+                  <p className="text-[#88B3B5] text-[15px] font-medium">Ask Anything…</p>
+                  <p className="text-white/40 text-[13px] leading-relaxed">
+                    Get summaries, create tasks, schedule meetings, view attendance, or ask anything about your operations.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
                     <button
-                      onClick={handleDownloadWeeklyReport}
-                      className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
+                      onClick={handleQueueWeeklyReport}
+                      disabled={isQueueingWeeklyReport || isStreaming}
+                      className="rounded-full border border-[#2D6F63] bg-[#113B37] px-3 py-1.5 text-[11px] font-semibold text-[#B9E9DD] hover:bg-[#1B4D47] disabled:opacity-60"
                     >
-                      Download Summary
+                      {isQueueingWeeklyReport ? "Queueing..." : "Generate Weekly Summary"}
                     </button>
+                    <button
+                      onClick={() => voiceInputRef.current?.click()}
+                      disabled={isRunningQuickAction || isStreaming}
+                      className="rounded-full border border-[#6B5A3B] bg-[#342A1A] px-3 py-1.5 text-[11px] text-[#F2D9A6] hover:bg-[#433322] disabled:opacity-60"
+                    >
+                      <span className="inline-flex items-center gap-1"><FileAudio className="h-3.5 w-3.5" /> Voice Input</span>
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isRunningQuickAction || isStreaming}
+                      className="rounded-full border border-[#4F5D2A] bg-[#2B3418] px-3 py-1.5 text-[11px] text-[#D8E7A0] hover:bg-[#364221] disabled:opacity-60"
+                    >
+                      <span className="inline-flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5" /> Analyze File</span>
+                    </button>
+                    <button
+                      onClick={handleTranscriptSummaryAction}
+                      disabled={isRunningQuickAction || isStreaming}
+                      className="rounded-full border border-[#5A496E] bg-[#2C2139] px-3 py-1.5 text-[11px] text-[#DAB9FF] hover:bg-[#39294A] disabled:opacity-60"
+                    >
+                      Summarize Transcript
+                    </button>
+                    <button
+                      onClick={handleForecastAction}
+                      disabled={isRunningQuickAction || isStreaming}
+                      className="rounded-full border border-[#355E73] bg-[#132F3C] px-3 py-1.5 text-[11px] text-[#BCE7FF] hover:bg-[#1A3D4D] disabled:opacity-60"
+                    >
+                      <span className="inline-flex items-center gap-1"><LineChart className="h-3.5 w-3.5" /> Forecast</span>
+                    </button>
+                  </div>
+                  {weeklyReport && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="rounded-full border border-[#3D6A78] bg-[#11303A] px-2.5 py-1 text-[11px] text-[#9CC6CA]">
+                        Report: {weeklyReport.status} ({weeklyReport.progress}%)
+                      </span>
+                      {weeklyReport.status === "completed" && (
+                        <button
+                          onClick={handleDownloadWeeklyReport}
+                          className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
+                        >
+                          Download Summary
+                        </button>
+                      )}
+                    </div>
                   )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => voiceInputRef.current?.click()}
-                    disabled={isRunningQuickAction || isStreaming}
-                    className="rounded-full border border-[#6B5A3B] bg-[#342A1A] px-3 py-1.5 text-[11px] text-[#F2D9A6] hover:bg-[#433322] disabled:opacity-60"
-                  >
-                    <span className="inline-flex items-center gap-1"><FileAudio className="h-3.5 w-3.5" /> Voice Input</span>
-                  </button>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isRunningQuickAction || isStreaming}
-                    className="rounded-full border border-[#4F5D2A] bg-[#2B3418] px-3 py-1.5 text-[11px] text-[#D8E7A0] hover:bg-[#364221] disabled:opacity-60"
-                  >
-                    <span className="inline-flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5" /> Analyze File</span>
-                  </button>
-                  <button
-                    onClick={handleTranscriptSummaryAction}
-                    disabled={isRunningQuickAction || isStreaming}
-                    className="rounded-full border border-[#5A496E] bg-[#2C2139] px-3 py-1.5 text-[11px] text-[#DAB9FF] hover:bg-[#39294A] disabled:opacity-60"
-                  >
-                    Summarize Transcript
-                  </button>
-                  <button
-                    onClick={handleForecastAction}
-                    disabled={isRunningQuickAction || isStreaming}
-                    className="rounded-full border border-[#355E73] bg-[#132F3C] px-3 py-1.5 text-[11px] text-[#BCE7FF] hover:bg-[#1A3D4D] disabled:opacity-60"
-                  >
-                    <span className="inline-flex items-center gap-1"><LineChart className="h-3.5 w-3.5" /> Forecast</span>
-                  </button>
-                  <input
-                    ref={voiceInputRef}
-                    type="file"
-                    accept="audio/*"
-                    className="hidden"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) {
-                        void handleVoiceFile(file);
-                      }
-                      event.currentTarget.value = "";
-                    }}
-                  />
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf,.xlsx,.xls,.csv"
-                    className="hidden"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) {
-                        void handleAnalysisFile(file);
-                      }
-                      event.currentTarget.value = "";
-                    }}
-                  />
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Messages area */}
-            <div className="flex-1 overflow-y-auto px-8 py-2 space-y-8 scrollbar-thin scrollbar-thumb-white/10">
+            <div className="flex-1 overflow-y-auto px-6 py-2 space-y-4 scrollbar-thin scrollbar-thumb-white/10">
+              {isInitializing && !hasMessages && (
+                <div className="flex flex-col gap-3 pt-2">
+                  {[80, 55, 70].map((w, i) => (
+                    <div key={i} className={`h-3 rounded-full bg-white/10 animate-pulse`} style={{ width: `${w}%`, animationDelay: `${i * 120}ms` }} />
+                  ))}
+                  <div className="flex gap-3 mt-2">
+                    {[45, 60].map((w, i) => (
+                      <div key={i} className="h-3 rounded-full bg-white/10 animate-pulse" style={{ width: `${w}%`, animationDelay: `${i * 120}ms` }} />
+                    ))}
+                  </div>
+                </div>
+              )}
               {messages.map((msg, index) => (
                 <div key={msg.id}>
                   {msg.role === "user" ? (
                     /* User message */
-                    <div className="flex justify-end mb-6">
+                    <div className="flex justify-end mb-3">
                       <div className="group relative max-w-[75%]">
-                        <div className="bg-[#5B2155] text-white/90 text-[16px] px-6 py-3.5 rounded-[32px] leading-relaxed shadow-sm">
+                        <div className="bg-[#5B2155] text-white/90 text-[13px] px-4 py-2.5 rounded-[20px] leading-relaxed shadow-sm">
                           {msg.content}
                         </div>
                       </div>
                     </div>
                   ) : (
                     /* AI message */
-                    <div className="flex flex-col gap-4 max-w-[65%]">
-                      <div className="bg-gradient-to-b from-[#333333] to-[#16384B] rounded-[24px] p-7 shadow-sm">
+                    <div className="flex flex-col gap-3 max-w-[65%]">
+                      <div className="bg-gradient-to-b from-[#333333] to-[#16384B] rounded-[20px] p-4 shadow-sm">
                         <div
-                          className="text-[#D0E2E3] text-[15px] leading-[1.8] ai-message-content font-light"
+                          className="text-[#D0E2E3] text-[13px] leading-[1.7] ai-message-content font-light"
                           dangerouslySetInnerHTML={{ __html: msg.content.replace(/\n/g, '<br />') }}
                         />
                       </div>
@@ -423,13 +1204,143 @@ export function AIChat({ open, onClose }: AIChatProps) {
                       )}
                       {messagePayload(msg)?.confirmation_required === true && (
                         <div className="pl-1">
-                          <button
-                            onClick={() => handleConfirmAction(index, msg)}
-                            disabled={isStreaming}
-                            className="rounded-full bg-[#2D6F63] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#358372] disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Confirm Action
-                          </button>
+                          {(() => {
+                            const previewRows = confirmationPreviewRows(msg);
+                            if (previewRows.length === 0) {
+                              return null;
+                            }
+
+                            return (
+                              <div className="mb-2 rounded-xl border border-[#2F5E5A]/70 bg-[#152B2A] px-3 py-2">
+                                <p className="text-[11px] font-semibold text-[#A6DFD2] mb-1">Parsed action details:</p>
+                                <div className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1">
+                                  {previewRows.map((row) => (
+                                    <div key={`${msg.id}-preview-${row.key}`} className="contents">
+                                      <span className="text-[11px] text-[#8CB9B3]">{row.label}</span>
+                                      <span className={`text-[11px] ${row.warning ? "text-[#F2B4A6]" : "text-[#C9E5E0]"}`}>
+                                        {row.value}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                          {(() => {
+                            const args = actionArgsForMessage(msg);
+                            if (!args) {
+                              return null;
+                            }
+                            const fields = editFieldsForMessage(msg, args);
+                            if (fields.length === 0) {
+                              return null;
+                            }
+
+                            return (
+                              <div className="mb-2 rounded-xl border border-[#355C57]/70 bg-[#102322] px-3 py-2">
+                                <p className="text-[11px] font-semibold text-[#9FD3C8] mb-2">Edit before confirm:</p>
+                                <div className="grid grid-cols-1 gap-2">
+                                  {fields.map((field) => {
+                                    const value = editFieldValue(msg, args, field);
+                                    const baseClassName = "w-full rounded-lg border border-[#355C57] bg-[#0D1C1C] px-2.5 py-2 text-[12px] text-[#D0E2E3] outline-none focus:border-[#4F8C83]";
+
+                                    if (field.control === "select") {
+                                      const options = field.options ?? [];
+                                      const hasCurrent = value !== "" && !options.some((opt) => opt.value === value);
+
+                                      return (
+                                        <div key={`${msg.id}-edit-${field.key}`} className="grid gap-1">
+                                          <label className="text-[11px] text-[#8CB9B3]">{field.label}</label>
+                                          <select
+                                            value={value}
+                                            onChange={(e) => updateActionDraft(msg.id, field.key, e.target.value)}
+                                            className={baseClassName}
+                                          >
+                                            <option value="">Select {field.label}</option>
+                                            {hasCurrent && <option value={value}>{toTitleCase(value)}</option>}
+                                            {options.map((option) => (
+                                              <option key={`${msg.id}-opt-${field.key}-${option.value}`} value={option.value}>
+                                                {option.label}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      );
+                                    }
+
+                                    if (field.control === "textarea") {
+                                      return (
+                                        <div key={`${msg.id}-edit-${field.key}`} className="grid gap-1">
+                                          <label className="text-[11px] text-[#8CB9B3]">{field.label}</label>
+                                          <textarea
+                                            value={value}
+                                            onChange={(e) => updateActionDraft(msg.id, field.key, e.target.value)}
+                                            rows={3}
+                                            className={`${baseClassName} resize-none`}
+                                          />
+                                        </div>
+                                      );
+                                    }
+
+                                    const inputType = field.control === "datetime-local"
+                                      ? "datetime-local"
+                                      : field.control === "date"
+                                        ? "date"
+                                        : field.control === "number"
+                                          ? "number"
+                                          : "text";
+
+                                    return (
+                                      <div key={`${msg.id}-edit-${field.key}`} className="grid gap-1">
+                                        <label className="text-[11px] text-[#8CB9B3]">{field.label}</label>
+                                        <input
+                                          type={inputType}
+                                          value={value}
+                                          onChange={(e) => updateActionDraft(msg.id, field.key, e.target.value)}
+                                          className={baseClassName}
+                                        />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                          {Array.isArray(messagePayload(msg)?.validation_warnings) && (messagePayload(msg)?.validation_warnings as unknown[]).length > 0 && (
+                            <div className="mb-2 rounded-xl border border-[#7A5A2A]/60 bg-[#2F2617] px-3 py-2">
+                              <p className="text-[11px] font-semibold text-[#F2D9A6] mb-1">Please review before confirming:</p>
+                              <ul className="space-y-1">
+                                {(messagePayload(msg)?.validation_warnings as unknown[]).map((warning, idx) => (
+                                  <li key={`${msg.id}-warn-${idx}`} className="text-[11px] text-[#EBCFA0] leading-relaxed">
+                                    - {String(warning)}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {isBlockingConfirmation(msg) && (
+                            <p className="mb-2 text-[11px] text-[#F2B4A6]">
+                              {blockingMessage(msg)}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-2">
+                            {isBlockingConfirmation(msg) && (
+                              <button
+                                onClick={() => handleEditActionDetails(index)}
+                                disabled={isStreaming}
+                                className="rounded-full border border-[#7A5A2A]/70 bg-[#2F2617] px-3 py-2 text-[11px] font-semibold text-[#F2D9A6] hover:bg-[#3B2E1D] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Edit Details
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleConfirmAction(index, msg)}
+                              disabled={isStreaming || isBlockingConfirmation(msg)}
+                              className="rounded-full bg-[#2D6F63] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#358372] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Confirm Action
+                            </button>
+                          </div>
                         </div>
                       )}
 
@@ -488,27 +1399,31 @@ export function AIChat({ open, onClose }: AIChatProps) {
             </div>
 
             {/* Bottom input */}
-            <div className="px-8 pb-10 pt-4 flex-shrink-0">
-              <div className="flex items-center gap-2 bg-[#DCE0E1] rounded-[48px] p-2 pl-5 shadow-lg">
-                <button className="w-10 h-10 flex items-center justify-center text-[#091519] hover:text-black transition-colors flex-shrink-0">
-                  <Camera className="w-6 h-6" />
+            <div className="px-6 pb-6 pt-3 flex-shrink-0">
+              <div className="flex items-center gap-2 bg-[#DCE0E1] rounded-[40px] p-1.5 pl-4 shadow-lg">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-8 h-8 flex items-center justify-center text-[#091519] hover:text-black transition-colors flex-shrink-0"
+                  title="Upload file"
+                >
+                  <Paperclip className="w-5 h-5" />
                 </button>
-                <div className="flex-1 bg-[#CDD1D2] rounded-[40px] flex items-center px-6 h-[60px] ml-1 border border-black/5 shadow-inner">
+                <div className="flex-1 bg-[#CDD1D2] rounded-[32px] flex items-center px-5 h-[40px] ml-1 border border-black/5 shadow-inner">
                   <input
                     ref={inputRef}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Ask Anything..."
-                    className="flex-1 bg-transparent text-[#091519] text-[16px] placeholder:text-[#091519]/60 font-medium outline-none min-w-0"
+                    className="flex-1 bg-transparent text-[#091519] text-[14px] placeholder:text-[#091519]/60 font-medium outline-none min-w-0"
                   />
                 </div>
                 {input.trim() && (
                   <button
                     onClick={() => sendMessage()}
-                    className="w-14 h-14 rounded-full bg-[#16384B] flex items-center justify-center flex-shrink-0 hover:bg-[#16384B]/80 transition-colors ml-2 mr-1"
+                    className="w-10 h-10 rounded-full bg-[#16384B] flex items-center justify-center flex-shrink-0 hover:bg-[#16384B]/80 transition-colors ml-1 mr-0.5"
                   >
-                    <ChevronLeft className="w-6 h-6 text-white rotate-180" />
+                    <ChevronLeft className="w-5 h-5 text-white rotate-180" />
                   </button>
                 )}
               </div>

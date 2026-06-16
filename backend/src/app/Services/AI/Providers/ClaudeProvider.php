@@ -25,6 +25,10 @@ class ClaudeProvider implements AiProviderContract
         $timeoutMs = (int) config('services.ai.request_timeout_ms', 30000);
         $baseUrl = rtrim((string) config('services.ai.claude.base_url', 'https://api.anthropic.com/v1'), '/');
 
+        $configuredMaxTokens = max(64, (int) config('services.ai.max_tokens', 4000));
+        $requestedMaxTokens = (int) ($options['max_tokens'] ?? 400);
+        $effectiveMaxTokens = max(64, min($configuredMaxTokens, $requestedMaxTokens));
+
         $response = $this->http
             ->timeout(max(1, (int) ceil($timeoutMs / 1000)))
             ->withHeaders([
@@ -33,7 +37,7 @@ class ClaudeProvider implements AiProviderContract
             ])
             ->post($baseUrl . '/messages', [
                 'model' => (string) ($options['model'] ?? config('services.ai.claude.model', config('services.ai.analyst_model'))),
-                'max_tokens' => (int) ($options['max_tokens'] ?? 400),
+                'max_tokens' => $effectiveMaxTokens,
                 'system' => $systemPrompt,
                 'messages' => [
                     [

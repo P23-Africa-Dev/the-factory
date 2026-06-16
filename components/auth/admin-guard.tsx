@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth";
+import { clearAuthSession } from "@/lib/auth/session";
 
 const ADMIN_ROLES = ["owner", "admin", "supervisor"];
 
@@ -14,6 +15,7 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hasHydrated) return;
     if (!user) {
+      clearAuthSession();
       router.replace("/login");
       return;
     }

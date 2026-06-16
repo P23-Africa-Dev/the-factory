@@ -8,6 +8,7 @@ const {
     getCopilotThreadMock,
     deleteCopilotThreadMock,
     sendCopilotMessageStreamMock,
+    sendCopilotMessageMock,
     queueWeeklySummaryReportMock,
     getWeeklySummaryStatusMock,
 } = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ const {
     getCopilotThreadMock: vi.fn(),
     deleteCopilotThreadMock: vi.fn(),
     sendCopilotMessageStreamMock: vi.fn(),
+    sendCopilotMessageMock: vi.fn(),
     queueWeeklySummaryReportMock: vi.fn(),
     getWeeklySummaryStatusMock: vi.fn(),
 }));
@@ -28,6 +30,7 @@ vi.mock("@/lib/api/copilot", () => ({
     getCopilotThread: getCopilotThreadMock,
     deleteCopilotThread: deleteCopilotThreadMock,
     sendCopilotMessageStream: sendCopilotMessageStreamMock,
+    sendCopilotMessage: sendCopilotMessageMock,
     queueWeeklySummaryReport: queueWeeklySummaryReportMock,
     getWeeklySummaryStatus: getWeeklySummaryStatusMock,
     downloadWeeklySummaryReport: vi.fn(),

@@ -156,6 +156,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/chat', [CopilotController::class, 'chat'])
             ->middleware('throttle:20,1')
             ->name('chat');
+        Route::get('/assignees', [CopilotController::class, 'assignees'])
+            ->middleware('throttle:30,1')
+            ->name('assignees.index');
         Route::get('/threads', [CopilotController::class, 'index'])->name('threads.index');
         Route::get('/threads/{thread}', [CopilotController::class, 'show'])->name('threads.show');
         Route::delete('/threads/{thread}', [CopilotController::class, 'destroy'])->name('threads.destroy');

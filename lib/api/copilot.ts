@@ -87,6 +87,13 @@ export type WeeklySummaryStatusResponse = {
     available: boolean;
 };
 
+export type CopilotAssigneeOption = {
+    id: number;
+    name: string;
+    email: string;
+    role: string | null;
+};
+
 function buildQuery(companyId?: number | string): string {
     if (companyId === undefined || companyId === null || String(companyId).trim() === "") {
         return "";
@@ -141,6 +148,34 @@ export function sendCopilotMessage(
             ...payload,
             stream: false,
         },
+        token,
+    });
+}
+
+export function lookupCopilotAssignees(
+    token: string,
+    query: string,
+    companyId?: number | string,
+    limit = 8
+): Promise<ApiEnvelope<{ items: CopilotAssigneeOption[] }>> {
+    const params = new URLSearchParams();
+    const trimmed = query.trim();
+
+    if (trimmed !== "") {
+        params.set("query", trimmed);
+    }
+
+    params.set("limit", String(limit));
+
+    if (companyId !== undefined && companyId !== null && String(companyId).trim() !== "") {
+        params.set("company_id", String(companyId));
+    }
+
+    const suffix = params.toString();
+
+    return apiRequest<{ items: CopilotAssigneeOption[] }>({
+        method: "GET",
+        path: `/copilot/assignees${suffix ? `?${suffix}` : ""}`,
         token,
     });
 }
@@ -275,7 +310,7 @@ export async function sendCopilotMessageStream(
         method: "POST",
         headers: {
             "Content-Type": "application/json",
-            "Accept": "text/event-stream",
+            "Accept": "text/event-stream, application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
@@ -284,7 +319,7 @@ export async function sendCopilotMessageStream(
         }),
     });
 
-    if (!response.ok || !response.body) {
+    if (!response.ok) {
         let message = "Unable to start Copilot streaming response.";
         try {
             const errorPayload = await response.json();
@@ -294,10 +329,32 @@ export async function sendCopilotMessageStream(
         throw new ApiRequestError(message, response.status, null);
     }
 
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+        const payloadJson = (await response.json()) as ApiEnvelope<CopilotChatResponse>;
+        const doneEvent: StreamEventDone = {
+            thread_id: payloadJson?.data?.thread_id ?? "",
+            message: payloadJson?.data?.response?.content ?? "",
+            tool: payloadJson?.data?.response?.tool ?? null,
+            sources: payloadJson?.data?.response?.sources ?? [],
+            payload: payloadJson?.data?.response?.payload ?? null,
+        };
+
+        handlers.onMeta?.({ thread_id: doneEvent.thread_id });
+        handlers.onDone?.(doneEvent);
+        return doneEvent;
+    }
+
+    if (!response.body) {
+        throw new ApiRequestError("Copilot stream response body is empty.", 500, null);
+    }
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
     let doneEvent: StreamEventDone | null = null;
+    let lastMeta: StreamEventMeta | null = null;
+    let accumulatedMessage = "";
 
     while (true) {
         const { value, done } = await reader.read();
@@ -324,9 +381,12 @@ export async function sendCopilotMessageStream(
             }
 
             if (eventName === "meta") {
-                handlers.onMeta?.(parsed as StreamEventMeta);
+                lastMeta = parsed as StreamEventMeta;
+                handlers.onMeta?.(lastMeta);
             } else if (eventName === "delta") {
-                handlers.onDelta?.(parsed as StreamEventDelta);
+                const deltaEvent = parsed as StreamEventDelta;
+                accumulatedMessage += deltaEvent.chunk ?? "";
+                handlers.onDelta?.(deltaEvent);
             } else if (eventName === "done") {
                 doneEvent = parsed as StreamEventDone;
                 handlers.onDone?.(doneEvent);
@@ -335,6 +395,18 @@ export async function sendCopilotMessageStream(
     }
 
     if (!doneEvent) {
+        if (lastMeta) {
+            doneEvent = {
+                thread_id: lastMeta.thread_id,
+                message: accumulatedMessage.trim(),
+                tool: null,
+                sources: [],
+                payload: null,
+            };
+            handlers.onDone?.(doneEvent);
+            return doneEvent;
+        }
+
         throw new ApiRequestError("Copilot stream ended unexpectedly.", 500, null);
     }
 
