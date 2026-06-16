@@ -21,7 +21,7 @@ export function DownloadAgentAppModal({ isOpen, onClose }: DownloadAgentAppModal
     if (typeof window !== 'undefined') {
       const ua = window.navigator.userAgent.toLowerCase();
       const isIphoneOrIpad = ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod');
-      setIsIos(isIphoneOrIpad);
+      setTimeout(() => setIsIos(isIphoneOrIpad), 0);
     }
   }, []);
 

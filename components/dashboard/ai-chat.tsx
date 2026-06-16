@@ -194,7 +194,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   useEffect(() => {
     if (!open || !companyId) return;
     setIsInitializing(true);
-    void initialize(companyId).finally(() => setIsInitializing(false));
+    Promise.resolve(initialize(companyId)).finally(() => setIsInitializing(false));
   }, [companyId, initialize, open]);
 
   useEffect(() => {

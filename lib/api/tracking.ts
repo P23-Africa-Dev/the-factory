@@ -8,10 +8,8 @@ import type { TaskApiItem } from "./tasks";
 import type {
   StartTrackingPayload,
   RecordLocationPayload,
-  RecordLocationResponse,
   TrackingSession,
   TaskRoute,
-  AgentLocationsListData,
 } from "@/types/tracking";
 
 export type { TrackingSession, TaskRoute };
