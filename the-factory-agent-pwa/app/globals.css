@@ -1,22 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0A1D25;
+  --foreground: #FAFAFA;
+
+  /* Input colours — single source of truth for autofill overrides */
+  --input-bg: #0F2B36;
+  --input-text: #FAFAFA;
+  --input-placeholder: #DEDEDE;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
@@ -24,3 +20,25 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ─── Autofill override ───────────────────────────────────────────────────────
+ * Browsers apply a forced UA background to :-webkit-autofill that ignores
+ * background-color. The only reliable fix is a large inset box-shadow that
+ * visually covers the autofill paint, combined with -webkit-text-fill-color
+ * to keep text legible.
+ * Applied to all autofill states: default, hover, focus, active.
+ * ─────────────────────────────────────────────────────────────────────────── */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  /* Flood-fill the autofill background with the input's own colour */
+  -webkit-box-shadow: 0 0 0 9999px var(--input-bg) inset !important;
+  box-shadow: 0 0 0 9999px var(--input-bg) inset !important;
+  /* Keep text colour correct — background-color doesn't work here */
+  -webkit-text-fill-color: var(--input-text) !important;
+  /* Smooth the transition so it doesn't flash on fill */
+  transition: background-color 9999s ease-in-out 0s;
+  caret-color: var(--input-text);
+}
+

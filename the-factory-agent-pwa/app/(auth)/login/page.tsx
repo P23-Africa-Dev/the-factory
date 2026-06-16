@@ -175,9 +175,13 @@ export default function LoginPage() {
               onChange={setAgreed}
               className="mb-5 items-start"
               label={
-                <span className="text-xs text-[#F1F1F1] font-sans leading-relaxed">
+                <span className="text-xs text-[#FAFAFA]/80 font-sans leading-relaxed">
                   By using Factory 23, you agree to our{' '}
-                  <a href="#" onClick={handleTermsPress} className="font-semibold underline">
+                  <a
+                    href="#"
+                    onClick={handleTermsPress}
+                    className="font-semibold text-[#75ADAF] underline underline-offset-2"
+                  >
                     Terms, conditions and Privacy Policy.
                   </a>
                 </span>
