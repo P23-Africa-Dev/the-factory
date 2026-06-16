@@ -174,7 +174,7 @@ export function NotificationPanel({ open, onClose }: NotificationPanelProps): Re
               ) : isError ? (
                 <div className="flex flex-col items-center justify-center py-20 px-8 text-center gap-4">
                   <span className="text-3xl">⚠️</span>
-                  <h4 className="text-base font-semibold text-white">Couldn't load notifications</h4>
+                  <h4 className="text-base font-semibold text-white">Couldn&apos;t load notifications</h4>
                   <p className="text-xs text-white/50 leading-relaxed">
                     Check your internet connection and try again.
                   </p>

@@ -38,11 +38,12 @@ export default function ForgotPasswordPage() {
     try {
       const res = await forgotPassword({ email: data.email });
       setSuccessMessage(res.message || 'Check your email for a reset link.');
-    } catch (err: any) {
-      if (err?.errors?.email) {
-        setError('email', { message: err.errors.email[0] });
+    } catch (err: unknown) {
+      const apiErr = err as { errors?: { email?: string[] }, message?: string };
+      if (apiErr?.errors?.email) {
+        setError('email', { message: apiErr.errors.email[0] });
       } else {
-        setError('root', { message: err?.message ?? 'Something went wrong. Please try again.' });
+        setError('root', { message: apiErr?.message ?? 'Something went wrong. Please try again.' });
       }
     }
   };
@@ -94,7 +95,7 @@ export default function ForgotPasswordPage() {
               Forgot Password
             </h2>
             <p className="text-sm text-[#DEDEDE] leading-relaxed text-center mb-8 font-sans">
-              Enter your email and we'll send a reset link if your account is eligible.
+              Enter your email and we&apos;ll send a reset link if your account is eligible.
             </p>
 
             {errors.root && (

@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "fix-all-lint.js",
+    "start-dev.js",
   ]),
 ]);
 

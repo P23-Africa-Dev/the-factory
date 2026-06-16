@@ -45,7 +45,7 @@ export function MeetingWidget({ selectedDate }: MeetingWidgetProps): React.React
   const [localDate, setLocalDate] = useState(selectedDate);
 
   useEffect(() => {
-    setLocalDate(selectedDate);
+    setTimeout(() => setLocalDate(selectedDate), 0);
   }, [selectedDate]);
 
   const dateStr = localDate.toISOString().slice(0, 10);

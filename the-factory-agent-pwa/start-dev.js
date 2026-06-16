@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 /**
  * start-dev.js — PWA development server bootstrap
  *

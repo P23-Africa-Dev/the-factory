@@ -2,7 +2,7 @@
 
 import React, { Suspense, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Camera, ShieldAlert, X, Search, Clock, ArrowLeft, ArrowRight, Play, CheckCircle } from 'lucide-react';
+import { X } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
@@ -505,7 +505,7 @@ function AddNoteModal({
 }) {
   const [note, setNote] = useState('');
   const [photos, setPhotos] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
+  const [_previews, setPreviews] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -560,8 +560,8 @@ function AddNoteModal({
       setPhotos([]);
       setPreviews([]);
       onDone();
-    } catch (err: any) {
-      const msg = err && err.message ? err.message : 'Could not complete task. Please try again.';
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not complete task. Please try again.';
       alert(`Completion failed: ${msg}`);
     } finally {
       setIsSubmitting(false);
@@ -629,7 +629,6 @@ function AddNoteModal({
 // ─── Main Content Component ───────────────────────────────────────────────────
 
 function MapContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
@@ -692,25 +691,25 @@ function MapContent() {
   useEffect(() => {
     if (selectedDestination !== null) return;
     if (!activeTask?.latitude || !activeTask?.longitude) return;
-    setSelectedDestination({
+    setTimeout(() => setSelectedDestination({
       name: activeTask.title,
       address: activeTask.address ?? undefined,
       latitude: activeTask.latitude,
       longitude: activeTask.longitude,
       taskId: Number(activeTask.id),
-    });
+    }), 0);
   }, [activeTask, selectedDestination]);
 
   // Advance idle → destination_selected when destination arrives
   useEffect(() => {
     if (phase === 'idle' && selectedDestination) {
-      setPhase('destination_selected');
+      setTimeout(() => setPhase('destination_selected'), 0);
     }
   }, [phase, selectedDestination]);
 
   // Load recents on mount
   useEffect(() => {
-    setRecentDestinations(getRecentDestinations());
+    setTimeout(() => setRecentDestinations(getRecentDestinations()), 0);
   }, []);
 
   const searchGeoDestPlaces = useCallback(async (query: string): Promise<void> => {
@@ -871,7 +870,7 @@ function MapContent() {
       taskId: taskIdForDest,
     });
     saveRecentDestination(dest);
-    setRecentDestinations(getRecentDestinations());
+    setTimeout(() => setRecentDestinations(getRecentDestinations()), 0);
     setIsDestSearchOpen(false);
     setSearchQuery('');
     setGeoDestResults([]);
@@ -949,12 +948,12 @@ function MapContent() {
             setPhase('activity_started');
             if (data.arrived) setHasArrived(true);
           },
-          onError: (err: any) => {
-            alert(`Could not start activity: ${err.message || 'Please try again.'}`);
+          onError: (err: unknown) => {
+            alert(`Could not start activity: ${err instanceof Error ? err.message : 'Please try again.'}`);
           },
         },
       );
-    } catch (err) {
+    } catch (_err) {
       alert('Location error: Could not get your current position. Please try again.');
     }
   }, [selectedDestination, tasks, companyId, startTask, requestPermission, getCurrentPosition]);
@@ -1016,7 +1015,7 @@ function MapContent() {
           {hasArrived && phase === 'activity_started' && (
             <div className="mx-4 mt-2 bg-[#113948] border-l-4 border-[#75ADAF] rounded-xl p-3 shadow-lg flex items-center justify-center pointer-events-auto select-none">
               <span className="font-sans font-bold text-xs text-white text-center">
-                You've arrived at the destination!
+                You&apos;ve arrived at the destination!
               </span>
             </div>
           )}

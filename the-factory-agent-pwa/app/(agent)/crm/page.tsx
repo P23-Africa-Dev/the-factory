@@ -16,7 +16,7 @@ import { NotificationPanel, useUnreadCount } from '@/features/notifications';
 const PREVIEW_COUNT = 5;
 
 export default function CrmDashboardPage() {
-  const { user } = useAuth();
+  useAuth();
   const { goToAllLeads, goToLeadDetail } = useCrmNavigation();
 
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);

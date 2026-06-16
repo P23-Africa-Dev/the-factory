@@ -58,17 +58,18 @@ export default function ResetPasswordPage() {
         password_confirmation: data.password_confirmation,
       });
       setSuccessMessage(res.message || 'Your password has been reset successfully.');
-    } catch (err: any) {
-      if (err?.errors?.token) {
+    } catch (err: unknown) {
+      const apiErr = err as { errors?: { token?: string[], password?: string[], password_confirmation?: string[] }, message?: string };
+      if (apiErr?.errors?.token) {
         setError('root', {
           message: 'This reset link is invalid or has expired. Please request a new one.',
         });
-      } else if (err?.errors?.password) {
-        setError('password', { message: err.errors.password[0] });
-      } else if (err?.errors?.password_confirmation) {
-        setError('password_confirmation', { message: err.errors.password_confirmation[0] });
+      } else if (apiErr?.errors?.password) {
+        setError('password', { message: apiErr.errors.password[0] });
+      } else if (apiErr?.errors?.password_confirmation) {
+        setError('password_confirmation', { message: apiErr.errors.password_confirmation[0] });
       } else {
-        setError('root', { message: err?.message ?? 'Something went wrong. Please try again.' });
+        setError('root', { message: apiErr?.message ?? 'Something went wrong. Please try again.' });
       }
     }
   };
