@@ -16,6 +16,8 @@
 # next.js
 /.next/
 /out/
+/the-factory-agent-pwa/.next/
+/the-factory-agent-pwa/out/
 
 # production
 /build
