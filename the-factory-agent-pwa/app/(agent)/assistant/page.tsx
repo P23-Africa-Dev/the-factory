@@ -178,7 +178,7 @@ export default function AiAssistantPage() {
                   onClick={() => handleSendMessage('My schedule today')}
                   className="w-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 rounded-2xl py-4 px-5 text-left text-xs font-semibold text-[#D0E2E3] transition-all active:scale-98"
                 >
-                  📅 Today's meetings
+                  📅 Today&apos;s meetings
                 </button>
               </div>
             </div>

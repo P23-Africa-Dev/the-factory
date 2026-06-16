@@ -106,7 +106,7 @@ export const useTrackingStore = create<TrackingStore>((set) => ({
 
   removeTask: (taskId) =>
     set((state) => {
-      const { [taskId]: _removed, ...rest } = state.liveTaskMap;
+      const { [taskId]: _unused, ...rest } = state.liveTaskMap; void _unused;
       return { liveTaskMap: rest };
     }),
 

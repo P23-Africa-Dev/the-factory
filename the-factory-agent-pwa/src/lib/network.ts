@@ -4,7 +4,7 @@
  */
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 
 export function useNetworkStatus() {
   const [isConnected, setIsConnected] = useState(() =>

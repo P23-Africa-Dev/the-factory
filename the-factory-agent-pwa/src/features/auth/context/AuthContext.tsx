@@ -42,8 +42,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (storedUser?.company_id && typeof storedUser.company_id === 'number') {
         setActiveCompanyId(storedUser.company_id);
       }
-      setToken(storedToken);
-      setUser(storedUser);
+      setTimeout(() => setToken(storedToken), 0);
+      setTimeout(() => setUser(storedUser), 0);
     } catch (err) {
       console.error('[Auth] Hydration error:', err);
     } finally {

@@ -37,7 +37,7 @@ export function DateTimePickerModal({
 
   useEffect(() => {
     if (visible && value) {
-      setTempValue(formatDateForInput(value));
+      setTimeout(() => setTempValue(formatDateForInput(value)), 0);
     }
   }, [visible, value]);
 

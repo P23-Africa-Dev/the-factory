@@ -89,11 +89,13 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
   // Populate edit fields when lead loads
   useEffect(() => {
     if (lead) {
-      setEditName(lead.name);
-      setEditPhone(lead.phone ?? '');
-      setEditEmail(lead.email ?? '');
-      setEditLocation(lead.location ?? '');
-      setEditSource(lead.source ?? '');
+      setTimeout(() => {
+        setEditName(lead.name);
+        setEditPhone(lead.phone ?? '');
+        setEditEmail(lead.email ?? '');
+        setEditLocation(lead.location ?? '');
+        setEditSource(lead.source ?? '');
+      }, 0);
     }
   }, [lead]);
 

@@ -18,7 +18,7 @@ export function ClockInModal({ visible, onClose }: ClockInModalProps): React.Rea
 
   const isClockedIn = today?.isClockedIn ?? false;
   const isSubmitting = isClockingIn || isClockingOut;
-  const action = isClockedIn ? 'clock_out' : 'clock_in';
+  const _action = isClockedIn ? 'clock_out' : 'clock_in';
 
   const blockedReason = !today
     ? null
@@ -47,8 +47,9 @@ export function ClockInModal({ visible, onClose }: ClockInModalProps): React.Rea
       await actionFn(payload);
       toast.success(isClockedIn ? 'Clocked out' : 'Clocked in', 'Your location has been recorded.');
       onClose();
-    } catch (err: any) {
-      const message = err?.message || 'Something went wrong. Please try again.';
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      const message = apiErr?.message || 'Something went wrong. Please try again.';
       toast.error(message);
     }
   };

@@ -161,6 +161,21 @@ describe("AIChat", () => {
     });
 
     it("queues weekly summary from quick action button", async () => {
+        useCopilotChatMock.mockReturnValue({
+            messages: [],
+            isStreaming: false,
+            weeklyReport: null,
+            isQueueingWeeklyReport: false,
+            initialize: initializeMock,
+            sendMessage: sendMessageMock,
+            queueWeeklyReport: queueWeeklyReportMock,
+            downloadWeeklyReport: downloadWeeklyReportMock,
+            runVoiceTranscription: runVoiceTranscriptionMock,
+            runFileAnalysis: runFileAnalysisMock,
+            runTranscriptSummary: runTranscriptSummaryMock,
+            loadForecastOverview: loadForecastOverviewMock,
+        });
+
         render(<AIChat open onClose={() => { }} />);
 
         fireEvent.click(screen.getByText("Generate Weekly Summary"));

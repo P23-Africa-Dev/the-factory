@@ -89,7 +89,7 @@ export default function TaskDetailPage() {
   const statusColor = STATUS_COLOR[task.status] || '#8F9098';
   const isActive = task.status === 'in_progress';
   const isPending = task.status === 'pending';
-  const isDone = task.status === 'completed' || task.status === 'cancelled';
+  const _isDone = task.status === 'completed' || task.status === 'cancelled';
 
   return (
     <div className="flex flex-col flex-1 bg-[#0A1D25] min-h-screen">

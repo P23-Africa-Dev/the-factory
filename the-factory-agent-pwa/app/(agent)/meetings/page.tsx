@@ -14,14 +14,6 @@ const FILTERS: Array<{ label: string; value: MeetingStatus | 'all' }> = [
   { label: 'Cancelled', value: 'cancelled' },
 ];
 
-function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
 type Section = { title: string; items: Meeting[] };
 
 function groupMeetings(meetings: Meeting[]): Section[] {
@@ -68,7 +60,6 @@ export default function MeetingsListPage() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-    refetch,
   } = useMeetingList(filters);
 
   const allMeetings = useMemo(

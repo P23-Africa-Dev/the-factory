@@ -158,7 +158,6 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [actionMap, setActionMap] = useState<Record<string, MessageAction>>({});
   const [copiedMap, setCopiedMap] = useState<Record<string, boolean>>({});
   const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
   const [assigneeOptions, setAssigneeOptions] = useState<Record<string, AssigneeOptionsState>>({});
@@ -193,12 +192,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
   useEffect(() => {
     if (!open || !companyId) return;
-    setIsInitializing(true);
-    void initialize(companyId).finally(() => setIsInitializing(false));
+    setTimeout(() => setIsInitializing(true), 0);
+    Promise.resolve(initialize(companyId)).finally(() => setIsInitializing(false));
   }, [companyId, initialize, open]);
 
   useEffect(() => {
-    setAssigneeOptions({});
+    setTimeout(() => setAssigneeOptions({}), 0);
   }, [companyId]);
 
   useEffect(() => {

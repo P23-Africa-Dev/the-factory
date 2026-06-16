@@ -130,6 +130,7 @@ export function CompleteTaskSheet({
               <div className="grid grid-cols-3 gap-2 mb-3">
                 {previews.map((url, i) => (
                   <div key={i} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={url} className="w-full h-full object-cover" alt="" />
                     <button
                       onClick={() => removeFile(i)}

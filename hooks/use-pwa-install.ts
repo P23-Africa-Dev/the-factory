@@ -5,17 +5,17 @@ import { useEffect, useState, useRef } from 'react';
 export function usePwaInstall() {
   const [canInstall, setCanInstall] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
-  const deferredPrompt = useRef<any>(null);
+  const deferredPrompt = useRef<Event | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     // Check if already in standalone mode (installed)
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches 
-      || (navigator as any).standalone 
+      || !!(navigator as unknown as { standalone?: boolean }).standalone
       || document.referrer.includes('android-app://');
     
-    setIsInstalled(isStandalone);
+    setTimeout(() => setIsInstalled(isStandalone), 0);
 
     const handleBeforeInstallPrompt = (e: Event) => {
       // Prevent standard browser install prompts
@@ -45,8 +45,12 @@ export function usePwaInstall() {
     if (!deferredPrompt.current) return false;
     
     try {
-      deferredPrompt.current.prompt();
-      const { outcome } = await deferredPrompt.current.userChoice;
+      const promptEvent = deferredPrompt.current as unknown as { 
+        prompt: () => void; 
+        userChoice: Promise<{ outcome: string }>; 
+      };
+      promptEvent.prompt();
+      const { outcome } = await promptEvent.userChoice;
       deferredPrompt.current = null;
       setCanInstall(false);
       return outcome === 'accepted';
