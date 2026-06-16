@@ -16,6 +16,7 @@ const eslintConfig = defineConfig([
     "backend/**",
     "coverage/**",
     "dist/**",
+    "the-factory-agent-pwa/**",
   ]),
 ]);
 

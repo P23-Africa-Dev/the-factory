@@ -8,12 +8,13 @@ import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { clearAuthSession, getAuthTokenFromDocument } from "@/lib/auth/session";
 import { logout } from "@/lib/api/auth";
-import { ChevronDown, Menu, X, LogOut, User } from "lucide-react";
+import { ChevronDown, Menu, X, LogOut, User, Smartphone } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils/sample";
 import LogoutModal from "@/components/ui/logout-modal";
 import { NotificationPanel } from "@/components/notifications/notification-panel";
 import { useUnreadCount } from "@/hooks/use-notifications";
+import { DownloadAgentAppModal } from "@/components/pwa/DownloadAgentAppModal";
 
 // Import local SVG assets
 import DashboardIcon from "@/assets/nav-icons/dashboard.svg";
@@ -85,6 +86,7 @@ export function Navbar() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [pwaModalOpen, setPwaModalOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const user = useAuthStore((s) => s.user);
   const clearUser = useAuthStore((s) => s.clearUser);
@@ -396,6 +398,18 @@ export function Navbar() {
                     </Link>
                   );
                 })}
+
+                {/* Download Agent App Mobile Trigger */}
+                <button
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    setPwaModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-4 p-4 rounded-2xl transition-all text-[#75ADAF] hover:bg-white/5 cursor-pointer text-left"
+                >
+                  <Smartphone size={22} className="opacity-80" />
+                  <span className="text-lg font-bold">Download Agent App</span>
+                </button>
               </div>
 
               <div className="mt-auto space-y-6">
@@ -469,6 +483,9 @@ export function Navbar() {
 
       {/* Notification Panel */}
       <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} />
+
+      {/* PWA Download Modal */}
+      <DownloadAgentAppModal isOpen={pwaModalOpen} onClose={() => setPwaModalOpen(false)} />
     </nav>
   );
 }
