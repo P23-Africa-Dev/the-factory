@@ -189,8 +189,8 @@ export default function TasksPage() {
           toast.success('Task declined');
           setTaskToDecline(null);
         },
-        onError: (err: any) => {
-          toast.error(err?.message || 'Failed to decline task');
+        onError: (err: unknown) => {
+          toast.error(err instanceof Error ? err.message : 'Failed to decline task');
           setTaskToDecline(null);
         },
       }
@@ -325,7 +325,7 @@ export default function TasksPage() {
               <h3 className="mb-2 text-lg font-bold text-white font-sans">Decline Task</h3>
               <p className="mb-6 text-xs leading-relaxed text-[#8F9098] font-sans">
                 Are you sure you want to decline <br />
-                <span className="font-semibold text-white font-sans">"{taskToDecline.title}"</span>?
+                <span className="font-semibold text-white font-sans">&quot;{taskToDecline.title}&quot;</span>?
                 <br />This action cannot be undone.
               </p>
 

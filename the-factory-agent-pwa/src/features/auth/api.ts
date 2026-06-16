@@ -87,8 +87,8 @@ function normalizeProfileBody(body: Record<string, unknown>): Record<string, unk
 export const authApi = {
   login: (payload: LoginPayload): Promise<LoginResponse> =>
     client.post('/agent/login', payload).then((r) => {
-      const body = r.data as Record<string, any>;
-      const unwrapped = body.data && typeof body.data === 'object' ? body.data : body;
+      const body = r.data as Record<string, unknown>;
+      const unwrapped = (body.data && typeof body.data === 'object' ? body.data : body) as { token: string, user: any };
       return {
         token: unwrapped.token,
         user: unwrapped.user,

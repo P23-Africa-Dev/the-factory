@@ -560,8 +560,8 @@ function AddNoteModal({
       setPhotos([]);
       setPreviews([]);
       onDone();
-    } catch (err: any) {
-      const msg = err && err.message ? err.message : 'Could not complete task. Please try again.';
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not complete task. Please try again.';
       alert(`Completion failed: ${msg}`);
     } finally {
       setIsSubmitting(false);
@@ -704,13 +704,13 @@ function MapContent() {
   // Advance idle → destination_selected when destination arrives
   useEffect(() => {
     if (phase === 'idle' && selectedDestination) {
-      setPhase('destination_selected');
+      setTimeout(() => setPhase('destination_selected'), 0);
     }
   }, [phase, selectedDestination]);
 
   // Load recents on mount
   useEffect(() => {
-    setRecentDestinations(getRecentDestinations());
+    setTimeout(() => setRecentDestinations(getRecentDestinations()), 0);
   }, []);
 
   const searchGeoDestPlaces = useCallback(async (query: string): Promise<void> => {
@@ -871,7 +871,7 @@ function MapContent() {
       taskId: taskIdForDest,
     });
     saveRecentDestination(dest);
-    setRecentDestinations(getRecentDestinations());
+    setTimeout(() => setRecentDestinations(getRecentDestinations()), 0);
     setIsDestSearchOpen(false);
     setSearchQuery('');
     setGeoDestResults([]);
@@ -949,8 +949,8 @@ function MapContent() {
             setPhase('activity_started');
             if (data.arrived) setHasArrived(true);
           },
-          onError: (err: any) => {
-            alert(`Could not start activity: ${err.message || 'Please try again.'}`);
+          onError: (err: unknown) => {
+            alert(`Could not start activity: ${err instanceof Error ? err.message : 'Please try again.'}`);
           },
         },
       );
@@ -1016,7 +1016,7 @@ function MapContent() {
           {hasArrived && phase === 'activity_started' && (
             <div className="mx-4 mt-2 bg-[#113948] border-l-4 border-[#75ADAF] rounded-xl p-3 shadow-lg flex items-center justify-center pointer-events-auto select-none">
               <span className="font-sans font-bold text-xs text-white text-center">
-                You've arrived at the destination!
+                You&apos;ve arrived at the destination!
               </span>
             </div>
           )}

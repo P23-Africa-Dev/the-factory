@@ -60,7 +60,7 @@ export function MapboxMap({
 
       map.on('error', (e) => {
         console.warn('Mapbox error:', e);
-        setMapError(true);
+        setTimeout(() => setMapError(true), 0);
       });
 
       map.on('load', () => {
@@ -125,7 +125,7 @@ export function MapboxMap({
       mapRef.current = map;
     } catch (err) {
       console.warn('Failed to initialize Mapbox:', err);
-      setMapError(true);
+      setTimeout(() => setMapError(true), 0);
     }
 
     return () => {

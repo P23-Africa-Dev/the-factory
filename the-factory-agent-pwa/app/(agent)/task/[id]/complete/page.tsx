@@ -70,7 +70,7 @@ export default function TaskCompletePage() {
         onSuccess: () => {
           goToTaskList();
         },
-        onError: (err: any) => {
+        onError: (err: unknown) => {
           console.error('[complete] API error:', err);
         },
       }
@@ -163,7 +163,7 @@ export default function TaskCompletePage() {
           <div className="bg-[#FD6046]/10 border-l-[3px] border-[#FD6046] rounded-xl p-3.5 mb-5 flex items-start gap-2.5">
             <ShieldAlert size={18} className="text-[#FD6046] flex-shrink-0 mt-0.5" />
             <span className="font-sans text-xs text-white">
-              {(error as any).message || 'Submission failed. Please try again.'}
+              {(error as Error).message || 'Submission failed. Please try again.'}
             </span>
           </div>
         )}

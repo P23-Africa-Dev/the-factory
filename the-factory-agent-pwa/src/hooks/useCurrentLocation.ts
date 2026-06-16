@@ -29,7 +29,7 @@ export function useCurrentLocation(): UseCurrentLocationReturn {
     }
 
     setIsLoading(true);
-    setError(null);
+    setTimeout(() => setError(null), 0);
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -58,7 +58,7 @@ export function useCurrentLocation(): UseCurrentLocationReturn {
   }, []);
 
   useEffect(() => {
-    fetchLocation();
+    setTimeout(fetchLocation, 0);
   }, [fetchLocation]);
 
   return { location, error, isLoading, refresh: fetchLocation };

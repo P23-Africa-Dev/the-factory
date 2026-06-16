@@ -51,7 +51,7 @@ export default function AgentDashboardPage() {
 
   // Offline status tracking
   useEffect(() => {
-    setIsOffline(!navigator.onLine);
+    setTimeout(() => setIsOffline(!navigator.onLine), 0);
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
 

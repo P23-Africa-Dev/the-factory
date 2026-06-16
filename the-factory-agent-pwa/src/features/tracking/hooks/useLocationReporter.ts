@@ -112,8 +112,9 @@ export const useLocationReporter = ({
       if (response.arrived) {
         onArrived?.();
       }
-    } catch (error: any) {
-      const is422 = error && error.status === 422;
+    } catch (error: unknown) {
+      const apiErr = error as { status?: number, message?: string };
+      const is422 = apiErr?.status === 422;
 
       if (is422) {
         isUnauthorizedRef.current = true;
@@ -132,7 +133,7 @@ export const useLocationReporter = ({
           await tx.done;
         } catch {}
 
-        const msg = error.message || 'You can only track tasks currently assigned to you.';
+        const msg = apiErr?.message || 'You can only track tasks currently assigned to you.';
         toast.error('Tracking Stopped', msg);
         return;
       }

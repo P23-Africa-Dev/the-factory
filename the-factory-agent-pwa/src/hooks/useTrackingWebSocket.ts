@@ -139,7 +139,7 @@ export const useTrackingWebSocket = (): void => {
     [upsertTask, appendPolylinePoint, markArrived, markCompleted, removeTask, setUnreadCount, setPendingNotification]
   );
 
-  const connect = useCallback(() => {
+  const connect = useCallback(function connectFn() {
     const token = appStore.getString('auth_token');
     const companyId = getActiveCompanyId();
     if (!token || !companyId) return;

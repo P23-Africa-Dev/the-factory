@@ -133,7 +133,7 @@ export default function ProfilePage() {
             </div>
           ) : isError && !hasProfileData ? (
             <div className="flex flex-col items-center justify-center py-20 text-center gap-4 bg-white/[0.03] border border-white/5 rounded-2xl">
-              <h4 className="text-sm font-semibold text-white">Couldn't load profile</h4>
+              <h4 className="text-sm font-semibold text-white">Couldn&apos;t load profile</h4>
               <button
                 onClick={() => refetch()}
                 className="px-6 py-2 bg-white/[0.08] text-[#75ADAF] text-xs font-semibold rounded-full hover:bg-white/[0.12] transition-colors"

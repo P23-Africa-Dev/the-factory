@@ -39,7 +39,7 @@ function LocationPermissionGate({
         </div>
         <h3 className="text-lg font-bold text-white mb-2">Location access blocked</h3>
         <p className="text-xs text-[#8F9098] leading-relaxed max-w-xs mb-6">
-          To start or resume tasks, enable location access in your browser's site settings or system privacy settings.
+          To start or resume tasks, enable location access in your browser&apos;s site settings or system privacy settings.
         </p>
         <button
           onClick={handleRequest}
@@ -134,8 +134,8 @@ export default function TrackingPage() {
               useTrackingStore.getState().markArrived(taskId, new Date().toISOString());
             }
           },
-          onError: (error: any) => {
-            alert(`Could not start task: ${error.message || 'Please try again.'}`);
+          onError: (error: unknown) => {
+            alert(`Could not start task: ${error instanceof Error ? error.message : 'Please try again.'}`);
           },
         }
       );
