@@ -26,7 +26,7 @@ export function DownloadAgentAppModal({ isOpen, onClose }: DownloadAgentAppModal
   }, []);
 
   const getAgentAppUrl = () => {
-    if (typeof window === 'undefined') return 'https://agent.thefactory23.com';
+    if (typeof window === 'undefined') return 'https://app.thefactory23.com';
     const host = window.location.host;
     const proto = window.location.protocol;
     
@@ -38,7 +38,7 @@ export function DownloadAgentAppModal({ isOpen, onClose }: DownloadAgentAppModal
     if (parts.length > 2) {
       parts.shift();
     }
-    return `${proto}//agent.${parts.join('.')}`;
+    return `${proto}//app.${parts.join('.')}`;
   };
 
   const handleInstallClick = async () => {
