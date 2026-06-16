@@ -161,6 +161,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
             ->name('assignees.index');
         Route::get('/threads', [CopilotController::class, 'index'])->name('threads.index');
         Route::get('/threads/{thread}', [CopilotController::class, 'show'])->name('threads.show');
+        Route::get('/threads/{thread}/messages', [CopilotController::class, 'messages'])->name('threads.messages.index');
         Route::delete('/threads/{thread}', [CopilotController::class, 'destroy'])->name('threads.destroy');
 
         Route::get('/analytics/context-pack', [CopilotReportingController::class, 'contextPack'])

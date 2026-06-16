@@ -115,6 +115,70 @@ class ConversationMemoryService
         return is_array($thread) ? $thread : null;
     }
 
+    public function hasThread(int $companyId, int $userId, string $threadId): bool
+    {
+        return Cache::has($this->threadKey($companyId, $userId, $threadId));
+    }
+
+    public function getThreadMessages(int $companyId, int $userId, string $threadId, int $limit = 20, ?string $cursor = null): ?array
+    {
+        $thread = $this->getThread($companyId, $userId, $threadId);
+        if (! is_array($thread)) {
+            return null;
+        }
+
+        $messages = is_array($thread['messages'] ?? []) ? $thread['messages'] : [];
+        $totalCount = count($messages);
+
+        if ($totalCount === 0) {
+            return [
+                'thread_id' => (string) $thread['thread_id'],
+                'created_at' => (string) ($thread['created_at'] ?? ''),
+                'updated_at' => (string) ($thread['updated_at'] ?? ''),
+                'message_count' => 0,
+                'messages' => [],
+                'pagination' => [
+                    'has_more' => false,
+                    'next_cursor' => null,
+                    'loaded_count' => 0,
+                ],
+            ];
+        }
+
+        $cursorPosition = null;
+        if (is_string($cursor) && trim($cursor) !== '') {
+            foreach ($messages as $index => $message) {
+                if (is_array($message) && isset($message['id']) && $message['id'] === $cursor) {
+                    $cursorPosition = $index;
+                    break;
+                }
+            }
+
+            if ($cursorPosition === null) {
+                return null;
+            }
+        }
+
+        $end = $cursorPosition ?? $totalCount;
+        $start = max(0, $end - $limit);
+        $pageMessages = array_slice($messages, $start, $end - $start);
+        $hasMore = $start > 0;
+        $nextCursor = $hasMore && count($pageMessages) > 0 ? (string) ($pageMessages[0]['id'] ?? '') : null;
+
+        return [
+            'thread_id' => (string) $thread['thread_id'],
+            'created_at' => (string) ($thread['created_at'] ?? ''),
+            'updated_at' => (string) ($thread['updated_at'] ?? ''),
+            'message_count' => $totalCount,
+            'messages' => $pageMessages,
+            'pagination' => [
+                'has_more' => $hasMore,
+                'next_cursor' => $nextCursor,
+                'loaded_count' => count($pageMessages),
+            ],
+        ];
+    }
+
     /**
      * @return array<int,array<string,mixed>>
      */

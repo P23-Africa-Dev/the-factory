@@ -46,11 +46,17 @@ class PhaseFiveCopilotService
         $context = $this->companyContextService->resolve($user, $companyId);
         $extension = strtolower((string) $file->getClientOriginalExtension());
 
+        $isSpreadsheet = in_array($extension, ['xlsx', 'xls', 'csv'], true);
+        $isPdf = $extension === 'pdf';
+        $isDocument = in_array($extension, ['pdf', 'doc', 'docx', 'txt'], true);
+
         $analysis = [
-            'kind' => in_array($extension, ['xlsx', 'xls', 'csv'], true) ? 'spreadsheet' : 'document',
-            'summary' => in_array($extension, ['pdf'], true)
+            'kind' => $isSpreadsheet ? 'spreadsheet' : 'document',
+            'summary' => $isPdf
                 ? 'PDF pipeline accepted. Text extraction and semantic analysis can be attached in provider stage.'
-                : 'Spreadsheet pipeline accepted. Tabular inspection can be attached in provider stage.',
+                : ($isSpreadsheet
+                    ? 'Spreadsheet pipeline accepted. Tabular inspection can be attached in provider stage.'
+                    : 'Document pipeline accepted. Text extraction and semantic analysis can be attached in provider stage.'),
         ];
 
         return [

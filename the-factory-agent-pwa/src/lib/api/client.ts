@@ -8,6 +8,7 @@
  */
 import axios, { AxiosError } from 'axios';
 import type { ApiError } from '@/types';
+import { env } from '@/constants/env';
 import { appStore } from '@/lib/storage/stores';
 import { sessionEvents } from '@/lib/auth/sessionEvents';
 import { toast } from '@/lib/toast';
@@ -16,7 +17,7 @@ import { toast } from '@/lib/toast';
 let sessionExpiredPending = false;
 
 export const client = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL,
+  baseURL: env.API_BASE_URL,
   timeout: 15_000,
   headers: { 'Content-Type': 'application/json' },
 });

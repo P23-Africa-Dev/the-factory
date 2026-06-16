@@ -321,6 +321,26 @@ class CopilotService
         ];
     }
 
+    public function hasThread(User $user, string $threadId, ?int $companyId = null): bool
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+
+        return $this->conversationMemoryService->hasThread((int) $context['company']->id, (int) $user->id, $threadId);
+    }
+
+    public function getThreadPage(User $user, string $threadId, ?int $companyId = null, int $limit = 20, ?string $cursor = null): ?array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+
+        return $this->conversationMemoryService->getThreadMessages(
+            (int) $context['company']->id,
+            (int) $user->id,
+            $threadId,
+            $limit,
+            $cursor,
+        );
+    }
+
     private function resolveGeneralResponse(
         User $user,
         string $role,
@@ -343,7 +363,13 @@ class CopilotService
             $message .= ' (same agent refers to: ' . $contextEntities['agent'] . ')';
         }
 
-        if (str_contains($normalized, 'my name') || str_contains($normalized, "what's my name") || str_contains($normalized, 'what is my name')) {
+        // Only answer when the user explicitly asks about their name.
+        // Avoid matching generic occurrences like 'my name is ...' inside pasted transcripts.
+        if (
+            str_contains($normalized, "what's my name")
+            || str_contains($normalized, 'what is my name')
+            || str_contains($normalized, 'who am i')
+        ) {
             return "Your name is {$user->name}.";
         }
 
