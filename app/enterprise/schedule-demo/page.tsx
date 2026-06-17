@@ -22,14 +22,26 @@ import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Select from "@/components/ui/select";
 import {
+  getCountries,
   submitDemoRequest,
+  type CountryOption,
   type DemoRequestPayload,
   type TeamSizeRange,
 } from "@/lib/api/enterprise";
 import { ApiRequestError } from "@/lib/api/onboarding";
 import { toast } from "sonner";
 
-type Country = { name: { common: string }; cca2: string };
+const countryFallbackOptions: CountryOption[] = [
+  { label: "United States", value: "US" },
+  { label: "United Kingdom", value: "GB" },
+  { label: "Canada", value: "CA" },
+  { label: "Germany", value: "DE" },
+  { label: "France", value: "FR" },
+  { label: "Nigeria", value: "NG" },
+  { label: "South Africa", value: "ZA" },
+  { label: "India", value: "IN" },
+  { label: "Australia", value: "AU" },
+];
 
 const teamSizeOptions: { label: string; value: TeamSizeRange }[] = [
   { label: "2-10", value: "2-10" },
@@ -54,21 +66,18 @@ const scheduleDemoSchema = z.object({
 export default function ScheduleDemoPage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  const { data: countryOptions = [] } = useQuery({
+  const {
+    data: countryOptions = [],
+    isPending: isCountriesPending,
+    isError: isCountriesError,
+  } = useQuery({
     queryKey: ["enterprise-demo-countries"],
-    queryFn: async () => {
-      const response = await fetch("https://restcountries.com/v3.1/all?fields=name,cca2");
-      const data = (await response.json()) as Country[];
-
-      return data
-        .map((country) => ({
-          label: country.name.common,
-          value: country.cca2.toUpperCase(),
-        }))
-        .sort((a, b) => a.label.localeCompare(b.label));
-    },
+    queryFn: getCountries,
+    retry: 1,
     staleTime: Infinity,
   });
+
+  const countriesToRender = countryOptions.length ? countryOptions : countryFallbackOptions;
 
   const {
     register,
@@ -202,12 +211,23 @@ export default function ScheduleDemoPage() {
                 <div className="grid gap-5 md:grid-cols-2 text-black">
                   <div className="space-y-2">
                     <Select
-                      placeholder={countryOptions.length ? "Select country" : "Loading countries..."}
-                      disabled={!countryOptions.length}
-                      options={countryOptions}
+                      placeholder={
+                        isCountriesPending
+                          ? "Loading countries..."
+                          : isCountriesError
+                            ? "Select country (fallback list)"
+                            : "Select country"
+                      }
+                      disabled={isCountriesPending}
+                      options={countriesToRender}
                       className="bg-white/5 border-white/5 text-white focus:border-[#6FA8A6]/50"
                       {...register("country")}
                     />
+                    {isCountriesError && (
+                      <p className="px-4 text-[10px] font-medium text-amber-300">
+                        We could not load the full country list. Showing a fallback list.
+                      </p>
+                    )}
                     {errors.country && <p className="px-4 text-[10px] font-medium text-red-400">{errors.country.message}</p>}
                     {apiErrors?.country && <p className="px-4 text-[10px] font-medium text-red-400">{apiErrors.country[0]}</p>}
                   </div>
