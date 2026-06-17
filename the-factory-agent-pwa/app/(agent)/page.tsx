@@ -131,7 +131,7 @@
 
     return (
       <ScreenErrorBoundary screenName="AgentHome">
-        <div className="relative min-h-screen bg-[#0A1D25] text-white flex flex-col font-sans select-none overflow-x-hidden pb-10">
+        <div className="relative min-h-screen bg-[#0A1D25] text-white flex flex-col font-sans select-none overflow-x-hidden">
           {/* Ambient background texture and stripes */}
           <div className="absolute inset-0 z-0 pointer-events-none">
             <div className="absolute inset-0 bg-gradient-to-br from-[#0A1D25] to-[#051014]" />
@@ -360,13 +360,13 @@
 
             {/* Fixed Find Location panel */}
             <div className="fixed bottom-0 left-0 right-0 select-none z-20">
-              <div className="relative mx-auto w-full max-w-md h-[285px] px-5 pt-4 flex flex-col gap-3.5 text-black rounded-t-[28px] overflow-hidden shadow-2xl bg-white">
+              <div className="relative mx-auto w-full max-w-md h-[275px] px-5 pt-4 flex flex-col gap-3.5 text-black rounded-t-[28px] overflow-hidden shadow-2xl bg-white">
                 {/* Top Notch Background Image (clipped to hide bottom waves) */}
                 <div 
-                  className="absolute top-0 left-0 right-0 h-[140px] bg-no-repeat bg-top pointer-events-none z-0"
+                  className="absolute top-0 left-0 bottom-0 right-0 h-[50px] bg-no-repeat bg-top pointer-events-none z-0"
                   style={{
                     backgroundImage: "url('/assets/find-location-backgroud.png')",
-                    backgroundSize: "100% auto",
+                    backgroundSize: "100% auto",  
                   }}
                 />
 
