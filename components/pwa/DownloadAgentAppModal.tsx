@@ -49,7 +49,7 @@ export function DownloadAgentAppModal({ isOpen, onClose }: DownloadAgentAppModal
       }
     } else {
       // Fallback redirect to subdomain if install isn't directly triggerable
-      window.open(getAgentAppUrl(), '_blank', 'noopener,noreferrer');
+      window.open(`${getAgentAppUrl()}?install=true`, '_blank', 'noopener,noreferrer');
     }
   };
 

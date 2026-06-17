@@ -7,6 +7,7 @@ import { Toaster } from 'sonner';
 import { AuthProvider } from '@/features/auth';
 import { queryClient } from '@/lib/queryClient';
 import { SessionExpiredModal } from '@/components/shared/SessionExpiredModal';
+import { PwaInstallBanner } from '@/components/shared/PwaInstallBanner';
 import './globals.css';
 
 export default function RootLayout({
@@ -49,6 +50,7 @@ export default function RootLayout({
               {children}
             </main>
             <SessionExpiredModal />
+            <PwaInstallBanner />
           </QueryClientProvider>
           <Toaster 
             theme="dark" 

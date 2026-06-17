@@ -77,15 +77,22 @@ export function AttendanceCard(): React.ReactElement {
 
         {status === 'idle' && (
           <div className="flex flex-col flex-1 items-center justify-between">
-            <StatusBadge status={status} />
-
+            {/* Top avatar circle */}
             <div className="w-8 h-8 rounded-full bg-black/30 flex items-center justify-center overflow-hidden">
               <img src="/assets/user-avatar.png" alt="Avatar" className="w-7 h-7 object-cover" />
             </div>
 
+            {/* Middle attendance status texts */}
+            <div className="flex flex-col items-center leading-tight">
+              <span className="font-sans text-[10px] font-normal text-white/50 text-center">Attendance</span>
+              <span className="font-sans text-[10px] font-normal text-white/50 text-center">Status</span>
+              <span className="font-sans text-[11px] font-bold text-white mt-1 text-center">(Inactive)</span>
+            </div>
+
+            {/* Bottom clock-in button */}
             <button
               onClick={() => setIsModalOpen(true)}
-              className="w-[67px] h-[34px] rounded-xl bg-[#FD6046] hover:bg-[#E0533C] flex items-center justify-center gap-1 px-1.5 text-white active:scale-95 transition-all outline-none focus:outline-none"
+              className="w-[67px] h-[34px] rounded-xl bg-[#FD6046] hover:bg-[#E0533C] flex items-center justify-center gap-1 px-1.5 text-white active:scale-95 transition-all outline-none focus:outline-none cursor-pointer"
             >
               <img src="/assets/clock-arrow-up.png" alt="Clock" className="w-3.5 h-3.5 object-contain" />
               <span className="font-sans font-medium text-[8px]">Clock In</span>
