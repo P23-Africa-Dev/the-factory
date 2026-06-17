@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
 use App\Http\Controllers\Api\V1\Calendar\CalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Calendar\MeetingController;
+use App\Http\Controllers\Api\V1\CountryController;
 use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
@@ -57,6 +58,9 @@ Route::get('/avatars', [AvatarController::class, 'index'])
 Route::get('/currencies', [CurrencyController::class, 'index'])
     ->middleware('throttle:60,1')
     ->name('currencies.index');
+Route::get('/countries', [CountryController::class, 'index'])
+    ->middleware('throttle:60,1')
+    ->name('countries.index');
 Route::get('/map/provider', MapProviderController::class)
     ->middleware('throttle:60,1')
     ->name('map.provider');

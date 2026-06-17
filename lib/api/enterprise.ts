@@ -17,12 +17,30 @@ export type DemoRequestResponse = {
   id: number;
 };
 
+export type CountryOption = {
+  label: string;
+  value: string;
+};
+
 export function submitDemoRequest(payload: DemoRequestPayload) {
   return apiRequest<DemoRequestResponse>({
     method: "POST",
     path: "/enterprise/demo-requests",
     body: payload,
   });
+}
+
+type CountriesResponse = {
+  countries: CountryOption[];
+};
+
+export async function getCountries() {
+  const response = await apiRequest<CountriesResponse>({
+    method: "GET",
+    path: "/countries",
+  });
+
+  return response.data.countries;
 }
 
 export type SetupInfoResponse = {
