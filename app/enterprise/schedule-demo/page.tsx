@@ -2,9 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { 
@@ -21,27 +20,24 @@ import {
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Select from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   getCountries,
   submitDemoRequest,
-  type CountryOption,
   type DemoRequestPayload,
   type TeamSizeRange,
 } from "@/lib/api/enterprise";
 import { ApiRequestError } from "@/lib/api/onboarding";
 import { toast } from "sonner";
 
-const countryFallbackOptions: CountryOption[] = [
-  { label: "United States", value: "US" },
-  { label: "United Kingdom", value: "GB" },
-  { label: "Canada", value: "CA" },
-  { label: "Germany", value: "DE" },
-  { label: "France", value: "FR" },
-  { label: "Nigeria", value: "NG" },
-  { label: "South Africa", value: "ZA" },
-  { label: "India", value: "IN" },
-  { label: "Australia", value: "AU" },
-];
+const scheduleDemoSchema = z.object({
+  full_name: z.string().min(2, "Full name must be at least 2 characters."),
+  email: z.string().email("Please enter a valid email address."),
+  company_name: z.string().min(2, "Company name must be at least 2 characters."),
+  country: z.string().min(2, "Please select a country."),
+  team_size: z.enum(["2-10", "11-50", "51-200", "201-500", "501+"]),
+  use_case: z.string().min(10, "Use case should be at least 10 characters."),
+});
 
 const teamSizeOptions: { label: string; value: TeamSizeRange }[] = [
   { label: "2-10", value: "2-10" },
@@ -51,17 +47,8 @@ const teamSizeOptions: { label: string; value: TeamSizeRange }[] = [
   { label: "501+", value: "501+" },
 ];
 
-const scheduleDemoSchema = z.object({
-  full_name: z.string().min(2, "Full name must be at least 2 characters."),
-  email: z.string().email("Please enter a valid email address."),
-  company_name: z.string().min(2, "Company name must be at least 2 characters."),
-  country: z
-    .string()
-    .length(2, "Country must be a 2-letter ISO code.")
-    .transform((value) => value.toUpperCase()),
-  team_size: z.enum(["2-10", "11-50", "51-200", "201-500", "501+"]),
-  use_case: z.string().min(10, "Use case should be at least 10 characters."),
-});
+const countrySelectClassName =
+  "w-full h-15 px-7 rounded-full border shadow-[0px_1px_2px_0px_#0000004D] border-white/5 bg-white/5 text-xs text-white outline-none focus:border-[#6FA8A6]/50 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60";
 
 export default function ScheduleDemoPage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -77,10 +64,11 @@ export default function ScheduleDemoPage() {
     staleTime: Infinity,
   });
 
-  const countriesToRender = countryOptions.length ? countryOptions : countryFallbackOptions;
+  const countriesToRender = countryOptions;
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
     formState: { errors },
@@ -210,22 +198,24 @@ export default function ScheduleDemoPage() {
 
                 <div className="grid gap-5 md:grid-cols-2 text-black">
                   <div className="space-y-2">
-                    <Select
-                      placeholder={
-                        isCountriesPending
-                          ? "Loading countries..."
-                          : isCountriesError
-                            ? "Select country (fallback list)"
-                            : "Select country"
-                      }
-                      disabled={isCountriesPending}
-                      options={countriesToRender}
-                      className="bg-white/5 border-white/5 text-white focus:border-[#6FA8A6]/50"
-                      {...register("country")}
+                    <Controller
+                      name="country"
+                      control={control}
+                      render={({ field }) => (
+                        <SearchableSelect
+                          value={field.value}
+                          onChange={field.onChange}
+                          options={countriesToRender}
+                          placeholder={isCountriesPending ? "Loading countries..." : "Select country"}
+                          searchPlaceholder="Search countries..."
+                          disabled={isCountriesPending || isCountriesError}
+                          className={countrySelectClassName}
+                        />
+                      )}
                     />
                     {isCountriesError && (
-                      <p className="px-4 text-[10px] font-medium text-amber-300">
-                        We could not load the full country list. Showing a fallback list.
+                      <p className="px-4 text-[10px] font-medium text-red-400">
+                        Unable to load countries. Please refresh the page and try again.
                       </p>
                     )}
                     {errors.country && <p className="px-4 text-[10px] font-medium text-red-400">{errors.country.message}</p>}
@@ -262,7 +252,7 @@ export default function ScheduleDemoPage() {
                 <Button 
                   type="submit" 
                   className="mt-4 h-16 w-full rounded-[24px] bg-[#6FA8A6] text-sm font-bold uppercase tracking-widest text-[#0A1618] hover:bg-[#A3E635] shadow-[0_4px_20px_rgba(111,168,166,0.3)] hover:shadow-[0_4px_20px_rgba(163,230,53,0.3)] active:scale-[0.98] transition-all" 
-                  disabled={requestMutation.isPending}
+                  disabled={requestMutation.isPending || isCountriesPending || isCountriesError}
                 >
                   {requestMutation.isPending ? (
                     <div className="flex items-center gap-2">
