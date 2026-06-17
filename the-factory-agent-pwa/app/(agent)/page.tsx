@@ -360,20 +360,21 @@
 
             {/* Fixed Find Location panel */}
             <div className="fixed bottom-0 left-0 right-0 select-none z-20">
-              <div className="relative mx-auto w-full max-w-md h-[275px] px-5 pt-4 flex flex-col gap-3.5 text-black rounded-t-[28px] overflow-hidden shadow-2xl bg-white">
+              <div className="relative mx-auto w-full max-w-md h-[275px] px-5 pt-4 flex flex-col gap-3.5 text-black rounded-t-[28px] overflow-hidden shadow-2xl bg-white"
+              >
                 {/* Top Notch Background Image (clipped to hide bottom waves) */}
-                <div 
+                {/* <div 
                   className="absolute top-0 left-0 bottom-0 right-0 h-[50px] bg-no-repeat bg-top pointer-events-none z-0"
                   style={{
                     backgroundImage: "url('/assets/find-location-backgroud.png')",
                     backgroundSize: "100% auto",  
                   }}
-                />
+                /> */}
 
                 {/* Content wrapper */}
                 <div className="relative z-10 flex flex-col gap-3.5 h-full">
                   {/* Search row container (transparent outer wrap) */}
-                  <div className="flex items-center bg-white/40 h-[59px] rounded-[30px] p-[4px_7px] gap-[5px] mt-7">
+                  <div className="flex items-center bg-white/40 h-[59px] rounded-[30px] p-[4px_7px] gap-[5px] mt-3">
                     <img
                       src="/assets/magnifying-icon.png"
                       alt="Search icon"
