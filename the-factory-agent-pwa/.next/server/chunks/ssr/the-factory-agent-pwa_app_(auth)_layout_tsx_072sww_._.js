@@ -1,0 +1,3 @@
+module.exports=[57395,a=>{"use strict";var b=a.i(87924),c=a.i(72131),d=a.i(50944);a.i(63628);var e=a.i(27568);a.s(["default",0,function({children:a}){let{isSignedIn:f,isLoading:g}=(0,e.useAuth)(),h=(0,d.useRouter)();return((0,c.useEffect)(()=>{!g&&f&&h.replace("/")},[f,g,h]),g||f)?(0,b.jsx)("div",{className:"flex flex-1 items-center justify-center min-h-screen bg-[#0F2B36]",children:(0,b.jsx)("div",{className:"h-8 w-8 animate-spin rounded-full border-4 border-[#75ADAF] border-t-transparent"})}):(0,b.jsx)(b.Fragment,{children:a})}])}];
+
+//# sourceMappingURL=the-factory-agent-pwa_app_%28auth%29_layout_tsx_072sww_._.js.map
