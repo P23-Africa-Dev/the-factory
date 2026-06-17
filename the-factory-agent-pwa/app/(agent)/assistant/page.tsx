@@ -238,8 +238,8 @@ export default function AiAssistantPage() {
         </div>
 
         {/* Input Bar pinned above Bottom Navigation */}
-        <div className="fixed bottom-[96px] left-0 right-0 max-w-md mx-auto z-20 px-5 pb-3">
-          <div className="bg-white rounded-t-3xl shadow-xl flex items-center p-3 gap-3 border border-gray-100">
+        <div className="fixed bottom-[80px] left-0 right-0 max-w-md mx-auto z-50 pb-1">
+          <div className="bg-white rounded-t-3xl shadow-xl flex items-center p-6 gap-3 border border-gray-100">
             <button
               type="button"
               className="w-11 h-11 rounded-full bg-gray-100 flex items-center justify-center text-[#091519] focus:outline-none text-lg"

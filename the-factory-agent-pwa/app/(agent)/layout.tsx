@@ -63,7 +63,7 @@ export default function AgentLayout({
   return (
     <div className="flex flex-col flex-1 min-h-screen bg-[#0A1D25] text-white">
       {/* Scrollable screen view container with padding to avoid bottom navigation bar overlay */}
-      <div className="flex flex-col flex-1 pb-[116px]">
+      <div className="flex flex-col flex-1 pb-[100px]">
         {children}
       </div>
 
