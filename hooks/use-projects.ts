@@ -4,7 +4,6 @@ import {
   useQuery,
   useMutation,
   useQueryClient,
-  type UseQueryOptions,
 } from "@tanstack/react-query";
 import {
   listProjects,
@@ -15,8 +14,6 @@ import {
   type ListProjectsParams,
   type CreateProjectPayload,
   type UpdateProjectPayload,
-  type ProjectsListData,
-  type ProjectDetailData,
   type PaginationData,
   type InternalUser,
   type InternalUsersParams,

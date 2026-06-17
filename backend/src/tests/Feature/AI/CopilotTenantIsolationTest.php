@@ -36,10 +36,7 @@ final class CopilotTenantIsolationTest extends TestCase
         ]);
 
         /** @var User $admin */
-        $admin = User::factory()->createOne([
-            'company_id' => $primaryCompany->id,
-            'role' => 'admin',
-        ]);
+        $admin = User::factory()->createOne();
 
         $primaryCompany->users()->attach($admin->id, [
             'role' => 'admin',

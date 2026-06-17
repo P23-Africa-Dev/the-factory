@@ -43,6 +43,7 @@ export default function AuthInitializer({
           }
         });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run once on refresh/mount
 
   return <>{children}</>;

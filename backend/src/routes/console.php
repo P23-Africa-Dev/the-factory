@@ -44,3 +44,6 @@ Schedule::command('attendance:auto-clockout')->everyTenMinutes();
 
 // Generate attendance payroll summaries for the previous month.
 Schedule::command('attendance:generate-monthly-payroll')->monthlyOn(1, '00:30');
+
+// Prune AI logs older than 30 days every day at 03:00.
+Schedule::command('ai:prune-logs --days=30')->dailyAt('03:00');

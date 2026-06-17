@@ -2,6 +2,9 @@
   "name": "factory-app",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "the-factory-agent-pwa"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",

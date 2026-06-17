@@ -10,8 +10,10 @@ use App\Enums\TaskType;
 use App\Models\Company;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\AI\Providers\AiProviderRouter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Mockery;
 use Tests\TestCase;
 
 final class CopilotReadFlowTest extends TestCase
@@ -46,21 +48,95 @@ final class CopilotReadFlowTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertJsonPath('message.role', 'assistant')
-            ->assertJsonPath('message.sources.0', 'tasks.overdue')
-            ->assertJsonPath('threadId', $response->json('threadId'));
+            ->assertJsonPath('data.response.tool', 'tasks.overdue')
+            ->assertJsonPath('data.response.sources.0', 'tasks.overdue')
+            ->assertJsonPath('data.thread_id', $response->json('data.thread_id'));
 
         $this
             ->actingAs($admin)
             ->getJson('/api/v1/copilot/threads?company_id=' . $company->id)
             ->assertOk()
-            ->assertJsonCount(1, 'threads');
+            ->assertJsonCount(1, 'data.items');
 
         $this
             ->actingAs($admin)
-            ->getJson('/api/v1/copilot/threads/' . $response->json('threadId') . '?company_id=' . $company->id)
+            ->getJson('/api/v1/copilot/threads/' . $response->json('data.thread_id') . '?company_id=' . $company->id)
             ->assertOk()
-            ->assertJsonCount(2, 'thread.messages');
+            ->assertJsonCount(2, 'data.thread.messages');
+    }
+
+    public function test_follow_up_general_prompt_includes_thread_context_and_entities(): void
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+
+        $capturedPrompts = [];
+        $mockRouter = Mockery::mock(AiProviderRouter::class);
+        $mockRouter
+            ->shouldReceive('generateText')
+            ->twice()
+            ->andReturnUsing(function (string $systemPrompt, string $userPrompt) use (&$capturedPrompts): string {
+                $capturedPrompts[] = $userPrompt;
+
+                return 'Provider response';
+            });
+
+        $this->app->instance(AiProviderRouter::class, $mockRouter);
+
+        $first = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Generate a report for agent John Doe.',
+            ]);
+
+        $first->assertOk();
+
+        $second = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => $first->json('data.thread_id'),
+                'message' => 'Now do the same for that agent and make it shorter.',
+            ]);
+
+        $second->assertOk();
+
+        $this->assertCount(2, $capturedPrompts);
+        $this->assertStringContainsString('Conversation summary:', $capturedPrompts[1]);
+        $this->assertStringContainsString('Recent conversation:', $capturedPrompts[1]);
+        $this->assertStringContainsString('same agent refers to: john doe', strtolower($capturedPrompts[1]));
+    }
+
+    public function test_general_prompt_uses_company_name_instead_of_company_codename(): void
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+        $company->name = 'Acme Industrial Logistics';
+        $company->save();
+
+        $capturedPrompt = null;
+        $mockRouter = Mockery::mock(AiProviderRouter::class);
+        $mockRouter
+            ->shouldReceive('generateText')
+            ->once()
+            ->andReturnUsing(function (string $systemPrompt, string $userPrompt) use (&$capturedPrompt): string {
+                $capturedPrompt = $userPrompt;
+
+                return 'Provider response';
+            });
+
+        $this->app->instance(AiProviderRouter::class, $mockRouter);
+
+        $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Give me a short operating summary.',
+            ])
+            ->assertOk();
+
+        $this->assertIsString($capturedPrompt);
+        $this->assertStringContainsString('Company name: Acme Industrial Logistics', $capturedPrompt);
+        $this->assertStringContainsString('Tenant scope ID (internal, do not mention):', $capturedPrompt);
     }
 
     /**
@@ -77,10 +153,7 @@ final class CopilotReadFlowTest extends TestCase
             'status' => 'active',
             'activated_at' => now(),
         ]);
-        $admin = User::factory()->createOne([
-            'company_id' => $company->id,
-            'role' => 'admin',
-        ]);
+        $admin = User::factory()->createOne();
 
         $company->users()->attach($admin->id, [
             'role' => 'admin',

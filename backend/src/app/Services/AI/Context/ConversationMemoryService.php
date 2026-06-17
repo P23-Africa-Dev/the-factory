@@ -11,6 +11,61 @@ class ConversationMemoryService
 {
     private const THREAD_TTL_SECONDS = 604800;
 
+    /**
+     * @return array{summary:string,recent_messages:array<int,array{role:string,content:string}>,entities:array<string,string>}
+     */
+    public function buildPromptContext(int $companyId, int $userId, ?string $threadId, int $recentLimit = 8): array
+    {
+        if (! is_string($threadId) || trim($threadId) === '') {
+            return [
+                'summary' => '',
+                'recent_messages' => [],
+                'entities' => [],
+            ];
+        }
+
+        $thread = $this->getThread($companyId, $userId, $threadId);
+        if (! is_array($thread)) {
+            return [
+                'summary' => '',
+                'recent_messages' => [],
+                'entities' => [],
+            ];
+        }
+
+        $messages = collect(is_array($thread['messages'] ?? null) ? $thread['messages'] : [])
+            ->filter(static fn(mixed $msg): bool => is_array($msg))
+            ->values();
+
+        if ($messages->isEmpty()) {
+            return [
+                'summary' => '',
+                'recent_messages' => [],
+                'entities' => [],
+            ];
+        }
+
+        $recent = $messages
+            ->take(-1 * max(1, $recentLimit))
+            ->map(static fn(array $msg): array => [
+                'role' => (string) ($msg['role'] ?? 'assistant'),
+                'content' => Str::limit(trim((string) ($msg['content'] ?? '')), 320),
+            ])
+            ->filter(static fn(array $msg): bool => $msg['content'] !== '')
+            ->values()
+            ->all();
+
+        $older = $messages->slice(0, max(0, $messages->count() - max(1, $recentLimit)))->values();
+        $summary = $this->summaryForOlderMessages($companyId, $userId, $threadId, $older->all());
+        $entities = $this->extractEntities($messages->all());
+
+        return [
+            'summary' => $summary,
+            'recent_messages' => $recent,
+            'entities' => $entities,
+        ];
+    }
+
     public function appendMessage(
         int $companyId,
         int $userId,
@@ -58,6 +113,70 @@ class ConversationMemoryService
         $thread = Cache::get($this->threadKey($companyId, $userId, $threadId));
 
         return is_array($thread) ? $thread : null;
+    }
+
+    public function hasThread(int $companyId, int $userId, string $threadId): bool
+    {
+        return Cache::has($this->threadKey($companyId, $userId, $threadId));
+    }
+
+    public function getThreadMessages(int $companyId, int $userId, string $threadId, int $limit = 20, ?string $cursor = null): ?array
+    {
+        $thread = $this->getThread($companyId, $userId, $threadId);
+        if (! is_array($thread)) {
+            return null;
+        }
+
+        $messages = is_array($thread['messages'] ?? []) ? $thread['messages'] : [];
+        $totalCount = count($messages);
+
+        if ($totalCount === 0) {
+            return [
+                'thread_id' => (string) $thread['thread_id'],
+                'created_at' => (string) ($thread['created_at'] ?? ''),
+                'updated_at' => (string) ($thread['updated_at'] ?? ''),
+                'message_count' => 0,
+                'messages' => [],
+                'pagination' => [
+                    'has_more' => false,
+                    'next_cursor' => null,
+                    'loaded_count' => 0,
+                ],
+            ];
+        }
+
+        $cursorPosition = null;
+        if (is_string($cursor) && trim($cursor) !== '') {
+            foreach ($messages as $index => $message) {
+                if (is_array($message) && isset($message['id']) && $message['id'] === $cursor) {
+                    $cursorPosition = $index;
+                    break;
+                }
+            }
+
+            if ($cursorPosition === null) {
+                return null;
+            }
+        }
+
+        $end = $cursorPosition ?? $totalCount;
+        $start = max(0, $end - $limit);
+        $pageMessages = array_slice($messages, $start, $end - $start);
+        $hasMore = $start > 0;
+        $nextCursor = $hasMore && count($pageMessages) > 0 ? (string) ($pageMessages[0]['id'] ?? '') : null;
+
+        return [
+            'thread_id' => (string) $thread['thread_id'],
+            'created_at' => (string) ($thread['created_at'] ?? ''),
+            'updated_at' => (string) ($thread['updated_at'] ?? ''),
+            'message_count' => $totalCount,
+            'messages' => $pageMessages,
+            'pagination' => [
+                'has_more' => $hasMore,
+                'next_cursor' => $nextCursor,
+                'loaded_count' => count($pageMessages),
+            ],
+        ];
     }
 
     /**
@@ -138,6 +257,82 @@ class ConversationMemoryService
     private function threadKey(int $companyId, int $userId, string $threadId): string
     {
         return "copilot:thread:{$companyId}:{$userId}:{$threadId}";
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $olderMessages
+     */
+    private function summaryForOlderMessages(int $companyId, int $userId, string $threadId, array $olderMessages): string
+    {
+        if ($olderMessages === []) {
+            return '';
+        }
+
+        $cacheKey = "copilot:summary:{$companyId}:{$userId}:{$threadId}";
+        $fingerprint = sha1(json_encode($olderMessages) ?: '');
+        $cached = Cache::get($cacheKey);
+
+        if (is_array($cached) && ($cached['fingerprint'] ?? null) === $fingerprint && is_string($cached['summary'] ?? null)) {
+            return (string) $cached['summary'];
+        }
+
+        $summaryLines = collect($olderMessages)
+            ->map(static fn(array $msg): string => sprintf(
+                '[%s] %s',
+                (string) ($msg['role'] ?? 'assistant'),
+                Str::limit(trim((string) ($msg['content'] ?? '')), 180)
+            ))
+            ->filter(static fn(string $line): bool => $line !== '')
+            ->take(-10)
+            ->values()
+            ->all();
+
+        $summary = implode("\n", $summaryLines);
+
+        Cache::put($cacheKey, [
+            'fingerprint' => $fingerprint,
+            'summary' => $summary,
+        ], self::THREAD_TTL_SECONDS);
+
+        return $summary;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $messages
+     * @return array<string,string>
+     */
+    private function extractEntities(array $messages): array
+    {
+        $entities = [];
+
+        foreach ($messages as $msg) {
+            $content = trim((string) ($msg['content'] ?? ''));
+            if ($content === '') {
+                continue;
+            }
+
+            if (preg_match('/\bagent\s+([a-z][a-z\-]*(?:\s+[a-z][a-z\-]*){0,3})(?=\s+(?:to|for|on|at|by|with)\b|[\.,!?]|$)/i', $content, $m) === 1) {
+                $entities['agent'] = trim((string) $m[1]);
+            }
+
+            if (preg_match('/\bproject\s+([a-z0-9][a-z0-9\s\-]{1,60})/i', $content, $m) === 1) {
+                $entities['project'] = trim((string) $m[1]);
+            }
+
+            if (preg_match('/\btask\s+([a-z0-9][a-z0-9\s\-]{1,60})/i', $content, $m) === 1) {
+                $entities['task'] = trim((string) $m[1]);
+            }
+
+            if (preg_match('/\breport\s+for\s+([a-z0-9][a-z0-9\s\-]{1,60})/i', $content, $m) === 1) {
+                $entities['report_subject'] = trim((string) $m[1]);
+            }
+
+            if (preg_match('/\bmeeting\s+([a-z0-9][a-z0-9\s\-]{1,60})/i', $content, $m) === 1) {
+                $entities['meeting'] = trim((string) $m[1]);
+            }
+        }
+
+        return $entities;
     }
 
     private function indexKey(int $companyId, int $userId): string

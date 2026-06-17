@@ -161,12 +161,67 @@ describe("AIChat", () => {
     });
 
     it("queues weekly summary from quick action button", async () => {
+        useCopilotChatMock.mockReturnValue({
+            messages: [],
+            isStreaming: false,
+            weeklyReport: null,
+            isQueueingWeeklyReport: false,
+            initialize: initializeMock,
+            sendMessage: sendMessageMock,
+            queueWeeklyReport: queueWeeklyReportMock,
+            downloadWeeklyReport: downloadWeeklyReportMock,
+            runVoiceTranscription: runVoiceTranscriptionMock,
+            runFileAnalysis: runFileAnalysisMock,
+            runTranscriptSummary: runTranscriptSummaryMock,
+            loadForecastOverview: loadForecastOverviewMock,
+        });
+
         render(<AIChat open onClose={() => { }} />);
 
-        fireEvent.click(screen.getByText("Generate Weekly Summary"));
+        // Open menu, then open AI Tools submenu and click Generate Weekly Summary
+        fireEvent.click(screen.getByLabelText("More options"));
+        fireEvent.click(await screen.findByText("AI Tools"));
+        fireEvent.click(await screen.findByText("Generate Weekly Summary"));
 
         await waitFor(() => {
             expect(queueWeeklyReportMock).toHaveBeenCalledWith(99);
+        });
+    });
+
+    it("opens transcript summary modal and submits transcript", async () => {
+        runTranscriptSummaryMock.mockResolvedValue({
+            summary: {
+                key_points: ["Point 1", "Point 2", "Point 3"],
+                action_items: ["Action 1", "Action 2"],
+            },
+        });
+
+        render(<AIChat open onClose={() => { }} />);
+
+        // Open menu, then AI Tools, then click Summarize Transcript
+        fireEvent.click(screen.getByLabelText("More options"));
+        fireEvent.click(await screen.findByText("AI Tools"));
+        fireEvent.click(await screen.findByText("Summarize Transcript"));
+
+        // Find and fill the textarea
+        const textarea = await screen.findByPlaceholderText(/paste your meeting transcript/i);
+        expect(textarea).toBeTruthy();
+
+        fireEvent.change(textarea, { target: { value: "This is a test meeting transcript with content about the quarterly review." } });
+
+        // Click Summarize button
+        const summarizeBtn = screen.getAllByText(/Summarize/i).find(btn => btn.tagName === "BUTTON");
+        if (summarizeBtn) {
+            fireEvent.click(summarizeBtn);
+        }
+
+        await waitFor(() => {
+            expect(runTranscriptSummaryMock).toHaveBeenCalledWith("This is a test meeting transcript with content about the quarterly review.", 99);
+            expect(sendMessageMock).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message: expect.stringContaining("Transcript Summary"),
+                })
+            );
         });
     });
 });

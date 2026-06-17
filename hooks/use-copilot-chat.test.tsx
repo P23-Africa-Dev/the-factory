@@ -6,15 +6,19 @@ import { useCopilotChat } from "@/hooks/use-copilot-chat";
 const {
     listCopilotThreadsMock,
     getCopilotThreadMock,
+    getCopilotThreadMessagesMock,
     deleteCopilotThreadMock,
     sendCopilotMessageStreamMock,
+    sendCopilotMessageMock,
     queueWeeklySummaryReportMock,
     getWeeklySummaryStatusMock,
 } = vi.hoisted(() => ({
     listCopilotThreadsMock: vi.fn(),
     getCopilotThreadMock: vi.fn(),
+    getCopilotThreadMessagesMock: vi.fn(),
     deleteCopilotThreadMock: vi.fn(),
     sendCopilotMessageStreamMock: vi.fn(),
+    sendCopilotMessageMock: vi.fn(),
     queueWeeklySummaryReportMock: vi.fn(),
     getWeeklySummaryStatusMock: vi.fn(),
 }));
@@ -26,8 +30,10 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/lib/api/copilot", () => ({
     listCopilotThreads: listCopilotThreadsMock,
     getCopilotThread: getCopilotThreadMock,
+    getCopilotThreadMessages: getCopilotThreadMessagesMock,
     deleteCopilotThread: deleteCopilotThreadMock,
     sendCopilotMessageStream: sendCopilotMessageStreamMock,
+    sendCopilotMessage: sendCopilotMessageMock,
     queueWeeklySummaryReport: queueWeeklySummaryReportMock,
     getWeeklySummaryStatus: getWeeklySummaryStatusMock,
     downloadWeeklySummaryReport: vi.fn(),
@@ -102,6 +108,88 @@ describe("useCopilotChat", () => {
         expect(result.current.threadId).toBe("thread-1");
         expect(result.current.messages).toHaveLength(1);
         expect(result.current.messages[0].content).toBe("Loaded message");
+    });
+
+    it("loads older paginated thread messages when requested", async () => {
+        listCopilotThreadsMock.mockResolvedValue({
+            data: {
+                items: [
+                    {
+                        thread_id: "thread-1",
+                        updated_at: "2026-01-01T00:00:00.000Z",
+                        created_at: "2026-01-01T00:00:00.000Z",
+                        message_count: 40,
+                        last_message_preview: "Newest message",
+                    },
+                ],
+            },
+        });
+
+        getCopilotThreadMock.mockResolvedValue({
+            data: {
+                thread: {
+                    thread_id: "thread-1",
+                    company_id: 77,
+                    user_id: 33,
+                    created_at: "2026-01-01T00:00:00.000Z",
+                    updated_at: "2026-01-01T00:00:00.000Z",
+                    messages: [
+                        {
+                            id: "m20",
+                            role: "assistant",
+                            content: "Newest chunk",
+                            sources: [],
+                            tool: null,
+                            payload: null,
+                            created_at: "2026-01-01T00:00:00.000Z",
+                        },
+                    ],
+                    message_count: 40,
+                    pagination: {
+                        has_more: true,
+                        next_cursor: "m20",
+                        loaded_count: 1,
+                    },
+                },
+            },
+        });
+
+        getCopilotThreadMessagesMock.mockResolvedValue({
+            data: {
+                conversation_id: "thread-1",
+                messages: [
+                    {
+                        id: "m19",
+                        role: "assistant",
+                        content: "Older chunk",
+                        sources: [],
+                        tool: null,
+                        payload: null,
+                        created_at: "2026-01-01T00:00:00.000Z",
+                    },
+                ],
+                pagination: {
+                    has_more: false,
+                    next_cursor: null,
+                    loaded_count: 1,
+                },
+            },
+        });
+
+        const { result } = renderHook(() => useCopilotChat());
+
+        await act(async () => {
+            await result.current.initialize(77);
+        });
+
+        await act(async () => {
+            await result.current.loadOlderThreadMessages(77);
+        });
+
+        expect(result.current.messages[0].id).toBe("m19");
+        expect(result.current.messages[1].id).toBe("m20");
+        expect(result.current.threadPagination?.has_more).toBe(false);
+        expect(result.current.threadPagination?.next_cursor).toBeNull();
     });
 
     it("streams assistant response and updates final tool metadata", async () => {
