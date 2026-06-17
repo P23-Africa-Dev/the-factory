@@ -95,7 +95,7 @@ describe("AIChat", () => {
     it("sends input content through copilot hook", async () => {
         render(<AIChat open onClose={() => { }} />);
 
-        const input = screen.getByPlaceholderText("Ask Anything...");
+        const input = screen.getByPlaceholderText("Ask ELY anything...");
         fireEvent.change(input, { target: { value: "What is overdue?" } });
         fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 

@@ -1,0 +1,28 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\AI;
+
+final class ElySystemPrompt
+{
+    public static function core(): string
+    {
+        return trim((string) config('ely.system_prompt')) . "\n\n" . trim((string) config('ely.runtime_constraints'));
+    }
+
+    public static function meetingTranscriptSummary(): string
+    {
+        return trim((string) config('ely.meeting_transcript_summary_prompt'));
+    }
+
+    public static function intro(): string
+    {
+        return (string) config('ely.intro', "I'm ELY, your Factory23 AI Assistant.");
+    }
+
+    public static function name(): string
+    {
+        return (string) config('ely.name', 'ELY');
+    }
+}

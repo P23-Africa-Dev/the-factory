@@ -6,6 +6,7 @@ namespace App\Services\AI\Innovation;
 
 use App\Models\Meeting;
 use App\Models\User;
+use App\Services\AI\ElySystemPrompt;
 use App\Services\AI\Providers\AiProviderRouter;
 use App\Services\Company\CompanyContextService;
 use App\Services\Dashboard\DashboardAggregateService;
@@ -113,7 +114,7 @@ class PhaseFiveCopilotService
         }
 
         $providerSummary = $this->aiProviderRouter->generateText(
-            systemPrompt: 'You summarize operations meeting transcripts. Respond with concise plain text in 2-4 lines.',
+            systemPrompt: ElySystemPrompt::meetingTranscriptSummary(),
             userPrompt: $transcript,
             options: [
                 'max_tokens' => 220,

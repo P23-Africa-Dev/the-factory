@@ -103,7 +103,7 @@ class CopilotService
             );
 
             if ($intentType === 'action' && ! (bool) config('services.ai.enable_actions', true)) {
-                $assistantText = 'Copilot write actions are currently disabled by configuration. Read-only answers are still available.';
+                $assistantText = 'ELY write actions are currently disabled by configuration. Read-only answers are still available.';
                 $resolvedTool = $candidateTool;
                 $toolResult = [
                     'summary' => $assistantText,
@@ -386,10 +386,10 @@ class CopilotService
         }
 
         if (str_contains($normalized, 'this software') || str_contains($normalized, 'what is factory23') || str_contains($normalized, 'what does this do')) {
-            return 'Factory23 is your operations workspace. Ask for CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.';
+            return ElySystemPrompt::intro() . ' Factory23 is your operations workspace. Ask for CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.';
         }
 
-        $systemPrompt = 'You are Ask The Factory, an operations copilot. Respond concisely, avoid policy bypass, and stay within role-scoped company context. Always refer to the organization by the provided company name, and do not invent code names or numeric company labels.';
+        $systemPrompt = ElySystemPrompt::core();
         $userPrompt = sprintf(
             "Company name: %s\nTenant scope ID (internal, do not mention): %d\nUser name: %s\nRole: %s\nConversation summary:\n%s\nRecent conversation:\n%s\nKnown entities: %s\nQuestion: %s",
             $this->redactSensitiveText($resolvedCompanyName),
@@ -464,7 +464,7 @@ class CopilotService
             'tasks.create' => $this->inferTaskCreateArgs($message, $companyId, $entities),
             'projects.create' => [
                 'name' => $normalized !== '' ? $normalized : 'New Project',
-                'description' => $normalized !== '' ? $normalized : 'Project created by Copilot',
+                'description' => $normalized !== '' ? $normalized : 'Project created by ELY',
                 'start_date' => now()->toDateString(),
             ],
             'meetings.schedule' => [
@@ -476,8 +476,8 @@ class CopilotService
                 'location' => 'Main Conference Room',
             ],
             'notifications.send' => [
-                'title' => 'Copilot Notification',
-                'message' => $normalized !== '' ? $normalized : 'New notification from Copilot',
+                'title' => 'ELY Notification',
+                'message' => $normalized !== '' ? $normalized : 'New notification from ELY',
                 'category' => 'system',
                 'user_ids' => [$userId],
             ],
@@ -598,9 +598,9 @@ class CopilotService
 
         $rawTitle = $this->extractLabeledValue($message, ['task title', 'title'])
             ?? $this->extractTaskTitleFromSentence($message)
-            ?? 'Task created by Copilot';
+            ?? 'Task created by ELY';
         $title = Str::limit(trim($rawTitle), 255, '');
-        $usedDefaultTitle = strtolower($title) === 'task created by copilot';
+        $usedDefaultTitle = strtolower($title) === 'task created by ely';
 
         $rawDescription = $this->extractLabeledValue($message, ['description'])
             ?? $normalized

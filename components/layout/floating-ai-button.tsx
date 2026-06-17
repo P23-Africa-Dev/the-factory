@@ -1,6 +1,7 @@
 "use client";
 
 import { AIChat } from "@/components/dashboard/ai-chat";
+import { ELY_OPEN_LABEL } from "@/lib/ely-brand";
 import { Sparkles, Wand2, X } from "lucide-react";
 import { useState } from "react";
 
@@ -34,7 +35,7 @@ export function FloatingAIButton() {
 
         <button
           onClick={() => (open ? setOpen(false) : openChat())}
-          aria-label="Open AI Assistant"
+          aria-label={ELY_OPEN_LABEL}
           className="relative w-16 h-16 rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(168,85,247,0.6)] active:scale-95 transition-transform duration-200"
           style={{
             background: open

@@ -407,7 +407,7 @@ export function useCopilotChat() {
                     localStorage.setItem(persistedKey, done.thread_id);
                 }
             } catch (err) {
-                const fallbackMessage = err instanceof Error ? err.message : "Unable to process Copilot request.";
+                const fallbackMessage = err instanceof Error ? err.message : "Unable to process ELY request.";
                 setError(fallbackMessage);
                 setMessages((prev) =>
                     prev.map((item) =>

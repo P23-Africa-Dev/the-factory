@@ -3,11 +3,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { useAuth } from '@/features/auth';
+import {
+  ELY_INPUT_PLACEHOLDER,
+  ELY_INTRO,
+  ELY_NAME,
+  ELY_TYPING_LABEL,
+} from '@/lib/ely-brand';
 import { toast } from '@/lib/toast';
 
 const DUMMY_RESPONSES = {
   default:
-    "I'm here to help you with your CRM needs. You can ask me about leads, customers, outreach strategies, or anything related to your sales pipeline.",
+    `${ELY_INTRO} I can help with leads, customers, outreach strategies, meetings, attendance, and your sales pipeline.`,
   banks:
     "Here are some banks around Lagos you can check out nearby:\n• <u>Access Tower (Access Bank Head Office)</u>\n• <u>First Bank - Head Office</u>\n• <u>Union Bank Head Office</u>\n• <u>Globus Bank</u>\n• <u>Citibank Nigeria</u>\n• <u>PremiumTrust Bank</u>\n• <u>Jaiz Bank Oba Akran Ikeja</u>\n• <u>Parallex Bank Limited</u>\nIf you want, I can also help you with:\n• banks closest to your exact area,\n• ATMs nearby,\n• Islamic banks only,\n• banks open now,\n• best banks for transfers/savings in Nigeria,\n• or branches around areas like Yaba, Ojuelegba, Ikeja, Lekki, Gbagada, or VI.\n<u>(The Factory)</u>",
   leads:
@@ -137,7 +143,7 @@ export default function AiAssistantPage() {
           </div>
 
           <div className="flex items-center gap-1">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider">AI Assistant</h3>
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">{ELY_NAME}</h3>
           </div>
         </div>
 
@@ -146,9 +152,9 @@ export default function AiAssistantPage() {
           {messages.length === 0 ? (
             /* Suggestions Empty State */
             <div className="flex flex-col items-center justify-center py-12 px-2 text-center">
-              <h3 className="font-bold text-xl text-white mb-2">Ask The Factory AI Anything</h3>
+              <h3 className="font-bold text-xl text-white mb-2">{ELY_INTRO}</h3>
               <p className="text-xs text-white/50 leading-relaxed max-w-[280px] mb-8">
-                Get assistance with nearby banks, active leads, meetings, and CRM operations.
+                Get assistance with leads, meetings, attendance, CRM operations, and workforce tasks.
               </p>
 
               <div className="w-full flex flex-col gap-3">
@@ -231,7 +237,7 @@ export default function AiAssistantPage() {
           {isTyping && (
             <div className="flex items-start">
               <div className="bg-[#16384B]/80 text-[#D0E2E3]/80 border border-white/5 rounded-2xl px-5 py-3 text-xs font-semibold animate-pulse">
-                The Factory is typing...
+                {ELY_TYPING_LABEL}
               </div>
             </div>
           )}
@@ -250,7 +256,7 @@ export default function AiAssistantPage() {
             <div className="flex-1 bg-gray-100 rounded-full h-12 flex items-center px-4">
               <input
                 type="text"
-                placeholder="Ask Anything..."
+                placeholder={ELY_INPUT_PLACEHOLDER}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {

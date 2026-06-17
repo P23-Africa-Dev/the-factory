@@ -1,6 +1,7 @@
 "use client";
 
 import { useCopilotChat } from "@/hooks/use-copilot-chat";
+import { ELY_INPUT_PLACEHOLDER, ELY_LANDING_HEADLINE, ELY_LANDING_SUBTEXT, ELY_NAME } from "@/lib/ely-brand";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
@@ -662,7 +663,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
       if (code === "used_default_title") {
         const title = String(args?.title ?? "").trim().toLowerCase();
-        if (title === "" || title === "task created by copilot") {
+        if (title === "" || title === "task created by ely") {
           remaining.push(code);
         }
         continue;
@@ -1025,6 +1026,10 @@ export function AIChat({ open, onClose }: AIChatProps) {
                 </div>
 
                 <div className="flex items-center gap-3 flex-shrink-0">
+                  <div className="hidden sm:flex flex-col items-end leading-tight">
+                    <span className="text-[#7BB6B8] text-[11px] font-bold uppercase tracking-[0.2em]">{ELY_NAME}</span>
+                    <span className="text-[#88B3B5] text-[10px]">Factory23 AI</span>
+                  </div>
                   <button
                     onClick={() => {
                       setSearchOpen((v) => !v);
@@ -1316,9 +1321,9 @@ export function AIChat({ open, onClose }: AIChatProps) {
             {!hasMessages && (
               <div className="px-8 py-6 flex-shrink-0">
                 <div className="border border-white/20 rounded-[32px] px-6 py-5 space-y-4">
-                  <p className="text-[#88B3B5] text-[15px] font-medium">Ask Anything…</p>
+                  <p className="text-[#88B3B5] text-[15px] font-medium">{ELY_LANDING_HEADLINE}</p>
                   <p className="text-white/40 text-[13px] leading-relaxed">
-                    Get summaries, create tasks, schedule meetings, view attendance, or ask anything about your operations.
+                    {ELY_LANDING_SUBTEXT}
                   </p>
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <button
@@ -1634,7 +1639,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Ask Anything..."
+                    placeholder={ELY_INPUT_PLACEHOLDER}
                     className="flex-1 bg-transparent text-[#091519] text-[14px] placeholder:text-[#091519]/60 font-medium outline-none min-w-0"
                   />
                 </div>
