@@ -31,6 +31,10 @@ export function BottomNavBar({ activeTab }: BottomNavBarProps): React.ReactEleme
 
   const currentActive = getActiveTab();
 
+  const isCrmRoute = pathname.startsWith('/crm');
+  const rxValue = isCrmRoute ? 32 : 0;
+  const clipHeight = isCrmRoute ? 180 : 140;
+
   const handleTabClick = (tabId: ActiveTab, path: string) => {
     router.push(path);
   };
@@ -38,7 +42,7 @@ export function BottomNavBar({ activeTab }: BottomNavBarProps): React.ReactEleme
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 select-none pb-[safe-area-inset-bottom]">
       {/* Container holding the wavy bar, centered and max-width matched to layout */}
-      <div className="relative mx-auto w-full max-w-md h-[96px]">
+      <div className="relative mx-auto w-full max-w-md h-[100px]">
         {/* SVG background layer */}
         <svg
           className="absolute inset-0 w-full h-full drop-shadow-[0_-8px_24px_rgba(0,0,0,0.15)]"
@@ -56,32 +60,48 @@ export function BottomNavBar({ activeTab }: BottomNavBarProps): React.ReactEleme
               <Stop offset="0" stopColor="#44AFCD" />
               <Stop offset="1" stopColor="#E4D5FA" />
             </linearGradient>
+            <clipPath id="waveClip">
+              <rect x="-50" y="44" width="540" height="150" />
+            </clipPath>
+            <clipPath id="roundedNavBar">
+              <rect width="440" height={clipHeight} rx={rxValue} />
+            </clipPath>
           </defs>
-          <rect width="440" height="140" fill="#F8F8F8" rx="32" />
-          <path
-            d="M-14.339 63.0683L-31.6672 72.636C-38.0421 76.1558 -42 82.8565 -42 90.1385V199.75C-42 232.804 168.667 213.522 274 199.75V91.0538C274 83.296 269.514 76.238 262.489 72.945L238.946 61.9078C233.656 59.4279 227.547 59.385 222.223 61.7902L194.825 74.1671C189.017 76.7909 182.307 76.4896 176.757 73.3558L159.184 63.4325C153.197 60.0519 145.894 59.9832 139.845 63.2506L121.213 73.3146C115.391 76.4594 108.39 76.5209 102.514 73.4791L82.1097 62.9171C76.1751 59.8452 69.0985 59.9401 63.2485 63.1702L44.9504 73.2734C39.2024 76.4471 32.2628 76.5974 26.3829 73.6755L4.2285 62.6662C-1.65144 59.7443 -8.59103 59.8946 -14.339 63.0683Z"
-            fill="url(#navL)"
-          />
-          <path
-            d="M210.536 87.4457L205.508 85.9473C193.976 82.5099 181.154 85.137 171.143 92.9884C159.91 101.799 153.893 115.848 155.452 129.645L166.521 227.575C169.851 257.034 337.143 213.729 445.497 180.937C464.887 175.069 477.62 155.5 475.362 135.523L468.579 75.5156C466.831 60.0484 456.358 47.6081 441.735 43.6274L437.627 42.5092C426.74 39.5455 414.817 41.6371 404.943 48.2427L395.131 54.8074C384.476 61.9361 371.465 63.7162 360.043 59.6081C347.72 55.1758 333.468 57.7299 322.481 66.1946C311.79 74.4306 298.008 77.1553 285.844 73.2995L283.734 72.6309C271.449 68.7369 257.557 71.5317 246.829 79.9456C236.289 88.2124 222.679 91.065 210.536 87.4457Z"
-            fill="url(#navR)"
-          />
-          {/* Cloud bubble circles for targets */}
-          <circle cx="125.676" cy="87" r="44" fill="#F1FAFD" />
-          <circle cx="188.676" cy="87" r="44" fill="#F1FAFD" />
-          <circle cx="251.676" cy="87" r="44" fill="#F1FAFD" />
-          <circle cx="314.676" cy="87" r="44" fill="#F1FAFD" />
+          <g clipPath="url(#roundedNavBar)">
+            <rect width="440" height={clipHeight} fill="#FFFFFF" rx={rxValue} />
+            <path
+              d="M-14.339 63.0683L-31.6672 72.636C-38.0421 76.1558 -42 82.8565 -42 90.1385V199.75C-42 232.804 168.667 213.522 274 199.75V91.0538C274 83.296 269.514 76.238 262.489 72.945L238.946 61.9078C233.656 59.4279 227.547 59.385 222.223 61.7902L194.825 74.1671C189.017 76.7909 182.307 76.4896 176.757 73.3558L159.184 63.4325C153.197 60.0519 145.894 59.9832 139.845 63.2506L121.213 73.3146C115.391 76.4594 108.39 76.5209 102.514 73.4791L82.1097 62.9171C76.1751 59.8452 69.0985 59.9401 63.2485 63.1702L44.9504 73.2734C39.2024 76.4471 32.2628 76.5974 26.3829 73.6755L4.2285 62.6662C-1.65144 59.7443 -8.59103 59.8946 -14.339 63.0683Z"
+              fill="url(#navL)"
+              clipPath="url(#waveClip)"
+            />
+            <path
+              d="M210.536 87.4457L205.508 85.9473C193.976 82.5099 181.154 85.137 171.143 92.9884C159.91 101.799 153.893 115.848 155.452 129.645L166.521 227.575C169.851 257.034 337.143 213.729 445.497 180.937C464.887 175.069 477.62 155.5 475.362 135.523L468.579 75.5156C466.831 60.0484 456.358 47.6081 441.735 43.6274L437.627 42.5092C426.74 39.5455 414.817 41.6371 404.943 48.2427L395.131 54.8074C384.476 61.9361 371.465 63.7162 360.043 59.6081C347.72 55.1758 333.468 57.7299 322.481 66.1946C311.79 74.4306 298.008 77.1553 285.844 73.2995L283.734 72.6309C271.449 68.7369 257.557 71.5317 246.829 79.9456C236.289 88.2124 222.679 91.065 210.536 87.4457Z"
+              fill="url(#navR)"
+              clipPath="url(#waveClip)"
+            />
+            {/* Cloud bubble circles for targets */}
+            <circle cx="125.676" cy="87" r="44" fill="#F1FAFD" />
+            <circle cx="188.676" cy="87" r="44" fill="#F1FAFD" />
+            <circle cx="251.676" cy="87" r="44" fill="#F1FAFD" />
+            <circle cx="314.676" cy="87" r="44" fill="#F1FAFD" />
+          </g>
         </svg>
 
-        {/* Buttons overlays */}
-        <div className="absolute inset-0 flex items-center justify-center gap-1.5 px-[60px] pb-1.5">
+        {/* Buttons overlays aligned mathematically to the background curves */}
+        <div className="absolute inset-0 pointer-events-none">
           {TABS.map((tab) => {
             const isActive = currentActive === tab.id;
+            const leftPositions = ['28.56%', '42.88%', '57.20%', '71.52%'] as const;
             return (
               <button
                 key={tab.id}
                 onClick={() => handleTabClick(tab.id, tab.path)}
-                className="flex-1 flex flex-col items-center justify-center h-16 w-16 relative outline-none focus:outline-none transition-transform active:scale-90"
+                className="absolute w-14 h-14 flex items-center justify-center outline-none focus:outline-none transition-transform active:scale-90 pointer-events-auto cursor-pointer"
+                style={{
+                  left: leftPositions[tab.id],
+                  top: '62.14%',
+                  transform: 'translate(-50%, -50%)',
+                }}
               >
                 <img
                   src={isActive ? tab.activeIcon : tab.defaultIcon}

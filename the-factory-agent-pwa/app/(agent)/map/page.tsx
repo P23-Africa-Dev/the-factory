@@ -1055,7 +1055,7 @@ function MapContent() {
 
       {/* Bottom panel */}
       {!isDestSearchOpen && !isOriginSearchOpen && (
-        <div className="absolute bottom-0 inset-x-0 z-20 flex flex-col pointer-events-none pb-[110px]">
+        <div className="absolute bottom-0 inset-x-0 z-20 flex flex-col pointer-events-none pb-[100px]">
           <div className="pointer-events-auto w-full">
             <RouteInfoSheet
               transportMode={transportMode}
