@@ -359,75 +359,110 @@
             </div>
 
             {/* Fixed Find Location panel */}
-            <div className="fixed bottom-0 left-0 right-0 z-[250] select-none">
-              <div
-                className="relative mx-auto w-full max-w-md h-[275px] px-5 pt-4 flex flex-col gap-3.5 text-black bg-no-repeat bg-top rounded-t-[28px] overflow-hidden shadow-2xl"
-                style={{
-                  backgroundImage: "url('/assets/find-location-backgroud.png')",
-                  backgroundSize: "100% 100%",
-                  paddingTop: "10px",
-                }}
-              >
+            <div className="fixed bottom-0 left-0 right-0 select-none z-20">
+              <div className="relative mx-auto w-full max-w-md h-[285px] px-5 pt-4 flex flex-col gap-3.5 text-black rounded-t-[28px] overflow-hidden shadow-2xl bg-white">
+                {/* Top Notch Background Image (clipped to hide bottom waves) */}
+                <div 
+                  className="absolute top-0 left-0 right-0 h-[140px] bg-no-repeat bg-top pointer-events-none z-0"
+                  style={{
+                    backgroundImage: "url('/assets/find-location-backgroud.png')",
+                    backgroundSize: "100% auto",
+                  }}
+                />
 
-                {/* Search row container (transparent outer wrap) */}
-                <div className="flex items-center bg-white/40 h-[59px] rounded-[30px] p-[4px_7px] gap-[5px] mt-7">
-                  <img
-                    src="/assets/magnifying-icon.png"
-                    alt="Search icon"
-                    className="w-[38px] h-[38px] flex-shrink-0 object-contain"
-                  />
-                  <div className="flex-1 bg-[#D6D7D7] h-[48px] rounded-[24px] flex items-center px-5">
-                    <input
-                      type="text"
-                      placeholder="Where To?"
-                      value={locationQuery}
-                      onChange={(e) => handleLocationQueryChange(e.target.value)}
-                      className="w-full bg-transparent border-none text-[#113948] font-semibold text-sm focus:outline-none placeholder-[#113948]/60 p-0"
+                {/* Content wrapper */}
+                <div className="relative z-10 flex flex-col gap-3.5 h-full">
+                  {/* Search row container (transparent outer wrap) */}
+                  <div className="flex items-center bg-white/40 h-[59px] rounded-[30px] p-[4px_7px] gap-[5px] mt-7">
+                    <img
+                      src="/assets/magnifying-icon.png"
+                      alt="Search icon"
+                      className="w-[38px] h-[38px] flex-shrink-0 object-contain"
                     />
+                    <div className="flex-1 bg-[#D6D7D7] h-[48px] rounded-[24px] flex items-center px-5">
+                      <input
+                        type="text"
+                        placeholder="Where to?"
+                        value={locationQuery}
+                        onChange={(e) => handleLocationQueryChange(e.target.value)}
+                        className="w-full bg-transparent border-none text-[#113948] font-semibold text-sm focus:outline-none placeholder-[#113948]/60 p-0"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                {/* Geocode Search results */}
-                <div className="flex-1 overflow-y-auto min-h-0 pr-1">
-                  {isOffline ? (
-                    <div className="flex flex-col items-center justify-center py-4 gap-2 text-center select-none">
-                      <img src="/assets/location-offline-03.png" alt="Offline" className="w-6 h-6 object-contain opacity-50" />
-                      <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">No Recent Location</span>
-                    </div>
-                  ) : locationResults.length === 0 ? (
-                    <div className="flex items-center justify-center py-6 select-none">
-                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                        {locationQuery.trim() ? 'No results found' : 'Type a location to search'}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-3.5">
-                      {locationResults.map((item, index) => (
-                        <div
-                          key={index}
-                          onClick={() =>
-                            goToMapScreen({
-                              name: item.name,
-                              address: item.address,
-                              latitude: item.latitude,
-                              longitude: item.longitude,
-                            })
-                          }
-                          className="flex items-center cursor-pointer active:opacity-75 transition-opacity"
-                        >
-                          <img
-                            src="/assets/location-icon.png"
-                            alt="Location"
-                            className="w-[38px] h-[38px] mr-3 object-contain flex-shrink-0"
-                          />
-                          <div className="flex-1 min-w-0 leading-tight">
-                            <p className="text-sm font-semibold text-[#09232D] truncate">{item.name}</p>
-                            <p className="text-[10px] font-light text-[#09232D]/60 truncate mt-1">{item.address}</p>
+                  {/* Geocode Search results */}
+                  <div className="flex-1 overflow-y-auto min-h-0 pr-1 select-none">
+                    {isOffline ? (
+                      <div className="flex flex-col items-center justify-center py-4 gap-2 text-center select-none">
+                        <img src="/assets/location-offline-03.png" alt="Offline" className="w-6 h-6 object-contain opacity-50" />
+                        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">No Recent Location</span>
+                      </div>
+                    ) : locationQuery.trim() === '' ? (
+                      /* Default state: show recent locations list from design mockup */
+                      <div className="flex flex-col gap-3.5">
+                        {[
+                          { name: 'Computer Village Ikeja', address: '29/31 Obafemi Awolowo way, ikeja', latitude: 6.5973, longitude: 3.3444 },
+                          { name: 'Bodyline, Ikoyi', address: 'Ikoyi, Lagos, Nigeria', latitude: 6.4474, longitude: 3.4471 }
+                        ].map((item, index) => (
+                          <div
+                            key={index}
+                            onClick={() =>
+                              goToMapScreen({
+                                name: item.name,
+                                address: item.address,
+                                latitude: item.latitude,
+                                longitude: item.longitude,
+                              })
+                            }
+                            className="flex items-center cursor-pointer active:opacity-75 transition-opacity"
+                          >
+                            <img
+                              src="/assets/location-icon.png"
+                              alt="Location"
+                              className="w-[38px] h-[38px] mr-3 object-contain flex-shrink-0"
+                            />
+                            <div className="flex-1 min-w-0 leading-tight">
+                              <p className="text-sm font-semibold text-[#09232D] truncate">{item.name}</p>
+                              <p className="text-[10px] font-light text-[#09232D]/60 truncate mt-1">{item.address}</p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    ) : locationResults.length === 0 ? (
+                      <div className="flex items-center justify-center py-6 select-none">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                          No results found
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-3.5">
+                        {locationResults.map((item, index) => (
+                          <div
+                            key={index}
+                            onClick={() =>
+                              goToMapScreen({
+                                name: item.name,
+                                address: item.address,
+                                latitude: item.latitude,
+                                longitude: item.longitude,
+                              })
+                            }
+                            className="flex items-center cursor-pointer active:opacity-75 transition-opacity"
+                          >
+                            <img
+                              src="/assets/location-icon.png"
+                              alt="Location"
+                              className="w-[38px] h-[38px] mr-3 object-contain flex-shrink-0"
+                            />
+                            <div className="flex-1 min-w-0 leading-tight">
+                              <p className="text-sm font-semibold text-[#09232D] truncate">{item.name}</p>
+                              <p className="text-[10px] font-light text-[#09232D]/60 truncate mt-1">{item.address}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
