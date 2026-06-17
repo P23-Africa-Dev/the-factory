@@ -196,19 +196,115 @@ class CopilotController extends Controller
 
     public function show(Request $request, string $thread): JsonResponse
     {
-        $threadData = $this->copilotService->getThread(
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'cursor' => ['nullable', 'string', 'max:120'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:50'],
+        ]);
+
+        $companyId = $this->resolveCompanyContextId($validated['company_id'] ?? null);
+        $limit = isset($validated['limit']) ? (int) $validated['limit'] : 20;
+        $cursor = isset($validated['cursor']) ? (string) $validated['cursor'] : null;
+
+        logger()->info('Copilot thread fetch requested.', [
+            'company_id' => $companyId,
+            'user_id' => $request->user()->id,
+            'thread_id' => $thread,
+            'cursor' => $cursor,
+            'limit' => $limit,
+        ]);
+
+        if (! $this->copilotService->hasThread($request->user(), $thread, $companyId)) {
+            logger()->warning('Copilot thread fetch denied: thread not found in tenant scope.', [
+                'company_id' => $companyId,
+                'user_id' => $request->user()->id,
+                'thread_id' => $thread,
+            ]);
+
+            return $this->error('Copilot thread was not found.', ['thread' => ['Copilot thread does not exist in your scope.']], 404);
+        }
+
+        $threadData = $this->copilotService->getThreadPage(
             user: $request->user(),
             threadId: $thread,
-            companyId: $this->resolveCompanyContextId($request->input('company_id')),
+            companyId: $companyId,
+            limit: $limit,
+            cursor: $cursor,
         );
 
         if ($threadData === null) {
-            return $this->error('Copilot thread was not found.', ['thread' => ['Copilot thread does not exist in your scope.']], 404);
+            logger()->warning('Copilot thread pagination failed: invalid cursor.', [
+                'company_id' => $companyId,
+                'user_id' => $request->user()->id,
+                'thread_id' => $thread,
+                'cursor' => $cursor,
+            ]);
+
+            return $this->error('Invalid message cursor specified.', ['cursor' => ['The requested cursor is invalid for this conversation.']], 400);
         }
 
         return $this->success(
             message: 'Copilot thread fetched successfully.',
             data: ['thread' => $threadData],
+        );
+    }
+
+    public function messages(Request $request, string $thread): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'cursor' => ['nullable', 'string', 'max:120'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:50'],
+        ]);
+
+        $companyId = $this->resolveCompanyContextId($validated['company_id'] ?? null);
+        $limit = isset($validated['limit']) ? (int) $validated['limit'] : 20;
+        $cursor = isset($validated['cursor']) ? (string) $validated['cursor'] : null;
+
+        logger()->info('Copilot thread messages page requested.', [
+            'company_id' => $companyId,
+            'user_id' => $request->user()->id,
+            'thread_id' => $thread,
+            'cursor' => $cursor,
+            'limit' => $limit,
+        ]);
+
+        if (! $this->copilotService->hasThread($request->user(), $thread, $companyId)) {
+            logger()->warning('Copilot thread messages request denied: thread not found in tenant scope.', [
+                'company_id' => $companyId,
+                'user_id' => $request->user()->id,
+                'thread_id' => $thread,
+            ]);
+
+            return $this->error('Copilot thread was not found.', ['thread' => ['Copilot thread does not exist in your scope.']], 404);
+        }
+
+        $threadData = $this->copilotService->getThreadPage(
+            user: $request->user(),
+            threadId: $thread,
+            companyId: $companyId,
+            limit: $limit,
+            cursor: $cursor,
+        );
+
+        if ($threadData === null) {
+            logger()->warning('Copilot thread messages pagination failed: invalid cursor.', [
+                'company_id' => $companyId,
+                'user_id' => $request->user()->id,
+                'thread_id' => $thread,
+                'cursor' => $cursor,
+            ]);
+
+            return $this->error('Invalid message cursor specified.', ['cursor' => ['The requested cursor is invalid for this conversation.']], 400);
+        }
+
+        return $this->success(
+            message: 'Copilot thread messages fetched successfully.',
+            data: [
+                'conversation_id' => $threadData['thread_id'],
+                'messages' => $threadData['messages'],
+                'pagination' => $threadData['pagination'],
+            ],
         );
     }
 

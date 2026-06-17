@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
 use App\Http\Controllers\Api\V1\Calendar\CalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Calendar\MeetingController;
+use App\Http\Controllers\Api\V1\CountryController;
 use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
@@ -57,6 +58,9 @@ Route::get('/avatars', [AvatarController::class, 'index'])
 Route::get('/currencies', [CurrencyController::class, 'index'])
     ->middleware('throttle:60,1')
     ->name('currencies.index');
+Route::get('/countries', [CountryController::class, 'index'])
+    ->middleware('throttle:60,1')
+    ->name('countries.index');
 Route::get('/map/provider', MapProviderController::class)
     ->middleware('throttle:60,1')
     ->name('map.provider');
@@ -140,7 +144,7 @@ Route::prefix('internal')->name('internal.')->group(function (): void {
 });
 
 // Authenticated
-Route::middleware('auth:sanctum')->group(function (): void {
+Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
     Route::post('/auth/logout', LogoutController::class)->name('auth.logout');
 
     Route::prefix('user')->name('user.')->group(function (): void {
@@ -161,6 +165,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
             ->name('assignees.index');
         Route::get('/threads', [CopilotController::class, 'index'])->name('threads.index');
         Route::get('/threads/{thread}', [CopilotController::class, 'show'])->name('threads.show');
+        Route::get('/threads/{thread}/messages', [CopilotController::class, 'messages'])->name('threads.messages.index');
         Route::delete('/threads/{thread}', [CopilotController::class, 'destroy'])->name('threads.destroy');
 
         Route::get('/analytics/context-pack', [CopilotReportingController::class, 'contextPack'])

@@ -1,8 +1,10 @@
 <?php
 
+use App\Exceptions\AccountAccessDeniedException;
 use App\Http\Middleware\EnsureAdminHasPermission;
 use App\Http\Middleware\EnsureAdminIsActive;
 use App\Http\Middleware\EnsureApiAccessRole;
+use App\Http\Middleware\EnsureUserAccountIsActive;
 use App\Http\Middleware\NormalizeRequestPath;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -39,6 +41,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin.active' => EnsureAdminIsActive::class,
             'admin.permission' => EnsureAdminHasPermission::class,
             'access.role' => EnsureApiAccessRole::class,
+            'account.active' => EnsureUserAccountIsActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -53,6 +56,15 @@ return Application::configure(basePath: dirname(__DIR__))
         });
         $exceptions->render(function (AuthorizationException $e, Request $request) use ($jsonError): ?JsonResponse {
             return $request->expectsJson() ? $jsonError('You do not have permission to perform this action.', null, 403) : null;
+        });
+        $exceptions->render(function (AccountAccessDeniedException $e, Request $request): ?JsonResponse {
+            return $request->expectsJson()
+                ? EnsureUserAccountIsActive::blockedResponse(
+                    message: $e->getMessage(),
+                    accountStatus: $e->accountStatus(),
+                    suspendedUntil: $e->suspendedUntil(),
+                )
+                : null;
         });
         $exceptions->render(function (ModelNotFoundException $e, Request $request) use ($jsonError): ?JsonResponse {
             return $request->expectsJson() ? $jsonError('The requested resource was not found.', null, 404) : null;

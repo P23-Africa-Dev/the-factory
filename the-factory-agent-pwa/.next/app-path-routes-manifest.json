@@ -1,0 +1,23 @@
+{
+  "/(agent)/assistant/page": "/assistant",
+  "/(agent)/crm/leads/[id]/page": "/crm/leads/[id]",
+  "/(agent)/crm/leads/page": "/crm/leads",
+  "/(agent)/crm/page": "/crm",
+  "/(agent)/map/page": "/map",
+  "/(agent)/meetings/[id]/edit/page": "/meetings/[id]/edit",
+  "/(agent)/meetings/[id]/page": "/meetings/[id]",
+  "/(agent)/meetings/new/page": "/meetings/new",
+  "/(agent)/meetings/page": "/meetings",
+  "/(agent)/page": "/",
+  "/(agent)/profile/page": "/profile",
+  "/(agent)/task/[id]/complete/page": "/task/[id]/complete",
+  "/(agent)/task/[id]/page": "/task/[id]",
+  "/(agent)/task/[id]/tracking/page": "/task/[id]/tracking",
+  "/(agent)/tasks/page": "/tasks",
+  "/(auth)/forgot-password/page": "/forgot-password",
+  "/(auth)/login/page": "/login",
+  "/(auth)/reset-password/[token]/page": "/reset-password/[token]",
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/favicon.ico/route": "/favicon.ico"
+}

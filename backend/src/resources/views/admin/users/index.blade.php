@@ -134,6 +134,7 @@
                         <button type="button" class="btn btn-outline-secondary btn-sm duration-btn" data-days="7">7 Days</button>
                         <button type="button" class="btn btn-outline-secondary btn-sm duration-btn" data-days="30">30 Days</button>
                         <button type="button" class="btn btn-outline-secondary btn-sm" id="customDateBtn">Custom Date</button>
+                        <button type="button" class="btn btn-outline-danger btn-sm" id="permanentSuspendBtn">Permanent</button>
                     </div>
                     <div id="customDateWrap" class="d-none">
                         <label class="form-label small fw-semibold" style="font-size:.78rem">Suspend Until</label>
@@ -315,10 +316,11 @@ document.addEventListener('DOMContentLoaded', function () {
             document.querySelectorAll('.duration-btn').forEach(b => b.classList.remove('active'));
             document.querySelector('.duration-btn[data-days="3"]').classList.add('active');
             document.getElementById('customDateBtn').classList.remove('active');
+            document.getElementById('permanentSuspendBtn')?.classList.remove('active');
         });
         document.querySelectorAll('.duration-btn').forEach(btn => {
             btn.addEventListener('click', function () {
-                document.querySelectorAll('.duration-btn, #customDateBtn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.duration-btn, #customDateBtn, #permanentSuspendBtn').forEach(b => b.classList.remove('active'));
                 this.classList.add('active');
                 document.getElementById('suspendType').value = 'duration';
                 document.getElementById('suspendDays').value = this.dataset.days;
@@ -326,10 +328,16 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         });
         document.getElementById('customDateBtn')?.addEventListener('click', function () {
-            document.querySelectorAll('.duration-btn, #customDateBtn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.duration-btn, #customDateBtn, #permanentSuspendBtn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
             document.getElementById('suspendType').value = 'date';
             document.getElementById('customDateWrap').classList.remove('d-none');
+        });
+        document.getElementById('permanentSuspendBtn')?.addEventListener('click', function () {
+            document.querySelectorAll('.duration-btn, #customDateBtn, #permanentSuspendBtn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            document.getElementById('suspendType').value = 'permanent';
+            document.getElementById('customDateWrap').classList.add('d-none');
         });
     }
 

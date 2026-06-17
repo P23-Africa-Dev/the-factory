@@ -102,14 +102,20 @@ class UserManagementController extends Controller
 
     public function suspend(SuspendUserRequest $request, User $user): RedirectResponse
     {
-        $until = $request->input('suspend_type') === 'duration'
-            ? now()->addDays((int) $request->input('suspend_days'))->endOfDay()
-            : Carbon::parse($request->input('suspend_until'))->endOfDay();
+        $until = match ($request->input('suspend_type')) {
+            'duration' => now()->addDays((int) $request->input('suspend_days'))->endOfDay(),
+            'date' => Carbon::parse($request->input('suspend_until'))->endOfDay(),
+            'permanent' => Carbon::create(2099, 12, 31, 23, 59, 59),
+        };
 
         $this->userAdminService->suspend($user, $until);
 
+        $statusMessage = $request->input('suspend_type') === 'permanent'
+            ? 'User suspended permanently.'
+            : "User suspended until {$until->format('M j, Y')}.";
+
         return redirect()->route('admin.users.show', $user)
-            ->with('status', "User suspended until {$until->format('M j, Y')}.");
+            ->with('status', $statusMessage);
     }
 
     public function reactivate(User $user): RedirectResponse

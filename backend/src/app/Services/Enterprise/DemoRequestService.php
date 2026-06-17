@@ -15,6 +15,7 @@ use App\Notifications\EnterpriseActivationNotification;
 use App\Notifications\EnterpriseDemoRequestAdminNotification;
 use App\Notifications\EnterpriseDemoRequestReceivedNotification;
 use App\Services\Notification\NotificationService;
+use App\Support\CountryCatalog;
 use DomainException;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Support\Facades\DB;
@@ -37,7 +38,7 @@ class DemoRequestService
                 'full_name' => $data['full_name'],
                 'email' => strtolower($data['email']),
                 'company_name' => $data['company_name'],
-                'country' => strtoupper($data['country']),
+                'country' => CountryCatalog::resolveName((string) $data['country']) ?? trim((string) $data['country']),
                 'team_size' => $data['team_size'],
                 'use_case' => $data['use_case'],
                 'status' => DemoRequestStatus::PENDING->value,
@@ -87,6 +88,13 @@ class DemoRequestService
 
         return DB::transaction(function () use ($demoRequest, $admin, $data, $action): CompanyDemoRequest {
             $registration = $this->resolveAdminRegistrationData($demoRequest, $data);
+            $companyCountryCode = CountryCatalog::resolveCode($registration['country']);
+
+            if ($companyCountryCode === null) {
+                throw ValidationException::withMessages([
+                    'country' => ['Country must be a valid country name.'],
+                ]);
+            }
 
             $demoRequest->fill([
                 'full_name' => $registration['full_name'],
@@ -125,7 +133,7 @@ class DemoRequestService
                 $company = Company::create([
                     'company_id' => $this->generateUniqueCompanyId(),
                     'name' => $registration['company_name'],
-                    'country' => $registration['country'],
+                    'country' => $companyCountryCode,
                     'team_size' => $registration['team_size'],
                     'use_case' => $registration['purpose'],
                     'status' => 'active',
@@ -134,7 +142,7 @@ class DemoRequestService
             } else {
                 $company->update([
                     'name' => $registration['company_name'],
-                    'country' => $registration['country'],
+                    'country' => $companyCountryCode,
                     'team_size' => $registration['team_size'],
                     'use_case' => $registration['purpose'],
                     'status' => 'active',
@@ -380,7 +388,8 @@ class DemoRequestService
             'full_name' => trim((string) ($data['full_name'] ?? $demoRequest->full_name)),
             'email' => strtolower(trim((string) ($data['email'] ?? $demoRequest->email))),
             'company_name' => trim((string) ($data['company_name'] ?? $demoRequest->company_name)),
-            'country' => strtoupper(trim((string) ($data['country'] ?? $demoRequest->country))),
+            'country' => CountryCatalog::resolveName(trim((string) ($data['country'] ?? $demoRequest->country)))
+                ?? trim((string) ($data['country'] ?? $demoRequest->country)),
             'team_size' => (string) ($data['team_size'] ?? $demoRequest->team_size),
             'purpose' => (string) ($data['purpose'] ?? $demoRequest->registration_purpose ?? $demoRequest->use_case),
             'user_type' => (string) ($data['user_type'] ?? $demoRequest->registration_user_type ?? 'other'),

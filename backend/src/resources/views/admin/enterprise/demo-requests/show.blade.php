@@ -122,7 +122,7 @@
                                 name="country"
                                 class="form-control form-control-sm"
                                 value="{{ old('country', $demoRequest->country) }}"
-                                maxlength="2"
+                                maxlength="100"
                                 required
                             >
                         </div>

@@ -24,7 +24,7 @@ class BookDemoRequestTest extends TestCase
             'full_name' => 'Ada Lovelace',
             'email' => 'ada@analytical.co',
             'company_name' => 'Analytical Engines Ltd',
-            'country' => 'GB',
+            'country' => 'United Kingdom',
             'team_size' => '11-50',
             'use_case' => 'We need enterprise workflows for secure collaboration.',
         ]);
@@ -35,6 +35,7 @@ class BookDemoRequestTest extends TestCase
         $this->assertDatabaseHas('company_demo_requests', [
             'email' => 'ada@analytical.co',
             'status' => 'pending',
+            'country' => 'United Kingdom',
         ]);
 
         Notification::assertSentOnDemand(EnterpriseDemoRequestReceivedNotification::class);
@@ -47,7 +48,7 @@ class BookDemoRequestTest extends TestCase
             'full_name' => 'Ada Lovelace',
             'email' => 'ada@analytical.co',
             'company_name' => 'Analytical Engines Ltd',
-            'country' => 'GB',
+            'country' => 'United Kingdom',
             'team_size' => '11-50',
             'use_case' => 'Original pending request',
             'status' => 'pending',
@@ -58,7 +59,7 @@ class BookDemoRequestTest extends TestCase
             'full_name' => 'Ada Lovelace',
             'email' => 'ada@analytical.co',
             'company_name' => 'Analytical Engines Ltd',
-            'country' => 'GB',
+            'country' => 'United Kingdom',
             'team_size' => '11-50',
             'use_case' => 'Second request should fail because first is pending.',
         ]);
@@ -82,7 +83,7 @@ class BookDemoRequestTest extends TestCase
             'full_name' => 'Ada Lovelace',
             'email' => 'ada@analytical.co',
             'company_name' => 'Analytical Engines Ltd',
-            'country' => 'GB',
+            'country' => 'United Kingdom',
             'team_size' => '11-50',
             'use_case' => 'We need enterprise workflows for secure collaboration.',
         ]);

@@ -8,15 +8,27 @@
  */
 import axios, { AxiosError } from 'axios';
 import type { ApiError } from '@/types';
+import { env } from '@/constants/env';
 import { appStore } from '@/lib/storage/stores';
 import { sessionEvents } from '@/lib/auth/sessionEvents';
 import { toast } from '@/lib/toast';
 
-// Prevents multiple concurrent 401s from stacking the modal
+const ACCOUNT_STATUS_CODES = new Set([
+  'deactivated',
+  'suspended_temporary',
+  'suspended_permanent',
+]);
+
+function isAccountStatusCode(code: string | undefined): boolean {
+  return code != null && ACCOUNT_STATUS_CODES.has(code);
+}
+
+// Prevents multiple concurrent session events from stacking modals
 let sessionExpiredPending = false;
+let accountBlockedPending = false;
 
 export const client = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL,
+  baseURL: env.API_BASE_URL,
   timeout: 15_000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -43,7 +55,9 @@ client.interceptors.response.use(
         (responseData?.message as string) ??
         error.message ??
         'An unexpected error occurred',
-      code: responseData?.code as string | undefined,
+      code:
+        (responseData?.code as string) ??
+        ((responseData?.data as Record<string, unknown> | undefined)?.account_status as string | undefined),
       errors: responseData?.errors as Record<string, string[]> | undefined,
     };
 
@@ -51,6 +65,27 @@ client.interceptors.response.use(
       console.log('[API Error]', error.config?.method?.toUpperCase(), error.config?.url);
       console.log('[API Error] status:', apiError.status, '| message:', apiError.message);
       console.log('[API Error] raw response:', JSON.stringify(responseData, null, 2));
+    }
+
+    // Account blocked (suspended/deactivated) — force logout with server message
+    if (apiError.status === 403 && isAccountStatusCode(apiError.code) && !accountBlockedPending) {
+      accountBlockedPending = true;
+      setTimeout(() => {
+        accountBlockedPending = false;
+      }, 5_500);
+
+      try {
+        appStore.delete('auth_token');
+      } catch {
+        // Non-fatal
+      }
+
+      const params = new URLSearchParams();
+      if (apiError.code) params.set('account_status', apiError.code);
+      if (apiError.message) params.set('message', apiError.message);
+      const query = params.toString();
+      window.location.href = query ? `/login?${query}` : '/login';
+      return Promise.reject(apiError);
     }
 
     // 401 Unauthenticated — show session-expired modal then auto-logout

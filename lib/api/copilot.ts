@@ -21,6 +21,12 @@ export type CopilotThread = {
     created_at: string;
     updated_at: string;
     messages: CopilotMessage[];
+    message_count?: number;
+    pagination?: {
+        has_more: boolean;
+        next_cursor: string | null;
+        loaded_count: number;
+    };
 };
 
 export type CopilotThreadSummary = {
@@ -102,6 +108,30 @@ function buildQuery(companyId?: number | string): string {
     return `?company_id=${encodeURIComponent(String(companyId))}`;
 }
 
+function buildQueryString(params?: Record<string, string | number | null | undefined>): string {
+    if (!params) {
+        return "";
+    }
+
+    const search = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(params)) {
+        if (value === undefined || value === null) {
+            continue;
+        }
+
+        const normalized = String(value).trim();
+        if (normalized === "") {
+            continue;
+        }
+
+        search.set(key, normalized);
+    }
+
+    const query = search.toString();
+    return query ? `?${query}` : "";
+}
+
 export function listCopilotThreads(
     token: string,
     companyId?: number | string
@@ -121,6 +151,42 @@ export function getCopilotThread(
     return apiRequest<{ thread: CopilotThread }>({
         method: "GET",
         path: `/copilot/threads/${encodeURIComponent(threadId)}${buildQuery(companyId)}`,
+        token,
+    });
+}
+
+export function getCopilotThreadMessages(
+    threadId: string,
+    token: string,
+    companyId?: number | string,
+    cursor?: string,
+    limit = 50
+): Promise<
+    ApiEnvelope<{
+        conversation_id: string;
+        messages: CopilotMessage[];
+        pagination: {
+            has_more: boolean;
+            next_cursor: string | null;
+            loaded_count: number;
+        };
+    }>
+> {
+    return apiRequest<{
+        conversation_id: string;
+        messages: CopilotMessage[];
+        pagination: {
+            has_more: boolean;
+            next_cursor: string | null;
+            loaded_count: number;
+        };
+    }>({
+        method: "GET",
+        path: `/copilot/threads/${encodeURIComponent(threadId)}/messages${buildQueryString({
+            company_id: companyId,
+            cursor,
+            limit,
+        })}`,
         token,
     });
 }

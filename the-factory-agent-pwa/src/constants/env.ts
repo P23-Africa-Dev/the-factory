@@ -1,6 +1,6 @@
 /**
- * Environment configuration — validates required env vars at startup.
- * All env vars are read from `NEXT_PUBLIC_*` process.env keys.
+ * Environment configuration for the agent PWA.
+ * Uses production defaults so Vercel/CI builds succeed without every var set locally.
  */
 
 // Static references to allow the Next.js/Turbopack bundler to inline them at build/compile time

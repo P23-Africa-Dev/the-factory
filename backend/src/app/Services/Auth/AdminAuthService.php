@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Auth;
 
+use App\Exceptions\AccountAccessDeniedException;
 use App\Models\User;
+use App\Support\UserAccountStatus;
 
 class AdminAuthService
 {
@@ -24,8 +26,17 @@ class AdminAuthService
         /** @var User|null $user */
         $user = User::where('email', strtolower($email))->first();
 
-        if (! $user || ! $user->canAuthenticate()) {
+        if (! $user) {
             return null;
+        }
+
+        $block = UserAccountStatus::resolveBlock($user);
+        if ($block !== null) {
+            throw new AccountAccessDeniedException(
+                message: $block['message'],
+                accountStatus: $block['code'],
+                suspendedUntil: $block['suspended_until'],
+            );
         }
 
         $isSupervisor = $user->internal_role === 'supervisor' && $user->onboarding_status === 'active';

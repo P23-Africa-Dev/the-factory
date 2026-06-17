@@ -39,7 +39,8 @@ class CopilotInnovationController extends Controller
     {
         $validated = $request->validate([
             'company_id' => ['nullable'],
-            'file' => ['required', 'file', 'mimes:pdf,xlsx,xls,csv', 'max:30720'],
+            // Accept a wider set of document and spreadsheet types to avoid client-side rejections
+            'file' => ['required', 'file', 'mimes:pdf,doc,docx,txt,xlsx,xls,csv', 'max:30720'],
         ]);
 
         $result = $this->phaseFiveCopilotService->analyzeFile(

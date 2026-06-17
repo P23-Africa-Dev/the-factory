@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -50,6 +50,8 @@ export default function LoginPage() {
   const { login } = useAuth();
   const { mutateAsync: loginMutate } = useLoginMutation();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const accountStatusMessage = searchParams.get('message');
 
   const [agreed, setAgreed] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -169,6 +171,12 @@ export default function LoginPage() {
             <h2 className="text-3xl font-extrabold text-[#F1F1F1] mb-6 text-center leading-normal font-sans">
               Login to Continue
             </h2>
+
+            {accountStatusMessage && (
+              <p className="mb-4 text-sm text-amber-300 text-center leading-relaxed">
+                {accountStatusMessage}
+              </p>
+            )}
 
             {/* Terms Agreement Checkbox */}
             <Checkbox
