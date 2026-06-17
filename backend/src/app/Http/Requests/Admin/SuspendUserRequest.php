@@ -14,7 +14,7 @@ class SuspendUserRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'suspend_type'  => ['required', 'in:duration,date'],
+            'suspend_type'  => ['required', 'in:duration,date,permanent'],
             'suspend_days'  => ['required_if:suspend_type,duration', 'nullable', 'integer', 'min:1', 'max:365'],
             'suspend_until' => ['required_if:suspend_type,date', 'nullable', 'date', 'after:today'],
         ];

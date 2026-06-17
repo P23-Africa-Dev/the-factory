@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  extractAccountStatusCode,
+  handleAccountAccessDenied,
+  isAccountStatusCode,
+} from "@/lib/auth/account-status";
+
 export type ApiEnvelope<TData> = {
   success: boolean;
   message: string;
@@ -17,15 +23,18 @@ type ApiRequestOptions = {
 export class ApiRequestError extends Error {
   status: number;
   errors: Record<string, string[]> | null;
+  code?: string;
 
   constructor(
     message: string,
     status: number,
-    errors: Record<string, string[]> | null = null
+    errors: Record<string, string[]> | null = null,
+    code?: string
   ) {
     super(message);
     this.status = status;
     this.errors = errors;
+    this.code = code;
   }
 }
 
@@ -65,10 +74,25 @@ export async function apiRequest<TData>({
   }
 
   if (!response.ok || !payload.success) {
+    const accountStatus = extractAccountStatusCode({
+      code: (payload as { code?: string }).code,
+      data:
+        payload.data && typeof payload.data === "object"
+          ? (payload.data as { account_status?: string })
+          : null,
+    });
+
+    if (response.status === 403 && isAccountStatusCode(accountStatus) && token) {
+      handleAccountAccessDenied(payload.message || "Your account access has been restricted.", {
+        accountStatus,
+      });
+    }
+
     throw new ApiRequestError(
       payload.message || "Request failed.",
       response.status,
-      payload.errors
+      payload.errors,
+      accountStatus
     );
   }
 

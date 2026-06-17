@@ -144,7 +144,7 @@ Route::prefix('internal')->name('internal.')->group(function (): void {
 });
 
 // Authenticated
-Route::middleware('auth:sanctum')->group(function (): void {
+Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
     Route::post('/auth/logout', LogoutController::class)->name('auth.logout');
 
     Route::prefix('user')->name('user.')->group(function (): void {

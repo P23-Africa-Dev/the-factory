@@ -2,6 +2,10 @@
 
 import { useEffect } from "react";
 import { getMe } from "@/lib/api/onboarding";
+import {
+  handleAccountAccessDenied,
+  isAccountStatusCode,
+} from "@/lib/auth/account-status";
 import { clearAuthSession, getAuthTokenFromDocument } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 
@@ -36,6 +40,12 @@ export default function AuthInitializer({
               message: err?.message,
             });
           }
+
+          if (err?.status === 403 && isAccountStatusCode(err?.code)) {
+            handleAccountAccessDenied(err.message, { accountStatus: err.code });
+            return;
+          }
+
           // If token is invalid (401), clear session
           if (err.status === 401) {
             clearAuthSession();

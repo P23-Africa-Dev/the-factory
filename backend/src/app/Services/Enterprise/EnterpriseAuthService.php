@@ -2,7 +2,9 @@
 
 namespace App\Services\Enterprise;
 
+use App\Exceptions\AccountAccessDeniedException;
 use App\Models\User;
+use App\Support\UserAccountStatus;
 
 class EnterpriseAuthService
 {
@@ -11,7 +13,20 @@ class EnterpriseAuthService
         /** @var User|null $user */
         $user = User::where('email', strtolower($email))->first();
 
-        if (! $user || ! $user->canAuthenticate() || ! $user->hasCompletedEnterpriseOnboarding()) {
+        if (! $user) {
+            return null;
+        }
+
+        $block = UserAccountStatus::resolveBlock($user);
+        if ($block !== null) {
+            throw new AccountAccessDeniedException(
+                message: $block['message'],
+                accountStatus: $block['code'],
+                suspendedUntil: $block['suspended_until'],
+            );
+        }
+
+        if (! $user->hasCompletedEnterpriseOnboarding()) {
             return null;
         }
 

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Internal;
 
+use App\Exceptions\AccountAccessDeniedException;
 use App\Models\User;
+use App\Support\UserAccountStatus;
 
 class InternalAuthService
 {
@@ -18,7 +20,20 @@ class InternalAuthService
         /** @var User|null $user */
         $user = User::query()->where('email', strtolower($email))->first();
 
-        if (! $user || ! $user->canAuthenticate() || $user->internal_role !== 'agent' || $user->onboarding_status !== 'active') {
+        if (! $user) {
+            return null;
+        }
+
+        $block = UserAccountStatus::resolveBlock($user);
+        if ($block !== null) {
+            throw new AccountAccessDeniedException(
+                message: $block['message'],
+                accountStatus: $block['code'],
+                suspendedUntil: $block['suspended_until'],
+            );
+        }
+
+        if ($user->internal_role !== 'agent' || $user->onboarding_status !== 'active') {
             return null;
         }
 

@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { loginAgent } from "@/lib/api/auth";
 import { ApiRequestError, getMe } from "@/lib/api/onboarding";
+import { getAccountStatusMessage } from "@/lib/auth/account-status";
 import { clearAuthSession, getAuthTokenFromDocument, setAuthSession, setCompanyId } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 import { toast } from "sonner";
@@ -55,6 +56,7 @@ export default function AgentLoginForm() {
   const password = watch("password");
   const isFilled = email.trim() !== "" && password.trim() !== "";
   const showResetSuccess = searchParams.get("reset") === "success";
+  const accountStatusMessage = getAccountStatusMessage(searchParams);
 
   useEffect(() => {
     if (!hasHydrated || !user) return;
@@ -228,6 +230,12 @@ export default function AgentLoginForm() {
           </p>
         )}
       </div>
+
+      {accountStatusMessage && (
+        <p className="mb-4 px-1 text-sm text-amber-700 text-center">
+          {accountStatusMessage}
+        </p>
+      )}
 
       {globalError && (
         <p className="mb-4 px-1 text-sm text-red-500 text-center">
