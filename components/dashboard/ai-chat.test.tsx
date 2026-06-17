@@ -178,10 +178,7 @@ describe("AIChat", () => {
 
         render(<AIChat open onClose={() => { }} />);
 
-        // Open menu, then open AI Tools submenu and click Generate Weekly Summary
-        fireEvent.click(screen.getByLabelText("More options"));
-        fireEvent.click(await screen.findByText("AI Tools"));
-        fireEvent.click(await screen.findByText("Generate Weekly Summary"));
+        fireEvent.click(screen.getByRole("button", { name: "Generate Weekly Summary" }));
 
         await waitFor(() => {
             expect(queueWeeklyReportMock).toHaveBeenCalledWith(99);
