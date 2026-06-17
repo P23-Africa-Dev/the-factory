@@ -8,10 +8,27 @@ use Symfony\Component\Intl\Countries;
 
 final class CountryCatalog
 {
+    /** @var array<string, string>|null */
+    private static ?array $cachedNames = null;
+
     /** @return array<string, string> */
     public static function names(): array
     {
-        return Countries::getNames('en');
+        if (self::$cachedNames !== null) {
+            return self::$cachedNames;
+        }
+
+        if (class_exists(Countries::class)) {
+            return self::$cachedNames = Countries::getNames('en');
+        }
+
+        $configured = config('countries.names');
+
+        if (! is_array($configured) || $configured === []) {
+            throw new \RuntimeException('Country catalog is not configured.');
+        }
+
+        return self::$cachedNames = $configured;
     }
 
     /** @return list<array{label: string, value: string}> */

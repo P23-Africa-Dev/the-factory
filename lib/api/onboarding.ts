@@ -50,7 +50,19 @@ export async function apiRequest<TData>({
     body: body ? (isFormData ? (body as FormData) : JSON.stringify(body)) : undefined,
   });
 
-  const payload = (await response.json()) as ApiEnvelope<TData>;
+  let payload: ApiEnvelope<TData>;
+
+  try {
+    payload = (await response.json()) as ApiEnvelope<TData>;
+  } catch {
+    throw new ApiRequestError(
+      response.status >= 500
+        ? "Server error. Please try again shortly."
+        : "Request failed.",
+      response.status,
+      null
+    );
+  }
 
   if (!response.ok || !payload.success) {
     throw new ApiRequestError(
