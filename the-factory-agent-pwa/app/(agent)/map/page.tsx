@@ -29,7 +29,6 @@ import { fetchDirectionsRoute } from '@/lib/map/directions';
 import { getDb } from '@/lib/db/client';
 import { syncEngine } from '@/lib/sync/syncEngine';
 import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
-import { agentDebugLog } from '@/lib/debug-ingest';
 import { toast } from '@/lib/toast';
 
 // Dynamically import MapboxMap with SSR disabled to prevent server-side window/document errors
@@ -45,6 +44,7 @@ const MapboxMap = dynamic(() => import('@/features/tracking/components/MapboxMap
 // ─── Types & constants ────────────────────────────────────────────────────────
 
 type MapPhase = 'idle' | 'destination_selected' | 'activity_started' | 'activity_ended';
+type TrackingStatus = 'idle' | 'connecting' | 'live' | 'error';
 type TransportMode = 'driving' | 'cycling' | 'walking';
 
 const MODE_LABELS: Record<TransportMode, string> = {
@@ -829,6 +829,9 @@ function MapContent() {
   const [plannedRoute, setPlannedRoute] = useState<[number, number][]>([]);
   const [isRouteLoading, setIsRouteLoading] = useState(false);
   const [isLaunchingRide, setIsLaunchingRide] = useState(false);
+  const [trackingStatus, setTrackingStatus] = useState<TrackingStatus>(
+    isFromTrackingScreen ? 'live' : 'idle',
+  );
   const startRideInFlightRef = useRef(false);
   const [distanceRemainingM, setDistanceRemainingM] = useState<number | null>(null);
 
@@ -857,13 +860,6 @@ function MapContent() {
     if (isFromTrackingScreen) return;
     if (activeTaskId == null) return;
     void stopTracking();
-    agentDebugLog({
-      location: 'map/page.tsx:mountClearTracking',
-      message: 'Cleared orphan tracking on map open',
-      hypothesisId: 'H50',
-      runId: 'post-fix-5',
-      data: { activeTaskId },
-    });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only hygiene
   }, []);
 
@@ -1042,18 +1038,6 @@ function MapContent() {
       const route = coords && coords.length > 1 ? coords : [origin, destination];
       setPlannedRoute(route);
       setIsRouteLoading(false);
-      agentDebugLog({
-        location: 'map/page.tsx:fetchRoute',
-        message: 'Directions result',
-        hypothesisId: 'H3-H4',
-        runId: 'post-fix-4',
-        data: {
-          hasToken: !!token,
-          apiCoords: coords?.length ?? 0,
-          routePoints: route.length,
-          usedFallback: !coords || coords.length < 2,
-        },
-      });
     });
 
     return () => {
@@ -1231,25 +1215,17 @@ function MapContent() {
 
     if (!companyId) {
       toast.error('Session error', 'Company context is missing. Please reload and try again.');
-      agentDebugLog({
-        location: 'map/page.tsx:handleStartActivity',
-        message: 'Blocked — missing companyId',
-        hypothesisId: 'H51',
-        runId: 'post-fix-5',
-        data: { taskId, companyId },
-      });
       return;
     }
 
     startRideInFlightRef.current = true;
     setIsLaunchingRide(true);
-    agentDebugLog({
-      location: 'map/page.tsx:handleStartActivity',
-      message: 'Start Task tapped',
-      hypothesisId: 'H8-H9',
-      runId: 'post-fix-6',
-      data: { taskId, companyId, taskStatus: selectedDestination.taskStatus, isResume },
-    });
+    setTrackingStatus('connecting');
+
+    const markTrackingLive = () => {
+      setTrackingStatus('live');
+      queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    };
 
     const beginSession = (arrived?: boolean, trackingSessionId?: number, startPoint?: [number, number]) => {
       const avatarUrl = getSafeAvatarSrc(user?.avatar_url ?? null);
@@ -1276,21 +1252,7 @@ function MapContent() {
         onArrived: () => setHasArrived(true),
         onDistanceRemaining: (m) => setDistanceRemainingM(m),
       });
-      agentDebugLog({
-        location: 'map/page.tsx:beginSession',
-        message: 'Ride started',
-        hypothesisId: 'H8-H9',
-        runId: 'post-fix-6',
-        data: { taskId, plannedRouteLen: plannedRoute.length, arrived: Boolean(arrived), isResume },
-      });
     };
-
-    const geoErrorMessage = (geoErr: unknown): string =>
-      geoErr instanceof Error
-        ? geoErr.message
-        : typeof geoErr === 'object' && geoErr != null && 'message' in geoErr
-          ? String((geoErr as { message: unknown }).message)
-          : 'unknown';
 
     try {
       let permStatus = await checkPermission();
@@ -1299,6 +1261,7 @@ function MapContent() {
       }
       if (permStatus !== 'granted') {
         setIsLaunchingRide(false);
+        setTrackingStatus('idle');
         toast.error('Location required', 'Location access is required to start this task.');
         return;
       }
@@ -1306,31 +1269,13 @@ function MapContent() {
       let startPoint: [number, number];
       if (lastPosition) {
         startPoint = [lastPosition.coords.longitude, lastPosition.coords.latitude];
-        agentDebugLog({
-          location: 'map/page.tsx:resolveStartPoint',
-          message: 'Using cached lastPosition',
-          hypothesisId: 'H81',
-          runId: 'post-fix-7',
-          data: { taskId },
-        });
       } else if (customOrigin) {
         startPoint = [customOrigin.longitude, customOrigin.latitude];
       } else if (effectiveOriginLng != null && effectiveOriginLat != null) {
         startPoint = [effectiveOriginLng, effectiveOriginLat];
       } else {
-        try {
-          const pos = await getCurrentPosition();
-          startPoint = [pos.coords.longitude, pos.coords.latitude];
-        } catch (geoErr: unknown) {
-          agentDebugLog({
-            location: 'map/page.tsx:resolveStartPoint',
-            message: 'GPS failed with no cache',
-            hypothesisId: 'H71',
-            runId: 'post-fix-7',
-            data: { taskId, error: geoErrorMessage(geoErr) },
-          });
-          throw geoErr;
-        }
+        const pos = await getCurrentPosition();
+        startPoint = [pos.coords.longitude, pos.coords.latitude];
       }
 
       beginSession(false, undefined, startPoint);
@@ -1341,22 +1286,10 @@ function MapContent() {
           .then((route) => {
             hydrateLiveTaskFromRoute(taskId, route);
             if (route.arrival) setHasArrived(true);
-            agentDebugLog({
-              location: 'map/page.tsx:resumeRoute',
-              message: 'Resume route hydrated',
-              hypothesisId: 'H71',
-              runId: 'post-fix-6',
-              data: { taskId, points: route.points.length },
-            });
+            markTrackingLive();
           })
-          .catch((err: unknown) => {
-            agentDebugLog({
-              location: 'map/page.tsx:resumeRoute',
-              message: 'Resume route fetch failed (ride already active)',
-              hypothesisId: 'H52',
-              runId: 'post-fix-6',
-              data: { taskId, error: err instanceof Error ? err.message : 'unknown' },
-            });
+          .catch(() => {
+            // ride UI already active; route hydrate is best-effort
           });
         return;
       }
@@ -1377,52 +1310,29 @@ function MapContent() {
           status: data.arrived ? 'arrived' : 'tracking',
         });
         if (data.arrived) setHasArrived(true);
-        agentDebugLog({
-          location: 'map/page.tsx:startTaskSuccess',
-          message: 'Start task API ok',
-          hypothesisId: 'H53',
-          runId: 'post-fix-6',
-          data: { taskId, trackingId: data.tracking.id },
-        });
+        markTrackingLive();
       } catch (err: unknown) {
-        agentDebugLog({
-          location: 'map/page.tsx:startTaskError',
-          message: 'Start task API failed — trying resume',
-          hypothesisId: 'H53',
-          runId: 'post-fix-6',
-          data: { taskId, error: err instanceof Error ? err.message : 'unknown' },
-        });
         try {
           const route = await trackingApi.getTaskRoute(taskId, companyId);
           hydrateLiveTaskFromRoute(taskId, route);
           useTrackingStore.getState().upsertTask(taskId, { lastPosition: startPoint });
-          agentDebugLog({
-            location: 'map/page.tsx:startTaskError',
-            message: 'Resumed ride after API failure',
-            hypothesisId: 'H60',
-            runId: 'post-fix-6',
-            data: { taskId },
-          });
+          if (route.arrival) setHasArrived(true);
+          markTrackingLive();
         } catch {
           void stopTracking();
           setPhase('destination_selected');
           setIsLaunchingRide(false);
+          setTrackingStatus('error');
           toast.error(
             'Could not start task',
             err instanceof Error ? err.message : 'Please try again.',
           );
         }
       }
-    } catch (err: unknown) {
+    } catch {
       setIsLaunchingRide(false);
       setPhase('destination_selected');
-      agentDebugLog({
-        location: 'map/page.tsx:handleStartActivity',
-        message: 'Location error',
-        hypothesisId: 'H54',
-        runId: 'post-fix-6',
-        data: { taskId, error: geoErrorMessage(err) },
-      });
+      setTrackingStatus('idle');
       toast.error('Location error', 'Could not get your current position. Please try again.');
     } finally {
       startRideInFlightRef.current = false;
@@ -1445,11 +1355,26 @@ function MapContent() {
     displayName,
     user?.avatar_url,
     plannedRoute.length,
+    queryClient,
   ]);
+
+  useEffect(() => {
+    if (phase !== 'activity_started' || trackingStatus === 'live') return;
+    if (liveTask?.lastUpdatedAt) {
+      setTrackingStatus('live');
+    }
+  }, [phase, trackingStatus, liveTask?.lastUpdatedAt]);
+
+  useEffect(() => {
+    if (phase !== 'activity_started' || trackingStatus !== 'connecting') return;
+    const timer = setTimeout(() => setTrackingStatus('live'), 3000);
+    return () => clearTimeout(timer);
+  }, [phase, trackingStatus]);
 
   const handleEndActivity = useCallback((): void => {
     void stopTracking();
     setPhase('activity_ended');
+    setTrackingStatus('idle');
   }, [stopTracking]);
 
   const handleShareDestination = useCallback(() => {
@@ -1479,6 +1404,7 @@ function MapContent() {
     setSelectedDestination(null);
     setHasArrived(false);
     setPlannedRoute([]);
+    setTrackingStatus('idle');
   }, [queryClient]);
 
   // Derived positions
@@ -1524,10 +1450,30 @@ function MapContent() {
       displayName,
       avatarUrl: isOnline ? agentAvatarUrl : null,
       preferInitials: !isOnline,
-      headingDegrees: lastPosition?.coords.heading ?? null,
+      headingDegrees: isNavigating
+        ? liveTask?.lastHeadingDegrees ?? lastPosition?.coords.heading ?? null
+        : lastPosition?.coords.heading ?? null,
+      speedMps: isNavigating
+        ? liveTask?.lastSpeedMps ?? lastPosition?.coords.speed ?? null
+        : lastPosition?.coords.speed ?? null,
     }),
-    [displayName, isOnline, agentAvatarUrl, lastPosition?.coords.heading],
+    [
+      displayName,
+      isOnline,
+      agentAvatarUrl,
+      isNavigating,
+      liveTask?.lastHeadingDegrees,
+      liveTask?.lastSpeedMps,
+      lastPosition?.coords.heading,
+      lastPosition?.coords.speed,
+    ],
   );
+
+  const rideTrackingStatus = useMemo((): 'connecting' | 'live' | 'error' => {
+    if (trackingStatus === 'error') return 'error';
+    if (trackingStatus === 'connecting') return 'connecting';
+    return 'live';
+  }, [trackingStatus]);
 
   const destinationMarkerKind = (selectedDestination?.taskId ?? 0) > 0 ? 'task' as const : 'place' as const;
 
@@ -1561,16 +1507,18 @@ function MapContent() {
         />
       </div>
 
-      {(isRouteLoading || isLaunchingRide || isStarting) && (
+      {(isRouteLoading || isLaunchingRide || isStarting || trackingStatus === 'connecting') && (
         <div className="absolute inset-x-0 top-1/2 z-[15] flex justify-center pointer-events-none px-6">
           <div className="bg-[#09232D]/90 text-white rounded-2xl px-5 py-4 shadow-xl flex items-center gap-3 max-w-sm w-full border border-white/10">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#75ADAF] border-t-transparent flex-shrink-0" />
             <div className="min-w-0">
               <p className="font-sans font-bold text-sm truncate">
-                {isLaunchingRide || isStarting ? 'Starting your ride…' : 'Calculating route…'}
+                {isLaunchingRide || isStarting || trackingStatus === 'connecting'
+                  ? 'Starting your ride…'
+                  : 'Calculating route…'}
               </p>
               <p className="font-sans text-xs text-white/70 truncate">
-                {isLaunchingRide || isStarting
+                {isLaunchingRide || isStarting || trackingStatus === 'connecting'
                   ? 'Connecting GPS tracking and task session'
                   : 'Fetching directions from Mapbox'}
               </p>
@@ -1644,6 +1592,8 @@ function MapContent() {
                 etaMinutes={etaByMode[transportMode]}
                 distanceRemainingM={distanceRemainingM}
                 totalDistanceM={totalRouteDistanceM}
+                trackingStatus={rideTrackingStatus}
+                lastUpdatedAt={liveTask?.lastUpdatedAt ?? null}
                 onEnd={handleEndActivity}
               />
             ) : (

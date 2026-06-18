@@ -1,6 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
+
+export type RideTrackingStatus = 'connecting' | 'live' | 'error';
 
 function formatDistance(meters: number | null): string {
   if (meters === null || !Number.isFinite(meters)) return '—';
@@ -8,17 +10,74 @@ function formatDistance(meters: number | null): string {
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
+function TrackingStatusPill({
+  trackingStatus,
+  lastUpdatedAt,
+}: {
+  trackingStatus: RideTrackingStatus;
+  lastUpdatedAt: string | null;
+}) {
+  const freshness = useMemo(() => {
+    if (!lastUpdatedAt) return 'unknown' as const;
+    const ageMs = Date.now() - new Date(lastUpdatedAt).getTime();
+    if (ageMs <= 15_000) return 'fresh' as const;
+    if (ageMs <= 30_000) return 'aging' as const;
+    return 'stale' as const;
+  }, [lastUpdatedAt]);
+
+  if (trackingStatus === 'connecting') {
+    return (
+      <div className="flex items-center gap-2 mb-3">
+        <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+        <span className="font-sans text-xs font-semibold text-amber-700">Connecting GPS…</span>
+      </div>
+    );
+  }
+
+  if (trackingStatus === 'error') {
+    return (
+      <div className="flex items-center gap-2 mb-3">
+        <span className="h-2 w-2 rounded-full bg-red-500" />
+        <span className="font-sans text-xs font-semibold text-red-700">Tracking unavailable</span>
+      </div>
+    );
+  }
+
+  if (freshness === 'stale') {
+    return (
+      <div className="flex items-center gap-2 mb-3">
+        <span className="h-2 w-2 rounded-full bg-gray-400" />
+        <span className="font-sans text-xs font-semibold text-gray-500">Signal weak</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <span className="relative flex h-2 w-2">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+      </span>
+      <span className="font-sans text-xs font-semibold text-emerald-700">Live tracking</span>
+    </div>
+  );
+}
+
 export function NavigationRideSheet({
   destinationName,
   etaMinutes,
   distanceRemainingM,
   totalDistanceM,
+  trackingStatus,
+  lastUpdatedAt,
   onEnd,
 }: {
   destinationName: string;
   etaMinutes: number | null;
   distanceRemainingM: number | null;
   totalDistanceM: number | null;
+  trackingStatus: RideTrackingStatus;
+  lastUpdatedAt: string | null;
   onEnd: () => void;
 }) {
   const etaLabel =
@@ -34,6 +93,8 @@ export function NavigationRideSheet({
       <div className="flex justify-center mb-3">
         <div className="w-9 h-1 rounded-full bg-gray-300" />
       </div>
+
+      <TrackingStatusPill trackingStatus={trackingStatus} lastUpdatedAt={lastUpdatedAt} />
 
       <div className="flex items-end justify-between gap-4 mb-3">
         <div>

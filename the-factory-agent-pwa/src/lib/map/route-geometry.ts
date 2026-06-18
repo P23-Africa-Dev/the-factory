@@ -97,3 +97,67 @@ export function sliceRemainingRoute(
 export function buildTraveledSegment(trail: [number, number][]): [number, number][] {
   return sanitizePolyline(trail);
 }
+
+/** Forward azimuth in degrees (0 = north, clockwise) — Mapbox bearing convention. */
+export function bearingDegrees(from: [number, number], to: [number, number]): number {
+  const [lng1, lat1] = from;
+  const [lng2, lat2] = to;
+  const lat1Rad = (lat1 * Math.PI) / 180;
+  const lat2Rad = (lat2 * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2Rad);
+  const x =
+    Math.cos(lat1Rad) * Math.sin(lat2Rad) -
+    Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
+  return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
+}
+
+const MIN_NAV_SPEED_MPS = 0.5;
+
+/** Bearing for navigation camera: device heading when moving, else route/destination. */
+export function resolveNavigationBearing(
+  agent: [number, number] | null,
+  remainingRoute: [number, number][],
+  dest: [number, number] | null,
+  gpsHeading: number | null | undefined,
+  gpsSpeed: number | null | undefined,
+): number | null {
+  if (
+    gpsHeading != null &&
+    Number.isFinite(gpsHeading) &&
+    gpsSpeed != null &&
+    Number.isFinite(gpsSpeed) &&
+    gpsSpeed > MIN_NAV_SPEED_MPS
+  ) {
+    return gpsHeading;
+  }
+
+  if (isFiniteCoordinate(agent)) {
+    const route = sanitizePolyline(remainingRoute);
+    if (route.length >= 2) {
+      const next = route.find((pt) => !areSamePoint(pt, agent)) ?? route[1];
+      if (next && !areSamePoint(agent, next)) {
+        return bearingDegrees(agent, next);
+      }
+    }
+    if (isFiniteCoordinate(dest) && !areSamePoint(agent, dest)) {
+      return bearingDegrees(agent, dest);
+    }
+  }
+
+  return null;
+}
+
+/** Smooth map bearing toward target, reducing GPS jitter. */
+export function smoothBearingDegrees(
+  current: number,
+  target: number,
+  factor = 0.25,
+  minDelta = 8,
+): number {
+  let delta = target - current;
+  while (delta > 180) delta -= 360;
+  while (delta < -180) delta += 360;
+  if (Math.abs(delta) < minDelta) return current;
+  return (current + delta * factor + 360) % 360;
+}

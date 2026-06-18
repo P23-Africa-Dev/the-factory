@@ -13,9 +13,13 @@ import {
   updateAgentMarkerElement,
   type DestinationMarkerKind,
 } from '@/lib/map/map-markers';
-import { agentDebugLog } from '@/lib/debug-ingest';
+import { resolveNavigationBearing, smoothBearingDegrees } from '@/lib/map/route-geometry';
 
 export type MapboxMapMode = 'preview' | 'navigation';
+
+const NAV_CAMERA_PADDING = { top: 120, bottom: 220, left: 48, right: 48 };
+const NAV_PITCH = 55;
+const NAV_ZOOM = 17;
 
 export type MapboxMapProps = {
   agentPosition: [number, number] | null;
@@ -32,6 +36,7 @@ export type MapboxMapProps = {
     avatarUrl?: string | null;
     preferInitials?: boolean;
     headingDegrees?: number | null;
+    speedMps?: number | null;
   };
   destinationMarkerKind?: DestinationMarkerKind;
   radiusMeters: number | null;
@@ -166,17 +171,6 @@ function addRouteLayers(map: mapboxgl.Map): void {
   }
 }
 
-function routeLayerVisibility(map: mapboxgl.Map): Record<string, string | undefined> {
-  const ids = ['route-remaining-main', 'route-remaining-casing', 'route-traveled-line', 'geofence-fill'];
-  const out: Record<string, string | undefined> = {};
-  for (const id of ids) {
-    if (map.getLayer(id)) {
-      out[id] = map.getLayoutProperty(id, 'visibility') as string | undefined;
-    }
-  }
-  return out;
-}
-
 function applyRouteData(
   map: mapboxgl.Map,
   mode: MapboxMapMode,
@@ -241,6 +235,8 @@ export function MapboxMap({
   const mapLoadedRef = useRef(false);
   const enteredNavigationRef = useRef(false);
   const previewFitDoneRef = useRef(false);
+  const mapBearingRef = useRef(0);
+  const wasNavigationRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState(false);
 
@@ -380,37 +376,10 @@ export function MapboxMap({
 
       applyRouteData(map, mapMode, traveled, remaining);
 
-      const styleLoadedAfter = map.isStyleLoaded();
-      agentDebugLog({
-        location: 'MapboxMap.tsx:syncMap',
-        message: 'Route layers synced',
-        hypothesisId: 'H11-H16',
-        runId: 'post-fix-4',
-        data: {
-          mapMode,
-          traveledLen: traveled.length,
-          remainingLen: remaining.length,
-          styleLoaded: styleLoadedAfter,
-          hasGeofence: Boolean(destPos && radius != null),
-          layerVisibility: routeLayerVisibility(map),
-        },
-      });
-
-      if (!styleLoadedAfter && remaining.length > 1) {
+      if (!map.isStyleLoaded() && remaining.length > 1) {
         map.once('idle', () => {
           const payload = syncPayloadRef.current;
           applyRouteData(map, payload.mode, payload.effectiveTraveled, payload.effectiveRemaining);
-          agentDebugLog({
-            location: 'MapboxMap.tsx:idleReapply',
-            message: 'Route re-applied after idle',
-            hypothesisId: 'H20',
-            runId: 'post-fix-4',
-            data: {
-              remainingLen: payload.effectiveRemaining.length,
-              styleLoaded: map.isStyleLoaded(),
-              layerVisibility: routeLayerVisibility(map),
-            },
-          });
         });
       }
 
@@ -426,13 +395,6 @@ export function MapboxMap({
         if (agentPos) bounds.extend(agentPos);
         bounds.extend(destPos);
         map.fitBounds(bounds, { padding: 72, duration: 800, maxZoom: 15 });
-        agentDebugLog({
-          location: 'MapboxMap.tsx:previewFit',
-          message: 'Preview fitBounds',
-          hypothesisId: 'H22',
-          runId: 'post-fix-4',
-          data: { hasAgent: Boolean(agentPos), remainingLen: remaining.length },
-        });
       }
 
       if (agentPos && marker) {
@@ -453,20 +415,53 @@ export function MapboxMap({
         }
 
         const heading = marker.headingDegrees;
+        const mapBearing = map.getBearing();
         if (heading != null && Number.isFinite(heading)) {
-          agentMarkerRef.current.getElement().style.transform = `rotate(${heading}deg)`;
+          const relative = ((heading - mapBearing) % 360 + 360) % 360;
+          agentMarkerRef.current.getElement().style.transform = `rotate(${relative}deg)`;
+        } else {
+          agentMarkerRef.current.getElement().style.transform = '';
         }
 
         const duration = mapMode === 'navigation' ? 400 : 800;
-        const zoom = mapMode === 'navigation' ? 16 : 15;
+        const zoom = mapMode === 'navigation' ? NAV_ZOOM : 15;
 
-        if (mapMode === 'navigation' && !enteredNavigationRef.current && destPos) {
-          enteredNavigationRef.current = true;
-          const bounds = new mapboxgl.LngLatBounds();
-          bounds.extend(agentPos);
-          bounds.extend(destPos);
-          map.fitBounds(bounds, { padding: 80, duration: 900, maxZoom: 16 });
-        } else if (mapMode === 'navigation' || remaining.length <= 1) {
+        if (mapMode === 'navigation') {
+          const rawBearing = resolveNavigationBearing(
+            agentPos,
+            remaining,
+            destPos,
+            marker.headingDegrees,
+            marker.speedMps,
+          );
+          const targetBearing =
+            rawBearing != null
+              ? smoothBearingDegrees(mapBearingRef.current, rawBearing)
+              : mapBearingRef.current;
+
+          if (!enteredNavigationRef.current) {
+            enteredNavigationRef.current = true;
+            mapBearingRef.current = targetBearing;
+            map.easeTo({
+              center: agentPos,
+              zoom: NAV_ZOOM,
+              bearing: targetBearing,
+              pitch: NAV_PITCH,
+              padding: NAV_CAMERA_PADDING,
+              duration: 900,
+            });
+          } else {
+            mapBearingRef.current = targetBearing;
+            map.easeTo({
+              center: agentPos,
+              zoom: NAV_ZOOM,
+              bearing: targetBearing,
+              pitch: NAV_PITCH,
+              padding: NAV_CAMERA_PADDING,
+              duration,
+            });
+          }
+        } else if (remaining.length <= 1) {
           map.easeTo({ center: agentPos, zoom, duration });
         }
       } else if (agentMarkerRef.current) {
@@ -515,6 +510,7 @@ export function MapboxMap({
     agentMarker?.avatarUrl,
     agentMarker?.preferInitials,
     agentMarker?.headingDegrees,
+    agentMarker?.speedMps,
     destinationMarkerKind,
     radiusMeters,
     arrived,
@@ -525,7 +521,20 @@ export function MapboxMap({
   }, [remainingSig, destLng, destLat]);
 
   useEffect(() => {
-    if (mode !== 'navigation') {
+    if (mode === 'navigation') {
+      wasNavigationRef.current = true;
+      return;
+    }
+
+    if (wasNavigationRef.current) {
+      wasNavigationRef.current = false;
+      enteredNavigationRef.current = false;
+      mapBearingRef.current = 0;
+      const map = mapRef.current;
+      if (map) {
+        map.easeTo({ bearing: 0, pitch: 0, duration: 600 });
+      }
+    } else {
       enteredNavigationRef.current = false;
     }
   }, [mode]);

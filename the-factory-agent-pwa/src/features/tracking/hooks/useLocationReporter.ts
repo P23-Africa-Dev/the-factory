@@ -4,7 +4,6 @@ import { useEffect, useRef, useCallback } from 'react';
 import { getDb } from '@/lib/db/client';
 import { requestBackgroundSync } from '@/lib/offline/queue';
 import { useTrackingStore } from '@/store/tracking';
-import { agentDebugLog } from '@/lib/debug-ingest';
 import { trackingApi } from '../api';
 import { useGeolocation, type LocationObject } from './useGeolocation';
 import type { LocationQueueItem } from '../types';
@@ -35,6 +34,8 @@ export const useLocationReporter = ({
   const memoryQueue = useRef<LocationQueueItem[]>([]);
   const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isUnauthorizedRef = useRef(false);
+  const needsImmediateFlushRef = useRef(false);
+  const flushRef = useRef<(() => Promise<void>) | null>(null);
   const onArrivedRef = useRef(onArrived);
   const onNearRef = useRef(onNearDestination);
   const onDistanceRef = useRef(onDistanceRemaining);
@@ -67,15 +68,15 @@ export const useLocationReporter = ({
       useTrackingStore.getState().appendPolylinePoint(taskId, point);
       useTrackingStore.getState().upsertTask(taskId, {
         lastPosition: point,
+        lastHeadingDegrees: loc.coords.heading ?? null,
+        lastSpeedMps: loc.coords.speed ?? null,
         lastUpdatedAt: new Date(loc.timestamp).toISOString(),
       });
-      agentDebugLog({
-        location: 'useLocationReporter.ts:enqueue',
-        message: 'GPS point queued',
-        hypothesisId: 'H10',
-        runId: 'post-fix-4',
-        data: { taskId, lat: point[1], lng: point[0] },
-      });
+
+      if (needsImmediateFlushRef.current) {
+        needsImmediateFlushRef.current = false;
+        void flushRef.current?.();
+      }
 
       if (memoryQueue.current.length >= MAX_QUEUE_SIZE) {
         memoryQueue.current.shift();
@@ -208,8 +209,13 @@ export const useLocationReporter = ({
   }, [taskId, companyId, applyProximityResponse]);
 
   useEffect(() => {
+    flushRef.current = flush;
+  }, [flush]);
+
+  useEffect(() => {
     if (!active) {
       stopWatching();
+      needsImmediateFlushRef.current = false;
       if (flushIntervalRef.current) {
         clearInterval(flushIntervalRef.current);
         flushIntervalRef.current = null;
@@ -217,6 +223,7 @@ export const useLocationReporter = ({
       return;
     }
 
+    needsImmediateFlushRef.current = true;
     startWatching(enqueue);
     flushIntervalRef.current = setInterval(() => {
       void flush();
