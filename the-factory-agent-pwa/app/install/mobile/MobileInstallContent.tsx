@@ -6,6 +6,7 @@ import { Smartphone, Share, CheckCircle2 } from 'lucide-react';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { isStandaloneMode } from '@/lib/pwa/standalone';
 import { isIosDevice } from '@/lib/pwa/device';
+import { FactoryLogo } from '@/components/branding/FactoryLogo';
 
 export function MobileInstallContent() {
   const router = useRouter();
@@ -44,7 +45,7 @@ export function MobileInstallContent() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#0A1D25] px-6 py-10 text-white">
       <div className="w-16 h-16 rounded-[22px] bg-gradient-to-tr from-[#113948] to-[#0A1D25] p-2.5 border border-white/10 flex items-center justify-center shadow-lg mb-5">
-        <img src="/icons/icon-192x192.png" alt="Factory 23 Agent" width={44} height={44} />
+        <FactoryLogo size={36} alt="Factory 23 Agent" />
       </div>
 
       <h1 className="text-xl font-bold text-center">Install Factory 23 Agent</h1>
