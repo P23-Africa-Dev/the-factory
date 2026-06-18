@@ -89,17 +89,26 @@ export default function Home() {
               simplifies field operations by combining tasks, tracking, and CRM in one platform.
               Designed for teams to manage work, monitor agents, and close deals faster.            </p>
 
-            <div className="mt-12 flex flex-col items-center justify-center gap-6 sm:flex-row">
-              <Link href="/register" className="group w-full sm:w-auto">
+            <div className="mt-12 flex flex-col items-center justify-center gap-6 sm:flex-row w-full max-w-4xl px-4">
+              <Link href="/register" className="group w-full sm:w-auto flex justify-center">
                 <Button className="h-[64px] min-w-[240px] rounded-full bg-[#6FA8A6] px-8 text-[11px] font-bold uppercase tracking-widest text-[#0A1618] hover:bg-[#A3E635] shadow-lg transition-all">
                   Deploy System <ArrowRight className="ml-2 inline-block transition-transform group-hover:translate-x-1" size={18} />
                 </Button>
               </Link>
-              <Link href="/enterprise/schedule-demo" className="w-full sm:w-auto">
+              <Link href="/enterprise/schedule-demo" className="w-full sm:w-auto flex justify-center">
                 <Button variant="outline" className="h-[64px] min-w-[240px] rounded-2xl border-white/10 bg-white/5 text-sm font-black uppercase tracking-widest text-white backdrop-blur-xl hover:bg-white/10 transition-all active:scale-[0.98]">
                   Schedule Demo
                 </Button>
               </Link>
+              <div className="w-full sm:w-auto flex justify-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-[64px] min-w-[240px] rounded-2xl border-[#6FA8A6]/20 bg-[#6FA8A6]/5 text-sm font-black uppercase tracking-widest text-[#6FA8A6] backdrop-blur-xl hover:bg-[#6FA8A6]/10 shadow-[0_0_15px_rgba(111,168,166,0.05)] transition-all active:scale-[0.98]"
+                >
+                  Download Agent App
+                </Button>
+              </div>
             </div>
           </div>
 
