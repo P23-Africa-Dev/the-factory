@@ -12,12 +12,13 @@
  * - proof-sync: upload pending proof photos
  */
 
-const CACHE_NAME = 'factory-agent-pwa-v1';
-const STATIC_CACHE = 'factory-static-v1';
-const API_CACHE = 'factory-api-v1';
+const CACHE_NAME = 'factory-agent-pwa-v2';
+const STATIC_CACHE = 'factory-static-v2';
+const API_CACHE = 'factory-api-v2';
 
 const STATIC_ASSETS = [
   '/',
+  '/offline',
   '/manifest.json',
 ];
 
@@ -71,7 +72,7 @@ self.addEventListener('fetch', (event) => {
 
 // Background Sync events
 self.addEventListener('sync', (event) => {
-  if (event.tag === 'location-sync' || event.tag === 'proof-sync') {
+  if (event.tag === 'location-sync' || event.tag === 'proof-sync' || event.tag === 'offline-action-sync') {
     event.waitUntil(
       self.clients.matchAll().then((clients) => {
         clients.forEach((client) => {
@@ -143,7 +144,7 @@ async function cacheFirst(request) {
     return response;
   } catch {
     // Offline fallback
-    return caches.match('/') || new Response('Offline', { status: 503 });
+    return caches.match('/offline') || caches.match('/') || new Response('Offline', { status: 503 });
   }
 }
 

@@ -178,10 +178,22 @@
       "namedRegex": "^/meetings/new(?:/)?$"
     },
     {
+      "page": "/offline",
+      "regex": "^/offline(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/offline(?:/)?$"
+    },
+    {
       "page": "/profile",
       "regex": "^/profile(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/profile(?:/)?$"
+    },
+    {
+      "page": "/sync/conflicts",
+      "regex": "^/sync/conflicts(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/sync/conflicts(?:/)?$"
     },
     {
       "page": "/tasks",

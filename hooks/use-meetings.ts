@@ -15,6 +15,7 @@ import {
     type UpdateMeetingPayload,
 } from "@/lib/api/meetings";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { toast } from "sonner";
 
 export const MEETING_KEYS = {
     all: ["meetings"] as const,
@@ -67,6 +68,10 @@ export function useCreateMeeting(options?: { onSuccess?: (meeting: MeetingItem) 
         mutationFn: (payload: CreateMeetingPayload) => createMeeting(payload, token),
         onSuccess: (res) => {
             queryClient.invalidateQueries({ queryKey: MEETING_KEYS.all });
+            if (res.meta?.queued_offline) {
+                toast.info("Meeting creation queued offline.");
+                return;
+            }
             options?.onSuccess?.(res.data.meeting);
         },
     });
@@ -81,6 +86,10 @@ export function useUpdateMeeting(options?: { onSuccess?: (meeting: MeetingItem) 
             updateMeeting(meetingId, payload, token),
         onSuccess: (res) => {
             queryClient.invalidateQueries({ queryKey: MEETING_KEYS.all });
+            if (res.meta?.queued_offline) {
+                toast.info("Meeting update queued offline.");
+                return;
+            }
             options?.onSuccess?.(res.data.meeting);
         },
     });
@@ -95,6 +104,10 @@ export function useCancelMeeting(options?: { onSuccess?: (meeting: MeetingItem) 
             cancelMeeting(meetingId, { company_id: companyId }, token),
         onSuccess: (res) => {
             queryClient.invalidateQueries({ queryKey: MEETING_KEYS.all });
+            if (res.meta?.queued_offline) {
+                toast.info("Meeting cancellation queued offline.");
+                return;
+            }
             options?.onSuccess?.(res.data.meeting);
         },
     });

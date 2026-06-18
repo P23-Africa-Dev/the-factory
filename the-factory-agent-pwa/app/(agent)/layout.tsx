@@ -7,6 +7,7 @@ import { useAuth } from '@/features/auth';
 import { useTrackingWebSocket } from '@/hooks/useTrackingWebSocket';
 import { syncEngine } from '@/lib/sync/syncEngine';
 import { BottomNavBar } from '@/components/shared/BottomNavBar';
+import { OfflineSyncBanner } from '@/components/shared/OfflineSyncBanner';
 
 export default function AgentLayout({
   children,
@@ -19,7 +20,7 @@ export default function AgentLayout({
   // Mount WebSocket tracking session for authenticated agents
   useTrackingWebSocket();
 
-  // Handle offline sync trigger on reconnect and visible tab changes
+  // Handle offline sync trigger on reconnect, visibility, and service worker messages.
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -31,17 +32,26 @@ export default function AgentLayout({
       syncEngine.syncAll();
     };
 
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (event?.data?.type === 'SYNC_REQUESTED') {
+        syncEngine.syncAll();
+      }
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('online', handleOnline);
+    navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage);
 
     // Initial check/sync
     if (navigator.onLine) {
       syncEngine.syncAll();
+      syncEngine.scheduleSync();
     }
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('online', handleOnline);
+      navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage);
     };
   }, []);
 
@@ -62,6 +72,7 @@ export default function AgentLayout({
 
   return (
     <div className="flex flex-col flex-1 min-h-screen bg-[#0A1D25] text-white">
+      <OfflineSyncBanner />
       {/* Scrollable screen view container with padding to avoid bottom navigation bar overlay */}
       <div className="flex flex-col flex-1 pb-[100px]">
         {children}

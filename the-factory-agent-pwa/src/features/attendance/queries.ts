@@ -30,7 +30,9 @@ export function useClockIn() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: attendanceKeys.today() });
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.today() });
+      }
     },
   });
 }
@@ -52,7 +54,9 @@ export function useClockOut() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: attendanceKeys.today() });
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.today() });
+      }
     },
   });
 }

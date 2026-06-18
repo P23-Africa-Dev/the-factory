@@ -28,6 +28,7 @@ import {
   type AttendanceSettings,
   type PayrollSummariesParams,
 } from "@/lib/api/attendance";
+import { toast } from "sonner";
 
 export const ATTENDANCE_KEYS = {
   all: ["attendance"] as const,
@@ -66,8 +67,11 @@ export function useClockIn() {
 
   return useMutation({
     mutationFn: (payload: ClockPayload) => clockIn(payload, token),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ATTENDANCE_KEYS.all });
+      if (res.meta?.queued_offline) {
+        toast.info("Clock in queued offline.");
+      }
     },
   });
 }
@@ -78,8 +82,11 @@ export function useClockOut() {
 
   return useMutation({
     mutationFn: (payload: ClockPayload) => clockOut(payload, token),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ATTENDANCE_KEYS.all });
+      if (res.meta?.queued_offline) {
+        toast.info("Clock out queued offline.");
+      }
     },
   });
 }

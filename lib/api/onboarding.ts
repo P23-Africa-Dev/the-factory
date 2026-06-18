@@ -5,12 +5,20 @@ import {
   handleAccountAccessDenied,
   isAccountStatusCode,
 } from "@/lib/auth/account-status";
+import {
+  enqueueOfflineHttpMutation,
+  isOfflineQueueSupportedPath,
+} from "@/lib/offline/queue";
 
 export type ApiEnvelope<TData> = {
   success: boolean;
   message: string;
   data: TData;
   errors: Record<string, string[]> | null;
+  meta?: {
+    queued_offline?: boolean;
+    queue_id?: number;
+  };
 };
 
 type ApiRequestOptions = {
@@ -48,6 +56,30 @@ export async function apiRequest<TData>({
   token,
 }: ApiRequestOptions): Promise<ApiEnvelope<TData>> {
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+  const canQueueOffline =
+    method !== "GET" &&
+    !isFormData &&
+    typeof window !== "undefined" &&
+    !navigator.onLine &&
+    isOfflineQueueSupportedPath(method, path);
+
+  if (canQueueOffline) {
+    const queueId = await enqueueOfflineHttpMutation({
+      method,
+      path,
+      body,
+    });
+    return {
+      success: true,
+      message: "Saved offline. It will sync automatically when connection returns.",
+      data: {} as TData,
+      errors: null,
+      meta: {
+        queued_offline: true,
+        queue_id: queueId,
+      },
+    };
+  }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,

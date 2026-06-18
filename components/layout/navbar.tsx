@@ -15,6 +15,7 @@ import LogoutModal from "@/components/ui/logout-modal";
 import { NotificationPanel } from "@/components/notifications/notification-panel";
 import { useUnreadCount } from "@/hooks/use-notifications";
 import { DownloadAgentAppModal } from "@/components/pwa/DownloadAgentAppModal";
+import InstallDashboardAppButton from "@/components/pwa/InstallDashboardAppButton";
 
 // Import local SVG assets
 import DashboardIcon from "@/assets/nav-icons/dashboard.svg";
@@ -188,6 +189,7 @@ export function Navbar() {
       {/* Right Side Actions */}
       <div className="flex items-center gap-4 lg:gap-8">
         <div className="hidden sm:flex items-center gap-3 lg:gap-5 text-white/60">
+          <InstallDashboardAppButton />
           <button
             onClick={() => setNotifOpen(true)}
             className="hover:text-white transition-all cursor-pointer relative p-1"

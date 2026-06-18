@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { getDb } from '@/lib/db/client';
+import { requestBackgroundSync } from '@/lib/offline/queue';
 import { trackingApi } from '../api';
 import { useGeolocation, type LocationObject } from './useGeolocation';
 import type { LocationQueueItem } from '../types';
@@ -60,7 +61,11 @@ export const useLocationReporter = ({
         headingDegrees: item.headingDegrees,
         recordedAt: item.recordedAt,
         synced: 0,
+        attempts: 0,
+        nextAttemptAt: new Date().toISOString(),
+        lastError: null,
       });
+      await requestBackgroundSync('location-sync');
     } catch (err) {
       console.warn('[LocationReporter] Failed to store checkpoint in db:', err);
     }
@@ -104,7 +109,13 @@ export const useLocationReporter = ({
       const syncedTimestamps = new Set(batch.map(b => b.recordedAt));
       for (const row of unsynced) {
         if (row.id != null && syncedTimestamps.has(row.recordedAt)) {
-          await tx.store.put({ ...row, synced: 1 });
+          await tx.store.put({
+            ...row,
+            synced: 1,
+            attempts: 0,
+            nextAttemptAt: null,
+            lastError: null,
+          });
         }
       }
       await tx.done;
@@ -127,7 +138,12 @@ export const useLocationReporter = ({
           const unsynced = pending.filter(p => p.synced === 0);
           for (const row of unsynced) {
             if (row.id != null) {
-              await tx.store.put({ ...row, synced: 1 });
+              await tx.store.put({
+                ...row,
+                synced: 1,
+                nextAttemptAt: null,
+                lastError: apiErr?.message ?? null,
+              });
             }
           }
           await tx.done;

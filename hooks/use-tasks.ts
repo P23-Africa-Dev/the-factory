@@ -25,6 +25,7 @@ import {
   type PaginationData,
 } from "@/lib/api/tasks";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { toast } from "sonner";
 
 export const TASK_KEYS = {
   all: ["tasks"] as const,
@@ -66,6 +67,10 @@ export function useCreateTask(options?: { onSuccess?: (task: TaskApiItem) => voi
     onSuccess: (res) => {
       // Invalidate the tasks queries to refresh the list
       queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+      if (res.meta?.queued_offline) {
+        toast.info("Task queued offline. It will sync automatically.");
+        return;
+      }
       options?.onSuccess?.(res.data.task);
     },
   });
@@ -165,6 +170,10 @@ export function useUpdateTaskStatus(options?: { onSuccess?: (task: TaskApiItem) 
     }) => updateTaskStatus(taskId, payload, token),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+      if (res.meta?.queued_offline) {
+        toast.info("Task status update queued offline.");
+        return;
+      }
       options?.onSuccess?.(res.data.task);
     },
   });
@@ -183,6 +192,10 @@ export function useUpdateTaskStatusAdmin(options?: { onSuccess?: (task: TaskApiI
     }) => updateTaskStatusAdmin(taskId, payload, token),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+      if (res.meta?.queued_offline) {
+        toast.info("Task status update queued offline.");
+        return;
+      }
       options?.onSuccess?.(res.data.task);
     },
   });
@@ -195,6 +208,10 @@ export function useCreateSelfTask(options?: { onSuccess?: (task: TaskApiItem) =>
     mutationFn: (payload: CreateSelfTaskPayload) => createSelfTask(payload, token),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+      if (res.meta?.queued_offline) {
+        toast.info("Task queued offline.");
+        return;
+      }
       options?.onSuccess?.(res.data.task);
     },
   });

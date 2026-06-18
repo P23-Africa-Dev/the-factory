@@ -10,6 +10,7 @@
   "/(agent)/meetings/page": "app/(agent)/meetings/page.js",
   "/(agent)/page": "app/(agent)/page.js",
   "/(agent)/profile/page": "app/(agent)/profile/page.js",
+  "/(agent)/sync/conflicts/page": "app/(agent)/sync/conflicts/page.js",
   "/(agent)/task/[id]/complete/page": "app/(agent)/task/[id]/complete/page.js",
   "/(agent)/task/[id]/page": "app/(agent)/task/[id]/page.js",
   "/(agent)/task/[id]/tracking/page": "app/(agent)/task/[id]/tracking/page.js",
@@ -19,5 +20,6 @@
   "/(auth)/reset-password/[token]/page": "app/(auth)/reset-password/[token]/page.js",
   "/_global-error/page": "app/_global-error/page.js",
   "/_not-found/page": "app/_not-found/page.js",
-  "/favicon.ico/route": "app/favicon.ico/route.js"
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/offline/page": "app/offline/page.js"
 }

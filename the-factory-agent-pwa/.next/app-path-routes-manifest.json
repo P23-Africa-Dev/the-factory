@@ -10,6 +10,7 @@
   "/(agent)/meetings/page": "/meetings",
   "/(agent)/page": "/",
   "/(agent)/profile/page": "/profile",
+  "/(agent)/sync/conflicts/page": "/sync/conflicts",
   "/(agent)/task/[id]/complete/page": "/task/[id]/complete",
   "/(agent)/task/[id]/page": "/task/[id]",
   "/(agent)/task/[id]/tracking/page": "/task/[id]/tracking",
@@ -19,5 +20,6 @@
   "/(auth)/reset-password/[token]/page": "/reset-password/[token]",
   "/_global-error/page": "/_global-error",
   "/_not-found/page": "/_not-found",
-  "/favicon.ico/route": "/favicon.ico"
+  "/favicon.ico/route": "/favicon.ico",
+  "/offline/page": "/offline"
 }

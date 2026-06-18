@@ -1,8 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Poppins, Montserrat } from "next/font/google";
 import "./globals.css";
 import QueryProvider from "@/components/providers/query-provider";
 import AuthInitializer from "@/components/providers/auth-initializer";
+import OfflineSyncProvider from "@/components/providers/offline-sync-provider";
+import OfflineStatusBanner from "@/components/pwa/OfflineStatusBanner";
 import { Toaster } from "sonner";
 
 const poppins = Poppins({
@@ -20,6 +22,17 @@ const montserrat = Montserrat({
 export const metadata: Metadata = {
   title: "Factory 23",
   description: "Factory 23 - Africa's Factory",
+  applicationName: "Factory 23 Workforce",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Factory23",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0A1D25",
 };
 
 export default function RootLayout({
@@ -35,9 +48,12 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <QueryProvider>
-          <AuthInitializer>
-            {children}
-          </AuthInitializer>
+          <OfflineSyncProvider>
+            <AuthInitializer>
+              {children}
+            </AuthInitializer>
+            <OfflineStatusBanner />
+          </OfflineSyncProvider>
         </QueryProvider>
         <Toaster position="top-center" richColors />
       </body>
