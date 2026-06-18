@@ -20,6 +20,23 @@ export type MapboxMapProps = {
   dimmed?: boolean;
 };
 
+function buildRouteGeoJson(coords: [number, number][]): GeoJSON.FeatureCollection<GeoJSON.LineString> {
+  return {
+    type: 'FeatureCollection',
+    features:
+      coords.length >= 2
+        ? [{
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'LineString',
+              coordinates: coords,
+            },
+          }]
+        : [],
+  };
+}
+
 // Generate GeoJSON Polygon coordinates for a circular geofence
 function getCirclePolygon(center: [number, number], radiusInMeters: number): GeoJSON.Feature<GeoJSON.Polygon> {
   const coords = {
@@ -96,14 +113,7 @@ export function MapboxMap({
       map.on('load', () => {
         map.addSource('route', {
           type: 'geojson',
-          data: {
-            type: 'Feature',
-            properties: {},
-            geometry: {
-              type: 'LineString',
-              coordinates: polylineCoords.length > 0 ? polylineCoords : [[0, 0]],
-            },
-          },
+          data: buildRouteGeoJson(polylineCoords),
         });
 
         map.addLayer({
@@ -172,14 +182,7 @@ export function MapboxMap({
 
     const routeSource = map.getSource('route') as mapboxgl.GeoJSONSource | undefined;
     if (routeSource) {
-      routeSource.setData({
-        type: 'Feature',
-        properties: {},
-        geometry: {
-          type: 'LineString',
-          coordinates: polylineCoords.length > 1 ? polylineCoords : [[0, 0]],
-        },
-      });
+      routeSource.setData(buildRouteGeoJson(polylineCoords));
     }
 
     const geofenceSource = map.getSource('geofence') as mapboxgl.GeoJSONSource | undefined;
