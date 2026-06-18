@@ -196,6 +196,12 @@
       "namedRegex": "^/sync/conflicts(?:/)?$"
     },
     {
+      "page": "/sync/queue",
+      "regex": "^/sync/queue(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/sync/queue(?:/)?$"
+    },
+    {
       "page": "/tasks",
       "regex": "^/tasks(?:/)?$",
       "routeKeys": {},

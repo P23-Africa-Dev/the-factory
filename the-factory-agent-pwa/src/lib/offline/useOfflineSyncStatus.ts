@@ -11,7 +11,7 @@ const EMPTY_STATS: OfflineQueueStats = {
   pendingConflicts: 0,
 };
 
-export function useOfflineSyncStatus(pollEveryMs = 8_000) {
+export function useOfflineSyncStatus(pollEveryMs = 5_000) {
   const { isConnected } = useNetworkStatus();
   const [stats, setStats] = useState<OfflineQueueStats>(EMPTY_STATS);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -35,9 +35,17 @@ export function useOfflineSyncStatus(pollEveryMs = 8_000) {
 
     refresh();
     const interval = window.setInterval(refresh, pollEveryMs);
+
+    const handleOnline = () => {
+      void refresh();
+    };
+
+    window.addEventListener('online', handleOnline);
+
     return () => {
       mounted = false;
       window.clearInterval(interval);
+      window.removeEventListener('online', handleOnline);
     };
   }, [pollEveryMs, isConnected]);
 

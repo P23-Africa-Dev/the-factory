@@ -3,133 +3,161 @@
  *
  * Cache strategies:
  * - Cache First: static assets (CSS, JS, images, fonts)
- * - Network First: API calls (/api/v1/*)
- * - Stale While Revalidate: Mapbox tiles
- * - Offline Fallback: serve cached shell when offline
- *
- * Background Sync:
- * - location-sync: batch upload pending GPS coordinates
- * - proof-sync: upload pending proof photos
+ * -                Network First: API calls (/api/v1/*)
+ * - Stale While Revalidate: Mapbox tiles + RSC payloads
+ * - Navigation fallback: cached pages, then /offline shell
  */
 
-const CACHE_NAME = 'factory-agent-pwa-v2';
-const STATIC_CACHE = 'factory-static-v2';
-const API_CACHE = 'factory-api-v2';
+const CACHE_NAME = "factory-agent-pwa-v3";
+const STATIC_CACHE = "factory-static-v3";
+const API_CACHE = "factory-api-v3";
+const PAGE_CACHE = "factory-pages-v3";
 
-const STATIC_ASSETS = [
-  '/',
-  '/offline',
-  '/manifest.json',
-];
+const STATIC_ASSETS = ["/", "/offline", "/manifest.json"];
 
-// Install: pre-cache critical assets
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    })
+    caches.open(STATIC_CACHE).then((cache) => cache.addAll(STATIC_ASSETS)),
   );
   self.skipWaiting();
 });
 
-// Activate: clean up old caches
-self.addEventListener('activate', (event) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
+    caches.keys().then((keys) =>
+      Promise.all(
         keys
-          .filter((key) => key !== STATIC_CACHE && key !== API_CACHE && key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
-      );
-    })
+          .filter(
+            (key) =>
+              key !== STATIC_CACHE &&
+              key !== API_CACHE &&
+              key !== CACHE_NAME &&
+              key !== PAGE_CACHE,
+          )
+          .map((key) => caches.delete(key)),
+      ),
+    ),
   );
   self.clients.claim();
 });
 
-// Fetch: route requests to appropriate cache strategy
-self.addEventListener('fetch', (event) => {
+self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests
-  if (request.method !== 'GET') return;
+  if (request.method !== "GET") return;
 
-  // API calls: Network First
-  if (url.pathname.startsWith('/api/') || url.hostname.includes('thefactory23.com')) {
+  if (
+    url.pathname.startsWith("/api/") ||
+    (url.hostname.includes("thefactory23.com") && url.origin !== self.location.origin)
+  ) {
     event.respondWith(networkFirst(request));
     return;
   }
 
-  // Mapbox tiles: Stale While Revalidate
-  if (url.hostname.includes('mapbox.com') || url.hostname.includes('tiles.mapbox.com')) {
-    event.respondWith(staleWhileRevalidate(request));
+  if (url.hostname.includes("mapbox.com") || url.hostname.includes("tiles.mapbox.com")) {
+    event.respondWith(staleWhileRevalidate(request, STATIC_CACHE));
     return;
   }
 
-  // Everything else: Cache First (static assets)
-  event.respondWith(cacheFirst(request));
+  if (url.origin !== self.location.origin) return;
+
+  if (request.mode === "navigate") {
+    event.respondWith(handleNavigation(request));
+    return;
+  }
+
+  const isRscRequest =
+    request.headers.get("RSC") === "1" ||
+    request.headers.get("Next-Router-Prefetch") === "1" ||
+    request.headers.get("Next-Router-State-Tree") != null;
+
+  if (url.pathname.startsWith("/_next/") || isRscRequest) {
+    event.respondWith(staleWhileRevalidate(request, STATIC_CACHE));
+    return;
+  }
+
+  event.respondWith(staleWhileRevalidate(request, PAGE_CACHE));
 });
 
-// Background Sync events
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'location-sync' || event.tag === 'proof-sync' || event.tag === 'offline-action-sync') {
+self.addEventListener("sync", (event) => {
+  if (
+    event.tag === "location-sync" ||
+    event.tag === "proof-sync" ||
+    event.tag === "offline-action-sync"
+  ) {
     event.waitUntil(
       self.clients.matchAll().then((clients) => {
         clients.forEach((client) => {
           client.postMessage({
-            type: 'SYNC_REQUESTED',
+            type: "SYNC_REQUESTED",
             tag: event.tag,
           });
         });
-      })
+      }),
     );
   }
 });
 
-// Push notification support
-self.addEventListener('push', (event) => {
+self.addEventListener("push", (event) => {
   if (!event.data) return;
 
   try {
     const data = event.data.json();
     const options = {
-      body: data.message || data.body || '',
-      icon: '/icons/icon-192x192.png',
-      badge: '/icons/icon-72x72.png',
-      tag: data.tag || 'factory-notification',
+      body: data.message || data.body || "",
+      icon: "/icons/icon-192x192.png",
+      badge: "/icons/icon-72x72.png",
+      tag: data.tag || "factory-notification",
       data: {
-        url: data.action_url || '/',
+        url: data.action_url || "/",
       },
     };
 
     event.waitUntil(
-      self.registration.showNotification(data.title || 'Factory 23', options)
+      self.registration.showNotification(data.title || "Factory 23", options),
     );
   } catch {
     // Malformed push — ignore
   }
 });
 
-// Notification click handler
-self.addEventListener('notificationclick', (event) => {
+self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || '/';
+  const url = event.notification.data?.url || "/";
 
   event.waitUntil(
-    self.clients.matchAll({ type: 'window' }).then((clients) => {
-      // Focus existing tab if available
+    self.clients.matchAll({ type: "window" }).then((clients) => {
       for (const client of clients) {
-        if (client.url.includes(url) && 'focus' in client) {
+        if (client.url.includes(url) && "focus" in client) {
           return client.focus();
         }
       }
-      // Otherwise open a new tab
       return self.clients.openWindow(url);
-    })
+    }),
   );
 });
 
-// --- Cache strategy implementations ---
+async function handleNavigation(request) {
+  const cache = await caches.open(PAGE_CACHE);
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+
+    const offlinePage = await caches.match("/offline");
+    if (offlinePage) return offlinePage;
+
+    const shell = await caches.match("/");
+    return shell || new Response("Offline", { status: 503 });
+  }
+}
 
 async function cacheFirst(request) {
   const cached = await caches.match(request);
@@ -143,8 +171,11 @@ async function cacheFirst(request) {
     }
     return response;
   } catch {
-    // Offline fallback
-    return caches.match('/offline') || caches.match('/') || new Response('Offline', { status: 503 });
+    return (
+      caches.match("/offline") ||
+      caches.match("/") ||
+      new Response("Offline", { status: 503 })
+    );
   }
 }
 
@@ -158,23 +189,27 @@ async function networkFirst(request) {
     return response;
   } catch {
     const cached = await caches.match(request);
-    return cached || new Response(JSON.stringify({ error: 'Offline' }), {
-      status: 503,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return (
+      cached ||
+      new Response(JSON.stringify({ error: "Offline" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
   }
 }
 
-async function staleWhileRevalidate(request) {
+async function staleWhileRevalidate(request, cacheName) {
   const cached = await caches.match(request);
 
-  const fetchPromise = fetch(request).then((response) => {
-    if (response.ok) {
-      const cache = caches.open(STATIC_CACHE);
-      cache.then((c) => c.put(request, response.clone()));
-    }
-    return response;
-  }).catch(() => cached);
+  const fetchPromise = fetch(request)
+    .then((response) => {
+      if (response.ok) {
+        caches.open(cacheName).then((c) => c.put(request, response.clone()));
+      }
+      return response;
+    })
+    .catch(() => cached);
 
   return cached || fetchPromise;
 }

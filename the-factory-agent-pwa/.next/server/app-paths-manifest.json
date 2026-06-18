@@ -11,6 +11,7 @@
   "/(agent)/page": "app/(agent)/page.js",
   "/(agent)/profile/page": "app/(agent)/profile/page.js",
   "/(agent)/sync/conflicts/page": "app/(agent)/sync/conflicts/page.js",
+  "/(agent)/sync/queue/page": "app/(agent)/sync/queue/page.js",
   "/(agent)/task/[id]/complete/page": "app/(agent)/task/[id]/complete/page.js",
   "/(agent)/task/[id]/page": "app/(agent)/task/[id]/page.js",
   "/(agent)/task/[id]/tracking/page": "app/(agent)/task/[id]/tracking/page.js",

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { WifiOff } from "lucide-react";
+import { CloudOff, RefreshCw, WifiOff } from "lucide-react";
+import { useConnectivityStatus } from "@/lib/offline/connectivity";
 import { getOfflineSnapshot, type OfflineSnapshot } from "@/lib/offline/queue";
 import {
   getRuntimeSyncStatus,
@@ -17,7 +18,7 @@ const EMPTY_SNAPSHOT: OfflineSnapshot = {
 };
 
 export default function OfflineStatusBanner() {
-  const [isOnline, setIsOnline] = useState(true);
+  const { isOffline } = useConnectivityStatus();
   const [snapshot, setSnapshot] = useState<OfflineSnapshot>(EMPTY_SNAPSHOT);
   const [isSyncing, setIsSyncing] = useState(getRuntimeSyncStatus().isSyncing);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
@@ -25,60 +26,21 @@ export default function OfflineStatusBanner() {
   useEffect(() => {
     let mounted = true;
 
-    const probeConnectivity = async () => {
-      if (typeof navigator === "undefined") return true;
-      if (navigator.onLine) return true;
-
-      try {
-        const response = await fetch(`/favicon.ico?probe=${Date.now()}`, {
-          method: "GET",
-          cache: "no-store",
-        });
-        return response.ok;
-      } catch {
-        return false;
-      }
-    };
-
     const refresh = async () => {
       const next = await getOfflineSnapshot();
       if (mounted) setSnapshot(next);
     };
 
-    const evaluateConnection = async () => {
-      const connected = await probeConnectivity();
-      if (mounted) {
-        setIsOnline(connected);
-        if (connected) {
-          setIsPanelOpen(false);
-        }
-      }
-    };
-
     refresh();
-    evaluateConnection();
-    const interval = window.setInterval(refresh, 8000);
+    const interval = window.setInterval(refresh, 5000);
     const unsubscribe = subscribeRuntimeSyncStatus((status) => {
       if (mounted) setIsSyncing(status.isSyncing);
     });
-
-    const handleOnline = () => {
-      setIsOnline(true);
-      setIsPanelOpen(false);
-    };
-    const handleOffline = () => {
-      evaluateConnection();
-    };
-
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
 
     return () => {
       mounted = false;
       window.clearInterval(interval);
       unsubscribe();
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
@@ -88,47 +50,84 @@ export default function OfflineStatusBanner() {
     snapshot.failedActions > 0 ||
     snapshot.pendingConflicts > 0;
 
-  if (isOnline) return null;
+  const shouldShow = isOffline || hasPending || isSyncing;
+  if (!shouldShow) return null;
+
+  const totalPending = snapshot.pendingActions + snapshot.pendingUploads;
+  const title = isOffline
+    ? "Offline mode active"
+    : isSyncing
+      ? "Syncing offline changes"
+      : "Pending offline changes";
 
   return (
     <div className="group fixed bottom-5 right-5 z-[60]">
       <button
         type="button"
         onClick={() => setIsPanelOpen((prev) => !prev)}
-        className="flex h-11 w-11 items-center justify-center rounded-full border border-amber-300/40 bg-[#0B2330]/95 text-amber-200 shadow-2xl backdrop-blur transition hover:scale-[1.03]"
-        aria-label="Offline mode details"
-        title="Offline mode active"
+        className={`relative flex h-11 w-11 items-center justify-center rounded-full border shadow-2xl backdrop-blur transition hover:scale-[1.03] ${
+          isOffline
+            ? "border-amber-300/40 bg-[#0B2330]/95 text-amber-200"
+            : snapshot.failedActions > 0
+              ? "border-red-300/40 bg-[#0B2330]/95 text-red-200"
+              : "border-cyan-300/40 bg-[#0B2330]/95 text-cyan-200"
+        }`}
+        aria-label={title}
+        title={title}
       >
-        <WifiOff size={18} />
+        {isSyncing ? (
+          <RefreshCw size={18} className="animate-spin" />
+        ) : isOffline ? (
+          <WifiOff size={18} />
+        ) : (
+          <CloudOff size={18} />
+        )}
+        {totalPending > 0 ? (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-[#0B2330]">
+            {totalPending > 99 ? "99+" : totalPending}
+          </span>
+        ) : null}
       </button>
 
       <div
-        className={`absolute bottom-14 right-0 w-72 rounded-xl border border-white/15 bg-[#0B2330]/95 px-3 py-2 text-white shadow-2xl backdrop-blur ${
+        className={`absolute bottom-14 right-0 w-80 rounded-xl border border-white/15 bg-[#0B2330]/95 px-3 py-2 text-white shadow-2xl backdrop-blur ${
           isPanelOpen ? "block" : "hidden group-hover:block"
         }`}
       >
-        <div className="text-xs font-semibold">Offline Mode Active</div>
+        <div className="text-xs font-semibold">{title}</div>
         <div className="mt-1 text-[11px] text-white/75">
           Actions: {snapshot.pendingActions} | Uploads: {snapshot.pendingUploads} | Failed:{" "}
           {snapshot.failedActions}
           {snapshot.pendingConflicts > 0 ? ` | Conflicts: ${snapshot.pendingConflicts}` : ""}
         </div>
+        {isOffline ? (
+          <div className="mt-1 text-[11px] text-amber-100/80">
+            Changes are saved locally and will sync when you reconnect.
+          </div>
+        ) : null}
         {isSyncing ? (
-          <div className="mt-1 text-[11px] text-[#75ADAF]">Sync will resume when connected.</div>
+          <div className="mt-1 text-[11px] text-[#75ADAF]">Synchronizing queued changes…</div>
         ) : null}
-        {!hasPending ? (
-          <div className="mt-1 text-[11px] text-white/60">No queued changes pending.</div>
+        {!hasPending && isOffline ? (
+          <div className="mt-1 text-[11px] text-white/60">No queued changes yet.</div>
         ) : null}
-        {snapshot.pendingConflicts > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-2">
           <Link
-            href="/sync/conflicts"
-            className="mt-1 inline-block text-[11px] font-semibold text-[#75ADAF] underline"
+            href="/sync/queue"
+            className="inline-block text-[11px] font-semibold text-[#75ADAF] underline"
           >
-            Resolve conflicts
+            View sync queue
           </Link>
-        ) : null}
+          {snapshot.pendingConflicts > 0 ? (
+            <Link
+              href="/sync/conflicts"
+              className="inline-block text-[11px] font-semibold text-[#75ADAF] underline"
+            >
+              Resolve conflicts
+            </Link>
+          ) : null}
+        </div>
       </div>
     </div>
   );
 }
-

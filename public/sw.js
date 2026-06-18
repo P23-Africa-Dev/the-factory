@@ -1,5 +1,6 @@
-const STATIC_CACHE = "factory-dashboard-static-v1";
-const API_CACHE = "factory-dashboard-api-v1";
+const STATIC_CACHE = "factory-dashboard-static-v2";
+const API_CACHE = "factory-dashboard-api-v2";
+const PAGE_CACHE = "factory-dashboard-pages-v2";
 
 const OFFLINE_FALLBACK = "/offline";
 const STATIC_ASSETS = ["/", "/offline", "/manifest.webmanifest"];
@@ -16,7 +17,10 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key !== STATIC_CACHE && key !== API_CACHE)
+          .filter(
+            (key) =>
+              key !== STATIC_CACHE && key !== API_CACHE && key !== PAGE_CACHE,
+          )
           .map((key) => caches.delete(key)),
       ),
     ),
@@ -29,22 +33,36 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   if (request.method !== "GET") return;
+  if (url.origin !== self.location.origin) return;
 
   if (
     url.pathname.startsWith("/api/") ||
-    url.pathname.startsWith("/backend/") ||
-    url.hostname.includes("api.thefactory23.com")
+    url.pathname.startsWith("/backend/")
   ) {
-    event.respondWith(networkFirst(request));
+    event.respondWith(networkFirst(request, API_CACHE));
     return;
   }
 
-  if (url.pathname.startsWith("/_next/") || url.pathname.startsWith("/fonts/")) {
-    event.respondWith(cacheFirst(request));
+  if (request.mode === "navigate") {
+    event.respondWith(handleNavigation(request));
     return;
   }
 
-  event.respondWith(staleWhileRevalidate(request));
+  const isRscRequest =
+    request.headers.get("RSC") === "1" ||
+    request.headers.get("Next-Router-Prefetch") === "1" ||
+    request.headers.get("Next-Router-State-Tree") != null;
+
+  if (
+    url.pathname.startsWith("/_next/") ||
+    url.pathname.startsWith("/fonts/") ||
+    isRscRequest
+  ) {
+    event.respondWith(staleWhileRevalidate(request, STATIC_CACHE));
+    return;
+  }
+
+  event.respondWith(staleWhileRevalidate(request, PAGE_CACHE));
 });
 
 self.addEventListener("sync", (event) => {
@@ -62,27 +80,50 @@ self.addEventListener("sync", (event) => {
   }
 });
 
-async function cacheFirst(request) {
+async function handleNavigation(request) {
+  const cache = await caches.open(PAGE_CACHE);
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+
+    const offlinePage = await caches.match(OFFLINE_FALLBACK);
+    if (offlinePage) return offlinePage;
+
+    const shell = await caches.match("/");
+    return shell || new Response("Offline", { status: 503 });
+  }
+}
+
+async function cacheFirst(request, cacheName) {
   const cached = await caches.match(request);
   if (cached) return cached;
 
   try {
     const response = await fetch(request);
     if (response.ok) {
-      const cache = await caches.open(STATIC_CACHE);
+      const cache = await caches.open(cacheName);
       cache.put(request, response.clone());
     }
     return response;
   } catch {
-    return caches.match(OFFLINE_FALLBACK) || new Response("Offline", { status: 503 });
+    return (
+      caches.match(OFFLINE_FALLBACK) || new Response("Offline", { status: 503 })
+    );
   }
 }
 
-async function networkFirst(request) {
+async function networkFirst(request, cacheName) {
   try {
     const response = await fetch(request);
     if (response.ok) {
-      const cache = await caches.open(API_CACHE);
+      const cache = await caches.open(cacheName);
       cache.put(request, response.clone());
     }
     return response;
@@ -98,18 +139,18 @@ async function networkFirst(request) {
   }
 }
 
-async function staleWhileRevalidate(request) {
+async function staleWhileRevalidate(request, cacheName) {
   const cached = await caches.match(request);
   const network = fetch(request)
     .then(async (response) => {
       if (response.ok) {
-        const cache = await caches.open(STATIC_CACHE);
+        const cache = await caches.open(cacheName);
         cache.put(request, response.clone());
       }
       return response;
     })
     .catch(async () => cached);
 
-  return cached || network;
+  if (cached) return cached;
+  return network;
 }
-

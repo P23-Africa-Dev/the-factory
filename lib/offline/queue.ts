@@ -1,15 +1,21 @@
 "use client";
 
-import { getOfflineDb, type HttpMutationMethod } from "./db";
+import {
+  getOfflineDb,
+  type HttpMutationMethod,
+  type OfflineHttpMutationEntry,
+} from "./db";
 
 const SUPPORTED_MUTATION_RULES: Array<{
   method: HttpMutationMethod;
   pattern: RegExp;
 }> = [
   { method: "POST", pattern: /^\/tasks$/ },
+  { method: "PATCH", pattern: /^\/tasks\/[^/]+$/ },
   { method: "POST", pattern: /^\/agent\/tasks\/self$/ },
   { method: "PATCH", pattern: /^\/tasks\/[^/]+\/status$/ },
   { method: "PATCH", pattern: /^\/admin\/tasks\/[^/]+\/status$/ },
+  { method: "POST", pattern: /^\/agent\/tasks\/[^/]+\/complete$/ },
   { method: "POST", pattern: /^\/projects$/ },
   { method: "PATCH", pattern: /^\/projects\/[^/]+$/ },
   { method: "POST", pattern: /^\/meetings$/ },
@@ -328,5 +334,63 @@ export async function requestBackgroundSync(tag: string): Promise<void> {
   } catch {
     // Background sync is best-effort.
   }
+}
+
+export type QueueListItem = OfflineHttpMutationEntry & { id: number };
+
+export async function listHttpMutationQueue(): Promise<QueueListItem[]> {
+  const context = parseAuthContext();
+  if (!context) return [];
+
+  const db = await getOfflineDb();
+  const statuses = ["pending", "syncing", "failed", "synced"] as const;
+  const rows = await Promise.all(
+    statuses.map((status) =>
+      db.getAllFromIndex("httpMutationQueue", "by-company-user-status", [
+        context.companyId,
+        context.userId,
+        status,
+      ]),
+    ),
+  );
+
+  return rows
+    .flat()
+    .filter((entry): entry is QueueListItem => entry.id != null)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function retryHttpMutation(id: number): Promise<void> {
+  const db = await getOfflineDb();
+  const row = await db.get("httpMutationQueue", id);
+  if (!row) return;
+
+  const now = new Date().toISOString();
+  await db.put("httpMutationQueue", {
+    ...row,
+    status: "pending",
+    attempts: 0,
+    nextAttemptAt: now,
+    lastError: null,
+    updatedAt: now,
+  });
+
+  await requestBackgroundSync("dashboard-offline-sync");
+}
+
+export function describeHttpMutation(entry: QueueListItem): string {
+  const path = entry.path;
+  if (entry.method === "POST" && path === "/tasks") return "Create task";
+  if (entry.method === "PATCH" && /^\/tasks\/[^/]+$/.test(path)) return "Edit task";
+  if (entry.method === "PATCH" && path.endsWith("/status")) return "Update task status";
+  if (entry.method === "POST" && path.includes("/complete")) return "Complete task";
+  if (entry.method === "POST" && path === "/projects") return "Create project";
+  if (entry.method === "PATCH" && path.startsWith("/projects/")) return "Edit project";
+  if (entry.method === "POST" && path === "/meetings") return "Schedule meeting";
+  if (entry.method === "PATCH" && path.startsWith("/meetings/")) return "Edit meeting";
+  if (entry.method === "POST" && path.endsWith("/cancel")) return "Cancel meeting";
+  if (path.includes("clock-in")) return "Clock in";
+  if (path.includes("clock-out")) return "Clock out";
+  return `${entry.method} ${path}`;
 }
 

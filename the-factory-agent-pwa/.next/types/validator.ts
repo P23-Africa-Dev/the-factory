@@ -144,6 +144,15 @@ type LayoutConfig<Route extends LayoutRoutes = LayoutRoutes> = {
   type __Unused = __Check
 }
 
+// Validate ../../app/(agent)/sync/queue/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/sync/queue">> = Specific
+  const handler = {} as typeof import("../../app/(agent)/sync/queue/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../app/(agent)/task/[id]/complete/page.tsx
 {
   type __IsExpected<Specific extends AppPageConfig<"/task/[id]/complete">> = Specific

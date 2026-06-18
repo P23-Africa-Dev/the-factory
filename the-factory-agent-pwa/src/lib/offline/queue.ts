@@ -229,6 +229,76 @@ export async function getRunnableOfflineActions(): Promise<OfflineActionQueueEnt
     });
 }
 
+export type OfflineQueueListItem = OfflineActionQueueEntry & { id: number };
+
+export async function listOfflineActionQueue(): Promise<OfflineQueueListItem[]> {
+  const resolvedCompanyId = getActiveCompanyId();
+  const userId = getCurrentUserId();
+  if (!resolvedCompanyId || !userId) return [];
+
+  const db = await getDb();
+  const statuses = ['pending', 'syncing', 'failed', 'synced'] as const;
+  const rows = await Promise.all(
+    statuses.map((status) =>
+      db.getAllFromIndex('offlineActionQueue', 'by-company-user-status', [
+        resolvedCompanyId,
+        userId,
+        status,
+      ]),
+    ),
+  );
+
+  return rows
+    .flat()
+    .filter((entry): entry is OfflineQueueListItem => entry.id != null)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function retryOfflineAction(id: number): Promise<void> {
+  const db = await getDb();
+  const row = await db.get('offlineActionQueue', id);
+  if (!row) return;
+
+  const now = new Date().toISOString();
+  await db.put('offlineActionQueue', {
+    ...row,
+    status: 'pending',
+    attempts: 0,
+    nextAttemptAt: now,
+    lastError: null,
+    updatedAt: now,
+  });
+
+  await requestBackgroundSync('offline-action-sync');
+}
+
+export function describeOfflineAction(entry: OfflineActionQueueEntry): string {
+  switch (entry.actionType) {
+    case 'task.update_status':
+      return 'Update task status';
+    case 'task.complete':
+      return 'Complete task';
+    case 'project.create':
+      return 'Create project';
+    case 'project.update':
+      return 'Edit project';
+    case 'project.update_status':
+      return 'Update project status';
+    case 'meeting.create':
+      return 'Schedule meeting';
+    case 'meeting.update':
+      return 'Edit meeting';
+    case 'meeting.cancel':
+      return 'Cancel meeting';
+    case 'attendance.clock_in':
+      return 'Clock in';
+    case 'attendance.clock_out':
+      return 'Clock out';
+    default:
+      return entry.actionType;
+  }
+}
+
 export async function listPendingConflicts() {
   const resolvedCompanyId = getActiveCompanyId();
   const userId = getCurrentUserId();

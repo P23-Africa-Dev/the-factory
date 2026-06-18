@@ -11,6 +11,7 @@
   "/(agent)/page": "/",
   "/(agent)/profile/page": "/profile",
   "/(agent)/sync/conflicts/page": "/sync/conflicts",
+  "/(agent)/sync/queue/page": "/sync/queue",
   "/(agent)/task/[id]/complete/page": "/task/[id]/complete",
   "/(agent)/task/[id]/page": "/task/[id]",
   "/(agent)/task/[id]/tracking/page": "/task/[id]/tracking",

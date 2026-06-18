@@ -77,8 +77,6 @@ export default function AgentLayout({
       <div className="flex flex-col flex-1 pb-[100px]">
         {children}
       </div>
-
-      {/* Floating Bottom Nav Bar */}
       <BottomNavBar />
     </div>
   );

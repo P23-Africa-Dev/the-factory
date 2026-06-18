@@ -4,6 +4,9 @@ import { useEffect } from "react";
 import { requestBackgroundSync } from "@/lib/offline/queue";
 import { syncAllOfflineMutations } from "@/lib/offline/sync-engine";
 
+const shouldRegisterServiceWorker =
+  typeof window !== "undefined" && "serviceWorker" in navigator;
+
 export default function OfflineSyncProvider({
   children,
 }: {
@@ -27,7 +30,7 @@ export default function OfflineSyncProvider({
     };
 
     const registerServiceWorker = async () => {
-      if (!("serviceWorker" in navigator)) return;
+      if (!shouldRegisterServiceWorker) return;
       try {
         await navigator.serviceWorker.register("/sw.js");
         await requestBackgroundSync("dashboard-offline-sync");
