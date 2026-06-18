@@ -35,16 +35,10 @@ export function middleware(request: NextRequest) {
   const secChUaMobile = request.headers.get('sec-ch-ua-mobile');
   const isMobile = isMobileUserAgent(userAgent, secChUaMobile);
 
+  // Standalone mode cannot be detected server-side. Mobile install enforcement
+  // is handled client-side by PwaAccessGuard via isStandaloneMode().
   if (isMobile) {
-    if (pathname.startsWith('/install/mobile')) {
-      return NextResponse.next();
-    }
-    const url = request.nextUrl.clone();
-    url.pathname = '/install/mobile';
-    if (pathname !== '/') {
-      url.searchParams.set('from', pathname);
-    }
-    return NextResponse.redirect(url);
+    return NextResponse.next();
   }
 
   if (pathname.startsWith('/install')) {

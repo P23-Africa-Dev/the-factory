@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { isStandaloneMode } from '@/lib/pwa/standalone';
 
 export interface BeforeInstallPromptEvent extends Event {
@@ -17,9 +17,14 @@ export function usePwaInstall() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    setIsInstalled(isStandaloneMode());
+    const standalone = isStandaloneMode();
+    setIsInstalled(standalone);
+
+    if (standalone) return;
 
     const handleBeforeInstallPrompt = (e: Event) => {
+      if (isStandaloneMode()) return;
+
       e.preventDefault();
 
       const promptEvent = e as BeforeInstallPromptEvent;
@@ -45,7 +50,7 @@ export function usePwaInstall() {
 
     const handleAppInstalled = () => {
       setDeferredPrompt(null);
-      setIsInstalled(true);
+      setIsInstalled(isStandaloneMode());
       setCanInstall(false);
       sessionStorage.removeItem('pwa-auto-install');
     };
@@ -67,7 +72,7 @@ export function usePwaInstall() {
   const triggerInstall = async (
     promptEvent: BeforeInstallPromptEvent | null = deferredPrompt,
   ) => {
-    if (!promptEvent) return false;
+    if (!promptEvent || isStandaloneMode()) return false;
 
     try {
       await promptEvent.prompt();

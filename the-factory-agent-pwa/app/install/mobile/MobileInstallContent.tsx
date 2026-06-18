@@ -4,28 +4,22 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Smartphone, Share, CheckCircle2 } from 'lucide-react';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
-import { isStandaloneMode } from '@/lib/pwa/standalone';
 import { isIosDevice } from '@/lib/pwa/device';
+import { getAppLaunchPath } from '@/lib/pwa/launch';
 import { FactoryLogo } from '@/components/branding/FactoryLogo';
 
 export function MobileInstallContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { canInstall, isInstalled, install } = usePwaInstall();
+  const { canInstall, install } = usePwaInstall();
   const [isIos, setIsIos] = useState(false);
   const [installAttempted, setInstallAttempted] = useState(false);
 
-  const fromPath = searchParams.get('from') || '/';
+  const fromPath = searchParams.get('from') || getAppLaunchPath();
 
   useEffect(() => {
     setIsIos(isIosDevice());
   }, []);
-
-  useEffect(() => {
-    if (isStandaloneMode() || isInstalled) {
-      router.replace(fromPath.startsWith('/') ? fromPath : '/');
-    }
-  }, [isInstalled, router, fromPath]);
 
   useEffect(() => {
     if (canInstall && !installAttempted && !isIos) {
@@ -38,7 +32,7 @@ export function MobileInstallContent() {
     setInstallAttempted(true);
     const accepted = await install();
     if (accepted) {
-      router.replace(fromPath.startsWith('/') ? fromPath : '/');
+      router.replace(fromPath.startsWith('/') ? fromPath : getAppLaunchPath());
     }
   };
 

@@ -1,21 +1,11 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { Smartphone, ScanLine } from 'lucide-react';
 import { InstallQrCode } from '@/components/pwa/InstallQrCode';
 import { getAgentMobileInstallUrl } from '@/lib/pwa/url';
-import { isStandaloneMode } from '@/lib/pwa/standalone';
 
 export default function DesktopInstallPage() {
-  const router = useRouter();
   const installUrl = getAgentMobileInstallUrl();
-
-  useEffect(() => {
-    if (isStandaloneMode()) {
-      router.replace('/');
-    }
-  }, [router]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#0A1D25] px-6 py-10 text-white">
