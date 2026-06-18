@@ -2,43 +2,28 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { CloudOff, RefreshCw, WifiOff } from 'lucide-react';
+import { WifiOff } from 'lucide-react';
 import { useOfflineSyncStatus } from '@/lib/offline/useOfflineSyncStatus';
 
 export function OfflineSyncBanner(): React.ReactElement | null {
-  const { isOffline, stats, totalPending, isRefreshing } = useOfflineSyncStatus();
+  const { isOffline, stats, totalPending } = useOfflineSyncStatus();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 
-  if (!isOffline) return null;
+  const shouldShow = isOffline;
+  if (!shouldShow) return null;
 
-  const title = isOffline
-    ? 'Offline mode active'
-    : isRefreshing
-      ? 'Syncing offline changes'
-      : 'Pending offline changes';
+  const title = 'Offline mode active';
 
   return (
     <div className="fixed bottom-24 right-4 z-40 group">
       <button
         type="button"
         onClick={() => setIsPanelOpen((prev) => !prev)}
-        className={`relative flex h-11 w-11 items-center justify-center rounded-full border shadow-2xl backdrop-blur transition hover:scale-[1.03] ${
-          isOffline
-            ? 'border-amber-400/40 bg-[#0B2330]/95 text-amber-100'
-            : stats.pendingActions > 0 && stats.pendingConflicts === 0
-              ? 'border-cyan-400/35 bg-[#0B2330]/95 text-cyan-100'
-              : 'border-red-400/35 bg-[#0B2330]/95 text-red-100'
-        }`}
+        className="relative flex h-11 w-11 items-center justify-center rounded-full border border-amber-400/40 bg-[#0B2330]/95 text-amber-100 shadow-2xl backdrop-blur transition hover:scale-[1.03]"
         aria-label={title}
         title={title}
       >
-        {isRefreshing ? (
-          <RefreshCw size={18} className="animate-spin" />
-        ) : isOffline ? (
-          <WifiOff size={18} />
-        ) : (
-          <CloudOff size={18} />
-        )}
+        <WifiOff size={18} />
         {totalPending > 0 ? (
           <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-[#0B2330]">
             {totalPending > 99 ? '99+' : totalPending}

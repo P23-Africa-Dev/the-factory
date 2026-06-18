@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { CloudOff, RefreshCw, WifiOff } from "lucide-react";
+import { RefreshCw, WifiOff } from "lucide-react";
 import { useConnectivityStatus } from "@/lib/offline/connectivity";
 import { getOfflineSnapshot, type OfflineSnapshot } from "@/lib/offline/queue";
 import {
@@ -44,43 +44,22 @@ export default function OfflineStatusBanner() {
     };
   }, []);
 
-  const hasPending =
-    snapshot.pendingActions > 0 ||
-    snapshot.pendingUploads > 0 ||
-    snapshot.failedActions > 0 ||
-    snapshot.pendingConflicts > 0;
-
-  if (!isOffline) return null;
+  const shouldShow = isOffline;
+  if (!shouldShow) return null;
 
   const totalPending = snapshot.pendingActions + snapshot.pendingUploads;
-  const title = isOffline
-    ? "Offline mode active"
-    : isSyncing
-      ? "Syncing offline changes"
-      : "Pending offline changes";
+  const title = "Offline mode active";
 
   return (
     <div className="group fixed bottom-6 left-6 z-[60]">
       <button
         type="button"
         onClick={() => setIsPanelOpen((prev) => !prev)}
-        className={`relative flex h-11 w-11 items-center justify-center rounded-full border shadow-2xl backdrop-blur transition hover:scale-[1.03] ${
-          isOffline
-            ? "border-amber-300/40 bg-[#0B2330]/95 text-amber-200"
-            : snapshot.failedActions > 0
-              ? "border-red-300/40 bg-[#0B2330]/95 text-red-200"
-              : "border-cyan-300/40 bg-[#0B2330]/95 text-cyan-200"
-        }`}
+        className="relative flex h-11 w-11 items-center justify-center rounded-full border border-amber-300/40 bg-[#0B2330]/95 text-amber-200 shadow-2xl backdrop-blur transition hover:scale-[1.03]"
         aria-label={title}
         title={title}
       >
-        {isSyncing ? (
-          <RefreshCw size={18} className="animate-spin" />
-        ) : isOffline ? (
-          <WifiOff size={18} />
-        ) : (
-          <CloudOff size={18} />
-        )}
+        <WifiOff size={18} />
         {totalPending > 0 ? (
           <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-[#0B2330]">
             {totalPending > 99 ? "99+" : totalPending}
@@ -107,7 +86,10 @@ export default function OfflineStatusBanner() {
         {isSyncing ? (
           <div className="mt-1 text-[11px] text-[#75ADAF]">Synchronizing queued changes…</div>
         ) : null}
-        {!hasPending && isOffline ? (
+        {snapshot.pendingActions === 0 &&
+        snapshot.pendingUploads === 0 &&
+        snapshot.failedActions === 0 &&
+        snapshot.pendingConflicts === 0 ? (
           <div className="mt-1 text-[11px] text-white/60">No queued changes yet.</div>
         ) : null}
         <div className="mt-2 flex flex-wrap gap-2">
