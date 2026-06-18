@@ -208,9 +208,9 @@ function RouteInfoSheet({
   const etaLabel = (min: number | null) => formatDuration(min);
 
   const MODES: Array<{ mode: TransportMode; icon: string }> = [
-    { mode: 'driving', icon: '🚗' },
-    { mode: 'cycling', icon: '🛵' },
-    { mode: 'walking', icon: '🚶' },
+    { mode: 'driving', icon: '/assets/car-02.png' },
+    { mode: 'cycling', icon: '/assets/motorbike-02.png' },
+    { mode: 'walking', icon: '/assets/walking.png' },
   ];
 
   return (
@@ -224,32 +224,35 @@ function RouteInfoSheet({
           {MODE_LABELS[transportMode]}
         </h4>
         <div className="flex gap-2">
-          <div className="w-8 h-8 rounded-full border border-gray-300 bg-white flex items-center justify-center text-xs font-semibold">
-            ⬆
-          </div>
-          <div className="w-8 h-8 rounded-full border border-gray-300 bg-white flex items-center justify-center text-xs font-semibold">
-            📋
-          </div>
+          <button className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors">
+            <img src="/assets/send-icon.png" alt="Send" className="w-[25px] h-[25px] object-contain" />
+          </button>
+          <button className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors">
+            <img src="/assets/task-icon.png" alt="Tasks" className="w-[25px] h-[25px] object-contain" />
+          </button>
+          <button className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors">
+            <img src="/assets/cancel-icon.png" alt="Cancel" className="w-[25px] h-[25px] object-contain" />
+          </button>
         </div>
       </div>
 
       <div className="h-[1px] bg-gray-200 mb-3" />
 
-      <div className="flex justify-around">
+      <div className="flex justify-around items-center">
         {MODES.map(({ mode, icon }) => (
           <button
             key={mode}
             onClick={() => onSelectMode(mode)}
-            className="flex-1 py-2 flex flex-col items-center relative focus:outline-none"
+            className="flex-1 py-2 flex flex-row items-center justify-center gap-2 relative focus:outline-none"
           >
-            <span className="text-xl mb-1">{icon}</span>
+            <img src={icon} alt={mode} className="w-[24px] h-[24px] object-contain" />
             <span className={`font-sans text-xs transition-colors duration-150 ${
               transportMode === mode ? 'font-bold text-[#09232D]' : 'font-medium text-gray-400'
             }`}>
               {etaLabel(etaByMode[mode])}
             </span>
             {transportMode === mode && (
-              <div className="absolute bottom-0 w-6 h-0.5 rounded-full bg-[#09232D]" />
+              <div className="absolute bottom-0 left-1/4 right-1/4 h-1 rounded-full bg-[#0091FF]" />
             )}
           </button>
         ))}
@@ -275,21 +278,43 @@ function ActivityButton({
 }) {
   if (phase === 'activity_ended') {
     return (
-      <div className="w-full h-14 rounded-full bg-[#D1D5D8] flex items-center justify-center">
+      <div className="mx-auto w-[344px] h-[67px] rounded-[60px] bg-[#D1D5D8] flex items-center justify-center">
         <span className="font-sans font-medium text-sm text-[#8F9098]">Activity Ended</span>
       </div>
     );
   }
 
+  const canStart = hasDestination && phase === 'destination_selected';
+
+  const activeButtonStyle = {
+    background: 'linear-gradient(90deg, #1D7293 0%, #09232D 100%)',
+    boxShadow: 'inset 0px 4px 8px -2px rgba(0, 0, 0, 0.4)',
+    width: '344px',
+    height: '67px',
+    borderRadius: '60px',
+    padding: '10px',
+    gap: '8px',
+  };
+
+  const disabledButtonStyle = {
+    backgroundColor: '#D1D5D8',
+    width: '344px',
+    height: '67px',
+    borderRadius: '60px',
+    padding: '10px',
+    gap: '8px',
+  };
+
   if (phase === 'activity_started') {
     return (
       <button
         onClick={onEnd}
-        className="w-full h-14 rounded-full bg-[#09232D] text-white flex items-center justify-between px-6 transition-all active:scale-[0.98]"
+        style={activeButtonStyle}
+        className="mx-auto flex items-center justify-between text-white active:scale-[0.98] transition-all duration-200"
       >
-        <span className="font-sans font-bold text-base">‹‹</span>
+        <span className="font-sans font-bold text-base pl-4">‹‹</span>
         <span className="font-sans font-bold text-sm">End Activity</span>
-        <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-[#09232D] text-xs">
+        <div className="w-[44px] h-[44px] rounded-full bg-white flex items-center justify-center text-[#09232D] text-xs mr-2">
           ◀
         </div>
       </button>
@@ -298,30 +323,49 @@ function ActivityButton({
 
   if (isStarting) {
     return (
-      <div className="w-full h-14 rounded-full bg-[#09232D] text-white flex items-center justify-center gap-3">
+      <div
+        style={activeButtonStyle}
+        className="mx-auto flex items-center justify-center gap-3 text-white"
+      >
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
         <span className="font-sans font-bold text-sm">Starting…</span>
       </div>
     );
   }
 
-  const canStart = hasDestination && phase === 'destination_selected';
-
   return (
     <button
       onClick={canStart ? onStart : undefined}
       disabled={!canStart}
-      className={`w-full h-14 rounded-full flex items-center justify-between px-6 transition-all duration-200 ${
-        canStart
-          ? 'bg-[#09232D] text-white active:scale-[0.98]'
-          : 'bg-[#D1D5D8] text-[#8F9098] cursor-not-allowed'
+      style={canStart ? activeButtonStyle : disabledButtonStyle}
+      className={`mx-auto flex items-center justify-between transition-all duration-200 ${
+        canStart ? 'text-white active:scale-[0.98]' : 'text-[#8F9098] cursor-not-allowed'
       }`}
     >
-      <div className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center text-white text-xs">
-        ▶
+      <div className={`relative w-[58px] h-[58px] flex items-center justify-center flex-shrink-0 ${!canStart && 'opacity-50'}`}>
+        <img
+          src="/assets/Ellipse 436.png"
+          alt="Ellipse"
+          className="absolute inset-0 w-[58px] h-[58px] object-contain"
+        />
+        <img
+          src="/assets/navigation-03.png"
+          alt="Arrow"
+          className="relative w-[29px] h-[29px] object-contain"
+        />
       </div>
-      <span className="font-sans font-bold text-sm">Start Activity</span>
-      <span className="font-sans font-bold text-base">»»</span>
+
+      <span className="font-sans font-bold text-sm text-center flex-1">
+        Start Activity
+      </span>
+
+      <div className={`pr-3 flex-shrink-0 ${!canStart && 'opacity-50'}`}>
+        <img
+          src="/assets/arrow-right-double.png"
+          alt="Double Arrow"
+          className="w-[24px] h-[24px] object-contain"
+        />
+      </div>
     </button>
   );
 }
@@ -992,7 +1036,7 @@ function MapContent() {
   );
 
   return (
-    <div className="relative flex-1 flex flex-col bg-[#0A1D25] min-h-screen text-white overflow-hidden select-none">
+    <div className="fixed inset-0 flex flex-col bg-[#0A1D25] text-white overflow-hidden select-none">
       {/* Dynamic Mapbox Map */}
       <div className="absolute inset-0 z-0">
         <MapboxMap
@@ -1060,7 +1104,7 @@ function MapContent() {
 
       {/* Bottom panel */}
       {!isDestSearchOpen && !isOriginSearchOpen && (
-        <div className="absolute bottom-0 inset-x-0 z-20 flex flex-col pointer-events-none pb-[100px]">
+        <div className="fixed bottom-0 inset-x-0 z-20 flex flex-col pointer-events-none pb-[100px]">
           <div className="pointer-events-auto w-full">
             <RouteInfoSheet
               transportMode={transportMode}
