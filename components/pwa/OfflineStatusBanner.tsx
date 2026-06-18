@@ -61,7 +61,7 @@ export default function OfflineStatusBanner() {
       : "Pending offline changes";
 
   return (
-    <div className="group fixed bottom-5 right-5 z-[60]">
+    <div className="group fixed bottom-6 left-6 z-[60]">
       <button
         type="button"
         onClick={() => setIsPanelOpen((prev) => !prev)}
@@ -90,7 +90,7 @@ export default function OfflineStatusBanner() {
       </button>
 
       <div
-        className={`absolute bottom-14 right-0 w-80 rounded-xl border border-white/15 bg-[#0B2330]/95 px-3 py-2 text-white shadow-2xl backdrop-blur ${
+        className={`absolute bottom-14 left-0 w-80 rounded-xl border border-white/15 bg-[#0B2330]/95 px-3 py-2 text-white shadow-2xl backdrop-blur ${
           isPanelOpen ? "block" : "hidden group-hover:block"
         }`}
       >
