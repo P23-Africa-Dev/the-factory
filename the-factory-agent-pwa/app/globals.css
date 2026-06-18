@@ -21,6 +21,13 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Keep Mapbox tiles in light mode regardless of app chrome (html.dark). */
+.agent-mapbox-surface,
+.agent-mapbox-surface .mapboxgl-map,
+.agent-mapbox-surface .mapboxgl-canvas {
+  color-scheme: light;
+}
+
 /* ─── Autofill override ───────────────────────────────────────────────────────
  * Browsers apply a forced UA background to :-webkit-autofill that ignores
  * background-color. The only reliable fix is a large inset box-shadow that

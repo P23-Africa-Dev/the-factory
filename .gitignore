@@ -34,12 +34,29 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env*.example
+!.env.local.example
 backend/.env*
 frontend/.env*
 backend/src/.env*
 backend/src/config/.env*
 backend/src/vendor
 api-docs/.env*
+
+# editor / agent debug (may contain tokens in logs)
+.cursor/
+**/.cursor/
+
+# build output must never be committed (bundles inline NEXT_PUBLIC_* secrets)
+**/.next/
+**/out/
+**/dist/
+**/build/
+
+# local logs
+debug-*.log
+*.log
+!**/*.log.example
 
 
 # vercel

@@ -20,27 +20,15 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync, spawn } = require('child_process');
+const { loadPwaEnv } = require('./load-env');
 
 // ─── 1. Load env vars ────────────────────────────────────────────────────────
 
-const envFile = path.resolve(__dirname, '.env.local');
-
-if (fs.existsSync(envFile)) {
-  const lines = fs.readFileSync(envFile, 'utf8').split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
-    const eq = trimmed.indexOf('=');
-    const key = trimmed.slice(0, eq).trim();
-    const val = trimmed.slice(eq + 1).trim();
-    // Only set if not already defined — lets CI/CD override via shell env
-    if (!process.env[key]) {
-      process.env[key] = val;
-    }
-  }
-  console.log('[start-dev] Loaded env from .env.local');
+const loadedEnvFiles = loadPwaEnv();
+if (loadedEnvFiles.length > 0) {
+  console.log(`[start-dev] Loaded env from: ${loadedEnvFiles.join(', ')}`);
 } else {
-  console.warn('[start-dev] Warning: .env.local not found — env vars may be missing');
+  console.warn('[start-dev] Warning: no .env files found — env vars may be missing');
 }
 
 // ─── 2. Clean up stale lock file ─────────────────────────────────────────────
