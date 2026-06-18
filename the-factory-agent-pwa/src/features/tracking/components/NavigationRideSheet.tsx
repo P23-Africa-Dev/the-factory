@@ -89,11 +89,7 @@ export function NavigationRideSheet({
       : null;
 
   return (
-    <div className="bg-[#F2F4F5] rounded-t-3xl px-5 pb-4 pt-2 text-[#09232D] border-t border-gray-200 shadow-[0_-8px_24px_rgba(0,0,0,0.12)]">
-      <div className="flex justify-center mb-3">
-        <div className="w-9 h-1 rounded-full bg-gray-300" />
-      </div>
-
+    <div className="px-5 pb-4 pt-0 text-[#09232D]">
       <TrackingStatusPill trackingStatus={trackingStatus} lastUpdatedAt={lastUpdatedAt} />
 
       <div className="flex items-end justify-between gap-4 mb-3">

@@ -20,6 +20,10 @@ import { useAuth, useAgentIdentity } from '@/features/auth';
 import { getSafeAvatarSrc } from '@/lib/avatar';
 import { buildTraveledSegment, sliceRemainingRoute } from '@/lib/map/route-geometry';
 import { NavigationRideSheet } from '@/features/tracking/components/NavigationRideSheet';
+import {
+  MAP_SHEET_COLLAPSED_SNAP_INDEX,
+  MAP_SHEET_EXPANDED_SNAP_INDEX,
+} from '@/features/tracking/components/MapBottomSheet';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId } from '@/lib/storage/stores';
@@ -31,7 +35,11 @@ import { syncEngine } from '@/lib/sync/syncEngine';
 import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 import { toast } from '@/lib/toast';
 
-// Dynamically import MapboxMap with SSR disabled to prevent server-side window/document errors
+const MapBottomSheetDynamic = dynamic(
+  () => import('@/features/tracking/components/MapBottomSheet').then((m) => m.MapBottomSheet),
+  { ssr: false },
+);
+
 const MapboxMap = dynamic(() => import('@/features/tracking/components/MapboxMap'), {
   ssr: false,
   loading: () => (
@@ -236,11 +244,7 @@ function RouteInfoSheet({
   ];
 
   return (
-    <div className="bg-[#F2F4F5] rounded-t-3xl px-5 pb-3 pt-2 text-[#09232D] border-t border-gray-200">
-      <div className="flex justify-center mb-3">
-        <div className="w-9 h-1 rounded-full bg-gray-300" />
-      </div>
-
+    <div className="px-5 pb-3 text-[#09232D]">
       <div className="flex items-center justify-between mb-4">
         <h4 className="font-sans font-bold text-base text-[#09232D]">
           {isRouteLoading ? 'Calculating route…' : MODE_LABELS[transportMode]}
@@ -832,6 +836,7 @@ function MapContent() {
   const [trackingStatus, setTrackingStatus] = useState<TrackingStatus>(
     isFromTrackingScreen ? 'live' : 'idle',
   );
+  const [sheetSnapIndex, setSheetSnapIndex] = useState(MAP_SHEET_EXPANDED_SNAP_INDEX);
   const startRideInFlightRef = useRef(false);
   const [distanceRemainingM, setDistanceRemainingM] = useState<number | null>(null);
 
@@ -1489,6 +1494,19 @@ function MapContent() {
     [selectedDestLng, selectedDestLat],
   );
 
+  const isSheetCollapsed = sheetSnapIndex <= MAP_SHEET_COLLAPSED_SNAP_INDEX;
+  const showMapChrome = !isDestSearchOpen && !isOriginSearchOpen;
+
+  const handleSheetSnapChange = useCallback((snapIndex: number) => {
+    setSheetSnapIndex(snapIndex);
+  }, []);
+
+  useEffect(() => {
+    if (selectedDestination) {
+      setSheetSnapIndex(MAP_SHEET_EXPANDED_SNAP_INDEX);
+    }
+  }, [selectedDestination?.taskId, selectedDestination?.latitude, selectedDestination?.longitude]);
+
   return (
     <div className="fixed inset-0 flex flex-col bg-[#0A1D25] text-white overflow-hidden select-none">
       {/* Dynamic Mapbox Map */}
@@ -1528,8 +1546,14 @@ function MapContent() {
       )}
 
       {/* Top overlay: location card + arrival banner */}
-      {!isDestSearchOpen && !isOriginSearchOpen && (
-        <div className="relative z-10 flex flex-col w-full pt-[env(safe-area-inset-top,16px)] pointer-events-none">
+      {showMapChrome && (
+        <div
+          className={`relative z-10 flex flex-col w-full pt-[env(safe-area-inset-top,16px)] transition-all duration-300 ease-out ${
+            isSheetCollapsed
+              ? 'opacity-0 -translate-y-3 pointer-events-none'
+              : 'opacity-100 translate-y-0 pointer-events-none'
+          }`}
+        >
           <div className="pointer-events-auto">
             <LocationCard
               destination={selectedDestination}
@@ -1582,45 +1606,43 @@ function MapContent() {
         />
       )}
 
-      {/* Bottom panel */}
-      {!isDestSearchOpen && !isOriginSearchOpen && (
-        <div className="fixed bottom-0 inset-x-0 z-20 flex flex-col pointer-events-none pb-[100px]">
-          <div className="pointer-events-auto w-full">
-            {phase === 'activity_started' ? (
-              <NavigationRideSheet
-                destinationName={selectedDestination?.name ?? 'Destination'}
-                etaMinutes={etaByMode[transportMode]}
-                distanceRemainingM={distanceRemainingM}
-                totalDistanceM={totalRouteDistanceM}
-                trackingStatus={rideTrackingStatus}
-                lastUpdatedAt={liveTask?.lastUpdatedAt ?? null}
-                onEnd={handleEndActivity}
+      {/* Bottom draggable sheet */}
+      {showMapChrome && (
+        <MapBottomSheetDynamic visible onSnapChange={handleSheetSnapChange}>
+          {phase === 'activity_started' ? (
+            <NavigationRideSheet
+              destinationName={selectedDestination?.name ?? 'Destination'}
+              etaMinutes={etaByMode[transportMode]}
+              distanceRemainingM={distanceRemainingM}
+              totalDistanceM={totalRouteDistanceM}
+              trackingStatus={rideTrackingStatus}
+              lastUpdatedAt={liveTask?.lastUpdatedAt ?? null}
+              onEnd={handleEndActivity}
+            />
+          ) : (
+            <>
+              <RouteInfoSheet
+                transportMode={transportMode}
+                onSelectMode={setTransportMode}
+                etaByMode={etaByMode}
+                onCancel={handleCancelRoute}
+                onOpenTasks={handleOpenTaskPicker}
+                onShare={handleShareDestination}
+                canCancel
+                isRouteLoading={isRouteLoading}
               />
-            ) : (
-              <>
-                <RouteInfoSheet
-                  transportMode={transportMode}
-                  onSelectMode={setTransportMode}
-                  etaByMode={etaByMode}
-                  onCancel={handleCancelRoute}
-                  onOpenTasks={handleOpenTaskPicker}
-                  onShare={handleShareDestination}
-                  canCancel
-                  isRouteLoading={isRouteLoading}
+              <div className="bg-[#F2F4F5] px-4 pt-3 pb-4">
+                <ActivityButton
+                  phase={phase}
+                  hasDestination={(selectedDestination?.taskId ?? 0) > 0}
+                  isStarting={isStarting}
+                  taskStatus={selectedDestination?.taskStatus ?? selectedDestTask?.status}
+                  onStart={handleStartActivity}
                 />
-                <div className="bg-[#F2F4F5] px-4 pt-3 pb-4">
-                  <ActivityButton
-                    phase={phase}
-                    hasDestination={(selectedDestination?.taskId ?? 0) > 0}
-                    isStarting={isStarting}
-                    taskStatus={selectedDestination?.taskStatus ?? selectedDestTask?.status}
-                    onStart={handleStartActivity}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+              </div>
+            </>
+          )}
+        </MapBottomSheetDynamic>
       )}
 
       {/* Complete notes modal */}
