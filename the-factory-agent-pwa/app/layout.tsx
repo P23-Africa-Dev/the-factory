@@ -50,7 +50,7 @@ export default function RootLayout({
     <html lang="en" className="h-full antialiased dark" suppressHydrationWarning>
       <head>
         <title>Factory 23 Agent</title>
-        <meta name="description" content="Field agent management app — tasks, tracking, CRM, all in one app" />
+        <meta name="description" content="Field agent management app for tasks, tracking, CRM, and communication all in one app" />
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#0A1D25" />
@@ -70,9 +70,9 @@ export default function RootLayout({
             <SessionExpiredModal />
             <PwaInstallBanner />
           </QueryClientProvider>
-          <Toaster 
-            theme="dark" 
-            position="top-center" 
+          <Toaster
+            theme="dark"
+            position="top-center"
             toastOptions={{
               style: {
                 background: '#0B2330',

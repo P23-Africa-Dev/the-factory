@@ -8,10 +8,10 @@
  * - Navigation fallback: cached pages, then /offline shell
  */
 
-const CACHE_NAME = "factory-agent-pwa-v5";
-const STATIC_CACHE = "factory-static-v5";
-const API_CACHE = "factory-api-v5";
-const PAGE_CACHE = "factory-pages-v5";
+const CACHE_NAME = "factory-agent-pwa-v6";
+const STATIC_CACHE = "factory-static-v6";
+const API_CACHE = "factory-api-v6";
+const PAGE_CACHE = "factory-pages-v6";
 
 const STATIC_ASSETS = ["/", "/offline", "/manifest.json"];
 
