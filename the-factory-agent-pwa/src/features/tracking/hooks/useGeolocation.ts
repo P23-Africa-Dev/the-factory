@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
 export type PermissionStatus = 'unknown' | 'granted' | 'denied';
 
@@ -32,12 +32,85 @@ interface GeolocationActions {
   stopWatching: () => void;
 }
 
+const HIGH_ACCURACY_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  timeout: 15_000,
+  maximumAge: 0,
+};
+
+const LOW_ACCURACY_OPTIONS: PositionOptions = {
+  enableHighAccuracy: false,
+  timeout: 15_000,
+  maximumAge: 30_000,
+};
+
+const MAX_STREAMING_ACCURACY_HIGH_M = 120;
+const MAX_STREAMING_ACCURACY_LOW_M = 250;
+
+function toLocationObject(pos: GeolocationPosition): LocationObject {
+  return {
+    coords: {
+      latitude: pos.coords.latitude,
+      longitude: pos.coords.longitude,
+      altitude: pos.coords.altitude,
+      accuracy: pos.coords.accuracy,
+      altitudeAccuracy: pos.coords.altitudeAccuracy,
+      heading: pos.coords.heading,
+      speed: pos.coords.speed,
+    },
+    timestamp: pos.timestamp,
+  };
+}
+
+function isValidReading(loc: LocationObject, maxAccuracyM: number): boolean {
+  if (loc.coords.latitude === 0 && loc.coords.longitude === 0) return false;
+  if (loc.coords.accuracy != null && loc.coords.accuracy > maxAccuracyM) return false;
+  return true;
+}
+
 export const useGeolocation = (): GeolocationState & GeolocationActions => {
   const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>('unknown');
   const [isWatching, setIsWatching] = useState(false);
   const [lastPosition, setLastPosition] = useState<LocationObject | null>(null);
   const [error, setError] = useState<string | null>(null);
   const watcherRef = useRef<number | null>(null);
+  const onUpdateRef = useRef<((loc: LocationObject) => void) | null>(null);
+  const lowAccuracyRef = useRef(false);
+
+  const clearWatcher = useCallback(() => {
+    if (typeof window === 'undefined' || !navigator.geolocation) return;
+    if (watcherRef.current !== null) {
+      navigator.geolocation.clearWatch(watcherRef.current);
+      watcherRef.current = null;
+    }
+    setIsWatching(false);
+  }, []);
+
+  const beginWatch = useCallback(() => {
+    if (typeof window === 'undefined' || !navigator.geolocation) return;
+    if (!onUpdateRef.current) return;
+
+    clearWatcher();
+
+    const options = lowAccuracyRef.current ? LOW_ACCURACY_OPTIONS : HIGH_ACCURACY_OPTIONS;
+    const maxAccuracy = lowAccuracyRef.current
+      ? MAX_STREAMING_ACCURACY_LOW_M
+      : MAX_STREAMING_ACCURACY_HIGH_M;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const loc = toLocationObject(pos);
+        if (!isValidReading(loc, maxAccuracy)) return;
+        setLastPosition(loc);
+        onUpdateRef.current?.(loc);
+      },
+      (err) => setError(err.message),
+      options,
+    );
+
+    watcherRef.current = watchId;
+    setIsWatching(true);
+  }, [clearWatcher]);
 
   const checkPermission = useCallback(async (): Promise<PermissionStatus> => {
     if (typeof window === 'undefined' || !navigator.permissions) {
@@ -47,7 +120,8 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
 
     try {
       const result = await navigator.permissions.query({ name: 'geolocation' });
-      const mapped: PermissionStatus = result.state === 'granted' ? 'granted' : result.state === 'denied' ? 'denied' : 'unknown';
+      const mapped: PermissionStatus =
+        result.state === 'granted' ? 'granted' : result.state === 'denied' ? 'denied' : 'unknown';
       setPermissionStatus(mapped);
       return mapped;
     } catch {
@@ -72,7 +146,7 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
           setPermissionStatus('denied');
           resolve('denied');
         },
-        { enableHighAccuracy: true, timeout: 5000 }
+        { enableHighAccuracy: true, timeout: 5000 },
       );
     });
   }, []);
@@ -85,18 +159,7 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
     return new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          const loc: LocationObject = {
-            coords: {
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              altitude: pos.coords.altitude,
-              accuracy: pos.coords.accuracy,
-              altitudeAccuracy: pos.coords.altitudeAccuracy,
-              heading: pos.coords.heading,
-              speed: pos.coords.speed,
-            },
-            timestamp: pos.timestamp,
-          };
+          const loc = toLocationObject(pos);
           setLastPosition(loc);
           setError(null);
           resolve(loc);
@@ -105,58 +168,36 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
           setError(err.message);
           reject(err);
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
       );
     });
   }, []);
 
-  const startWatching = useCallback(async (
-    onUpdate: (loc: LocationObject) => void,
-  ): Promise<void> => {
-    if (typeof window === 'undefined' || !navigator.geolocation) return;
-    if (watcherRef.current !== null) return; // already watching
-
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        // Quality gates: drop poor accuracy (larger than 200m)
-        if (pos.coords.accuracy && pos.coords.accuracy > 200) return;
-        // Drop null island
-        if (pos.coords.latitude === 0 && pos.coords.longitude === 0) return;
-
-        const loc: LocationObject = {
-          coords: {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            altitude: pos.coords.altitude,
-            accuracy: pos.coords.accuracy,
-            altitudeAccuracy: pos.coords.altitudeAccuracy,
-            heading: pos.coords.heading,
-            speed: pos.coords.speed,
-          },
-          timestamp: pos.timestamp,
-        };
-
-        setLastPosition(loc);
-        onUpdate(loc);
-      },
-      (err) => {
-        setError(err.message);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-
-    watcherRef.current = watchId;
-    setIsWatching(true);
-  }, []);
+  const startWatching = useCallback(
+    async (onUpdate: (loc: LocationObject) => void): Promise<void> => {
+      onUpdateRef.current = onUpdate;
+      beginWatch();
+    },
+    [beginWatch],
+  );
 
   const stopWatching = useCallback(() => {
-    if (typeof window === 'undefined' || !navigator.geolocation) return;
-    if (watcherRef.current !== null) {
-      navigator.geolocation.clearWatch(watcherRef.current);
-      watcherRef.current = null;
-    }
-    setIsWatching(false);
-  }, []);
+    onUpdateRef.current = null;
+    clearWatcher();
+  }, [clearWatcher]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    const handler = () => {
+      const hidden = document.visibilityState === 'hidden';
+      lowAccuracyRef.current = hidden;
+      if (onUpdateRef.current) beginWatch();
+    };
+
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, [beginWatch]);
 
   return {
     permissionStatus,

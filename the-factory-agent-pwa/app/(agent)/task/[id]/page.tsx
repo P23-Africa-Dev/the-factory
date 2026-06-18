@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, MapPin, Calendar, User, ShieldAlert } from 'lucide-react';
 
 import { useTask, useTaskNavigation } from '@/features/tasks';
+import { useTrackingStore } from '@/store/tracking';
 
 const STATUS_COLOR: Record<string, string> = {
   pending: '#FD6046',
@@ -61,6 +62,8 @@ export default function TaskDetailPage() {
 
   const { data: task, isLoading, error } = useTask(id);
   const { goToTracking, goToTaskComplete } = useTaskNavigation();
+  const liveTask = useTrackingStore((s) => s.liveTaskMap[Number(id)]);
+  const hasArrived = liveTask?.status === 'arrived' || liveTask?.arrivedAt != null;
 
   if (isLoading) {
     return (
@@ -187,12 +190,14 @@ export default function TaskDetailPage() {
               >
                 Continue Tracking
               </button>
-              <button
-                onClick={() => goToTaskComplete(task.id)}
-                className="w-full h-[46px] rounded-[30px] border border-white/15 text-[#8F9098] hover:text-white font-medium text-xs bg-transparent transition-all duration-200 active:scale-95 flex items-center justify-center"
-              >
-                Skip to Completion Form
-              </button>
+              {hasArrived && (
+                <button
+                  onClick={() => goToTaskComplete(task.id)}
+                  className="w-full h-[46px] rounded-[30px] border border-white/15 text-[#8F9098] hover:text-white font-medium text-xs bg-transparent transition-all duration-200 active:scale-95 flex items-center justify-center"
+                >
+                  Complete Task (proof required)
+                </button>
+              )}
             </>
           )}
 

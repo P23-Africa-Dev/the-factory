@@ -1,55 +1,234 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 import { env } from '@/constants/env';
 import { createMapboxTransformRequest, getMapboxPublicToken } from '@/lib/map/public-env';
 import { getAgentMapboxStyle } from '@/lib/map/style-mode';
+import {
+  createAgentMarkerElement,
+  createDestinationMarkerElement,
+  updateAgentMarkerElement,
+  type DestinationMarkerKind,
+} from '@/lib/map/map-markers';
+import { agentDebugLog } from '@/lib/debug-ingest';
+
+export type MapboxMapMode = 'preview' | 'navigation';
 
 export type MapboxMapProps = {
-  agentPosition: [number, number] | null; // [lng, lat]
-  destinationPosition: [number, number] | null; // [lng, lat]
-  polylineCoords: [number, number][]; // [lng, lat][]
+  agentPosition: [number, number] | null;
+  destinationPosition: [number, number] | null;
+  /** @deprecated Use traveledCoords + remainingRouteCoords */
+  polylineCoords?: [number, number][];
+  /** @deprecated Use remainingRouteCoords */
+  plannedRouteCoords?: [number, number][];
+  traveledCoords?: [number, number][];
+  remainingRouteCoords?: [number, number][];
+  mode?: MapboxMapMode;
+  agentMarker?: {
+    displayName: string;
+    avatarUrl?: string | null;
+    preferInitials?: boolean;
+    headingDegrees?: number | null;
+  };
+  destinationMarkerKind?: DestinationMarkerKind;
   radiusMeters: number | null;
   arrived: boolean;
   dimmed?: boolean;
 };
 
-// Generate GeoJSON Polygon coordinates for a circular geofence
-function getCirclePolygon(center: [number, number], radiusInMeters: number): GeoJSON.Feature<GeoJSON.Polygon> {
-  const coords = {
-    latitude: center[1],
-    longitude: center[0],
+function emptyLine(): GeoJSON.Feature<GeoJSON.LineString> {
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: { type: 'LineString', coordinates: [[0, 0]] },
   };
-  const km = radiusInMeters / 1000;
-  const ret = [];
-  const distanceX = km / (111.32 * Math.cos((coords.latitude * Math.PI) / 180));
-  const distanceY = km / 110.574;
+}
 
-  const points = 64;
-  for (let i = 0; i < points; i++) {
-    const theta = (i / points) * (2 * Math.PI);
-    const x = distanceX * Math.cos(theta);
-    const y = distanceY * Math.sin(theta);
-    ret.push([coords.longitude + x, coords.latitude + y]);
-  }
-  ret.push(ret[0]); // Close polygon
+function lineFeature(coords: [number, number][]): GeoJSON.Feature<GeoJSON.LineString> {
   return {
     type: 'Feature',
     properties: {},
     geometry: {
-      type: 'Polygon',
-      coordinates: [ret],
+      type: 'LineString',
+      coordinates: coords.length > 1 ? coords : [[0, 0]],
     },
   };
+}
+
+function getCirclePolygon(center: [number, number], radiusInMeters: number): GeoJSON.Feature<GeoJSON.Polygon> {
+  const coords = { latitude: center[1], longitude: center[0] };
+  const km = radiusInMeters / 1000;
+  const distanceX = km / (111.32 * Math.cos((coords.latitude * Math.PI) / 180));
+  const distanceY = km / 110.574;
+  const ret: [number, number][] = [];
+  const points = 64;
+
+  for (let i = 0; i < points; i++) {
+    const theta = (i / points) * (2 * Math.PI);
+    ret.push([coords.longitude + distanceX * Math.cos(theta), coords.latitude + distanceY * Math.sin(theta)]);
+  }
+  ret.push(ret[0]);
+
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: { type: 'Polygon', coordinates: [ret] },
+  };
+}
+
+function coordsSignature(coords: [number, number][]): string {
+  if (coords.length < 2) return String(coords.length);
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  return `${coords.length}:${first[0].toFixed(5)},${first[1].toFixed(5)}:${last[0].toFixed(5)},${last[1].toFixed(5)}`;
+}
+
+function findFirstSymbolLayerId(map: mapboxgl.Map): string | undefined {
+  const layers = map.getStyle()?.layers;
+  if (!layers) return undefined;
+  for (const layer of layers) {
+    if (layer.type === 'symbol') return layer.id;
+  }
+  return undefined;
+}
+
+function emptyPolygon(): GeoJSON.Feature<GeoJSON.Polygon> {
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: { type: 'Polygon', coordinates: [[[0, 0], [0, 0], [0, 0], [0, 0]]] },
+  };
+}
+
+function ensureGeofenceLayers(map: mapboxgl.Map): void {
+  const beforeId = findFirstSymbolLayerId(map);
+
+  if (!map.getSource('geofence')) {
+    map.addSource('geofence', { type: 'geojson', data: emptyPolygon() });
+    map.addLayer(
+      {
+        id: 'geofence-fill',
+        type: 'fill',
+        source: 'geofence',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#FD6046', 'fill-opacity': 0.15 },
+      },
+      beforeId,
+    );
+    map.addLayer(
+      {
+        id: 'geofence-outline',
+        type: 'line',
+        source: 'geofence',
+        layout: { visibility: 'none' },
+        paint: {
+          'line-color': '#FD6046',
+          'line-width': 1.5,
+          'line-opacity': 0.6,
+        },
+      },
+      beforeId,
+    );
+  }
+}
+
+function addRouteLayers(map: mapboxgl.Map): void {
+  if (!map.getSource('route-traveled')) {
+    map.addSource('route-traveled', { type: 'geojson', data: emptyLine() });
+    map.addLayer({
+      id: 'route-traveled-line',
+      type: 'line',
+      source: 'route-traveled',
+      layout: { 'line-join': 'round', 'line-cap': 'round', visibility: 'none' },
+      paint: { 'line-color': '#94A3B8', 'line-width': 5, 'line-opacity': 0.85 },
+    });
+  }
+
+  if (!map.getSource('route-remaining')) {
+    map.addSource('route-remaining', { type: 'geojson', data: emptyLine() });
+    map.addLayer({
+      id: 'route-remaining-casing',
+      type: 'line',
+      source: 'route-remaining',
+      layout: { 'line-join': 'round', 'line-cap': 'round', visibility: 'none' },
+      paint: { 'line-color': '#FFFFFF', 'line-width': 10, 'line-opacity': 0.35 },
+    });
+    map.addLayer({
+      id: 'route-remaining-main',
+      type: 'line',
+      source: 'route-remaining',
+      layout: { 'line-join': 'round', 'line-cap': 'round', visibility: 'none' },
+      paint: { 'line-color': '#0095FF', 'line-width': 7, 'line-opacity': 1 },
+    });
+  }
+}
+
+function routeLayerVisibility(map: mapboxgl.Map): Record<string, string | undefined> {
+  const ids = ['route-remaining-main', 'route-remaining-casing', 'route-traveled-line', 'geofence-fill'];
+  const out: Record<string, string | undefined> = {};
+  for (const id of ids) {
+    if (map.getLayer(id)) {
+      out[id] = map.getLayoutProperty(id, 'visibility') as string | undefined;
+    }
+  }
+  return out;
+}
+
+function applyRouteData(
+  map: mapboxgl.Map,
+  mode: MapboxMapMode,
+  effectiveTraveled: [number, number][],
+  effectiveRemaining: [number, number][],
+): void {
+  addRouteLayers(map);
+
+  const traveledSource = map.getSource('route-traveled') as mapboxgl.GeoJSONSource | undefined;
+  const remainingSource = map.getSource('route-remaining') as mapboxgl.GeoJSONSource | undefined;
+
+  if (mode === 'navigation' && effectiveTraveled.length >= 1) {
+    const traveledCoords =
+      effectiveTraveled.length > 1
+        ? effectiveTraveled
+        : [effectiveTraveled[0], effectiveTraveled[0]];
+    traveledSource?.setData(lineFeature(traveledCoords));
+    if (map.getLayer('route-traveled-line')) {
+      map.setLayoutProperty('route-traveled-line', 'visibility', 'visible');
+    }
+  } else if (map.getLayer('route-traveled-line')) {
+    map.setLayoutProperty('route-traveled-line', 'visibility', 'none');
+  }
+
+  if (effectiveRemaining.length > 1) {
+    remainingSource?.setData(lineFeature(effectiveRemaining));
+    if (map.getLayer('route-remaining-casing')) {
+      map.setLayoutProperty('route-remaining-casing', 'visibility', 'visible');
+    }
+    if (map.getLayer('route-remaining-main')) {
+      map.setLayoutProperty('route-remaining-main', 'visibility', 'visible');
+    }
+  } else {
+    if (map.getLayer('route-remaining-casing')) {
+      map.setLayoutProperty('route-remaining-casing', 'visibility', 'none');
+    }
+    if (map.getLayer('route-remaining-main')) {
+      map.setLayoutProperty('route-remaining-main', 'visibility', 'none');
+    }
+  }
 }
 
 export function MapboxMap({
   agentPosition,
   destinationPosition,
-  polylineCoords,
+  polylineCoords = [],
+  plannedRouteCoords = [],
+  traveledCoords,
+  remainingRouteCoords,
+  mode = 'preview',
+  agentMarker,
+  destinationMarkerKind = 'place',
   radiusMeters,
   arrived,
   dimmed = false,
@@ -58,9 +237,46 @@ export function MapboxMap({
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const agentMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const destMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const destMarkerKindRef = useRef<DestinationMarkerKind | null>(null);
+  const mapLoadedRef = useRef(false);
+  const enteredNavigationRef = useRef(false);
+  const previewFitDoneRef = useRef(false);
+  const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState(false);
 
-  // Fallback map view if Mapbox fails
+  const effectiveTraveled = traveledCoords ?? (mode === 'navigation' ? polylineCoords : []);
+  const effectiveRemaining = remainingRouteCoords ?? plannedRouteCoords;
+
+  const agentLng = agentPosition?.[0] ?? null;
+  const agentLat = agentPosition?.[1] ?? null;
+  const destLng = destinationPosition?.[0] ?? null;
+  const destLat = destinationPosition?.[1] ?? null;
+  const traveledSig = useMemo(() => coordsSignature(effectiveTraveled), [effectiveTraveled]);
+  const remainingSig = useMemo(() => coordsSignature(effectiveRemaining), [effectiveRemaining]);
+
+  const syncPayloadRef = useRef({
+    mode,
+    effectiveTraveled,
+    effectiveRemaining,
+    agentPosition,
+    destinationPosition,
+    agentMarker,
+    destinationMarkerKind,
+    radiusMeters,
+    arrived,
+  });
+  syncPayloadRef.current = {
+    mode,
+    effectiveTraveled,
+    effectiveRemaining,
+    agentPosition,
+    destinationPosition,
+    agentMarker,
+    destinationMarkerKind,
+    radiusMeters,
+    arrived,
+  };
+
   const fallbackView = (
     <div className="absolute inset-0 bg-[#0A1D25] flex items-center justify-center overflow-hidden">
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -72,12 +288,10 @@ export function MapboxMap({
     </div>
   );
 
-  // Initialize Map
   useEffect(() => {
     if (typeof window === 'undefined' || !mapContainerRef.current || mapRef.current) return;
 
     const mapboxToken = getMapboxPublicToken() || env.MAPBOX_TOKEN;
-
     if (!mapboxToken) {
       setTimeout(() => setMapError(true), 0);
       return;
@@ -101,60 +315,10 @@ export function MapboxMap({
 
       map.on('load', () => {
         map.resize();
-        map.addSource('route', {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            properties: {},
-            geometry: {
-              type: 'LineString',
-              coordinates: polylineCoords.length > 0 ? polylineCoords : [[0, 0]],
-            },
-          },
-        });
-
-        map.addLayer({
-          id: 'route-line',
-          type: 'line',
-          source: 'route',
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round',
-          },
-          paint: {
-            'line-color': '#75ADAF',
-            'line-width': 4,
-            'line-opacity': 0.8,
-          },
-        });
-
-        if (destinationPosition && radiusMeters != null) {
-          map.addSource('geofence', {
-            type: 'geojson',
-            data: getCirclePolygon(destinationPosition, radiusMeters),
-          });
-
-          map.addLayer({
-            id: 'geofence-fill',
-            type: 'fill',
-            source: 'geofence',
-            paint: {
-              'fill-color': arrived ? '#7BB6B8' : '#FD6046',
-              'fill-opacity': 0.15,
-            },
-          });
-
-          map.addLayer({
-            id: 'geofence-outline',
-            type: 'line',
-            source: 'geofence',
-            paint: {
-              'line-color': arrived ? '#7BB6B8' : '#FD6046',
-              'line-width': 1.5,
-              'line-opacity': 0.6,
-            },
-          });
-        }
+        ensureGeofenceLayers(map);
+        addRouteLayers(map);
+        mapLoadedRef.current = true;
+        setMapReady(true);
       });
 
       mapRef.current = map;
@@ -164,93 +328,207 @@ export function MapboxMap({
     }
 
     return () => {
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
+      mapLoadedRef.current = false;
+      previewFitDoneRef.current = false;
+      enteredNavigationRef.current = false;
+      setMapReady(false);
+      agentMarkerRef.current?.remove();
+      agentMarkerRef.current = null;
+      destMarkerRef.current?.remove();
+      destMarkerRef.current = null;
+      mapRef.current?.remove();
+      mapRef.current = null;
     };
   }, []);
 
-  // Update dynamic properties
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
-    if (!map.isStyleLoaded()) return;
+    if (!map || !mapReady || !mapLoadedRef.current) return;
 
-    const routeSource = map.getSource('route') as mapboxgl.GeoJSONSource | undefined;
-    if (routeSource) {
-      routeSource.setData({
-        type: 'Feature',
-        properties: {},
-        geometry: {
-          type: 'LineString',
-          coordinates: polylineCoords.length > 1 ? polylineCoords : [[0, 0]],
+    const syncMap = () => {
+      const {
+        mode: mapMode,
+        effectiveTraveled: traveled,
+        effectiveRemaining: remaining,
+        agentPosition: agentPos,
+        destinationPosition: destPos,
+        agentMarker: marker,
+        destinationMarkerKind: destKind,
+        radiusMeters: radius,
+        arrived: isArrived,
+      } = syncPayloadRef.current;
+
+      const geofenceSource = map.getSource('geofence') as mapboxgl.GeoJSONSource | undefined;
+      if (destPos && radius != null && geofenceSource) {
+        geofenceSource.setData(getCirclePolygon(destPos, radius));
+        if (map.getLayer('geofence-fill')) {
+          map.setLayoutProperty('geofence-fill', 'visibility', 'visible');
+          map.setPaintProperty('geofence-fill', 'fill-color', isArrived ? '#7BB6B8' : '#FD6046');
+        }
+        if (map.getLayer('geofence-outline')) {
+          map.setLayoutProperty('geofence-outline', 'visibility', 'visible');
+          map.setPaintProperty('geofence-outline', 'line-color', isArrived ? '#7BB6B8' : '#FD6046');
+        }
+      } else {
+        if (map.getLayer('geofence-fill')) {
+          map.setLayoutProperty('geofence-fill', 'visibility', 'none');
+        }
+        if (map.getLayer('geofence-outline')) {
+          map.setLayoutProperty('geofence-outline', 'visibility', 'none');
+        }
+      }
+
+      applyRouteData(map, mapMode, traveled, remaining);
+
+      const styleLoadedAfter = map.isStyleLoaded();
+      agentDebugLog({
+        location: 'MapboxMap.tsx:syncMap',
+        message: 'Route layers synced',
+        hypothesisId: 'H11-H16',
+        runId: 'post-fix-4',
+        data: {
+          mapMode,
+          traveledLen: traveled.length,
+          remainingLen: remaining.length,
+          styleLoaded: styleLoadedAfter,
+          hasGeofence: Boolean(destPos && radius != null),
+          layerVisibility: routeLayerVisibility(map),
         },
       });
-    }
 
-    const geofenceSource = map.getSource('geofence') as mapboxgl.GeoJSONSource | undefined;
-    if (destinationPosition && radiusMeters != null) {
-      const circleGeoJSON = getCirclePolygon(destinationPosition, radiusMeters);
-      if (geofenceSource) {
-        geofenceSource.setData(circleGeoJSON);
-      } else {
-        try {
-          map.addSource('geofence', { type: 'geojson', data: circleGeoJSON });
-          map.addLayer({
-            id: 'geofence-fill',
-            type: 'fill',
-            source: 'geofence',
-            paint: { 'fill-color': arrived ? '#7BB6B8' : '#FD6046', 'fill-opacity': 0.15 },
+      if (!styleLoadedAfter && remaining.length > 1) {
+        map.once('idle', () => {
+          const payload = syncPayloadRef.current;
+          applyRouteData(map, payload.mode, payload.effectiveTraveled, payload.effectiveRemaining);
+          agentDebugLog({
+            location: 'MapboxMap.tsx:idleReapply',
+            message: 'Route re-applied after idle',
+            hypothesisId: 'H20',
+            runId: 'post-fix-4',
+            data: {
+              remainingLen: payload.effectiveRemaining.length,
+              styleLoaded: map.isStyleLoaded(),
+              layerVisibility: routeLayerVisibility(map),
+            },
           });
-          map.addLayer({
-            id: 'geofence-outline',
-            type: 'line',
-            source: 'geofence',
-            paint: { 'line-color': arrived ? '#7BB6B8' : '#FD6046', 'line-width': 1.5, 'line-opacity': 0.6 },
-          });
-        } catch {}
+        });
       }
 
-      if (map.getLayer('geofence-fill')) {
-        map.setPaintProperty('geofence-fill', 'fill-color', arrived ? '#7BB6B8' : '#FD6046');
+      if (
+        mapMode === 'preview' &&
+        !previewFitDoneRef.current &&
+        remaining.length > 1 &&
+        destPos
+      ) {
+        previewFitDoneRef.current = true;
+        const bounds = new mapboxgl.LngLatBounds();
+        for (const coord of remaining) bounds.extend(coord);
+        if (agentPos) bounds.extend(agentPos);
+        bounds.extend(destPos);
+        map.fitBounds(bounds, { padding: 72, duration: 800, maxZoom: 15 });
+        agentDebugLog({
+          location: 'MapboxMap.tsx:previewFit',
+          message: 'Preview fitBounds',
+          hypothesisId: 'H22',
+          runId: 'post-fix-4',
+          data: { hasAgent: Boolean(agentPos), remainingLen: remaining.length },
+        });
       }
-      if (map.getLayer('geofence-outline')) {
-        map.setPaintProperty('geofence-outline', 'line-color', arrived ? '#7BB6B8' : '#FD6046');
-      }
-    }
 
-    if (agentPosition) {
-      if (agentMarkerRef.current) {
-        agentMarkerRef.current.setLngLat(agentPosition);
-      } else {
-        const el = document.createElement('div');
-        el.className = 'w-5 h-5 rounded-full bg-[#4A90E2] border-[3px] border-white shadow-md transition-all duration-300';
-        agentMarkerRef.current = new mapboxgl.Marker(el)
-          .setLngLat(agentPosition)
-          .addTo(map);
-      }
-      map.easeTo({ center: agentPosition, zoom: 15, duration: 800 });
-    } else if (agentMarkerRef.current) {
-      agentMarkerRef.current.remove();
-      agentMarkerRef.current = null;
-    }
+      if (agentPos && marker) {
+        const markerInput = {
+          displayName: marker.displayName,
+          avatarUrl: marker.avatarUrl,
+          preferInitials: marker.preferInitials,
+        };
 
-    if (destinationPosition) {
-      if (destMarkerRef.current) {
-        destMarkerRef.current.setLngLat(destinationPosition);
-      } else {
-        const el = document.createElement('div');
-        el.className = 'w-4.5 h-4.5 rounded-full bg-[#FD6046] border-[3px] border-white shadow-md';
-        destMarkerRef.current = new mapboxgl.Marker(el)
-          .setLngLat(destinationPosition)
-          .addTo(map);
+        if (agentMarkerRef.current) {
+          agentMarkerRef.current.setLngLat(agentPos);
+          updateAgentMarkerElement(agentMarkerRef.current.getElement(), markerInput);
+        } else {
+          const el = createAgentMarkerElement(markerInput);
+          agentMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: 'center' })
+            .setLngLat(agentPos)
+            .addTo(map);
+        }
+
+        const heading = marker.headingDegrees;
+        if (heading != null && Number.isFinite(heading)) {
+          agentMarkerRef.current.getElement().style.transform = `rotate(${heading}deg)`;
+        }
+
+        const duration = mapMode === 'navigation' ? 400 : 800;
+        const zoom = mapMode === 'navigation' ? 16 : 15;
+
+        if (mapMode === 'navigation' && !enteredNavigationRef.current && destPos) {
+          enteredNavigationRef.current = true;
+          const bounds = new mapboxgl.LngLatBounds();
+          bounds.extend(agentPos);
+          bounds.extend(destPos);
+          map.fitBounds(bounds, { padding: 80, duration: 900, maxZoom: 16 });
+        } else if (mapMode === 'navigation' || remaining.length <= 1) {
+          map.easeTo({ center: agentPos, zoom, duration });
+        }
+      } else if (agentMarkerRef.current) {
+        agentMarkerRef.current.remove();
+        agentMarkerRef.current = null;
       }
-    } else if (destMarkerRef.current) {
-      destMarkerRef.current.remove();
-      destMarkerRef.current = null;
+
+      if (destPos) {
+        const kind = destKind;
+        if (destMarkerRef.current && destMarkerKindRef.current !== kind) {
+          destMarkerRef.current.remove();
+          destMarkerRef.current = null;
+        }
+
+        if (destMarkerRef.current) {
+          destMarkerRef.current.setLngLat(destPos);
+        } else {
+          const el = createDestinationMarkerElement({ kind, arrived: isArrived });
+          destMarkerKindRef.current = kind;
+          destMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+            .setLngLat(destPos)
+            .addTo(map);
+        }
+      } else if (destMarkerRef.current) {
+        destMarkerRef.current.remove();
+        destMarkerRef.current = null;
+        destMarkerKindRef.current = null;
+      }
+    };
+
+    const runSync = () => {
+      syncMap();
+    };
+
+    runSync();
+  }, [
+    mapReady,
+    agentLng,
+    agentLat,
+    destLng,
+    destLat,
+    traveledSig,
+    remainingSig,
+    mode,
+    agentMarker?.displayName,
+    agentMarker?.avatarUrl,
+    agentMarker?.preferInitials,
+    agentMarker?.headingDegrees,
+    destinationMarkerKind,
+    radiusMeters,
+    arrived,
+  ]);
+
+  useEffect(() => {
+    previewFitDoneRef.current = false;
+  }, [remainingSig, destLng, destLat]);
+
+  useEffect(() => {
+    if (mode !== 'navigation') {
+      enteredNavigationRef.current = false;
     }
-  }, [agentPosition, destinationPosition, polylineCoords, radiusMeters, arrived]);
+  }, [mode]);
 
   if (mapError) {
     return (

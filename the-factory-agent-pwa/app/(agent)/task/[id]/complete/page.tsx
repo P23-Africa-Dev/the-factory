@@ -1,23 +1,41 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { Camera, ShieldAlert } from 'lucide-react';
 
-import { useTask, useTaskNavigation, useCompleteTask } from '@/features/tasks';
+import {
+  useTask,
+  useTaskNavigation,
+  useCompleteTask,
+} from '@/features/tasks';
+import {
+  useGeolocation,
+  useActiveTracking,
+  buildCompleteFormData,
+  useTrackingNavigation,
+} from '@/features/tracking';
+import { useTrackingStore } from '@/store/tracking';
 import { getDb } from '@/lib/db/client';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { syncEngine } from '@/lib/sync/syncEngine';
+import { toast } from '@/lib/toast';
 
 export default function TaskCompletePage() {
-  const router = useRouter();
   const routeParams = useParams();
   const id = (routeParams?.id as string) || '';
   const taskId = Number(id);
 
   const { data: task, isLoading } = useTask(id);
   const { goToTaskList } = useTaskNavigation();
+  const { goToMapActivity } = useTrackingNavigation();
   const { mutate: completeTask, isPending, isError, error } = useCompleteTask();
+  const { getCurrentPosition } = useGeolocation();
+  const { stopTracking } = useActiveTracking();
+
+  const liveTask = useTrackingStore((s) => s.liveTaskMap[taskId]);
+  const hasArrived =
+    liveTask?.status === 'arrived' || liveTask?.arrivedAt != null;
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
@@ -30,8 +48,7 @@ export default function TaskCompletePage() {
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
-      const objectUrl = URL.createObjectURL(file);
-      setPreviewUri(objectUrl);
+      setPreviewUri(URL.createObjectURL(file));
     }
   };
 
@@ -43,9 +60,13 @@ export default function TaskCompletePage() {
     setSubmitAttempted(true);
     if (!task || !selectedFile) return;
 
+    if (!hasArrived) {
+      toast.error('Not arrived yet', 'You must reach the destination before completing this task.');
+      return;
+    }
+
     const taskIdNum = Number(task.id);
 
-    // Write to IndexedDB proof queue for background sync safety
     try {
       const db = await getDb();
       await db.add('proofQueue', {
@@ -64,21 +85,44 @@ export default function TaskCompletePage() {
     }
     await syncEngine.scheduleSync();
 
-    const formData = new FormData();
-    formData.append('company_id', String(companyId));
-    formData.append('notes', '');
-    formData.append('file', selectedFile);
+    let position = {
+      latitude: task.latitude,
+      longitude: task.longitude,
+      accuracyMeters: null as number | null,
+      recordedAt: new Date().toISOString(),
+    };
+
+    try {
+      const pos = await getCurrentPosition();
+      position = {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracyMeters: pos.coords.accuracy,
+        recordedAt: new Date(pos.timestamp).toISOString(),
+      };
+    } catch {
+      // Use task destination as fallback
+    }
+
+    const formData = buildCompleteFormData({
+      companyId,
+      files: [selectedFile],
+      notes: '',
+      position,
+    });
 
     completeTask(
       { taskId: taskIdNum, formData },
       {
-        onSuccess: () => {
+        onSuccess: async () => {
+          await stopTracking();
           goToTaskList();
         },
         onError: (err: unknown) => {
-          console.error('[complete] API error:', err);
+          const apiErr = err as { message?: string };
+          toast.error('Completion failed', apiErr?.message ?? 'Please try again.');
         },
-      }
+      },
     );
   };
 
@@ -91,22 +135,32 @@ export default function TaskCompletePage() {
   }
 
   const photoMissing = submitAttempted && !selectedFile;
-  const canSubmit = Boolean(selectedFile) && !isPending;
+  const canSubmit = Boolean(selectedFile) && hasArrived && !isPending;
 
   return (
     <div className="flex flex-col flex-1 bg-[#0A1D25] min-h-screen">
       <header className="px-6 py-4 mt-2">
-        <h2 className="font-sans font-semibold text-xl text-white">
-          Complete Task
-        </h2>
+        <h2 className="font-sans font-semibold text-xl text-white">Complete Task</h2>
         {task && (
-          <p className="font-sans text-xs text-[#8F9098] mt-1 leading-relaxed">
-            {task.title}
-          </p>
+          <p className="font-sans text-xs text-[#8F9098] mt-1 leading-relaxed">{task.title}</p>
         )}
       </header>
 
       <div className="flex-1 px-6 pb-8 overflow-y-auto">
+        {!hasArrived && (
+          <div className="bg-[#F5A623]/10 border-l-[3px] border-[#F5A623] rounded-xl p-3.5 mb-5">
+            <p className="font-sans text-xs text-white leading-relaxed mb-3">
+              You must arrive at the destination before submitting proof of completion.
+            </p>
+            <button
+              onClick={() => goToMapActivity(taskId)}
+              className="text-xs font-semibold text-[#75ADAF] hover:text-white transition-colors"
+            >
+              Continue Tracking →
+            </button>
+          </div>
+        )}
+
         <div className="mb-7">
           <h4 className="text-xs font-bold text-[#75ADAF] mb-1 uppercase tracking-wider font-sans">
             Proof Photo <span className="text-[#FD6046]">*</span>
@@ -115,12 +169,11 @@ export default function TaskCompletePage() {
             Take a photo at the task location as proof of visit.
           </p>
 
-          {/* Hidden HTML input file */}
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
-            capture="environment" // Request mobile camera directly when opened on phone
+            capture="environment"
             onChange={handleFileChange}
             className="hidden"
           />
@@ -133,15 +186,9 @@ export default function TaskCompletePage() {
           >
             {previewUri ? (
               <div className="relative w-full h-[240px]">
-                <img
-                  src={previewUri}
-                  alt="Proof preview"
-                  className="w-full h-full object-cover"
-                />
+                <img src={previewUri} alt="Proof preview" className="w-full h-full object-cover" />
                 <div className="absolute inset-x-0 bottom-0 bg-black/55 py-2.5 text-center">
-                  <span className="font-sans font-semibold text-xs text-white">
-                    Tap to retake
-                  </span>
+                  <span className="font-sans font-semibold text-xs text-white">Tap to retake</span>
                 </div>
               </div>
             ) : (
@@ -149,9 +196,7 @@ export default function TaskCompletePage() {
                 <div className="w-14 h-14 rounded-full bg-[#75ADAF]/15 flex items-center justify-center border border-[#75ADAF]/30 text-[#75ADAF]">
                   <Camera size={24} />
                 </div>
-                <span className="font-sans font-semibold text-sm text-[#75ADAF]">
-                  Take Photo
-                </span>
+                <span className="font-sans font-semibold text-sm text-[#75ADAF]">Take Photo</span>
               </div>
             )}
           </div>
@@ -163,7 +208,6 @@ export default function TaskCompletePage() {
           )}
         </div>
 
-        {/* API Error banner */}
         {isError && error && (
           <div className="bg-[#FD6046]/10 border-l-[3px] border-[#FD6046] rounded-xl p-3.5 mb-5 flex items-start gap-2.5">
             <ShieldAlert size={18} className="text-[#FD6046] flex-shrink-0 mt-0.5" />
@@ -187,7 +231,7 @@ export default function TaskCompletePage() {
           )}
         </button>
 
-        {!previewUri && (
+        {!previewUri && hasArrived && (
           <p className="text-center text-xs text-[#8F9098] mt-3 font-sans">
             Take a proof photo to enable submission.
           </p>

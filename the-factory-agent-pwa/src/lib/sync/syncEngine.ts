@@ -16,6 +16,7 @@ import {
 } from '@/lib/offline/queue';
 import { getActiveCompanyId, appStore } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
+import { buildCompleteFormData } from '@/features/tracking/completeTaskForm';
 
 const MAX_BATCH_SIZE = 50;
 const RETRY_DELAYS_MS = [0, 30_000, 120_000, 300_000, 900_000] as const;
@@ -198,15 +199,45 @@ async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<voi
         taskId: number;
         company_id?: number;
         notes?: string;
+        latitude: number;
+        longitude: number;
+        accuracy_meters?: number | null;
+        recorded_at?: string;
       }>(entry);
-      const formData = new FormData();
-      if (payload.company_id != null) {
-        formData.append('company_id', String(payload.company_id));
+      const db = await getDb();
+      const pendingProofs = await db.getAllFromIndex('proofQueue', 'by-uploaded', 0);
+      const taskProofs = pendingProofs.filter((p) => p.taskId === payload.taskId);
+      const files = taskProofs.map(
+        (p) => new File([p.fileBlob], p.fileName, { type: p.mimeType }),
+      );
+      if (files.length === 0) {
+        throw new Error('Proof photos required to complete task offline sync.');
       }
-      formData.append('notes', payload.notes ?? '');
+      const formData = buildCompleteFormData({
+        companyId: payload.company_id ?? getActiveCompanyId() ?? 0,
+        files,
+        notes: payload.notes,
+        position: {
+          latitude: payload.latitude,
+          longitude: payload.longitude,
+          accuracyMeters: payload.accuracy_meters,
+          recordedAt: payload.recorded_at,
+        },
+      });
       await client.post(`/agent/tasks/${payload.taskId}/complete`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
+      for (const proof of taskProofs) {
+        if (proof.id != null) {
+          await db.put('proofQueue', {
+            ...proof,
+            uploaded: 1,
+            attempts: 0,
+            nextAttemptAt: null,
+            lastError: null,
+          });
+        }
+      }
       return;
     }
     case 'project.create': {

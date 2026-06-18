@@ -6,17 +6,31 @@ import { X } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
-import { BottomNavBar } from '@/components/shared/BottomNavBar';
-import { useGeolocation, useLocationReporter, useStartTask } from '@/features/tracking';
+import {
+  useGeolocation,
+  useStartTask,
+  useActiveTracking,
+  useTaskRoute,
+  buildCompleteFormData,
+  hydrateLiveTaskFromRoute,
+  trackingApi,
+} from '@/features/tracking';
 import { useTaskListItems, useTask, taskKeys, taskApi } from '@/features/tasks';
-import { useAuth } from '@/features/auth';
+import { useAuth, useAgentIdentity } from '@/features/auth';
+import { getSafeAvatarSrc } from '@/lib/avatar';
+import { buildTraveledSegment, sliceRemainingRoute } from '@/lib/map/route-geometry';
+import { NavigationRideSheet } from '@/features/tracking/components/NavigationRideSheet';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTrackingStore } from '@/store/tracking';
-import { getActiveCompanyId, appStore } from '@/lib/storage/stores';
+import { getActiveCompanyId } from '@/lib/storage/stores';
 import { env } from '@/constants/env';
+import { getMapboxPublicToken } from '@/lib/map/public-env';
+import { fetchDirectionsRoute } from '@/lib/map/directions';
 import { getDb } from '@/lib/db/client';
 import { syncEngine } from '@/lib/sync/syncEngine';
 import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
+import { agentDebugLog } from '@/lib/debug-ingest';
+import { toast } from '@/lib/toast';
 
 // Dynamically import MapboxMap with SSR disabled to prevent server-side window/document errors
 const MapboxMap = dynamic(() => import('@/features/tracking/components/MapboxMap'), {
@@ -52,6 +66,7 @@ interface SelectedDestination {
   latitude: number;
   longitude: number;
   taskId: number;
+  taskStatus?: string;
 }
 
 interface GeocodedPlace {
@@ -95,6 +110,25 @@ function formatDuration(minutes: number | null): string {
   const days = Math.floor(hours / 24);
   const remainingHours = hours % 24;
   return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+}
+
+function taskHasMapLocation(t: {
+  latitude: number;
+  longitude: number;
+  address?: string | null;
+}): boolean {
+  if (Math.abs(t.latitude) > 0.0001 && Math.abs(t.longitude) > 0.0001) return true;
+  const addr = t.address?.trim();
+  return Boolean(addr && addr !== '—');
+}
+
+function canStartTaskActivity(status?: string): boolean {
+  return (
+    status === 'pending' ||
+    status === 'in_progress' ||
+    status === 'paused' ||
+    status === 'resumed'
+  );
 }
 
 const LocationIcon = () => (
@@ -178,10 +212,20 @@ function RouteInfoSheet({
   transportMode,
   onSelectMode,
   etaByMode,
+  onCancel,
+  onOpenTasks,
+  onShare,
+  canCancel,
+  isRouteLoading,
 }: {
   transportMode: TransportMode;
   onSelectMode: (mode: TransportMode) => void;
   etaByMode: Record<TransportMode, number | null>;
+  onCancel: () => void;
+  onOpenTasks: () => void;
+  onShare: () => void;
+  canCancel: boolean;
+  isRouteLoading?: boolean;
 }) {
   const etaLabel = (min: number | null) => formatDuration(min);
 
@@ -199,22 +243,42 @@ function RouteInfoSheet({
 
       <div className="flex items-center justify-between mb-4">
         <h4 className="font-sans font-bold text-base text-[#09232D]">
-          {MODE_LABELS[transportMode]}
+          {isRouteLoading ? 'Calculating route…' : MODE_LABELS[transportMode]}
         </h4>
         <div className="flex gap-2">
-          <button className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors">
+          <button
+            type="button"
+            onClick={onShare}
+            className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors"
+          >
             <img src="/assets/send-icon.png" alt="Send" className="w-[25px] h-[25px] object-contain" />
           </button>
-          <button className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors">
+          <button
+            type="button"
+            onClick={onOpenTasks}
+            className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors"
+          >
             <img src="/assets/task-icon.png" alt="Tasks" className="w-[25px] h-[25px] object-contain" />
           </button>
-          <button className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={!canCancel}
+            className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors disabled:opacity-40"
+          >
             <img src="/assets/cancel-icon.png" alt="Cancel" className="w-[25px] h-[25px] object-contain" />
           </button>
         </div>
       </div>
 
       <div className="h-[1px] bg-gray-200 mb-3" />
+
+      {isRouteLoading && (
+        <div className="flex items-center gap-2 mb-3 text-sm text-[#1D7293] font-semibold">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#1D7293] border-t-transparent" />
+          <span>Loading route preview…</span>
+        </div>
+      )}
 
       <div className="flex justify-around items-center">
         {MODES.map(({ mode, icon }) => (
@@ -245,24 +309,35 @@ function ActivityButton({
   phase,
   hasDestination,
   isStarting,
+  taskStatus,
   onStart,
-  onEnd,
 }: {
   phase: MapPhase;
   hasDestination: boolean;
   isStarting: boolean;
+  taskStatus?: string;
   onStart: () => void;
-  onEnd: () => void;
 }) {
-  if (phase === 'activity_ended') {
+  if (taskStatus === 'completed' || taskStatus === 'cancelled') {
     return (
       <div className="mx-auto w-[344px] h-[67px] rounded-[60px] bg-[#D1D5D8] flex items-center justify-center">
-        <span className="font-sans font-medium text-sm text-[#8F9098]">Activity Ended</span>
+        <span className="font-sans font-medium text-sm text-[#8F9098]">Task Closed</span>
       </div>
     );
   }
 
-  const canStart = hasDestination && phase === 'destination_selected';
+  if (phase === 'activity_ended') {
+    return (
+      <div className="mx-auto w-[344px] h-[67px] rounded-[60px] bg-[#D1D5D8] flex items-center justify-center">
+        <span className="font-sans font-medium text-sm text-[#8F9098]">Task Ended</span>
+      </div>
+    );
+  }
+
+  const canStart =
+    hasDestination &&
+    phase === 'destination_selected' &&
+    canStartTaskActivity(taskStatus);
 
   const activeButtonStyle = {
     background: 'linear-gradient(90deg, #1D7293 0%, #09232D 100%)',
@@ -284,19 +359,7 @@ function ActivityButton({
   };
 
   if (phase === 'activity_started') {
-    return (
-      <button
-        onClick={onEnd}
-        style={activeButtonStyle}
-        className="mx-auto flex items-center justify-between text-white active:scale-[0.98] transition-all duration-200"
-      >
-        <span className="font-sans font-bold text-base pl-4">‹‹</span>
-        <span className="font-sans font-bold text-sm">End Activity</span>
-        <div className="w-[44px] h-[44px] rounded-full bg-white flex items-center justify-center text-[#09232D] text-xs mr-2">
-          ◀
-        </div>
-      </button>
-    );
+    return null;
   }
 
   if (isStarting) {
@@ -306,7 +369,7 @@ function ActivityButton({
         className="mx-auto flex items-center justify-center gap-3 text-white"
       >
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-        <span className="font-sans font-bold text-sm">Starting…</span>
+        <span className="font-sans font-bold text-sm">Starting task…</span>
       </div>
     );
   }
@@ -334,7 +397,7 @@ function ActivityButton({
       </div>
 
       <span className="font-sans font-bold text-sm text-center flex-1">
-        Start Activity
+        Start Task
       </span>
 
       <div className={`pr-3 flex-shrink-0 ${!canStart && 'opacity-50'}`}>
@@ -354,15 +417,19 @@ function DestinationSearch({
   searchQuery,
   onQueryChange,
   results,
+  taskResults,
   onSelect,
   onClose,
 }: {
   searchQuery: string;
   onQueryChange: (q: string) => void;
   results: RecentDestination[];
+  taskResults: RecentDestination[];
   onSelect: (dest: RecentDestination) => void;
   onClose: () => void;
 }) {
+  const showTasks = taskResults.length > 0 && !searchQuery.trim();
+
   return (
     <div className="fixed inset-0 bg-[#051014]/75 z-50 overflow-y-auto flex flex-col font-sans">
       {/* Click outside backdrop overlay */}
@@ -396,10 +463,36 @@ function DestinationSearch({
 
         {/* Results List */}
         <div className="mx-4 mt-3 bg-[#0B1E26] rounded-2xl overflow-hidden shadow-2xl border border-white/5 flex-1 max-h-[400px] overflow-y-auto pb-4">
+          {showTasks && (
+            <div>
+              <div className="px-4 pt-4 pb-2 text-white font-bold text-sm tracking-wider uppercase opacity-40">
+                Your Tasks
+              </div>
+              <div className="divide-y divide-white/5">
+                {taskResults.map((item) => (
+                  <div
+                    key={`task-${item.taskId}`}
+                    onClick={() => onSelect(item)}
+                    className="flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-white/[0.04] transition-colors active:opacity-70"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-[#09232D] flex items-center justify-center flex-shrink-0 border border-white/5">
+                      <img src="/assets/task-icon.png" alt="Task" className="w-4.5 h-4.5 object-contain" />
+                    </div>
+                    <div className="flex-1 min-w-0 leading-tight">
+                      <p className="text-sm font-semibold text-white truncate">{item.name}</p>
+                      {item.address && (
+                        <p className="text-[10px] text-gray-400 truncate mt-1">{item.address}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {results.length > 0 ? (
             <div>
               <div className="px-4 pt-4 pb-2 text-white font-bold text-sm tracking-wider uppercase opacity-40">
-                Recent
+                {searchQuery.trim() ? 'Places' : 'Recent'}
               </div>
               <div className="divide-y divide-white/5">
                 {results.map((item, index) => (
@@ -425,11 +518,11 @@ function DestinationSearch({
                 ))}
               </div>
             </div>
-          ) : (
+          ) : !showTasks ? (
             <div className="flex items-center justify-center py-10 text-gray-400 text-xs font-semibold uppercase tracking-wider">
-              {searchQuery.trim() ? 'No destinations found' : 'Search for a place'}
+              {searchQuery.trim() ? 'No destinations found' : 'Search for a place or pick a task'}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
@@ -444,6 +537,7 @@ function OriginSearch({
   results,
   destination,
   onSelect,
+  onUseMyLocation,
   onClose,
 }: {
   query: string;
@@ -451,6 +545,7 @@ function OriginSearch({
   results: GeocodedPlace[];
   destination: SelectedDestination | null;
   onSelect: (place: GeocodedPlace) => void;
+  onUseMyLocation: () => void;
   onClose: () => void;
 }) {
   return (
@@ -486,6 +581,18 @@ function OriginSearch({
 
         {/* Results List */}
         <div className="mx-4 mt-3 bg-[#0B1E26] rounded-2xl overflow-hidden shadow-2xl border border-white/5 flex-1 max-h-[400px] overflow-y-auto pb-4">
+          <div
+            onClick={onUseMyLocation}
+            className="flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-white/[0.04] transition-colors active:opacity-70 border-b border-white/5"
+          >
+            <div className="w-9 h-9 rounded-full bg-[#09232D] flex items-center justify-center flex-shrink-0 border border-white/5">
+              <div className="w-2.5 h-2.5 rounded-full bg-[#75ADAF]" />
+            </div>
+            <div className="flex-1 min-w-0 leading-tight">
+              <p className="text-sm font-semibold text-white">Use my current location</p>
+              <p className="text-[10px] text-gray-400 truncate mt-1">GPS — Your Location</p>
+            </div>
+          </div>
           {results.length > 0 ? (
             <div className="divide-y divide-white/5">
               {results.map((item, index) => (
@@ -520,12 +627,16 @@ function OriginSearch({
 function AddNoteModal({
   visible,
   taskId,
+  hasArrived,
   onDone,
 }: {
   visible: boolean;
   taskId: number;
+  hasArrived: boolean;
   onDone: () => void;
 }) {
+  const { getCurrentPosition } = useGeolocation();
+  const { stopTracking } = useActiveTracking();
   const [note, setNote] = useState('');
   const [photos, setPhotos] = useState<File[]>([]);
   const [_previews, setPreviews] = useState<string[]>([]);
@@ -549,9 +660,16 @@ function AddNoteModal({
 
   const handleTaskDone = async () => {
     if (isSubmitting) return;
+    if (!hasArrived) {
+      toast.error('Not arrived yet', 'You must reach the destination before completing this task.');
+      return;
+    }
+    if (photos.length === 0) {
+      toast.error('Photo required', 'Please attach at least one proof photo.');
+      return;
+    }
     setIsSubmitting(true);
     try {
-      // Write to IndexedDB proof queue for background sync safety
       try {
         const db = await getDb();
         for (const file of photos) {
@@ -572,16 +690,33 @@ function AddNoteModal({
       }
       await syncEngine.scheduleSync();
 
-      const formData = new FormData();
-      formData.append('company_id', String(companyId));
-      if (note.trim()) formData.append('notes', note.trim());
-      photos.forEach((file) => {
-        formData.append('photos[]', file);
+      let position = {
+        latitude: 0,
+        longitude: 0,
+        accuracyMeters: null as number | null,
+        recordedAt: new Date().toISOString(),
+      };
+      try {
+        const pos = await getCurrentPosition();
+        position = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracyMeters: pos.coords.accuracy,
+          recordedAt: new Date(pos.timestamp).toISOString(),
+        };
+      } catch {
+        // best-effort GPS at completion
+      }
+
+      const formData = buildCompleteFormData({
+        companyId,
+        files: photos,
+        notes: note.trim() || undefined,
+        position,
       });
 
       await taskApi.completeTask(taskId, formData);
-
-      console.log('Task completed from map tab successfully', { taskId, hasNote: !!note.trim(), photoCount: photos.length });
+      await stopTracking();
 
       setNote('');
       setPhotos([]);
@@ -589,7 +724,7 @@ function AddNoteModal({
       onDone();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Could not complete task. Please try again.';
-      alert(`Completion failed: ${msg}`);
+      toast.error('Completion failed', msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -638,8 +773,8 @@ function AddNoteModal({
           </button>
           <button
             onClick={handleTaskDone}
-            disabled={isSubmitting}
-            className="flex-1 h-12 rounded-xl bg-[#75ADAF] hover:bg-[#66989A] text-white font-bold text-xs active:scale-95 transition-all flex items-center justify-center"
+            disabled={isSubmitting || !hasArrived}
+            className="flex-1 h-12 rounded-xl bg-[#75ADAF] hover:bg-[#66989A] text-white font-bold text-xs active:scale-95 transition-all flex items-center justify-center disabled:opacity-40"
           >
             {isSubmitting ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
@@ -691,12 +826,46 @@ function MapContent() {
   const [customOrigin, setCustomOrigin] = useState<GeocodedPlace | null>(null);
   const [recentDestinations, setRecentDestinations] = useState<RecentDestination[]>([]);
   const [hasArrived, setHasArrived] = useState(false);
+  const [plannedRoute, setPlannedRoute] = useState<[number, number][]>([]);
+  const [isRouteLoading, setIsRouteLoading] = useState(false);
+  const [isLaunchingRide, setIsLaunchingRide] = useState(false);
+  const startRideInFlightRef = useRef(false);
+  const [distanceRemainingM, setDistanceRemainingM] = useState<number | null>(null);
 
-  const { lastPosition, getCurrentPosition, checkPermission, requestPermission } = useGeolocation();
+  const { lastPosition, getCurrentPosition, checkPermission, requestPermission, startWatching, stopWatching } = useGeolocation();
+  const { startTracking, stopTracking, activeTaskId } = useActiveTracking();
   const { data: tasks = [] } = useTaskListItems();
-  const { mutate: startTask, isPending: isStarting } = useStartTask();
+  const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
   const { user } = useAuth();
+  const { displayName } = useAgentIdentity();
+  const [isOnline, setIsOnline] = useState(true);
   const currentAgentId = user?.id != null ? Number(user.id) : null;
+
+  useEffect(() => {
+    const sync = () => setIsOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
+    sync();
+    window.addEventListener('online', sync);
+    window.addEventListener('offline', sync);
+    return () => {
+      window.removeEventListener('online', sync);
+      window.removeEventListener('offline', sync);
+    };
+  }, []);
+
+  // Stop orphan GPS when opening /map without ?taskId (tracking store outlives page state).
+  useEffect(() => {
+    if (isFromTrackingScreen) return;
+    if (activeTaskId == null) return;
+    void stopTracking();
+    agentDebugLog({
+      location: 'map/page.tsx:mountClearTracking',
+      message: 'Cleared orphan tracking on map open',
+      hypothesisId: 'H50',
+      runId: 'post-fix-5',
+      data: { activeTaskId },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only hygiene
+  }, []);
 
   // Determine which task to work with — filter to only tasks assigned to this agent
   const resolvedTaskId = useMemo((): number | null => {
@@ -711,8 +880,47 @@ function MapContent() {
     return pending ? Number(pending.id) : null;
   }, [taskIdParam, tasks, currentAgentId]);
 
+  const trackingTaskId = useMemo((): number | null => {
+    const selected = selectedDestination?.taskId ?? 0;
+    if (selected > 0) return selected;
+    return resolvedTaskId;
+  }, [selectedDestination?.taskId, resolvedTaskId]);
+
   const { data: activeTask } = useTask(resolvedTaskId ? String(resolvedTaskId) : '');
-  const companyId = activeTask?.companyId ?? getActiveCompanyId() ?? 0;
+  const { data: trackingTask } = useTask(trackingTaskId ? String(trackingTaskId) : '');
+  const companyId = trackingTask?.companyId ?? activeTask?.companyId ?? getActiveCompanyId() ?? 0;
+
+  const { data: taskRoute } = useTaskRoute(
+    trackingTaskId,
+    companyId,
+    Boolean(trackingTaskId && companyId),
+  );
+
+  const liveTask = useTrackingStore((s) =>
+    trackingTaskId ? s.liveTaskMap[trackingTaskId] : undefined,
+  );
+
+  useEffect(() => {
+    if (!trackingTaskId || !taskRoute) return;
+    hydrateLiveTaskFromRoute(trackingTaskId, taskRoute);
+    if (taskRoute.arrival) {
+      setHasArrived(true);
+    }
+  }, [trackingTaskId, taskRoute]);
+
+  useEffect(() => {
+    if (liveTask?.status === 'arrived' || liveTask?.arrivedAt) {
+      setHasArrived(true);
+    }
+  }, [liveTask?.status, liveTask?.arrivedAt]);
+
+  useEffect(() => {
+    if (!isFromTrackingScreen || !trackingTaskId) return;
+    startTracking(trackingTaskId, companyId, {
+      onArrived: () => setHasArrived(true),
+      onDistanceRemaining: (m) => setDistanceRemainingM(m),
+    });
+  }, [isFromTrackingScreen, trackingTaskId, companyId, startTracking]);
 
   // Auto-fill destination from resolved task
   useEffect(() => {
@@ -771,63 +979,124 @@ function MapContent() {
     } catch {}
   }, []);
 
-  // Seed initial agent position for map dot
+  // Boot GPS for map preview: request permission, get fix, keep watching
   useEffect(() => {
-    checkPermission().then((status) => {
-      if (status === 'granted') getCurrentPosition().catch(() => {});
-    });
-  }, [checkPermission, getCurrentPosition]);
-
-  // Location reporting — active only during activity_started
-  useLocationReporter({
-    taskId: selectedDestination?.taskId ?? 0,
-    companyId,
-    active: phase === 'activity_started' && (selectedDestination?.taskId ?? 0) > 0,
-    onArrived: () => {
-      setHasArrived(true);
-      console.log('Agent arrived at destination (map page)', { taskId: selectedDestination?.taskId });
-    },
-  });
+    let mounted = true;
+    const bootLocation = async () => {
+      let status = await checkPermission();
+      if (status !== 'granted') {
+        status = await requestPermission();
+      }
+      if (status !== 'granted') {
+        toast.error('Location access needed', 'Enable location permission to use Your Location on the map.');
+        return;
+      }
+      try {
+        await getCurrentPosition();
+      } catch {
+        // ignore — user may deny or GPS may be unavailable
+      }
+      if (mounted) {
+        await startWatching(() => {});
+      }
+    };
+    void bootLocation();
+    return () => {
+      mounted = false;
+      stopWatching();
+    };
+  }, [checkPermission, requestPermission, getCurrentPosition, startWatching, stopWatching]);
 
   // Real-time polyline from WebSocket store
-  const livePolyline = useTrackingStore((s) =>
-    resolvedTaskId ? s.liveTaskMap[resolvedTaskId]?.polyline ?? EMPTY_POLYLINE : EMPTY_POLYLINE,
-  );
+  const livePolyline = liveTask?.polyline ?? EMPTY_POLYLINE;
+
+  const geofenceRadius =
+    liveTask?.destination?.radiusMeters ??
+    taskRoute?.destination.radius_meters ??
+    activeTask?.proximityThreshold ??
+    null;
+
+  const effectiveOriginLat = customOrigin?.latitude ?? lastPosition?.coords.latitude ?? null;
+  const effectiveOriginLng = customOrigin?.longitude ?? lastPosition?.coords.longitude ?? null;
+
+  // Planned driving route (preview / navigation)
+  useEffect(() => {
+    const token = getMapboxPublicToken() || env.MAPBOX_TOKEN;
+    if (!token || !selectedDestination) {
+      setPlannedRoute([]);
+      setIsRouteLoading(false);
+      return;
+    }
+    if (effectiveOriginLng == null || effectiveOriginLat == null) {
+      setIsRouteLoading(false);
+      return;
+    }
+
+    const origin: [number, number] = [effectiveOriginLng, effectiveOriginLat];
+    const destination: [number, number] = [selectedDestination.longitude, selectedDestination.latitude];
+    let cancelled = false;
+    setIsRouteLoading(true);
+
+    void fetchDirectionsRoute(origin, destination, token).then((coords) => {
+      if (cancelled) return;
+      const route = coords && coords.length > 1 ? coords : [origin, destination];
+      setPlannedRoute(route);
+      setIsRouteLoading(false);
+      agentDebugLog({
+        location: 'map/page.tsx:fetchRoute',
+        message: 'Directions result',
+        hypothesisId: 'H3-H4',
+        runId: 'post-fix-4',
+        data: {
+          hasToken: !!token,
+          apiCoords: coords?.length ?? 0,
+          routePoints: route.length,
+          usedFallback: !coords || coords.length < 2,
+        },
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    effectiveOriginLng,
+    effectiveOriginLat,
+    selectedDestination?.latitude,
+    selectedDestination?.longitude,
+  ]);
 
   // Static ETAs
   const etaByMode = useMemo((): Record<TransportMode, number | null> => {
-    if (!lastPosition || !selectedDestination) {
+    if (effectiveOriginLat == null || effectiveOriginLng == null || !selectedDestination) {
       return { driving: null, cycling: null, walking: null };
     }
-    const dist = haversineMeters(
-      lastPosition.coords.latitude,
-      lastPosition.coords.longitude,
-      selectedDestination.latitude,
-      selectedDestination.longitude,
-    );
+    const dist =
+      distanceRemainingM ??
+      haversineMeters(
+        effectiveOriginLat,
+        effectiveOriginLng,
+        selectedDestination.latitude,
+        selectedDestination.longitude,
+      );
     return {
       driving: etaMinutes(dist, 'driving'),
       cycling: etaMinutes(dist, 'cycling'),
       walking: etaMinutes(dist, 'walking'),
     };
-  }, [lastPosition, selectedDestination]);
+  }, [effectiveOriginLat, effectiveOriginLng, selectedDestination, distanceRemainingM]);
 
   // Search results: active task destinations + recents
   const taskDestOptions = useMemo((): RecentDestination[] =>
     tasks
-      .filter(
-        (t) =>
-          t.status !== 'completed' &&
-          t.status !== 'cancelled' &&
-          t.latitude &&
-          t.longitude,
-      )
+      .filter((t) => taskHasMapLocation(t))
       .map((t) => ({
         name: t.title,
         address: t.address ?? undefined,
-        latitude: t.latitude!,
-        longitude: t.longitude!,
+        latitude: t.latitude,
+        longitude: t.longitude,
         taskId: Number(t.id),
+        taskStatus: t.status,
       })),
     [tasks],
   );
@@ -845,21 +1114,27 @@ function MapContent() {
 
     const taskRecents: RecentDestination[] = [];
     const seenTaskIds = new Set<number>();
-    for (const td of taskDestOptions) {
-      if (td.taskId !== undefined && !seenTaskIds.has(td.taskId)) {
-        seenTaskIds.add(td.taskId);
-        taskRecents.push(td);
-      }
-    }
     for (const rd of recentDestinations) {
-      if (rd.taskId === undefined || !seenTaskIds.has(rd.taskId)) {
-        taskRecents.push(rd);
-      }
+      if (rd.taskId !== undefined && seenTaskIds.has(rd.taskId)) continue;
+      if (rd.taskId !== undefined) seenTaskIds.add(rd.taskId);
+      taskRecents.push(rd);
     }
 
-    if (!searchQuery.trim()) return taskRecents;
+    if (!searchQuery.trim()) {
+      const taskIds = new Set(taskDestOptions.map((t) => t.taskId).filter((id): id is number => id != null));
+      return taskRecents.filter((r) => r.taskId == null || !taskIds.has(r.taskId));
+    }
 
     const q = searchQuery.toLowerCase();
+    for (const td of taskDestOptions) {
+      if (
+        !seen.has(td.name) &&
+        (td.name.toLowerCase().includes(q) || (td.address?.toLowerCase().includes(q) ?? false))
+      ) {
+        seen.add(td.name);
+        combined.push(td);
+      }
+    }
     for (const r of taskRecents) {
       if (
         !seen.has(r.name) &&
@@ -889,19 +1164,22 @@ function MapContent() {
 
   const handleSelectDestination = useCallback((dest: RecentDestination) => {
     const taskIdForDest = dest.taskId ?? 0;
+    const matchedTask = taskIdForDest > 0 ? tasks.find((t) => t.id === String(taskIdForDest)) : undefined;
     setSelectedDestination({
       name: dest.name,
       address: dest.address,
       latitude: dest.latitude,
       longitude: dest.longitude,
       taskId: taskIdForDest,
+      taskStatus: matchedTask?.status ?? dest.taskStatus,
     });
+    setPhase('destination_selected');
     saveRecentDestination(dest);
     setTimeout(() => setRecentDestinations(getRecentDestinations()), 0);
     setIsDestSearchOpen(false);
     setSearchQuery('');
     setGeoDestResults([]);
-  }, []);
+  }, [tasks]);
 
   const handleSelectOrigin = useCallback((place: GeocodedPlace) => {
     setCustomOrigin(place);
@@ -910,9 +1188,28 @@ function MapContent() {
     setOriginGeoResults([]);
   }, []);
 
+  const handleUseMyLocation = useCallback(() => {
+    setCustomOrigin(null);
+    setIsOriginSearchOpen(false);
+    setOriginQuery('');
+    setOriginGeoResults([]);
+    void requestPermission().then(async (status) => {
+      if (status !== 'granted') {
+        toast.error('Location access needed', 'Enable location permission to use Your Location.');
+        return;
+      }
+      try {
+        await getCurrentPosition();
+      } catch {
+        toast.error('Location unavailable', 'Could not get your current position. Try again.');
+      }
+    });
+  }, [requestPermission, getCurrentPosition]);
+
   const handleClearOrigin = useCallback(() => {
     setCustomOrigin(null);
-  }, []);
+    void handleUseMyLocation();
+  }, [handleUseMyLocation]);
 
   const handleDestQueryChange = useCallback((q: string) => {
     setSearchQuery(q);
@@ -926,84 +1223,317 @@ function MapContent() {
 
   const handleStartActivity = useCallback(async (): Promise<void> => {
     if (!selectedDestination?.taskId) return;
+    if (startRideInFlightRef.current || isLaunchingRide) return;
+
     const taskId = selectedDestination.taskId;
+    const existingTask = tasks.find((t) => t.id === String(taskId));
+    const isResume = existingTask?.status === 'in_progress';
+
+    if (!companyId) {
+      toast.error('Session error', 'Company context is missing. Please reload and try again.');
+      agentDebugLog({
+        location: 'map/page.tsx:handleStartActivity',
+        message: 'Blocked — missing companyId',
+        hypothesisId: 'H51',
+        runId: 'post-fix-5',
+        data: { taskId, companyId },
+      });
+      return;
+    }
+
+    startRideInFlightRef.current = true;
+    setIsLaunchingRide(true);
+    agentDebugLog({
+      location: 'map/page.tsx:handleStartActivity',
+      message: 'Start Task tapped',
+      hypothesisId: 'H8-H9',
+      runId: 'post-fix-6',
+      data: { taskId, companyId, taskStatus: selectedDestination.taskStatus, isResume },
+    });
+
+    const beginSession = (arrived?: boolean, trackingSessionId?: number, startPoint?: [number, number]) => {
+      const avatarUrl = getSafeAvatarSrc(user?.avatar_url ?? null);
+      const point =
+        startPoint ??
+        useTrackingStore.getState().liveTaskMap[taskId]?.lastPosition ??
+        (effectiveOriginLng != null && effectiveOriginLat != null
+          ? ([effectiveOriginLng, effectiveOriginLat] as [number, number])
+          : null);
+
+      useTrackingStore.getState().upsertTask(taskId, {
+        ...(trackingSessionId != null ? { trackingSessionId } : {}),
+        status: arrived ? 'arrived' : 'tracking',
+        lastPosition: point,
+        polyline: point ? [point] : [],
+        agentName: displayName,
+        agentAvatar: avatarUrl,
+        taskTitle: selectedDestination?.name ?? existingTask?.title ?? 'Task',
+      });
+      setPhase('activity_started');
+      setIsLaunchingRide(false);
+      if (arrived) setHasArrived(true);
+      startTracking(taskId, companyId, {
+        onArrived: () => setHasArrived(true),
+        onDistanceRemaining: (m) => setDistanceRemainingM(m),
+      });
+      agentDebugLog({
+        location: 'map/page.tsx:beginSession',
+        message: 'Ride started',
+        hypothesisId: 'H8-H9',
+        runId: 'post-fix-6',
+        data: { taskId, plannedRouteLen: plannedRoute.length, arrived: Boolean(arrived), isResume },
+      });
+    };
+
+    const geoErrorMessage = (geoErr: unknown): string =>
+      geoErr instanceof Error
+        ? geoErr.message
+        : typeof geoErr === 'object' && geoErr != null && 'message' in geoErr
+          ? String((geoErr as { message: unknown }).message)
+          : 'unknown';
 
     try {
-      const permStatus = await requestPermission();
+      let permStatus = await checkPermission();
       if (permStatus !== 'granted') {
-        alert('Location access is required to start this activity. Please check settings.');
+        permStatus = await requestPermission();
+      }
+      if (permStatus !== 'granted') {
+        setIsLaunchingRide(false);
+        toast.error('Location required', 'Location access is required to start this task.');
         return;
       }
 
-      const pos = await getCurrentPosition();
-      const existingTask = tasks.find((t) => t.id === String(taskId));
-
-      // Resume in-progress task
-      if (existingTask?.status === 'in_progress') {
-        useTrackingStore.getState().upsertTask(taskId, {
-          status: 'tracking',
-          lastPosition: [pos.coords.longitude, pos.coords.latitude],
-          polyline: [],
+      let startPoint: [number, number];
+      if (lastPosition) {
+        startPoint = [lastPosition.coords.longitude, lastPosition.coords.latitude];
+        agentDebugLog({
+          location: 'map/page.tsx:resolveStartPoint',
+          message: 'Using cached lastPosition',
+          hypothesisId: 'H81',
+          runId: 'post-fix-7',
+          data: { taskId },
         });
-        useTrackingStore.getState().setActiveTrackingTaskId(taskId);
-        console.log('Activity resumed from map page', { taskId });
-        setPhase('activity_started');
+      } else if (customOrigin) {
+        startPoint = [customOrigin.longitude, customOrigin.latitude];
+      } else if (effectiveOriginLng != null && effectiveOriginLat != null) {
+        startPoint = [effectiveOriginLng, effectiveOriginLat];
+      } else {
+        try {
+          const pos = await getCurrentPosition();
+          startPoint = [pos.coords.longitude, pos.coords.latitude];
+        } catch (geoErr: unknown) {
+          agentDebugLog({
+            location: 'map/page.tsx:resolveStartPoint',
+            message: 'GPS failed with no cache',
+            hypothesisId: 'H71',
+            runId: 'post-fix-7',
+            data: { taskId, error: geoErrorMessage(geoErr) },
+          });
+          throw geoErr;
+        }
+      }
+
+      beginSession(false, undefined, startPoint);
+
+      if (isResume) {
+        void trackingApi
+          .getTaskRoute(taskId, companyId)
+          .then((route) => {
+            hydrateLiveTaskFromRoute(taskId, route);
+            if (route.arrival) setHasArrived(true);
+            agentDebugLog({
+              location: 'map/page.tsx:resumeRoute',
+              message: 'Resume route hydrated',
+              hypothesisId: 'H71',
+              runId: 'post-fix-6',
+              data: { taskId, points: route.points.length },
+            });
+          })
+          .catch((err: unknown) => {
+            agentDebugLog({
+              location: 'map/page.tsx:resumeRoute',
+              message: 'Resume route fetch failed (ride already active)',
+              hypothesisId: 'H52',
+              runId: 'post-fix-6',
+              data: { taskId, error: err instanceof Error ? err.message : 'unknown' },
+            });
+          });
         return;
       }
 
-      startTask(
-        {
+      try {
+        const data = await startTaskAsync({
           taskId,
           payload: {
             companyId,
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracyMeters: pos.coords.accuracy ?? 0,
-            recordedAt: new Date(pos.timestamp).toISOString(),
+            latitude: startPoint[1],
+            longitude: startPoint[0],
+            accuracyMeters: lastPosition?.coords.accuracy ?? 0,
+            recordedAt: new Date(lastPosition?.timestamp ?? Date.now()).toISOString(),
           },
-        },
-        {
-          onSuccess: (data) => {
-            useTrackingStore.getState().upsertTask(taskId, {
-              trackingSessionId: data.tracking.id,
-              status: 'tracking',
-              lastPosition: [pos.coords.longitude, pos.coords.latitude],
-              polyline: [],
-            });
-            useTrackingStore.getState().setActiveTrackingTaskId(taskId);
-            console.log('Activity started from map page', { taskId, sessionId: data.tracking.id });
-            setPhase('activity_started');
-            if (data.arrived) setHasArrived(true);
-          },
-          onError: (err: unknown) => {
-            alert(`Could not start activity: ${err instanceof Error ? err.message : 'Please try again.'}`);
-          },
-        },
-      );
-    } catch (_err) {
-      alert('Location error: Could not get your current position. Please try again.');
+        });
+        useTrackingStore.getState().upsertTask(taskId, {
+          trackingSessionId: data.tracking.id,
+          status: data.arrived ? 'arrived' : 'tracking',
+        });
+        if (data.arrived) setHasArrived(true);
+        agentDebugLog({
+          location: 'map/page.tsx:startTaskSuccess',
+          message: 'Start task API ok',
+          hypothesisId: 'H53',
+          runId: 'post-fix-6',
+          data: { taskId, trackingId: data.tracking.id },
+        });
+      } catch (err: unknown) {
+        agentDebugLog({
+          location: 'map/page.tsx:startTaskError',
+          message: 'Start task API failed — trying resume',
+          hypothesisId: 'H53',
+          runId: 'post-fix-6',
+          data: { taskId, error: err instanceof Error ? err.message : 'unknown' },
+        });
+        try {
+          const route = await trackingApi.getTaskRoute(taskId, companyId);
+          hydrateLiveTaskFromRoute(taskId, route);
+          useTrackingStore.getState().upsertTask(taskId, { lastPosition: startPoint });
+          agentDebugLog({
+            location: 'map/page.tsx:startTaskError',
+            message: 'Resumed ride after API failure',
+            hypothesisId: 'H60',
+            runId: 'post-fix-6',
+            data: { taskId },
+          });
+        } catch {
+          void stopTracking();
+          setPhase('destination_selected');
+          setIsLaunchingRide(false);
+          toast.error(
+            'Could not start task',
+            err instanceof Error ? err.message : 'Please try again.',
+          );
+        }
+      }
+    } catch (err: unknown) {
+      setIsLaunchingRide(false);
+      setPhase('destination_selected');
+      agentDebugLog({
+        location: 'map/page.tsx:handleStartActivity',
+        message: 'Location error',
+        hypothesisId: 'H54',
+        runId: 'post-fix-6',
+        data: { taskId, error: geoErrorMessage(err) },
+      });
+      toast.error('Location error', 'Could not get your current position. Please try again.');
+    } finally {
+      startRideInFlightRef.current = false;
     }
-  }, [selectedDestination, tasks, companyId, startTask, requestPermission, getCurrentPosition]);
+  }, [
+    selectedDestination,
+    tasks,
+    companyId,
+    isLaunchingRide,
+    startTaskAsync,
+    startTracking,
+    stopTracking,
+    requestPermission,
+    checkPermission,
+    getCurrentPosition,
+    lastPosition,
+    customOrigin,
+    effectiveOriginLng,
+    effectiveOriginLat,
+    displayName,
+    user?.avatar_url,
+    plannedRoute.length,
+  ]);
 
   const handleEndActivity = useCallback((): void => {
-    console.log('Activity ended from map page', { taskId: selectedDestination?.taskId });
+    void stopTracking();
     setPhase('activity_ended');
+  }, [stopTracking]);
+
+  const handleShareDestination = useCallback(() => {
+    if (!selectedDestination) return;
+    const text = `${selectedDestination.name}\n${selectedDestination.latitude}, ${selectedDestination.longitude}`;
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(text);
+      toast.success('Copied', 'Destination coordinates copied to clipboard.');
+    }
   }, [selectedDestination]);
+
+  const handleCancelRoute = useCallback(() => {
+    if (phase === 'activity_started') return;
+    setSelectedDestination(null);
+    setPlannedRoute([]);
+    setPhase('idle');
+  }, [phase]);
+
+  const handleOpenTaskPicker = useCallback(() => {
+    if (phase === 'activity_started') return;
+    handleOpenDestSearch();
+  }, [phase, handleOpenDestSearch]);
 
   const handleTaskDone = useCallback((): void => {
     queryClient.invalidateQueries({ queryKey: taskKeys.all });
-    useTrackingStore.getState().setActiveTrackingTaskId(null);
     setPhase('idle');
     setSelectedDestination(null);
     setHasArrived(false);
+    setPlannedRoute([]);
   }, [queryClient]);
 
   // Derived positions
-  const agentLng = customOrigin?.longitude ?? lastPosition?.coords.longitude ?? null;
-  const agentLat = customOrigin?.latitude ?? lastPosition?.coords.latitude ?? null;
+  const isNavigating = phase === 'activity_started';
+  const agentLng = isNavigating
+    ? liveTask?.lastPosition?.[0] ?? lastPosition?.coords.longitude ?? customOrigin?.longitude ?? null
+    : customOrigin?.longitude ?? lastPosition?.coords.longitude ?? null;
+  const agentLat = isNavigating
+    ? liveTask?.lastPosition?.[1] ?? lastPosition?.coords.latitude ?? customOrigin?.latitude ?? null
+    : customOrigin?.latitude ?? lastPosition?.coords.latitude ?? null;
   const agentPosition = useMemo<[number, number] | null>(
     () => (agentLng != null && agentLat != null ? [agentLng, agentLat] : null),
     [agentLng, agentLat],
+  );
+
+  const mapMode = isNavigating ? 'navigation' as const : 'preview' as const;
+  const traveledCoords = useMemo(
+    () => buildTraveledSegment(livePolyline),
+    [livePolyline],
+  );
+  const remainingRouteCoords = useMemo(() => {
+    if (!isNavigating) return plannedRoute;
+    return agentPosition ? sliceRemainingRoute(plannedRoute, agentPosition) : plannedRoute;
+  }, [isNavigating, plannedRoute, agentPosition]);
+
+  const totalRouteDistanceM = useMemo(() => {
+    if (plannedRoute.length < 2) return null;
+    let total = 0;
+    for (let i = 1; i < plannedRoute.length; i++) {
+      total += haversineMeters(
+        plannedRoute[i - 1][1],
+        plannedRoute[i - 1][0],
+        plannedRoute[i][1],
+        plannedRoute[i][0],
+      );
+    }
+    return total;
+  }, [plannedRoute]);
+
+  const agentAvatarUrl = getSafeAvatarSrc(user?.avatar_url ?? null);
+  const agentMarker = useMemo(
+    () => ({
+      displayName,
+      avatarUrl: isOnline ? agentAvatarUrl : null,
+      preferInitials: !isOnline,
+      headingDegrees: lastPosition?.coords.heading ?? null,
+    }),
+    [displayName, isOnline, agentAvatarUrl, lastPosition?.coords.heading],
+  );
+
+  const destinationMarkerKind = (selectedDestination?.taskId ?? 0) > 0 ? 'task' as const : 'place' as const;
+
+  const selectedDestTask = useMemo(
+    () => (selectedDestination?.taskId ? tasks.find((t) => t.id === String(selectedDestination.taskId)) : undefined),
+    [selectedDestination?.taskId, tasks],
   );
 
   const selectedDestLng = selectedDestination?.longitude ?? null;
@@ -1020,12 +1550,34 @@ function MapContent() {
         <MapboxMap
           agentPosition={agentPosition}
           destinationPosition={destinationPosition}
-          polylineCoords={livePolyline}
-          radiusMeters={null}
+          traveledCoords={traveledCoords}
+          remainingRouteCoords={remainingRouteCoords}
+          mode={mapMode}
+          agentMarker={agentMarker}
+          destinationMarkerKind={destinationMarkerKind}
+          radiusMeters={geofenceRadius}
           arrived={hasArrived}
           dimmed={phase === 'activity_ended'}
         />
       </div>
+
+      {(isRouteLoading || isLaunchingRide || isStarting) && (
+        <div className="absolute inset-x-0 top-1/2 z-[15] flex justify-center pointer-events-none px-6">
+          <div className="bg-[#09232D]/90 text-white rounded-2xl px-5 py-4 shadow-xl flex items-center gap-3 max-w-sm w-full border border-white/10">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#75ADAF] border-t-transparent flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="font-sans font-bold text-sm truncate">
+                {isLaunchingRide || isStarting ? 'Starting your ride…' : 'Calculating route…'}
+              </p>
+              <p className="font-sans text-xs text-white/70 truncate">
+                {isLaunchingRide || isStarting
+                  ? 'Connecting GPS tracking and task session'
+                  : 'Fetching directions from Mapbox'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top overlay: location card + arrival banner */}
       {!isDestSearchOpen && !isOriginSearchOpen && (
@@ -1055,6 +1607,7 @@ function MapContent() {
           searchQuery={searchQuery}
           onQueryChange={handleDestQueryChange}
           results={searchResults}
+          taskResults={taskDestOptions}
           onSelect={handleSelectDestination}
           onClose={() => {
             setIsDestSearchOpen(false);
@@ -1072,6 +1625,7 @@ function MapContent() {
           results={originGeoResults}
           destination={selectedDestination}
           onSelect={handleSelectOrigin}
+          onUseMyLocation={handleUseMyLocation}
           onClose={() => {
             setIsOriginSearchOpen(false);
             setOriginQuery('');
@@ -1084,27 +1638,39 @@ function MapContent() {
       {!isDestSearchOpen && !isOriginSearchOpen && (
         <div className="fixed bottom-0 inset-x-0 z-20 flex flex-col pointer-events-none pb-[100px]">
           <div className="pointer-events-auto w-full">
-            <RouteInfoSheet
-              transportMode={transportMode}
-              onSelectMode={setTransportMode}
-              etaByMode={etaByMode}
-            />
-            <div className="bg-[#F2F4F5] px-4 pt-3 pb-4">
-              <ActivityButton
-                phase={phase}
-                hasDestination={Boolean(selectedDestination?.taskId)}
-                isStarting={isStarting}
-                onStart={handleStartActivity}
+            {phase === 'activity_started' ? (
+              <NavigationRideSheet
+                destinationName={selectedDestination?.name ?? 'Destination'}
+                etaMinutes={etaByMode[transportMode]}
+                distanceRemainingM={distanceRemainingM}
+                totalDistanceM={totalRouteDistanceM}
                 onEnd={handleEndActivity}
               />
-            </div>
+            ) : (
+              <>
+                <RouteInfoSheet
+                  transportMode={transportMode}
+                  onSelectMode={setTransportMode}
+                  etaByMode={etaByMode}
+                  onCancel={handleCancelRoute}
+                  onOpenTasks={handleOpenTaskPicker}
+                  onShare={handleShareDestination}
+                  canCancel
+                  isRouteLoading={isRouteLoading}
+                />
+                <div className="bg-[#F2F4F5] px-4 pt-3 pb-4">
+                  <ActivityButton
+                    phase={phase}
+                    hasDestination={(selectedDestination?.taskId ?? 0) > 0}
+                    isStarting={isStarting}
+                    taskStatus={selectedDestination?.taskStatus ?? selectedDestTask?.status}
+                    onStart={handleStartActivity}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
-      )}
-
-      {/* Navigation Footer */}
-      {!isDestSearchOpen && !isOriginSearchOpen && (
-        <BottomNavBar activeTab={1} />
       )}
 
       {/* Complete notes modal */}
@@ -1112,6 +1678,7 @@ function MapContent() {
         <AddNoteModal
           visible={phase === 'activity_ended'}
           taskId={selectedDestination.taskId}
+          hasArrived={hasArrived}
           onDone={handleTaskDone}
         />
       )}

@@ -4,23 +4,15 @@ import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { useAuth } from '@/features/auth';
+import { ActiveTrackingProvider } from '@/features/tracking/ActiveTrackingProvider';
 import { useTrackingWebSocket } from '@/hooks/useTrackingWebSocket';
 import { syncEngine } from '@/lib/sync/syncEngine';
 import { BottomNavBar } from '@/components/shared/BottomNavBar';
 import { OfflineSyncBanner } from '@/components/shared/OfflineSyncBanner';
 
-export default function AgentLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const { isSignedIn, isLoading } = useAuth();
-  const router = useRouter();
-
-  // Mount WebSocket tracking session for authenticated agents
+function AgentShell({ children }: { children: React.ReactNode }) {
   useTrackingWebSocket();
 
-  // Handle offline sync trigger on reconnect, visibility, and service worker messages.
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -42,7 +34,6 @@ export default function AgentLayout({
     window.addEventListener('online', handleOnline);
     navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage);
 
-    // Initial check/sync
     if (navigator.onLine) {
       syncEngine.syncAll();
       syncEngine.scheduleSync();
@@ -55,7 +46,23 @@ export default function AgentLayout({
     };
   }, []);
 
-  // Protect all agent routes
+  return (
+    <div className="flex flex-col flex-1 min-h-screen bg-[#0A1D25] text-white">
+      <OfflineSyncBanner />
+      <div className="flex flex-col flex-1 pb-[100px]">{children}</div>
+      <BottomNavBar />
+    </div>
+  );
+}
+
+export default function AgentLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const { isSignedIn, isLoading } = useAuth();
+  const router = useRouter();
+
   useEffect(() => {
     if (!isLoading && !isSignedIn) {
       router.replace('/login');
@@ -71,13 +78,8 @@ export default function AgentLayout({
   }
 
   return (
-    <div className="flex flex-col flex-1 min-h-screen bg-[#0A1D25] text-white">
-      <OfflineSyncBanner />
-      {/* Scrollable screen view container with padding to avoid bottom navigation bar overlay */}
-      <div className="flex flex-col flex-1 pb-[100px]">
-        {children}
-      </div>
-      <BottomNavBar />
-    </div>
+    <ActiveTrackingProvider>
+      <AgentShell>{children}</AgentShell>
+    </ActiveTrackingProvider>
   );
 }

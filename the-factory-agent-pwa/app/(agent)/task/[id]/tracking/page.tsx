@@ -1,13 +1,21 @@
 'use client';
 
 import React, { useCallback, useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { Compass, ShieldAlert } from 'lucide-react';
 
-import { useGeolocation, useStartTask, useTrackingNavigation } from '@/features/tracking';
+import {
+  useGeolocation,
+  useStartTask,
+  useTrackingNavigation,
+  useActiveTracking,
+  trackingApi,
+  hydrateLiveTaskFromRoute,
+} from '@/features/tracking';
 import { useTask } from '@/features/tasks';
 import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId } from '@/lib/storage/stores';
+import { toast } from '@/lib/toast';
 
 function LocationPermissionGate({
   onGranted,
@@ -81,7 +89,6 @@ function LocationPermissionGate({
 }
 
 export default function TrackingPage() {
-  const router = useRouter();
   const routeParams = useParams();
   const id = (routeParams?.id as string) || '';
   const taskId = Number(id);
@@ -89,9 +96,26 @@ export default function TrackingPage() {
   const { mutate: startTask, isPending: isStarting } = useStartTask();
   const { getCurrentPosition } = useGeolocation();
   const { goToMapActivity, goToTrackingComplete } = useTrackingNavigation();
+  const { startTracking } = useActiveTracking();
 
   const { data: task } = useTask(String(taskId));
   const resolvedCompanyId = task?.companyId ?? getActiveCompanyId() ?? 0;
+
+  const beginTrackingSession = useCallback(
+    (arrived?: boolean) => {
+      startTracking(taskId, resolvedCompanyId, {
+        onArrived: () => {
+          useTrackingStore.getState().markArrived(taskId, new Date().toISOString());
+        },
+      });
+      useTrackingStore.getState().setActiveTrackingTaskId(taskId);
+      if (arrived) {
+        useTrackingStore.getState().markArrived(taskId, new Date().toISOString());
+      }
+      goToMapActivity(taskId);
+    },
+    [taskId, resolvedCompanyId, startTracking, goToMapActivity],
+  );
 
   const handlePermissionGranted = useCallback(async () => {
     try {
@@ -99,14 +123,18 @@ export default function TrackingPage() {
       const isResume = task?.status === 'in_progress';
 
       if (isResume) {
-        useTrackingStore.getState().upsertTask(taskId, {
-          status: 'tracking',
-          lastPosition: [pos.coords.longitude, pos.coords.latitude],
-          polyline: [],
-        });
-        useTrackingStore.getState().setActiveTrackingTaskId(taskId);
-        goToMapActivity(taskId);
-        return;
+        try {
+          const route = await trackingApi.getTaskRoute(taskId, resolvedCompanyId);
+          hydrateLiveTaskFromRoute(taskId, route);
+          useTrackingStore.getState().upsertTask(taskId, {
+            status: route.arrival ? 'arrived' : 'tracking',
+            lastPosition: [pos.coords.longitude, pos.coords.latitude],
+          });
+          beginTrackingSession(route.arrival != null);
+          return;
+        } catch {
+          // Fall through to /start if route fetch fails
+        }
       }
 
       startTask(
@@ -124,25 +152,24 @@ export default function TrackingPage() {
           onSuccess: (data) => {
             useTrackingStore.getState().upsertTask(taskId, {
               trackingSessionId: data.tracking.id,
-              status: 'tracking',
+              status: data.arrived ? 'arrived' : 'tracking',
               lastPosition: [pos.coords.longitude, pos.coords.latitude],
               polyline: [],
             });
-            useTrackingStore.getState().setActiveTrackingTaskId(taskId);
-            goToMapActivity(taskId);
-            if (data.arrived) {
-              useTrackingStore.getState().markArrived(taskId, new Date().toISOString());
-            }
+            beginTrackingSession(data.arrived);
           },
           onError: (error: unknown) => {
-            alert(`Could not start task: ${error instanceof Error ? error.message : 'Please try again.'}`);
+            toast.error(
+              'Could not start task',
+              error instanceof Error ? error.message : 'Please try again.',
+            );
           },
-        }
+        },
       );
-    } catch (err) {
-      alert('Location error: Could not get your current position. Please try again.');
+    } catch {
+      toast.error('Location error', 'Could not get your current position. Please try again.');
     }
-  }, [taskId, resolvedCompanyId, startTask, getCurrentPosition, task, goToMapActivity]);
+  }, [taskId, resolvedCompanyId, startTask, getCurrentPosition, task, beginTrackingSession]);
 
   if (isStarting) {
     return (

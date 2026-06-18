@@ -97,6 +97,7 @@ export function useCompleteTask() {
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
       useTrackingStore.getState().setActiveTrackingTaskId(null);
       useTrackingStore.getState().markCompleted(taskId);
+      useTrackingStore.getState().removeTask(taskId);
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         toast.info('Offline queue', 'Task completion queued and will sync automatically.');
       }

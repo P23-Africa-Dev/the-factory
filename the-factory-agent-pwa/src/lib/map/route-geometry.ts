@@ -1,0 +1,99 @@
+const EPSILON = 1e-6;
+
+export function isFiniteCoordinate(point: [number, number] | null | undefined): point is [number, number] {
+  if (!point) return false;
+  if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) return false;
+  if (point[0] === 0 && point[1] === 0) return false;
+  return true;
+}
+
+export function areSamePoint(a: [number, number], b: [number, number], epsilon = EPSILON): boolean {
+  return Math.abs(a[0] - b[0]) <= epsilon && Math.abs(a[1] - b[1]) <= epsilon;
+}
+
+export function sanitizePolyline(points: [number, number][]): [number, number][] {
+  const sanitized: [number, number][] = [];
+
+  for (const point of points) {
+    if (!isFiniteCoordinate(point)) continue;
+    const previous = sanitized[sanitized.length - 1];
+    if (previous && areSamePoint(previous, point)) continue;
+    sanitized.push(point);
+  }
+
+  return sanitized;
+}
+
+function haversineMeters(lng1: number, lat1: number, lng2: number, lat2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function distancePointToSegmentMeters(
+  point: [number, number],
+  segStart: [number, number],
+  segEnd: [number, number],
+): number {
+  const [px, py] = point;
+  const [x1, y1] = segStart;
+  const [x2, y2] = segEnd;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+
+  if (dx === 0 && dy === 0) {
+    return haversineMeters(px, py, x1, y1);
+  }
+
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)));
+  const projLng = x1 + t * dx;
+  const projLat = y1 + t * dy;
+  return haversineMeters(px, py, projLng, projLat);
+}
+
+/** Find closest vertex index on route to agent position. */
+function findClosestRouteIndex(route: [number, number][], agent: [number, number]): number {
+  if (route.length <= 1) return 0;
+
+  let bestIndex = 0;
+  let bestDist = Infinity;
+
+  for (let i = 0; i < route.length - 1; i++) {
+    const dist = distancePointToSegmentMeters(agent, route[i], route[i + 1]);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIndex = i + 1;
+    }
+  }
+
+  return bestIndex;
+}
+
+/** Return the portion of planned route still ahead of the agent. */
+export function sliceRemainingRoute(
+  planned: [number, number][],
+  agent: [number, number] | null,
+): [number, number][] {
+  const route = sanitizePolyline(planned);
+  if (route.length < 2) return route;
+  if (!isFiniteCoordinate(agent)) return route;
+
+  const idx = findClosestRouteIndex(route, agent);
+  const remaining = route.slice(idx);
+  if (remaining.length === 0) return [agent];
+  if (!areSamePoint(remaining[0], agent)) {
+    return [agent, ...remaining];
+  }
+  return remaining;
+}
+
+/** Sanitized traveled GPS trail for grey "behind" line. */
+export function buildTraveledSegment(trail: [number, number][]): [number, number][] {
+  return sanitizePolyline(trail);
+}

@@ -29,6 +29,13 @@ export const useTrackingWebSocket = (): void => {
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const disconnectedAtRef = useRef<number | null>(null);
 
+  const subscribeActiveTask = useCallback((ws: WebSocket) => {
+    const activeTaskId = useTrackingStore.getState().activeTrackingTaskId;
+    if (activeTaskId != null) {
+      ws.send(JSON.stringify({ type: 'subscribe_task', task_id: activeTaskId }));
+    }
+  }, []);
+
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
@@ -98,6 +105,10 @@ export const useTrackingWebSocket = (): void => {
           break;
         }
 
+        case 'tracking.task.near_destination':
+          upsertTask(taskId, { status: 'tracking', lastUpdatedAt: occurredAt });
+          break;
+
         case 'tracking.task.arrived':
           markArrived(taskId, occurredAt);
           break;
@@ -160,6 +171,7 @@ export const useTrackingWebSocket = (): void => {
       disconnectedAtRef.current = null;
       stopPolling();
       ws.send(JSON.stringify({ type: 'ping' }));
+      subscribeActiveTask(ws);
     };
 
     ws.onmessage = (event) => {
@@ -189,11 +201,26 @@ export const useTrackingWebSocket = (): void => {
         connectRef.current?.();
       }, backoffRef.current);
     };
-  }, [setWsStatus, handleEvent, startPolling, stopPolling]);
+  }, [setWsStatus, handleEvent, startPolling, stopPolling, subscribeActiveTask]);
 
   useEffect(() => {
     connectRef.current = connect;
   }, [connect]);
+
+  useEffect(() => {
+    const unsubscribe = useTrackingStore.subscribe((state, prevState) => {
+      if (state.activeTrackingTaskId === prevState.activeTrackingTaskId) return;
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (prevState.activeTrackingTaskId != null) {
+        ws.send(JSON.stringify({ type: 'unsubscribe_task', task_id: prevState.activeTrackingTaskId }));
+      }
+      if (state.activeTrackingTaskId != null) {
+        ws.send(JSON.stringify({ type: 'subscribe_task', task_id: state.activeTrackingTaskId }));
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     connect();

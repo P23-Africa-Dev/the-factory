@@ -1,5 +1,12 @@
 import { z } from 'zod';
 
+export const proximityStateSchema = z.enum([
+  'in_progress',
+  'near_destination',
+  'arrived',
+  'completed',
+]);
+
 export const trackingSessionSchema = z.object({
   id: z.number(),
   task_id: z.number(),
@@ -53,16 +60,29 @@ export const taskRouteSchema = z.object({
   polyline: z.array(z.tuple([z.number(), z.number()])),
 });
 
-export const startTaskResponseSchema = z.object({
-  tracking: trackingSessionSchema,
+const proximityFieldsSchema = z.object({
+  near_destination: z.boolean().optional(),
   arrived: z.boolean(),
+  proximity_state: proximityStateSchema.optional(),
+  distance_to_destination_meters: z.number().nullable().optional(),
+  distance_remaining_meters: z.number().nullable().optional(),
+  movement_started: z.boolean().optional(),
 });
 
-export const recordLocationResponseSchema = z.object({
-  received_points: z.number(),
-  persisted_points: z.number(),
-  arrived: z.boolean(),
-});
+export const startTaskResponseSchema = z
+  .object({
+    tracking: trackingSessionSchema,
+    arrived: z.boolean(),
+  })
+  .merge(proximityFieldsSchema);
+
+export const recordLocationResponseSchema = z
+  .object({
+    received_points: z.number(),
+    persisted_points: z.number(),
+    arrived: z.boolean(),
+  })
+  .merge(proximityFieldsSchema);
 
 export const locationQueueItemSchema = z.object({
   taskId: z.number(),
@@ -74,3 +94,20 @@ export const locationQueueItemSchema = z.object({
   headingDegrees: z.number().nullable(),
   recordedAt: z.string(),
 });
+
+function unwrapTrackingData(raw: unknown): unknown {
+  const wrapped = raw as Record<string, unknown>;
+  return wrapped?.data ?? raw;
+}
+
+export function parseStartTaskResponse(raw: unknown) {
+  return startTaskResponseSchema.parse(unwrapTrackingData(raw));
+}
+
+export function parseRecordLocationResponse(raw: unknown) {
+  return recordLocationResponseSchema.parse(unwrapTrackingData(raw));
+}
+
+export function parseTaskRouteResponse(raw: unknown) {
+  return taskRouteSchema.parse(unwrapTrackingData(raw));
+}

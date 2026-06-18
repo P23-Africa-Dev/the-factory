@@ -9,6 +9,7 @@ export interface RecentDestination {
   latitude: number;
   longitude: number;
   taskId?: number;
+  taskStatus?: string;
 }
 
 export function getRecentDestinations(): RecentDestination[] {

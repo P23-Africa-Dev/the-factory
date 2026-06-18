@@ -4,12 +4,12 @@ import { trackingKeys } from './queryKeys';
 import { taskKeys } from '@/features/tasks/queryKeys';
 import type { StartTaskPayload } from './types';
 
-export const useTaskRoute = (taskId: number, companyId: number) =>
+export const useTaskRoute = (taskId: number | null, companyId: number, enabled = true) =>
   useQuery({
-    queryKey: trackingKeys.route(taskId),
-    queryFn: () => trackingApi.getTaskRoute(taskId, companyId),
-    enabled: !!taskId && !!companyId,
-    refetchInterval: 1000 * 30, // Poll for updates on route
+    queryKey: trackingKeys.route(taskId ?? 0),
+    queryFn: () => trackingApi.getTaskRoute(taskId!, companyId),
+    enabled: enabled && !!taskId && !!companyId,
+    staleTime: 1000 * 15,
   });
 
 export const useStartTask = () => {

@@ -5,6 +5,7 @@ import type { Task, TaskFilters, UpdateTaskStatusPayload } from './types';
 import { env } from '@/constants/env';
 import { queueOfflineAction } from '@/lib/offline/queue';
 import { appStore } from '@/lib/storage/stores';
+import { buildCompleteFormData } from '@/features/tracking/completeTaskForm';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -150,6 +151,10 @@ export const taskApi = {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       const companyIdFromForm = formData.get('company_id');
       const notesFromForm = formData.get('notes');
+      const lat = formData.get('latitude');
+      const lng = formData.get('longitude');
+      const accuracy = formData.get('accuracy_meters');
+      const recordedAt = formData.get('recorded_at');
       await queueOfflineAction({
         actionType: 'task.complete',
         payload: {
@@ -159,6 +164,10 @@ export const taskApi = {
               ? Number(companyIdFromForm)
               : getActiveCompanyId(),
           notes: typeof notesFromForm === 'string' ? notesFromForm : '',
+          latitude: typeof lat === 'string' ? Number(lat) : 0,
+          longitude: typeof lng === 'string' ? Number(lng) : 0,
+          accuracy_meters: typeof accuracy === 'string' ? Number(accuracy) : null,
+          recorded_at: typeof recordedAt === 'string' ? recordedAt : new Date().toISOString(),
         },
       });
       return;
