@@ -248,9 +248,9 @@ export default function AiAssistantPage() {
           <div className="bg-white rounded-t-3xl shadow-xl flex items-center p-6 gap-3 border border-gray-100">
             <button
               type="button"
-              className="w-11 h-11 rounded-full bg-gray-100 flex items-center justify-center text-[#091519] focus:outline-none text-lg"
+              className="w-11 h-11 rounded-full bg-gray-100 flex items-center justify-center text-[#091519] focus:outline-none flex-shrink-0"
             >
-              📷
+              <img src="/assets/ai-camera.png" alt="camera" className="w-[38px] h-[38px] object-contain" />
             </button>
 
             <div className="flex-1 bg-gray-100 rounded-full h-12 flex items-center px-4">

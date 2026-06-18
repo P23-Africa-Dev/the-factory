@@ -35,6 +35,9 @@ export function BottomNavBar({ activeTab }: BottomNavBarProps): React.ReactEleme
   const rxValue = isCrmRoute ? 32 : 0;
   const clipHeight = isCrmRoute ? 180 : 140;
 
+  const isMapRoute = pathname.startsWith('/map');
+  const baseFillColor = isMapRoute ? '#F2F4F5' : '#FFFFFF';
+
   const handleTabClick = (tabId: ActiveTab, path: string) => {
     router.push(path);
   };
@@ -45,7 +48,7 @@ export function BottomNavBar({ activeTab }: BottomNavBarProps): React.ReactEleme
       <div className="relative mx-auto w-full max-w-md h-[100px]">
         {/* SVG background layer */}
         <svg
-          className="absolute inset-0 w-full h-full drop-shadow-[0_-8px_24px_rgba(0,0,0,0.15)]"
+          className="absolute inset-0 w-full h-full"
           viewBox="0 0 440 140"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
@@ -68,7 +71,7 @@ export function BottomNavBar({ activeTab }: BottomNavBarProps): React.ReactEleme
             </clipPath>
           </defs>
           <g clipPath="url(#roundedNavBar)">
-            <rect width="440" height={clipHeight} fill="#FFFFFF" rx={rxValue} />
+            <rect width="440" height={clipHeight} fill={baseFillColor} rx={rxValue} />
             <path
               d="M-14.339 63.0683L-31.6672 72.636C-38.0421 76.1558 -42 82.8565 -42 90.1385V199.75C-42 232.804 168.667 213.522 274 199.75V91.0538C274 83.296 269.514 76.238 262.489 72.945L238.946 61.9078C233.656 59.4279 227.547 59.385 222.223 61.7902L194.825 74.1671C189.017 76.7909 182.307 76.4896 176.757 73.3558L159.184 63.4325C153.197 60.0519 145.894 59.9832 139.845 63.2506L121.213 73.3146C115.391 76.4594 108.39 76.5209 102.514 73.4791L82.1097 62.9171C76.1751 59.8452 69.0985 59.9401 63.2485 63.1702L44.9504 73.2734C39.2024 76.4471 32.2628 76.5974 26.3829 73.6755L4.2285 62.6662C-1.65144 59.7443 -8.59103 59.8946 -14.339 63.0683Z"
               fill="url(#navL)"
