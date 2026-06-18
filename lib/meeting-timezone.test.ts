@@ -6,7 +6,7 @@ describe("meeting-timezone", () => {
   it("resolveUserTimezone returns an IANA timezone string", () => {
     const timezone = resolveUserTimezone();
     expect(timezone.length).toBeGreaterThan(0);
-    expect(timezone).toMatch(/^[A-Za-z_]+\/[A-Za-z_]+$/);
+    expect(() => new Intl.DateTimeFormat("en-US", { timeZone: timezone })).not.toThrow();
   });
 
   it("resolveMeetingTimezone prefers explicit timezone when valid", () => {
