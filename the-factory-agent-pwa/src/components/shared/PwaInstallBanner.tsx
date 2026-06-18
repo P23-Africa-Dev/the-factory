@@ -4,8 +4,10 @@ import React, { useEffect, useState } from 'react';
 import { X, Smartphone, Share, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
+import { useShouldShowInstallBanner } from '@/components/guards/PwaAccessGuard';
 
 export function PwaInstallBanner() {
+  const showOnRoute = useShouldShowInstallBanner();
   const { canInstall, isInstalled, install } = usePwaInstall();
   const [isIos, setIsIos] = useState(false);
   const [dismissed, setDismissed] = useState(true);
@@ -36,6 +38,8 @@ export function PwaInstallBanner() {
     const isIphoneOrIpad = ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod');
     setIsIos(isIphoneOrIpad);
   }, [canInstall, isInstalled]);
+
+  if (!showOnRoute) return null;
 
   // Don't render if PWA is already installed or if user dismissed the banner
   if (isInstalled || dismissed) return null;

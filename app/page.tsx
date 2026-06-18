@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -15,8 +16,20 @@ import {
 } from "lucide-react";
 import Logo from "@/assets/images/logo.png";
 import Button from "@/components/ui/button";
+import { DownloadAgentAppModal } from "@/components/pwa/DownloadAgentAppModal";
+import { getAgentInstallUrl, isMobileDevice } from "@/lib/agent-pwa-url";
 
 export default function Home() {
+  const [agentModalOpen, setAgentModalOpen] = useState(false);
+
+  function handleDownloadAgentApp() {
+    if (isMobileDevice()) {
+      window.location.href = getAgentInstallUrl();
+      return;
+    }
+    setAgentModalOpen(true);
+  }
+
   return (
     <div className="relative min-h-screen w-full flex flex-col bg-[#0A1618] overflow-x-hidden selection:bg-[#6FA8A6]/30 font-sans">
       {/* Cinematic Background */}
@@ -104,6 +117,7 @@ export default function Home() {
                 <Button
                   type="button"
                   variant="outline"
+                  onClick={handleDownloadAgentApp}
                   className="h-[64px] min-w-[240px] rounded-2xl border-[#6FA8A6]/20 bg-[#6FA8A6]/5 text-sm font-black uppercase tracking-widest text-[#6FA8A6] backdrop-blur-xl hover:bg-[#6FA8A6]/10 shadow-[0_0_15px_rgba(111,168,166,0.05)] transition-all active:scale-[0.98]"
                 >
                   Download Agent App
@@ -185,6 +199,7 @@ export default function Home() {
           </div>
         </div>
       </footer>
+      <DownloadAgentAppModal isOpen={agentModalOpen} onClose={() => setAgentModalOpen(false)} />
     </div>
   );
 }

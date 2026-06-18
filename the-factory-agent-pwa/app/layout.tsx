@@ -8,6 +8,7 @@ import { AuthProvider } from '@/features/auth';
 import { queryClient } from '@/lib/queryClient';
 import { SessionExpiredModal } from '@/components/shared/SessionExpiredModal';
 import { PwaInstallBanner } from '@/components/shared/PwaInstallBanner';
+import { PwaAccessGuard } from '@/components/guards/PwaAccessGuard';
 import './globals.css';
 
 export default function RootLayout({
@@ -52,9 +53,11 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-[#0A1D25] text-white overflow-x-hidden selection:bg-[#75ADAF]/30">
         <AuthProvider>
           <QueryClientProvider client={queryClient}>
-            <main className="flex flex-col flex-1 min-h-screen">
-              {children}
-            </main>
+            <PwaAccessGuard>
+              <main className="flex flex-col flex-1 min-h-screen">
+                {children}
+              </main>
+            </PwaAccessGuard>
             <SessionExpiredModal />
             <PwaInstallBanner />
           </QueryClientProvider>
