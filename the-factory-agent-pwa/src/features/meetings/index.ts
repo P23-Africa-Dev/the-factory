@@ -33,3 +33,4 @@ export { MeetingStatusBadge } from './components/MeetingStatusBadge';
 export { SyncStatusBanner } from './components/SyncStatusBanner';
 export { CalendarStatusNotice } from './components/CalendarStatusNotice';
 export { MeetingForm } from './components/MeetingForm';
+export { CreateMeetingModal } from './components/CreateMeetingModal';

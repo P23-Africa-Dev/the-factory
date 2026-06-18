@@ -19,9 +19,6 @@ function formatDateForInput(date: Date): string {
   const dd = pad(date.getDate());
   const hh = pad(date.getHours());
   const mm = pad(date.getMinutes());
-  return `${yyyy}-${MM}-${dd}T${hh}-${mm}`.replace('-', '/').replace('-', '/'); // actually T separator: YYYY-MM-DDTHH:mm
-  // Let's do standard ISO format without offset:
-  // yyyy-MM-ddThh:mm
   return `${yyyy}-${MM}-${dd}T${hh}:${mm}`;
 }
 

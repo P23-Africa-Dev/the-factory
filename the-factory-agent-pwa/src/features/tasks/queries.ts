@@ -1,23 +1,59 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
+import type { InfiniteData } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
+import { getActiveCompanyId } from '@/lib/storage/stores';
 import { useTrackingStore } from '@/store/tracking';
 import { toast } from '@/lib/toast';
 import { taskApi } from './api';
+import type { TaskListResult } from './api';
 import { taskKeys } from './queryKeys';
 import type { Task, TaskFilters, UpdateTaskStatusPayload } from './types';
 
+export function flattenTaskPages(data: InfiniteData<TaskListResult> | undefined): Task[] {
+  if (!data?.pages.length) return [];
+  const seen = new Set<string>();
+  const result: Task[] = [];
+  for (const page of data.pages) {
+    for (const task of page.tasks) {
+      if (!seen.has(task.id)) {
+        seen.add(task.id);
+        result.push(task);
+      }
+    }
+  }
+  return result;
+}
+
 export function useTaskList(filters?: TaskFilters) {
-  return useQuery({
+  const companyId = getActiveCompanyId();
+  return useInfiniteQuery({
     queryKey: taskKeys.list(filters),
-    queryFn: () => taskApi.list(filters),
+    queryFn: async ({ pageParam }) => {
+      if (pageParam) return taskApi.listByUrl(pageParam as string);
+      return taskApi.list(filters);
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.pagination.nextPageUrl ?? null,
+    enabled: companyId != null,
+    staleTime: 1000 * 30,
   });
 }
 
+/** Convenience hook returning a flat task array (dashboard, map). */
+export function useTaskListItems(filters?: TaskFilters) {
+  const query = useTaskList(filters);
+  return {
+    ...query,
+    data: flattenTaskPages(query.data),
+  };
+}
+
 export function useTask(id: string) {
+  const companyId = getActiveCompanyId();
   return useQuery({
     queryKey: taskKeys.detail(id),
     queryFn: () => taskApi.get(id),
-    enabled: Boolean(id),
+    enabled: Boolean(id) && companyId != null,
   });
 }
 
@@ -38,6 +74,7 @@ export function useUpdateTaskStatus() {
       }
     },
     onSettled: (_, __, { id }) => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
       if (typeof navigator !== 'undefined' && navigator.onLine) {
         queryClient.invalidateQueries({ queryKey: taskKeys.detail(id) });
       }

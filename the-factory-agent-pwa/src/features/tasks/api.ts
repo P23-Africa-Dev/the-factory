@@ -1,22 +1,53 @@
 import { client } from '@/lib/api/client';
-import { appStore, getActiveCompanyId, setActiveCompanyId } from '@/lib/storage/stores';
+import { getActiveCompanyId, setActiveCompanyId } from '@/lib/storage/stores';
 import { taskSchema, taskListSchema } from './schema';
 import type { Task, TaskFilters, UpdateTaskStatusPayload } from './types';
 import { env } from '@/constants/env';
 import { queueOfflineAction } from '@/lib/offline/queue';
+import { appStore } from '@/lib/storage/stores';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
-// Laravel paginates as { data: [...], meta: {…} } or returns a plain array
-function unwrapList(raw: unknown): unknown[] {
-  if (Array.isArray(raw)) return raw;
+export type TaskPagination = {
+  nextPageUrl: string | null;
+  prevPageUrl: string | null;
+  perPage: number;
+};
+
+export type TaskListResult = {
+  tasks: Task[];
+  pagination: TaskPagination;
+};
+
+function unwrapListPayload(raw: unknown): { items: unknown[]; pagination: TaskPagination } {
+  if (Array.isArray(raw)) {
+    return {
+      items: raw,
+      pagination: { nextPageUrl: null, prevPageUrl: null, perPage: raw.length },
+    };
+  }
+
   const wrapped = raw as Record<string, unknown>;
-  // Plain { data: [...] }
-  if (Array.isArray(wrapped?.data)) return wrapped.data as unknown[];
-  // Paginated { data: { items: [...], pagination: {} } }
-  const nested = wrapped?.data as Record<string, unknown> | undefined;
-  if (Array.isArray(nested?.items)) return nested.items as unknown[];
-  return [];
+  const data = (wrapped?.data as Record<string, unknown> | undefined) ?? wrapped;
+
+  let items: unknown[] = [];
+  if (Array.isArray(data?.items)) {
+    items = data.items as unknown[];
+  } else if (Array.isArray(data)) {
+    items = data as unknown[];
+  } else if (Array.isArray(wrapped?.items)) {
+    items = wrapped.items as unknown[];
+  }
+
+  const paginationRaw = (data?.pagination as Record<string, unknown> | undefined) ?? {};
+  return {
+    items,
+    pagination: {
+      nextPageUrl: (paginationRaw.next_page_url as string | null) ?? null,
+      prevPageUrl: (paginationRaw.prev_page_url as string | null) ?? null,
+      perPage: typeof paginationRaw.per_page === 'number' ? paginationRaw.per_page : items.length,
+    },
+  };
 }
 
 function seedCompanyId(rawTask: unknown): void {
@@ -37,11 +68,16 @@ function unwrapItem(raw: unknown): unknown {
   return data;
 }
 
+function parseTaskList(items: unknown[]): Task[] {
+  if (items.length > 0) seedCompanyId(items[0]);
+  return taskListSchema.parse(items);
+}
+
 export const taskApi = {
-  list: async (filters?: TaskFilters): Promise<Task[]> => {
+  list: async (filters?: TaskFilters): Promise<TaskListResult> => {
     const companyId = getActiveCompanyId();
     if (isDev) {
-      console.log('[taskApi.list] company_id:', companyId);
+      console.log('[taskApi.list] company_id:', companyId, 'filters:', filters);
     }
     const response = await client.get('/agent/tasks', {
       params: { company_id: companyId ?? undefined, ...filters },
@@ -50,15 +86,26 @@ export const taskApi = {
       console.log('[taskApi.list] raw response:', JSON.stringify(response.data, null, 2));
     }
     try {
-      const items = unwrapList(response.data);
-      if (items.length > 0) seedCompanyId(items[0]);
-      return taskListSchema.parse(items);
+      const { items, pagination } = unwrapListPayload(response.data);
+      return {
+        tasks: parseTaskList(items),
+        pagination,
+      };
     } catch (parseErr) {
       if (isDev) {
         console.log('[taskApi.list] Zod parse error:', JSON.stringify(parseErr, null, 2));
       }
       throw parseErr;
     }
+  },
+
+  listByUrl: async (url: string): Promise<TaskListResult> => {
+    const response = await client.get(url);
+    const { items, pagination } = unwrapListPayload(response.data);
+    return {
+      tasks: parseTaskList(items),
+      pagination,
+    };
   },
 
   get: async (id: string): Promise<Task> => {
@@ -85,14 +132,18 @@ export const taskApi = {
   },
 
   updateStatus: async ({ id, status }: UpdateTaskStatusPayload): Promise<void> => {
+    const companyId = getActiveCompanyId();
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       await queueOfflineAction({
         actionType: 'task.update_status',
-        payload: { id, status },
+        payload: { id, status, company_id: companyId },
       });
       return;
     }
-    await client.patch(`/tasks/${id}/status`, { status });
+    await client.patch(`/agent/tasks/${id}/status`, {
+      status,
+      company_id: companyId ?? undefined,
+    });
   },
 
   completeTask: async (taskId: number, formData: FormData): Promise<void> => {
@@ -114,16 +165,13 @@ export const taskApi = {
     }
 
     const token = appStore.getString('auth_token');
-    const res = await fetch(
-      `${env.API_BASE_URL}/agent/tasks/${taskId}/complete`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token ?? ''}`,
-        },
-        body: formData,
+    const res = await fetch(`${env.API_BASE_URL}/agent/tasks/${taskId}/complete`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token ?? ''}`,
       },
-    );
+      body: formData,
+    });
     if (!res.ok) {
       const err = (await res.json()) as { message?: string };
       throw { status: res.status, message: err.message ?? 'Completion failed' };

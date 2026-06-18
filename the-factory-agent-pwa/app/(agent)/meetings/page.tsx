@@ -5,81 +5,92 @@ import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { useMeetingList, useCalendarStatus } from '@/features/meetings/queries';
 import { useMeetingNavigation } from '@/features/meetings/navigation';
 import { MeetingListItem } from '@/features/meetings/components/MeetingListItem';
-import type { Meeting, MeetingStatus } from '@/features/meetings/types';
+import { CreateMeetingModal } from '@/features/meetings/components/CreateMeetingModal';
+import type { Meeting } from '@/features/meetings/types';
 
-const FILTERS: Array<{ label: string; value: MeetingStatus | 'all' }> = [
-  { label: 'All', value: 'all' },
-  { label: 'Scheduled', value: 'scheduled' },
-  { label: 'Completed', value: 'completed' },
-  { label: 'Cancelled', value: 'cancelled' },
+type TimeFilter = 'upcoming' | 'today' | 'tomorrow' | 'past';
+
+const FILTERS: Array<{ label: string; value: TimeFilter }> = [
+  { label: 'Upcoming', value: 'upcoming' },
+  { label: 'Today', value: 'today' },
+  { label: 'Tomorrow', value: 'tomorrow' },
+  { label: 'Past', value: 'past' },
 ];
 
-type Section = { title: string; items: Meeting[] };
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
 
-function groupMeetings(meetings: Meeting[]): Section[] {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+function startOfDay(d: Date): Date {
+  const copy = new Date(d);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function filterAndSortMeetings(meetings: Meeting[], filter: TimeFilter, now: number): Meeting[] {
+  const today = startOfDay(new Date());
   const tomorrow = new Date(today);
   tomorrow.setDate(today.getDate() + 1);
-  const nextWeek = new Date(today);
-  nextWeek.setDate(today.getDate() + 7);
 
-  const todayArr: Meeting[] = [];
-  const tomorrowArr: Meeting[] = [];
-  const thisWeekArr: Meeting[] = [];
-  const laterArr: Meeting[] = [];
+  const active = meetings.filter((m) => m.status !== 'cancelled');
 
-  for (const m of meetings) {
-    const d = new Date(m.startAt);
-    d.setHours(0, 0, 0, 0);
-    if (d.getTime() === today.getTime()) todayArr.push(m);
-    else if (d.getTime() === tomorrow.getTime()) tomorrowArr.push(m);
-    else if (d < nextWeek) thisWeekArr.push(m);
-    else laterArr.push(m);
+  let filtered: Meeting[];
+  switch (filter) {
+    case 'today':
+      filtered = active.filter((m) => isSameDay(new Date(m.startAt), today));
+      break;
+    case 'tomorrow':
+      filtered = active.filter((m) => isSameDay(new Date(m.startAt), tomorrow));
+      break;
+    case 'past':
+      filtered = active.filter((m) => new Date(m.startAt).getTime() < now);
+      return filtered.sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime());
+    case 'upcoming':
+    default:
+      filtered = active.filter((m) => {
+        const start = new Date(m.startAt).getTime();
+        return m.status === 'scheduled' && !Number.isNaN(start) && start >= now;
+      });
+      return filtered.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
   }
 
-  const groups: Array<{ title: string; items: Meeting[] }> = [
-    { title: 'Today', items: todayArr },
-    { title: 'Tomorrow', items: tomorrowArr },
-    { title: 'This Week', items: thisWeekArr },
-    { title: 'Later', items: laterArr },
-  ];
-
-  return groups.filter((g) => g.items.length > 0);
+  return filtered.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
 }
 
 export default function MeetingsListPage() {
   const nav = useMeetingNavigation();
   const { data: calendarStatus } = useCalendarStatus();
-  const [activeFilter, setActiveFilter] = useState<MeetingStatus | 'all'>('all');
+  const [activeFilter, setActiveFilter] = useState<TimeFilter>('upcoming');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [now] = useState(() => Date.now());
 
-  const filters = activeFilter !== 'all' ? { status: activeFilter } : undefined;
   const {
     data,
     isLoading,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useMeetingList(filters);
+  } = useMeetingList({ per_page: 100 });
 
-  const allMeetings = useMemo(
-    () => data?.pages.flatMap((p) => p.items) ?? [],
-    [data]
-  );
-
-  const sections = useMemo(() => groupMeetings(allMeetings), [allMeetings]);
+  const filteredMeetings = useMemo(() => {
+    const allMeetings = data?.pages.flatMap((p) => p.items) ?? [];
+    return filterAndSortMeetings(allMeetings, activeFilter, now);
+  }, [data, activeFilter, now]);
 
   const canCreate = calendarStatus?.connected && calendarStatus.status === 'active';
 
   return (
     <ScreenErrorBoundary screenName="MeetingsList">
       <div className="relative min-h-screen bg-[#0A1D25] text-white flex flex-col font-sans select-none overflow-hidden pb-16">
-        {/* Header */}
         <div className="relative z-10 flex items-center justify-between px-5 pt-6 mb-4">
           <h2 className="font-bold text-xl text-white">Meetings</h2>
           {canCreate && (
             <button
-              onClick={nav.goToCreateMeeting}
+              onClick={() => setIsCreateModalOpen(true)}
               className="w-8 h-8 rounded-full bg-[#FD6046] hover:bg-[#E0533C] flex items-center justify-center text-white text-lg font-bold transition-all active:scale-90"
             >
               +
@@ -87,7 +98,6 @@ export default function MeetingsListPage() {
           )}
         </div>
 
-        {/* Filter Row */}
         <div className="relative z-10 flex px-5 gap-2 overflow-x-auto pb-3 mb-2 scrollbar-none">
           {FILTERS.map((f) => {
             const isActive = activeFilter === f.value;
@@ -107,13 +117,12 @@ export default function MeetingsListPage() {
           })}
         </div>
 
-        {/* Scroll Content */}
         <div className="relative z-10 flex-1 px-5 overflow-y-auto pb-20">
           {isLoading ? (
             <div className="flex justify-center items-center py-20">
               <div className="h-8 w-8 animate-spin rounded-full border-3 border-[#44AFCD] border-t-transparent" />
             </div>
-          ) : sections.length === 0 ? (
+          ) : filteredMeetings.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 px-8 text-center gap-4 bg-white/[0.03] border border-white/5 rounded-2xl">
               <h4 className="text-sm font-semibold text-white">No meetings found</h4>
               <p className="text-xs text-white/40 leading-relaxed max-w-xs">
@@ -124,27 +133,16 @@ export default function MeetingsListPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-4">
-              {sections.map((section) => (
-                <div key={section.title} className="flex flex-col">
-                  {/* Date section header */}
-                  <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-3 pl-1">
-                    {section.title}
-                  </h3>
+              <div className="flex flex-col">
+                {filteredMeetings.map((meeting) => (
+                  <MeetingListItem
+                    key={meeting.id}
+                    meeting={meeting}
+                    onPress={(id) => nav.goToMeetingDetail(id)}
+                  />
+                ))}
+              </div>
 
-                  {/* Meeting list items */}
-                  <div className="flex flex-col">
-                    {section.items.map((meeting) => (
-                      <MeetingListItem
-                        key={meeting.id}
-                        meeting={meeting}
-                        onPress={(id) => nav.goToMeetingDetail(id)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              {/* Load older button */}
               {hasNextPage && (
                 <div className="py-4 text-center">
                   <button
@@ -160,15 +158,19 @@ export default function MeetingsListPage() {
           )}
         </div>
 
-        {/* FAB */}
         {canCreate && (
           <button
-            onClick={nav.goToCreateMeeting}
+            onClick={() => setIsCreateModalOpen(true)}
             className="fixed bottom-[130px] right-6 w-14 h-14 rounded-full bg-[#FD6046] hover:bg-[#E0533C] text-white flex items-center justify-center text-3xl font-light shadow-xl active:scale-95 hover:shadow-2xl transition-all z-30"
           >
             +
           </button>
         )}
+
+        <CreateMeetingModal
+          open={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+        />
       </div>
     </ScreenErrorBoundary>
   );

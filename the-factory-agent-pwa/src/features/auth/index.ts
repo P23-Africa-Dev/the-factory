@@ -6,6 +6,7 @@ export { useAuthNavigation } from './navigation';
 export { AuthProvider, AuthContext } from './context/AuthContext';
 export type { AuthUser } from './context/AuthContext';
 export { useAuth } from './hooks/useAuth';
+export { useAgentIdentity } from './hooks/useAgentIdentity';
 export {
   useLoginMutation,
   useForgotPasswordMutation,
@@ -23,6 +24,7 @@ export type {
   ResetPasswordResponse,
   Profile,
 } from './types';
+export { authApi } from './api';
 export {
   loginPayloadSchema,
   loginResponseSchema,

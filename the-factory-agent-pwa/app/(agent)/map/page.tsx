@@ -8,7 +8,7 @@ import dynamic from 'next/dynamic';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { BottomNavBar } from '@/components/shared/BottomNavBar';
 import { useGeolocation, useLocationReporter, useStartTask } from '@/features/tracking';
-import { useTaskList, useTask, taskKeys, taskApi } from '@/features/tasks';
+import { useTaskListItems, useTask, taskKeys, taskApi } from '@/features/tasks';
 import { useAuth } from '@/features/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTrackingStore } from '@/store/tracking';
@@ -16,6 +16,7 @@ import { getActiveCompanyId, appStore } from '@/lib/storage/stores';
 import { env } from '@/constants/env';
 import { getDb } from '@/lib/db/client';
 import { syncEngine } from '@/lib/sync/syncEngine';
+import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 
 // Dynamically import MapboxMap with SSR disabled to prevent server-side window/document errors
 const MapboxMap = dynamic(() => import('@/features/tracking/components/MapboxMap'), {
@@ -53,14 +54,6 @@ interface SelectedDestination {
   taskId: number;
 }
 
-interface RecentDestination {
-  name: string;
-  address?: string;
-  latitude: number;
-  longitude: number;
-  taskId?: number;
-}
-
 interface GeocodedPlace {
   name: string;
   address: string;
@@ -68,7 +61,6 @@ interface GeocodedPlace {
   longitude: number;
 }
 
-const RECENT_KEY = 'map_recent_destinations';
 const EMPTY_POLYLINE: [number, number][] = [];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -88,20 +80,6 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
 function etaMinutes(distanceM: number, mode: TransportMode): number {
   const speedMps = (SPEED_KPH[mode] * 1000) / 3600;
   return Math.max(1, Math.ceil(distanceM / speedMps / 60));
-}
-
-function getRecentDestinations(): RecentDestination[] {
-  try {
-    const raw = appStore.getString(RECENT_KEY);
-    return raw ? (JSON.parse(raw) as RecentDestination[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveRecentDestination(dest: RecentDestination): void {
-  const existing = getRecentDestinations().filter((r) => r.name !== dest.name);
-  appStore.set(RECENT_KEY, JSON.stringify([dest, ...existing].slice(0, 10)));
 }
 
 function formatDuration(minutes: number | null): string {
@@ -671,7 +649,7 @@ function MapContent() {
   const [hasArrived, setHasArrived] = useState(false);
 
   const { lastPosition, getCurrentPosition, checkPermission, requestPermission } = useGeolocation();
-  const { data: tasks = [] } = useTaskList();
+  const { data: tasks = [] } = useTaskListItems();
   const { mutate: startTask, isPending: isStarting } = useStartTask();
   const { user } = useAuth();
   const currentAgentId = user?.id != null ? Number(user.id) : null;

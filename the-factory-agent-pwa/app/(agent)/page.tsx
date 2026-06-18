@@ -3,13 +3,14 @@
   import React, { useState, useEffect, useMemo, useCallback } from 'react';
   import { useRouter } from 'next/navigation';
   import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
-  import { useAuth, useLogoutMutation, useAuthNavigation } from '@/features/auth';
-  import { useTaskList, useTaskNavigation } from '@/features/tasks';
-  import { useCrmNavigation } from '@/features/crm';
+  import { useAuth, useLogoutMutation, useAuthNavigation, useAgentIdentity } from '@/features/auth';
+  import { useTaskListItems, useTaskNavigation } from '@/features/tasks';
+  import { useCrmNavigation, useAgentUploadsOverview } from '@/features/crm';
   import { AddLeadModal } from '@/features/crm/components/AddLeadModal';
   import { AttendanceCard } from '@/features/attendance';
   import { NotificationPanel, useUnreadCount } from '@/features/notifications';
-  import { MeetingWidget } from '@/features/meetings';
+  import { MeetingWidget, CreateMeetingModal } from '@/features/meetings';
+  import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 
   export default function AgentDashboardPage() {
     const router = useRouter();
@@ -25,17 +26,44 @@
     const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
     const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
     const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+    const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
+    const [meetingModalDate, setMeetingModalDate] = useState<Date | undefined>(undefined);
+    const [recentLocations, setRecentLocations] = useState<RecentDestination[]>([]);
 
-    const { logout, user } = useAuth();
+    const openMeetingModal = useCallback((date?: Date) => {
+      setMeetingModalDate(date ?? selectedDate);
+      setIsMeetingModalOpen(true);
+    }, [selectedDate]);
+
+    const { logout } = useAuth();
     const { mutate: logoutMutate, isPending: isLoggingOut } = useLogoutMutation();
     const { goToProfile } = useAuthNavigation();
-    const firstName = user?.name ? user.name.split(' ')[0] : 'Agent';
-    const userRole = user?.access_role ?? user?.internal_role ?? null;
+    const { firstName, avatarSrc, userRole } = useAgentIdentity();
 
-    const { data: tasks = [], isLoading: isLoadingTasks } = useTaskList();
+    const { data: tasks = [], isLoading: isLoadingTasks } = useTaskListItems();
     const { goToTasksList, goToMapScreen } = useTaskNavigation();
-    const { goToCrm } = useCrmNavigation();
+    const { goToAllLeads } = useCrmNavigation();
+    const { data: leadsOverview, isLoading: isLoadingLeadsOverview } = useAgentUploadsOverview();
+    const totalUploadedLeads = leadsOverview?.total_uploaded_leads ?? 0;
     const { count: unreadCount = 0 } = useUnreadCount();
+
+    useEffect(() => {
+      setRecentLocations(getRecentDestinations());
+    }, []);
+
+    const handleSelectLocation = useCallback(
+      (item: { name: string; address: string; latitude: number; longitude: number }) => {
+        saveRecentDestination(item);
+        setRecentLocations(getRecentDestinations());
+        goToMapScreen({
+          name: item.name,
+          address: item.address,
+          latitude: item.latitude,
+          longitude: item.longitude,
+        });
+      },
+      [goToMapScreen],
+    );
 
     const pendingTasks = useMemo(() => tasks.filter((t) => t.status === 'pending'), [tasks]);
 
@@ -175,9 +203,9 @@
                     className="flex items-center gap-4 cursor-pointer"
                   >
                     <img
-                      src="/assets/animoji.png"
+                      src={avatarSrc}
                       alt="avatar"
-                      className="w-[60px] h-[60px] rounded-full bg-[#0B3343] border border-white/10"
+                      className="w-[60px] h-[60px] rounded-full bg-[#0B3343] border border-white/10 object-cover"
                     />
                     <div className="flex flex-col justify-center leading-tight">
                       <span className="text-white font-light text-[16px]">Hello,</span>
@@ -255,7 +283,10 @@
                 return (
                   <button
                     key={index}
-                    onClick={() => setSelectedDate(item.fullDate)}
+                    onClick={() => {
+                      setSelectedDate(item.fullDate);
+                      openMeetingModal(item.fullDate);
+                    }}
                     className={`flex flex-col items-center justify-center w-[42px] h-[65px] rounded-[16px] transition-all active:scale-95 ${
                       isActive ? 'bg-[#7BB6B8]' : 'bg-transparent'
                     }`}
@@ -289,7 +320,15 @@
                 )}
               </button>
 
-              <div className="flex-[1.6] h-[44px] bg-[#113948] rounded-[20px] flex items-center p-1 gap-1 min-w-0">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => openMeetingModal(selectedDate)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') openMeetingModal(selectedDate);
+                }}
+                className="flex-[1.6] h-[44px] bg-[#113948] rounded-[20px] flex items-center p-1 gap-1 min-w-0 cursor-pointer active:scale-[0.98] transition-transform"
+              >
                 <img src="/assets/calendar-icon.png" alt="Calendar" className="w-8 h-8 flex-shrink-0" />
                 <div className="flex-1 bg-[#09232D] h-[36px] rounded-[20px] flex items-center justify-center px-1 min-w-0">
                   <span className="text-[10px] text-white tracking-wide truncate font-normal text-center">{formattedSelectedDate}</span>
@@ -310,24 +349,24 @@
               {/* Leads card */}
               <div className="flex-1 h-[154px] bg-[#FFFDFE] rounded-[20px] flex flex-row items-center overflow-hidden shadow-md text-black relative select-none">
                 <img
-                  src="/assets/upload-avatar.png"
+                  src={avatarSrc}
                   alt="Leads"
-                  className="w-[115px] h-[115px] mr-0.5 object-contain flex-shrink-0"
+                  className="w-[115px] h-[115px] mr-0.5 object-cover rounded-full flex-shrink-0"
                 />
                 <div className="flex-1 flex flex-col justify-center pr-2">
-                  {isLoadingTasks ? (
+                  {isLoadingLeadsOverview ? (
                     <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
                   ) : (
                     <>
                       <div className="flex items-baseline gap-1">
                         <span className="font-bold text-[40px] leading-[43px] text-[#34373C] tracking-tight">
-                          {tasks.length > 0 ? tasks.length.toLocaleString() : '0'}
+                          {totalUploadedLeads.toLocaleString()}
                         </span>
                         <span className="text-[10px] text-[#616263] font-light capitalize">Leads</span>
                       </div>
                       <p className="text-[10px] text-[#616263] font-normal -mt-1">Uploaded by you</p>
                       <button
-                        onClick={goToCrm}
+                        onClick={goToAllLeads}
                         className="flex items-center justify-between w-[90px] mt-3 focus:outline-none cursor-pointer"
                       >
                         <span className="text-[10px] text-[#616263] font-medium capitalize">View Leads</span>
@@ -344,7 +383,7 @@
 
             {/* Meetings Calendar Widget */}
             <div className="mb-5">
-              <MeetingWidget selectedDate={selectedDate} />
+              <MeetingWidget onCreateMeeting={() => openMeetingModal(selectedDate)} />
             </div>
 
             {/* View Route row */}
@@ -393,24 +432,27 @@
 
                   {/* Geocode Search results */}
                   <div className="flex-1 overflow-y-auto min-h-0 pr-1 select-none">
-                    {isOffline ? (
+                    {isOffline && recentLocations.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-4 gap-2 text-center select-none">
                         <img src="/assets/location-offline-03.png" alt="Offline" className="w-6 h-6 object-contain opacity-50" />
                         <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">No Recent Location</span>
                       </div>
                     ) : locationQuery.trim() === '' ? (
-                      /* Default state: show recent locations list from design mockup */
+                      recentLocations.length === 0 ? (
+                        <div className="flex items-center justify-center py-6 select-none">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                            Search for a destination
+                          </span>
+                        </div>
+                      ) : (
                       <div className="flex flex-col gap-3.5">
-                        {[
-                          { name: 'Computer Village Ikeja', address: '29/31 Obafemi Awolowo way, ikeja', latitude: 6.5973, longitude: 3.3444 },
-                          { name: 'Bodyline, Ikoyi', address: 'Ikoyi, Lagos, Nigeria', latitude: 6.4474, longitude: 3.4471 }
-                        ].map((item, index) => (
+                        {recentLocations.map((item, index) => (
                           <div
                             key={index}
                             onClick={() =>
-                              goToMapScreen({
+                              handleSelectLocation({
                                 name: item.name,
-                                address: item.address,
+                                address: item.address ?? '',
                                 latitude: item.latitude,
                                 longitude: item.longitude,
                               })
@@ -429,6 +471,7 @@
                           </div>
                         ))}
                       </div>
+                      )
                     ) : locationResults.length === 0 ? (
                       <div className="flex items-center justify-center py-6 select-none">
                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
@@ -441,7 +484,7 @@
                           <div
                             key={index}
                             onClick={() =>
-                              goToMapScreen({
+                              handleSelectLocation({
                                 name: item.name,
                                 address: item.address,
                                 latitude: item.latitude,
@@ -475,6 +518,12 @@
 
         {/* Add Lead Modal */}
         <AddLeadModal visible={isAddLeadOpen} onClose={() => setIsAddLeadOpen(false)} />
+
+        <CreateMeetingModal
+          open={isMeetingModalOpen}
+          onClose={() => setIsMeetingModalOpen(false)}
+          defaultDate={meetingModalDate}
+        />
 
         {/* Logout modal */}
         {isLogoutModalOpen && (

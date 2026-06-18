@@ -20,6 +20,7 @@ export function useNotifications(filters?: Omit<NotificationFilters, 'page'>) {
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.pagination.next_page_url ?? null,
     refetchOnMount: 'always',
+    refetchInterval: 1000 * 60,
   });
 }
 
@@ -29,7 +30,8 @@ export function useUnreadCount() {
   const query = useQuery({
     queryKey: notificationKeys.unreadCount(),
     queryFn: notificationsApi.unreadCount,
-    staleTime: 1000 * 60,
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 30,
   });
 
   const apiCount = query.data ?? 0;

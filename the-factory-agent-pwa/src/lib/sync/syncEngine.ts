@@ -186,8 +186,11 @@ async function syncProofQueue(): Promise<void> {
 async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<void> {
   switch (entry.actionType) {
     case 'task.update_status': {
-      const payload = parseOfflinePayload<{ id: string | number; status: string }>(entry);
-      await client.patch(`/tasks/${payload.id}/status`, { status: payload.status });
+      const payload = parseOfflinePayload<{ id: string | number; status: string; company_id?: number }>(entry);
+      await client.patch(`/agent/tasks/${payload.id}/status`, {
+        status: payload.status,
+        company_id: payload.company_id ?? getActiveCompanyId() ?? undefined,
+      });
       return;
     }
     case 'task.complete': {

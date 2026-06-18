@@ -44,7 +44,7 @@ export function NotificationPanel({ open, onClose }: NotificationPanelProps): Re
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useNotifications(filter === 'unread' ? { is_read: 1 } : undefined); // in api, is_read: 0 filters unread, wait! Let's check mobile, it says "filter === 'unread' ? { is_read: 0 } : undefined". Wait, in the database/API: is_read=0 means unread! Let's pass is_read: 0 for unread.
+  } = useNotifications(filter === 'unread' ? { is_read: 0 } : undefined);
 
   const { count: unreadCount, refetch: refetchUnreadCount } = useUnreadCount();
   const { mutate: markRead } = useMarkRead();

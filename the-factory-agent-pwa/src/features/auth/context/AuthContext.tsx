@@ -4,7 +4,7 @@
  */
 'use client';
 
-import React, { createContext, useState, useEffect, type ReactNode } from 'react';
+import React, { createContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { appStore, setActiveCompanyId } from '@/lib/storage/stores';
 
 export type AuthUser = {
@@ -14,6 +14,7 @@ export type AuthUser = {
   company_id?: number;
   access_role?: string;
   internal_role?: string;
+  avatar_url?: string | null;
 };
 
 type AuthContextType = {
@@ -22,6 +23,7 @@ type AuthContextType = {
   isSignedIn: boolean;
   isLoading: boolean;
   login: (token: string, user?: AuthUser) => void;
+  updateUser: (partial: Partial<AuthUser>) => void;
   logout: () => void;
 };
 
@@ -69,6 +71,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const updateUser = useCallback((partial: Partial<AuthUser>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...partial };
+      const changed = (Object.keys(partial) as Array<keyof AuthUser>).some(
+        (key) => prev[key] !== next[key],
+      );
+      if (!changed) return prev;
+      try {
+        appStore.set('auth_user', JSON.stringify(next));
+      } catch (err) {
+        console.error('[Auth] updateUser error:', err);
+      }
+      return next;
+    });
+  }, []);
+
   const logout = () => {
     try {
       appStore.delete('auth_token');
@@ -82,7 +101,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider
-      value={{ token, user, isSignedIn: !!token, isLoading, login, logout }}
+      value={{ token, user, isSignedIn: !!token, isLoading, login, updateUser, logout }}
     >
       {children}
     </AuthContext.Provider>
