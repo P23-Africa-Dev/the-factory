@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { resolveUserTimezone } from "@/lib/meeting-timezone";
 import {
     CopilotAssigneeOption,
     CopilotMessage,
@@ -366,6 +367,7 @@ export function useCopilotChat() {
                         action_args: actionArgs,
                         action_confirmed: actionConfirmed,
                         idempotency_key: idempotencyKey ?? createIdempotencyKey(),
+                        client_timezone: resolveUserTimezone(),
                     },
                     token,
                     {

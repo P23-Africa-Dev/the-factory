@@ -152,7 +152,7 @@ class ActionToolRegistry
 
         return [
             'tool' => 'meetings.schedule',
-            'summary' => "Meeting '{$meeting->title}' was scheduled successfully.",
+            'summary' => "ELY scheduled meeting '{$meeting->title}' successfully.",
             'payload' => [
                 'meeting_id' => (int) $meeting->id,
                 'title' => (string) $meeting->title,

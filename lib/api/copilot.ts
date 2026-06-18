@@ -44,6 +44,7 @@ export type CopilotChatRequest = {
     action_args?: Record<string, unknown>;
     action_confirmed?: boolean;
     idempotency_key?: string;
+    client_timezone?: string;
 };
 
 export type CopilotChatResponse = {

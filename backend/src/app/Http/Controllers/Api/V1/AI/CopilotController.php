@@ -29,7 +29,10 @@ class CopilotController extends Controller
             'action_args' => ['sometimes', 'array'],
             'action_confirmed' => ['sometimes', 'boolean'],
             'idempotency_key' => ['nullable', 'string', 'max:120'],
+            'client_timezone' => ['nullable', 'string', 'max:64', 'timezone'],
         ]);
+
+        $clientTimezone = isset($validated['client_timezone']) ? (string) $validated['client_timezone'] : null;
 
         $streamRequested = (bool) ($validated['stream'] ?? false);
         $streamingEnabled = (bool) config('services.ai.enable_streaming', true);
@@ -43,6 +46,7 @@ class CopilotController extends Controller
                 actionArgs: is_array($validated['action_args'] ?? null) ? $validated['action_args'] : [],
                 actionConfirmed: (bool) ($validated['action_confirmed'] ?? false),
                 idempotencyKey: isset($validated['idempotency_key']) ? (string) $validated['idempotency_key'] : null,
+                clientTimezone: $clientTimezone,
             );
 
             return $this->success(
@@ -59,9 +63,10 @@ class CopilotController extends Controller
         $chatActionArgs = is_array($validated['action_args'] ?? null) ? $validated['action_args'] : [];
         $chatActionConfirmed = (bool) ($validated['action_confirmed'] ?? false);
         $chatIdempotencyKey = isset($validated['idempotency_key']) ? (string) $validated['idempotency_key'] : null;
+        $chatClientTimezone = $clientTimezone;
 
         return response()->stream(
-            function () use ($chatUser, $chatMessage, $chatCompanyId, $chatThreadId, $chatActionArgs, $chatActionConfirmed, $chatIdempotencyKey): void {
+            function () use ($chatUser, $chatMessage, $chatCompanyId, $chatThreadId, $chatActionArgs, $chatActionConfirmed, $chatIdempotencyKey, $chatClientTimezone): void {
                 try {
                     $result = $this->copilotService->chat(
                         user: $chatUser,
@@ -71,6 +76,7 @@ class CopilotController extends Controller
                         actionArgs: $chatActionArgs,
                         actionConfirmed: $chatActionConfirmed,
                         idempotencyKey: $chatIdempotencyKey,
+                        clientTimezone: $chatClientTimezone,
                     );
 
                     $content = (string) ($result['response']['content'] ?? '');

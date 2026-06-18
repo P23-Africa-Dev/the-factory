@@ -46,8 +46,8 @@ export function MeetingForm({
   submitLabel,
   serverErrors,
 }: MeetingFormProps): React.ReactElement {
-  const deviceTz = typeof window !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'Africa/Lagos';
-  const defaultTz = TIMEZONES.includes(deviceTz) ? deviceTz : 'Africa/Lagos';
+  const deviceTz = typeof window !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC';
+  const defaultTz = TIMEZONES.includes(deviceTz) ? deviceTz : deviceTz;
 
   const [startDate, setStartDate] = useState<Date>(() => {
     if (initialValues?.startDate) return new Date(initialValues.startDate);

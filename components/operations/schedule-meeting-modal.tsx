@@ -19,6 +19,7 @@ import {
 import { useMeetingAttendeeCandidates } from "@/hooks/use-meeting-attendees";
 import type { MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
 import type { CreateMeetingPayload, MeetingItem } from "@/lib/api/meetings";
+import { resolveUserTimezone } from "@/lib/meeting-timezone";
 
 const REMINDER_PRESETS = [
     { label: "5 minutes before", value: 5 },
@@ -147,9 +148,10 @@ type FormState = {
 function buildDefaultFormState(defaultDate?: Date): FormState {
     const nextStart = defaultStart(defaultDate);
     const timezoneOptions = getTimeZoneOptions();
-    const defaultTimezone = timezoneOptions.includes("Europe/London")
-        ? "Europe/London"
-        : timezoneOptions[0] ?? "Europe/London";
+    const deviceTimezone = resolveUserTimezone();
+    const defaultTimezone = timezoneOptions.includes(deviceTimezone)
+        ? deviceTimezone
+        : timezoneOptions[0] ?? deviceTimezone;
 
     return {
         meetingTitle: "",
