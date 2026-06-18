@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { resolveUserTimezone } from "@/lib/meeting-timezone";
 import {
     CopilotAssigneeOption,
     CopilotMessage,
@@ -366,6 +367,7 @@ export function useCopilotChat() {
                         action_args: actionArgs,
                         action_confirmed: actionConfirmed,
                         idempotency_key: idempotencyKey ?? createIdempotencyKey(),
+                        client_timezone: resolveUserTimezone(),
                     },
                     token,
                     {
@@ -407,7 +409,7 @@ export function useCopilotChat() {
                     localStorage.setItem(persistedKey, done.thread_id);
                 }
             } catch (err) {
-                const fallbackMessage = err instanceof Error ? err.message : "Unable to process Copilot request.";
+                const fallbackMessage = err instanceof Error ? err.message : "Unable to process ELY request.";
                 setError(fallbackMessage);
                 setMessages((prev) =>
                     prev.map((item) =>

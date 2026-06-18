@@ -32,6 +32,7 @@ class CopilotService
         private readonly ActionToolRegistry $actionToolRegistry,
         private readonly ConversationMemoryService $conversationMemoryService,
         private readonly AiProviderRouter $aiProviderRouter,
+        private readonly MeetingInferenceService $meetingInferenceService,
     ) {}
 
     public function chat(
@@ -42,10 +43,12 @@ class CopilotService
         array $actionArgs = [],
         bool $actionConfirmed = false,
         ?string $idempotencyKey = null,
+        ?string $clientTimezone = null,
     ): array {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
         $role = (string) $context['role'];
+        $companyCountry = (string) ($context['company']->country ?? '');
 
         if (! $this->canConsumeCredits($resolvedCompanyId)) {
             $this->aiLoggingService->cancelled(
@@ -73,14 +76,24 @@ class CopilotService
         }
 
         $intent = $this->intentClassifier->classify($message);
-        if (($intent['type'] ?? 'general') === 'general' && $this->looksLikeActionRequest($message)) {
+        $resolvedActionTool = $this->resolveActionToolFromMessage(
+            $message,
+            $threadId,
+            $resolvedCompanyId,
+            (int) $user->id,
+        );
+
+        if (($intent['type'] ?? 'general') === 'general' && $resolvedActionTool !== null) {
             $intent = [
                 'type' => 'action',
-                'tool' => null,
-                'confidence' => 0.5,
-                'note' => 'action_like_request_without_resolved_tool',
+                'tool' => $resolvedActionTool,
+                'confidence' => 0.85,
             ];
+        } elseif (($intent['type'] ?? 'general') === 'action' && ! is_string($intent['tool'] ?? null) && $resolvedActionTool !== null) {
+            $intent['tool'] = $resolvedActionTool;
         }
+
+        $actionMessage = $this->buildActionableMessage($message, $threadId, $resolvedCompanyId, (int) $user->id);
 
         $intentType = (string) ($intent['type'] ?? 'general');
 
@@ -103,7 +116,7 @@ class CopilotService
             );
 
             if ($intentType === 'action' && ! (bool) config('services.ai.enable_actions', true)) {
-                $assistantText = 'Copilot write actions are currently disabled by configuration. Read-only answers are still available.';
+                $assistantText = 'ELY write actions are currently disabled by configuration. Read-only answers are still available.';
                 $resolvedTool = $candidateTool;
                 $toolResult = [
                     'summary' => $assistantText,
@@ -116,7 +129,16 @@ class CopilotService
             } elseif ($this->toolPolicyService->canUseTool($role, $candidateTool)) {
                 if ($intentType === 'action') {
                     if ($this->actionConfirmationPolicyService->requiresConfirmation($candidateTool) && ! $actionConfirmed) {
-                        $inferredArgs = $this->inferActionArgs($message, $candidateTool, $resolvedCompanyId, $actionArgs, $threadId, (int) $user->id);
+                        $inferredArgs = $this->inferActionArgs(
+                            $actionMessage,
+                            $candidateTool,
+                            $resolvedCompanyId,
+                            $actionArgs,
+                            $threadId,
+                            (int) $user->id,
+                            $clientTimezone,
+                            $companyCountry,
+                        );
                         $validationWarningCodes = $this->inferActionWarningCodes($candidateTool, $inferredArgs);
                         $validationWarnings = $this->inferActionWarnings($candidateTool, $inferredArgs);
                         $blockingWarningCodes = $this->determineBlockingWarningCodes($validationWarningCodes);
@@ -137,7 +159,16 @@ class CopilotService
                         ];
                     } else {
                         $resolvedActionArgs = $this->sanitizeActionArgs(
-                            $this->inferActionArgs($message, $candidateTool, $resolvedCompanyId, $actionArgs, $threadId, (int) $user->id)
+                            $this->inferActionArgs(
+                                $actionMessage,
+                                $candidateTool,
+                                $resolvedCompanyId,
+                                $actionArgs,
+                                $threadId,
+                                (int) $user->id,
+                                $clientTimezone,
+                                $companyCountry,
+                            )
                         );
                         try {
                             $toolResult = $this->executeActionWithIdempotency(
@@ -355,8 +386,8 @@ class CopilotService
         $promptContext = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
         $contextEntities = is_array($promptContext['entities'] ?? null) ? $promptContext['entities'] : [];
 
-        if ($this->looksLikeActionRequest($message)) {
-            return 'This looks like a write action request. Please specify the exact action and required details so I can execute it instead of only describing it.';
+        if ($this->looksLikeActionRequest($message) && $this->resolveActionToolFromMessage($message, $threadId, $companyId, $userId) === null) {
+            return 'I can help schedule that. Try phrasing it like "Create a meeting with [name] tomorrow at 2 PM" so I can prepare the confirmation form for you.';
         }
 
         if ((str_contains($normalized, 'same agent') || str_contains($normalized, 'that agent')) && is_string($contextEntities['agent'] ?? null)) {
@@ -386,10 +417,10 @@ class CopilotService
         }
 
         if (str_contains($normalized, 'this software') || str_contains($normalized, 'what is factory23') || str_contains($normalized, 'what does this do')) {
-            return 'Factory23 is your operations workspace. Ask for CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.';
+            return ElySystemPrompt::intro() . ' Factory23 is your operations workspace. Ask for CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.';
         }
 
-        $systemPrompt = 'You are Ask The Factory, an operations copilot. Respond concisely, avoid policy bypass, and stay within role-scoped company context. Always refer to the organization by the provided company name, and do not invent code names or numeric company labels.';
+        $systemPrompt = ElySystemPrompt::core();
         $userPrompt = sprintf(
             "Company name: %s\nTenant scope ID (internal, do not mention): %d\nUser name: %s\nRole: %s\nConversation summary:\n%s\nRecent conversation:\n%s\nKnown entities: %s\nQuestion: %s",
             $this->redactSensitiveText($resolvedCompanyName),
@@ -440,8 +471,79 @@ class CopilotService
             return false;
         }
 
-        return preg_match('/\b(create|add|start|open|schedule|book|send|notify|assign|reassign|transfer|move|update|change|cancel|delete)\b/i', $normalized) === 1
+        return preg_match('/\b(create|add|start|open|schedule|book|setup|set\s*up|arrange|plan|send|notify|assign|reassign|transfer|move|update|change|cancel|delete)\b/i', $normalized) === 1
             && preg_match('/\b(task|project|meeting|notification|alert)\b/i', $normalized) === 1;
+    }
+
+    private function resolveActionToolFromMessage(
+        string $message,
+        ?string $threadId,
+        int $companyId,
+        int $userId,
+    ): ?string {
+        $actionableMessage = $this->buildActionableMessage($message, $threadId, $companyId, $userId);
+        $intent = $this->intentClassifier->classify($actionableMessage);
+        if (($intent['type'] ?? '') === 'action' && is_string($intent['tool'] ?? null)) {
+            return (string) $intent['tool'];
+        }
+
+        $normalized = strtolower(trim($actionableMessage));
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (preg_match('/\bmeeting\b/i', $normalized) && preg_match('/\b(create|schedule|book|setup|set\s*up|arrange|plan|with|at|on|for|\d{1,2}\s*(?:am|pm)|reminder)\b/i', $normalized) === 1) {
+            return 'meetings.schedule';
+        }
+
+        if (preg_match('/\b(task)\b/i', $normalized) && preg_match('/\b(create|add|new|open|assign)\b/i', $normalized) === 1) {
+            return 'tasks.create';
+        }
+
+        if (preg_match('/\b(project)\b/i', $normalized) && preg_match('/\b(create|start|new|open)\b/i', $normalized) === 1) {
+            return 'projects.create';
+        }
+
+        if (preg_match('/\b(notification|alert)\b/i', $normalized) && preg_match('/\b(send|notify|broadcast)\b/i', $normalized) === 1) {
+            return 'notifications.send';
+        }
+
+        return null;
+    }
+
+    private function buildActionableMessage(
+        string $message,
+        ?string $threadId,
+        int $companyId,
+        int $userId,
+    ): string {
+        $promptContext = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
+        $recentMessages = is_array($promptContext['recent_messages'] ?? null) ? $promptContext['recent_messages'] : [];
+        $userLines = collect($recentMessages)
+            ->filter(static fn(array $entry): bool => (string) ($entry['role'] ?? '') === 'user')
+            ->map(static fn(array $entry): string => trim((string) ($entry['content'] ?? '')))
+            ->filter(static fn(string $line): bool => $line !== '')
+            ->values()
+            ->all();
+
+        if ($userLines === []) {
+            return trim($message);
+        }
+
+        $normalized = strtolower(trim($message));
+        $isFollowUp = preg_match('/\b(setup|set\s*up|schedule|use\s+this|here\s+are|the\s+details|confirm|proceed|using\s+this)\b/i', $normalized) === 1
+            || preg_match('/^\s*meeting\s+(is\s+)?(at|on|for)\b/i', $normalized) === 1
+            || (str_contains($normalized, 'meeting') && preg_match('/\b\d{1,2}\s*(?:am|pm)\b/i', $normalized) === 1);
+
+        $meetingContext = collect($userLines)
+            ->filter(static fn(string $line): bool => preg_match('/\bmeeting\b/i', $line) === 1)
+            ->implode(' ');
+
+        if ($isFollowUp && $meetingContext !== '') {
+            return trim($meetingContext . ' ' . $message);
+        }
+
+        return trim($message);
     }
 
     private function inferActionArgs(
@@ -451,33 +553,43 @@ class CopilotService
         array $actionArgs,
         ?string $threadId,
         int $userId,
+        ?string $clientTimezone = null,
+        ?string $companyCountry = null,
     ): array {
         $context = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
         $entities = is_array($context['entities'] ?? null) ? $context['entities'] : [];
         $normalized = trim($message);
 
         if ($actionArgs !== []) {
-            return $this->normalizeProvidedActionArgs($tool, $message, $companyId, $entities, $actionArgs);
+            return $this->normalizeProvidedActionArgs(
+                $tool,
+                $message,
+                $companyId,
+                $entities,
+                $actionArgs,
+                $clientTimezone,
+                $companyCountry,
+            );
         }
 
         return match ($tool) {
             'tasks.create' => $this->inferTaskCreateArgs($message, $companyId, $entities),
             'projects.create' => [
                 'name' => $normalized !== '' ? $normalized : 'New Project',
-                'description' => $normalized !== '' ? $normalized : 'Project created by Copilot',
+                'description' => $normalized !== '' ? $normalized : 'Project created by ELY',
                 'start_date' => now()->toDateString(),
             ],
-            'meetings.schedule' => [
-                'title' => $normalized !== '' ? $normalized : 'Operations Meeting',
-                'description' => $normalized,
-                'timezone' => config('app.timezone', 'UTC'),
-                'start_at' => now()->addDay()->setTime(10, 0)->toDateTimeString(),
-                'end_at' => now()->addDay()->setTime(11, 0)->toDateTimeString(),
-                'location' => 'Main Conference Room',
-            ],
+            'meetings.schedule' => $this->meetingInferenceService->infer(
+                message: $message,
+                companyId: $companyId,
+                entities: $entities,
+                conversationSummary: (string) ($context['summary'] ?? ''),
+                clientTimezone: $clientTimezone,
+                companyCountry: $companyCountry,
+            ),
             'notifications.send' => [
-                'title' => 'Copilot Notification',
-                'message' => $normalized !== '' ? $normalized : 'New notification from Copilot',
+                'title' => 'ELY Notification',
+                'message' => $normalized !== '' ? $normalized : 'New notification from ELY',
                 'category' => 'system',
                 'user_ids' => [$userId],
             ],
@@ -496,11 +608,37 @@ class CopilotService
         int $companyId,
         array $entities,
         array $actionArgs,
+        ?string $clientTimezone = null,
+        ?string $companyCountry = null,
     ): array {
-        if ($tool !== 'tasks.create') {
-            return $actionArgs;
+        if ($tool === 'tasks.create') {
+            return $this->normalizeProvidedActionArgsForTask($message, $companyId, $entities, $actionArgs);
         }
 
+        if ($tool === 'meetings.schedule') {
+            return $this->meetingInferenceService->normalizeProvidedArgs(
+                $message,
+                $companyId,
+                $actionArgs,
+                $clientTimezone,
+                $companyCountry,
+            );
+        }
+
+        return $actionArgs;
+    }
+
+    /**
+     * @param array<string,string> $entities
+     * @param array<string,mixed> $actionArgs
+     * @return array<string,mixed>
+     */
+    private function normalizeProvidedActionArgsForTask(
+        string $message,
+        int $companyId,
+        array $entities,
+        array $actionArgs,
+    ): array {
         $normalized = $actionArgs;
 
         if (is_string($normalized['title'] ?? null)) {
@@ -598,9 +736,9 @@ class CopilotService
 
         $rawTitle = $this->extractLabeledValue($message, ['task title', 'title'])
             ?? $this->extractTaskTitleFromSentence($message)
-            ?? 'Task created by Copilot';
+            ?? 'Task created by ELY';
         $title = Str::limit(trim($rawTitle), 255, '');
-        $usedDefaultTitle = strtolower($title) === 'task created by copilot';
+        $usedDefaultTitle = strtolower($title) === 'task created by ely';
 
         $rawDescription = $this->extractLabeledValue($message, ['description'])
             ?? $normalized
@@ -886,7 +1024,7 @@ class CopilotService
             $due = (string) ($args['due_date'] ?? 'Not set');
 
             $base = sprintf(
-                'Action ready: create task "%s" (%s) at %s, due %s. Click Confirm Action to proceed.',
+                'ELY action ready: create task "%s" (%s) at %s, due %s. Click Confirm Action to proceed.',
                 $title,
                 $type,
                 $location,
@@ -902,7 +1040,11 @@ class CopilotService
             return $base;
         }
 
-        return 'Action is ready. Review and click Confirm Action to proceed.';
+        if ($tool === 'meetings.schedule') {
+            return $this->meetingInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
+        }
+
+        return 'ELY prepared an action. Review and click Confirm Action to proceed.';
     }
 
     /**
@@ -921,6 +1063,9 @@ class CopilotService
             'raw_type_unrecognized' => 'Task type was not recognized and defaulted to inspection.',
             'used_default_due_date' => 'Due date was not clear and defaulted to tomorrow 5:00 PM.',
             'used_default_title' => 'Task title was not clearly detected; please confirm before proceeding.',
+            'used_default_time' => 'Meeting time was not clear and defaulted to tomorrow at 10:00 AM.',
+            'attendee_unresolved' => 'Some attendee names could not be matched to organization users. Please verify internal attendees before confirming.',
+            'invalid_attendee_email' => 'One or more attendee emails are invalid. Please correct them before confirming.',
         ];
 
         return collect($codes)
@@ -935,6 +1080,10 @@ class CopilotService
      */
     private function inferActionWarningCodes(string $tool, array $args): array
     {
+        if ($tool === 'meetings.schedule') {
+            return $this->meetingInferenceService->warningCodes($args);
+        }
+
         if ($tool !== 'tasks.create') {
             return [];
         }
@@ -971,6 +1120,10 @@ class CopilotService
 
         if (in_array('assignee_unresolved', $validationWarningCodes, true)) {
             $blockingCodes[] = 'assignee_unresolved';
+        }
+
+        if (in_array('invalid_attendee_email', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'invalid_attendee_email';
         }
 
         if ((bool) config('services.ai.strict_confirmation_blocking', false)) {

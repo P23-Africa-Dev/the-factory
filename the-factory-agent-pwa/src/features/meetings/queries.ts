@@ -2,6 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
+import { queueOfflineAction } from '@/lib/offline/queue';
 import { meetingsApi } from './api';
 import { meetingKeys } from './queryKeys';
 import type { Meeting, MeetingFilters, CreateMeetingPayload, UpdateMeetingPayload } from './types';
@@ -48,31 +49,72 @@ export function useCalendarStatus() {
 
 export function useCreateMeeting() {
   return useMutation({
-    mutationFn: (payload: CreateMeetingPayload) => {
+    mutationFn: async (payload: CreateMeetingPayload) => {
       const companyId = getActiveCompanyId() ?? 0;
-      return meetingsApi.create({ ...payload, company_id: companyId, source_page: 'agent' });
+      const fullPayload = { ...payload, company_id: companyId, source_page: 'agent' as const };
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await queueOfflineAction({
+          actionType: 'meeting.create',
+          payload: fullPayload,
+          companyId,
+        });
+        return { meeting: null, warnings: ['Meeting queued for sync when connection is restored.'], queued: true };
+      }
+      const created = await meetingsApi.create(fullPayload);
+      return { meeting: created.meeting, warnings: created.warnings, queued: false as const };
     },
-    onSuccess: ({ warnings }) => {
+    onSuccess: ({ warnings, queued }) => {
       queryClient.invalidateQueries({ queryKey: meetingKeys.lists() });
       warnings.forEach((w) => toast.info(w));
+      if (queued) {
+        toast.info('Offline queue', 'Meeting will be scheduled once you are online.');
+      }
     },
   });
 }
 
 export function useUpdateMeeting() {
   return useMutation({
-    mutationFn: ({ id, payload }: { id: number | string; payload: Omit<UpdateMeetingPayload, 'company_id'> }) =>
-      meetingsApi.update(id, payload),
+    mutationFn: async ({ id, payload }: { id: number | string; payload: Omit<UpdateMeetingPayload, 'company_id'> }) => {
+      const companyId = getActiveCompanyId() ?? 0;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await queueOfflineAction({
+          actionType: 'meeting.update',
+          payload: { id, body: { ...payload, company_id: companyId } },
+          companyId,
+        });
+        return { queued: true, id: Number(id) };
+      }
+      const updated = await meetingsApi.update(id, payload);
+      return { queued: false as const, meeting: updated };
+    },
     onSuccess: (updated) => {
-      queryClient.setQueryData(meetingKeys.detail(updated.id), updated);
+      if (!updated.queued && updated.meeting) {
+        queryClient.setQueryData(meetingKeys.detail(updated.meeting.id), updated.meeting);
+      }
       queryClient.invalidateQueries({ queryKey: meetingKeys.lists() });
+      if (updated.queued) {
+        toast.info('Offline queue', 'Meeting update will sync automatically.');
+      }
     },
   });
 }
 
 export function useCancelMeeting() {
   return useMutation({
-    mutationFn: (id: number | string) => meetingsApi.cancel(id),
+    mutationFn: async (id: number | string) => {
+      const companyId = getActiveCompanyId() ?? 0;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await queueOfflineAction({
+          actionType: 'meeting.cancel',
+          payload: { id, company_id: companyId },
+          companyId,
+        });
+        return { queued: true };
+      }
+      const cancelled = await meetingsApi.cancel(id);
+      return { queued: false as const, meeting: cancelled };
+    },
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: meetingKeys.detail(id) });
       const previous = queryClient.getQueryData<Meeting>(meetingKeys.detail(id));
@@ -88,8 +130,12 @@ export function useCancelMeeting() {
       queryClient.invalidateQueries({ queryKey: meetingKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: meetingKeys.lists() });
     },
-    onSuccess: () => {
-      toast.success('Meeting cancelled', 'All attendees have been notified.');
+    onSuccess: (result) => {
+      if (result.queued) {
+        toast.info('Offline queue', 'Meeting cancellation will sync when online.');
+      } else {
+        toast.success('Meeting cancelled', 'All attendees have been notified.');
+      }
     },
   });
 }

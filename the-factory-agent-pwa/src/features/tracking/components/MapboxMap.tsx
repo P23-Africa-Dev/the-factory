@@ -5,11 +5,8 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 import { env } from '@/constants/env';
-
-// Set mapbox token safely
-if (typeof window !== 'undefined') {
-  mapboxgl.accessToken = env.MAPBOX_TOKEN;
-}
+import { createMapboxTransformRequest, getMapboxPublicToken } from '@/lib/map/public-env';
+import { getAgentMapboxStyle } from '@/lib/map/style-mode';
 
 export type MapboxMapProps = {
   agentPosition: [number, number] | null; // [lng, lat]
@@ -79,13 +76,22 @@ export function MapboxMap({
   useEffect(() => {
     if (typeof window === 'undefined' || !mapContainerRef.current || mapRef.current) return;
 
+    const mapboxToken = getMapboxPublicToken() || env.MAPBOX_TOKEN;
+
+    if (!mapboxToken) {
+      setTimeout(() => setMapError(true), 0);
+      return;
+    }
+
     try {
+      mapboxgl.accessToken = mapboxToken;
       const map = new mapboxgl.Map({
         container: mapContainerRef.current,
-        style: 'mapbox://styles/mapbox/dark-v11',
+        style: getAgentMapboxStyle(),
         center: agentPosition || destinationPosition || [8.6753, 9.0820],
         zoom: 14,
         attributionControl: false,
+        transformRequest: createMapboxTransformRequest(),
       });
 
       map.on('error', (e) => {
@@ -94,6 +100,7 @@ export function MapboxMap({
       });
 
       map.on('load', () => {
+        map.resize();
         map.addSource('route', {
           type: 'geojson',
           data: {
@@ -255,7 +262,7 @@ export function MapboxMap({
   }
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full agent-mapbox-surface">
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" />
       {dimmed && <div className="absolute inset-0 bg-black/45 pointer-events-none" />}
     </div>

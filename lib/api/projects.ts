@@ -1,6 +1,7 @@
 "use client";
 
 import { apiRequest, ApiEnvelope, ApiRequestError } from "./onboarding";
+import { enqueueOfflineHttpMutation } from "@/lib/offline/queue";
 
 export type TaskSummary = {
   total_tasks: number;
@@ -188,6 +189,28 @@ export function createProject(
   payload: CreateProjectPayload,
   token: string
 ): Promise<ApiEnvelope<ProjectDetailData>> {
+  const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+  if (isOffline) {
+    if (payload.attachments && payload.attachments.length > 0) {
+      throw new ApiRequestError(
+        "Project attachments require connectivity. Save without attachments and upload later.",
+        0,
+        null
+      );
+    }
+    return enqueueOfflineHttpMutation({
+      method: "POST",
+      path: "/projects",
+      body: payload,
+    }).then((queueId) => ({
+      success: true,
+      message: "Project queued offline and will sync automatically.",
+      data: {} as ProjectDetailData,
+      errors: null,
+      meta: { queued_offline: true, queue_id: queueId },
+    }));
+  }
+
   return fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1"}/projects`, {
     method: "POST",
     headers: {
@@ -213,6 +236,28 @@ export function updateProject(
   payload: UpdateProjectPayload,
   token: string
 ): Promise<ApiEnvelope<ProjectDetailData>> {
+  const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+  if (isOffline) {
+    if (payload.attachments && payload.attachments.length > 0) {
+      throw new ApiRequestError(
+        "Project attachments require connectivity. Save without attachments and upload later.",
+        0,
+        null
+      );
+    }
+    return enqueueOfflineHttpMutation({
+      method: "PATCH",
+      path: `/projects/${id}`,
+      body: payload,
+    }).then((queueId) => ({
+      success: true,
+      message: "Project update queued offline and will sync automatically.",
+      data: {} as ProjectDetailData,
+      errors: null,
+      meta: { queued_offline: true, queue_id: queueId },
+    }));
+  }
+
   return fetch(
     `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1"}/projects/${id}`,
     {

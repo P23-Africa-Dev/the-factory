@@ -3,6 +3,7 @@ import { appStore, getActiveCompanyId, setActiveCompanyId } from '@/lib/storage/
 import { taskSchema, taskListSchema } from './schema';
 import type { Task, TaskFilters, UpdateTaskStatusPayload } from './types';
 import { env } from '@/constants/env';
+import { queueOfflineAction } from '@/lib/offline/queue';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -84,10 +85,34 @@ export const taskApi = {
   },
 
   updateStatus: async ({ id, status }: UpdateTaskStatusPayload): Promise<void> => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await queueOfflineAction({
+        actionType: 'task.update_status',
+        payload: { id, status },
+      });
+      return;
+    }
     await client.patch(`/tasks/${id}/status`, { status });
   },
 
   completeTask: async (taskId: number, formData: FormData): Promise<void> => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const companyIdFromForm = formData.get('company_id');
+      const notesFromForm = formData.get('notes');
+      await queueOfflineAction({
+        actionType: 'task.complete',
+        payload: {
+          taskId,
+          company_id:
+            typeof companyIdFromForm === 'string'
+              ? Number(companyIdFromForm)
+              : getActiveCompanyId(),
+          notes: typeof notesFromForm === 'string' ? notesFromForm : '',
+        },
+      });
+      return;
+    }
+
     const token = appStore.getString('auth_token');
     const res = await fetch(
       `${env.API_BASE_URL}/agent/tasks/${taskId}/complete`,

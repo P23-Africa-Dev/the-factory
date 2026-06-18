@@ -114,12 +114,14 @@ final class CopilotReadFlowTest extends TestCase
         $company->save();
 
         $capturedPrompt = null;
+        $capturedSystemPrompt = null;
         $mockRouter = Mockery::mock(AiProviderRouter::class);
         $mockRouter
             ->shouldReceive('generateText')
             ->once()
-            ->andReturnUsing(function (string $systemPrompt, string $userPrompt) use (&$capturedPrompt): string {
+            ->andReturnUsing(function (string $systemPrompt, string $userPrompt) use (&$capturedPrompt, &$capturedSystemPrompt): string {
                 $capturedPrompt = $userPrompt;
+                $capturedSystemPrompt = $systemPrompt;
 
                 return 'Provider response';
             });
@@ -135,6 +137,8 @@ final class CopilotReadFlowTest extends TestCase
             ->assertOk();
 
         $this->assertIsString($capturedPrompt);
+        $this->assertIsString($capturedSystemPrompt);
+        $this->assertStringContainsString('You are ELY', $capturedSystemPrompt);
         $this->assertStringContainsString('Company name: Acme Industrial Logistics', $capturedPrompt);
         $this->assertStringContainsString('Tenant scope ID (internal, do not mention):', $capturedPrompt);
     }

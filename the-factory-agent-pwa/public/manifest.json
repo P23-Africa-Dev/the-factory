@@ -2,8 +2,11 @@
   "name": "Factory 23 Agent",
   "short_name": "F23 Agent",
   "description": "Field agent management app — tasks, tracking, CRM, all in one app",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "orientation": "portrait",
   "background_color": "#0A1D25",
   "theme_color": "#0A1D25",
@@ -47,6 +50,26 @@
     }
   ],
   "categories": ["business", "productivity"],
+  "shortcuts": [
+    {
+      "name": "My Tasks",
+      "short_name": "Tasks",
+      "description": "Open today task list",
+      "url": "/"
+    },
+    {
+      "name": "Tracking Map",
+      "short_name": "Map",
+      "description": "Open live location tracking",
+      "url": "/map"
+    },
+    {
+      "name": "Meetings",
+      "short_name": "Meetings",
+      "description": "Open meeting schedule",
+      "url": "/meetings"
+    }
+  ],
   "screenshots": [],
   "prefer_related_applications": false
 }

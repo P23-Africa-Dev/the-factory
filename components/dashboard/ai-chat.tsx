@@ -1,7 +1,15 @@
 "use client";
 
 import { useCopilotChat } from "@/hooks/use-copilot-chat";
+import {
+  buildMeetingActionArgs,
+  ElyMeetingActionFields,
+  type ElyMeetingDraft,
+} from "@/components/dashboard/ely-meeting-action-fields";
+import { ELY_INPUT_PLACEHOLDER, ELY_LANDING_HEADLINE, ELY_LANDING_SUBTEXT, ELY_NAME } from "@/lib/ely-brand";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
+import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
 import {
@@ -56,6 +64,12 @@ interface AssigneeOptionsState {
   loading: boolean;
   loaded: boolean;
   items: AssigneeOption[];
+}
+
+interface MeetingAttendeeOptionsState {
+  loading: boolean;
+  loaded: boolean;
+  items: MeetingAttendeeCandidate[];
 }
 
 type EditControlType = "text" | "textarea" | "select" | "date" | "datetime-local" | "number";
@@ -165,7 +179,9 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [input, setInput] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
+  const [meetingActionDrafts, setMeetingActionDrafts] = useState<Record<string, ElyMeetingDraft>>({});
   const [assigneeOptions, setAssigneeOptions] = useState<Record<string, AssigneeOptionsState>>({});
+  const [meetingAttendeeOptions, setMeetingAttendeeOptions] = useState<Record<string, MeetingAttendeeOptionsState>>({});
   const [isRunningQuickAction, setIsRunningQuickAction] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAiToolsOpen, setIsAiToolsOpen] = useState(false);
@@ -217,6 +233,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
   useEffect(() => {
     setTimeout(() => setAssigneeOptions({}), 0);
+    setTimeout(() => setMeetingAttendeeOptions({}), 0);
+    setTimeout(() => setMeetingActionDrafts({}), 0);
   }, [companyId]);
 
   useEffect(() => {
@@ -235,7 +253,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const argKeys = rawArgs ? Object.keys(rawArgs) : [];
       const hasUserAssignmentField = argKeys.some((key) => /(^|_)(user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/.test(key));
 
-      if (!["tasks.create", "tasks.reassign", "projects.create"].includes(tool) && !hasUserAssignmentField) {
+      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule"].includes(tool) && !hasUserAssignmentField) {
+        continue;
+      }
+
+      if (tool === "meetings.schedule") {
+        void loadMeetingAttendeeOptions(msg.id);
         continue;
       }
 
@@ -361,6 +384,51 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }));
   }
 
+  async function loadMeetingAttendeeOptions(msgId: string) {
+    const current = meetingAttendeeOptions[msgId];
+    if (current?.loading === true || current?.loaded === true) {
+      return;
+    }
+
+    setMeetingAttendeeOptions((prev) => ({
+      ...prev,
+      [msgId]: {
+        loading: true,
+        loaded: false,
+        items: prev[msgId]?.items ?? [],
+      },
+    }));
+
+    try {
+      const token = getAuthTokenFromDocument();
+      const response = await listMeetingAttendeeCandidates({ company_id: companyId ?? undefined }, token);
+      setMeetingAttendeeOptions((prev) => ({
+        ...prev,
+        [msgId]: {
+          loading: false,
+          loaded: true,
+          items: response.data.items,
+        },
+      }));
+    } catch {
+      setMeetingAttendeeOptions((prev) => ({
+        ...prev,
+        [msgId]: {
+          loading: false,
+          loaded: true,
+          items: [],
+        },
+      }));
+    }
+  }
+
+  function updateMeetingActionDraft(msgId: string, draft: ElyMeetingDraft) {
+    setMeetingActionDrafts((prev) => ({
+      ...prev,
+      [msgId]: draft,
+    }));
+  }
+
   async function loadAssigneeOptions(msgId: string) {
     const current = assigneeOptions[msgId];
     if (current?.loading === true || current?.loaded === true) {
@@ -439,6 +507,16 @@ export function AIChat({ open, onClose }: AIChatProps) {
       }
 
       return merged;
+    }
+
+    if (tool === "meetings.schedule") {
+      const draft = meetingActionDrafts[msg.id];
+      if (draft) {
+        const candidates = meetingAttendeeOptions[msg.id]?.items ?? [];
+        return buildMeetingActionArgs(draft, candidates);
+      }
+
+      return baseArgs;
     }
 
     if (Object.keys(draft).length === 0) {
@@ -527,13 +605,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }
 
     if (tool === "meetings.schedule") {
-      return [
-        { key: "title", label: "Title", control: "text" },
-        { key: "start_at", label: "Start Time", control: "datetime-local" },
-        { key: "end_at", label: "End Time", control: "datetime-local" },
-        { key: "location", label: "Location", control: "text" },
-        { key: "timezone", label: "Timezone", control: "text" },
-      ];
+      return [];
     }
 
     if (tool === "projects.create") {
@@ -662,7 +734,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
       if (code === "used_default_title") {
         const title = String(args?.title ?? "").trim().toLowerCase();
-        if (title === "" || title === "task created by copilot") {
+        if (title === "" || title === "task created by ely") {
           remaining.push(code);
         }
         continue;
@@ -763,6 +835,31 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return rows;
     }
 
+    if (tool === "meetings.schedule") {
+      const attendees = Array.isArray(args.attendees) ? args.attendees : [];
+      const reminders = Array.isArray(args.reminders) ? args.reminders : [];
+
+      return [
+        { key: "title", label: "Title", value: formatPreviewValue("title", args.title) },
+        { key: "description", label: "Description", value: formatPreviewValue("description", args.description) },
+        { key: "start_at", label: "Start", value: formatPreviewValue("start_at", args.start_at) },
+        { key: "end_at", label: "End", value: formatPreviewValue("end_at", args.end_at) },
+        { key: "timezone", label: "Timezone", value: formatPreviewValue("timezone", args.timezone) },
+        { key: "location", label: "Location", value: formatPreviewValue("location", args.location) },
+        {
+          key: "attendees",
+          label: "Attendees",
+          value: attendees.length > 0 ? `${attendees.length} selected` : "None selected",
+          warning: warningCodes.includes("attendee_unresolved"),
+        },
+        {
+          key: "reminders",
+          label: "Reminders",
+          value: reminders.length > 0 ? `${reminders.length} scheduled` : "None selected",
+        },
+      ];
+    }
+
     return Object.entries(args)
       .filter(([key]) => key !== "company_id")
       .map(([key, value]) => ({
@@ -816,6 +913,10 @@ export function AIChat({ open, onClose }: AIChatProps) {
     const issues = blockingIssuesForMessage(msg);
     if (issues.includes("assignee_unresolved")) {
       return "Confirmation is blocked until assignee details are corrected.";
+    }
+
+    if (issues.includes("invalid_attendee_email")) {
+      return "Confirmation is blocked until attendee email addresses are corrected.";
     }
 
     if (issues.includes("used_default_title") || issues.includes("used_default_due_date")) {
@@ -1025,6 +1126,10 @@ export function AIChat({ open, onClose }: AIChatProps) {
                 </div>
 
                 <div className="flex items-center gap-3 flex-shrink-0">
+                  <div className="hidden sm:flex flex-col items-end leading-tight">
+                    <span className="text-[#7BB6B8] text-[11px] font-bold uppercase tracking-[0.2em]">{ELY_NAME}</span>
+                    <span className="text-[#88B3B5] text-[10px]">Factory23 AI</span>
+                  </div>
                   <button
                     onClick={() => {
                       setSearchOpen((v) => !v);
@@ -1316,9 +1421,9 @@ export function AIChat({ open, onClose }: AIChatProps) {
             {!hasMessages && (
               <div className="px-8 py-6 flex-shrink-0">
                 <div className="border border-white/20 rounded-[32px] px-6 py-5 space-y-4">
-                  <p className="text-[#88B3B5] text-[15px] font-medium">Ask Anything…</p>
+                  <p className="text-[#88B3B5] text-[15px] font-medium">{ELY_LANDING_HEADLINE}</p>
                   <p className="text-white/40 text-[13px] leading-relaxed">
-                    Get summaries, create tasks, schedule meetings, view attendance, or ask anything about your operations.
+                    {ELY_LANDING_SUBTEXT}
                   </p>
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <button
@@ -1448,9 +1553,27 @@ export function AIChat({ open, onClose }: AIChatProps) {
                           })()}
                           {(() => {
                             const args = actionArgsForMessage(msg);
+                            const payloadTool = String(messagePayload(msg)?.tool ?? "");
                             if (!args) {
                               return null;
                             }
+
+                            if (payloadTool === "meetings.schedule") {
+                              return (
+                                <div className="mb-2 rounded-xl border border-[#355C57]/70 bg-[#102322] px-3 py-2">
+                                  <p className="text-[11px] font-semibold text-[#9FD3C8] mb-2">Edit before confirm:</p>
+                                  <ElyMeetingActionFields
+                                    msgId={msg.id}
+                                    args={args}
+                                    draft={meetingActionDrafts[msg.id]}
+                                    onDraftChange={updateMeetingActionDraft}
+                                    candidates={meetingAttendeeOptions[msg.id]?.items ?? []}
+                                    loadingCandidates={meetingAttendeeOptions[msg.id]?.loading === true}
+                                  />
+                                </div>
+                              );
+                            }
+
                             const fields = editFieldsForMessage(msg, args);
                             if (fields.length === 0) {
                               return null;
@@ -1634,7 +1757,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Ask Anything..."
+                    placeholder={ELY_INPUT_PLACEHOLDER}
                     className="flex-1 bg-transparent text-[#091519] text-[14px] placeholder:text-[#091519]/60 font-medium outline-none min-w-0"
                   />
                 </div>

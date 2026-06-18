@@ -1,45 +1,82 @@
-/**
- * Sync engine — all background sync logic lives here.
- * Ported from mobile app's src/lib/sync/syncEngine.ts.
- *
- * Key changes:
- * - drizzle ORM queries → IndexedDB transactions via `idb`
- * - Sentry → console.error (TODO: replace with @sentry/nextjs)
- * - FormData uses Blob instead of file URI
- */
-import { getDb } from '@/lib/db/client';
-import type { LocationQueueEntry } from '@/lib/db/schema';
-import { getActiveCompanyId } from '@/lib/storage/stores';
-import { toast } from '@/lib/toast';
-import { client } from '@/lib/api/client';
 import type { ApiError } from '@/types';
+import { client } from '@/lib/api/client';
+import { getDb } from '@/lib/db/client';
+import type {
+  LocationQueueEntry,
+  OfflineActionQueueEntry,
+} from '@/lib/db/schema';
+import {
+  getRunnableOfflineActions,
+  markOfflineActionRetry,
+  markOfflineActionSynced,
+  markOfflineActionSyncing,
+  parseOfflinePayload,
+  requestBackgroundSync,
+  storeOfflineConflict,
+} from '@/lib/offline/queue';
+import { getActiveCompanyId, appStore } from '@/lib/storage/stores';
+import { toast } from '@/lib/toast';
+
+const MAX_BATCH_SIZE = 50;
+const RETRY_DELAYS_MS = [0, 30_000, 120_000, 300_000, 900_000] as const;
+
+let syncInFlight = false;
+
+function getCurrentUserId(): string | null {
+  try {
+    const raw = appStore.getString('auth_user');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { id?: string | number };
+    return parsed.id != null ? String(parsed.id) : null;
+  } catch {
+    return null;
+  }
+}
+
+function canRunNow(nextAttemptAt?: string | null): boolean {
+  if (!nextAttemptAt) return true;
+  return new Date(nextAttemptAt).getTime() <= Date.now();
+}
+
+function buildNextAttemptIso(attempts: number): string {
+  const delay = RETRY_DELAYS_MS[Math.min(attempts, RETRY_DELAYS_MS.length - 1)];
+  return new Date(Date.now() + delay).toISOString();
+}
+
+function isConflictError(err: ApiError): boolean {
+  return err.status === 409;
+}
+
+function isPoorConnection(): boolean {
+  if (typeof navigator === 'undefined' || !('connection' in navigator)) {
+    return false;
+  }
+  const connection = (navigator as Navigator & {
+    connection?: { effectiveType?: string };
+  }).connection;
+  const quality = connection?.effectiveType;
+  return quality === 'slow-2g';
+}
 
 async function syncLocationQueue(): Promise<void> {
   const companyId = getActiveCompanyId();
   if (!companyId) return;
 
   const db = await getDb();
-
-  // Get all pending (unsynced) location entries
   const pending = await db.getAllFromIndex('locationQueue', 'by-synced', 0);
-  if (pending.length === 0) return;
+  const runnable = pending.filter((item) => canRunNow(item.nextAttemptAt));
+  if (runnable.length === 0) return;
 
-  // Group by task
-  const byTask = pending.reduce<Record<number, LocationQueueEntry[]>>((acc, row) => {
+  const byTask = runnable.reduce<Record<number, LocationQueueEntry[]>>((acc, row) => {
     const existing = acc[row.taskId];
-    if (existing) {
-      existing.push(row);
-    } else {
-      acc[row.taskId] = [row];
-    }
+    if (existing) existing.push(row);
+    else acc[row.taskId] = [row];
     return acc;
   }, {});
 
-  for (const [taskIdStr, rows] of Object.entries(byTask)) {
-    const taskId = Number(taskIdStr);
-    // Never exceed backend max batch
-    const batch = rows.slice(0, 50);
-
+  for (const [taskIdRaw, rows] of Object.entries(byTask)) {
+    const taskId = Number(taskIdRaw);
+    const batch = rows.slice(0, MAX_BATCH_SIZE);
     try {
       await client.post(`/agent/tasks/${taskId}/location`, {
         company_id: companyId,
@@ -53,51 +90,65 @@ async function syncLocationQueue(): Promise<void> {
         })),
       });
 
-      // Mark as synced
       const tx = db.transaction('locationQueue', 'readwrite');
       for (const row of batch) {
         if (row.id != null) {
-          await tx.store.put({ ...row, synced: 1 });
+          await tx.store.put({
+            ...row,
+            synced: 1,
+            attempts: 0,
+            nextAttemptAt: null,
+            lastError: null,
+          });
         }
       }
       await tx.done;
     } catch (error) {
-      const is422 =
-        typeof error === 'object' &&
-        error !== null &&
-        (error as { status?: number }).status === 422;
+      const apiError = error as ApiError;
+      const is422 = apiError.status === 422;
 
-      if (is422) {
-        // Mark as synced to avoid infinite retry loops
-        const tx = db.transaction('locationQueue', 'readwrite');
-        for (const row of batch) {
-          if (row.id != null) {
-            await tx.store.put({ ...row, synced: 1 });
+      const tx = db.transaction('locationQueue', 'readwrite');
+      for (const row of batch) {
+        if (row.id != null) {
+          if (is422) {
+            await tx.store.put({
+              ...row,
+              synced: 1,
+              attempts: row.attempts ?? 0,
+              nextAttemptAt: null,
+              lastError: apiError.message ?? null,
+            });
+          } else {
+            const attempts = (row.attempts ?? 0) + 1;
+            await tx.store.put({
+              ...row,
+              attempts,
+              nextAttemptAt: buildNextAttemptIso(attempts),
+              lastError: apiError.message ?? 'Location sync failed',
+            });
           }
         }
-        await tx.done;
+      }
+      await tx.done;
 
-        const apiError = error as ApiError;
+      if (is422) {
         const msg =
-          apiError.errors?.authorization?.[0] ||
-          apiError.message ||
+          apiError.errors?.authorization?.[0] ??
+          apiError.message ??
           'You can only track tasks currently assigned to you.';
         toast.error('Tracking Stopped', msg);
       }
-
-      console.error('[SyncEngine] Location sync error:', error);
     }
   }
 }
 
 async function syncProofQueue(): Promise<void> {
   const db = await getDb();
-
-  // Get all pending (not uploaded) proof entries
   const pending = await db.getAllFromIndex('proofQueue', 'by-uploaded', 0);
-  if (pending.length === 0) return;
+  const runnable = pending.filter((item) => canRunNow(item.nextAttemptAt));
+  if (runnable.length === 0) return;
 
-  for (const proof of pending) {
+  for (const proof of runnable) {
     try {
       const formData = new FormData();
       formData.append(
@@ -109,20 +160,187 @@ async function syncProofQueue(): Promise<void> {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      // Mark as uploaded
       if (proof.id != null) {
-        await db.put('proofQueue', { ...proof, uploaded: 1 });
+        await db.put('proofQueue', {
+          ...proof,
+          uploaded: 1,
+          attempts: 0,
+          nextAttemptAt: null,
+          lastError: null,
+        });
       }
     } catch (error) {
-      console.error('[SyncEngine] Proof sync error:', error);
+      if (proof.id != null) {
+        const attempts = (proof.attempts ?? 0) + 1;
+        await db.put('proofQueue', {
+          ...proof,
+          attempts,
+          nextAttemptAt: buildNextAttemptIso(attempts),
+          lastError: (error as ApiError).message ?? 'Proof upload failed',
+        });
+      }
     }
+  }
+}
+
+async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<void> {
+  switch (entry.actionType) {
+    case 'task.update_status': {
+      const payload = parseOfflinePayload<{ id: string | number; status: string }>(entry);
+      await client.patch(`/tasks/${payload.id}/status`, { status: payload.status });
+      return;
+    }
+    case 'task.complete': {
+      const payload = parseOfflinePayload<{
+        taskId: number;
+        company_id?: number;
+        notes?: string;
+      }>(entry);
+      const formData = new FormData();
+      if (payload.company_id != null) {
+        formData.append('company_id', String(payload.company_id));
+      }
+      formData.append('notes', payload.notes ?? '');
+      await client.post(`/agent/tasks/${payload.taskId}/complete`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return;
+    }
+    case 'project.create': {
+      const payload = parseOfflinePayload<Record<string, unknown>>(entry);
+      await client.post('/projects', payload);
+      return;
+    }
+    case 'project.update': {
+      const payload = parseOfflinePayload<{ id: string | number; body: Record<string, unknown> }>(entry);
+      await client.patch(`/projects/${payload.id}`, payload.body);
+      return;
+    }
+    case 'project.update_status': {
+      const payload = parseOfflinePayload<{ id: string | number; status: string }>(entry);
+      await client.patch(`/projects/${payload.id}`, { status: payload.status });
+      return;
+    }
+    case 'meeting.create': {
+      const payload = parseOfflinePayload<Record<string, unknown>>(entry);
+      await client.post('/meetings', payload);
+      return;
+    }
+    case 'meeting.update': {
+      const payload = parseOfflinePayload<{ id: string | number; body: Record<string, unknown> }>(entry);
+      await client.patch(`/meetings/${payload.id}`, payload.body);
+      return;
+    }
+    case 'meeting.cancel': {
+      const payload = parseOfflinePayload<{ id: string | number; company_id?: number }>(entry);
+      await client.post(`/meetings/${payload.id}/cancel`, {
+        company_id: payload.company_id,
+      });
+      return;
+    }
+    case 'attendance.clock_in': {
+      const payload = parseOfflinePayload<Record<string, unknown>>(entry);
+      await client.post('/agent/attendance/clock-in', payload);
+      return;
+    }
+    case 'attendance.clock_out': {
+      const payload = parseOfflinePayload<Record<string, unknown>>(entry);
+      await client.post('/agent/attendance/clock-out', payload);
+      return;
+    }
+  }
+}
+
+async function syncOfflineActionQueue(): Promise<void> {
+  const runnable = await getRunnableOfflineActions();
+  if (runnable.length === 0) return;
+
+  const userId = getCurrentUserId();
+  if (!userId) return;
+
+  for (const entry of runnable) {
+    if (entry.id == null) continue;
+    await markOfflineActionSyncing(entry.id);
+
+    try {
+      await executeOfflineAction(entry);
+      await markOfflineActionSynced(entry.id);
+    } catch (error) {
+      const apiError = error as ApiError;
+
+      if (isConflictError(apiError)) {
+        await storeOfflineConflict({
+          actionQueueId: entry.id,
+          actionType: entry.actionType,
+          companyId: entry.companyId,
+          userId: entry.userId,
+          localPayloadJson: entry.payloadJson,
+          serverPayloadJson: null,
+          message: apiError.message ?? 'Conflict detected while syncing offline action.',
+        });
+        await markOfflineActionRetry(entry.id, entry.attempts, 'failed', apiError.message ?? 'Conflict');
+        toast.warning(
+          'Sync conflict detected',
+          'Choose Keep Local, Keep Server, or Merge from the conflict center.',
+        );
+        continue;
+      }
+
+      const nextStatus: 'pending' | 'failed' =
+        entry.attempts + 1 >= RETRY_DELAYS_MS.length ? 'failed' : 'pending';
+      await markOfflineActionRetry(
+        entry.id,
+        entry.attempts,
+        nextStatus,
+        apiError.message ?? 'Offline action sync failed',
+      );
+    }
+  }
+}
+
+async function scheduleNextSyncIfNeeded(): Promise<void> {
+  const db = await getDb();
+  const pendingActions = await db.getAllFromIndex('offlineActionQueue', 'by-status', 'pending');
+  const failedActions = await db.getAllFromIndex('offlineActionQueue', 'by-status', 'failed');
+  const pendingUploads = await db.getAllFromIndex('proofQueue', 'by-uploaded', 0);
+  const pendingLocations = await db.getAllFromIndex('locationQueue', 'by-synced', 0);
+
+  if (
+    pendingActions.length > 0 ||
+    failedActions.length > 0 ||
+    pendingUploads.length > 0 ||
+    pendingLocations.length > 0
+  ) {
+    await requestBackgroundSync('offline-action-sync');
+    await requestBackgroundSync('location-sync');
+    await requestBackgroundSync('proof-sync');
+  }
+}
+
+async function syncAll(): Promise<void> {
+  if (syncInFlight) return;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  if (isPoorConnection()) return;
+
+  syncInFlight = true;
+  try {
+    await syncProofQueue();
+    await syncOfflineActionQueue();
+    await syncLocationQueue();
+  } finally {
+    syncInFlight = false;
+    await scheduleNextSyncIfNeeded();
   }
 }
 
 export const syncEngine = {
   syncLocationQueue,
   syncProofQueue,
-  syncAll: async (): Promise<void> => {
-    await Promise.allSettled([syncLocationQueue(), syncProofQueue()]);
+  syncOfflineActionQueue,
+  scheduleSync: async (): Promise<void> => {
+    await requestBackgroundSync('offline-action-sync');
+    await requestBackgroundSync('location-sync');
+    await requestBackgroundSync('proof-sync');
   },
+  syncAll,
 };

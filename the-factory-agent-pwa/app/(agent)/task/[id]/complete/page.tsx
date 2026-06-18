@@ -7,6 +7,7 @@ import { Camera, ShieldAlert } from 'lucide-react';
 import { useTask, useTaskNavigation, useCompleteTask } from '@/features/tasks';
 import { getDb } from '@/lib/db/client';
 import { getActiveCompanyId } from '@/lib/storage/stores';
+import { syncEngine } from '@/lib/sync/syncEngine';
 
 export default function TaskCompletePage() {
   const router = useRouter();
@@ -54,10 +55,14 @@ export default function TaskCompletePage() {
         mimeType: selectedFile.type || 'image/jpeg',
         uploaded: 0,
         createdAt: new Date().toISOString(),
+        attempts: 0,
+        nextAttemptAt: new Date().toISOString(),
+        lastError: null,
       });
     } catch (dbErr) {
       console.warn('[complete] proof_queue insert failed (non-fatal):', dbErr);
     }
+    await syncEngine.scheduleSync();
 
     const formData = new FormData();
     formData.append('company_id', String(companyId));

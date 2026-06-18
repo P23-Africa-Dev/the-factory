@@ -42,7 +42,11 @@ export default function NewMeetingPage() {
           })),
         ],
       });
-      nav.goToMeetingDetail(meeting.id);
+      if (meeting) {
+        nav.goToMeetingDetail(meeting.id);
+      } else {
+        nav.goToMeetingsList();
+      }
     } catch (err: unknown) {
       if (
         typeof err === 'object' && err !== null &&

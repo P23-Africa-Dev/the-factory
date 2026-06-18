@@ -98,8 +98,8 @@
     {{-- Header row --}}
     <div class="d-flex align-items-center justify-content-between mb-4">
         <div>
-            <h4 class="fw-bold mb-1" style="font-size:1.1rem">AI Copilot Control Center</h4>
-            <p class="mb-0" style="font-size:.82rem;color:var(--text-secondary)">Monitor and manage the Factory23 AI
+            <h4 class="fw-bold mb-1" style="font-size:1.1rem">ELY Control Center</h4>
+            <p class="mb-0" style="font-size:.82rem;color:var(--text-secondary)">Monitor and manage ELY, the Factory23 AI
                 assistant infrastructure.</p>
         </div>
         <div class="d-flex gap-2">
@@ -120,7 +120,7 @@
                 <i class="bi bi-cpu" style="font-size:1.4rem;color:var(--accent)"></i>
             </div>
             <div>
-                <div class="fw-bold" style="font-size:1rem">AI Assistant Status</div>
+                <div class="fw-bold" style="font-size:1rem">ELY Status</div>
                 <div style="font-size:.8rem;color:var(--text-secondary)">Real-time system health</div>
             </div>
         </div>

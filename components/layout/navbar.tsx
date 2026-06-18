@@ -15,6 +15,7 @@ import LogoutModal from "@/components/ui/logout-modal";
 import { NotificationPanel } from "@/components/notifications/notification-panel";
 import { useUnreadCount } from "@/hooks/use-notifications";
 import { DownloadAgentAppModal } from "@/components/pwa/DownloadAgentAppModal";
+import { usePwaInstall } from "@/hooks/use-pwa-install";
 
 // Import local SVG assets
 import DashboardIcon from "@/assets/nav-icons/dashboard.svg";
@@ -95,6 +96,7 @@ export function Navbar() {
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const { data: unreadData } = useUnreadCount(companyId ?? undefined);
   const unreadCount = unreadData?.unread_count ?? 0;
+  const { canInstall, isInstalled, promptInstall } = usePwaInstall();
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -300,6 +302,22 @@ export function Navbar() {
                     <User size={15} />
                     Profile
                   </Link>
+                  {!isInstalled ? (
+                    <button
+                      onClick={async () => {
+                        setProfileOpen(false);
+                        if (canInstall) {
+                          await promptInstall();
+                          return;
+                        }
+                        setPwaModalOpen(true);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[#75ADAF] hover:text-[#8fc4c6] hover:bg-white/5 transition-colors text-sm font-medium cursor-pointer"
+                    >
+                      <Smartphone size={15} />
+                      Install App
+                    </button>
+                  ) : null}
                   <div className="my-1 border-t border-white/5" />
                   <button
                     onClick={() => {

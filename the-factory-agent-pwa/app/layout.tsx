@@ -16,18 +16,24 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   useEffect(() => {
-    if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('/sw.js')
-          .then((registration) => {
-            console.log('PWA Service Worker registered with scope:', registration.scope);
-          })
-          .catch((error) => {
-            console.error('PWA Service Worker registration failed:', error);
-          });
-      });
-    }
+    if (!('serviceWorker' in navigator)) return;
+
+    const shouldRegister =
+      process.env.NODE_ENV === 'production' ||
+      process.env.NEXT_PUBLIC_ENABLE_PWA === 'true';
+
+    if (!shouldRegister) return;
+
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((registration) => {
+          console.log('PWA Service Worker registered with scope:', registration.scope);
+        })
+        .catch((error) => {
+          console.error('PWA Service Worker registration failed:', error);
+        });
+    });
   }, []);
 
   return (

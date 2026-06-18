@@ -15,6 +15,7 @@ import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId, appStore } from '@/lib/storage/stores';
 import { env } from '@/constants/env';
 import { getDb } from '@/lib/db/client';
+import { syncEngine } from '@/lib/sync/syncEngine';
 
 // Dynamically import MapboxMap with SSR disabled to prevent server-side window/document errors
 const MapboxMap = dynamic(() => import('@/features/tracking/components/MapboxMap'), {
@@ -539,11 +540,15 @@ function AddNoteModal({
             mimeType: file.type || 'image/jpeg',
             uploaded: 0,
             createdAt: new Date().toISOString(),
+            attempts: 0,
+            nextAttemptAt: new Date().toISOString(),
+            lastError: null,
           });
         }
       } catch (dbErr) {
         console.warn('[complete] proofQueue insert failed (non-fatal):', dbErr);
       }
+      await syncEngine.scheduleSync();
 
       const formData = new FormData();
       formData.append('company_id', String(companyId));

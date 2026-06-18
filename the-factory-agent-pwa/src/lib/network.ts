@@ -1,17 +1,24 @@
 /**
  * Network status hook — replaces @react-native-community/netinfo.
- * Uses navigator.onLine + online/offline event listeners.
+ * Uses navigator.onLine + online/offline event listeners (client only).
  */
 'use client';
 
 import { useState, useEffect } from 'react';
 
+function getBrowserOnlineStatus(): boolean {
+  if (typeof window === 'undefined') return true;
+  return navigator.onLine;
+}
+
 export function useNetworkStatus() {
-  const [isConnected, setIsConnected] = useState(() =>
-    typeof navigator !== 'undefined' ? navigator.onLine : true,
-  );
+  const [isConnected, setIsConnected] = useState(true);
+  const [isClientReady, setIsClientReady] = useState(false);
 
   useEffect(() => {
+    setIsClientReady(true);
+    setIsConnected(getBrowserOnlineStatus());
+
     const handleOnline = () => setIsConnected(true);
     const handleOffline = () => setIsConnected(false);
 
@@ -24,7 +31,7 @@ export function useNetworkStatus() {
     };
   }, []);
 
-  return { isConnected };
+  return { isConnected: isClientReady ? isConnected : true };
 }
 
 /**
@@ -34,6 +41,10 @@ export function useNetworkStatus() {
 export function onNetworkChange(
   callback: (state: { isConnected: boolean }) => void,
 ): () => void {
+  if (typeof window === 'undefined') {
+    return () => undefined;
+  }
+
   const handleOnline = () => callback({ isConnected: true });
   const handleOffline = () => callback({ isConnected: false });
 

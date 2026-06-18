@@ -22,6 +22,7 @@ import {
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { mapApiProject } from "@/types/operations";
 import type { Project } from "@/types/operations";
+import { toast } from "sonner";
 
 export const PROJECT_KEYS = {
   all: ["projects"] as const,
@@ -87,6 +88,10 @@ export function useCreateProject(options?: { onSuccess?: (project: Project) => v
     mutationFn: (payload: CreateProjectPayload) => createProject(payload, token),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: PROJECT_KEYS.all });
+      if (res.meta?.queued_offline) {
+        toast.info("Project creation queued offline.");
+        return;
+      }
       options?.onSuccess?.(mapApiProject(res.data.project));
     },
   });
@@ -106,6 +111,10 @@ export function useUpdateProject(
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: PROJECT_KEYS.all });
       queryClient.invalidateQueries({ queryKey: PROJECT_KEYS.detail(id) });
+      if (res.meta?.queued_offline) {
+        toast.info("Project update queued offline.");
+        return;
+      }
       options?.onSuccess?.(mapApiProject(res.data.project));
     },
   });

@@ -44,6 +44,7 @@ export type CopilotChatRequest = {
     action_args?: Record<string, unknown>;
     action_confirmed?: boolean;
     idempotency_key?: string;
+    client_timezone?: string;
 };
 
 export type CopilotChatResponse = {
@@ -386,7 +387,7 @@ export async function sendCopilotMessageStream(
     });
 
     if (!response.ok) {
-        let message = "Unable to start Copilot streaming response.";
+        let message = "Unable to start ELY streaming response.";
         try {
             const errorPayload = await response.json();
             message = errorPayload?.message ?? message;
@@ -412,7 +413,7 @@ export async function sendCopilotMessageStream(
     }
 
     if (!response.body) {
-        throw new ApiRequestError("Copilot stream response body is empty.", 500, null);
+        throw new ApiRequestError("ELY stream response body is empty.", 500, null);
     }
 
     const reader = response.body.getReader();
@@ -473,7 +474,7 @@ export async function sendCopilotMessageStream(
             return doneEvent;
         }
 
-        throw new ApiRequestError("Copilot stream ended unexpectedly.", 500, null);
+        throw new ApiRequestError("ELY stream ended unexpectedly.", 500, null);
     }
 
     return doneEvent;

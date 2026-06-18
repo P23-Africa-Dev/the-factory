@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "node start-dev.js",
-    "build": "next build",
-    "start": "next start",
+    "build": "node run-with-env.js build",
+    "start": "node run-with-env.js start",
     "lint": "eslint"
   },
   "dependencies": {

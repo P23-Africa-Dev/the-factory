@@ -5,12 +5,20 @@ import {
   handleAccountAccessDenied,
   isAccountStatusCode,
 } from "@/lib/auth/account-status";
+import {
+  enqueueOfflineHttpMutation,
+  isOfflineQueueSupportedPath,
+} from "@/lib/offline/queue";
 
 export type ApiEnvelope<TData> = {
   success: boolean;
   message: string;
   data: TData;
   errors: Record<string, string[]> | null;
+  meta?: {
+    queued_offline?: boolean;
+    queue_id?: number;
+  };
 };
 
 type ApiRequestOptions = {
@@ -41,6 +49,43 @@ export class ApiRequestError extends Error {
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
 
+function isNetworkFailure(error: unknown): boolean {
+  return error instanceof TypeError;
+}
+
+async function queueOfflineIfSupported<TData>(
+  method: ApiRequestOptions["method"],
+  path: string,
+  body?: unknown,
+): Promise<ApiEnvelope<TData> | null> {
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+  if (
+    method === "GET" ||
+    isFormData ||
+    typeof window === "undefined" ||
+    !isOfflineQueueSupportedPath(method, path)
+  ) {
+    return null;
+  }
+
+  const queueId = await enqueueOfflineHttpMutation({
+    method,
+    path,
+    body,
+  });
+
+  return {
+    success: true,
+    message: "Saved offline. It will sync automatically when connection returns.",
+    data: {} as TData,
+    errors: null,
+    meta: {
+      queued_offline: true,
+      queue_id: queueId,
+    },
+  };
+}
+
 export async function apiRequest<TData>({
   method,
   path,
@@ -49,15 +94,35 @@ export async function apiRequest<TData>({
 }: ApiRequestOptions): Promise<ApiEnvelope<TData>> {
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers: {
-      "Accept": "application/json",
-      ...(isFormData ? {} : { "Content-Type": "application/json" }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: body ? (isFormData ? (body as FormData) : JSON.stringify(body)) : undefined,
-  });
+  if (
+    method !== "GET" &&
+    !isFormData &&
+    typeof window !== "undefined" &&
+    !navigator.onLine &&
+    isOfflineQueueSupportedPath(method, path)
+  ) {
+    return (await queueOfflineIfSupported<TData>(method, path, body)) as ApiEnvelope<TData>;
+  }
+
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers: {
+        Accept: "application/json",
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: body ? (isFormData ? (body as FormData) : JSON.stringify(body)) : undefined,
+    });
+  } catch (error) {
+    const queued = await queueOfflineIfSupported<TData>(method, path, body);
+    if (queued && isNetworkFailure(error)) {
+      return queued;
+    }
+    throw new ApiRequestError("Network error. Please check your connection.", 0, null);
+  }
 
   let payload: ApiEnvelope<TData>;
 
