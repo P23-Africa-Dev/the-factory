@@ -9,6 +9,7 @@ import { queryClient } from '@/lib/queryClient';
 import { SessionExpiredModal } from '@/components/shared/SessionExpiredModal';
 import { PwaInstallBanner } from '@/components/shared/PwaInstallBanner';
 import { PwaAccessGuard } from '@/components/guards/PwaAccessGuard';
+import '@/lib/pwa/installPromptStore';
 import './globals.css';
 
 export default function RootLayout({
@@ -21,11 +22,12 @@ export default function RootLayout({
 
     const shouldRegister =
       process.env.NODE_ENV === 'production' ||
-      process.env.NEXT_PUBLIC_ENABLE_PWA === 'true';
+      process.env.NEXT_PUBLIC_ENABLE_PWA === 'true' ||
+      process.env.NEXT_PUBLIC_PWA_ONLY_MODE === 'true';
 
     if (!shouldRegister) return;
 
-    window.addEventListener('load', () => {
+    const registerServiceWorker = () => {
       navigator.serviceWorker
         .register('/sw.js')
         .then((registration) => {
@@ -34,7 +36,14 @@ export default function RootLayout({
         .catch((error) => {
           console.error('PWA Service Worker registration failed:', error);
         });
-    });
+    };
+
+    registerServiceWorker();
+
+    if (document.readyState !== 'complete') {
+      window.addEventListener('load', registerServiceWorker);
+      return () => window.removeEventListener('load', registerServiceWorker);
+    }
   }, []);
 
   return (

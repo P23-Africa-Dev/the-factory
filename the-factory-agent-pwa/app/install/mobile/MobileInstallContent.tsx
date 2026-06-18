@@ -11,7 +11,7 @@ import { FactoryLogo } from '@/components/branding/FactoryLogo';
 export function MobileInstallContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { canInstall, install } = usePwaInstall();
+  const { canInstall, isPlatformInstalled, install } = usePwaInstall();
   const [isIos, setIsIos] = useState(false);
   const [installAttempted, setInstallAttempted] = useState(false);
 
@@ -81,17 +81,39 @@ export function MobileInstallContent() {
             Install Now
           </button>
         </div>
-      ) : (
-        <div className="mt-8 w-full max-w-sm rounded-2xl border border-amber-400/30 bg-amber-500/10 p-5 text-center">
-          <CheckCircle2 size={24} className="mx-auto text-amber-200" />
-          <p className="mt-3 text-sm font-semibold text-amber-100">Already installed?</p>
-          <p className="mt-2 text-xs text-amber-100/80 leading-relaxed">
-            Open Factory 23 Agent from your home screen. Browser access is not supported for field
-            workflows.
+      ) : isPlatformInstalled ? (
+        <div className="mt-8 w-full max-w-sm rounded-2xl border border-[#75ADAF]/30 bg-[#75ADAF]/10 p-5 text-center">
+          <CheckCircle2 size={24} className="mx-auto text-[#75ADAF]" />
+          <p className="mt-3 text-sm font-semibold text-white">App is installed on this device</p>
+          <p className="mt-2 text-xs text-white/70 leading-relaxed">
+            Close this browser tab and open <span className="font-semibold text-white">Factory 23 Agent</span> from
+            your home screen to sign in and use the app.
           </p>
-          <p className="mt-4 text-xs text-white/50">
-            If you have not installed yet, use Chrome and look for the browser menu install option,
-            or revisit this page after clearing site data.
+        </div>
+      ) : (
+        <div className="mt-8 w-full max-w-sm rounded-2xl border border-white/10 bg-white/5 p-5">
+          <div className="flex items-center gap-2 text-sm font-bold text-[#75ADAF]">
+            <Smartphone size={16} />
+            <span>Install from Chrome menu</span>
+          </div>
+          <ol className="mt-4 list-decimal space-y-2 pl-5 text-xs text-white/75 leading-relaxed">
+            <li>
+              Tap the <span className="font-semibold text-white">three-dot menu (⋮)</span> in the
+              top-right of Chrome.
+            </li>
+            <li>
+              Select <span className="font-semibold text-white">Install app</span> or{' '}
+              <span className="font-semibold text-white">Add to Home screen</span>.
+            </li>
+            <li>
+              Confirm install, then open <span className="font-semibold text-white">Factory 23 Agent</span>{' '}
+              from your home screen.
+            </li>
+          </ol>
+          <p className="mt-4 text-[11px] text-white/45 leading-relaxed">
+            On localhost, Chrome may not show an automatic install banner. Use the menu option above,
+            or set <span className="text-white/60">NEXT_PUBLIC_PWA_ONLY_MODE=false</span> for browser
+            testing during development.
           </p>
         </div>
       )}

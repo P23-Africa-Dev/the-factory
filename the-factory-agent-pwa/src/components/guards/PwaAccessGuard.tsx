@@ -4,6 +4,7 @@ import React, { useLayoutEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { resolvePwaAccess, isInstallPath } from '@/lib/pwa/access';
 import { isStandaloneMode } from '@/lib/pwa/standalone';
+import { getAppLaunchPath } from '@/lib/pwa/launch';
 
 function InstallRedirectSpinner() {
   return (
@@ -20,6 +21,19 @@ export function PwaAccessGuard({ children }: { children: React.ReactNode }) {
 
   useLayoutEffect(() => {
     const result = resolvePwaAccess(pathname);
+
+    if (
+      result.bypassReason === 'localhost_dev_bypass' &&
+      isInstallPath(pathname) &&
+      typeof window !== 'undefined'
+    ) {
+      const hasInstallIntent = new URLSearchParams(window.location.search).get('install') === 'true';
+      if (!hasInstallIntent) {
+        setAllowed(false);
+        router.replace(getAppLaunchPath());
+        return;
+      }
+    }
 
     if (result.redirect && result.redirect !== pathname) {
       setAllowed(false);

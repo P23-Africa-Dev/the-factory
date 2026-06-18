@@ -25,6 +25,14 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  const hostname = request.nextUrl.hostname;
+  if (
+    process.env.NODE_ENV === 'development' &&
+    (hostname === 'localhost' || hostname === '127.0.0.1')
+  ) {
+    return NextResponse.next();
+  }
+
   const { pathname } = request.nextUrl;
 
   if (isAllowedPath(pathname)) {
