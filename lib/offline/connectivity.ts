@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 
 export function getBrowserOnlineStatus(): boolean {
-  if (typeof navigator === "undefined") return true;
+  // SSR / RSC: never treat the app as offline (Node may expose navigator.onLine=false).
+  if (typeof window === "undefined") return true;
   return navigator.onLine;
 }
 
@@ -27,9 +28,22 @@ export function subscribeConnectivity(
 }
 
 export function useConnectivityStatus() {
-  const [isOnline, setIsOnline] = useState(getBrowserOnlineStatus);
+  const [isOnline, setIsOnline] = useState(true);
+  const [isClientReady, setIsClientReady] = useState(false);
 
-  useEffect(() => subscribeConnectivity(setIsOnline), []);
+  useEffect(() => {
+    const browserOnline = getBrowserOnlineStatus();
+    setIsClientReady(true);
+    setIsOnline(browserOnline);
 
-  return { isOnline, isOffline: !isOnline };
+    const unsubscribe = subscribeConnectivity((online) => {
+      setIsOnline(online);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  const isOffline = isClientReady && !isOnline;
+
+  return { isOnline, isOffline, isClientReady };
 }

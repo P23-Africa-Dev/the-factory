@@ -4,7 +4,7 @@ import { describeHttpMutation } from "./queue";
 import type { OfflineHttpMutationEntry } from "./db";
 
 describe("connectivity", () => {
-  it("returns true when navigator is unavailable", () => {
+  it("returns true when window is unavailable (SSR)", () => {
     expect(getBrowserOnlineStatus()).toBeTypeOf("boolean");
   });
 });
