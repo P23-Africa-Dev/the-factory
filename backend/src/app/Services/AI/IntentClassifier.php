@@ -19,7 +19,11 @@ class IntentClassifier
                 '/\b(change|update)\s+(task\s+)?assignee\b/i',
             ],
             'meetings.schedule' => [
-                '/\b(schedule|book|create|set\s+up)\s+(a\s+|an\s+)?meeting\b/i',
+                '/\b(schedule|book|create|set\s*up|setup|arrange|plan|organize)\b.{0,80}\bmeeting\b/i',
+                '/\b(create|schedule|set\s*up|setup)\s+me\s+(a\s+)?meeting\b/i',
+                '/\bmeeting\b.{0,60}\b(with|for|between)\b/i',
+                '/^\s*meeting\s+(is\s+)?(at|on|for)\b/i',
+                '/\b(setup|set\s*up|schedule)\s+(the\s+)?meeting\b/i',
             ],
             'notifications.send' => [
                 '/\b(send|broadcast|push)\s+(a\s+|an\s+)?notification\b/i',

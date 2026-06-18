@@ -76,14 +76,24 @@ class CopilotService
         }
 
         $intent = $this->intentClassifier->classify($message);
-        if (($intent['type'] ?? 'general') === 'general' && $this->looksLikeActionRequest($message)) {
+        $resolvedActionTool = $this->resolveActionToolFromMessage(
+            $message,
+            $threadId,
+            $resolvedCompanyId,
+            (int) $user->id,
+        );
+
+        if (($intent['type'] ?? 'general') === 'general' && $resolvedActionTool !== null) {
             $intent = [
                 'type' => 'action',
-                'tool' => null,
-                'confidence' => 0.5,
-                'note' => 'action_like_request_without_resolved_tool',
+                'tool' => $resolvedActionTool,
+                'confidence' => 0.85,
             ];
+        } elseif (($intent['type'] ?? 'general') === 'action' && ! is_string($intent['tool'] ?? null) && $resolvedActionTool !== null) {
+            $intent['tool'] = $resolvedActionTool;
         }
+
+        $actionMessage = $this->buildActionableMessage($message, $threadId, $resolvedCompanyId, (int) $user->id);
 
         $intentType = (string) ($intent['type'] ?? 'general');
 
@@ -120,7 +130,7 @@ class CopilotService
                 if ($intentType === 'action') {
                     if ($this->actionConfirmationPolicyService->requiresConfirmation($candidateTool) && ! $actionConfirmed) {
                         $inferredArgs = $this->inferActionArgs(
-                            $message,
+                            $actionMessage,
                             $candidateTool,
                             $resolvedCompanyId,
                             $actionArgs,
@@ -150,7 +160,7 @@ class CopilotService
                     } else {
                         $resolvedActionArgs = $this->sanitizeActionArgs(
                             $this->inferActionArgs(
-                                $message,
+                                $actionMessage,
                                 $candidateTool,
                                 $resolvedCompanyId,
                                 $actionArgs,
@@ -376,8 +386,8 @@ class CopilotService
         $promptContext = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
         $contextEntities = is_array($promptContext['entities'] ?? null) ? $promptContext['entities'] : [];
 
-        if ($this->looksLikeActionRequest($message)) {
-            return 'This looks like a write action request. Please specify the exact action and required details so I can execute it instead of only describing it.';
+        if ($this->looksLikeActionRequest($message) && $this->resolveActionToolFromMessage($message, $threadId, $companyId, $userId) === null) {
+            return 'I can help schedule that. Try phrasing it like "Create a meeting with [name] tomorrow at 2 PM" so I can prepare the confirmation form for you.';
         }
 
         if ((str_contains($normalized, 'same agent') || str_contains($normalized, 'that agent')) && is_string($contextEntities['agent'] ?? null)) {
@@ -461,8 +471,79 @@ class CopilotService
             return false;
         }
 
-        return preg_match('/\b(create|add|start|open|schedule|book|send|notify|assign|reassign|transfer|move|update|change|cancel|delete)\b/i', $normalized) === 1
+        return preg_match('/\b(create|add|start|open|schedule|book|setup|set\s*up|arrange|plan|send|notify|assign|reassign|transfer|move|update|change|cancel|delete)\b/i', $normalized) === 1
             && preg_match('/\b(task|project|meeting|notification|alert)\b/i', $normalized) === 1;
+    }
+
+    private function resolveActionToolFromMessage(
+        string $message,
+        ?string $threadId,
+        int $companyId,
+        int $userId,
+    ): ?string {
+        $actionableMessage = $this->buildActionableMessage($message, $threadId, $companyId, $userId);
+        $intent = $this->intentClassifier->classify($actionableMessage);
+        if (($intent['type'] ?? '') === 'action' && is_string($intent['tool'] ?? null)) {
+            return (string) $intent['tool'];
+        }
+
+        $normalized = strtolower(trim($actionableMessage));
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (preg_match('/\bmeeting\b/i', $normalized) && preg_match('/\b(create|schedule|book|setup|set\s*up|arrange|plan|with|at|on|for|\d{1,2}\s*(?:am|pm)|reminder)\b/i', $normalized) === 1) {
+            return 'meetings.schedule';
+        }
+
+        if (preg_match('/\b(task)\b/i', $normalized) && preg_match('/\b(create|add|new|open|assign)\b/i', $normalized) === 1) {
+            return 'tasks.create';
+        }
+
+        if (preg_match('/\b(project)\b/i', $normalized) && preg_match('/\b(create|start|new|open)\b/i', $normalized) === 1) {
+            return 'projects.create';
+        }
+
+        if (preg_match('/\b(notification|alert)\b/i', $normalized) && preg_match('/\b(send|notify|broadcast)\b/i', $normalized) === 1) {
+            return 'notifications.send';
+        }
+
+        return null;
+    }
+
+    private function buildActionableMessage(
+        string $message,
+        ?string $threadId,
+        int $companyId,
+        int $userId,
+    ): string {
+        $promptContext = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
+        $recentMessages = is_array($promptContext['recent_messages'] ?? null) ? $promptContext['recent_messages'] : [];
+        $userLines = collect($recentMessages)
+            ->filter(static fn(array $entry): bool => (string) ($entry['role'] ?? '') === 'user')
+            ->map(static fn(array $entry): string => trim((string) ($entry['content'] ?? '')))
+            ->filter(static fn(string $line): bool => $line !== '')
+            ->values()
+            ->all();
+
+        if ($userLines === []) {
+            return trim($message);
+        }
+
+        $normalized = strtolower(trim($message));
+        $isFollowUp = preg_match('/\b(setup|set\s*up|schedule|use\s+this|here\s+are|the\s+details|confirm|proceed|using\s+this)\b/i', $normalized) === 1
+            || preg_match('/^\s*meeting\s+(is\s+)?(at|on|for)\b/i', $normalized) === 1
+            || (str_contains($normalized, 'meeting') && preg_match('/\b\d{1,2}\s*(?:am|pm)\b/i', $normalized) === 1);
+
+        $meetingContext = collect($userLines)
+            ->filter(static fn(string $line): bool => preg_match('/\bmeeting\b/i', $line) === 1)
+            ->implode(' ');
+
+        if ($isFollowUp && $meetingContext !== '') {
+            return trim($meetingContext . ' ' . $message);
+        }
+
+        return trim($message);
     }
 
     private function inferActionArgs(

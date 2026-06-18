@@ -26,6 +26,42 @@ final class CopilotMeetingScheduleTest extends TestCase
     {
         [$company, $admin, $david] = $this->seedCompanyAdminWithMember();
 
+        $elijah = \App\Models\User::factory()->createOne(['name' => 'Elijah Test', 'email' => 'elijah@factory23.test']);
+        $company->users()->attach($elijah->id, ['role' => 'agent']);
+
+        $mockRouter = Mockery::mock(AiProviderRouter::class);
+        $mockRouter->shouldReceive('generateText')->once()->andReturn(null);
+        $this->app->instance(AiProviderRouter::class, $mockRouter);
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'client_timezone' => 'America/New_York',
+                'message' => 'Create me a meeting with Agent Elijah and Matter',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.tool', 'meetings.schedule');
+
+        $actionArgs = $response->json('data.response.payload.action_args');
+        $this->assertIsArray($actionArgs);
+        $this->assertNotEmpty($actionArgs['title']);
+        $this->assertNotSame($actionArgs['title'], $actionArgs['description']);
+        $this->assertSame('America/New_York', $actionArgs['timezone']);
+        $this->assertIsArray($actionArgs['attendees']);
+        $this->assertNotEmpty($actionArgs['attendees']);
+        $this->assertIsArray($actionArgs['reminders']);
+        $this->assertNotEmpty($actionArgs['reminders']);
+        $this->assertStringContainsString('ELY prepared a meeting', (string) $response->json('data.response.content'));
+    }
+
+    public function test_meeting_schedule_confirmation_for_project_review_prompt(): void
+    {
+        [$company, $admin, $david] = $this->seedCompanyAdminWithMember();
+
         $mockRouter = Mockery::mock(AiProviderRouter::class);
         $mockRouter->shouldReceive('generateText')->once()->andReturn(null);
         $this->app->instance(AiProviderRouter::class, $mockRouter);

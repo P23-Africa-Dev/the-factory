@@ -23,6 +23,30 @@ final class MeetingInferenceServiceTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_infer_parses_day_of_month_time_duration_and_reminders(): void
+    {
+        [$company] = $this->seedMembers();
+
+        $mockRouter = Mockery::mock(AiProviderRouter::class);
+        $mockRouter->shouldReceive('generateText')->once()->andReturn(null);
+        $this->app->instance(AiProviderRouter::class, $mockRouter);
+
+        $service = $this->app->make(MeetingInferenceService::class);
+        $result = $service->infer(
+            message: 'Meeting is 12pm on the 20th of this month, 2hrs duration, add ndaniju@gmail.com, reminder a day before and an hour before.',
+            companyId: (int) $company->id,
+            clientTimezone: 'Europe/London',
+        );
+
+        $this->assertSame('Europe/London', $result['timezone']);
+        $this->assertFalse($result['__inference']['used_default_time']);
+        $this->assertContains('ndaniju@gmail.com', collect($result['attendees'])->pluck('email')->all());
+
+        $offsets = collect($result['reminders'])->pluck('offset_minutes')->all();
+        $this->assertContains(1440, $offsets);
+        $this->assertContains(60, $offsets);
+    }
+
     public function test_infer_generates_distinct_title_and_description_for_sales_review_prompt(): void
     {
         [$company, $david, $sarah] = $this->seedMembers();

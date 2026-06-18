@@ -38,7 +38,7 @@ class MeetingInferenceService
         $generated = $this->generateTitleAndDescription($normalized, $conversationSummary);
         $schedule = $this->resolveSchedule($normalized, $timezone);
         $attendeeResolution = $this->resolveAttendees($normalized, $members, $entities, $conversationSummary);
-        $reminders = $this->defaultReminders();
+        $reminders = $this->resolveRemindersFromMessage($normalized);
 
         return [
             'title' => $generated['title'],
@@ -272,12 +272,20 @@ class MeetingInferenceService
         $start = $now->copy()->addDay()->setTime(10, 0, 0);
         $end = $start->copy()->addHour();
 
-        if (preg_match('/\b(tomorrow|today|next\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i', $message, $dayMatch) === 1) {
+        if (preg_match('/\b(\d{1,2})(?:st|nd|rd|th)?\s+of\s+this\s+month\b/i', $message, $dayOfMonthMatch) === 1) {
+            $day = max(1, min(31, (int) $dayOfMonthMatch[1]));
+            $start = $now->copy()->day($day);
+            if ($start->lessThan($now->copy()->startOfDay())) {
+                $start->addMonth();
+            }
+            $usedDefault = false;
+        } elseif (preg_match('/\b(tomorrow|today|next\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i', $message, $dayMatch) === 1) {
             $start = $this->resolveDayToken(trim((string) $dayMatch[1]), $now);
             $usedDefault = false;
         }
 
-        if (preg_match('/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i', $message, $timeMatch) === 1) {
+        if (preg_match('/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i', $message, $timeMatch) === 1
+            || preg_match('/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i', $message, $timeMatch) === 1) {
             $hour = (int) $timeMatch[1];
             $minute = isset($timeMatch[2]) && $timeMatch[2] !== '' ? (int) $timeMatch[2] : 0;
             $meridiem = strtolower((string) ($timeMatch[3] ?? ''));
@@ -294,7 +302,9 @@ class MeetingInferenceService
             $usedDefault = false;
         }
 
-        if (preg_match('/\bfor\s+(\d{1,2})\s*(?:hour|hours|hr|hrs)\b/i', $message, $durationMatch) === 1) {
+        if (preg_match('/\bfor\s+(\d{1,2})\s*(?:hour|hours|hr|hrs)\b/i', $message, $durationMatch) === 1
+            || preg_match('/\b(\d{1,2})\s*(?:hour|hours|hr|hrs)\s+duration\b/i', $message, $durationMatch) === 1
+            || preg_match('/\b(\d{1,2})\s*hrs?\b/i', $message, $durationMatch) === 1) {
             $end = $start->copy()->addHours(max(1, (int) $durationMatch[1]));
         } else {
             $end = $start->copy()->addHour();
@@ -437,9 +447,16 @@ class MeetingInferenceService
             $parts = preg_split('/\s*(?:,|&|\band\b)\s*/i', $segment) ?: [];
             foreach ($parts as $part) {
                 $clean = trim(preg_replace('/\b(the|team|sales team|project manager)\b/i', '', $part) ?? '');
+                $clean = trim(preg_replace('/\bagent\s+/i', '', $clean) ?? '');
                 if ($clean !== '' && strlen($clean) >= 2) {
                     $tokens[] = $clean;
                 }
+            }
+        }
+
+        if (preg_match_all('/\bagent\s+([A-Za-z][A-Za-z\-]+(?:\s+[A-Za-z][A-Za-z\-]+)?)/i', $message, $agentMatches) > 0) {
+            foreach ($agentMatches[1] as $name) {
+                $tokens[] = trim((string) $name);
             }
         }
 
@@ -479,6 +496,7 @@ class MeetingInferenceService
     private function fuzzyMatchMember(string $token, Collection $members): ?User
     {
         $needle = strtolower(trim($token));
+        $needle = trim((string) preg_replace('/\bagent\s+/i', '', $needle));
         if ($needle === '') {
             return null;
         }
@@ -516,6 +534,40 @@ class MeetingInferenceService
         $firstName = strtolower((string) Str::of($memberName)->before(' '));
 
         return $needle === $name || $needle === $firstName;
+    }
+
+    /**
+     * @return array<int,array{offset_minutes:int}>
+     */
+    private function resolveRemindersFromMessage(string $message): array
+    {
+        $offsets = [];
+        $lower = strtolower($message);
+
+        if (preg_match('/\b(day before|1 day before|24 hours before|a day before)\b/i', $lower) === 1) {
+            $offsets[] = 1440;
+        }
+
+        if (preg_match('/\b(hour before|1 hour before|an hour before|60 minutes before)\b/i', $lower) === 1) {
+            $offsets[] = 60;
+        }
+
+        if (preg_match('/\b30 minutes before\b/i', $lower) === 1) {
+            $offsets[] = 30;
+        }
+
+        if (preg_match('/\b15 minutes before\b/i', $lower) === 1) {
+            $offsets[] = 15;
+        }
+
+        if ($offsets === []) {
+            return $this->defaultReminders();
+        }
+
+        return array_map(
+            static fn(int $offset): array => ['offset_minutes' => $offset],
+            array_values(array_unique($offsets)),
+        );
     }
 
     /**
