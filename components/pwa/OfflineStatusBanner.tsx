@@ -50,8 +50,7 @@ export default function OfflineStatusBanner() {
     snapshot.failedActions > 0 ||
     snapshot.pendingConflicts > 0;
 
-  const shouldShow = isOffline || hasPending || isSyncing;
-  if (!shouldShow) return null;
+  if (!isOffline) return null;
 
   const totalPending = snapshot.pendingActions + snapshot.pendingUploads;
   const title = isOffline

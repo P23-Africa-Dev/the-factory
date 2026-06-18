@@ -9,11 +9,7 @@ export function OfflineSyncBanner(): React.ReactElement | null {
   const { isOffline, stats, totalPending, isRefreshing } = useOfflineSyncStatus();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 
-  const hasPending =
-    totalPending > 0 || stats.pendingConflicts > 0 || stats.pendingActions > 0;
-
-  const shouldShow = isOffline || hasPending || isRefreshing;
-  if (!shouldShow) return null;
+  if (!isOffline) return null;
 
   const title = isOffline
     ? 'Offline mode active'
