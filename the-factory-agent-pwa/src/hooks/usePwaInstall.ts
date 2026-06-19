@@ -1,90 +1,102 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { getStandaloneSignals, isStandaloneMode } from '@/lib/pwa/standalone';
+import {
+  getCapturedInstallPrompt,
+  subscribeInstallPrompt,
+  clearCapturedInstallPrompt,
+  type BeforeInstallPromptEvent,
+} from '@/lib/pwa/installPromptStore';
 
-export interface BeforeInstallPromptEvent extends Event {
-  readonly platforms: string[];
-  readonly userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
-  prompt(): Promise<void>;
-}
+export type { BeforeInstallPromptEvent };
 
 export function usePwaInstall() {
   const [canInstall, setCanInstall] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [isPlatformInstalled, setIsPlatformInstalled] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+
+  const triggerInstall = useCallback(async (promptEvent: BeforeInstallPromptEvent | null) => {
+    if (!promptEvent || isStandaloneMode()) return false;
+
+    try {
+      await promptEvent.prompt();
+      const { outcome } = await promptEvent.userChoice;
+      clearCapturedInstallPrompt();
+      setDeferredPrompt(null);
+      setCanInstall(false);
+      return outcome === 'accepted';
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const applyPrompt = useCallback(
+    (prompt: BeforeInstallPromptEvent | null) => {
+      if (isStandaloneMode()) return;
+      setDeferredPrompt(prompt);
+      setCanInstall(Boolean(prompt));
+
+      if (!prompt) return;
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const shouldAutoInstall =
+        urlParams.get('install') === 'true' ||
+        sessionStorage.getItem('pwa-auto-install') === 'true';
+
+      if (shouldAutoInstall) {
+        sessionStorage.removeItem('pwa-auto-install');
+        const cleanUrl =
+          window.location.pathname +
+          window.location.search.replace(/[?&]install=true/, '').replace(/^&/, '?');
+        window.history.replaceState({}, '', cleanUrl);
+        void triggerInstall(prompt);
+      }
+    },
+    [triggerInstall],
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // Detect if already running in standalone mode (PWA installed and opened)
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches 
-      || (navigator as any).standalone 
-      || document.referrer.includes('android-app://');
+    const standalone = getStandaloneSignals().standalone;
+    setIsInstalled(standalone);
 
-    setIsInstalled(isStandalone);
+    if (standalone) return;
 
-    const handleBeforeInstallPrompt = (e: Event) => {
-      // Prevent browser default installation prompt mini-infobar
-      e.preventDefault();
-      
-      const promptEvent = e as BeforeInstallPromptEvent;
-      setDeferredPrompt(promptEvent);
-      setCanInstall(true);
+    const unsubscribe = subscribeInstallPrompt(applyPrompt);
 
-      // Check if we came from a redirect asking for auto-install
-      const urlParams = new URLSearchParams(window.location.search);
-      const shouldAutoInstall = urlParams.get('install') === 'true' || sessionStorage.getItem('pwa-auto-install') === 'true';
-
-      if (shouldAutoInstall) {
-        // Clear the state/query param to avoid triggering it repeatedly on reload
-        sessionStorage.removeItem('pwa-auto-install');
-        
-        // Strip install=true from URL for clean copy-paste/sharing
-        const cleanUrl = window.location.pathname + window.location.search.replace(/[?&]install=true/, '').replace(/^&/, '?');
-        window.history.replaceState({}, '', cleanUrl);
-
-        // Attempt automatic install
-        triggerInstall(promptEvent);
+    void (async () => {
+      if ('serviceWorker' in navigator) {
+        await navigator.serviceWorker.ready;
       }
-    };
 
-    const handleAppInstalled = () => {
-      setDeferredPrompt(null);
-      setIsInstalled(true);
-      setCanInstall(false);
-      sessionStorage.removeItem('pwa-auto-install');
-    };
+      if ('getInstalledRelatedApps' in navigator) {
+        try {
+          const related = await (
+            navigator as Navigator & {
+              getInstalledRelatedApps?: () => Promise<Array<{ platform?: string }>>;
+            }
+          ).getInstalledRelatedApps?.();
+          setIsPlatformInstalled(Boolean(related && related.length > 0));
+        } catch {
+          // Unsupported or blocked
+        }
+      }
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
+      if (getCapturedInstallPrompt()) {
+        applyPrompt(getCapturedInstallPrompt());
+      }
+    })();
 
-    // Save auto-install request in sessionStorage if event has not fired yet
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('install') === 'true') {
       sessionStorage.setItem('pwa-auto-install', 'true');
     }
 
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
-    };
-  }, []);
-
-  const triggerInstall = async (promptEvent: BeforeInstallPromptEvent | null = deferredPrompt) => {
-    if (!promptEvent) return false;
-
-    try {
-      await promptEvent.prompt();
-      const { outcome } = await promptEvent.userChoice;
-      console.log(`PWA Installation Choice: ${outcome}`);
-      setDeferredPrompt(null);
-      setCanInstall(false);
-      return outcome === 'accepted';
-    } catch (err) {
-      console.warn('PWA auto-install prompt failed or was blocked by browser security rules:', err);
-      return false;
-    }
-  };
+    return unsubscribe;
+  }, [applyPrompt]);
 
   const install = () => {
     if (deferredPrompt) {
@@ -93,5 +105,5 @@ export function usePwaInstall() {
     return Promise.resolve(false);
   };
 
-  return { canInstall, isInstalled, install, deferredPrompt };
+  return { canInstall, isInstalled, isPlatformInstalled, install, deferredPrompt };
 }

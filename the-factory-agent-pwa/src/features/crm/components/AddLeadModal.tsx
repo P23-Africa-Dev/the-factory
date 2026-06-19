@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { getActiveCompanyId } from '@/lib/storage/stores';
+import { toast } from '@/lib/toast';
 import { useCreateLead, useCrmPipelines, useCrmLabels } from '@/features/crm';
 
 interface AddLeadModalProps {
@@ -41,6 +42,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
   
   const { mutate: createLead, isPending } = useCreateLead({
     onSuccess: () => {
+      toast.success('Lead added');
       setForm(INITIAL_FORM);
       setErrors({});
       onSuccess?.();
@@ -62,10 +64,16 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
     e.preventDefault();
     if (!validate()) return;
     const companyId = getActiveCompanyId();
-    if (!companyId) return;
+    if (!companyId) {
+      toast.error('Company context is missing. Please log in again.');
+      return;
+    }
 
     const defaultPipeline = pipelines[0];
-    if (!defaultPipeline) return;
+    if (!defaultPipeline) {
+      toast.error('No pipeline available. Contact your administrator.');
+      return;
+    }
 
     const pipelineId = form.pipelineId
       ? Number(form.pipelineId)
@@ -80,7 +88,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
       email: form.email.trim() || null,
       phone: form.phone.trim() || null,
       location: form.location.trim() || null,
-      source: form.source.trim() || null,
+      source: form.source.trim() || 'agent upload',
       status: form.status || defaultStatus,
     });
   };
@@ -95,7 +103,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
   return (
     <AnimatePresence>
       {visible && (
-        <div className="fixed inset-0 z-[1000] flex items-end justify-center bg-black/50 font-sans">
+        <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/50 font-sans">
           {/* Backdrop Click */}
           <div className="absolute inset-0 z-0" onClick={handleClose} />
 

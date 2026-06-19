@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { getDb } from '@/lib/db/client';
 import { requestBackgroundSync } from '@/lib/offline/queue';
+import { useTrackingStore } from '@/store/tracking';
 import { trackingApi } from '../api';
 import { useGeolocation, type LocationObject } from './useGeolocation';
 import type { LocationQueueItem } from '../types';
@@ -13,73 +14,127 @@ interface LocationReporterOptions {
   companyId: number;
   active: boolean;
   onArrived?: () => void;
+  onNearDestination?: () => void;
+  onDistanceRemaining?: (meters: number | null) => void;
 }
 
 const FLUSH_INTERVAL_MS = 30_000;
-const MAX_BATCH_SIZE = 50;  // backend contract batch cap
-const MAX_QUEUE_SIZE = 100; // safety ceiling
+const MAX_BATCH_SIZE = 50;
+const MAX_QUEUE_SIZE = 100;
 
 export const useLocationReporter = ({
   taskId,
   companyId,
   active,
   onArrived,
-}: LocationReporterOptions): void => {
+  onNearDestination,
+  onDistanceRemaining,
+}: LocationReporterOptions): { flush: () => Promise<void> } => {
   const { startWatching, stopWatching } = useGeolocation();
   const memoryQueue = useRef<LocationQueueItem[]>([]);
   const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isUnauthorizedRef = useRef(false);
+  const needsImmediateFlushRef = useRef(false);
+  const flushRef = useRef<(() => Promise<void>) | null>(null);
+  const onArrivedRef = useRef(onArrived);
+  const onNearRef = useRef(onNearDestination);
+  const onDistanceRef = useRef(onDistanceRemaining);
 
-  const buildQueueItem = useCallback((loc: LocationObject): LocationQueueItem => ({
-    taskId,
-    companyId,
-    latitude: loc.coords.latitude,
-    longitude: loc.coords.longitude,
-    accuracyMeters: loc.coords.accuracy ?? null,
-    speedMps: loc.coords.speed ?? null,
-    headingDegrees: loc.coords.heading ?? null,
-    recordedAt: new Date(loc.timestamp).toISOString(),
-  }), [taskId, companyId]);
+  useEffect(() => {
+    onArrivedRef.current = onArrived;
+    onNearRef.current = onNearDestination;
+    onDistanceRef.current = onDistanceRemaining;
+  }, [onArrived, onNearDestination, onDistanceRemaining]);
 
-  const enqueue = useCallback(async (loc: LocationObject) => {
-    const item = buildQueueItem(loc);
+  const buildQueueItem = useCallback(
+    (loc: LocationObject): LocationQueueItem => ({
+      taskId,
+      companyId,
+      latitude: loc.coords.latitude,
+      longitude: loc.coords.longitude,
+      accuracyMeters: loc.coords.accuracy ?? null,
+      speedMps: loc.coords.speed ?? null,
+      headingDegrees: loc.coords.heading ?? null,
+      recordedAt: new Date(loc.timestamp).toISOString(),
+    }),
+    [taskId, companyId],
+  );
 
-    if (memoryQueue.current.length >= MAX_QUEUE_SIZE) {
-      memoryQueue.current.shift();
-    }
-    memoryQueue.current.push(item);
+  const enqueue = useCallback(
+    async (loc: LocationObject) => {
+      const item = buildQueueItem(loc);
+      const point: [number, number] = [loc.coords.longitude, loc.coords.latitude];
 
-    // Persist to IndexedDB immediately for crash safety
-    try {
-      const db = await getDb();
-      await db.add('locationQueue', {
-        taskId: item.taskId,
-        latitude: item.latitude,
-        longitude: item.longitude,
-        accuracyMeters: item.accuracyMeters,
-        speedMps: item.speedMps,
-        headingDegrees: item.headingDegrees,
-        recordedAt: item.recordedAt,
-        synced: 0,
-        attempts: 0,
-        nextAttemptAt: new Date().toISOString(),
-        lastError: null,
+      useTrackingStore.getState().appendPolylinePoint(taskId, point);
+      useTrackingStore.getState().upsertTask(taskId, {
+        lastPosition: point,
+        lastHeadingDegrees: loc.coords.heading ?? null,
+        lastSpeedMps: loc.coords.speed ?? null,
+        lastUpdatedAt: new Date(loc.timestamp).toISOString(),
       });
-      await requestBackgroundSync('location-sync');
-    } catch (err) {
-      console.warn('[LocationReporter] Failed to store checkpoint in db:', err);
-    }
-  }, [buildQueueItem]);
+
+      if (needsImmediateFlushRef.current) {
+        needsImmediateFlushRef.current = false;
+        void flushRef.current?.();
+      }
+
+      if (memoryQueue.current.length >= MAX_QUEUE_SIZE) {
+        memoryQueue.current.shift();
+      }
+      memoryQueue.current.push(item);
+
+      try {
+        const db = await getDb();
+        await db.add('locationQueue', {
+          taskId: item.taskId,
+          latitude: item.latitude,
+          longitude: item.longitude,
+          accuracyMeters: item.accuracyMeters,
+          speedMps: item.speedMps,
+          headingDegrees: item.headingDegrees,
+          recordedAt: item.recordedAt,
+          synced: 0,
+          attempts: 0,
+          nextAttemptAt: new Date().toISOString(),
+          lastError: null,
+        });
+        await requestBackgroundSync('location-sync');
+      } catch (err) {
+        console.warn('[LocationReporter] Failed to store checkpoint in db:', err);
+      }
+    },
+    [buildQueueItem],
+  );
 
   useEffect(() => {
     isUnauthorizedRef.current = false;
   }, [taskId]);
 
+  const applyProximityResponse = useCallback(
+    (response: {
+      arrived: boolean;
+      near_destination?: boolean;
+      distance_remaining_meters?: number | null;
+    }) => {
+      if (response.distance_remaining_meters !== undefined) {
+        onDistanceRef.current?.(response.distance_remaining_meters ?? null);
+      }
+      if (response.near_destination) {
+        onNearRef.current?.();
+      }
+      if (response.arrived) {
+        useTrackingStore.getState().markArrived(taskId, new Date().toISOString());
+        onArrivedRef.current?.();
+      }
+    },
+    [taskId],
+  );
+
   const flush = useCallback(async () => {
     if (isUnauthorizedRef.current) return;
     if (memoryQueue.current.length === 0) return;
 
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return; // offline sync will push
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
     const batch = memoryQueue.current.slice(0, MAX_BATCH_SIZE);
 
@@ -96,17 +151,13 @@ export const useLocationReporter = ({
         })),
       });
 
-      // Remove synced items from memory
       memoryQueue.current = memoryQueue.current.slice(batch.length);
 
-      // Mark as synced in IndexedDB
       const db = await getDb();
       const tx = db.transaction('locationQueue', 'readwrite');
       const pending = await tx.store.index('by-taskId').getAll(taskId);
-      const unsynced = pending.filter(p => p.synced === 0);
-
-      // Match synced timestamps
-      const syncedTimestamps = new Set(batch.map(b => b.recordedAt));
+      const unsynced = pending.filter((p) => p.synced === 0);
+      const syncedTimestamps = new Set(batch.map((b) => b.recordedAt));
       for (const row of unsynced) {
         if (row.id != null && syncedTimestamps.has(row.recordedAt)) {
           await tx.store.put({
@@ -120,22 +171,20 @@ export const useLocationReporter = ({
       }
       await tx.done;
 
-      if (response.arrived) {
-        onArrived?.();
-      }
+      applyProximityResponse(response);
     } catch (error: unknown) {
-      const apiErr = error as { status?: number, message?: string };
+      const apiErr = error as { status?: number; message?: string };
       const is422 = apiErr?.status === 422;
 
       if (is422) {
         isUnauthorizedRef.current = true;
         memoryQueue.current = [];
-        
+
         try {
           const db = await getDb();
           const tx = db.transaction('locationQueue', 'readwrite');
           const pending = await tx.store.index('by-taskId').getAll(taskId);
-          const unsynced = pending.filter(p => p.synced === 0);
+          const unsynced = pending.filter((p) => p.synced === 0);
           for (const row of unsynced) {
             if (row.id != null) {
               await tx.store.put({
@@ -147,19 +196,26 @@ export const useLocationReporter = ({
             }
           }
           await tx.done;
-        } catch {}
+        } catch {
+          // non-fatal
+        }
 
-        const msg = apiErr?.message || 'You can only track tasks currently assigned to you.';
-        toast.error('Tracking Stopped', msg);
-        return;
+        useTrackingStore.getState().setActiveTrackingTaskId(null);
+        toast.error('Tracking Stopped', apiErr?.message || 'You can only track tasks currently assigned to you.');
+      } else {
+        console.error('[LocationReporter] Geolocation sync error:', error);
       }
-      console.error('[LocationReporter] Geolocation sync error:', error);
     }
-  }, [taskId, companyId, onArrived]);
+  }, [taskId, companyId, applyProximityResponse]);
+
+  useEffect(() => {
+    flushRef.current = flush;
+  }, [flush]);
 
   useEffect(() => {
     if (!active) {
       stopWatching();
+      needsImmediateFlushRef.current = false;
       if (flushIntervalRef.current) {
         clearInterval(flushIntervalRef.current);
         flushIntervalRef.current = null;
@@ -167,19 +223,28 @@ export const useLocationReporter = ({
       return;
     }
 
+    needsImmediateFlushRef.current = true;
     startWatching(enqueue);
-    flushIntervalRef.current = setInterval(flush, FLUSH_INTERVAL_MS);
+    flushIntervalRef.current = setInterval(() => {
+      void flush();
+    }, FLUSH_INTERVAL_MS);
 
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') flush();
+      if (document.visibilityState === 'visible') void flush();
     };
+    const handleOnline = () => void flush();
 
     document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('online', handleOnline);
 
     return () => {
       stopWatching();
       if (flushIntervalRef.current) clearInterval(flushIntervalRef.current);
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleOnline);
+      void flush();
     };
   }, [active, enqueue, flush, startWatching, stopWatching]);
+
+  return { flush };
 };

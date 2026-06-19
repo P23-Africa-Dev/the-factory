@@ -154,7 +154,7 @@ export function AttendeeSection({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setPickerOpen(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] cursor-pointer"
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10010] cursor-pointer"
             />
 
             {/* Picker Sheet Container */}
@@ -163,7 +163,7 @@ export function AttendeeSection({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-              className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-[#0A1D25] border-t border-white/10 rounded-t-2xl z-[120] flex flex-col p-5 max-h-[75vh] shadow-2xl font-sans text-white"
+              className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-[#0A1D25] border-t border-white/10 rounded-t-2xl z-[10020] flex flex-col p-5 max-h-[75vh] shadow-2xl font-sans text-white"
             >
               <div className="w-12 h-1 bg-white/10 rounded-full mx-auto mb-4" />
               <h3 className="text-base font-bold text-white mb-3">Add Team Members</h3>

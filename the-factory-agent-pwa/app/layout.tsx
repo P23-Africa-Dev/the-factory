@@ -8,6 +8,8 @@ import { AuthProvider } from '@/features/auth';
 import { queryClient } from '@/lib/queryClient';
 import { SessionExpiredModal } from '@/components/shared/SessionExpiredModal';
 import { PwaInstallBanner } from '@/components/shared/PwaInstallBanner';
+import { PwaAccessGuard } from '@/components/guards/PwaAccessGuard';
+import '@/lib/pwa/installPromptStore';
 import './globals.css';
 
 export default function RootLayout({
@@ -20,11 +22,12 @@ export default function RootLayout({
 
     const shouldRegister =
       process.env.NODE_ENV === 'production' ||
-      process.env.NEXT_PUBLIC_ENABLE_PWA === 'true';
+      process.env.NEXT_PUBLIC_ENABLE_PWA === 'true' ||
+      process.env.NEXT_PUBLIC_PWA_ONLY_MODE === 'true';
 
     if (!shouldRegister) return;
 
-    window.addEventListener('load', () => {
+    const registerServiceWorker = () => {
       navigator.serviceWorker
         .register('/sw.js')
         .then((registration) => {
@@ -33,14 +36,21 @@ export default function RootLayout({
         .catch((error) => {
           console.error('PWA Service Worker registration failed:', error);
         });
-    });
+    };
+
+    registerServiceWorker();
+
+    if (document.readyState !== 'complete') {
+      window.addEventListener('load', registerServiceWorker);
+      return () => window.removeEventListener('load', registerServiceWorker);
+    }
   }, []);
 
   return (
     <html lang="en" className="h-full antialiased dark" suppressHydrationWarning>
       <head>
         <title>Factory 23 Agent</title>
-        <meta name="description" content="Field agent management app — tasks, tracking, CRM, all in one app" />
+        <meta name="description" content="Field agent management app for tasks, tracking, CRM, and communication all in one app" />
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#0A1D25" />
@@ -52,15 +62,17 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-[#0A1D25] text-white overflow-x-hidden selection:bg-[#75ADAF]/30">
         <AuthProvider>
           <QueryClientProvider client={queryClient}>
-            <main className="flex flex-col flex-1 min-h-screen">
-              {children}
-            </main>
+            <PwaAccessGuard>
+              <main className="flex flex-col flex-1 min-h-screen">
+                {children}
+              </main>
+            </PwaAccessGuard>
             <SessionExpiredModal />
             <PwaInstallBanner />
           </QueryClientProvider>
-          <Toaster 
-            theme="dark" 
-            position="top-center" 
+          <Toaster
+            theme="dark"
+            position="top-center"
             toastOptions={{
               style: {
                 background: '#0B2330',

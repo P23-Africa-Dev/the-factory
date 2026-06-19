@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { loginUser } from "@/lib/api/auth";
 import { ApiRequestError, getMe } from "@/lib/api/onboarding";
 import { getAccountStatusMessage } from "@/lib/auth/account-status";
-import { clearAuthSession, getAuthTokenFromDocument, setAuthSession } from "@/lib/auth/session";
+import { clearAuthSession, getAuthTokenFromDocument, setAuthSession, setCompanyId } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -81,6 +81,9 @@ export default function LoginForm() {
       setAuthSession(token, values.remember ?? true);
 
       const me = await getMe(token);
+      if (me.data.active_company?.id) {
+        setCompanyId(me.data.active_company.id);
+      }
       setUser({
         id: me.data.id,
         name: me.data.name,

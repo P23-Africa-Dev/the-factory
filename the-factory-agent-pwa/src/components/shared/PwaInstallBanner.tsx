@@ -4,8 +4,11 @@ import React, { useEffect, useState } from 'react';
 import { X, Smartphone, Share, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
+import { useShouldShowInstallBanner } from '@/components/guards/PwaAccessGuard';
+import { FactoryLogo } from '@/components/branding/FactoryLogo';
 
 export function PwaInstallBanner() {
+  const showOnRoute = useShouldShowInstallBanner();
   const { canInstall, isInstalled, install } = usePwaInstall();
   const [isIos, setIsIos] = useState(false);
   const [dismissed, setDismissed] = useState(true);
@@ -36,6 +39,8 @@ export function PwaInstallBanner() {
     const isIphoneOrIpad = ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod');
     setIsIos(isIphoneOrIpad);
   }, [canInstall, isInstalled]);
+
+  if (!showOnRoute) return null;
 
   // Don't render if PWA is already installed or if user dismissed the banner
   if (isInstalled || dismissed) return null;
@@ -79,13 +84,7 @@ export function PwaInstallBanner() {
 
           <div className="flex gap-4 items-start pr-8">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#113948] to-[#0A1D25] p-2 border border-white/10 flex items-center justify-center shadow-md shrink-0">
-              <img
-                src="/icons/icon-192x192.png"
-                alt="F23 Agent Logo"
-                width={38}
-                height={38}
-                className="object-contain"
-              />
+              <FactoryLogo size={32} alt="Factory 23 Agent" />
             </div>
             <div className="flex flex-col min-w-0">
               <h4 className="font-bold text-sm leading-tight text-white flex items-center gap-1.5">

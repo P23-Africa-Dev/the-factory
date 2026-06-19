@@ -1,8 +1,8 @@
 import { client } from '@/lib/api/client';
 import {
-  startTaskResponseSchema,
-  recordLocationResponseSchema,
-  taskRouteSchema,
+  parseStartTaskResponse,
+  parseRecordLocationResponse,
+  parseTaskRouteResponse,
 } from './schema';
 import type {
   StartTaskPayload,
@@ -22,7 +22,7 @@ export const trackingApi = {
       accuracy_meters: payload.accuracyMeters,
       recorded_at: payload.recordedAt,
     });
-    return startTaskResponseSchema.parse(res.data);
+    return parseStartTaskResponse(res.data);
   },
 
   recordLocation: async (
@@ -40,13 +40,13 @@ export const trackingApi = {
         recorded_at: p.recordedAt,
       })),
     });
-    return recordLocationResponseSchema.parse(res.data);
+    return parseRecordLocationResponse(res.data);
   },
 
   getTaskRoute: async (taskId: number, companyId: number): Promise<TaskRoute> => {
     const res = await client.get(`/agent/tasks/${taskId}/route`, {
       params: { company_id: companyId, include_points: true, limit: 500 },
     });
-    return taskRouteSchema.parse(res.data);
+    return parseTaskRouteResponse(res.data);
   },
 };

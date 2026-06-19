@@ -1,11 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { User } from "lucide-react";
 import Logo from "@/assets/images/logo.png";
+import { DownloadAgentAppModal } from "@/components/pwa/DownloadAgentAppModal";
+import { getAgentInstallUrl, isMobileDevice } from "@/lib/agent-pwa-url";
 
 export default function Home() {
+  const [agentModalOpen, setAgentModalOpen] = useState(false);
+
+  function handleDownloadAgentApp() {
+    if (isMobileDevice()) {
+      window.location.href = getAgentInstallUrl();
+      return;
+    }
+    setAgentModalOpen(true);
+  }
+
   return (
     <div className="min-h-screen w-full flex flex-col lg:flex-row bg-white font-sans overflow-x-hidden">
       {/* Far-Left Vertical Accent Column (Dark Teal) */}
@@ -73,7 +86,10 @@ export default function Home() {
                 Sign Up
               </button>
             </Link>
-            <button className="w-full sm:w-auto px-8 h-14 border-2 border-[#0B252C] text-[#0B252C] text-sm font-bold rounded-full bg-transparent hover:bg-[#0B252C]/5 active:scale-[0.98] transition-all cursor-pointer">
+            <button 
+              onClick={handleDownloadAgentApp}
+              className="w-full sm:w-auto px-8 h-14 border-2 border-[#0B252C] text-[#0B252C] text-sm font-bold rounded-full bg-transparent hover:bg-[#0B252C]/5 active:scale-[0.98] transition-all cursor-pointer"
+            >
               Download Agent App
             </button>
           </div>
@@ -129,10 +145,10 @@ export default function Home() {
             </svg>
           </div>
         </div>
-
         {/* Bottom Spacer */}
         <div className="hidden lg:block h-12" />
       </div>
+      <DownloadAgentAppModal isOpen={agentModalOpen} onClose={() => setAgentModalOpen(false)} />
     </div>
   );
 }

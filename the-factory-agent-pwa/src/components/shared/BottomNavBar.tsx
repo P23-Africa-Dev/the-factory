@@ -43,7 +43,7 @@ export function BottomNavBar({ activeTab }: BottomNavBarProps): React.ReactEleme
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 select-none pb-[safe-area-inset-bottom]">
+    <div className="fixed bottom-0 left-0 right-0 z-[9999] select-none pb-[safe-area-inset-bottom]">
       {/* Container holding the wavy bar, centered and max-width matched to layout */}
       <div className="relative mx-auto w-full max-w-md h-[100px]">
         {/* SVG background layer */}

@@ -20,6 +20,7 @@ use App\Models\TaskTrackingSession;
 use App\Models\User;
 use App\Services\Analytics\AggregateCacheService;
 use App\Services\Company\CompanyContextService;
+use App\Services\Crm\LeadService;
 use App\Support\AvatarUrlResolver;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -31,6 +32,7 @@ class DashboardAggregateService
     public function __construct(
         private readonly CompanyContextService $companyContextService,
         private readonly AggregateCacheService $cacheService,
+        private readonly LeadService $leadService,
     ) {}
 
     public function overview(User $user, ?int $companyId = null, ?string $fromDate = null, ?string $toDate = null): array
@@ -65,6 +67,11 @@ class DashboardAggregateService
                 $leadsInWindow = Lead::query()
                     ->where('company_id', $resolvedCompanyId)
                     ->whereBetween('created_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()]);
+
+                if ($role === 'agent') {
+                    $this->applyAgentUploadedLeadScope($allLeads, (int) $user->id);
+                    $this->applyAgentUploadedLeadScope($leadsInWindow, (int) $user->id);
+                }
 
                 $activeAgents = User::query()
                     ->where('internal_role', 'agent')
@@ -147,25 +154,26 @@ class DashboardAggregateService
                     ],
                     'top_prospects' => Lead::query()
                         ->where('company_id', $resolvedCompanyId)
-                        ->whereIn('status', [
-                            LeadStatus::NEW->value,
-                            LeadStatus::CONTACTED->value,
-                            LeadStatus::QUALIFIED->value,
-                            LeadStatus::PROPOSAL_SENT->value,
-                        ])
+                        ->when($role === 'agent', function (Builder $query) use ($user): void {
+                            $this->applyAgentLeadScope($query, (int) $user->id);
+                        })
                         ->orderByDesc('updated_at')
                         ->limit(5)
                         ->get(['id', 'name', 'status', 'priority', 'assigned_to_user_id'])
-                        ->map(static fn(Lead $lead): array => [
-                            'id' => $lead->id,
-                            'name' => $lead->name,
-                            'status' => $lead->status?->value,
-                            'priority' => $lead->priority?->value,
-                            'assigned_to_user_id' => $lead->assigned_to_user_id,
-                        ])
+                        ->map(function (Lead $lead): array {
+                            $priority = $lead->priority;
+
+                            return [
+                                'id' => $lead->id,
+                                'name' => $lead->name,
+                                'status' => (string) $lead->status,
+                                'priority' => $priority instanceof \BackedEnum ? $priority->value : ($priority !== null ? (string) $priority : null),
+                                'assigned_to_user_id' => $lead->assigned_to_user_id,
+                            ];
+                        })
                         ->values()
                         ->all(),
-                    'crm_pipeline_snapshot' => $this->pipelineSnapshot($resolvedCompanyId),
+                    'crm_pipeline_snapshot' => $this->leadService->pipelineSummary($user, $resolvedCompanyId),
                     'calendar_task_feed' => $upcomingTasks->map(static fn(Task $task): array => [
                         'id' => $task->id,
                         'title' => $task->title,
@@ -179,6 +187,7 @@ class DashboardAggregateService
                     ],
                     'activity_metric' => $activityMetric,
                     'ongoing_tasks' => $ongoingTasks,
+                    'leads_trend' => $this->buildLeadsTrend($resolvedCompanyId, $role, (int) $user->id),
                 ];
             },
         );
@@ -641,26 +650,68 @@ class DashboardAggregateService
         return $earthRadius * $c;
     }
 
-    private function pipelineSnapshot(int $companyId): array
+    private function applyAgentLeadScope(Builder $query, int $userId): void
     {
-        $counts = Lead::query()
-            ->where('company_id', $companyId)
-            ->selectRaw('status, COUNT(*) as total')
-            ->groupBy('status')
-            ->pluck('total', 'status')
-            ->all();
+        $query->where(function (Builder $builder) use ($userId): void {
+            $builder->where('created_by_user_id', $userId)
+                ->orWhere('assigned_to_user_id', $userId);
+        });
+    }
 
-        return [
-            'total' => (int) array_sum(array_map(static fn($value): int => (int) $value, $counts)),
-            'stages' => [
-                ['status' => LeadStatus::NEW->value, 'count' => (int) ($counts[LeadStatus::NEW->value] ?? 0)],
-                ['status' => LeadStatus::CONTACTED->value, 'count' => (int) ($counts[LeadStatus::CONTACTED->value] ?? 0)],
-                ['status' => LeadStatus::QUALIFIED->value, 'count' => (int) ($counts[LeadStatus::QUALIFIED->value] ?? 0)],
-                ['status' => LeadStatus::PROPOSAL_SENT->value, 'count' => (int) ($counts[LeadStatus::PROPOSAL_SENT->value] ?? 0)],
-                ['status' => LeadStatus::WON->value, 'count' => (int) ($counts[LeadStatus::WON->value] ?? 0)],
-                ['status' => LeadStatus::LOST->value, 'count' => (int) ($counts[LeadStatus::LOST->value] ?? 0)],
-            ],
+    private function applyAgentUploadedLeadScope(Builder $query, int $userId): void
+    {
+        $query->where('created_by_user_id', $userId);
+        $this->applyAgentUploadedSourceFilter($query);
+    }
+
+    private function applyAgentUploadedSourceFilter(Builder $query): void
+    {
+        $accepted = [
+            'agent upload',
+            'agent uploaded',
+            'uploaded by agent',
+            'uploaded by agents',
         ];
+
+        $quoted = implode(',', array_map(static fn (string $value): string => "'" . str_replace("'", "''", $value) . "'", $accepted));
+
+        $query->whereRaw(
+            "LOWER(TRIM(REPLACE(REPLACE(COALESCE(source, ''), '-', ' '), '_', ' '))) IN ($quoted)"
+        );
+    }
+
+    /**
+     * @return array<int, array{name: string, v1: int, v2: int}>
+     */
+    private function buildLeadsTrend(int $companyId, string $role, int $userId): array
+    {
+        $query = Lead::query()->where('company_id', $companyId);
+
+        if ($role === 'agent') {
+            $this->applyAgentUploadedLeadScope($query, $userId);
+        }
+
+        $points = [];
+
+        for ($offset = 5; $offset >= 0; $offset--) {
+            $dayStart = now()->subDays($offset)->startOfDay();
+            $dayEnd = $dayStart->copy()->endOfDay();
+            $created = (int) (clone $query)
+                ->whereBetween('created_at', [$dayStart, $dayEnd])
+                ->count();
+            $converted = (int) (clone $query)
+                ->whereBetween('created_at', [$dayStart, $dayEnd])
+                ->whereNotNull('converted_at')
+                ->count();
+
+            $points[] = [
+                'name' => (string) (6 - $offset),
+                'v1' => $created,
+                'v2' => $converted,
+            ];
+        }
+
+        return $points;
     }
 
     private function resolveRange(?string $fromDate, ?string $toDate): array

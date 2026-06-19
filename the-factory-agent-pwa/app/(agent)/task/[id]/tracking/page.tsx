@@ -1,150 +1,192 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import { Compass, ShieldAlert } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useParams } from 'next/navigation';
 
-import { useGeolocation, useStartTask, useTrackingNavigation } from '@/features/tracking';
-import { useTask } from '@/features/tasks';
+import {
+  useGeolocation,
+  useStartTask,
+  useTrackingNavigation,
+  useActiveTracking,
+  trackingApi,
+  hydrateLiveTaskFromRoute,
+  LocationPermissionGate,
+} from '@/features/tracking';
+import { useTask, isResumeTrackingStatus } from '@/features/tasks';
 import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId } from '@/lib/storage/stores';
+import { flattenApiError, isTrackingAlreadyActiveError } from '@/lib/api/errors';
+import { toast } from '@/lib/toast';
 
-function LocationPermissionGate({
-  onGranted,
-  onDenied,
-  isResume = false,
-}: {
-  onGranted: () => void;
-  onDenied: () => void;
-  isResume?: boolean;
-}) {
-  const { permissionStatus, requestPermission } = useGeolocation();
-  const [errorVisible, setErrorVisible] = useState(false);
-
-  const handleRequest = async () => {
-    const status = await requestPermission();
-    if (status === 'granted') {
-      onGranted();
-    } else {
-      setErrorVisible(true);
-      onDenied();
-    }
-  };
-
-  if (errorVisible || permissionStatus === 'denied') {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-[#0A1D25] px-8 text-center font-sans">
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#FD6046]/15">
-          <ShieldAlert className="text-[#FD6046]" size={28} />
-        </div>
-        <h3 className="text-lg font-bold text-white mb-2">Location access blocked</h3>
-        <p className="text-xs text-[#8F9098] leading-relaxed max-w-xs mb-6">
-          To start or resume tasks, enable location access in your browser&apos;s site settings or system privacy settings.
-        </p>
-        <button
-          onClick={handleRequest}
-          className="w-full max-w-xs h-11 rounded-full bg-[#75ADAF] hover:bg-[#66989A] text-white font-semibold text-xs active:scale-95"
-        >
-          Try Again
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#0A1D25] px-8 text-center font-sans">
-      <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#75ADAF]/10 text-[#75ADAF]">
-        <Compass className="animate-pulse" size={32} />
-      </div>
-      <h3 className="text-xl font-bold text-white mb-3">
-        {isResume ? 'Resume tracking' : 'Location access needed'}
-      </h3>
-      <p className="text-xs text-[#8F9098] leading-relaxed max-w-xs mb-8">
-        {isResume
-          ? 'This task is already in progress. Allow location access to resume tracking from where you left off.'
-          : 'To start this task, we need to track your location so supervisors can monitor your route and confirm you reached the destination. Your location is only shared while this task is active.'}
-      </p>
-      <button
-        onClick={handleRequest}
-        className="w-full max-w-xs h-12 rounded-full bg-[#75ADAF] hover:bg-[#66989A] text-white font-semibold text-xs active:scale-95 mb-3 shadow-md"
-      >
-        {isResume ? 'Resume Tracking' : 'Allow Location Access'}
-      </button>
-      <button
-        onClick={onDenied}
-        className="text-[#8F9098] hover:text-white font-semibold text-xs py-2.5 transition-colors"
-      >
-        Not Now
-      </button>
-    </div>
-  );
+function resolveCompanyId(taskCompanyId: number | null | undefined): number {
+  return taskCompanyId ?? getActiveCompanyId() ?? 0;
 }
 
 export default function TrackingPage() {
-  const router = useRouter();
   const routeParams = useParams();
   const id = (routeParams?.id as string) || '';
   const taskId = Number(id);
 
-  const { mutate: startTask, isPending: isStarting } = useStartTask();
-  const { getCurrentPosition } = useGeolocation();
+  const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
+  const { resolveCurrentPosition, requestPermission, checkPermission } = useGeolocation();
   const { goToMapActivity, goToTrackingComplete } = useTrackingNavigation();
+  const { startTracking } = useActiveTracking();
+  const [gateMode, setGateMode] = useState<'request' | 'denied'>('request');
+  const [isRequesting, setIsRequesting] = useState(false);
+  const autoStartAttemptedRef = useRef(false);
+  const flowInFlightRef = useRef(false);
+  const resumeRedirectedRef = useRef(false);
 
-  const { data: task } = useTask(String(taskId));
-  const resolvedCompanyId = task?.companyId ?? getActiveCompanyId() ?? 0;
+  const { data: task, isLoading: isTaskLoading } = useTask(String(taskId));
+  const isResume = isResumeTrackingStatus(task?.status);
 
-  const handlePermissionGranted = useCallback(async () => {
-    try {
-      const pos = await getCurrentPosition();
-      const isResume = task?.status === 'in_progress';
+  // Active tasks skip this page entirely — resume on the map.
+  useEffect(() => {
+    if (!task || !isResume || resumeRedirectedRef.current) return;
+    resumeRedirectedRef.current = true;
+    goToMapActivity(taskId);
+  }, [task, isResume, taskId, goToMapActivity]);
 
-      if (isResume) {
+  const beginTrackingSession = useCallback(
+    (companyId: number, arrived?: boolean) => {
+      startTracking(taskId, companyId, {
+        onArrived: () => {
+          useTrackingStore.getState().markArrived(taskId, new Date().toISOString());
+        },
+      });
+      useTrackingStore.getState().setActiveTrackingTaskId(taskId);
+      if (arrived) {
+        useTrackingStore.getState().markArrived(taskId, new Date().toISOString());
+      }
+      goToMapActivity(taskId);
+    },
+    [taskId, startTracking, goToMapActivity],
+  );
+
+  const resumeExistingSession = useCallback(
+    async (companyId: number, pos: { coords: { latitude: number; longitude: number } }) => {
+      try {
+        const route = await trackingApi.getTaskRoute(taskId, companyId);
+        hydrateLiveTaskFromRoute(taskId, route);
+        useTrackingStore.getState().upsertTask(taskId, {
+          status: route.arrival ? 'arrived' : 'tracking',
+          lastPosition: [pos.coords.longitude, pos.coords.latitude],
+        });
+        beginTrackingSession(companyId, route.arrival != null);
+      } catch {
         useTrackingStore.getState().upsertTask(taskId, {
           status: 'tracking',
           lastPosition: [pos.coords.longitude, pos.coords.latitude],
-          polyline: [],
         });
-        useTrackingStore.getState().setActiveTrackingTaskId(taskId);
-        goToMapActivity(taskId);
+        beginTrackingSession(companyId, false);
+      }
+    },
+    [taskId, beginTrackingSession],
+  );
+
+  const proceedWithTracking = useCallback(async () => {
+    const companyId = resolveCompanyId(task?.companyId);
+
+    if (!companyId) {
+      toast.error('Session error', 'Company context is missing. Please reload and try again.');
+      return;
+    }
+
+    const pos = await resolveCurrentPosition();
+
+    try {
+      const data = await startTaskAsync({
+        taskId,
+        payload: {
+          companyId,
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracyMeters: pos.coords.accuracy ?? 0,
+          recordedAt: new Date(pos.timestamp).toISOString(),
+        },
+      });
+      useTrackingStore.getState().upsertTask(taskId, {
+        trackingSessionId: data.tracking.id,
+        status: data.arrived ? 'arrived' : 'tracking',
+        lastPosition: [pos.coords.longitude, pos.coords.latitude],
+        polyline: [],
+      });
+      beginTrackingSession(companyId, data.arrived);
+    } catch (error: unknown) {
+      if (isTrackingAlreadyActiveError(error)) {
+        await resumeExistingSession(companyId, pos);
+        return;
+      }
+      toast.error('Could not start task', flattenApiError(error) || 'Please try again.');
+    }
+  }, [
+    taskId,
+    task?.companyId,
+    task?.status,
+    resolveCurrentPosition,
+    resumeExistingSession,
+    beginTrackingSession,
+    startTaskAsync,
+  ]);
+
+  const runTrackingFlow = useCallback(async () => {
+    if (flowInFlightRef.current) return;
+    flowInFlightRef.current = true;
+    setIsRequesting(true);
+    try {
+      let status = await checkPermission();
+      if (status !== 'granted') {
+        status = await requestPermission();
+      }
+
+      if (status === 'denied') {
+        setGateMode('denied');
         return;
       }
 
-      startTask(
-        {
-          taskId,
-          payload: {
-            companyId: resolvedCompanyId,
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracyMeters: pos.coords.accuracy ?? 0,
-            recordedAt: new Date(pos.timestamp).toISOString(),
-          },
-        },
-        {
-          onSuccess: (data) => {
-            useTrackingStore.getState().upsertTask(taskId, {
-              trackingSessionId: data.tracking.id,
-              status: 'tracking',
-              lastPosition: [pos.coords.longitude, pos.coords.latitude],
-              polyline: [],
-            });
-            useTrackingStore.getState().setActiveTrackingTaskId(taskId);
-            goToMapActivity(taskId);
-            if (data.arrived) {
-              useTrackingStore.getState().markArrived(taskId, new Date().toISOString());
-            }
-          },
-          onError: (error: unknown) => {
-            alert(`Could not start task: ${error instanceof Error ? error.message : 'Please try again.'}`);
-          },
-        }
-      );
+      setGateMode('request');
+      await proceedWithTracking();
     } catch (err) {
-      alert('Location error: Could not get your current position. Please try again.');
+      const geoErr = err as GeolocationPositionError;
+      if (geoErr?.code === geoErr?.PERMISSION_DENIED) {
+        setGateMode('denied');
+        return;
+      }
+      toast.error('Location error', 'Could not get your current position. Please try again.');
+    } finally {
+      flowInFlightRef.current = false;
+      setIsRequesting(false);
     }
-  }, [taskId, resolvedCompanyId, startTask, getCurrentPosition, task, goToMapActivity]);
+  }, [checkPermission, requestPermission, proceedWithTracking]);
 
-  if (isStarting) {
+  const handleRequest = useCallback(() => {
+    autoStartAttemptedRef.current = true;
+    void runTrackingFlow();
+  }, [runTrackingFlow]);
+
+  useEffect(() => {
+    if (isResume || autoStartAttemptedRef.current || flowInFlightRef.current || isStarting || isRequesting) return;
+    if (isTaskLoading || !task) return;
+    if (!resolveCompanyId(task.companyId)) return;
+
+    void (async () => {
+      const status = await checkPermission();
+      if (status !== 'granted') return;
+      autoStartAttemptedRef.current = true;
+      await runTrackingFlow();
+    })();
+  }, [isResume, isTaskLoading, task, isStarting, isRequesting, checkPermission, runTrackingFlow]);
+
+  if (isResume || (isTaskLoading && !task)) {
+    return (
+      <div className="flex flex-col flex-1 items-center justify-center min-h-screen bg-[#0A1D25] gap-4 text-center font-sans">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#75ADAF] border-t-transparent" />
+        <p className="text-white text-sm">{isResume ? 'Opening map…' : 'Loading task…'}</p>
+      </div>
+    );
+  }
+
+  if (isStarting || isRequesting) {
     return (
       <div className="flex flex-col flex-1 items-center justify-center min-h-screen bg-[#0A1D25] gap-4 text-center font-sans">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#75ADAF] border-t-transparent" />
@@ -153,13 +195,16 @@ export default function TrackingPage() {
     );
   }
 
-  const isResume = task?.status === 'in_progress';
-
   return (
-    <LocationPermissionGate
-      onGranted={handlePermissionGranted}
-      onDenied={() => goToTrackingComplete(taskId)}
-      isResume={isResume}
-    />
+    <div className="relative min-h-screen bg-[#0A1D25]">
+      <LocationPermissionGate
+        mode={gateMode}
+        isBusy={isRequesting}
+        isResume={false}
+        onRequest={handleRequest}
+        onDismiss={() => goToTrackingComplete(taskId)}
+        fullScreen
+      />
+    </div>
   );
 }

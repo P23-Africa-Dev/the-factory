@@ -40,6 +40,14 @@ class TaskTrackingService
         $this->ensureAssignedUser($task, $user);
 
         if (! (bool) ($data['location_permission_granted'] ?? false)) {
+            Log::warning('[tracking] location_permission_denied', [
+                'source' => 'TaskTrackingService',
+                'task_id' => $task->id,
+                'user_id' => $user->id,
+                'reason' => 'Client reported location_permission_granted = false.',
+                'suggested_fix' => 'Prompt the agent to enable location access, then retry start.',
+            ]);
+
             throw ValidationException::withMessages([
                 'location_permission_granted' => ['Location permission is required to start tracking.'],
             ]);
@@ -108,8 +116,27 @@ class TaskTrackingService
                 'last_persisted_recorded_at' => $recordedAt,
                 'destination_latitude' => $task->latitude,
                 'destination_longitude' => $task->longitude,
-                'destination_radius_meters' => (int) config('tracking.arrival_radius_meters', 75),
+                'destination_radius_meters' => (int) config('tracking.arrival_radius_meters', 100),
             ]);
+
+            // Evaluate the geofence at start so an agent who begins a task while
+            // already standing at (or near) the destination is recognised
+            // immediately instead of being stuck unable to reach "arrived".
+            $startGeofence = $this->evaluateStartGeofence(
+                session: $session,
+                latitude: $latitude,
+                longitude: $longitude,
+                accuracyMeters: $accuracy,
+                recordedAt: $recordedAt,
+            );
+            $arrived = $startGeofence['arrived'];
+            $nearDestination = $startGeofence['near'] && ! $arrived;
+
+            if ($arrived || $startGeofence['near']) {
+                $session->save();
+            }
+
+            $startEventType = $arrived ? 'arrival' : ($nearDestination ? 'near_destination' : 'start');
 
             $this->createLocationPoint(
                 session: $session,
@@ -118,7 +145,7 @@ class TaskTrackingService
                 latitude: $latitude,
                 longitude: $longitude,
                 recordedAt: $recordedAt,
-                eventType: 'start',
+                eventType: $startEventType,
                 isCheckpoint: true,
                 accuracyMeters: $accuracy,
                 speedMps: $speed,
@@ -141,10 +168,10 @@ class TaskTrackingService
                 accuracyMeters: $accuracy,
                 speedMps: $speed,
                 headingDegrees: $heading,
-                eventType: 'start',
+                eventType: $startEventType,
                 taskStatus: $task->status?->value,
-                arrived: false,
-                nearDestination: false,
+                arrived: $arrived,
+                nearDestination: $nearDestination,
                 movementStarted: $proximity['movement_started'],
                 distanceToDestinationMeters: $proximity['distance_to_destination_meters'],
                 distanceRemainingMeters: $proximity['distance_remaining_meters'],
@@ -165,12 +192,45 @@ class TaskTrackingService
                 priority: NotificationPriority::NORMAL->value,
             );
 
+            if ($nearDestination) {
+                $this->publishTrackingEvent('tracking.task.near_destination', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+                $this->notifyTrackingEvent(
+                    task: $task,
+                    actor: $user,
+                    type: 'tracking.task.near_destination',
+                    title: 'Agent near destination',
+                    message: "{$user->name} is near destination for task '{$task->title}'.",
+                    priority: NotificationPriority::HIGH->value,
+                );
+            }
+
+            if ($arrived) {
+                $this->publishTrackingEvent('tracking.task.arrived', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+                $this->notifyTrackingEvent(
+                    task: $task,
+                    actor: $user,
+                    type: 'tracking.task.arrived',
+                    title: 'Agent arrived on site',
+                    message: "{$user->name} arrived at task '{$task->title}'.",
+                    priority: NotificationPriority::HIGH->value,
+                );
+            }
+
+            $this->logLifecycle('task_started', [
+                'task_id' => $task->id,
+                'tracking_session_id' => $session->id,
+                'user_id' => $user->id,
+                'arrived_at_start' => $arrived,
+                'near_at_start' => $nearDestination,
+                'distance_to_destination_meters' => $proximity['distance_to_destination_meters'],
+            ]);
+
             return [
                 'task' => $this->loadTaskForResponse($task),
                 'session' => $session->fresh(),
-                'arrived' => false,
-                'near_destination' => false,
-                'proximity_state' => 'in_progress',
+                'arrived' => $arrived,
+                'near_destination' => $nearDestination,
+                'proximity_state' => $this->resolveProximityState($session, $task->status?->value),
                 'distance_to_destination_meters' => $proximity['distance_to_destination_meters'] !== null
                     ? round($proximity['distance_to_destination_meters'], 2)
                     : null,
@@ -254,6 +314,21 @@ class TaskTrackingService
                 $justNearDestination = false;
                 $justArrived = false;
 
+                // If an agent that reached "near" (but not "arrived") moves well
+                // back outside the near radius, reset the near state so a fresh
+                // near notification can fire if they approach again.
+                if (
+                    $session->arrival_detected_at === null
+                    && $session->near_detected_at !== null
+                    && $proximity['distance_to_destination_meters'] !== null
+                    && $proximity['distance_to_destination_meters']
+                        > $proximity['near_radius_meters'] * (float) config('tracking.near_reset_hysteresis', 1.5)
+                ) {
+                    $session->near_detected_at = null;
+                    $session->near_latitude = null;
+                    $session->near_longitude = null;
+                }
+
                 if ($session->arrival_detected_at === null) {
                     if ($session->near_detected_at === null && $proximity['can_mark_near']) {
                         $justNearDestination = true;
@@ -328,6 +403,13 @@ class TaskTrackingService
                 $this->publishTrackingEvent('tracking.agent.location.updated', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
 
                 if ($justNearDestination) {
+                    $this->logLifecycle('near_destination', [
+                        'task_id' => $task->id,
+                        'tracking_session_id' => $session->id,
+                        'user_id' => $user->id,
+                        'distance_to_destination_meters' => $proximity['distance_to_destination_meters'],
+                    ]);
+
                     $this->publishTrackingEvent('tracking.task.near_destination', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
 
                     $this->notifyTrackingEvent(
@@ -341,6 +423,13 @@ class TaskTrackingService
                 }
 
                 if ($justArrived) {
+                    $this->logLifecycle('arrived', [
+                        'task_id' => $task->id,
+                        'tracking_session_id' => $session->id,
+                        'user_id' => $user->id,
+                        'distance_to_destination_meters' => $proximity['distance_to_destination_meters'],
+                    ]);
+
                     $this->publishTrackingEvent('tracking.task.arrived', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
 
                     $this->notifyTrackingEvent(
@@ -507,6 +596,13 @@ class TaskTrackingService
             $this->publishTrackingEvent('tracking.agent.location.updated', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
             $this->publishTrackingEvent('tracking.task.completed', $context->company->id, $task->id, $session->id, $user->id, $payload, $recordedAt);
 
+            $this->logLifecycle('task_completed', [
+                'task_id' => $task->id,
+                'tracking_session_id' => $session->id,
+                'user_id' => $user->id,
+                'proofs_uploaded' => count($proofs),
+            ]);
+
             $this->notifyTrackingEvent(
                 task: $task,
                 actor: $user,
@@ -521,6 +617,114 @@ class TaskTrackingService
                 'session' => $session->fresh(),
                 'proofs' => $proofs,
             ];
+        });
+    }
+
+    /**
+     * Keep tracking state consistent when a task's status changes outside the
+     * tracking complete() flow (e.g. PATCH /tasks/{id}/status to paused,
+     * cancelled or completed). Closes the active session and broadcasts a
+     * tracking.task.completed event so the live map stops showing the agent.
+     *
+     * Safe to call for any status: it is a no-op unless the status stops tracking
+     * and an active session exists. It does NOT call TaskService::updateStatus
+     * (the caller already did), avoiding a circular dependency and double work.
+     */
+    public function stopTrackingForStatusChange(Task $task, User $actor, string $status): void
+    {
+        $stopStatuses = [
+            TaskStatus::PAUSED->value,
+            TaskStatus::CANCELLED->value,
+            TaskStatus::COMPLETED->value,
+        ];
+
+        if (! in_array($status, $stopStatuses, true)) {
+            return;
+        }
+
+        $session = TaskTrackingSession::query()
+            ->where('task_id', $task->id)
+            ->whereNull('end_recorded_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $session) {
+            return;
+        }
+
+        DB::transaction(function () use ($task, $actor, $session): void {
+            $recordedAt = now();
+            $latitude = $session->last_latitude !== null
+                ? (float) $session->last_latitude
+                : (float) $session->start_latitude;
+            $longitude = $session->last_longitude !== null
+                ? (float) $session->last_longitude
+                : (float) $session->start_longitude;
+            $accuracy = $session->last_accuracy_meters !== null
+                ? (float) $session->last_accuracy_meters
+                : null;
+
+            $session->completed_by_user_id = $actor->id;
+            $session->end_latitude = $latitude;
+            $session->end_longitude = $longitude;
+            $session->end_accuracy_meters = $accuracy;
+            $session->end_recorded_at = $session->last_recorded_at ?? $recordedAt;
+            $session->save();
+
+            $this->createLocationPoint(
+                session: $session,
+                task: $task,
+                user: $actor,
+                latitude: $latitude,
+                longitude: $longitude,
+                recordedAt: $recordedAt,
+                eventType: 'complete',
+                isCheckpoint: true,
+                accuracyMeters: $accuracy,
+                speedMps: null,
+                headingDegrees: null,
+            );
+
+            $proximity = $this->buildProximitySnapshot(
+                session: $session,
+                latitude: $latitude,
+                longitude: $longitude,
+                accuracyMeters: $accuracy,
+            );
+
+            $payload = $this->upsertSnapshotAndBuildRealtimePayload(
+                session: $session,
+                task: $task,
+                userId: $actor->id,
+                latitude: $latitude,
+                longitude: $longitude,
+                accuracyMeters: $accuracy,
+                speedMps: null,
+                headingDegrees: null,
+                eventType: 'complete',
+                taskStatus: $task->status?->value,
+                arrived: $session->arrival_detected_at !== null,
+                nearDestination: false,
+                movementStarted: $proximity['movement_started'],
+                distanceToDestinationMeters: $proximity['distance_to_destination_meters'],
+                distanceRemainingMeters: $proximity['distance_remaining_meters'],
+                proximityState: 'completed',
+                recordedAt: $recordedAt,
+            );
+
+            // Clients treat tracking.task.completed as "tracking stopped" and
+            // remove the agent from the live map. Resuming a paused task starts a
+            // fresh session and re-broadcasts tracking.task.started.
+            $this->publishTrackingEvent('tracking.location.updated', (int) $session->company_id, $task->id, $session->id, $actor->id, $payload, $recordedAt);
+            $this->publishTrackingEvent('tracking.agent.location.updated', (int) $session->company_id, $task->id, $session->id, $actor->id, $payload, $recordedAt);
+            $this->publishTrackingEvent('tracking.task.completed', (int) $session->company_id, $task->id, $session->id, $actor->id, $payload, $recordedAt);
+
+            $this->logLifecycle('tracking_stopped_by_status_change', [
+                'task_id' => $task->id,
+                'tracking_session_id' => $session->id,
+                'user_id' => $actor->id,
+                'new_status' => $task->status?->value,
+            ]);
         });
     }
 
@@ -542,6 +746,9 @@ class TaskTrackingService
                 }
             }])
             ->where('task_id', $task->id)
+            // A task may have multiple sessions; show the most recent (the active
+            // one if tracking is live, otherwise the last completed session).
+            ->orderByDesc('id')
             ->first();
 
         if (! $session) {
@@ -714,7 +921,7 @@ class TaskTrackingService
         $minMovementBeforeProximity = max(1.0, (float) config('tracking.min_movement_before_proximity_meters', 20));
         $movementStarted = $movementFromStartMeters >= $minMovementBeforeProximity;
 
-        $arrivalRadiusMeters = max(1.0, (float) ($session->destination_radius_meters ?? config('tracking.arrival_radius_meters', 75)));
+        $arrivalRadiusMeters = max(1.0, (float) ($session->destination_radius_meters ?? config('tracking.arrival_radius_meters', 100)));
         $nearRadiusMeters = max(
             $arrivalRadiusMeters + 1,
             (float) config('tracking.near_radius_meters', 250),
@@ -743,6 +950,55 @@ class TaskTrackingService
             'near_radius_meters' => $nearRadiusMeters,
             'arrival_radius_meters' => $arrivalRadiusMeters,
         ];
+    }
+
+    /**
+     * Evaluate the geofence at the moment tracking starts. Unlike movement
+     * updates this intentionally ignores the "movement started" gate so an agent
+     * who begins a task already at the destination can still reach "arrived".
+     * Mutates the session in-memory; the caller is responsible for persisting.
+     *
+     * @return array{near: bool, arrived: bool}
+     */
+    private function evaluateStartGeofence(
+        TaskTrackingSession $session,
+        float $latitude,
+        float $longitude,
+        ?float $accuracyMeters,
+        Carbon $recordedAt,
+    ): array {
+        $proximity = $this->buildProximitySnapshot($session, $latitude, $longitude, $accuracyMeters);
+        $distance = $proximity['distance_to_destination_meters'];
+
+        if ($distance === null) {
+            return ['near' => false, 'arrived' => false];
+        }
+
+        $nearAccuracyOk = $this->isAccuracyWithinThreshold(
+            accuracyMeters: $accuracyMeters,
+            maxAccuracyMeters: (float) config('tracking.near_max_accuracy_meters', 150),
+        );
+        $arrivalAccuracyOk = $this->isAccuracyWithinThreshold(
+            accuracyMeters: $accuracyMeters,
+            maxAccuracyMeters: (float) config('tracking.arrival_max_accuracy_meters', 60),
+        );
+
+        $near = $distance <= $proximity['near_radius_meters'] && $nearAccuracyOk;
+        $arrived = $distance <= $proximity['arrival_radius_meters'] && $arrivalAccuracyOk;
+
+        if (($near || $arrived) && $session->near_detected_at === null) {
+            $session->near_detected_at = $recordedAt;
+            $session->near_latitude = $latitude;
+            $session->near_longitude = $longitude;
+        }
+
+        if ($arrived && $session->arrival_detected_at === null) {
+            $session->arrival_detected_at = $recordedAt;
+            $session->arrival_latitude = $latitude;
+            $session->arrival_longitude = $longitude;
+        }
+
+        return ['near' => $near || $arrived, 'arrived' => $arrived];
     }
 
     private function hasSatisfiedNearDwellTime(TaskTrackingSession $session, Carbon $recordedAt): bool
@@ -821,7 +1077,9 @@ class TaskTrackingService
     private function isAccuracyWithinThreshold(?float $accuracyMeters, float $maxAccuracyMeters): bool
     {
         if ($accuracyMeters === null) {
-            return false;
+            // Don't permanently block proximity for devices that never report
+            // accuracy; rely on the distance + movement gates instead.
+            return (bool) config('tracking.allow_unknown_accuracy', true);
         }
 
         return $accuracyMeters > 0 && $accuracyMeters <= max(1.0, $maxAccuracyMeters);
@@ -1170,6 +1428,15 @@ class TaskTrackingService
         }
 
         return $movementStarted ? 'en_route' : 'available';
+    }
+
+    /**
+     * Structured lifecycle log for a tracking session. Keeps a consistent shape
+     * (source + contextual fields) so tracking issues are easy to trace.
+     */
+    private function logLifecycle(string $event, array $context = []): void
+    {
+        Log::info("[tracking] {$event}", array_merge(['source' => 'TaskTrackingService'], $context));
     }
 
     private function publishTrackingEvent(

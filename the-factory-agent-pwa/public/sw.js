@@ -8,10 +8,10 @@
  * - Navigation fallback: cached pages, then /offline shell
  */
 
-const CACHE_NAME = "factory-agent-pwa-v4";
-const STATIC_CACHE = "factory-static-v4";
-const API_CACHE = "factory-api-v4";
-const PAGE_CACHE = "factory-pages-v4";
+const CACHE_NAME = "factory-agent-pwa-v6";
+const STATIC_CACHE = "factory-static-v6";
+const API_CACHE = "factory-api-v6";
+const PAGE_CACHE = "factory-pages-v6";
 
 const STATIC_ASSETS = ["/", "/offline", "/manifest.json"];
 
@@ -138,12 +138,31 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
+function shouldCacheNavigationResponse(request, response) {
+  if (!response.ok) return false;
+
+  const requestUrl = new URL(request.url);
+  const responseUrl = new URL(response.url);
+
+  if (requestUrl.pathname.startsWith("/install")) return false;
+  if (responseUrl.pathname.startsWith("/install")) return false;
+  if (responseUrl.pathname !== requestUrl.pathname) return false;
+
+  return true;
+}
+
 async function handleNavigation(request) {
+  const requestUrl = new URL(request.url);
+
+  if (requestUrl.pathname.startsWith("/install")) {
+    return fetch(request);
+  }
+
   const cache = await caches.open(PAGE_CACHE);
 
   try {
     const response = await fetch(request);
-    if (response.ok) {
+    if (shouldCacheNavigationResponse(request, response)) {
       cache.put(request, response.clone());
     }
     return response;

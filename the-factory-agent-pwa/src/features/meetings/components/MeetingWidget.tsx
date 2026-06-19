@@ -1,13 +1,22 @@
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useMeetingList, useCalendarStatus } from '../queries';
 import { useMeetingNavigation } from '../navigation';
 import { MeetingStatusBadge } from './MeetingStatusBadge';
 import type { Meeting } from '../types';
 
+type MeetingTimeFilter = 'upcoming' | 'today' | 'tomorrow' | 'past';
+
+const FILTERS: Array<{ key: MeetingTimeFilter; label: string }> = [
+  { key: 'upcoming', label: 'Upcoming' },
+  { key: 'today', label: 'Today' },
+  { key: 'tomorrow', label: 'Tomorrow' },
+  { key: 'past', label: 'Past' },
+];
+
 interface MeetingWidgetProps {
-  selectedDate: Date;
+  onCreateMeeting?: () => void;
 }
 
 function isSameDay(a: Date, b: Date): boolean {
@@ -30,72 +39,89 @@ function formatWidgetTime(iso: string): string {
   }
 }
 
-function formatWidgetDate(d: Date): string {
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  if (isSameDay(d, today)) return 'Today';
-  if (isSameDay(d, tomorrow)) return 'Tomorrow';
-  return d.toLocaleDateString('en-NG', { weekday: 'short', month: 'short', day: 'numeric' });
+function startOfDay(d: Date): Date {
+  const copy = new Date(d);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
 }
 
-export function MeetingWidget({ selectedDate }: MeetingWidgetProps): React.ReactElement {
+function filterMeetings(meetings: Meeting[], filter: MeetingTimeFilter, now: number): Meeting[] {
+  const today = startOfDay(new Date());
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+
+  const active = meetings.filter((m) => m.status !== 'cancelled');
+
+  let filtered: Meeting[];
+  switch (filter) {
+    case 'today':
+      filtered = active.filter((m) => isSameDay(new Date(m.startAt), today));
+      break;
+    case 'tomorrow':
+      filtered = active.filter((m) => isSameDay(new Date(m.startAt), tomorrow));
+      break;
+    case 'past':
+      filtered = active.filter((m) => new Date(m.startAt).getTime() < now);
+      filtered.sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime());
+      return filtered.slice(0, 2);
+    case 'upcoming':
+    default:
+      filtered = active.filter((m) => {
+        const start = new Date(m.startAt).getTime();
+        return m.status === 'scheduled' && !Number.isNaN(start) && start >= now;
+      });
+      filtered.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+      return filtered.slice(0, 2);
+  }
+
+  filtered.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+  return filtered.slice(0, 2);
+}
+
+function filterTitle(filter: MeetingTimeFilter): string {
+  switch (filter) {
+    case 'today':
+      return 'Today';
+    case 'tomorrow':
+      return 'Tomorrow';
+    case 'past':
+      return 'Past';
+    default:
+      return 'Upcoming';
+  }
+}
+
+export function MeetingWidget({ onCreateMeeting }: MeetingWidgetProps): React.ReactElement {
   const nav = useMeetingNavigation();
   const { data: calendarStatus } = useCalendarStatus();
-  const [localDate, setLocalDate] = useState(selectedDate);
+  const [timeFilter, setTimeFilter] = useState<MeetingTimeFilter>('upcoming');
+  const [now] = useState(() => Date.now());
 
-  useEffect(() => {
-    setTimeout(() => setLocalDate(selectedDate), 0);
-  }, [selectedDate]);
-
-  const dateStr = localDate.toISOString().slice(0, 10);
-  const { data, isLoading } = useMeetingList({ from: dateStr, to: dateStr });
+  const { data, isLoading } = useMeetingList({ per_page: 100 });
 
   const dayMeetings = useMemo((): Meeting[] => {
     if (!data?.pages) return [];
     const all = data.pages.flatMap((p) => p.items);
-    return all
-      .filter((m) => isSameDay(new Date(m.startAt), localDate) && m.status !== 'cancelled')
-      .slice(0, 2);
-  }, [data, localDate]);
+    return filterMeetings(all, timeFilter, now);
+  }, [data, timeFilter, now]);
 
   const canCreate = calendarStatus?.connected && calendarStatus.status === 'active';
 
-  const handlePrevDay = () => {
-    const d = new Date(localDate);
-    d.setDate(d.getDate() - 1);
-    setLocalDate(d);
-  };
-
-  const handleNextDay = () => {
-    const d = new Date(localDate);
-    d.setDate(d.getDate() + 1);
-    setLocalDate(d);
+  const handleCreate = () => {
+    if (onCreateMeeting) {
+      onCreateMeeting();
+    } else {
+      nav.goToCreateMeeting();
+    }
   };
 
   return (
     <div className="bg-[#0B3343]/80 border border-white/10 rounded-2xl p-4 shadow-lg select-none">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 gap-2">
-        <button
-          onClick={handlePrevDay}
-          className="w-8 h-8 flex items-center justify-center text-xl font-bold text-white/75 hover:text-white rounded-full hover:bg-white/5 active:scale-95 transition-all"
-        >
-          ‹
-        </button>
-        <span className="flex-1 text-center text-sm font-bold text-white">
-          {formatWidgetDate(localDate)}
-        </span>
-        <button
-          onClick={handleNextDay}
-          className="w-8 h-8 flex items-center justify-center text-xl font-bold text-white/75 hover:text-white rounded-full hover:bg-white/5 active:scale-95 transition-all"
-        >
-          ›
-        </button>
-
+      <div className="flex items-center justify-between mb-3 gap-2">
+        <span className="flex-1 text-sm font-bold text-white">{filterTitle(timeFilter)}</span>
         {canCreate && (
           <button
-            onClick={nav.goToCreateMeeting}
+            onClick={handleCreate}
             className="w-8 h-8 rounded-full bg-[#FD6046] hover:bg-[#E0533C] flex items-center justify-center text-white text-lg font-bold transition-all active:scale-90"
           >
             +
@@ -103,14 +129,32 @@ export function MeetingWidget({ selectedDate }: MeetingWidgetProps): React.React
         )}
       </div>
 
-      {/* Body */}
+      <div className="flex gap-1.5 mb-4 overflow-x-auto scrollbar-none">
+        {FILTERS.map((f) => {
+          const isActive = timeFilter === f.key;
+          return (
+            <button
+              key={f.key}
+              onClick={() => setTimeFilter(f.key)}
+              className={`px-3 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap transition-all active:scale-95 ${
+                isActive
+                  ? 'bg-[#75ADAF] text-white'
+                  : 'bg-white/[0.06] text-white/50 hover:text-white'
+              }`}
+            >
+              {f.label}
+            </button>
+          );
+        })}
+      </div>
+
       {isLoading ? (
         <div className="flex justify-center items-center py-6">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#75ADAF] border-t-transparent" />
         </div>
       ) : dayMeetings.length === 0 ? (
         <p className="text-center text-xs text-white/40 py-4 font-medium">
-          No meetings {formatWidgetDate(localDate).toLowerCase()}
+          No meetings {filterTitle(timeFilter).toLowerCase()}
         </p>
       ) : (
         <div className="flex flex-col gap-3">
@@ -133,7 +177,6 @@ export function MeetingWidget({ selectedDate }: MeetingWidgetProps): React.React
             </div>
           ))}
 
-          {/* View all button if there are pages */}
           {data?.pages?.[0]?.pagination?.next_page_url && (
             <button
               onClick={nav.goToMeetingsList}

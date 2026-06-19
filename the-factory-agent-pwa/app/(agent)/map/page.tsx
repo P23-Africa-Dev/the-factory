@@ -6,18 +6,54 @@ import { X } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
-import { BottomNavBar } from '@/components/shared/BottomNavBar';
-import { useGeolocation, useLocationReporter, useStartTask } from '@/features/tracking';
-import { useTaskList, useTask, taskKeys, taskApi } from '@/features/tasks';
-import { useAuth } from '@/features/auth';
+import {
+  useGeolocation,
+  useStartTask,
+  useActiveTracking,
+  useTaskRoute,
+  buildCompleteFormData,
+  hydrateLiveTaskFromRoute,
+  trackingApi,
+  LocationPermissionGate,
+} from '@/features/tracking';
+import { useTaskListItems, useTask, taskKeys, taskApi } from '@/features/tasks';
+import { useAuth, useAgentIdentity } from '@/features/auth';
+import { getSafeAvatarSrc } from '@/lib/avatar';
+import { buildTraveledSegment, sliceRemainingRoute } from '@/lib/map/route-geometry';
+import { NavigationRideSheet } from '@/features/tracking/components/NavigationRideSheet';
+import {
+  MAP_SHEET_COLLAPSED_SNAP_INDEX,
+  MAP_SHEET_EXPANDED_SNAP_INDEX,
+} from '@/features/tracking/components/MapBottomSheet';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTrackingStore } from '@/store/tracking';
-import { getActiveCompanyId, appStore } from '@/lib/storage/stores';
+import { getActiveCompanyId } from '@/lib/storage/stores';
 import { env } from '@/constants/env';
+import { getMapboxPublicToken } from '@/lib/map/public-env';
+import { fetchDirectionsRoute } from '@/lib/map/directions';
 import { getDb } from '@/lib/db/client';
 import { syncEngine } from '@/lib/sync/syncEngine';
+import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
+import { flattenApiError, isTrackingAlreadyActiveError } from '@/lib/api/errors';
+import { toast } from '@/lib/toast';
+import {
+  useSavedLocations,
+  useCreateSavedLocation,
+  SaveLocationSheet,
+  LocationDetailsSheet,
+  type SavedLocation,
+  type CreateSavedLocationInput,
+} from '@/features/locations';
+import { getSavedLocationType } from '@/lib/map/locationTypes';
+import { reverseGeocode } from '@/lib/map/reverseGeocode';
+import type { SavedLocationPin } from '@/features/tracking/components/MapboxMap';
+import { MapPin, Plus } from 'lucide-react';
 
-// Dynamically import MapboxMap with SSR disabled to prevent server-side window/document errors
+const MapBottomSheetDynamic = dynamic(
+  () => import('@/features/tracking/components/MapBottomSheet').then((m) => m.MapBottomSheet),
+  { ssr: false },
+);
+
 const MapboxMap = dynamic(() => import('@/features/tracking/components/MapboxMap'), {
   ssr: false,
   loading: () => (
@@ -30,6 +66,7 @@ const MapboxMap = dynamic(() => import('@/features/tracking/components/MapboxMap
 // ─── Types & constants ────────────────────────────────────────────────────────
 
 type MapPhase = 'idle' | 'destination_selected' | 'activity_started' | 'activity_ended';
+type TrackingStatus = 'idle' | 'connecting' | 'live' | 'error';
 type TransportMode = 'driving' | 'cycling' | 'walking';
 
 const MODE_LABELS: Record<TransportMode, string> = {
@@ -51,14 +88,7 @@ interface SelectedDestination {
   latitude: number;
   longitude: number;
   taskId: number;
-}
-
-interface RecentDestination {
-  name: string;
-  address?: string;
-  latitude: number;
-  longitude: number;
-  taskId?: number;
+  taskStatus?: string;
 }
 
 interface GeocodedPlace {
@@ -68,7 +98,6 @@ interface GeocodedPlace {
   longitude: number;
 }
 
-const RECENT_KEY = 'map_recent_destinations';
 const EMPTY_POLYLINE: [number, number][] = [];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -90,20 +119,6 @@ function etaMinutes(distanceM: number, mode: TransportMode): number {
   return Math.max(1, Math.ceil(distanceM / speedMps / 60));
 }
 
-function getRecentDestinations(): RecentDestination[] {
-  try {
-    const raw = appStore.getString(RECENT_KEY);
-    return raw ? (JSON.parse(raw) as RecentDestination[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveRecentDestination(dest: RecentDestination): void {
-  const existing = getRecentDestinations().filter((r) => r.name !== dest.name);
-  appStore.set(RECENT_KEY, JSON.stringify([dest, ...existing].slice(0, 10)));
-}
-
 function formatDuration(minutes: number | null): string {
   if (minutes === null) return '---';
   if (minutes < 60) {
@@ -117,6 +132,25 @@ function formatDuration(minutes: number | null): string {
   const days = Math.floor(hours / 24);
   const remainingHours = hours % 24;
   return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+}
+
+function taskHasMapLocation(t: {
+  latitude: number;
+  longitude: number;
+  address?: string | null;
+}): boolean {
+  if (Math.abs(t.latitude) > 0.0001 && Math.abs(t.longitude) > 0.0001) return true;
+  const addr = t.address?.trim();
+  return Boolean(addr && addr !== '—');
+}
+
+function canStartTaskActivity(status?: string): boolean {
+  return (
+    status === 'pending' ||
+    status === 'in_progress' ||
+    status === 'paused' ||
+    status === 'resumed'
+  );
 }
 
 const LocationIcon = () => (
@@ -200,10 +234,20 @@ function RouteInfoSheet({
   transportMode,
   onSelectMode,
   etaByMode,
+  onCancel,
+  onOpenTasks,
+  onShare,
+  canCancel,
+  isRouteLoading,
 }: {
   transportMode: TransportMode;
   onSelectMode: (mode: TransportMode) => void;
   etaByMode: Record<TransportMode, number | null>;
+  onCancel: () => void;
+  onOpenTasks: () => void;
+  onShare: () => void;
+  canCancel: boolean;
+  isRouteLoading?: boolean;
 }) {
   const etaLabel = (min: number | null) => formatDuration(min);
 
@@ -214,29 +258,45 @@ function RouteInfoSheet({
   ];
 
   return (
-    <div className="bg-[#F2F4F5] rounded-t-3xl px-5 pb-3 pt-2 text-[#09232D] border-t border-gray-200">
-      <div className="flex justify-center mb-3">
-        <div className="w-9 h-1 rounded-full bg-gray-300" />
-      </div>
-
+    <div className="px-5 pb-3 text-[#09232D]">
       <div className="flex items-center justify-between mb-4">
         <h4 className="font-sans font-bold text-base text-[#09232D]">
-          {MODE_LABELS[transportMode]}
+          {isRouteLoading ? 'Calculating route…' : MODE_LABELS[transportMode]}
         </h4>
         <div className="flex gap-2">
-          <button className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors">
+          <button
+            type="button"
+            onClick={onShare}
+            className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors"
+          >
             <img src="/assets/send-icon.png" alt="Send" className="w-[25px] h-[25px] object-contain" />
           </button>
-          <button className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors">
+          <button
+            type="button"
+            onClick={onOpenTasks}
+            className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors"
+          >
             <img src="/assets/task-icon.png" alt="Tasks" className="w-[25px] h-[25px] object-contain" />
           </button>
-          <button className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={!canCancel}
+            className="w-9 h-9 rounded-full bg-[#E5E9EB] hover:bg-[#D9DFE2] flex items-center justify-center transition-colors disabled:opacity-40"
+          >
             <img src="/assets/cancel-icon.png" alt="Cancel" className="w-[25px] h-[25px] object-contain" />
           </button>
         </div>
       </div>
 
       <div className="h-[1px] bg-gray-200 mb-3" />
+
+      {isRouteLoading && (
+        <div className="flex items-center gap-2 mb-3 text-sm text-[#1D7293] font-semibold">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#1D7293] border-t-transparent" />
+          <span>Loading route preview…</span>
+        </div>
+      )}
 
       <div className="flex justify-around items-center">
         {MODES.map(({ mode, icon }) => (
@@ -267,24 +327,35 @@ function ActivityButton({
   phase,
   hasDestination,
   isStarting,
+  taskStatus,
   onStart,
-  onEnd,
 }: {
   phase: MapPhase;
   hasDestination: boolean;
   isStarting: boolean;
+  taskStatus?: string;
   onStart: () => void;
-  onEnd: () => void;
 }) {
-  if (phase === 'activity_ended') {
+  if (taskStatus === 'completed' || taskStatus === 'cancelled') {
     return (
       <div className="mx-auto w-[344px] h-[67px] rounded-[60px] bg-[#D1D5D8] flex items-center justify-center">
-        <span className="font-sans font-medium text-sm text-[#8F9098]">Activity Ended</span>
+        <span className="font-sans font-medium text-sm text-[#8F9098]">Task Closed</span>
       </div>
     );
   }
 
-  const canStart = hasDestination && phase === 'destination_selected';
+  if (phase === 'activity_ended') {
+    return (
+      <div className="mx-auto w-[344px] h-[67px] rounded-[60px] bg-[#D1D5D8] flex items-center justify-center">
+        <span className="font-sans font-medium text-sm text-[#8F9098]">Task Ended</span>
+      </div>
+    );
+  }
+
+  const canStart =
+    hasDestination &&
+    phase === 'destination_selected' &&
+    canStartTaskActivity(taskStatus);
 
   const activeButtonStyle = {
     background: 'linear-gradient(90deg, #1D7293 0%, #09232D 100%)',
@@ -306,19 +377,7 @@ function ActivityButton({
   };
 
   if (phase === 'activity_started') {
-    return (
-      <button
-        onClick={onEnd}
-        style={activeButtonStyle}
-        className="mx-auto flex items-center justify-between text-white active:scale-[0.98] transition-all duration-200"
-      >
-        <span className="font-sans font-bold text-base pl-4">‹‹</span>
-        <span className="font-sans font-bold text-sm">End Activity</span>
-        <div className="w-[44px] h-[44px] rounded-full bg-white flex items-center justify-center text-[#09232D] text-xs mr-2">
-          ◀
-        </div>
-      </button>
-    );
+    return null;
   }
 
   if (isStarting) {
@@ -328,7 +387,7 @@ function ActivityButton({
         className="mx-auto flex items-center justify-center gap-3 text-white"
       >
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-        <span className="font-sans font-bold text-sm">Starting…</span>
+        <span className="font-sans font-bold text-sm">Starting task…</span>
       </div>
     );
   }
@@ -356,7 +415,7 @@ function ActivityButton({
       </div>
 
       <span className="font-sans font-bold text-sm text-center flex-1">
-        Start Activity
+        Start Task
       </span>
 
       <div className={`pr-3 flex-shrink-0 ${!canStart && 'opacity-50'}`}>
@@ -376,15 +435,19 @@ function DestinationSearch({
   searchQuery,
   onQueryChange,
   results,
+  taskResults,
   onSelect,
   onClose,
 }: {
   searchQuery: string;
   onQueryChange: (q: string) => void;
   results: RecentDestination[];
+  taskResults: RecentDestination[];
   onSelect: (dest: RecentDestination) => void;
   onClose: () => void;
 }) {
+  const showTasks = taskResults.length > 0 && !searchQuery.trim();
+
   return (
     <div className="fixed inset-0 bg-[#051014]/75 z-50 overflow-y-auto flex flex-col font-sans">
       {/* Click outside backdrop overlay */}
@@ -418,10 +481,36 @@ function DestinationSearch({
 
         {/* Results List */}
         <div className="mx-4 mt-3 bg-[#0B1E26] rounded-2xl overflow-hidden shadow-2xl border border-white/5 flex-1 max-h-[400px] overflow-y-auto pb-4">
+          {showTasks && (
+            <div>
+              <div className="px-4 pt-4 pb-2 text-white font-bold text-sm tracking-wider uppercase opacity-40">
+                Your Tasks
+              </div>
+              <div className="divide-y divide-white/5">
+                {taskResults.map((item) => (
+                  <div
+                    key={`task-${item.taskId}`}
+                    onClick={() => onSelect(item)}
+                    className="flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-white/[0.04] transition-colors active:opacity-70"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-[#09232D] flex items-center justify-center flex-shrink-0 border border-white/5">
+                      <img src="/assets/task-icon.png" alt="Task" className="w-4.5 h-4.5 object-contain" />
+                    </div>
+                    <div className="flex-1 min-w-0 leading-tight">
+                      <p className="text-sm font-semibold text-white truncate">{item.name}</p>
+                      {item.address && (
+                        <p className="text-[10px] text-gray-400 truncate mt-1">{item.address}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {results.length > 0 ? (
             <div>
               <div className="px-4 pt-4 pb-2 text-white font-bold text-sm tracking-wider uppercase opacity-40">
-                Recent
+                {searchQuery.trim() ? 'Places' : 'Recent'}
               </div>
               <div className="divide-y divide-white/5">
                 {results.map((item, index) => (
@@ -447,11 +536,11 @@ function DestinationSearch({
                 ))}
               </div>
             </div>
-          ) : (
+          ) : !showTasks ? (
             <div className="flex items-center justify-center py-10 text-gray-400 text-xs font-semibold uppercase tracking-wider">
-              {searchQuery.trim() ? 'No destinations found' : 'Search for a place'}
+              {searchQuery.trim() ? 'No destinations found' : 'Search for a place or pick a task'}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
@@ -466,6 +555,7 @@ function OriginSearch({
   results,
   destination,
   onSelect,
+  onUseMyLocation,
   onClose,
 }: {
   query: string;
@@ -473,6 +563,7 @@ function OriginSearch({
   results: GeocodedPlace[];
   destination: SelectedDestination | null;
   onSelect: (place: GeocodedPlace) => void;
+  onUseMyLocation: () => void;
   onClose: () => void;
 }) {
   return (
@@ -508,6 +599,18 @@ function OriginSearch({
 
         {/* Results List */}
         <div className="mx-4 mt-3 bg-[#0B1E26] rounded-2xl overflow-hidden shadow-2xl border border-white/5 flex-1 max-h-[400px] overflow-y-auto pb-4">
+          <div
+            onClick={onUseMyLocation}
+            className="flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-white/[0.04] transition-colors active:opacity-70 border-b border-white/5"
+          >
+            <div className="w-9 h-9 rounded-full bg-[#09232D] flex items-center justify-center flex-shrink-0 border border-white/5">
+              <div className="w-2.5 h-2.5 rounded-full bg-[#75ADAF]" />
+            </div>
+            <div className="flex-1 min-w-0 leading-tight">
+              <p className="text-sm font-semibold text-white">Use my current location</p>
+              <p className="text-[10px] text-gray-400 truncate mt-1">GPS — Your Location</p>
+            </div>
+          </div>
           {results.length > 0 ? (
             <div className="divide-y divide-white/5">
               {results.map((item, index) => (
@@ -542,12 +645,16 @@ function OriginSearch({
 function AddNoteModal({
   visible,
   taskId,
+  hasArrived,
   onDone,
 }: {
   visible: boolean;
   taskId: number;
+  hasArrived: boolean;
   onDone: () => void;
 }) {
+  const { getCurrentPosition } = useGeolocation();
+  const { stopTracking } = useActiveTracking();
   const [note, setNote] = useState('');
   const [photos, setPhotos] = useState<File[]>([]);
   const [_previews, setPreviews] = useState<string[]>([]);
@@ -571,9 +678,16 @@ function AddNoteModal({
 
   const handleTaskDone = async () => {
     if (isSubmitting) return;
+    if (!hasArrived) {
+      toast.error('Not arrived yet', 'You must reach the destination before completing this task.');
+      return;
+    }
+    if (photos.length === 0) {
+      toast.error('Photo required', 'Please attach at least one proof photo.');
+      return;
+    }
     setIsSubmitting(true);
     try {
-      // Write to IndexedDB proof queue for background sync safety
       try {
         const db = await getDb();
         for (const file of photos) {
@@ -594,16 +708,35 @@ function AddNoteModal({
       }
       await syncEngine.scheduleSync();
 
-      const formData = new FormData();
-      formData.append('company_id', String(companyId));
-      if (note.trim()) formData.append('notes', note.trim());
-      photos.forEach((file) => {
-        formData.append('photos[]', file);
+      let position = {
+        latitude: 0,
+        longitude: 0,
+        accuracyMeters: null as number | null,
+        recordedAt: new Date().toISOString(),
+      };
+      try {
+        const pos = await getCurrentPosition();
+        position = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracyMeters: pos.coords.accuracy,
+          recordedAt: new Date(pos.timestamp).toISOString(),
+        };
+      } catch {
+        // best-effort GPS at completion
+      }
+
+      const formData = buildCompleteFormData({
+        companyId,
+        files: photos,
+        notes: note.trim() || undefined,
+        position,
       });
 
       await taskApi.completeTask(taskId, formData);
+      await stopTracking();
 
-      console.log('Task completed from map tab successfully', { taskId, hasNote: !!note.trim(), photoCount: photos.length });
+      toast.success('Task completed', 'Great work — tracking has stopped.');
 
       setNote('');
       setPhotos([]);
@@ -611,7 +744,7 @@ function AddNoteModal({
       onDone();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Could not complete task. Please try again.';
-      alert(`Completion failed: ${msg}`);
+      toast.error('Completion failed', msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -660,8 +793,8 @@ function AddNoteModal({
           </button>
           <button
             onClick={handleTaskDone}
-            disabled={isSubmitting}
-            className="flex-1 h-12 rounded-xl bg-[#75ADAF] hover:bg-[#66989A] text-white font-bold text-xs active:scale-95 transition-all flex items-center justify-center"
+            disabled={isSubmitting || !hasArrived}
+            className="flex-1 h-12 rounded-xl bg-[#75ADAF] hover:bg-[#66989A] text-white font-bold text-xs active:scale-95 transition-all flex items-center justify-center disabled:opacity-40"
           >
             {isSubmitting ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
@@ -713,12 +846,54 @@ function MapContent() {
   const [customOrigin, setCustomOrigin] = useState<GeocodedPlace | null>(null);
   const [recentDestinations, setRecentDestinations] = useState<RecentDestination[]>([]);
   const [hasArrived, setHasArrived] = useState(false);
+  const [plannedRoute, setPlannedRoute] = useState<[number, number][]>([]);
+  const [isRouteLoading, setIsRouteLoading] = useState(false);
+  const [isLaunchingRide, setIsLaunchingRide] = useState(false);
+  const [trackingStatus, setTrackingStatus] = useState<TrackingStatus>(
+    isFromTrackingScreen ? 'live' : 'idle',
+  );
+  const [sheetSnapIndex, setSheetSnapIndex] = useState(MAP_SHEET_EXPANDED_SNAP_INDEX);
+  const startRideInFlightRef = useRef(false);
+  const [distanceRemainingM, setDistanceRemainingM] = useState<number | null>(null);
+  // Permission gate overlay for the Start flow: null = hidden.
+  const [permGate, setPermGate] = useState<'request' | 'denied' | null>(null);
+  const [resumePermBusy, setResumePermBusy] = useState(false);
+  const resumePermBootRef = useRef(false);
 
-  const { lastPosition, getCurrentPosition, checkPermission, requestPermission } = useGeolocation();
-  const { data: tasks = [] } = useTaskList();
-  const { mutate: startTask, isPending: isStarting } = useStartTask();
+  // Saved organization locations
+  const { data: savedLocations = [] } = useSavedLocations();
+  const { mutateAsync: createSavedLocation, isPending: isSavingLocation } = useCreateSavedLocation();
+  const [pinMode, setPinMode] = useState(false);
+  const [pendingPin, setPendingPin] = useState<{ lat: number; lng: number; address: string | null } | null>(null);
+  const [selectedSavedId, setSelectedSavedId] = useState<number | null>(null);
+
+  const { lastPosition, getCurrentPosition, resolveCurrentPosition, checkPermission, requestPermission, startWatching, stopWatching } = useGeolocation();
+  const { startTracking, stopTracking, activeTaskId } = useActiveTracking();
+  const { data: tasks = [] } = useTaskListItems();
+  const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
   const { user } = useAuth();
+  const { displayName } = useAgentIdentity();
+  const [isOnline, setIsOnline] = useState(true);
   const currentAgentId = user?.id != null ? Number(user.id) : null;
+
+  useEffect(() => {
+    const sync = () => setIsOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
+    sync();
+    window.addEventListener('online', sync);
+    window.addEventListener('offline', sync);
+    return () => {
+      window.removeEventListener('online', sync);
+      window.removeEventListener('offline', sync);
+    };
+  }, []);
+
+  // Stop orphan GPS when opening /map without ?taskId (tracking store outlives page state).
+  useEffect(() => {
+    if (isFromTrackingScreen) return;
+    if (activeTaskId == null) return;
+    void stopTracking();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only hygiene
+  }, []);
 
   // Determine which task to work with — filter to only tasks assigned to this agent
   const resolvedTaskId = useMemo((): number | null => {
@@ -733,8 +908,158 @@ function MapContent() {
     return pending ? Number(pending.id) : null;
   }, [taskIdParam, tasks, currentAgentId]);
 
+  const trackingTaskId = useMemo((): number | null => {
+    const selected = selectedDestination?.taskId ?? 0;
+    if (selected > 0) return selected;
+    return resolvedTaskId;
+  }, [selectedDestination?.taskId, resolvedTaskId]);
+
   const { data: activeTask } = useTask(resolvedTaskId ? String(resolvedTaskId) : '');
-  const companyId = activeTask?.companyId ?? getActiveCompanyId() ?? 0;
+  const { data: trackingTask } = useTask(trackingTaskId ? String(trackingTaskId) : '');
+  const companyId = trackingTask?.companyId ?? activeTask?.companyId ?? getActiveCompanyId() ?? 0;
+
+  const { data: taskRoute } = useTaskRoute(
+    trackingTaskId,
+    companyId,
+    Boolean(trackingTaskId && companyId),
+  );
+
+  const liveTask = useTrackingStore((s) =>
+    trackingTaskId ? s.liveTaskMap[trackingTaskId] : undefined,
+  );
+
+  useEffect(() => {
+    if (!trackingTaskId || !taskRoute) return;
+    hydrateLiveTaskFromRoute(trackingTaskId, taskRoute);
+    if (taskRoute.arrival) {
+      setHasArrived(true);
+    }
+    // Restore route trail immediately so resume is not blank while directions load.
+    if (taskRoute.polyline.length >= 2) {
+      setPlannedRoute((prev) => (prev.length >= 2 ? prev : taskRoute.polyline));
+    }
+    // Seed distance/ETA from last known agent position vs destination.
+    const lastPoint =
+      taskRoute.points.length > 0 ? taskRoute.points[taskRoute.points.length - 1] : null;
+    if (lastPoint && taskRoute.destination) {
+      const dist = haversineMeters(
+        lastPoint.latitude,
+        lastPoint.longitude,
+        taskRoute.destination.latitude,
+        taskRoute.destination.longitude,
+      );
+      setDistanceRemainingM((prev) => (prev == null ? dist : prev));
+    } else if (taskRoute.start && taskRoute.destination) {
+      const dist = haversineMeters(
+        taskRoute.start.latitude,
+        taskRoute.start.longitude,
+        taskRoute.destination.latitude,
+        taskRoute.destination.longitude,
+      );
+      setDistanceRemainingM((prev) => (prev == null ? dist : prev));
+    }
+  }, [trackingTaskId, taskRoute]);
+
+  useEffect(() => {
+    if (liveTask?.status === 'arrived' || liveTask?.arrivedAt) {
+      setHasArrived(true);
+    }
+  }, [liveTask?.status, liveTask?.arrivedAt]);
+
+  useEffect(() => {
+    if (!isFromTrackingScreen || !trackingTaskId) return;
+    startTracking(trackingTaskId, companyId, {
+      onArrived: () => setHasArrived(true),
+      onDistanceRemaining: (m) => setDistanceRemainingM(m),
+    });
+    useTrackingStore.getState().setActiveTrackingTaskId(trackingTaskId);
+  }, [isFromTrackingScreen, trackingTaskId, companyId, startTracking]);
+
+  // Resume via /map?taskId=… — ensure location permission without the tracking gate page.
+  useEffect(() => {
+    if (!isFromTrackingScreen || !trackingTaskId || resumePermBootRef.current) return;
+
+    void (async () => {
+      resumePermBootRef.current = true;
+      const status = await checkPermission();
+
+      if (status === 'denied') {
+        setPermGate('denied');
+        return;
+      }
+      if (status !== 'granted') {
+        setPermGate('request');
+        return;
+      }
+
+      try {
+        const pos = await resolveCurrentPosition();
+        useTrackingStore.getState().upsertTask(trackingTaskId, {
+          lastPosition: [pos.coords.longitude, pos.coords.latitude],
+        });
+        setPermGate(null);
+      } catch {
+        setPermGate('request');
+      }
+    })();
+  }, [isFromTrackingScreen, trackingTaskId, checkPermission, resolveCurrentPosition]);
+
+  const handleResumePermission = useCallback(async (): Promise<void> => {
+    if (!trackingTaskId) return;
+    setResumePermBusy(true);
+    try {
+      let status = await checkPermission();
+      if (status !== 'granted') {
+        status = await requestPermission();
+      }
+      if (status === 'denied') {
+        setPermGate('denied');
+        return;
+      }
+      const pos = await resolveCurrentPosition();
+      useTrackingStore.getState().upsertTask(trackingTaskId, {
+        lastPosition: [pos.coords.longitude, pos.coords.latitude],
+      });
+      setPermGate(null);
+      if (companyId) {
+        void trackingApi.getTaskRoute(trackingTaskId, companyId).then((route) => {
+          hydrateLiveTaskFromRoute(trackingTaskId, route);
+          if (route.arrival) setHasArrived(true);
+        }).catch(() => {});
+      }
+    } catch {
+      toast.error('Location error', 'Could not get your current position. Please try again.');
+    } finally {
+      setResumePermBusy(false);
+    }
+  }, [trackingTaskId, companyId, checkPermission, requestPermission, resolveCurrentPosition]);
+
+  // Restore destination on resume (e.g. /map?taskId=…) before task detail fetch completes.
+  useEffect(() => {
+    if (selectedDestination) return;
+    const dest = taskRoute?.destination ?? liveTask?.destination;
+    if (!dest) return;
+    const taskId = trackingTaskId ?? 0;
+    setSelectedDestination({
+      name: trackingTask?.title ?? activeTask?.title ?? 'Destination',
+      address: trackingTask?.address ?? activeTask?.address ?? undefined,
+      latitude: dest.latitude,
+      longitude: dest.longitude,
+      taskId,
+      taskStatus: trackingTask?.status ?? activeTask?.status,
+    });
+  }, [
+    selectedDestination,
+    taskRoute?.destination,
+    liveTask?.destination,
+    trackingTaskId,
+    trackingTask?.title,
+    trackingTask?.address,
+    trackingTask?.status,
+    activeTask?.title,
+    activeTask?.address,
+    activeTask?.status,
+  ]);
 
   // Auto-fill destination from resolved task
   useEffect(() => {
@@ -793,63 +1118,135 @@ function MapContent() {
     } catch {}
   }, []);
 
-  // Seed initial agent position for map dot
+  // Boot GPS for map preview. We deliberately do NOT force a permission prompt
+  // on page load — the Start flow prompts when the user actually starts a task,
+  // which avoids a surprise prompt and a duplicate request. We also suspend this
+  // preview watcher during active tracking, since the location reporter owns the
+  // GPS watch then (prevents two concurrent watchPosition subscriptions).
   useEffect(() => {
-    checkPermission().then((status) => {
-      if (status === 'granted') getCurrentPosition().catch(() => {});
-    });
-  }, [checkPermission, getCurrentPosition]);
-
-  // Location reporting — active only during activity_started
-  useLocationReporter({
-    taskId: selectedDestination?.taskId ?? 0,
-    companyId,
-    active: phase === 'activity_started' && (selectedDestination?.taskId ?? 0) > 0,
-    onArrived: () => {
-      setHasArrived(true);
-      console.log('Agent arrived at destination (map page)', { taskId: selectedDestination?.taskId });
-    },
-  });
+    let mounted = true;
+    const bootLocation = async () => {
+      const status = await checkPermission();
+      if (status !== 'granted') return;
+      try {
+        await getCurrentPosition();
+      } catch {
+        // ignore — GPS may be temporarily unavailable
+      }
+      if (mounted && phase !== 'activity_started') {
+        await startWatching(() => {});
+      } else if (mounted && isFromTrackingScreen) {
+        // Resume after refresh: one-shot GPS fix so route/ETA can compute before reporter starts.
+        try {
+          await getCurrentPosition();
+        } catch {
+          // best-effort — restored route origin may still come from taskRoute
+        }
+      }
+    };
+    void bootLocation();
+    return () => {
+      mounted = false;
+      stopWatching();
+    };
+  }, [checkPermission, getCurrentPosition, startWatching, stopWatching, phase, isFromTrackingScreen]);
 
   // Real-time polyline from WebSocket store
-  const livePolyline = useTrackingStore((s) =>
-    resolvedTaskId ? s.liveTaskMap[resolvedTaskId]?.polyline ?? EMPTY_POLYLINE : EMPTY_POLYLINE,
-  );
+  const livePolyline = liveTask?.polyline ?? EMPTY_POLYLINE;
+
+  const geofenceRadius =
+    liveTask?.destination?.radiusMeters ??
+    taskRoute?.destination.radius_meters ??
+    activeTask?.proximityThreshold ??
+    null;
+
+  // Route origin: prefer live GPS, then restored tracking state (resume after refresh).
+  const routeOriginPosition = useMemo((): [number, number] | null => {
+    if (customOrigin) return [customOrigin.longitude, customOrigin.latitude];
+    if (lastPosition) return [lastPosition.coords.longitude, lastPosition.coords.latitude];
+    if (liveTask?.lastPosition) return liveTask.lastPosition;
+    const routePoints = taskRoute?.points;
+    if (routePoints && routePoints.length > 0) {
+      const last = routePoints[routePoints.length - 1];
+      return [last.longitude, last.latitude];
+    }
+    if (taskRoute?.start) {
+      return [taskRoute.start.longitude, taskRoute.start.latitude];
+    }
+    return null;
+  }, [customOrigin, lastPosition, liveTask?.lastPosition, taskRoute]);
+
+  const effectiveOriginLat = routeOriginPosition?.[1] ?? null;
+  const effectiveOriginLng = routeOriginPosition?.[0] ?? null;
+
+  // Planned driving route (preview / navigation). Do not clear an already-restored
+  // route while destination or GPS is still loading on resume.
+  useEffect(() => {
+    const token = getMapboxPublicToken() || env.MAPBOX_TOKEN;
+    if (!token || !selectedDestination) {
+      setIsRouteLoading(false);
+      return;
+    }
+    if (effectiveOriginLng == null || effectiveOriginLat == null) {
+      setIsRouteLoading(false);
+      return;
+    }
+
+    const origin: [number, number] = [effectiveOriginLng, effectiveOriginLat];
+    const destination: [number, number] = [selectedDestination.longitude, selectedDestination.latitude];
+    let cancelled = false;
+    setIsRouteLoading(true);
+
+    void fetchDirectionsRoute(origin, destination, token).then((coords) => {
+      if (cancelled) return;
+      const route = coords && coords.length > 1 ? coords : [origin, destination];
+      setPlannedRoute(route);
+      setIsRouteLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    effectiveOriginLng,
+    effectiveOriginLat,
+    selectedDestination?.latitude,
+    selectedDestination?.longitude,
+    liveTask?.lastPosition,
+    taskRoute?.polyline,
+  ]);
 
   // Static ETAs
   const etaByMode = useMemo((): Record<TransportMode, number | null> => {
-    if (!lastPosition || !selectedDestination) {
+    if (effectiveOriginLat == null || effectiveOriginLng == null || !selectedDestination) {
       return { driving: null, cycling: null, walking: null };
     }
-    const dist = haversineMeters(
-      lastPosition.coords.latitude,
-      lastPosition.coords.longitude,
-      selectedDestination.latitude,
-      selectedDestination.longitude,
-    );
+    const dist =
+      distanceRemainingM ??
+      haversineMeters(
+        effectiveOriginLat,
+        effectiveOriginLng,
+        selectedDestination.latitude,
+        selectedDestination.longitude,
+      );
     return {
       driving: etaMinutes(dist, 'driving'),
       cycling: etaMinutes(dist, 'cycling'),
       walking: etaMinutes(dist, 'walking'),
     };
-  }, [lastPosition, selectedDestination]);
+  }, [effectiveOriginLat, effectiveOriginLng, selectedDestination, distanceRemainingM]);
 
   // Search results: active task destinations + recents
   const taskDestOptions = useMemo((): RecentDestination[] =>
     tasks
-      .filter(
-        (t) =>
-          t.status !== 'completed' &&
-          t.status !== 'cancelled' &&
-          t.latitude &&
-          t.longitude,
-      )
+      .filter((t) => taskHasMapLocation(t))
       .map((t) => ({
         name: t.title,
         address: t.address ?? undefined,
-        latitude: t.latitude!,
-        longitude: t.longitude!,
+        latitude: t.latitude,
+        longitude: t.longitude,
         taskId: Number(t.id),
+        taskStatus: t.status,
       })),
     [tasks],
   );
@@ -859,7 +1256,25 @@ function MapContent() {
     const combined: RecentDestination[] = [];
 
     if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      for (const loc of savedLocations) {
+        if (!loc.isActive) continue;
+        const matches =
+          loc.name.toLowerCase().includes(q) ||
+          (loc.address?.toLowerCase().includes(q) ?? false) ||
+          (loc.type?.toLowerCase().includes(q) ?? false);
+        if (matches && !seen.has(loc.name)) {
+          seen.add(loc.name);
+          combined.push({
+            name: loc.name,
+            address: loc.address ?? undefined,
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+          });
+        }
+      }
       for (const r of geoDestResults) {
+        if (seen.has(r.name)) continue;
         seen.add(r.name);
         combined.push(r);
       }
@@ -867,21 +1282,27 @@ function MapContent() {
 
     const taskRecents: RecentDestination[] = [];
     const seenTaskIds = new Set<number>();
-    for (const td of taskDestOptions) {
-      if (td.taskId !== undefined && !seenTaskIds.has(td.taskId)) {
-        seenTaskIds.add(td.taskId);
-        taskRecents.push(td);
-      }
-    }
     for (const rd of recentDestinations) {
-      if (rd.taskId === undefined || !seenTaskIds.has(rd.taskId)) {
-        taskRecents.push(rd);
-      }
+      if (rd.taskId !== undefined && seenTaskIds.has(rd.taskId)) continue;
+      if (rd.taskId !== undefined) seenTaskIds.add(rd.taskId);
+      taskRecents.push(rd);
     }
 
-    if (!searchQuery.trim()) return taskRecents;
+    if (!searchQuery.trim()) {
+      const taskIds = new Set(taskDestOptions.map((t) => t.taskId).filter((id): id is number => id != null));
+      return taskRecents.filter((r) => r.taskId == null || !taskIds.has(r.taskId));
+    }
 
     const q = searchQuery.toLowerCase();
+    for (const td of taskDestOptions) {
+      if (
+        !seen.has(td.name) &&
+        (td.name.toLowerCase().includes(q) || (td.address?.toLowerCase().includes(q) ?? false))
+      ) {
+        seen.add(td.name);
+        combined.push(td);
+      }
+    }
     for (const r of taskRecents) {
       if (
         !seen.has(r.name) &&
@@ -891,7 +1312,7 @@ function MapContent() {
       }
     }
     return combined;
-  }, [taskDestOptions, recentDestinations, searchQuery, geoDestResults]);
+  }, [taskDestOptions, recentDestinations, searchQuery, geoDestResults, savedLocations]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -911,19 +1332,22 @@ function MapContent() {
 
   const handleSelectDestination = useCallback((dest: RecentDestination) => {
     const taskIdForDest = dest.taskId ?? 0;
+    const matchedTask = taskIdForDest > 0 ? tasks.find((t) => t.id === String(taskIdForDest)) : undefined;
     setSelectedDestination({
       name: dest.name,
       address: dest.address,
       latitude: dest.latitude,
       longitude: dest.longitude,
       taskId: taskIdForDest,
+      taskStatus: matchedTask?.status ?? dest.taskStatus,
     });
+    setPhase('destination_selected');
     saveRecentDestination(dest);
     setTimeout(() => setRecentDestinations(getRecentDestinations()), 0);
     setIsDestSearchOpen(false);
     setSearchQuery('');
     setGeoDestResults([]);
-  }, []);
+  }, [tasks]);
 
   const handleSelectOrigin = useCallback((place: GeocodedPlace) => {
     setCustomOrigin(place);
@@ -932,9 +1356,28 @@ function MapContent() {
     setOriginGeoResults([]);
   }, []);
 
+  const handleUseMyLocation = useCallback(() => {
+    setCustomOrigin(null);
+    setIsOriginSearchOpen(false);
+    setOriginQuery('');
+    setOriginGeoResults([]);
+    void requestPermission().then(async (status) => {
+      if (status !== 'granted') {
+        toast.error('Location access needed', 'Enable location permission to use Your Location.');
+        return;
+      }
+      try {
+        await getCurrentPosition();
+      } catch {
+        toast.error('Location unavailable', 'Could not get your current position. Try again.');
+      }
+    });
+  }, [requestPermission, getCurrentPosition]);
+
   const handleClearOrigin = useCallback(() => {
     setCustomOrigin(null);
-  }, []);
+    void handleUseMyLocation();
+  }, [handleUseMyLocation]);
 
   const handleDestQueryChange = useCallback((q: string) => {
     setSearchQuery(q);
@@ -948,84 +1391,390 @@ function MapContent() {
 
   const handleStartActivity = useCallback(async (): Promise<void> => {
     if (!selectedDestination?.taskId) return;
+    if (startRideInFlightRef.current || isLaunchingRide) return;
+
     const taskId = selectedDestination.taskId;
+    const existingTask = tasks.find((t) => t.id === String(taskId));
+    const isResume = existingTask?.status === 'in_progress';
+
+    if (!companyId) {
+      toast.error('Session error', 'Company context is missing. Please reload and try again.');
+      return;
+    }
+
+    startRideInFlightRef.current = true;
+    setIsLaunchingRide(true);
+    setTrackingStatus('connecting');
+
+    const markTrackingLive = () => {
+      setTrackingStatus('live');
+      queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    };
+
+    const beginSession = (arrived?: boolean, trackingSessionId?: number, startPoint?: [number, number]) => {
+      const avatarUrl = getSafeAvatarSrc(user?.avatar_url ?? null);
+      const point =
+        startPoint ??
+        useTrackingStore.getState().liveTaskMap[taskId]?.lastPosition ??
+        (effectiveOriginLng != null && effectiveOriginLat != null
+          ? ([effectiveOriginLng, effectiveOriginLat] as [number, number])
+          : null);
+
+      useTrackingStore.getState().upsertTask(taskId, {
+        ...(trackingSessionId != null ? { trackingSessionId } : {}),
+        status: arrived ? 'arrived' : 'tracking',
+        lastPosition: point,
+        polyline: point ? [point] : [],
+        agentName: displayName,
+        agentAvatar: avatarUrl,
+        taskTitle: selectedDestination?.name ?? existingTask?.title ?? 'Task',
+      });
+      setPhase('activity_started');
+      setIsLaunchingRide(false);
+      if (arrived) setHasArrived(true);
+      startTracking(taskId, companyId, {
+        onArrived: () => setHasArrived(true),
+        onDistanceRemaining: (m) => setDistanceRemainingM(m),
+      });
+    };
 
     try {
-      const permStatus = await requestPermission();
+      // 1) Gate location permission. Trigger the browser prompt only if needed,
+      //    and surface a recovery gate (with platform guidance) on denial.
+      let permStatus = await checkPermission();
       if (permStatus !== 'granted') {
-        alert('Location access is required to start this activity. Please check settings.');
+        permStatus = await requestPermission();
+      }
+      if (permStatus === 'denied') {
+        setIsLaunchingRide(false);
+        setTrackingStatus('idle');
+        startRideInFlightRef.current = false;
+        setPermGate('denied');
+        return;
+      }
+      // granted, prompt, or unknown — attempt GPS (iOS Permissions API is unreliable).
+      setPermGate(null);
+
+      // 2) Acquire a GPS fix for the start point.
+      let startPoint: [number, number];
+      if (lastPosition) {
+        startPoint = [lastPosition.coords.longitude, lastPosition.coords.latitude];
+      } else if (customOrigin) {
+        startPoint = [customOrigin.longitude, customOrigin.latitude];
+      } else if (effectiveOriginLng != null && effectiveOriginLat != null) {
+        startPoint = [effectiveOriginLng, effectiveOriginLat];
+      } else {
+        const pos = await resolveCurrentPosition();
+        startPoint = [pos.coords.longitude, pos.coords.latitude];
+      }
+
+      // Resume: the session already exists, so transition immediately and
+      // hydrate the existing route in the background.
+      if (isResume) {
+        beginSession(false, undefined, startPoint);
+        toast.success('Tracking resumed', 'You are live again.');
+        void trackingApi
+          .getTaskRoute(taskId, companyId)
+          .then((route) => {
+            hydrateLiveTaskFromRoute(taskId, route);
+            if (route.arrival) setHasArrived(true);
+            markTrackingLive();
+          })
+          .catch(() => {
+            // ride UI already active; route hydrate is best-effort
+          });
         return;
       }
 
-      const pos = await getCurrentPosition();
-      const existingTask = tasks.find((t) => t.id === String(taskId));
-
-      // Resume in-progress task
-      if (existingTask?.status === 'in_progress') {
-        useTrackingStore.getState().upsertTask(taskId, {
-          status: 'tracking',
-          lastPosition: [pos.coords.longitude, pos.coords.latitude],
-          polyline: [],
-        });
-        useTrackingStore.getState().setActiveTrackingTaskId(taskId);
-        console.log('Activity resumed from map page', { taskId });
-        setPhase('activity_started');
-        return;
-      }
-
-      startTask(
-        {
+      // 3) Fresh start: call the API FIRST, only transition to the tracking
+      //    experience once the server confirms the session started.
+      try {
+        const data = await startTaskAsync({
           taskId,
           payload: {
             companyId,
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracyMeters: pos.coords.accuracy ?? 0,
-            recordedAt: new Date(pos.timestamp).toISOString(),
+            latitude: startPoint[1],
+            longitude: startPoint[0],
+            accuracyMeters: lastPosition?.coords.accuracy ?? 0,
+            recordedAt: new Date(lastPosition?.timestamp ?? Date.now()).toISOString(),
           },
-        },
-        {
-          onSuccess: (data) => {
-            useTrackingStore.getState().upsertTask(taskId, {
-              trackingSessionId: data.tracking.id,
-              status: 'tracking',
-              lastPosition: [pos.coords.longitude, pos.coords.latitude],
-              polyline: [],
-            });
-            useTrackingStore.getState().setActiveTrackingTaskId(taskId);
-            console.log('Activity started from map page', { taskId, sessionId: data.tracking.id });
-            setPhase('activity_started');
-            if (data.arrived) setHasArrived(true);
-          },
-          onError: (err: unknown) => {
-            alert(`Could not start activity: ${err instanceof Error ? err.message : 'Please try again.'}`);
-          },
-        },
+        });
+        beginSession(data.arrived, data.tracking.id, startPoint);
+        if (data.arrived) setHasArrived(true);
+        markTrackingLive();
+        toast.success('Task started', 'Tracking is now active.');
+        } catch (err: unknown) {
+          if (isTrackingAlreadyActiveError(err)) {
+            try {
+              const route = await trackingApi.getTaskRoute(taskId, companyId);
+              beginSession(route.arrival != null, undefined, startPoint);
+              hydrateLiveTaskFromRoute(taskId, route);
+              if (route.arrival) setHasArrived(true);
+              markTrackingLive();
+              toast.success('Tracking active', 'Reconnected to your task.');
+              return;
+            } catch {
+              // fall through to generic error
+            }
+          }
+          // Clean rollback: no transition happened, stay on the planning screen.
+          void stopTracking();
+          setPhase('destination_selected');
+          setIsLaunchingRide(false);
+          setTrackingStatus('error');
+          toast.error(
+            'Could not start task',
+            flattenApiError(err) || 'Please try again.',
+          );
+        }
+    } catch {
+      setIsLaunchingRide(false);
+      setPhase('destination_selected');
+      setTrackingStatus('idle');
+      toast.error(
+        'Location error',
+        'Could not get your current position. Please try again.',
       );
-    } catch (_err) {
-      alert('Location error: Could not get your current position. Please try again.');
+    } finally {
+      startRideInFlightRef.current = false;
     }
-  }, [selectedDestination, tasks, companyId, startTask, requestPermission, getCurrentPosition]);
+  }, [
+    selectedDestination,
+    tasks,
+    companyId,
+    isLaunchingRide,
+    startTaskAsync,
+    startTracking,
+    stopTracking,
+    requestPermission,
+    checkPermission,
+    resolveCurrentPosition,
+    getCurrentPosition,
+    lastPosition,
+    customOrigin,
+    effectiveOriginLng,
+    effectiveOriginLat,
+    displayName,
+    user?.avatar_url,
+    plannedRoute.length,
+    queryClient,
+  ]);
+
+  useEffect(() => {
+    if (phase !== 'activity_started' || trackingStatus === 'live') return;
+    if (liveTask?.lastUpdatedAt) {
+      setTrackingStatus('live');
+    }
+  }, [phase, trackingStatus, liveTask?.lastUpdatedAt]);
+
+  useEffect(() => {
+    if (phase !== 'activity_started' || trackingStatus !== 'connecting') return;
+    const timer = setTimeout(() => setTrackingStatus('live'), 3000);
+    return () => clearTimeout(timer);
+  }, [phase, trackingStatus]);
+
+  // Success feedback when the agent reaches the destination (once per session).
+  const arrivedToastShownRef = useRef(false);
+  useEffect(() => {
+    if (phase !== 'activity_started') {
+      arrivedToastShownRef.current = false;
+      return;
+    }
+    if (hasArrived && !arrivedToastShownRef.current) {
+      arrivedToastShownRef.current = true;
+      toast.success('Destination reached', 'You can complete the task now.');
+    }
+  }, [phase, hasArrived]);
 
   const handleEndActivity = useCallback((): void => {
-    console.log('Activity ended from map page', { taskId: selectedDestination?.taskId });
-    setPhase('activity_ended');
+    void stopTracking();
+    setTrackingStatus('idle');
+    if (hasArrived) {
+      setPhase('activity_ended');
+      return;
+    }
+    // Not at destination — pause tracking, do not open completion workflow.
+    setPhase('destination_selected');
+    toast.info('Tracking paused', 'Your task is still in progress. Tap Start when you are ready to continue.');
+  }, [stopTracking, hasArrived]);
+
+  const handleShareDestination = useCallback(() => {
+    if (!selectedDestination) return;
+    const text = `${selectedDestination.name}\n${selectedDestination.latitude}, ${selectedDestination.longitude}`;
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(text);
+      toast.success('Copied', 'Destination coordinates copied to clipboard.');
+    }
   }, [selectedDestination]);
+
+  const handleCancelRoute = useCallback(() => {
+    if (phase === 'activity_started') return;
+    setSelectedDestination(null);
+    setPlannedRoute([]);
+    setPhase('idle');
+  }, [phase]);
+
+  const handleOpenTaskPicker = useCallback(() => {
+    if (phase === 'activity_started') return;
+    handleOpenDestSearch();
+  }, [phase, handleOpenDestSearch]);
 
   const handleTaskDone = useCallback((): void => {
     queryClient.invalidateQueries({ queryKey: taskKeys.all });
-    useTrackingStore.getState().setActiveTrackingTaskId(null);
     setPhase('idle');
     setSelectedDestination(null);
     setHasArrived(false);
+    setPlannedRoute([]);
+    setTrackingStatus('idle');
   }, [queryClient]);
 
+  // ── Saved locations ──────────────────────────────────────────────────────────
+
+  const savedLocationPins = useMemo<SavedLocationPin[]>(
+    () =>
+      savedLocations
+        .filter((loc) => loc.isActive)
+        .map((loc) => ({
+          id: loc.id,
+          longitude: loc.longitude,
+          latitude: loc.latitude,
+          color: getSavedLocationType(loc.type).color,
+          selected: loc.id === selectedSavedId,
+        })),
+    [savedLocations, selectedSavedId],
+  );
+
+  const selectedSavedLocation = useMemo<SavedLocation | null>(
+    () => savedLocations.find((loc) => loc.id === selectedSavedId) ?? null,
+    [savedLocations, selectedSavedId],
+  );
+
+  const handleMapPin = useCallback((lng: number, lat: number) => {
+    setPinMode(false);
+    setPendingPin({ lat, lng, address: null });
+    void reverseGeocode(lng, lat).then((address) => {
+      setPendingPin((prev) =>
+        prev && prev.lat === lat && prev.lng === lng ? { ...prev, address } : prev,
+      );
+    });
+  }, []);
+
+  const handleSavedLocationClick = useCallback((id: number) => {
+    setSelectedSavedId(id);
+  }, []);
+
+  const handleSaveCurrentLocation = useCallback(() => {
+    setPinMode(false);
+    void requestPermission().then(async (status) => {
+      if (status !== 'granted') {
+        toast.error('Location access needed', 'Enable location permission to save your current spot.');
+        return;
+      }
+      try {
+        const pos = await getCurrentPosition();
+        const { latitude, longitude } = pos.coords;
+        setPendingPin({ lat: latitude, lng: longitude, address: null });
+        const address = await reverseGeocode(longitude, latitude);
+        setPendingPin((prev) =>
+          prev && prev.lat === latitude && prev.lng === longitude ? { ...prev, address } : prev,
+        );
+      } catch {
+        toast.error('Location unavailable', 'Could not get your current position. Try again.');
+      }
+    });
+  }, [requestPermission, getCurrentPosition]);
+
+  const handleSubmitSavedLocation = useCallback(
+    async (input: CreateSavedLocationInput) => {
+      try {
+        await createSavedLocation(input);
+        setPendingPin(null);
+      } catch {
+        // Errors surface via the API client toast.
+      }
+    },
+    [createSavedLocation],
+  );
+
+  const handleTogglePinMode = useCallback(() => {
+    setSelectedSavedId(null);
+    setPendingPin(null);
+    setPinMode((prev) => !prev);
+  }, []);
+
   // Derived positions
-  const agentLng = customOrigin?.longitude ?? lastPosition?.coords.longitude ?? null;
-  const agentLat = customOrigin?.latitude ?? lastPosition?.coords.latitude ?? null;
+  const isNavigating = phase === 'activity_started';
+  const agentLng = isNavigating
+    ? liveTask?.lastPosition?.[0] ?? lastPosition?.coords.longitude ?? customOrigin?.longitude ?? null
+    : customOrigin?.longitude ?? lastPosition?.coords.longitude ?? null;
+  const agentLat = isNavigating
+    ? liveTask?.lastPosition?.[1] ?? lastPosition?.coords.latitude ?? customOrigin?.latitude ?? null
+    : customOrigin?.latitude ?? lastPosition?.coords.latitude ?? null;
   const agentPosition = useMemo<[number, number] | null>(
     () => (agentLng != null && agentLat != null ? [agentLng, agentLat] : null),
     [agentLng, agentLat],
+  );
+
+  const mapMode = isNavigating ? 'navigation' as const : 'preview' as const;
+  const traveledCoords = useMemo(
+    () => buildTraveledSegment(livePolyline),
+    [livePolyline],
+  );
+  const remainingRouteCoords = useMemo(() => {
+    if (!isNavigating) return plannedRoute;
+    return agentPosition ? sliceRemainingRoute(plannedRoute, agentPosition) : plannedRoute;
+  }, [isNavigating, plannedRoute, agentPosition]);
+
+  const totalRouteDistanceM = useMemo(() => {
+    if (plannedRoute.length < 2) return null;
+    let total = 0;
+    for (let i = 1; i < plannedRoute.length; i++) {
+      total += haversineMeters(
+        plannedRoute[i - 1][1],
+        plannedRoute[i - 1][0],
+        plannedRoute[i][1],
+        plannedRoute[i][0],
+      );
+    }
+    return total;
+  }, [plannedRoute]);
+
+  const agentAvatarUrl = getSafeAvatarSrc(user?.avatar_url ?? null);
+  const agentMarker = useMemo(
+    () => ({
+      displayName,
+      avatarUrl: isOnline ? agentAvatarUrl : null,
+      preferInitials: !isOnline,
+      headingDegrees: isNavigating
+        ? liveTask?.lastHeadingDegrees ?? lastPosition?.coords.heading ?? null
+        : lastPosition?.coords.heading ?? null,
+      speedMps: isNavigating
+        ? liveTask?.lastSpeedMps ?? lastPosition?.coords.speed ?? null
+        : lastPosition?.coords.speed ?? null,
+    }),
+    [
+      displayName,
+      isOnline,
+      agentAvatarUrl,
+      isNavigating,
+      liveTask?.lastHeadingDegrees,
+      liveTask?.lastSpeedMps,
+      lastPosition?.coords.heading,
+      lastPosition?.coords.speed,
+    ],
+  );
+
+  const rideTrackingStatus = useMemo((): 'connecting' | 'live' | 'error' => {
+    if (trackingStatus === 'error') return 'error';
+    if (trackingStatus === 'connecting') return 'connecting';
+    return 'live';
+  }, [trackingStatus]);
+
+  const destinationMarkerKind = (selectedDestination?.taskId ?? 0) > 0 ? 'task' as const : 'place' as const;
+
+  const selectedDestTask = useMemo(
+    () => (selectedDestination?.taskId ? tasks.find((t) => t.id === String(selectedDestination.taskId)) : undefined),
+    [selectedDestination?.taskId, tasks],
   );
 
   const selectedDestLng = selectedDestination?.longitude ?? null;
@@ -1035,6 +1784,19 @@ function MapContent() {
     [selectedDestLng, selectedDestLat],
   );
 
+  const isSheetCollapsed = sheetSnapIndex <= MAP_SHEET_COLLAPSED_SNAP_INDEX;
+  const showMapChrome = !isDestSearchOpen && !isOriginSearchOpen;
+
+  const handleSheetSnapChange = useCallback((snapIndex: number) => {
+    setSheetSnapIndex(snapIndex);
+  }, []);
+
+  useEffect(() => {
+    if (selectedDestination) {
+      setSheetSnapIndex(MAP_SHEET_EXPANDED_SNAP_INDEX);
+    }
+  }, [selectedDestination?.taskId, selectedDestination?.latitude, selectedDestination?.longitude]);
+
   return (
     <div className="fixed inset-0 flex flex-col bg-[#0A1D25] text-white overflow-hidden select-none">
       {/* Dynamic Mapbox Map */}
@@ -1042,16 +1804,50 @@ function MapContent() {
         <MapboxMap
           agentPosition={agentPosition}
           destinationPosition={destinationPosition}
-          polylineCoords={livePolyline}
-          radiusMeters={null}
+          traveledCoords={traveledCoords}
+          remainingRouteCoords={remainingRouteCoords}
+          mode={mapMode}
+          agentMarker={agentMarker}
+          destinationMarkerKind={destinationMarkerKind}
+          radiusMeters={geofenceRadius}
           arrived={hasArrived}
           dimmed={phase === 'activity_ended'}
+          savedLocations={savedLocationPins}
+          onSavedLocationClick={handleSavedLocationClick}
+          pinMode={pinMode}
+          onMapPin={handleMapPin}
         />
       </div>
 
+      {(isRouteLoading || isLaunchingRide || isStarting || trackingStatus === 'connecting') && (
+        <div className="absolute inset-x-0 top-1/2 z-[15] flex justify-center pointer-events-none px-6">
+          <div className="bg-[#09232D]/90 text-white rounded-2xl px-5 py-4 shadow-xl flex items-center gap-3 max-w-sm w-full border border-white/10">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#75ADAF] border-t-transparent flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="font-sans font-bold text-sm truncate">
+                {isLaunchingRide || isStarting || trackingStatus === 'connecting'
+                  ? 'Starting your ride…'
+                  : 'Calculating route…'}
+              </p>
+              <p className="font-sans text-xs text-white/70 truncate">
+                {isLaunchingRide || isStarting || trackingStatus === 'connecting'
+                  ? 'Connecting GPS tracking and task session'
+                  : 'Fetching directions from Mapbox'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top overlay: location card + arrival banner */}
-      {!isDestSearchOpen && !isOriginSearchOpen && (
-        <div className="relative z-10 flex flex-col w-full pt-[env(safe-area-inset-top,16px)] pointer-events-none">
+      {showMapChrome && (
+        <div
+          className={`relative z-10 flex flex-col w-full pt-[env(safe-area-inset-top,16px)] transition-all duration-300 ease-out ${
+            isSheetCollapsed
+              ? 'opacity-0 -translate-y-3 pointer-events-none'
+              : 'opacity-100 translate-y-0 pointer-events-none'
+          }`}
+        >
           <div className="pointer-events-auto">
             <LocationCard
               destination={selectedDestination}
@@ -1071,12 +1867,44 @@ function MapContent() {
         </div>
       )}
 
+      {/* Saved-location controls (hidden during active navigation) */}
+      {showMapChrome && phase !== 'activity_started' && (
+        <div className="absolute right-4 bottom-[44%] z-20 flex flex-col gap-3 items-end pointer-events-none">
+          {pinMode && (
+            <div className="pointer-events-auto bg-[#09232D]/90 text-white text-xs font-semibold rounded-xl px-3 py-2 shadow-lg border border-white/10 max-w-[200px] text-right">
+              Tap the map or long-press to drop a pin
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={handleSaveCurrentLocation}
+            className="pointer-events-auto w-12 h-12 rounded-full bg-white shadow-lg flex items-center justify-center active:scale-95 transition-transform border border-gray-100"
+            aria-label="Save current location"
+            title="Save current location"
+          >
+            <MapPin size={20} className="text-[#1D7293]" />
+          </button>
+          <button
+            type="button"
+            onClick={handleTogglePinMode}
+            className={`pointer-events-auto w-14 h-14 rounded-full shadow-lg flex items-center justify-center active:scale-95 transition-all ${
+              pinMode ? 'bg-[#FD6046] text-white rotate-45' : 'bg-[#1D7293] text-white'
+            }`}
+            aria-label={pinMode ? 'Cancel pin mode' : 'Add saved location'}
+            title={pinMode ? 'Cancel' : 'Add location'}
+          >
+            <Plus size={26} />
+          </button>
+        </div>
+      )}
+
       {/* Destination search overlay */}
       {isDestSearchOpen && (
         <DestinationSearch
           searchQuery={searchQuery}
           onQueryChange={handleDestQueryChange}
           results={searchResults}
+          taskResults={taskDestOptions}
           onSelect={handleSelectDestination}
           onClose={() => {
             setIsDestSearchOpen(false);
@@ -1094,6 +1922,7 @@ function MapContent() {
           results={originGeoResults}
           destination={selectedDestination}
           onSelect={handleSelectOrigin}
+          onUseMyLocation={handleUseMyLocation}
           onClose={() => {
             setIsOriginSearchOpen(false);
             setOriginQuery('');
@@ -1102,31 +1931,74 @@ function MapContent() {
         />
       )}
 
-      {/* Bottom panel */}
-      {!isDestSearchOpen && !isOriginSearchOpen && (
-        <div className="fixed bottom-0 inset-x-0 z-20 flex flex-col pointer-events-none pb-[100px]">
-          <div className="pointer-events-auto w-full">
-            <RouteInfoSheet
-              transportMode={transportMode}
-              onSelectMode={setTransportMode}
-              etaByMode={etaByMode}
+      {/* Bottom draggable sheet */}
+      {showMapChrome && (
+        <MapBottomSheetDynamic visible onSnapChange={handleSheetSnapChange}>
+          {phase === 'activity_started' ? (
+            <NavigationRideSheet
+              destinationName={selectedDestination?.name ?? 'Destination'}
+              etaMinutes={etaByMode[transportMode]}
+              distanceRemainingM={distanceRemainingM}
+              totalDistanceM={totalRouteDistanceM}
+              trackingStatus={rideTrackingStatus}
+              lastUpdatedAt={liveTask?.lastUpdatedAt ?? null}
+              hasArrived={hasArrived}
+              onEnd={handleEndActivity}
             />
-            <div className="bg-[#F2F4F5] px-4 pt-3 pb-4">
-              <ActivityButton
-                phase={phase}
-                hasDestination={Boolean(selectedDestination?.taskId)}
-                isStarting={isStarting}
-                onStart={handleStartActivity}
-                onEnd={handleEndActivity}
+          ) : (
+            <>
+              <RouteInfoSheet
+                transportMode={transportMode}
+                onSelectMode={setTransportMode}
+                etaByMode={etaByMode}
+                onCancel={handleCancelRoute}
+                onOpenTasks={handleOpenTaskPicker}
+                onShare={handleShareDestination}
+                canCancel
+                isRouteLoading={isRouteLoading}
               />
-            </div>
-          </div>
-        </div>
+              <div className="bg-[#F2F4F5] px-4 pt-3 pb-4">
+                <ActivityButton
+                  phase={phase}
+                  hasDestination={(selectedDestination?.taskId ?? 0) > 0}
+                  isStarting={isStarting || isLaunchingRide}
+                  taskStatus={selectedDestination?.taskStatus ?? selectedDestTask?.status}
+                  onStart={handleStartActivity}
+                />
+              </div>
+            </>
+          )}
+        </MapBottomSheetDynamic>
       )}
 
-      {/* Navigation Footer */}
-      {!isDestSearchOpen && !isOriginSearchOpen && (
-        <BottomNavBar activeTab={1} />
+      {/* Saved location details */}
+      {selectedSavedLocation && (
+        <LocationDetailsSheet
+          location={selectedSavedLocation}
+          onClose={() => setSelectedSavedId(null)}
+          onNavigate={(loc) => {
+            setSelectedSavedId(null);
+            handleSelectDestination({
+              name: loc.name,
+              address: loc.address ?? undefined,
+              latitude: loc.latitude,
+              longitude: loc.longitude,
+            });
+          }}
+        />
+      )}
+
+      {/* Save location form */}
+      {pendingPin && (
+        <SaveLocationSheet
+          visible
+          latitude={pendingPin.lat}
+          longitude={pendingPin.lng}
+          initialAddress={pendingPin.address}
+          isSubmitting={isSavingLocation}
+          onClose={() => setPendingPin(null)}
+          onSubmit={handleSubmitSavedLocation}
+        />
       )}
 
       {/* Complete notes modal */}
@@ -1134,8 +2006,29 @@ function MapContent() {
         <AddNoteModal
           visible={phase === 'activity_ended'}
           taskId={selectedDestination.taskId}
+          hasArrived={hasArrived}
           onDone={handleTaskDone}
         />
+      )}
+
+      {/* Location permission gate for the Start flow */}
+      {permGate && (
+        <div className="absolute inset-0 z-[120] bg-[#0A1D25]/95 backdrop-blur-sm">
+          <LocationPermissionGate
+            mode={permGate}
+            isBusy={isLaunchingRide || resumePermBusy}
+            isResume={isFromTrackingScreen}
+            onRequest={() => {
+              if (isFromTrackingScreen && phase === 'activity_started') {
+                void handleResumePermission();
+              } else {
+                void handleStartActivity();
+              }
+            }}
+            onDismiss={() => setPermGate(null)}
+            fullScreen
+          />
+        </div>
       )}
     </div>
   );

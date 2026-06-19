@@ -39,7 +39,12 @@ class LeadService
         $query = $this->baseQuery($companyId);
 
         if ($role === 'agent') {
-            $this->applyAgentLeadScope($query, (int) $user->id);
+            $source = isset($filters['source']) ? (string) $filters['source'] : '';
+            if ($source !== '' && $this->isAgentUploadSourceFilter($source)) {
+                $query->where('created_by_user_id', (int) $user->id);
+            } else {
+                $this->applyAgentLeadScope($query, (int) $user->id);
+            }
         }
 
         if (! empty($filters['status'])) {
@@ -352,7 +357,7 @@ class LeadService
         $this->applyAgentUploadedSourceFilter($baseQuery);
 
         if ($role === 'agent') {
-            $this->applyAgentLeadScope($baseQuery, (int) $user->id);
+            $baseQuery->where('created_by_user_id', (int) $user->id);
         }
 
         $totalUploadedLeads = (int) (clone $baseQuery)->count();

@@ -10,13 +10,14 @@ import {
   useAgentUploadsOverview,
   useCrmNavigation,
 } from '@/features/crm';
-import { useAuth } from '@/features/auth';
+import { useAuth, useAgentIdentity } from '@/features/auth';
 import { NotificationPanel, useUnreadCount } from '@/features/notifications';
 
 const PREVIEW_COUNT = 5;
 
 export default function CrmDashboardPage() {
   useAuth();
+  const { avatarSrc } = useAgentIdentity();
   const { goToAllLeads, goToLeadDetail } = useCrmNavigation();
 
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
@@ -95,7 +96,7 @@ export default function CrmDashboardPage() {
               {/* Avatar with Gradient border */}
               <div className="w-20 h-20 rounded-full p-0.5 border-3 border-[#FD6046] overflow-hidden flex-shrink-0">
                 <img
-                  src="/assets/upload-avatar.png"
+                  src={avatarSrc}
                   alt="Agent avatar"
                   className="w-full h-full object-cover rounded-full"
                 />

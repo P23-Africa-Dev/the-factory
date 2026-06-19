@@ -44,7 +44,7 @@ export function SessionExpiredModal(): React.ReactElement | null {
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#051014]/90 backdrop-blur-md px-6">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-[#051014]/90 backdrop-blur-md px-6">
       <div className="w-full max-w-sm rounded-[28px] border border-white/10 bg-[#0B2330] p-8 text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200">
         {/* Lock icon */}
         <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#FD6046]/15 text-3xl">
