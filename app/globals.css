@@ -112,6 +112,7 @@
   --color-dash-blue: #3182ce;
   --color-dash-red: #e53e3e;
   --color-dash-bg: #f4f7f9;
+  --font-sans: var(--font-poppins);
 }
 
 :root {
