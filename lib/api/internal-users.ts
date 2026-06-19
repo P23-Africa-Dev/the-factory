@@ -204,18 +204,9 @@ export function assignInternalUserSupervisor(
 export type UpdateInternalUserPayload = {
   company_id: number | string;
   full_name?: string;
-  email?: string;
   role?: InternalUserRole;
-  phone_number?: string;
-  assigned_zone?: string;
-  base_salary?: number;
-  salary_type?: "daily" | "weekly" | "monthly";
-  currency_code?: string;
-  commission_enabled?: boolean;
-  work_days?: string[];
-  supervisor_user_id?: number;
-  gender?: "male" | "female";
-  avatar_key?: string;
+  phone_number?: string | null;
+  assigned_zone?: string | null;
 };
 
 export function updateInternalUser(

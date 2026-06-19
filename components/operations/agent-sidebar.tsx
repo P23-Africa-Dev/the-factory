@@ -64,8 +64,8 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
           company_id: companyId,
           full_name: name.trim(),
           role: role as 'admin' | 'supervisor' | 'agent',
-          assigned_zone: zone.trim() || undefined,
-          ...(phone.trim() ? { phone_number: phone.trim() } : {}),
+          assigned_zone: zone.trim() || null,
+          phone_number: phone.trim() || null,
         },
       },
       {
