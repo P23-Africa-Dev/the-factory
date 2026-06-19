@@ -14,6 +14,7 @@ class CompanyDemoRequest extends Model
     protected $fillable = [
         'full_name',
         'email',
+        'phone',
         'company_name',
         'country',
         'team_size',

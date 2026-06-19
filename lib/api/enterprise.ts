@@ -7,6 +7,7 @@ export type TeamSizeRange = "2-10" | "11-50" | "51-200" | "201-500" | "501+";
 export type DemoRequestPayload = {
   full_name: string;
   email: string;
+  phone: string;
   company_name: string;
   country: string;
   team_size: TeamSizeRange;

@@ -2,7 +2,7 @@
 
 import PhoneInput from "react-phone-number-input";
 
-type Variant = "default" | "compact" | "dark";
+type Variant = "default" | "compact" | "dark" | "enterprise";
 
 interface PhoneNumberInputProps {
   value: string | null | undefined;
@@ -18,13 +18,14 @@ const variantClassName: Record<Variant, string> = {
   default: "phone-input-default",
   compact: "phone-input-compact",
   dark: "phone-input-dark",
+  enterprise: "phone-input-enterprise w-full h-[60px] rounded-full border shadow-[0px_1px_2px_0px_#0000004D] text-xs outline-none transition-colors",
 };
 
 export default function PhoneNumberInput({
   value,
   onChange,
   placeholder = "Phone Number",
-  defaultCountry = "NG",
+  defaultCountry = "GB",
   variant = "default",
   className,
   disabled,

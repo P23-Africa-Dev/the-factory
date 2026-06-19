@@ -104,6 +104,30 @@
   color: rgba(255, 255, 255, 0.6);
 }
 
+.phone-input-enterprise {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.phone-input-enterprise .PhoneInputCountry {
+  display: none;
+}
+
+.phone-input-enterprise .PhoneInputInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 12px;
+  color: #fff;
+}
+
+.phone-input-enterprise .PhoneInputInput::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+
 @theme {
   --color-dash-dark: #09232D;
   --color-dash-teal: #4fd1c5;
@@ -130,50 +154,34 @@
   .ticket-cutout {
     --notch-size: 16px;
     mask-image:
-      radial-gradient(
-        circle var(--notch-size) at 0% 12%,
+      radial-gradient(circle var(--notch-size) at 0% 12%,
         transparent 98%,
-        black 100%
-      ),
-      radial-gradient(
-        circle var(--notch-size) at 0% 52%,
+        black 100%),
+      radial-gradient(circle var(--notch-size) at 0% 52%,
         transparent 98%,
-        black 100%
-      ),
-      radial-gradient(
-        circle var(--notch-size) at 100% 12%,
+        black 100%),
+      radial-gradient(circle var(--notch-size) at 100% 12%,
         transparent 98%,
-        black 100%
-      ),
-      radial-gradient(
-        circle var(--notch-size) at 100% 52%,
+        black 100%),
+      radial-gradient(circle var(--notch-size) at 100% 52%,
         transparent 98%,
-        black 100%
-      );
+        black 100%);
     mask-size: 100% 100%;
     mask-repeat: no-repeat;
     mask-composite: intersect;
     -webkit-mask-image:
-      radial-gradient(
-        circle var(--notch-size) at 0% 12%,
+      radial-gradient(circle var(--notch-size) at 0% 12%,
         transparent 98%,
-        black 100%
-      ),
-      radial-gradient(
-        circle var(--notch-size) at 0% 52%,
+        black 100%),
+      radial-gradient(circle var(--notch-size) at 0% 52%,
         transparent 98%,
-        black 100%
-      ),
-      radial-gradient(
-        circle var(--notch-size) at 100% 12%,
+        black 100%),
+      radial-gradient(circle var(--notch-size) at 100% 12%,
         transparent 98%,
-        black 100%
-      ),
-      radial-gradient(
-        circle var(--notch-size) at 100% 52%,
+        black 100%),
+      radial-gradient(circle var(--notch-size) at 100% 52%,
         transparent 98%,
-        black 100%
-      );
+        black 100%);
     -webkit-mask-size: 100% 100%;
     -webkit-mask-repeat: no-repeat;
     -webkit-mask-composite: source-in;
@@ -182,50 +190,34 @@
   .payroll-cutout {
     --notch-size: 18px;
     mask-image:
-      radial-gradient(
-        circle var(--notch-size) at 0% 14%,
+      radial-gradient(circle var(--notch-size) at 0% 14%,
         transparent 98%,
-        black 100%
-      ),
-      radial-gradient(
-        circle var(--notch-size) at 0% 75%,
+        black 100%),
+      radial-gradient(circle var(--notch-size) at 0% 75%,
         transparent 98%,
-        black 100%
-      ),
-      radial-gradient(
-        circle var(--notch-size) at 100% 14%,
+        black 100%),
+      radial-gradient(circle var(--notch-size) at 100% 14%,
         transparent 98%,
-        black 100%
-      ),
-      radial-gradient(
-        circle var(--notch-size) at 100% 75%,
+        black 100%),
+      radial-gradient(circle var(--notch-size) at 100% 75%,
         transparent 98%,
-        black 100%
-      );
+        black 100%);
     mask-size: 100% 100%;
     mask-repeat: no-repeat;
     mask-composite: intersect;
     -webkit-mask-image:
-      radial-gradient(
-        circle var(--notch-size) at 0% 14%,
+      radial-gradient(circle var(--notch-size) at 0% 14%,
         transparent 98%,
-        black 100%
-      ),
-      radial-gradient(
-        circle var(--notch-size) at 0% 75%,
+        black 100%),
+      radial-gradient(circle var(--notch-size) at 0% 75%,
         transparent 98%,
-        black 100%
-      ),
-      radial-gradient(
-        circle var(--notch-size) at 100% 14%,
+        black 100%),
+      radial-gradient(circle var(--notch-size) at 100% 14%,
         transparent 98%,
-        black 100%
-      ),
-      radial-gradient(
-        circle var(--notch-size) at 100% 75%,
+        black 100%),
+      radial-gradient(circle var(--notch-size) at 100% 75%,
         transparent 98%,
-        black 100%
-      );
+        black 100%);
     -webkit-mask-size: 100% 100%;
     -webkit-mask-repeat: no-repeat;
     -webkit-mask-composite: source-in;
@@ -235,10 +227,12 @@
 @utility no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+
   &::-webkit-scrollbar {
     display: none;
   }
 }
+
 /* Custom Mapbox Popup Styles */
 .custom-dark-popup .mapboxgl-popup-content {
   background: rgba(255, 255, 255, 0.96);
@@ -248,17 +242,19 @@
   border: 1px solid rgba(148, 163, 184, 0.22);
   backdrop-filter: blur(18px);
 }
+
 .custom-dark-popup .mapboxgl-popup-close-button {
   display: none;
 }
+
 .custom-dark-popup .mapboxgl-popup-tip {
   border-top-color: rgba(255, 255, 255, 0.96) !important;
   border-bottom-color: transparent !important;
 }
+
 .custom-dark-popup.mapboxgl-popup-anchor-top .mapboxgl-popup-tip,
 .custom-dark-popup.mapboxgl-popup-anchor-top-left .mapboxgl-popup-tip,
 .custom-dark-popup.mapboxgl-popup-anchor-top-right .mapboxgl-popup-tip {
   border-bottom-color: rgba(255, 255, 255, 0.96) !important;
   border-top-color: transparent !important;
 }
-
