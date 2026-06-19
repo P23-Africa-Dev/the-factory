@@ -12,7 +12,7 @@ export const MAP_SHEET_MEDIUM_SNAP_INDEX = 2;
 export const MAP_SHEET_EXPANDED_SNAP_INDEX = 3;
 
 /** Ascending snap points: closed, collapsed handle, medium, expanded. */
-export const MAP_SHEET_SNAP_POINTS = [0, 56, 0.22, 0.48];
+export const MAP_SHEET_SNAP_POINTS = [0, 56, 0.22, 0.36];
 
 export function MapBottomSheet({
   visible,
@@ -42,7 +42,7 @@ export function MapBottomSheet({
       initialSnap={MAP_SHEET_EXPANDED_SNAP_INDEX}
       onSnap={handleSnap}
       className="!pointer-events-none z-20"
-      style={{ paddingBottom: MAP_BOTTOM_NAV_OFFSET_PX }}
+      style={{ paddingBottom: MAP_BOTTOM_NAV_OFFSET_PX, zIndex: 50 }}
       tweenConfig={{ ease: 'easeOut', duration: 0.28 }}
     >
       <Sheet.Container
