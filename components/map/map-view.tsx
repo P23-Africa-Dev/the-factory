@@ -1139,6 +1139,17 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         </div>
       </div>
 
+      {/* Floating Action Button */}
+      {savedLocationPermissions.canCreate && (
+        <div className="absolute bottom-10 right-10 z-20">
+          <button
+            onClick={() => setPinMode((v) => !v)}
+            className={`px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2 text-white ${pinMode ? 'bg-gradient-to-r from-[#0A7E8C] to-[#094B5C]' : 'bg-gradient-to-r from-[#D946EF] to-[#9333EA] hover:from-[#C026D3] hover:to-[#7E22CE]'}`}
+          >
+            {pinMode ? 'Cancel Pin' : 'Location Mapping'}
+          </button>
+        </div>
+      )}
 
       <SavedLocationsLayer
         provider="mapbox"
@@ -1154,7 +1165,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
 
         return (
-          <div className="absolute bottom-64 right-4 md:right-10 z-20 w-[min(92vw,380px)] rounded-3xl border border-slate-200 bg-white/95 backdrop-blur shadow-2xl">
+          <div className="absolute bottom-24 right-4 md:right-10 z-20 w-[min(92vw,380px)] rounded-3xl border border-slate-200 bg-white/95 backdrop-blur shadow-2xl">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
               <h4 className="text-[14px] font-bold text-slate-800">Active Agent Command Panel</h4>
               <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusMeta.badgeClassName}`}>
@@ -1760,6 +1771,16 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         </div>
       </div>
 
+      {savedLocationPermissions.canCreate && (
+        <div className="absolute bottom-10 right-10 z-20">
+          <button
+            onClick={() => setPinMode((v) => !v)}
+            className={`px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2 text-white ${pinMode ? 'bg-gradient-to-r from-[#0A7E8C] to-[#094B5C]' : 'bg-gradient-to-r from-[#D946EF] to-[#9333EA] hover:from-[#C026D3] hover:to-[#7E22CE]'}`}
+          >
+            {pinMode ? 'Cancel Pin' : 'Location Mapping'}
+          </button>
+        </div>
+      )}
 
       <SavedLocationsLayer
         provider="google"

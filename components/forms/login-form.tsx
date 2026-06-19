@@ -144,9 +144,8 @@ export default function LoginForm() {
             type="checkbox"
             id="terms"
             {...register("terms")}
-            className={`peer w-5 h-5 shrink-0 appearance-none rounded-md border-[1.5px] bg-white checked:bg-[#6FA8A6] checked:border-[#6FA8A6] cursor-pointer transition-colors ${
-              errors.terms ? "border-red-400" : "border-[#A9AAAB]"
-            }`}
+            className={`peer w-5 h-5 shrink-0 appearance-none rounded-md border-[1.5px] bg-white checked:bg-[#6FA8A6] checked:border-[#6FA8A6] cursor-pointer transition-colors ${errors.terms ? "border-red-400" : "border-[#A9AAAB]"
+              }`}
           />
           <svg
             className="absolute text-white pointer-events-none opacity-0 peer-checked:opacity-100 w-3 h-3"
@@ -319,7 +318,7 @@ export default function LoginForm() {
       <p className="text-center text-xs mt-4 text-[#A9AAAB]">
         Don&apos;t have an account?{" "}
         <Link
-          href="/register"
+          href="/enterprise/schedule-demo"
           className="font-bold text-[#34373C] cursor-pointer hover:underline"
         >
           Contact Us.

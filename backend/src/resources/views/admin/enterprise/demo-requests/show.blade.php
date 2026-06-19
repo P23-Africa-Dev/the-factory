@@ -27,6 +27,7 @@
                 $fields = [
                     ['Full Name',   $demoRequest->full_name],
                     ['Email',       $demoRequest->email],
+                    ['Phone',       $demoRequest->phone ?? '—'],
                     ['Company',     $demoRequest->company_name],
                     ['Country',     $demoRequest->country],
                     ['Team Size',   $demoRequest->team_size],
@@ -100,6 +101,18 @@
                             class="form-control form-control-sm"
                             value="{{ old('email', $demoRequest->email) }}"
                             required
+                        >
+                    </div>
+
+                    <div>
+                        <label class="form-label small fw-semibold mb-1" style="font-size:.78rem">Phone</label>
+                        <input
+                            type="tel"
+                            name="phone"
+                            class="form-control form-control-sm"
+                            value="{{ old('phone', $demoRequest->phone) }}"
+                            placeholder="+2348012345678"
+                            pattern="^\+[1-9][0-9]{7,14}$"
                         >
                     </div>
 

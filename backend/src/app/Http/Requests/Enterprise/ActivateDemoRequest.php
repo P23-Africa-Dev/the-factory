@@ -35,6 +35,7 @@ class ActivateDemoRequest extends FormRequest
             'action' => ['nullable', 'string', Rule::in(['draft', 'activate'])],
             'full_name' => ['nullable', 'string', 'min:2', 'max:255'],
             'email' => ['nullable', 'string', 'email:rfc', 'max:255'],
+            'phone' => ['nullable', 'string', 'regex:/^\+[1-9][0-9]{7,14}$/'],
             'company_name' => ['nullable', 'string', 'min:2', 'max:255'],
             'country' => ['nullable', 'string', 'min:2', 'max:100', Rule::in(array_values(CountryCatalog::names()))],
             'team_size' => ['nullable', 'string', Rule::in(TeamSizeEnum::values())],

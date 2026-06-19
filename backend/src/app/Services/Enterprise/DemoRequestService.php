@@ -37,6 +37,7 @@ class DemoRequestService
             $request = CompanyDemoRequest::create([
                 'full_name' => $data['full_name'],
                 'email' => strtolower($data['email']),
+                'phone' => $this->normalizePhone($data['phone'] ?? null),
                 'company_name' => $data['company_name'],
                 'country' => CountryCatalog::resolveName((string) $data['country']) ?? trim((string) $data['country']),
                 'team_size' => $data['team_size'],
@@ -58,6 +59,7 @@ class DemoRequestService
                 'id',
                 'full_name',
                 'email',
+                'phone',
                 'company_name',
                 'team_size',
                 'status',
@@ -70,6 +72,7 @@ class DemoRequestService
             $query->where(function ($subQuery) use ($search): void {
                 $subQuery->where('full_name', 'like', "%{$search}%")
                     ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%")
                     ->orWhere('company_name', 'like', "%{$search}%");
             });
         }
@@ -99,6 +102,7 @@ class DemoRequestService
             $demoRequest->fill([
                 'full_name' => $registration['full_name'],
                 'email' => $registration['email'],
+                'phone' => $registration['phone'],
                 'company_name' => $registration['company_name'],
                 'country' => $registration['country'],
                 'team_size' => $registration['team_size'],
@@ -253,6 +257,7 @@ class DemoRequestService
                 ->notify(new EnterpriseDemoRequestAdminNotification([
                     'full_name' => $request->full_name,
                     'email' => $request->email,
+                    'phone' => $request->phone,
                     'company_name' => $request->company_name,
                     'country' => $request->country,
                     'team_size' => $request->team_size,
@@ -387,6 +392,7 @@ class DemoRequestService
         return [
             'full_name' => trim((string) ($data['full_name'] ?? $demoRequest->full_name)),
             'email' => strtolower(trim((string) ($data['email'] ?? $demoRequest->email))),
+            'phone' => $this->normalizePhone($data['phone'] ?? $demoRequest->phone),
             'company_name' => trim((string) ($data['company_name'] ?? $demoRequest->company_name)),
             'country' => CountryCatalog::resolveName(trim((string) ($data['country'] ?? $demoRequest->country)))
                 ?? trim((string) ($data['country'] ?? $demoRequest->country)),
@@ -414,6 +420,13 @@ class DemoRequestService
                 'email' => ['This email belongs to an internal account and cannot be used for enterprise onboarding.'],
             ]);
         }
+    }
+
+    private function normalizePhone(mixed $phone): ?string
+    {
+        $normalized = trim((string) ($phone ?? ''));
+
+        return $normalized !== '' ? $normalized : null;
     }
 
     private function generateUniqueCompanyId(): string

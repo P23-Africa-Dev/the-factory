@@ -6,13 +6,14 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { 
-  User, 
-  Mail, 
-  Building2, 
-  Globe, 
-  Users, 
-  MessageSquare, 
+import {
+  User,
+  Mail,
+  Phone,
+  Building2,
+  Globe,
+  Users,
+  MessageSquare,
   ArrowLeft,
   CheckCircle2,
   ChevronRight
@@ -20,6 +21,7 @@ import {
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Select from "@/components/ui/select";
+import PhoneNumberInput from "@/components/ui/phone-number-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   getCountries,
@@ -33,6 +35,9 @@ import { toast } from "sonner";
 const scheduleDemoSchema = z.object({
   full_name: z.string().min(2, "Full name must be at least 2 characters."),
   email: z.string().email("Please enter a valid email address."),
+  phone: z
+    .string()
+    .regex(/^\+[1-9][0-9]{7,14}$/, "Use a valid international number (e.g. +2348012345678)."),
   company_name: z.string().min(2, "Company name must be at least 2 characters."),
   country: z.string().min(2, "Please select a country."),
   team_size: z.enum(["2-10", "11-50", "51-200", "201-500", "501+"]),
@@ -47,8 +52,14 @@ const teamSizeOptions: { label: string; value: TeamSizeRange }[] = [
   { label: "501+", value: "501+" },
 ];
 
+const enterpriseInputClassName =
+  "bg-white/5 border-white/5 pl-14 text-white placeholder:text-white/20 focus:border-[#6FA8A6]/50 focus:bg-white/[0.08]";
+
+const enterprisePhoneClassName =
+  "bg-white/5 border-white/5 pl-14 pr-7 text-white placeholder:text-white/20 focus-within:border-[#6FA8A6]/50 focus-within:bg-white/[0.08]";
+
 const countrySelectClassName =
-  "w-full h-15 px-7 rounded-full border shadow-[0px_1px_2px_0px_#0000004D] border-white/5 bg-white/5 text-xs text-white outline-none focus:border-[#6FA8A6]/50 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60";
+  "w-full h-[60px] pl-14 pr-7 rounded-full border shadow-[0px_1px_2px_0px_#0000004D] border-white/5 bg-white/5 text-xs text-white outline-none focus:border-[#6FA8A6]/50 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60";
 
 export default function ScheduleDemoPage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -77,6 +88,7 @@ export default function ScheduleDemoPage() {
     defaultValues: {
       full_name: "",
       email: "",
+      phone: "",
       company_name: "",
       country: "",
       team_size: "2-10",
@@ -137,7 +149,7 @@ export default function ScheduleDemoPage() {
               Scale your <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#6FA8A6] to-[#A3E635]">workflow</span>
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-white/50">
-              Transform your team&apos;s productivity with Factory 23. Tell us about your goals 
+              Transform your team&apos;s productivity with Factory 23. Tell us about your goals
               {/* and we&apos;ll design a custom onboarding experience. */}
             </p>
           </div>
@@ -146,38 +158,61 @@ export default function ScheduleDemoPage() {
             {/* Form Section */}
             <div className="relative overflow-hidden rounded-[40px] border border-white/10 bg-white/[0.03] p-8 shadow-2xl backdrop-blur-2xl md:p-10">
               <form className="space-y-5" onSubmit={handleSubmit((values) => requestMutation.mutate(values))}>
-                <div className="grid gap-5 md:grid-cols-2">
+                <div className="space-y-2">
                   <div className="space-y-2">
                     <div className="group relative">
                       <div className="absolute left-6 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#6FA8A6] transition-colors">
                         <User size={18} />
                       </div>
-                      <Input 
-                        type="text" 
-                        placeholder="Full name" 
-                        className="bg-white/5 border-white/5 pl-14 text-white placeholder:text-white/20 focus:border-[#6FA8A6]/50 focus:bg-white/[0.08]" 
-                        {...register("full_name")} 
+                      <Input
+                        type="text"
+                        placeholder="Full name"
+                        className={enterpriseInputClassName}
+                        {...register("full_name")}
                       />
                     </div>
                     {errors.full_name && <p className="px-4 text-[10px] font-medium text-red-400">{errors.full_name.message}</p>}
                     {apiErrors?.full_name && <p className="px-4 text-[10px] font-medium text-red-400">{apiErrors.full_name[0]}</p>}
                   </div>
+                </div>
 
-                  <div className="space-y-2">
-                    <div className="group relative">
-                      <div className="absolute left-6 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#6FA8A6] transition-colors">
-                        <Mail size={18} />
-                      </div>
-                      <Input 
-                        type="email" 
-                        placeholder="Work email" 
-                        className="bg-white/5 border-white/5 pl-14 text-white placeholder:text-white/20 focus:border-[#6FA8A6]/50 focus:bg-white/[0.08]" 
-                        {...register("email")} 
-                      />
+                <div className="space-y-2">
+                  <div className="group relative">
+                    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#6FA8A6] transition-colors">
+                      <Phone size={18} />
                     </div>
-                    {errors.email && <p className="px-4 text-[10px] font-medium text-red-400">{errors.email.message}</p>}
-                    {apiErrors?.email && <p className="px-4 text-[10px] font-medium text-red-400">{apiErrors.email[0]}</p>}
+                    <Controller
+                      name="phone"
+                      control={control}
+                      render={({ field }) => (
+                        <PhoneNumberInput
+                          variant="enterprise"
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Phone no."
+                          className={enterprisePhoneClassName}
+                        />
+                      )}
+                    />
                   </div>
+                  {errors.phone && <p className="px-4 text-[10px] font-medium text-red-400">{errors.phone.message}</p>}
+                  {apiErrors?.phone && <p className="px-4 text-[10px] font-medium text-red-400">{apiErrors.phone[0]}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="group relative">
+                    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#6FA8A6] transition-colors">
+                      <Mail size={18} />
+                    </div>
+                    <Input
+                      type="email"
+                      placeholder="Work email"
+                      className={enterpriseInputClassName}
+                      {...register("email")}
+                    />
+                  </div>
+                  {errors.email && <p className="px-4 text-[10px] font-medium text-red-400">{errors.email.message}</p>}
+                  {apiErrors?.email && <p className="px-4 text-[10px] font-medium text-red-400">{apiErrors.email[0]}</p>}
                 </div>
 
                 <div className="space-y-2">
@@ -185,34 +220,40 @@ export default function ScheduleDemoPage() {
                     <div className="absolute left-6 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#6FA8A6] transition-colors">
                       <Building2 size={18} />
                     </div>
-                    <Input 
-                      type="text" 
-                      placeholder="Company name" 
-                      className="bg-white/5 border-white/5 pl-14 text-white placeholder:text-white/20 focus:border-[#6FA8A6]/50 focus:bg-white/[0.08]" 
-                      {...register("company_name")} 
+                    <Input
+                      type="text"
+                      placeholder="Company name"
+                      className={enterpriseInputClassName}
+                      {...register("company_name")}
                     />
                   </div>
                   {errors.company_name && <p className="px-4 text-[10px] font-medium text-red-400">{errors.company_name.message}</p>}
                   {apiErrors?.company_name && <p className="px-4 text-[10px] font-medium text-red-400">{apiErrors.company_name[0]}</p>}
                 </div>
 
-                <div className="grid gap-5 md:grid-cols-2 text-black">
+                <div className="grid gap-5 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Controller
-                      name="country"
-                      control={control}
-                      render={({ field }) => (
-                        <SearchableSelect
-                          value={field.value}
-                          onChange={field.onChange}
-                          options={countriesToRender}
-                          placeholder={isCountriesPending ? "Loading countries..." : "Select country"}
-                          searchPlaceholder="Search countries..."
-                          disabled={isCountriesPending || isCountriesError}
-                          className={countrySelectClassName}
-                        />
-                      )}
-                    />
+                    <div className="group relative">
+                      <div className="pointer-events-none absolute left-6 top-1/2 z-10 -translate-y-1/2 text-white/40 transition-colors group-focus-within:text-[#6FA8A6]">
+                        <Globe size={18} />
+                      </div>
+                      <Controller
+                        name="country"
+                        control={control}
+                        render={({ field }) => (
+                          <SearchableSelect
+                            variant="enterprise"
+                            value={field.value}
+                            onChange={field.onChange}
+                            options={countriesToRender}
+                            placeholder={isCountriesPending ? "Loading countries..." : "Select country"}
+                            searchPlaceholder="Search countries..."
+                            disabled={isCountriesPending || isCountriesError}
+                            className={countrySelectClassName}
+                          />
+                        )}
+                      />
+                    </div>
                     {isCountriesError && (
                       <p className="px-4 text-[10px] font-medium text-red-400">
                         Unable to load countries. Please refresh the page and try again.
@@ -222,7 +263,7 @@ export default function ScheduleDemoPage() {
                     {apiErrors?.country && <p className="px-4 text-[10px] font-medium text-red-400">{apiErrors.country[0]}</p>}
                   </div>
 
-                  <div className="space-y-2 text-black">
+                  <div className="space-y-2">
                     <Select
                       placeholder="Select team size"
                       options={teamSizeOptions}
@@ -249,9 +290,9 @@ export default function ScheduleDemoPage() {
                   {apiErrors?.use_case && <p className="px-4 text-[10px] font-medium text-red-400">{apiErrors.use_case[0]}</p>}
                 </div>
 
-                <Button 
-                  type="submit" 
-                  className="mt-4 h-16 w-full rounded-[24px] bg-[#6FA8A6] text-sm font-bold uppercase tracking-widest text-[#0A1618] hover:bg-[#A3E635] shadow-[0_4px_20px_rgba(111,168,166,0.3)] hover:shadow-[0_4px_20px_rgba(163,230,53,0.3)] active:scale-[0.98] transition-all" 
+                <Button
+                  type="submit"
+                  className="mt-4 h-16 w-full rounded-[24px] bg-[#6FA8A6] text-sm font-bold uppercase tracking-widest text-[#0A1618] hover:bg-[#A3E635] shadow-[0_4px_20px_rgba(111,168,166,0.3)] hover:shadow-[0_4px_20px_rgba(163,230,53,0.3)] active:scale-[0.98] transition-all"
                   disabled={requestMutation.isPending || isCountriesPending || isCountriesError}
                 >
                   {requestMutation.isPending ? (
@@ -270,50 +311,50 @@ export default function ScheduleDemoPage() {
 
             {/* Info Section */}
             <div className="hidden flex-col justify-center gap-8 lg:flex">
-                <div className="space-y-6">
-                  <div className="flex gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#6FA8A6]/10 text-[#6FA8A6] border border-[#6FA8A6]/20">
-                      <Users size={24} />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-white tracking-tight">Enterprise Scale</h3>
-                      <p className="mt-1 text-sm text-white/40 leading-relaxed">Built for teams of all sizes, from growing startups to global corporations.</p>
-                    </div>
+              <div className="space-y-6">
+                <div className="flex gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#6FA8A6]/10 text-[#6FA8A6] border border-[#6FA8A6]/20">
+                    <Users size={24} />
                   </div>
-
-                  <div className="flex gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#A3E635]/10 text-[#A3E635] border border-[#A3E635]/20">
-                      <Globe size={24} />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-white tracking-tight">Global Support</h3>
-                      <p className="mt-1 text-sm text-white/40 leading-relaxed">Dedicated account management and 24/7 technical assistance.</p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-white/80 border border-white/10">
-                      <CheckCircle2 size={24} />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-white tracking-tight">Swift Onboarding</h3>
-                      <p className="mt-1 text-sm text-white/40 leading-relaxed">Get started in days, not months, with our streamlined approval process.</p>
-                    </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white tracking-tight">Enterprise Scale</h3>
+                    <p className="mt-1 text-sm text-white/40 leading-relaxed">Built for teams of all sizes, from growing startups to global corporations.</p>
                   </div>
                 </div>
 
-                <div className="mt-10 rounded-[32px] border border-white/10 bg-gradient-to-br from-white/[0.05] to-transparent p-8">
-                  <p className="italic text-white/60 text-sm leading-relaxed">
-                    &quot;The Factory has revolutionized how we manage our global remote workforce. The schedule demo flow was the first step in a very professional partnership.&quot;
-                  </p>
-                  <div className="mt-6 flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-[#6FA8A6] to-[#A3E635]" />
-                    <div>
-                      <p className="text-sm font-bold text-white">Sarah Jenkins</p>
-                      <p className="text-[10px] uppercase font-bold tracking-widest text-white/30">Operations Director, Apex Corp</p>
-                    </div>
+                <div className="flex gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#A3E635]/10 text-[#A3E635] border border-[#A3E635]/20">
+                    <Globe size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white tracking-tight">Global Support</h3>
+                    <p className="mt-1 text-sm text-white/40 leading-relaxed">Dedicated account management and 24/7 technical assistance.</p>
                   </div>
                 </div>
+
+                <div className="flex gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-white/80 border border-white/10">
+                    <CheckCircle2 size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white tracking-tight">Swift Onboarding</h3>
+                    <p className="mt-1 text-sm text-white/40 leading-relaxed">Get started in days, not months, with our streamlined approval process.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-10 rounded-[32px] border border-white/10 bg-gradient-to-br from-white/[0.05] to-transparent p-8">
+                <p className="italic text-white/60 text-sm leading-relaxed">
+                  &quot;The Factory has revolutionized how we manage our global remote workforce. The schedule demo flow was the first step in a very professional partnership.&quot;
+                </p>
+                <div className="mt-6 flex items-center gap-4">
+                  <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-[#6FA8A6] to-[#A3E635]" />
+                  <div>
+                    <p className="text-sm font-bold text-white">Sarah Jenkins</p>
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-white/30">Operations Director, Apex Corp</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -332,15 +373,15 @@ export default function ScheduleDemoPage() {
                 Your demo request for <span className="font-bold text-white">Factory 23</span> has been submitted successfully. Our enterprise team will review your application and reach out within 24 hours.
               </p>
               <div className="mt-10 flex flex-col gap-4">
-                <Button 
+                <Button
                   onClick={() => setShowSuccessModal(false)}
                   className="h-14 rounded-2xl bg-[#6FA8A6] text-[#0A1618] hover:bg-[#A3E635] font-bold shadow-lg transition-all"
                 >
                   Return to Form
                 </Button>
                 <Link href="/" className="w-full">
-                  <Button 
-                    type="button" 
+                  <Button
+                    type="button"
                     variant="outline"
                     className="h-14 rounded-2xl border-white/20 bg-white/5 text-white hover:bg-white/10 font-bold transition-all"
                   >
