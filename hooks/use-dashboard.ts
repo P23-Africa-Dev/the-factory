@@ -61,7 +61,7 @@ export function useDashboardOverview(params: UseDashboardParams = {}) {
     const requestParams = buildDashboardRequestParams(queryParams, resolvedCompanyId);
 
     return useQuery({
-        queryKey: DASHBOARD_KEYS.overview({ ...params, company_id: resolvedCompanyId ?? null }),
+        queryKey: DASHBOARD_KEYS.overview({ ...params, company_id: resolvedCompanyId }),
         queryFn: async (): Promise<DashboardOverviewData> => {
             const res = await getDashboardOverview(requestParams, token, basePath);
             return res.data;
@@ -79,7 +79,7 @@ export function useWorkforceSummary(params: UseDashboardParams = {}) {
     const requestParams = buildDashboardRequestParams(queryParams, resolvedCompanyId);
 
     return useQuery({
-        queryKey: DASHBOARD_KEYS.workforce({ ...params, company_id: resolvedCompanyId ?? null }),
+        queryKey: DASHBOARD_KEYS.workforce({ ...params, company_id: resolvedCompanyId }),
         queryFn: async (): Promise<WorkforceSummaryData> => {
             const res = await getWorkforceSummary(requestParams, token, basePath);
             return res.data;
