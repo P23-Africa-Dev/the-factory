@@ -461,13 +461,13 @@ export default function AllAgentsPage() {
           </OpsTableContainer>
 
           {/* Sidebar */}
-          {selectedAgent ? (
+          {/* {selectedAgent ? (
             <AgentDetailSidebar agent={selectedAgent} />
           ) : (
             <div className="flex items-center justify-center w-full xl:w-90 xl:shrink-0 h-40 text-gray-400 text-[13px]">
               Select an agent to view details
             </div>
-          )}
+          )} */}
         </div>
       </div>
 
