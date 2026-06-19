@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
-import { getActiveCompanyId } from '@/lib/storage/stores';
+import { appStore, getActiveCompanyId } from '@/lib/storage/stores';
 import { useTrackingStore } from '@/store/tracking';
 import { toast } from '@/lib/toast';
 import { taskApi } from './api';
@@ -25,7 +25,13 @@ export function flattenTaskPages(data: InfiniteData<TaskListResult> | undefined)
 }
 
 export function useTaskList(filters?: TaskFilters) {
-  const companyId = getActiveCompanyId();
+  // The /agent/tasks endpoint is scoped by the bearer token and returns the
+  // agent's tasks even without a company_id param; taskApi.list seeds company_id
+  // from the response for subsequent company-scoped calls. Gating on company_id
+  // (which can be absent on a freshly hydrated session) would wrongly disable the
+  // query and leave the task page and map destination picker empty.
+  const isAuthenticated =
+    typeof window !== 'undefined' && Boolean(appStore.getString('auth_token'));
   return useInfiniteQuery({
     queryKey: taskKeys.list(filters),
     queryFn: async ({ pageParam }) => {
@@ -34,7 +40,7 @@ export function useTaskList(filters?: TaskFilters) {
     },
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.pagination.nextPageUrl ?? null,
-    enabled: companyId != null,
+    enabled: isAuthenticated,
     staleTime: 1000 * 30,
   });
 }

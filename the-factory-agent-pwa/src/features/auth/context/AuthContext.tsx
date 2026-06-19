@@ -6,6 +6,7 @@
 
 import React, { createContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { appStore, setActiveCompanyId } from '@/lib/storage/stores';
+import { clearSavedRoute } from '@/lib/pwa/routeRestoration';
 
 export type AuthUser = {
   id: number | string;
@@ -92,6 +93,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       appStore.delete('auth_token');
       appStore.delete('auth_user');
+      clearSavedRoute();
       setToken(null);
       setUser(null);
     } catch (err) {
