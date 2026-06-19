@@ -7,6 +7,7 @@ import { User } from "lucide-react";
 import Logo from "@/assets/images/logo.png";
 import { DownloadAgentAppModal } from "@/components/pwa/DownloadAgentAppModal";
 import { getAgentInstallUrl, isMobileDevice } from "@/lib/agent-pwa-url";
+import Footer from "@/components/layout/footer";
 
 export default function Home() {
   const [agentModalOpen, setAgentModalOpen] = useState(false);
@@ -20,9 +21,11 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen w-full flex flex-col lg:flex-row bg-white font-sans overflow-x-hidden">
-      {/* Far-Left Vertical Accent Column (Dark Teal) */}
-      <div className="w-12 bg-[#0B252C] shrink-0 hidden lg:block" />
+    <div className="min-h-screen w-full flex flex-col bg-white font-sans overflow-x-hidden">
+      {/* Split-screen layout container */}
+      <div className="flex-1 w-full flex flex-col lg:flex-row bg-white">
+        {/* Far-Left Vertical Accent Column (Dark Teal) */}
+        <div className="w-12 bg-[#0B252C] shrink-0 hidden lg:block" />
 
       {/* Main Content Pane (White Background) */}
       <div className="flex-1 lg:max-w-[58%] bg-white flex flex-col justify-between p-6 sm:p-10 lg:p-16 min-h-screen lg:min-h-0">
@@ -148,6 +151,13 @@ export default function Home() {
         {/* Bottom Spacer */}
         <div className="hidden lg:block h-12" />
       </div>
+
+      {/* Closes split-screen layout container */}
+      </div>
+
+      {/* Full-width Footer */}
+      <Footer />
+
       <DownloadAgentAppModal isOpen={agentModalOpen} onClose={() => setAgentModalOpen(false)} />
     </div>
   );
