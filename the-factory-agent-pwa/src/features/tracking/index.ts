@@ -8,6 +8,8 @@ export { buildCompleteFormData } from './completeTaskForm';
 export { hydrateLiveTaskFromRoute } from './hydrateRoute';
 export { trackingApi } from './api';
 export { trackingKeys } from './queryKeys';
+export { LocationPermissionGate } from './components/LocationPermissionGate';
+export type { LocationPermissionGateProps } from './components/LocationPermissionGate';
 
 export type {
   TrackingSession,

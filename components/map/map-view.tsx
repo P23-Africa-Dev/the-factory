@@ -969,6 +969,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   if (compact) {
     return (
       <div className="w-full h-full relative">
+        {/* Mount the live tracking WS + hydration so the home widget updates in real time. */}
+        <div className="hidden" aria-hidden="true">
+          <HydrationBridge onHydrationChange={setIsInitialHydrating} />
+        </div>
+
         <div ref={mapContainer} className="w-full h-full" />
 
         <SavedLocationsLayer
@@ -1242,6 +1247,8 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const destinationMarkersRef = useRef<Map<number, GoogleMarkerLike>>(new Map());
   const routeLinesRef = useRef<Map<number, GooglePolylineLike>>(new Map());
   const userLocationMarkerRef = useRef<GoogleMarkerLike | null>(null);
+  const markerAnimationsRef = useRef<Map<number, number>>(new Map());
+  const markerPositionRef = useRef<Map<number, [number, number]>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -1255,6 +1262,49 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
   const liveTasks = useTrackingStore((s) => s.liveTasks);
   const tasks = useMemo(() => Object.values(liveTasks), [liveTasks]);
+
+  // Smoothly tween a Google agent marker between GPS fixes (rAF lerp) so
+  // movement reads as continuous instead of teleporting on each update.
+  const animateGoogleMarkerTo = useCallback(
+    (taskId: number, marker: GoogleMarkerLike, target: [number, number]) => {
+      const current = markerPositionRef.current.get(taskId) ?? target;
+
+      if (areSamePoint(current, target)) {
+        marker.setPosition({ lat: target[1], lng: target[0] });
+        markerPositionRef.current.set(taskId, target);
+        return;
+      }
+
+      const existingFrame = markerAnimationsRef.current.get(taskId);
+      if (existingFrame) {
+        cancelAnimationFrame(existingFrame);
+        markerAnimationsRef.current.delete(taskId);
+      }
+
+      const startedAt = performance.now();
+      const step = (frameNow: number) => {
+        const progress = Math.min((frameNow - startedAt) / MARKER_ANIMATION_MS, 1);
+        const eased =
+          progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+        marker.setPosition({
+          lat: current[1] + (target[1] - current[1]) * eased,
+          lng: current[0] + (target[0] - current[0]) * eased,
+        });
+
+        if (progress < 1) {
+          markerAnimationsRef.current.set(taskId, requestAnimationFrame(step));
+          return;
+        }
+
+        markerAnimationsRef.current.delete(taskId);
+        markerPositionRef.current.set(taskId, target);
+      };
+
+      markerAnimationsRef.current.set(taskId, requestAnimationFrame(step));
+    },
+    [],
+  );
   const hasActiveTaskPositions = useMemo(
     () => tasks.some((task) => hasUsableTaskPosition(task)),
     [tasks]
@@ -1310,6 +1360,10 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     return () => {
       cancelled = true;
       setGoogleReady(false);
+
+      markerAnimationsRef.current.forEach((frame) => cancelAnimationFrame(frame));
+      markerAnimationsRef.current.clear();
+      markerPositionRef.current.clear();
 
       routeLinesRef.current.forEach((line) => line.setMap(null));
       destinationMarkersRef.current.forEach((marker) => marker.setMap(null));
@@ -1465,8 +1519,9 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         }
 
         agentMarkersRef.current.set(task.taskId, marker);
+        markerPositionRef.current.set(task.taskId, current);
       } else {
-        existingAgentMarker.setPosition({ lat: current[1], lng: current[0] });
+        animateGoogleMarkerTo(task.taskId, existingAgentMarker, current);
         existingAgentMarker.setLabel({
           text: initials,
           color: '#FFFFFF',
@@ -1543,9 +1598,15 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       if (!validIds.has(id)) {
         marker.setMap(null);
         agentMarkersRef.current.delete(id);
+        const frame = markerAnimationsRef.current.get(id);
+        if (frame) {
+          cancelAnimationFrame(frame);
+          markerAnimationsRef.current.delete(id);
+        }
+        markerPositionRef.current.delete(id);
       }
     });
-  }, [compact, tasks]);
+  }, [compact, tasks, animateGoogleMarkerTo]);
 
   const filteredTasks = tasks.filter((task) => {
     const needle = searchQuery.toLowerCase();
@@ -1584,6 +1645,11 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   if (compact) {
     return (
       <div className="w-full h-full relative">
+        {/* Mount the live tracking WS + hydration so the home widget updates in real time. */}
+        <div className="hidden" aria-hidden="true">
+          <HydrationBridge onHydrationChange={setIsInitialHydrating} />
+        </div>
+
         <div ref={mapContainer} className="w-full h-full" />
 
         <SavedLocationsLayer

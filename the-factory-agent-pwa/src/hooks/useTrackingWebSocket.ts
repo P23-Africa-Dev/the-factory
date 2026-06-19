@@ -75,13 +75,22 @@ export const useTrackingWebSocket = (): void => {
   }, [upsertTask]);
 
   const handleEvent = useCallback(
-    (envelope: Record<string, unknown>) => {
+    (message: Record<string, unknown>) => {
+      // The realtime relay wraps every Redis event as
+      // `{ type, channel, payload: { task_id, occurred_at, tracking_session_id, data } }`.
+      // Fall back to the message root for any non-wrapped/legacy messages.
+      const type = message.type as string;
+      const envelope = ((message.payload as Record<string, unknown> | undefined) ?? message) as Record<
+        string,
+        unknown
+      >;
       const taskId = envelope.task_id as number;
       const occurredAt = envelope.occurred_at as string;
       const data = (envelope.data ?? {}) as Record<string, unknown>;
 
-      switch (envelope.type) {
+      switch (type) {
         case 'tracking.task.started':
+          if (taskId == null) break;
           upsertTask(taskId, {
             trackingSessionId: envelope.tracking_session_id as number,
             status: 'tracking',
@@ -92,13 +101,22 @@ export const useTrackingWebSocket = (): void => {
           });
           break;
 
-        case 'tracking.location.updated': {
+        case 'tracking.location.updated':
+        case 'tracking.agent.location.updated': {
+          if (taskId == null || data.longitude == null || data.latitude == null) break;
           const point: [number, number] = [
             data.longitude as number,
             data.latitude as number,
           ];
           appendPolylinePoint(taskId, point);
-          upsertTask(taskId, { lastPosition: point, lastUpdatedAt: occurredAt });
+          upsertTask(taskId, {
+            lastPosition: point,
+            lastUpdatedAt: occurredAt,
+            ...(data.heading_degrees != null
+              ? { lastHeadingDegrees: data.heading_degrees as number }
+              : {}),
+            ...(data.speed_mps != null ? { lastSpeedMps: data.speed_mps as number } : {}),
+          });
           if (data.arrived) {
             markArrived(taskId, occurredAt);
           }
@@ -106,20 +124,23 @@ export const useTrackingWebSocket = (): void => {
         }
 
         case 'tracking.task.near_destination':
+          if (taskId == null) break;
           upsertTask(taskId, { status: 'tracking', lastUpdatedAt: occurredAt });
           break;
 
         case 'tracking.task.arrived':
+          if (taskId == null) break;
           markArrived(taskId, occurredAt);
           break;
 
         case 'tracking.task.completed':
+          if (taskId == null) break;
           markCompleted(taskId);
           setTimeout(() => removeTask(taskId), 5_000);
           break;
 
         case 'notifications.unread_count.updated': {
-          const count = (envelope.data as { unread_count?: number })?.unread_count;
+          const count = (data as { unread_count?: number })?.unread_count;
           if (typeof count === 'number') {
             setUnreadCount(count);
             queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
@@ -128,7 +149,7 @@ export const useTrackingWebSocket = (): void => {
         }
 
         case 'notifications.created': {
-          const notifData = envelope.data as Record<string, unknown>;
+          const notifData = data;
           setPendingNotification({
             notification_id: notifData.notification_id as number,
             type: notifData.type as string,
@@ -185,6 +206,11 @@ export const useTrackingWebSocket = (): void => {
 
     ws.onerror = () => {
       setWsStatus('error');
+      console.warn(
+        '[tracking-ws] connection error',
+        '— reason: WebSocket relay unreachable or auth rejected.',
+        'suggested fix: verify TRACKING_WS_URL and that the realtime relay is running.',
+      );
     };
 
     ws.onclose = () => {

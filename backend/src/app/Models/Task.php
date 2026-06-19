@@ -111,7 +111,9 @@ class Task extends Model
 
     public function trackingSession(): HasOne
     {
-        return $this->hasOne(TaskTrackingSession::class);
+        // A task can have multiple tracking sessions over its lifetime; the
+        // most recent one represents the current/last tracking state.
+        return $this->hasOne(TaskTrackingSession::class)->latestOfMany('id');
     }
 
     public function trackingPoints(): HasMany

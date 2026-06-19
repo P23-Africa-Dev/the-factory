@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-export type PermissionStatus = 'unknown' | 'granted' | 'denied';
+export type PermissionStatus = 'unknown' | 'prompt' | 'granted' | 'denied';
 
 export interface LocationObject {
   coords: {
@@ -121,7 +121,11 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
     try {
       const result = await navigator.permissions.query({ name: 'geolocation' });
       const mapped: PermissionStatus =
-        result.state === 'granted' ? 'granted' : result.state === 'denied' ? 'denied' : 'unknown';
+        result.state === 'granted'
+          ? 'granted'
+          : result.state === 'denied'
+            ? 'denied'
+            : 'prompt';
       setPermissionStatus(mapped);
       return mapped;
     } catch {
@@ -138,15 +142,21 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
 
     return new Promise((resolve) => {
       navigator.geolocation.getCurrentPosition(
-        () => {
+        (pos) => {
+          // Populate lastPosition so the start flow doesn't need a second GPS
+          // fix immediately after permission is granted.
+          setLastPosition(toLocationObject(pos));
+          setError(null);
           setPermissionStatus('granted');
           resolve('granted');
         },
-        () => {
-          setPermissionStatus('denied');
-          resolve('denied');
+        (err) => {
+          // A timeout/position-unavailable error does not necessarily mean the
+          // user blocked access; only PERMISSION_DENIED is a hard denial.
+          setPermissionStatus(err.code === err.PERMISSION_DENIED ? 'denied' : 'prompt');
+          resolve(err.code === err.PERMISSION_DENIED ? 'denied' : 'prompt');
         },
-        { enableHighAccuracy: true, timeout: 5000 },
+        { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
       );
     });
   }, []);

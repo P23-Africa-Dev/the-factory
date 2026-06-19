@@ -2,7 +2,6 @@
 
 import React, { useCallback, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Compass, ShieldAlert } from 'lucide-react';
 
 import {
   useGeolocation,
@@ -11,82 +10,12 @@ import {
   useActiveTracking,
   trackingApi,
   hydrateLiveTaskFromRoute,
+  LocationPermissionGate,
 } from '@/features/tracking';
 import { useTask } from '@/features/tasks';
 import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
-
-function LocationPermissionGate({
-  onGranted,
-  onDenied,
-  isResume = false,
-}: {
-  onGranted: () => void;
-  onDenied: () => void;
-  isResume?: boolean;
-}) {
-  const { permissionStatus, requestPermission } = useGeolocation();
-  const [errorVisible, setErrorVisible] = useState(false);
-
-  const handleRequest = async () => {
-    const status = await requestPermission();
-    if (status === 'granted') {
-      onGranted();
-    } else {
-      setErrorVisible(true);
-      onDenied();
-    }
-  };
-
-  if (errorVisible || permissionStatus === 'denied') {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-[#0A1D25] px-8 text-center font-sans">
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#FD6046]/15">
-          <ShieldAlert className="text-[#FD6046]" size={28} />
-        </div>
-        <h3 className="text-lg font-bold text-white mb-2">Location access blocked</h3>
-        <p className="text-xs text-[#8F9098] leading-relaxed max-w-xs mb-6">
-          To start or resume tasks, enable location access in your browser&apos;s site settings or system privacy settings.
-        </p>
-        <button
-          onClick={handleRequest}
-          className="w-full max-w-xs h-11 rounded-full bg-[#75ADAF] hover:bg-[#66989A] text-white font-semibold text-xs active:scale-95"
-        >
-          Try Again
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#0A1D25] px-8 text-center font-sans">
-      <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#75ADAF]/10 text-[#75ADAF]">
-        <Compass className="animate-pulse" size={32} />
-      </div>
-      <h3 className="text-xl font-bold text-white mb-3">
-        {isResume ? 'Resume tracking' : 'Location access needed'}
-      </h3>
-      <p className="text-xs text-[#8F9098] leading-relaxed max-w-xs mb-8">
-        {isResume
-          ? 'This task is already in progress. Allow location access to resume tracking from where you left off.'
-          : 'To start this task, we need to track your location so supervisors can monitor your route and confirm you reached the destination. Your location is only shared while this task is active.'}
-      </p>
-      <button
-        onClick={handleRequest}
-        className="w-full max-w-xs h-12 rounded-full bg-[#75ADAF] hover:bg-[#66989A] text-white font-semibold text-xs active:scale-95 mb-3 shadow-md"
-      >
-        {isResume ? 'Resume Tracking' : 'Allow Location Access'}
-      </button>
-      <button
-        onClick={onDenied}
-        className="text-[#8F9098] hover:text-white font-semibold text-xs py-2.5 transition-colors"
-      >
-        Not Now
-      </button>
-    </div>
-  );
-}
 
 export default function TrackingPage() {
   const routeParams = useParams();
@@ -94,9 +23,11 @@ export default function TrackingPage() {
   const taskId = Number(id);
 
   const { mutate: startTask, isPending: isStarting } = useStartTask();
-  const { getCurrentPosition } = useGeolocation();
+  const { getCurrentPosition, requestPermission } = useGeolocation();
   const { goToMapActivity, goToTrackingComplete } = useTrackingNavigation();
   const { startTracking } = useActiveTracking();
+  const [gateMode, setGateMode] = useState<'request' | 'denied'>('request');
+  const [isRequesting, setIsRequesting] = useState(false);
 
   const { data: task } = useTask(String(taskId));
   const resolvedCompanyId = task?.companyId ?? getActiveCompanyId() ?? 0;
@@ -171,6 +102,23 @@ export default function TrackingPage() {
     }
   }, [taskId, resolvedCompanyId, startTask, getCurrentPosition, task, beginTrackingSession]);
 
+  const handleRequest = useCallback(async () => {
+    setIsRequesting(true);
+    try {
+      const status = await requestPermission();
+      if (status === 'granted') {
+        await handlePermissionGranted();
+      } else if (status === 'denied') {
+        setGateMode('denied');
+      } else {
+        // 'prompt'/'unknown' — couldn't obtain a fix but not a hard denial.
+        toast.error('Location unavailable', 'We could not read your location. Please try again.');
+      }
+    } finally {
+      setIsRequesting(false);
+    }
+  }, [requestPermission, handlePermissionGranted]);
+
   if (isStarting) {
     return (
       <div className="flex flex-col flex-1 items-center justify-center min-h-screen bg-[#0A1D25] gap-4 text-center font-sans">
@@ -183,10 +131,15 @@ export default function TrackingPage() {
   const isResume = task?.status === 'in_progress';
 
   return (
-    <LocationPermissionGate
-      onGranted={handlePermissionGranted}
-      onDenied={() => goToTrackingComplete(taskId)}
-      isResume={isResume}
-    />
+    <div className="relative min-h-screen bg-[#0A1D25]">
+      <LocationPermissionGate
+        mode={gateMode}
+        isBusy={isRequesting}
+        isResume={isResume}
+        onRequest={handleRequest}
+        onDismiss={() => goToTrackingComplete(taskId)}
+        fullScreen
+      />
+    </div>
   );
 }

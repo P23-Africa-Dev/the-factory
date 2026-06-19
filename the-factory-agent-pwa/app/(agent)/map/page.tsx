@@ -14,6 +14,7 @@ import {
   buildCompleteFormData,
   hydrateLiveTaskFromRoute,
   trackingApi,
+  LocationPermissionGate,
 } from '@/features/tracking';
 import { useTaskListItems, useTask, taskKeys, taskApi } from '@/features/tasks';
 import { useAuth, useAgentIdentity } from '@/features/auth';
@@ -734,6 +735,8 @@ function AddNoteModal({
       await taskApi.completeTask(taskId, formData);
       await stopTracking();
 
+      toast.success('Task completed', 'Great work — tracking has stopped.');
+
       setNote('');
       setPhotos([]);
       setPreviews([]);
@@ -851,6 +854,8 @@ function MapContent() {
   const [sheetSnapIndex, setSheetSnapIndex] = useState(MAP_SHEET_EXPANDED_SNAP_INDEX);
   const startRideInFlightRef = useRef(false);
   const [distanceRemainingM, setDistanceRemainingM] = useState<number | null>(null);
+  // Permission gate overlay for the Start flow: null = hidden.
+  const [permGate, setPermGate] = useState<'request' | 'denied' | null>(null);
 
   // Saved organization locations
   const { data: savedLocations = [] } = useSavedLocations();
@@ -999,24 +1004,22 @@ function MapContent() {
     } catch {}
   }, []);
 
-  // Boot GPS for map preview: request permission, get fix, keep watching
+  // Boot GPS for map preview. We deliberately do NOT force a permission prompt
+  // on page load — the Start flow prompts when the user actually starts a task,
+  // which avoids a surprise prompt and a duplicate request. We also suspend this
+  // preview watcher during active tracking, since the location reporter owns the
+  // GPS watch then (prevents two concurrent watchPosition subscriptions).
   useEffect(() => {
     let mounted = true;
     const bootLocation = async () => {
-      let status = await checkPermission();
-      if (status !== 'granted') {
-        status = await requestPermission();
-      }
-      if (status !== 'granted') {
-        toast.error('Location access needed', 'Enable location permission to use Your Location on the map.');
-        return;
-      }
+      const status = await checkPermission();
+      if (status !== 'granted') return;
       try {
         await getCurrentPosition();
       } catch {
-        // ignore — user may deny or GPS may be unavailable
+        // ignore — GPS may be temporarily unavailable
       }
-      if (mounted) {
+      if (mounted && phase !== 'activity_started') {
         await startWatching(() => {});
       }
     };
@@ -1025,7 +1028,7 @@ function MapContent() {
       mounted = false;
       stopWatching();
     };
-  }, [checkPermission, requestPermission, getCurrentPosition, startWatching, stopWatching]);
+  }, [checkPermission, getCurrentPosition, startWatching, stopWatching, phase]);
 
   // Real-time polyline from WebSocket store
   const livePolyline = liveTask?.polyline ?? EMPTY_POLYLINE;
@@ -1297,6 +1300,8 @@ function MapContent() {
     };
 
     try {
+      // 1) Gate location permission. Trigger the browser prompt only if needed,
+      //    and surface a recovery gate (with platform guidance) on denial.
       let permStatus = await checkPermission();
       if (permStatus !== 'granted') {
         permStatus = await requestPermission();
@@ -1304,10 +1309,14 @@ function MapContent() {
       if (permStatus !== 'granted') {
         setIsLaunchingRide(false);
         setTrackingStatus('idle');
-        toast.error('Location required', 'Location access is required to start this task.');
+        startRideInFlightRef.current = false;
+        setPermGate(permStatus === 'denied' ? 'denied' : 'request');
         return;
       }
+      // Permission granted — clear any visible gate.
+      setPermGate(null);
 
+      // 2) Acquire a GPS fix for the start point.
       let startPoint: [number, number];
       if (lastPosition) {
         startPoint = [lastPosition.coords.longitude, lastPosition.coords.latitude];
@@ -1320,9 +1329,11 @@ function MapContent() {
         startPoint = [pos.coords.longitude, pos.coords.latitude];
       }
 
-      beginSession(false, undefined, startPoint);
-
+      // Resume: the session already exists, so transition immediately and
+      // hydrate the existing route in the background.
       if (isResume) {
+        beginSession(false, undefined, startPoint);
+        toast.success('Tracking resumed', 'You are live again.');
         void trackingApi
           .getTaskRoute(taskId, companyId)
           .then((route) => {
@@ -1336,6 +1347,8 @@ function MapContent() {
         return;
       }
 
+      // 3) Fresh start: call the API FIRST, only transition to the tracking
+      //    experience once the server confirms the session started.
       try {
         const data = await startTaskAsync({
           taskId,
@@ -1347,20 +1360,22 @@ function MapContent() {
             recordedAt: new Date(lastPosition?.timestamp ?? Date.now()).toISOString(),
           },
         });
-        useTrackingStore.getState().upsertTask(taskId, {
-          trackingSessionId: data.tracking.id,
-          status: data.arrived ? 'arrived' : 'tracking',
-        });
+        beginSession(data.arrived, data.tracking.id, startPoint);
         if (data.arrived) setHasArrived(true);
         markTrackingLive();
+        toast.success('Task started', 'Tracking is now active.');
       } catch (err: unknown) {
+        // The task may already be tracking server-side (e.g. started elsewhere);
+        // recover by hydrating the route before giving up.
         try {
           const route = await trackingApi.getTaskRoute(taskId, companyId);
+          beginSession(route.arrival != null, undefined, startPoint);
           hydrateLiveTaskFromRoute(taskId, route);
-          useTrackingStore.getState().upsertTask(taskId, { lastPosition: startPoint });
           if (route.arrival) setHasArrived(true);
           markTrackingLive();
+          toast.success('Tracking active', 'Reconnected to your task.');
         } catch {
+          // Clean rollback: no transition happened, stay on the planning screen.
           void stopTracking();
           setPhase('destination_selected');
           setIsLaunchingRide(false);
@@ -1375,7 +1390,10 @@ function MapContent() {
       setIsLaunchingRide(false);
       setPhase('destination_selected');
       setTrackingStatus('idle');
-      toast.error('Location error', 'Could not get your current position. Please try again.');
+      toast.error(
+        'Location error',
+        'Could not get your current position. Please try again.',
+      );
     } finally {
       startRideInFlightRef.current = false;
     }
@@ -1412,6 +1430,19 @@ function MapContent() {
     const timer = setTimeout(() => setTrackingStatus('live'), 3000);
     return () => clearTimeout(timer);
   }, [phase, trackingStatus]);
+
+  // Success feedback when the agent reaches the destination (once per session).
+  const arrivedToastShownRef = useRef(false);
+  useEffect(() => {
+    if (phase !== 'activity_started') {
+      arrivedToastShownRef.current = false;
+      return;
+    }
+    if (hasArrived && !arrivedToastShownRef.current) {
+      arrivedToastShownRef.current = true;
+      toast.success('Destination reached', 'You can complete the task now.');
+    }
+  }, [phase, hasArrived]);
 
   const handleEndActivity = useCallback((): void => {
     void stopTracking();
@@ -1781,7 +1812,7 @@ function MapContent() {
                 <ActivityButton
                   phase={phase}
                   hasDestination={(selectedDestination?.taskId ?? 0) > 0}
-                  isStarting={isStarting}
+                  isStarting={isStarting || isLaunchingRide}
                   taskStatus={selectedDestination?.taskStatus ?? selectedDestTask?.status}
                   onStart={handleStartActivity}
                 />
@@ -1829,6 +1860,21 @@ function MapContent() {
           hasArrived={hasArrived}
           onDone={handleTaskDone}
         />
+      )}
+
+      {/* Location permission gate for the Start flow */}
+      {permGate && (
+        <div className="absolute inset-0 z-[120] bg-[#0A1D25]/95 backdrop-blur-sm">
+          <LocationPermissionGate
+            mode={permGate}
+            isBusy={isLaunchingRide}
+            onRequest={() => {
+              void handleStartActivity();
+            }}
+            onDismiss={() => setPermGate(null)}
+            fullScreen
+          />
+        </div>
       )}
     </div>
   );
