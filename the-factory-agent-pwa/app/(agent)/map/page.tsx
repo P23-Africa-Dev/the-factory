@@ -34,6 +34,18 @@ import { getDb } from '@/lib/db/client';
 import { syncEngine } from '@/lib/sync/syncEngine';
 import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 import { toast } from '@/lib/toast';
+import {
+  useSavedLocations,
+  useCreateSavedLocation,
+  SaveLocationSheet,
+  LocationDetailsSheet,
+  type SavedLocation,
+  type CreateSavedLocationInput,
+} from '@/features/locations';
+import { getSavedLocationType } from '@/lib/map/locationTypes';
+import { reverseGeocode } from '@/lib/map/reverseGeocode';
+import type { SavedLocationPin } from '@/features/tracking/components/MapboxMap';
+import { MapPin, Plus } from 'lucide-react';
 
 const MapBottomSheetDynamic = dynamic(
   () => import('@/features/tracking/components/MapBottomSheet').then((m) => m.MapBottomSheet),
@@ -840,6 +852,13 @@ function MapContent() {
   const startRideInFlightRef = useRef(false);
   const [distanceRemainingM, setDistanceRemainingM] = useState<number | null>(null);
 
+  // Saved organization locations
+  const { data: savedLocations = [] } = useSavedLocations();
+  const { mutateAsync: createSavedLocation, isPending: isSavingLocation } = useCreateSavedLocation();
+  const [pinMode, setPinMode] = useState(false);
+  const [pendingPin, setPendingPin] = useState<{ lat: number; lng: number; address: string | null } | null>(null);
+  const [selectedSavedId, setSelectedSavedId] = useState<number | null>(null);
+
   const { lastPosition, getCurrentPosition, checkPermission, requestPermission, startWatching, stopWatching } = useGeolocation();
   const { startTracking, stopTracking, activeTaskId } = useActiveTracking();
   const { data: tasks = [] } = useTaskListItems();
@@ -1095,7 +1114,25 @@ function MapContent() {
     const combined: RecentDestination[] = [];
 
     if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      for (const loc of savedLocations) {
+        if (!loc.isActive) continue;
+        const matches =
+          loc.name.toLowerCase().includes(q) ||
+          (loc.address?.toLowerCase().includes(q) ?? false) ||
+          (loc.type?.toLowerCase().includes(q) ?? false);
+        if (matches && !seen.has(loc.name)) {
+          seen.add(loc.name);
+          combined.push({
+            name: loc.name,
+            address: loc.address ?? undefined,
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+          });
+        }
+      }
       for (const r of geoDestResults) {
+        if (seen.has(r.name)) continue;
         seen.add(r.name);
         combined.push(r);
       }
@@ -1133,7 +1170,7 @@ function MapContent() {
       }
     }
     return combined;
-  }, [taskDestOptions, recentDestinations, searchQuery, geoDestResults]);
+  }, [taskDestOptions, recentDestinations, searchQuery, geoDestResults, savedLocations]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -1412,6 +1449,80 @@ function MapContent() {
     setTrackingStatus('idle');
   }, [queryClient]);
 
+  // ── Saved locations ──────────────────────────────────────────────────────────
+
+  const savedLocationPins = useMemo<SavedLocationPin[]>(
+    () =>
+      savedLocations
+        .filter((loc) => loc.isActive)
+        .map((loc) => ({
+          id: loc.id,
+          longitude: loc.longitude,
+          latitude: loc.latitude,
+          color: getSavedLocationType(loc.type).color,
+          selected: loc.id === selectedSavedId,
+        })),
+    [savedLocations, selectedSavedId],
+  );
+
+  const selectedSavedLocation = useMemo<SavedLocation | null>(
+    () => savedLocations.find((loc) => loc.id === selectedSavedId) ?? null,
+    [savedLocations, selectedSavedId],
+  );
+
+  const handleMapPin = useCallback((lng: number, lat: number) => {
+    setPinMode(false);
+    setPendingPin({ lat, lng, address: null });
+    void reverseGeocode(lng, lat).then((address) => {
+      setPendingPin((prev) =>
+        prev && prev.lat === lat && prev.lng === lng ? { ...prev, address } : prev,
+      );
+    });
+  }, []);
+
+  const handleSavedLocationClick = useCallback((id: number) => {
+    setSelectedSavedId(id);
+  }, []);
+
+  const handleSaveCurrentLocation = useCallback(() => {
+    setPinMode(false);
+    void requestPermission().then(async (status) => {
+      if (status !== 'granted') {
+        toast.error('Location access needed', 'Enable location permission to save your current spot.');
+        return;
+      }
+      try {
+        const pos = await getCurrentPosition();
+        const { latitude, longitude } = pos.coords;
+        setPendingPin({ lat: latitude, lng: longitude, address: null });
+        const address = await reverseGeocode(longitude, latitude);
+        setPendingPin((prev) =>
+          prev && prev.lat === latitude && prev.lng === longitude ? { ...prev, address } : prev,
+        );
+      } catch {
+        toast.error('Location unavailable', 'Could not get your current position. Try again.');
+      }
+    });
+  }, [requestPermission, getCurrentPosition]);
+
+  const handleSubmitSavedLocation = useCallback(
+    async (input: CreateSavedLocationInput) => {
+      try {
+        await createSavedLocation(input);
+        setPendingPin(null);
+      } catch {
+        // Errors surface via the API client toast.
+      }
+    },
+    [createSavedLocation],
+  );
+
+  const handleTogglePinMode = useCallback(() => {
+    setSelectedSavedId(null);
+    setPendingPin(null);
+    setPinMode((prev) => !prev);
+  }, []);
+
   // Derived positions
   const isNavigating = phase === 'activity_started';
   const agentLng = isNavigating
@@ -1522,6 +1633,10 @@ function MapContent() {
           radiusMeters={geofenceRadius}
           arrived={hasArrived}
           dimmed={phase === 'activity_ended'}
+          savedLocations={savedLocationPins}
+          onSavedLocationClick={handleSavedLocationClick}
+          pinMode={pinMode}
+          onMapPin={handleMapPin}
         />
       </div>
 
@@ -1570,6 +1685,37 @@ function MapContent() {
               </span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Saved-location controls (hidden during active navigation) */}
+      {showMapChrome && phase !== 'activity_started' && (
+        <div className="absolute right-4 bottom-[44%] z-20 flex flex-col gap-3 items-end pointer-events-none">
+          {pinMode && (
+            <div className="pointer-events-auto bg-[#09232D]/90 text-white text-xs font-semibold rounded-xl px-3 py-2 shadow-lg border border-white/10 max-w-[200px] text-right">
+              Tap the map or long-press to drop a pin
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={handleSaveCurrentLocation}
+            className="pointer-events-auto w-12 h-12 rounded-full bg-white shadow-lg flex items-center justify-center active:scale-95 transition-transform border border-gray-100"
+            aria-label="Save current location"
+            title="Save current location"
+          >
+            <MapPin size={20} className="text-[#1D7293]" />
+          </button>
+          <button
+            type="button"
+            onClick={handleTogglePinMode}
+            className={`pointer-events-auto w-14 h-14 rounded-full shadow-lg flex items-center justify-center active:scale-95 transition-all ${
+              pinMode ? 'bg-[#FD6046] text-white rotate-45' : 'bg-[#1D7293] text-white'
+            }`}
+            aria-label={pinMode ? 'Cancel pin mode' : 'Add saved location'}
+            title={pinMode ? 'Cancel' : 'Add location'}
+          >
+            <Plus size={26} />
+          </button>
         </div>
       )}
 
@@ -1643,6 +1789,36 @@ function MapContent() {
             </>
           )}
         </MapBottomSheetDynamic>
+      )}
+
+      {/* Saved location details */}
+      {selectedSavedLocation && (
+        <LocationDetailsSheet
+          location={selectedSavedLocation}
+          onClose={() => setSelectedSavedId(null)}
+          onNavigate={(loc) => {
+            setSelectedSavedId(null);
+            handleSelectDestination({
+              name: loc.name,
+              address: loc.address ?? undefined,
+              latitude: loc.latitude,
+              longitude: loc.longitude,
+            });
+          }}
+        />
+      )}
+
+      {/* Save location form */}
+      {pendingPin && (
+        <SaveLocationSheet
+          visible
+          latitude={pendingPin.lat}
+          longitude={pendingPin.lng}
+          initialAddress={pendingPin.address}
+          isSubmitting={isSavingLocation}
+          onClose={() => setPendingPin(null)}
+          onSubmit={handleSubmitSavedLocation}
+        />
       )}
 
       {/* Complete notes modal */}

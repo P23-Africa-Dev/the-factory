@@ -294,6 +294,12 @@ export function describeOfflineAction(entry: OfflineActionQueueEntry): string {
       return 'Clock in';
     case 'attendance.clock_out':
       return 'Clock out';
+    case 'location.create':
+      return 'Save location';
+    case 'location.update':
+      return 'Edit location';
+    case 'location.delete':
+      return 'Delete location';
     default:
       return entry.actionType;
   }

@@ -42,6 +42,10 @@ import {
   getCountryFallbackViewport,
   resolvePrivacySafeViewport,
 } from '@/lib/map/default-viewport';
+import { SavedLocationsLayer, type GoogleMapBridge } from '@/components/map/SavedLocationsLayer';
+import { useSavedLocations, useSavedLocationPermissions } from '@/hooks/use-saved-locations';
+import { getSavedLocationLabel } from '@/lib/map/location-types';
+import type { SavedLocation } from '@/lib/api/saved-locations';
 
 const STALE_MS = 2 * 60_000;
 const MARKER_ANIMATION_MS = 700;
@@ -237,6 +241,10 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const [mapVersion, setMapVersion] = useState(0);
   const [isInitialHydrating, setIsInitialHydrating] = useState(false);
   const hoverPopupRef = useRef<mapboxgl.Popup | null>(null);
+  const [pinMode, setPinMode] = useState(false);
+  const [focusLocation, setFocusLocation] = useState<SavedLocation | null>(null);
+  const { data: savedLocations = [] } = useSavedLocations();
+  const savedLocationPermissions = useSavedLocationPermissions();
 
   const liveTasks = useTrackingStore((s) => s.liveTasks);
 
@@ -262,6 +270,19 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       )
       .slice(0, 8);
   }, [searchQuery, tasks]);
+
+  const savedLocationMatches = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    if (!needle) return [] as SavedLocation[];
+    return savedLocations
+      .filter(
+        (loc) =>
+          loc.name.toLowerCase().includes(needle) ||
+          getSavedLocationLabel(loc.type).toLowerCase().includes(needle) ||
+          (loc.address ?? '').toLowerCase().includes(needle)
+      )
+      .slice(0, 6);
+  }, [searchQuery, savedLocations]);
 
   const handleSearchQueryChange = useCallback((value: string) => {
     setSearchQuery(value);
@@ -950,6 +971,15 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       <div className="w-full h-full relative">
         <div ref={mapContainer} className="w-full h-full" />
 
+        <SavedLocationsLayer
+          provider="mapbox"
+          ready={mapVersion > 0}
+          getMapboxMap={() => mapRef.current}
+          pinMode={false}
+          onPinModeChange={() => {}}
+          readOnly
+        />
+
         {providerState.fallbackReason === 'missing_google_api_key' && providerState.requestedProvider === 'google' && (
           <div className="absolute bottom-1 left-1 right-1 rounded bg-black/70 px-2 py-1 text-[9px] font-medium text-white">
             Google key missing. Showing Mapbox fallback.
@@ -981,14 +1011,36 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           />
         </div>
 
-        {(searchBusy || placeResults.length > 0) && searchQuery.trim().length >= 3 && (
-          <div className="mt-2 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur px-2 py-2 shadow-xl">
+        {(searchBusy || placeResults.length > 0 || savedLocationMatches.length > 0) && searchQuery.trim().length >= 3 && (
+          <div className="mt-2 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur px-2 py-2 shadow-xl max-h-[50vh] overflow-y-auto">
+            {savedLocationMatches.length > 0 && (
+              <div className="px-3 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Saved locations
+              </div>
+            )}
+            {savedLocationMatches.map((loc) => (
+              <button
+                key={`saved-${loc.id}`}
+                className="w-full text-left px-3 py-2 rounded-xl text-[12px] text-slate-700 hover:bg-slate-100"
+                onClick={() => setFocusLocation({ ...loc })}
+              >
+                <span className="font-semibold">{loc.name}</span>
+                <span className="text-slate-400"> · {getSavedLocationLabel(loc.type)}</span>
+              </button>
+            ))}
+
+            {(placeResults.length > 0 || searchBusy) && savedLocationMatches.length > 0 && (
+              <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Places
+              </div>
+            )}
+
             {searchBusy && (
               <div className="px-3 py-2 text-[12px] text-slate-500">Searching places...</div>
             )}
 
-            {!searchBusy && placeResults.length === 0 && (
-              <div className="px-3 py-2 text-[12px] text-slate-500">No place matches found.</div>
+            {!searchBusy && placeResults.length === 0 && savedLocationMatches.length === 0 && (
+              <div className="px-3 py-2 text-[12px] text-slate-500">No matches found.</div>
             )}
 
             {placeResults.map((result) => (
@@ -1083,11 +1135,25 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       </div>
 
       {/* Floating Action Button */}
-      <div className="absolute bottom-10 right-10 z-20">
-        <button className="bg-gradient-to-r from-[#D946EF] to-[#9333EA] hover:from-[#C026D3] hover:to-[#7E22CE] text-white px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2">
-          Location Mapping
-        </button>
-      </div>
+      {savedLocationPermissions.canCreate && (
+        <div className="absolute bottom-10 right-10 z-20">
+          <button
+            onClick={() => setPinMode((v) => !v)}
+            className={`px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2 text-white ${pinMode ? 'bg-gradient-to-r from-[#0A7E8C] to-[#094B5C]' : 'bg-gradient-to-r from-[#D946EF] to-[#9333EA] hover:from-[#C026D3] hover:to-[#7E22CE]'}`}
+          >
+            {pinMode ? 'Cancel Pin' : 'Location Mapping'}
+          </button>
+        </div>
+      )}
+
+      <SavedLocationsLayer
+        provider="mapbox"
+        ready={mapVersion > 0}
+        getMapboxMap={() => mapRef.current}
+        pinMode={pinMode}
+        onPinModeChange={setPinMode}
+        focusLocation={focusLocation}
+      />
 
       {selectedTask && (() => {
         const operationalStatus = resolveOperationalStatusFromTask(selectedTask, nowMs, STALE_MS);
@@ -1181,6 +1247,11 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [historyTask, setHistoryTask] = useState<{ id: number; title: string } | null>(null);
   const [isInitialHydrating, setIsInitialHydrating] = useState(false);
+  const [googleReady, setGoogleReady] = useState(false);
+  const [pinMode, setPinMode] = useState(false);
+  const [focusLocation, setFocusLocation] = useState<SavedLocation | null>(null);
+  const { data: savedLocations = [] } = useSavedLocations();
+  const savedLocationPermissions = useSavedLocationPermissions();
 
   const liveTasks = useTrackingStore((s) => s.liveTasks);
   const tasks = useMemo(() => Object.values(liveTasks), [liveTasks]);
@@ -1189,6 +1260,19 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     [tasks]
   );
   const googleApiKey = useMemo(() => getGoogleMapsPublicApiKey(), []);
+
+  const savedLocationMatches = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    if (!needle) return [] as SavedLocation[];
+    return savedLocations
+      .filter(
+        (loc) =>
+          loc.name.toLowerCase().includes(needle) ||
+          getSavedLocationLabel(loc.type).toLowerCase().includes(needle) ||
+          (loc.address ?? '').toLowerCase().includes(needle)
+      )
+      .slice(0, 6);
+  }, [searchQuery, savedLocations]);
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current || !googleApiKey) {
@@ -1217,6 +1301,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           mapTypeControl: false,
           gestureHandling: compact ? 'none' : 'auto',
         });
+        setGoogleReady(true);
       })
       .catch(() => {
         // Key/network failures surface through fallback UI.
@@ -1224,6 +1309,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
     return () => {
       cancelled = true;
+      setGoogleReady(false);
 
       routeLinesRef.current.forEach((line) => line.setMap(null));
       destinationMarkersRef.current.forEach((marker) => marker.setMap(null));
@@ -1500,6 +1586,19 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       <div className="w-full h-full relative">
         <div ref={mapContainer} className="w-full h-full" />
 
+        <SavedLocationsLayer
+          provider="google"
+          ready={googleReady}
+          getGoogleMap={() =>
+            mapRef.current && googleRef.current
+              ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)
+              : null
+          }
+          pinMode={false}
+          onPinModeChange={() => {}}
+          readOnly
+        />
+
         {providerState.fallbackReason === 'missing_mapbox_token' && providerState.requestedProvider === 'mapbox' && (
           <div className="absolute bottom-1 left-1 right-1 rounded bg-black/70 px-2 py-1 text-[9px] font-medium text-white">
             Mapbox token missing. Showing Google fallback.
@@ -1528,6 +1627,24 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             className="w-full bg-white rounded-full py-4 pl-14 pr-6 text-[14px] shadow-2xl shadow-black/5 outline-none font-medium text-dash-dark placeholder:text-gray-400"
           />
         </div>
+
+        {savedLocationMatches.length > 0 && searchQuery.trim().length >= 2 && (
+          <div className="mt-2 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur px-2 py-2 shadow-xl max-h-[50vh] overflow-y-auto">
+            <div className="px-3 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              Saved locations
+            </div>
+            {savedLocationMatches.map((loc) => (
+              <button
+                key={`saved-${loc.id}`}
+                className="w-full text-left px-3 py-2 rounded-xl text-[12px] text-slate-700 hover:bg-slate-100"
+                onClick={() => setFocusLocation({ ...loc })}
+              >
+                <span className="font-semibold">{loc.name}</span>
+                <span className="text-slate-400"> · {getSavedLocationLabel(loc.type)}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-auto md:w-[340px] z-20 bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
@@ -1588,11 +1705,29 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         </div>
       </div>
 
-      <div className="absolute bottom-10 right-10 z-20">
-        <button className="bg-gradient-to-r from-[#D946EF] to-[#9333EA] hover:from-[#C026D3] hover:to-[#7E22CE] text-white px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2">
-          Location Mapping
-        </button>
-      </div>
+      {savedLocationPermissions.canCreate && (
+        <div className="absolute bottom-10 right-10 z-20">
+          <button
+            onClick={() => setPinMode((v) => !v)}
+            className={`px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2 text-white ${pinMode ? 'bg-gradient-to-r from-[#0A7E8C] to-[#094B5C]' : 'bg-gradient-to-r from-[#D946EF] to-[#9333EA] hover:from-[#C026D3] hover:to-[#7E22CE]'}`}
+          >
+            {pinMode ? 'Cancel Pin' : 'Location Mapping'}
+          </button>
+        </div>
+      )}
+
+      <SavedLocationsLayer
+        provider="google"
+        ready={googleReady}
+        getGoogleMap={() =>
+          mapRef.current && googleRef.current
+            ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)
+            : null
+        }
+        pinMode={pinMode}
+        onPinModeChange={setPinMode}
+        focusLocation={focusLocation}
+      />
 
       {historyTask && (
         <RouteHistoryPanel

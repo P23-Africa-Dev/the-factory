@@ -62,6 +62,34 @@ export function createDestinationMarkerElement(input: {
   return root;
 }
 
+/**
+ * DOM marker for a saved company location. Colored teardrop pin with a white
+ * dot, tinted by the location type. Pins are interactive (pointer events on).
+ */
+export function createSavedLocationMarkerElement(input: {
+  color: string;
+  selected?: boolean;
+}): HTMLDivElement {
+  const root = document.createElement('div');
+  root.dataset.marker = 'saved-location';
+  root.style.cursor = 'pointer';
+  root.style.transformOrigin = 'bottom center';
+  if (input.selected) {
+    root.style.transform = 'scale(1.15)';
+  }
+
+  root.innerHTML = `
+    <div style="position:relative;display:flex;flex-direction:column;align-items:center;">
+      <svg width="30" height="40" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter:drop-shadow(0px 5px 8px rgba(0,0,0,0.28));">
+        <path d="M12 0C5.37258 0 0 5.37258 0 12C0 21 12 32 12 32C12 32 24 21 24 12C24 5.37258 18.6274 0 12 0Z" fill="${input.color}"/>
+        <circle cx="12" cy="12" r="5" fill="white"/>
+      </svg>
+    </div>
+  `;
+
+  return root;
+}
+
 export function createAgentMarkerElement(input: {
   displayName: string;
   avatarUrl?: string | null;

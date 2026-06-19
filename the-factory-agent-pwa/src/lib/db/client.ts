@@ -10,11 +10,12 @@ import type {
   OfflineActionQueueEntry,
   OfflineConflictEntry,
   ProofQueueEntry,
+  SavedLocationCacheEntry,
   TaskDestinationCacheEntry,
 } from './schema';
 
 const DB_NAME = 'factory-agent-pwa';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export type FactoryDB = IDBPDatabase<{
   locationQueue: {
@@ -60,6 +61,14 @@ export type FactoryDB = IDBPDatabase<{
       'by-resolution': string;
       'by-company-user-resolution': [number, string, string];
       'by-actionQueueId': number;
+    };
+  };
+  savedLocationsCache: {
+    key: number;
+    value: SavedLocationCacheEntry;
+    indexes: {
+      'by-company': number;
+      'by-pending': number;
     };
   };
 }>;
@@ -136,6 +145,16 @@ export async function getDb(): Promise<FactoryDB> {
         conflictStore.createIndex('by-resolution', 'resolution');
         conflictStore.createIndex('by-company-user-resolution', ['companyId', 'userId', 'resolution']);
         conflictStore.createIndex('by-actionQueueId', 'actionQueueId');
+      }
+
+      // Saved locations offline cache (DB v3) — keyed by server id (negative for
+      // offline-created rows) so markers render while offline.
+      if (!db.objectStoreNames.contains('savedLocationsCache')) {
+        const savedLocationsStore = db.createObjectStore('savedLocationsCache', {
+          keyPath: 'id',
+        });
+        savedLocationsStore.createIndex('by-company', 'companyId');
+        savedLocationsStore.createIndex('by-pending', 'pending');
       }
     },
   })) as unknown as FactoryDB;

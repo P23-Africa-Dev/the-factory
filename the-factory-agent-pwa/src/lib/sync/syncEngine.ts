@@ -282,6 +282,46 @@ async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<voi
       await client.post('/agent/attendance/clock-out', payload);
       return;
     }
+    case 'location.create': {
+      const payload = parseOfflinePayload<Record<string, unknown>>(entry);
+      await client.post('/agent/locations', {
+        ...payload,
+        company_id: payload.company_id ?? getActiveCompanyId() ?? undefined,
+      });
+      // Drop optimistic offline rows; the next list fetch repopulates from server.
+      const companyId = entry.companyId ?? getActiveCompanyId();
+      if (companyId != null) {
+        try {
+          const db = await getDb();
+          const pending = await db.getAllFromIndex('savedLocationsCache', 'by-company', companyId);
+          const tx = db.transaction('savedLocationsCache', 'readwrite');
+          for (const row of pending) {
+            if (row.pending === 1 && row.id != null) {
+              await tx.store.delete(row.id);
+            }
+          }
+          await tx.done;
+        } catch {
+          // Cache cleanup is best-effort.
+        }
+      }
+      return;
+    }
+    case 'location.update': {
+      const payload = parseOfflinePayload<{ id: number; body: Record<string, unknown> }>(entry);
+      await client.put(`/admin/locations/${payload.id}`, {
+        ...payload.body,
+        company_id: payload.body.company_id ?? getActiveCompanyId() ?? undefined,
+      });
+      return;
+    }
+    case 'location.delete': {
+      const payload = parseOfflinePayload<{ id: number; company_id?: number }>(entry);
+      await client.delete(`/admin/locations/${payload.id}`, {
+        params: { company_id: payload.company_id ?? getActiveCompanyId() ?? undefined },
+      });
+      return;
+    }
   }
 }
 

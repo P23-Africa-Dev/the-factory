@@ -10,12 +10,21 @@ import { getAgentMapboxStyle } from '@/lib/map/style-mode';
 import {
   createAgentMarkerElement,
   createDestinationMarkerElement,
+  createSavedLocationMarkerElement,
   updateAgentMarkerElement,
   type DestinationMarkerKind,
 } from '@/lib/map/map-markers';
 import { resolveNavigationBearing, smoothBearingDegrees } from '@/lib/map/route-geometry';
 
 export type MapboxMapMode = 'preview' | 'navigation';
+
+export type SavedLocationPin = {
+  id: number;
+  longitude: number;
+  latitude: number;
+  color: string;
+  selected?: boolean;
+};
 
 const NAV_CAMERA_PADDING = { top: 120, bottom: 220, left: 48, right: 48 };
 const NAV_PITCH = 55;
@@ -42,6 +51,10 @@ export type MapboxMapProps = {
   radiusMeters: number | null;
   arrived: boolean;
   dimmed?: boolean;
+  savedLocations?: SavedLocationPin[];
+  onSavedLocationClick?: (id: number) => void;
+  pinMode?: boolean;
+  onMapPin?: (lng: number, lat: number) => void;
 };
 
 function emptyLine(): GeoJSON.Feature<GeoJSON.LineString> {
@@ -226,12 +239,20 @@ export function MapboxMap({
   radiusMeters,
   arrived,
   dimmed = false,
+  savedLocations,
+  onSavedLocationClick,
+  pinMode = false,
+  onMapPin,
 }: MapboxMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const agentMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const destMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const destMarkerKindRef = useRef<DestinationMarkerKind | null>(null);
+  const savedMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
+  const pinModeRef = useRef(pinMode);
+  const onMapPinRef = useRef(onMapPin);
+  const onSavedLocationClickRef = useRef(onSavedLocationClick);
   const mapLoadedRef = useRef(false);
   const enteredNavigationRef = useRef(false);
   const previewFitDoneRef = useRef(false);
@@ -249,6 +270,16 @@ export function MapboxMap({
   const destLat = destinationPosition?.[1] ?? null;
   const traveledSig = useMemo(() => coordsSignature(effectiveTraveled), [effectiveTraveled]);
   const remainingSig = useMemo(() => coordsSignature(effectiveRemaining), [effectiveRemaining]);
+  const savedSig = useMemo(
+    () =>
+      (savedLocations ?? [])
+        .map(
+          (p) =>
+            `${p.id}:${p.longitude.toFixed(5)},${p.latitude.toFixed(5)}:${p.color}:${p.selected ? 1 : 0}`,
+        )
+        .join('|'),
+    [savedLocations],
+  );
 
   const syncPayloadRef = useRef({
     mode,
@@ -332,10 +363,103 @@ export function MapboxMap({
       agentMarkerRef.current = null;
       destMarkerRef.current?.remove();
       destMarkerRef.current = null;
+      savedMarkersRef.current.forEach((marker) => marker.remove());
+      savedMarkersRef.current.clear();
       mapRef.current?.remove();
       mapRef.current = null;
     };
   }, []);
+
+  // Saved-location markers lifecycle (organization places).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    const pins = savedLocations ?? [];
+    const markers = savedMarkersRef.current;
+    const nextIds = new Set(pins.map((p) => p.id));
+
+    for (const [id, marker] of markers) {
+      if (!nextIds.has(id)) {
+        marker.remove();
+        markers.delete(id);
+      }
+    }
+
+    for (const pin of pins) {
+      const existing = markers.get(pin.id);
+      if (existing) existing.remove();
+
+      const el = createSavedLocationMarkerElement({ color: pin.color, selected: pin.selected });
+      el.addEventListener('click', (event) => {
+        event.stopPropagation();
+        onSavedLocationClickRef.current?.(pin.id);
+      });
+      const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+        .setLngLat([pin.longitude, pin.latitude])
+        .addTo(map);
+      markers.set(pin.id, marker);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- savedSig captures pins
+  }, [mapReady, savedSig]);
+
+  // Click / long-press to drop a pin for creating a saved location.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    const handleClick = (e: mapboxgl.MapMouseEvent) => {
+      if (!pinModeRef.current) return;
+      onMapPinRef.current?.(e.lngLat.lng, e.lngLat.lat);
+    };
+
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+    let startPoint: { x: number; y: number } | null = null;
+
+    const clearTimer = () => {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    };
+
+    const handleTouchStart = (e: mapboxgl.MapTouchEvent) => {
+      if (e.points.length !== 1) {
+        clearTimer();
+        return;
+      }
+      startPoint = { x: e.point.x, y: e.point.y };
+      const lngLat = e.lngLat;
+      clearTimer();
+      longPressTimer = setTimeout(() => {
+        onMapPinRef.current?.(lngLat.lng, lngLat.lat);
+      }, 600);
+    };
+
+    const handleTouchMove = (e: mapboxgl.MapTouchEvent) => {
+      if (!startPoint) return;
+      const dx = e.point.x - startPoint.x;
+      const dy = e.point.y - startPoint.y;
+      if (Math.sqrt(dx * dx + dy * dy) > 10) clearTimer();
+    };
+
+    map.on('click', handleClick);
+    map.on('touchstart', handleTouchStart);
+    map.on('touchmove', handleTouchMove);
+    map.on('touchend', clearTimer);
+    map.on('touchcancel', clearTimer);
+    map.on('movestart', clearTimer);
+
+    return () => {
+      clearTimer();
+      map.off('click', handleClick);
+      map.off('touchstart', handleTouchStart);
+      map.off('touchmove', handleTouchMove);
+      map.off('touchend', clearTimer);
+      map.off('touchcancel', clearTimer);
+      map.off('movestart', clearTimer);
+    };
+  }, [mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -519,6 +643,19 @@ export function MapboxMap({
   useEffect(() => {
     previewFitDoneRef.current = false;
   }, [remainingSig, destLng, destLat]);
+
+  useEffect(() => {
+    pinModeRef.current = pinMode;
+    onMapPinRef.current = onMapPin;
+    onSavedLocationClickRef.current = onSavedLocationClick;
+  });
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const canvas = map.getCanvas();
+    canvas.style.cursor = pinMode ? 'crosshair' : '';
+  }, [mapReady, pinMode]);
 
   useEffect(() => {
     if (mode === 'navigation') {
