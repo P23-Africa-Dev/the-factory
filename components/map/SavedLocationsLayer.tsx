@@ -569,9 +569,8 @@ export function SavedLocationsLayer({
 
   return (
     <>
-      {/* Action controls */}
       {permissions.canCreate && !readOnly && (
-        <div className="absolute bottom-28 right-4 md:right-10 z-20 flex flex-col items-end gap-2">
+        <div className="absolute bottom-32 right-4 md:right-10 z-20 flex flex-col items-end gap-3">
           <button
             onClick={handleSaveCurrentLocation}
             className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-[13px] font-semibold text-[#0B1215] shadow-xl hover:bg-gray-50"
@@ -579,8 +578,18 @@ export function SavedLocationsLayer({
             <Crosshair size={15} className="text-[#094B5C]" />
             Save current location
           </button>
+          <button
+            onClick={() => onPinModeChange(!pinMode)}
+            className={`px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2 text-white ${
+              pinMode
+                ? "bg-gradient-to-r from-[#0A7E8C] to-[#094B5C]"
+                : "bg-gradient-to-r from-[#D946EF] to-[#9333EA] hover:from-[#C026D3] hover:to-[#7E22CE]"
+            }`}
+          >
+            {pinMode ? "Cancel Pin" : "Location Pinning"}
+          </button>
           {pinMode && (
-            <span className="rounded-full bg-[#094B5C] px-4 py-2 text-[12px] font-semibold text-white shadow-lg">
+            <span className="rounded-full bg-[#094B5C] px-4 py-2 text-[12px] font-semibold text-white shadow-lg animate-pulse">
               Tap the map to drop a pin
             </span>
           )}
