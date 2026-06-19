@@ -306,7 +306,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                   <InlineSelect
                     value={role}
                     onChange={(v) => {
-                      const nextRole = v as "admin" | "supervisor" | "agent" | "";
+                      const nextRole = v as "supervisor" | "agent" | "";
                       setRole(nextRole);
                       setSupervisorId("");
                       if (nextRole !== "agent") {
