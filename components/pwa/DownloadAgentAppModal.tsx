@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import Image from 'next/image';
 import {
   X,
@@ -125,15 +125,14 @@ function CloseFooterButton({ onClose }: { onClose: () => void }) {
 }
 
 export function DownloadAgentAppModal({ isOpen, onClose }: DownloadAgentAppModalProps) {
-  const [isDesktop, setIsDesktop] = useState(true);
-  const [isIos, setIsIos] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    setIsDesktop(isDesktopDevice());
+  const [isDesktop] = useState(() =>
+    typeof window !== 'undefined' ? isDesktopDevice() : true
+  );
+  const [isIos] = useState(() => {
+    if (typeof window === 'undefined') return false;
     const ua = window.navigator.userAgent.toLowerCase();
-    setIsIos(/iphone|ipad|ipod/.test(ua));
-  }, [isOpen]);
+    return /iphone|ipad|ipod/.test(ua);
+  });
 
   const agentUrl = getAgentPwaUrl();
   const installUrl = getAgentInstallUrl();

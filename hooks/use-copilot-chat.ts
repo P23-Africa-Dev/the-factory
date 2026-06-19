@@ -140,6 +140,7 @@ export function useCopilotChat() {
         [persistedKey, threadId, token]
     );
 
+    /* eslint-disable react-hooks/preserve-manual-memoization */
     const loadOlderThreadMessages = useCallback(
         async (companyId?: string | number) => {
             if (!token || !threadId || !threadPagination?.next_cursor) {
@@ -162,6 +163,7 @@ export function useCopilotChat() {
         },
         [threadId, threadPagination?.next_cursor, token]
     );
+    /* eslint-enable react-hooks/preserve-manual-memoization */
 
     const stopWeeklyReportPolling = useCallback(() => {
         if (pollingIntervalRef.current !== null && typeof window !== "undefined") {

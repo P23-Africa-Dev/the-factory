@@ -48,16 +48,12 @@ function SearchableCountrySelect({
 }: SearchableCountrySelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [pos, setPos] = useState<{ top: number; left: number; width: number; above: boolean } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; above: boolean; triggerHeight: number } | null>(null);
   
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const [mounted] = useState(() => typeof document !== "undefined");
 
   const selectedOption = options.find((o) => o.value === value);
   const selectedLabel = selectedOption ? selectedOption.label : "International";
@@ -83,6 +79,7 @@ function SearchableCountrySelect({
       left,
       width: dropWidth,
       above,
+      triggerHeight: rect.height,
     });
   }, []);
 
@@ -158,8 +155,6 @@ function SearchableCountrySelect({
     close();
   };
 
-  const triggerHeight = triggerRef.current?.getBoundingClientRect().height || 36;
-
   const dropdown =
     open && pos && mounted
       ? createPortal(
@@ -167,7 +162,7 @@ function SearchableCountrySelect({
             ref={dropdownRef}
             style={{
               position: "fixed",
-              top: pos.above ? undefined : pos.top + triggerHeight + 6,
+              top: pos.above ? undefined : pos.top + pos.triggerHeight + 6,
               bottom: pos.above ? window.innerHeight - pos.top + 6 : undefined,
               left: pos.left,
               width: pos.width,
