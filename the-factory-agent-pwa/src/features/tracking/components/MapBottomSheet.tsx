@@ -42,7 +42,7 @@ export function MapBottomSheet({
       initialSnap={MAP_SHEET_EXPANDED_SNAP_INDEX}
       onSnap={handleSnap}
       className="!pointer-events-none z-20"
-      style={{ paddingBottom: MAP_BOTTOM_NAV_OFFSET_PX }}
+      style={{ paddingBottom: MAP_BOTTOM_NAV_OFFSET_PX, zIndex: 50 }}
       tweenConfig={{ ease: 'easeOut', duration: 0.28 }}
     >
       <Sheet.Container
