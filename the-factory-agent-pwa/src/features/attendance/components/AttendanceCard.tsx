@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useAgentIdentity } from '@/features/auth';
 import { useTodayAttendance } from '../queries';
 import { ClockInModal } from './ClockInModal';
 
@@ -42,8 +43,10 @@ function StatusBadge({ status }: { status: CardStatus }): React.ReactElement {
 }
 
 export function AttendanceCard(): React.ReactElement {
-  const { data: today, isLoading } = useTodayAttendance();
+  const { data: today, isLoading, isFetching } = useTodayAttendance();
+  const { avatarSrc } = useAgentIdentity();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isActionPending, setIsActionPending] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   const clockInAt = today?.clockInAt ?? null;
@@ -52,6 +55,7 @@ export function AttendanceCard(): React.ReactElement {
   const isCompleted = Boolean(clockInAt && clockOutAt);
 
   const status: CardStatus = isLoading && !today ? 'loading' : isActive ? 'active' : isCompleted ? 'completed' : 'idle';
+  const isBusy = isLoading || isFetching || isActionPending;
 
   useEffect(() => {
     if (status !== 'active') return undefined;
@@ -79,7 +83,7 @@ export function AttendanceCard(): React.ReactElement {
           <div className="flex flex-col flex-1 items-center justify-between">
             {/* Top avatar circle */}
             <div className="w-8 h-8 rounded-full bg-black/30 flex items-center justify-center overflow-hidden">
-              <img src="/assets/user-avatar.png" alt="Avatar" className="w-7 h-7 object-cover" />
+              <img src={avatarSrc} alt="Avatar" className="w-7 h-7 object-cover" />
             </div>
 
             {/* Middle attendance status texts */}
@@ -92,7 +96,8 @@ export function AttendanceCard(): React.ReactElement {
             {/* Bottom clock-in button */}
             <button
               onClick={() => setIsModalOpen(true)}
-              className="w-[67px] h-[34px] rounded-xl bg-[#FD6046] hover:bg-[#E0533C] flex items-center justify-center gap-1 px-1.5 text-white active:scale-95 transition-all outline-none focus:outline-none cursor-pointer"
+              disabled={isBusy}
+              className="w-[67px] h-[34px] rounded-xl bg-[#FD6046] hover:bg-[#E0533C] flex items-center justify-center gap-1 px-1.5 text-white active:scale-95 transition-all outline-none focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <img src="/assets/clock-arrow-up.png" alt="Clock" className="w-3.5 h-3.5 object-contain" />
               <span className="font-sans font-medium text-[8px]">Clock In</span>
@@ -111,7 +116,8 @@ export function AttendanceCard(): React.ReactElement {
 
             <button
               onClick={() => setIsModalOpen(true)}
-              className="w-[67px] h-[34px] rounded-xl bg-[#FD6046]/15 hover:bg-[#FD6046]/25 border border-[#FD6046] flex items-center justify-center gap-1 px-1 text-[#FD6046] active:scale-95 transition-all outline-none focus:outline-none"
+              disabled={isBusy}
+              className="w-[67px] h-[34px] rounded-xl bg-[#FD6046]/15 hover:bg-[#FD6046]/25 border border-[#FD6046] flex items-center justify-center gap-1 px-1 text-[#FD6046] active:scale-95 transition-all outline-none focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <img src="/assets/clock-arrow-up.png" alt="Clock" className="w-3.5 h-3.5 object-contain" />
               <span className="font-sans font-medium text-[8px]">Clock Out</span>
@@ -133,7 +139,11 @@ export function AttendanceCard(): React.ReactElement {
         )}
       </div>
 
-      <ClockInModal visible={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <ClockInModal
+        visible={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onPendingChange={setIsActionPending}
+      />
     </>
   );
 }

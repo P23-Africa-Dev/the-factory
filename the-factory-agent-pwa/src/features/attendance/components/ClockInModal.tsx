@@ -8,9 +8,10 @@ import { useTodayAttendance, useClockIn, useClockOut } from '../queries';
 type ClockInModalProps = {
   visible: boolean;
   onClose: () => void;
+  onPendingChange?: (pending: boolean) => void;
 };
 
-export function ClockInModal({ visible, onClose }: ClockInModalProps): React.ReactElement | null {
+export function ClockInModal({ visible, onClose, onPendingChange }: ClockInModalProps): React.ReactElement | null {
   const { data: today } = useTodayAttendance();
   const { location, error: locationError, isLoading: isLocating, refresh } = useCurrentLocation();
   const { mutateAsync: clockIn, isPending: isClockingIn } = useClockIn();
@@ -31,6 +32,10 @@ export function ClockInModal({ visible, onClose }: ClockInModalProps): React.Rea
   useEffect(() => {
     if (visible) refresh();
   }, [visible, refresh]);
+
+  useEffect(() => {
+    onPendingChange?.(isSubmitting);
+  }, [isSubmitting, onPendingChange]);
 
   const handleConfirm = async (): Promise<void> => {
     if (!location) return;
@@ -57,7 +62,7 @@ export function ClockInModal({ visible, onClose }: ClockInModalProps): React.Rea
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 px-6 font-sans">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 px-6 font-sans">
       <div className="w-full max-w-sm rounded-[20px] bg-[#0B1E26] p-6 text-center border border-white/10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
         <h3 className="text-xl font-bold text-white mb-3">
           {isClockedIn ? 'Clock Out' : 'Clock In'}
@@ -78,7 +83,16 @@ export function ClockInModal({ visible, onClose }: ClockInModalProps): React.Rea
               <span>Capturing your location…</span>
             </div>
           ) : locationError ? (
-            <span className="text-[#FD6046] text-xs font-semibold">{locationError}</span>
+            <div className="flex flex-col items-center gap-2">
+              <span className="text-[#FD6046] text-xs font-semibold">{locationError}</span>
+              <button
+                type="button"
+                onClick={() => refresh()}
+                className="text-[10px] font-semibold text-[#75ADAF] underline"
+              >
+                Retry location
+              </button>
+            </div>
           ) : location ? (
             <span className="text-[#75ADAF] text-xs">
               Location captured ({location.latitude.toFixed(5)}, {location.longitude.toFixed(5)})

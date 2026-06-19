@@ -2,7 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
-import { useProfile, useAuth, useAuthNavigation } from '@/features/auth';
+import { useProfile, useAuth, useAuthNavigation, useAgentIdentity } from '@/features/auth';
 import { toast } from '@/lib/toast';
 
 function formatDate(dateStr: string | null | undefined): string {
@@ -82,6 +82,7 @@ function RoleBadge({ label, variant }: { label: string; variant: 'primary' | 'se
 export default function ProfilePage() {
   const { goBack } = useAuthNavigation();
   const { user } = useAuth();
+  const { avatarSrc } = useAgentIdentity();
   const { data: profile, isLoading, isError, error, refetch } = useProfile();
 
   useEffect(() => {
@@ -146,7 +147,7 @@ export default function ProfilePage() {
               {/* Hero Card */}
               <div className="bg-[#0B3343]/75 border border-white/10 rounded-2xl flex flex-col items-center py-6 px-4 text-center">
                 <div className="w-24 h-24 rounded-full border-3 border-[#75ADAF] overflow-hidden mb-4 bg-[#0A2D3A]">
-                  <img src="/assets/animoji.png" alt="avatar" className="w-full h-full object-cover" />
+                  <img src={avatarSrc} alt="avatar" className="w-full h-full object-cover" />
                 </div>
                 <h3 className="font-bold text-lg text-white mb-1">{displayName}</h3>
                 {displayEmail && <p className="text-xs text-white/50 mb-4">{displayEmail}</p>}

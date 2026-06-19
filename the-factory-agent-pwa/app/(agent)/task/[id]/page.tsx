@@ -4,7 +4,8 @@ import React from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, MapPin, Calendar, User, ShieldAlert } from 'lucide-react';
 
-import { useTask, useTaskNavigation } from '@/features/tasks';
+import { useTask, useTaskNavigation, isResumeTrackingStatus } from '@/features/tasks';
+import { useTrackingStore } from '@/store/tracking';
 
 const STATUS_COLOR: Record<string, string> = {
   pending: '#FD6046',
@@ -60,7 +61,9 @@ export default function TaskDetailPage() {
   const id = (routeParams?.id as string) || '';
 
   const { data: task, isLoading, error } = useTask(id);
-  const { goToTracking, goToTaskComplete } = useTaskNavigation();
+  const { goToTracking, goToContinueTracking, goToTaskComplete } = useTaskNavigation();
+  const liveTask = useTrackingStore((s) => s.liveTaskMap[Number(id)]);
+  const hasArrived = liveTask?.status === 'arrived' || liveTask?.arrivedAt != null;
 
   if (isLoading) {
     return (
@@ -87,7 +90,7 @@ export default function TaskDetailPage() {
   }
 
   const statusColor = STATUS_COLOR[task.status] || '#8F9098';
-  const isActive = task.status === 'in_progress';
+  const isActive = isResumeTrackingStatus(task.status);
   const isPending = task.status === 'pending';
   const _isDone = task.status === 'completed' || task.status === 'cancelled';
 
@@ -182,17 +185,19 @@ export default function TaskDetailPage() {
           {isActive && (
             <>
               <button
-                onClick={() => goToTracking(task.id)}
+                onClick={() => goToContinueTracking(task.id)}
                 className="w-full h-[51px] rounded-[30px] bg-[#75ADAF] hover:bg-[#66989A] text-white font-bold text-sm transition-all duration-200 active:scale-95 shadow-md flex items-center justify-center"
               >
                 Continue Tracking
               </button>
-              <button
-                onClick={() => goToTaskComplete(task.id)}
-                className="w-full h-[46px] rounded-[30px] border border-white/15 text-[#8F9098] hover:text-white font-medium text-xs bg-transparent transition-all duration-200 active:scale-95 flex items-center justify-center"
-              >
-                Skip to Completion Form
-              </button>
+              {hasArrived && (
+                <button
+                  onClick={() => goToTaskComplete(task.id)}
+                  className="w-full h-[46px] rounded-[30px] border border-white/15 text-[#8F9098] hover:text-white font-medium text-xs bg-transparent transition-all duration-200 active:scale-95 flex items-center justify-center"
+                >
+                  Complete Task (proof required)
+                </button>
+              )}
             </>
           )}
 

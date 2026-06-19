@@ -14,6 +14,8 @@ export interface LiveTaskState {
   agentAvatar: string | null;
   taskTitle: string;
   lastPosition: [number, number] | null; // [lng, lat] — Mapbox convention
+  lastHeadingDegrees: number | null;
+  lastSpeedMps: number | null;
   polyline: [number, number][]; // ordered route trail so far
   status: LiveTaskStatus;
   arrivedAt: string | null;

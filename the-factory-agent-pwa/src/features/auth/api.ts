@@ -88,7 +88,14 @@ export const authApi = {
   login: (payload: LoginPayload): Promise<LoginResponse> =>
     client.post('/agent/login', payload).then((r) => {
       const body = r.data as Record<string, unknown>;
-      return (body.data && typeof body.data === 'object' ? body.data : body) as LoginResponse;
+      const data = (body.data && typeof body.data === 'object' ? body.data : body) as Record<string, unknown>;
+      const user = data.user as LoginResponse['user'];
+      return {
+        token: String(data.token ?? ''),
+        access_role: data.access_role != null ? String(data.access_role) : undefined,
+        internal_role: data.internal_role != null ? String(data.internal_role) : undefined,
+        user,
+      };
     }),
 
   logout: (): Promise<{ success: boolean }> =>

@@ -17,7 +17,7 @@
             <div class="input-group">
                 <span class="input-group-text"><i class="bi bi-search" style="font-size:.8rem;color:var(--text-muted)"></i></span>
                 <input type="text" name="search" value="{{ $filters['search'] ?? '' }}"
-                       class="form-control" placeholder="Name, email, or company…">
+                       class="form-control" placeholder="Name, email, phone, or company…">
             </div>
         </div>
         <div class="col-md-3">
@@ -86,6 +86,9 @@
                             <a href="{{ route('admin.enterprise.demo-requests.show', $requestItem) }}" class="text-decoration-none">
                                 <div class="fw-semibold" style="font-size:.85rem;color:var(--text-primary)">{{ $requestItem->full_name }}</div>
                                 <div style="font-size:.75rem;color:var(--text-muted)">{{ $requestItem->email }}</div>
+                                @if ($requestItem->phone)
+                                    <div style="font-size:.75rem;color:var(--text-muted)">{{ $requestItem->phone }}</div>
+                                @endif
                             </a>
                         </td>
                         <td style="font-size:.85rem">{{ $requestItem->company_name }}</td>

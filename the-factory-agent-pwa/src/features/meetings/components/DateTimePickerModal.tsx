@@ -19,9 +19,6 @@ function formatDateForInput(date: Date): string {
   const dd = pad(date.getDate());
   const hh = pad(date.getHours());
   const mm = pad(date.getMinutes());
-  return `${yyyy}-${MM}-${dd}T${hh}-${mm}`.replace('-', '/').replace('-', '/'); // actually T separator: YYYY-MM-DDTHH:mm
-  // Let's do standard ISO format without offset:
-  // yyyy-MM-ddThh:mm
   return `${yyyy}-${MM}-${dd}T${hh}:${mm}`;
 }
 
@@ -53,7 +50,7 @@ export function DateTimePickerModal({
   const minDateStr = minimumDate ? formatDateForInput(minimumDate) : undefined;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[10010] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div onClick={onClose} className="absolute inset-0 bg-black/60 backdrop-blur-sm cursor-pointer" />
 

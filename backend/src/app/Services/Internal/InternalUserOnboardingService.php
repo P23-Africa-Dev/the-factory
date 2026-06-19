@@ -286,6 +286,50 @@ class InternalUserOnboardingService
         return $agent->fresh();
     }
 
+    public function updateByManager(User $actor, User $target, array $data): User
+    {
+        ['company' => $company, 'role' => $actorRole] = $this->accessService->resolveCompanyContext($actor, $data['company_id'] ?? null);
+        $this->accessService->ensureCanManageInternalUsers($actorRole);
+
+        $this->ensureUserInCompanyWithRole((int) $company->id, (int) $target->id, ['admin', 'supervisor', 'agent']);
+
+        return DB::transaction(function () use ($company, $target, $data): User {
+            $updates = [];
+
+            if (isset($data['full_name'])) {
+                $updates['name'] = $data['full_name'];
+            }
+
+            if (isset($data['role'])) {
+                $updates['internal_role'] = $data['role'];
+            }
+
+            if (array_key_exists('assigned_zone', $data)) {
+                $updates['assigned_zone'] = $data['assigned_zone'] ?? null;
+            }
+
+            if (array_key_exists('phone_number', $data)) {
+                $updates['phone_number'] = $data['phone_number'] ?? null;
+            }
+
+            if ($updates !== []) {
+                $target->update($updates);
+            }
+
+            if (isset($data['role'])) {
+                $pivotRole = match ($data['role']) {
+                    'admin' => 'admin',
+                    'supervisor' => 'supervisor',
+                    default => 'agent',
+                };
+
+                $company->users()->updateExistingPivot($target->id, ['role' => $pivotRole]);
+            }
+
+            return $target->fresh();
+        });
+    }
+
     public function previewOnboarding(int $invitationId, string $token): array
     {
         $invitation = InternalUserInvitation::query()->with('user')->findOrFail($invitationId);

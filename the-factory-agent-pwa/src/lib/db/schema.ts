@@ -39,6 +39,24 @@ export interface TaskDestinationCacheEntry {
   cachedAt: number;
 }
 
+export interface SavedLocationCacheEntry {
+  id: number; // server id, or a negative temp id for offline-created rows
+  companyId: number;
+  name: string;
+  type: string | null;
+  description: string | null;
+  address: string | null;
+  latitude: number;
+  longitude: number;
+  contactNumber: string | null;
+  email: string | null;
+  isActive: boolean;
+  createdByName: string | null;
+  createdAt: string | null;
+  pending?: 0 | 1; // 1 = created/updated offline, awaiting sync
+  cachedAt: string;
+}
+
 export type OfflineActionType =
   | 'task.update_status'
   | 'task.complete'
@@ -49,7 +67,10 @@ export type OfflineActionType =
   | 'meeting.update'
   | 'meeting.cancel'
   | 'attendance.clock_in'
-  | 'attendance.clock_out';
+  | 'attendance.clock_out'
+  | 'location.create'
+  | 'location.update'
+  | 'location.delete';
 
 export interface OfflineActionQueueEntry {
   id?: number;

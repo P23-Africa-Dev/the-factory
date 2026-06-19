@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion } from 'framer-motion';
 
-import { useAuth, useLoginMutation } from '@/features/auth';
+import { useAuth, useLoginMutation, authApi } from '@/features/auth';
 import { toast } from '@/lib/toast';
 import { Input } from '@/components/ui/Input';
 import { Checkbox } from '@/components/ui/Checkbox';
@@ -101,7 +101,36 @@ export default function LoginPage() {
         } else {
           appStore.delete('saved_credentials');
         }
-        login(response.token, response.user);
+
+        const baseUser = response.user
+          ? {
+              ...response.user,
+              avatar_url: response.user.avatar_url ?? response.user.avatar ?? null,
+              access_role: response.access_role,
+              internal_role: response.internal_role,
+            }
+          : undefined;
+
+        login(response.token, baseUser);
+
+        try {
+          const profile = await authApi.getProfile(baseUser?.company_id);
+          login(response.token, {
+            id: profile.identity?.id ?? baseUser?.id ?? 0,
+            email: profile.identity?.email ?? baseUser?.email ?? data.email,
+            name: profile.identity?.name ?? baseUser?.name,
+            company_id:
+              profile.organization?.company_id != null
+                ? Number(profile.organization.company_id)
+                : baseUser?.company_id,
+            avatar_url: profile.identity?.avatar_url ?? null,
+            access_role: profile.permissions?.access_role ?? response.access_role,
+            internal_role: profile.permissions?.internal_role ?? response.internal_role,
+          });
+        } catch {
+          // Profile fetch is best-effort; login still succeeds with token
+        }
+
         toast.success('Logged in successfully');
         router.replace('/');
       } else {

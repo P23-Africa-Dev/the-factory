@@ -6,7 +6,7 @@ import {
   handleAccountAccessDenied,
   isAccountStatusCode,
 } from "@/lib/auth/account-status";
-import { clearAuthSession, getAuthTokenFromDocument } from "@/lib/auth/session";
+import { clearAuthSession, getAuthTokenFromDocument, setCompanyId } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 
 export default function AuthInitializer({
@@ -23,6 +23,9 @@ export default function AuthInitializer({
       getMe(token)
         .then((res) => {
           if (res.success) {
+            if (res.data.active_company?.id) {
+              setCompanyId(res.data.active_company.id);
+            }
             setUser({
               ...user, // Merge with existing state (preserved from persistence)
               id: res.data.id,

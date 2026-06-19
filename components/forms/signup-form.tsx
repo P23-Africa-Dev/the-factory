@@ -175,13 +175,13 @@ export default function SignupForm() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 md:mt-16 mt-4.5 md:mb-4.75 mb-3.5 h-9.5">
+        {/* <div className="flex items-center gap-2.5 md:mt-16 mt-4.5 md:mb-4.75 mb-3.5 h-9.5">
           <div className="flex-1 h-px bg-gray-200" />
           <span className="text-xs text-[#A9AAAB]">Or</span>
           <div className="flex-1 h-px bg-gray-200" />
-        </div>
+        </div> */}
 
-        <Button variant="outline" className="gap-3">
+        {/* <Button variant="outline" className="gap-3">
           <Image
             src={GoogleLogo}
             alt="Google Logo"
@@ -190,7 +190,7 @@ export default function SignupForm() {
             className="object-contain"
           />
           Continue with Google
-        </Button>
+        </Button> */}
       </form>
     </>
   );

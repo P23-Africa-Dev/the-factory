@@ -100,6 +100,12 @@ export type ProjectKpis = {
     completion_rate: number;
 };
 
+export type LeadsTrendPoint = {
+    name: string;
+    v1: number;
+    v2: number;
+};
+
 export type DashboardOverviewData = {
     kpis: DashboardKpis;
     project_kpis: ProjectKpis;
@@ -111,6 +117,7 @@ export type DashboardOverviewData = {
     agent_live_activity: AgentLiveActivity;
     activity_metric: ActivityMetric;
     ongoing_tasks: OngoingTask[];
+    leads_trend: LeadsTrendPoint[];
 };
 
 export type AgentSummary = {

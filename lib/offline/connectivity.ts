@@ -28,18 +28,15 @@ export function subscribeConnectivity(
 }
 
 export function useConnectivityStatus() {
-  const [isOnline, setIsOnline] = useState(true);
-  const [isClientReady, setIsClientReady] = useState(false);
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof window !== "undefined" ? getBrowserOnlineStatus() : true
+  );
+  const [isClientReady] = useState(() => typeof window !== "undefined");
 
   useEffect(() => {
-    const browserOnline = getBrowserOnlineStatus();
-    setIsClientReady(true);
-    setIsOnline(browserOnline);
-
     const unsubscribe = subscribeConnectivity((online) => {
       setIsOnline(online);
     });
-
     return unsubscribe;
   }, []);
 

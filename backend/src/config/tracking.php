@@ -10,6 +10,16 @@ return [
     // Confidence gates to reduce false positives from noisy GPS fixes.
     'near_max_accuracy_meters' => (float) env('TASK_TRACKING_NEAR_MAX_ACCURACY_METERS', 150),
     'arrival_max_accuracy_meters' => (float) env('TASK_TRACKING_ARRIVAL_MAX_ACCURACY_METERS', 60),
+
+    // Some devices/browsers never report GPS accuracy. When true, a null/unknown
+    // accuracy is treated as acceptable (proximity then relies on distance +
+    // movement gates) instead of permanently blocking near/arrival detection.
+    'allow_unknown_accuracy' => (bool) env('TASK_TRACKING_ALLOW_UNKNOWN_ACCURACY', true),
+
+    // Hysteresis multiplier: an un-arrived agent must move beyond
+    // near_radius_meters * this factor before the "near" state resets, so a
+    // fresh near notification can fire if they re-approach.
+    'near_reset_hysteresis' => (float) env('TASK_TRACKING_NEAR_RESET_HYSTERESIS', 1.5),
     'min_movement_before_proximity_meters' => (float) env('TASK_TRACKING_MIN_MOVEMENT_BEFORE_PROXIMITY_METERS', 20),
     'min_seconds_between_near_and_arrival' => (int) env('TASK_TRACKING_MIN_SECONDS_BETWEEN_NEAR_AND_ARRIVAL', 10),
 

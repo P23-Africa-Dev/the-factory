@@ -97,7 +97,8 @@ export const meetingsApi = {
       params: { company_id: companyId ?? undefined },
     });
     const data = unwrapData(response.data) as Record<string, unknown>;
-    return (data?.candidates as unknown[] ?? []).map((c) => attendeeCandidateSchema.parse(c));
+    const rawItems = (Array.isArray(data?.items) ? data.items : data?.candidates) as unknown[] ?? [];
+    return rawItems.map((c) => attendeeCandidateSchema.parse(c));
   },
 
   calendarStatus: async (): Promise<CalendarStatus> => {

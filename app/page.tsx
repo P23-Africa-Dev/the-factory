@@ -1,190 +1,164 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import {
-  ArrowRight,
-  Cpu,
-  Database,
-  Zap,
-  Globe,
-  BarChart3,
-  ChevronRight,
-  ShieldCheck,
-  CheckCircle2
-} from "lucide-react";
+import { User } from "lucide-react";
 import Logo from "@/assets/images/logo.png";
-import Button from "@/components/ui/button";
+import { DownloadAgentAppModal } from "@/components/pwa/DownloadAgentAppModal";
+import { getAgentInstallUrl, isMobileDevice } from "@/lib/agent-pwa-url";
+import Footer from "@/components/layout/footer";
 
 export default function Home() {
+  const [agentModalOpen, setAgentModalOpen] = useState(false);
+
+  function handleDownloadAgentApp() {
+    if (isMobileDevice()) {
+      window.location.href = getAgentInstallUrl();
+      return;
+    }
+    setAgentModalOpen(true);
+  }
+
   return (
-    <div className="relative min-h-screen w-full flex flex-col bg-[#0A1618] overflow-x-hidden selection:bg-[#6FA8A6]/30 font-sans">
-      {/* Cinematic Background */}
-      <div className="absolute inset-0 z-0">
-        {/* <Image
-          src="/landing/hero.png"
-          alt="Factory 23 - Industrial AI"
-          fill
-          className="object-cover opacity-30 mix-blend-overlay"
-          priority
-        /> */}
-        {/* Multilayered Overlays for Depth */}
-        {/* <div className="absolute inset-0 bg-gradient-to-b from-[#0A1618] via-[#0A1618]/60 to-[#0A1618]" />
-        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#0A1618] to-transparent" />
-        <div className="absolute top-[20%] left-[-10%] w-[600px] h-[600px] bg-[#6FA8A6]/5 rounded-full blur-[120px] pointer-events-none" /> */}
+    <div className="min-h-screen w-full flex flex-col bg-white font-sans overflow-x-hidden">
+      {/* Split-screen layout container */}
+      <div className="flex-1 w-full flex flex-col lg:flex-row bg-white">
+        {/* Far-Left Vertical Accent Column (Dark Teal) */}
+        <div className="w-12 bg-[#0B252C] shrink-0 hidden lg:block" />
+
+      {/* Main Content Pane (White Background) */}
+      <div className="flex-1 lg:max-w-[58%] bg-white flex flex-col justify-between p-6 sm:p-10 lg:p-16 min-h-screen lg:min-h-0">
+        {/* Navigation Bar */}
+        <header className="flex items-center gap-6 sm:gap-12 w-full">
+          <Link href="/" className="flex items-center shrink-0">
+            <Image
+              src={Logo}
+              alt="Factory 23 Logo"
+              width={54}
+              height={54}
+              className="object-contain"
+              priority
+            />
+          </Link>
+          
+          <nav className="hidden sm:flex items-center gap-8">
+            <Link href="#" className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
+              About
+            </Link>
+            <Link href="#" className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
+              Pricing
+            </Link>
+            <Link href="#" className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
+              Reviews
+            </Link>
+            <Link href="#" className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
+              P23 Africa
+            </Link>
+          </nav>
+        </header>
+
+        {/* Hero Section */}
+        <main className="my-auto py-12 lg:py-0 flex flex-col justify-center max-w-xl">
+          {/* Feature Badge */}
+          <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white p-1 pr-4 self-start mb-8 shadow-sm">
+            <span className="rounded-full bg-[#82C341] px-3 py-1.5 text-[11px] font-semibold text-white tracking-wide uppercase">
+              New
+            </span>
+            <span className="text-[12px] font-medium text-[#4A5F64] tracking-wide">
+              Offline RealTime Tracking System
+            </span>
+          </div>
+
+          {/* Heading */}
+          <h1 className="text-4xl sm:text-5xl lg:text-[62px] font-extrabold text-[#0B252C] leading-[1.1] tracking-[-0.02em] mb-6">
+            The Ultimate Field <br />
+            Agent Tracking <br />
+            System
+          </h1>
+
+          {/* Subheading / Description */}
+          <p className="text-sm sm:text-base text-[#4A5F64] leading-relaxed mb-10 max-w-lg">
+            An all-in-one field management and CRM platform built for real-world operations. Track teams, manage tasks, and capture customer interactions seamlessly, even offline.
+          </p>
+
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row items-center gap-4 w-full">
+            <Link href="/register" className="w-full sm:w-auto">
+              <button className="w-full sm:w-auto px-10 h-14 bg-[#0B252C] text-white text-sm font-bold rounded-full shadow-[0px_4px_12px_rgba(11,37,44,0.15)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer">
+                Sign Up
+              </button>
+            </Link>
+            <button 
+              onClick={handleDownloadAgentApp}
+              className="w-full sm:w-auto px-8 h-14 border-2 border-[#0B252C] text-[#0B252C] text-sm font-bold rounded-full bg-transparent hover:bg-[#0B252C]/5 active:scale-[0.98] transition-all cursor-pointer"
+            >
+              Download Agent App
+            </button>
+          </div>
+        </main>
+
+        {/* Muted Bottom Section / Spacer */}
+        <div className="hidden lg:block h-12" />
       </div>
 
-      {/* Floating Navbar */}
-      <header className="fixed top-0 left-0 right-0 z-50 flex justify-center px-6 py-6 md:px-12 lg:px-24">
-        <nav className="flex w-full max-w-7xl items-center justify-between rounded-[28px] border border-white/10 bg-white/[0.03] px-6 py-3 shadow-2xl backdrop-blur-xl transition-all">
-          <Link href="/" className="flex items-center gap-3 group">
-            <div className="relative h-10 w-10 overflow-hidden rounded-xl bg-white/[0.05] p-2 transition-transform group-hover:scale-105">
-              <Image
-                src={Logo}
-                alt="Logo"
-                fill
-                className="object-contain p-1.5"
-              />
-            </div>
-            <h1 className="text-white text-xl font-extrabold tracking-tight">Factory <span className="text-[#6FA8A6]">23</span></h1>
+      {/* Right Column Pane (Dark Teal Background) */}
+      <div className="w-full lg:w-[42%] bg-[#0B252C] flex flex-col justify-between p-6 sm:p-10 lg:p-16 relative overflow-hidden min-h-[500px] lg:min-h-screen">
+        {/* Right Section Header Buttons */}
+        <div className="flex items-center justify-end gap-4 w-full z-10">
+          <Link href="/login" className="px-6 h-12 border border-white/30 text-white text-xs font-semibold rounded-full flex items-center justify-center gap-2 hover:border-white/60 hover:bg-white/5 active:scale-[0.98] transition-all">
+            <User className="w-4 h-4 stroke-[2.5]" />
+            Log In
           </Link>
-
-          <div className="hidden items-center gap-10 md:flex">
-            <Link href="#" className="text-[12px] font-bold uppercase tracking-widest text-white/40 hover:text-white transition-colors">Solutions</Link>
-            <Link href="#" className="text-[12px] font-bold uppercase tracking-widest text-white/40 hover:text-white transition-colors">Infrastructure</Link>
-            <Link href="#" className="text-[12px] font-bold uppercase tracking-widest text-white/40 hover:text-white transition-colors">Security</Link>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <Link href="/login" className="hidden px-4 text-xs font-bold uppercase tracking-widest text-white/60 hover:text-white transition-colors sm:block">
-              Login
-            </Link>
-            <Link href="/register">
-              <Button className="h-10 rounded-full bg-[#6FA8A6] px-8 text-[11px] font-bold uppercase tracking-widest text-[#0A1618] hover:bg-[#A3E635] shadow-lg transition-all">
-                Get Started
-              </Button>
-            </Link>
-          </div>
-        </nav>
-      </header>
-
-      {/* Hero Content */}
-      <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 pt-32 pb-20 md:px-12 lg:px-24">
-        <div className="w-full max-w-6xl">
-          <div className="flex flex-col items-center text-center animate-in fade-in slide-in-from-bottom-8 duration-1000">
-            {/* Tagline */}
-            <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-1.5">
-              <div className="h-2 w-2 rounded-full bg-[#A3E635] animate-pulse shadow-[0_0_8px_rgba(163,230,53,1)]" />
-              <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#6FA8A6]">
-                Systems Operational · Genesis v2.4
-              </span>
-            </div>
-
-            {/* Main Headline */}
-            <h2 className="text-5xl font-black tracking-tighter text-white sm:text-7xl md:text-8xl lg:text-9xl">
-              Factory 23
-            </h2>
-
-            <p className="mt-10 max-w-2xl text-lg font-medium leading-relaxed text-white/40 md:text-xl">
-              simplifies field operations by combining tasks, tracking, and CRM in one platform.
-              Designed for teams to manage work, monitor agents, and close deals faster.            </p>
-
-            <div className="mt-12 flex flex-col items-center justify-center gap-6 sm:flex-row w-full max-w-4xl px-4">
-              <Link href="/register" className="group w-full sm:w-auto flex justify-center">
-                <Button className="h-[64px] min-w-[240px] rounded-full bg-[#6FA8A6] px-8 text-[11px] font-bold uppercase tracking-widest text-[#0A1618] hover:bg-[#A3E635] shadow-lg transition-all">
-                  Deploy System <ArrowRight className="ml-2 inline-block transition-transform group-hover:translate-x-1" size={18} />
-                </Button>
-              </Link>
-              <Link href="/enterprise/schedule-demo" className="w-full sm:w-auto flex justify-center">
-                <Button variant="outline" className="h-[64px] min-w-[240px] rounded-2xl border-white/10 bg-white/5 text-sm font-black uppercase tracking-widest text-white backdrop-blur-xl hover:bg-white/10 transition-all active:scale-[0.98]">
-                  Schedule Demo
-                </Button>
-              </Link>
-              <div className="w-full sm:w-auto flex justify-center">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-[64px] min-w-[240px] rounded-2xl border-[#6FA8A6]/20 bg-[#6FA8A6]/5 text-sm font-black uppercase tracking-widest text-[#6FA8A6] backdrop-blur-xl hover:bg-[#6FA8A6]/10 shadow-[0_0_15px_rgba(111,168,166,0.05)] transition-all active:scale-[0.98]"
-                >
-                  Download Agent App
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Social Proof Elements */}
-          {/* <div className="mt-32 grid grid-cols-2 gap-8 border-t border-white/5 pt-12 text-center md:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 delay-500 duration-1000">
-             <div className="flex flex-col gap-1">
-               <span className="text-3xl font-black text-white">99.9<span className="text-[#6FA8A6]">%</span></span>
-               <span className="text-[10px] font-bold uppercase tracking-widest text-white/20">Uptime</span>
-             </div>
-             <div className="flex flex-col gap-1">
-               <span className="text-3xl font-black text-white">250<span className="text-[#6FA8A6]">+</span></span>
-               <span className="text-[10px] font-bold uppercase tracking-widest text-white/20">Warehouses</span>
-             </div>
-             <div className="flex flex-col gap-1">
-               <span className="text-3xl font-black text-white">12M<span className="text-[#6FA8A6]">s</span></span>
-               <span className="text-[10px] font-bold uppercase tracking-widest text-white/20">Latency</span>
-             </div>
-             <div className="flex flex-col gap-1">
-               <span className="text-3xl font-black text-white">24<span className="text-[#6FA8A6]">/7</span></span>
-               <span className="text-[10px] font-bold uppercase tracking-widest text-white/20">Monitoring</span>
-             </div>
-          </div> */}
-
-          {/* Features Preview Cards */}
-          {/* <div className="mt-20 grid grid-cols-1 gap-6 md:grid-cols-3">
-            {[
-              { icon: Cpu, title: "Autonomous Ops", desc: "Edge computing for real-time robotic coordination." },
-              { icon: Database, title: "Unified Ledger", desc: "Transparent, immutable tracking across the supply chain." },
-              { icon: Zap, title: "Hyper Logistics", desc: "Optimized routing for zero-idle production cycles." }
-            ].map((feature, i) => (
-              <div 
-                key={i}
-                className="group relative overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.03] p-8 transition-all hover:bg-white/[0.06] hover:-translate-y-1"
-              >
-                <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#6FA8A6]/10 text-[#6FA8A6] border border-[#6FA8A6]/20 transition-transform group-hover:scale-110">
-                  <feature.icon size={28} />
-                </div>
-                <h3 className="text-xl font-black text-white">{feature.title}</h3>
-                <p className="mt-3 text-sm leading-relaxed text-white/40">{feature.desc}</p>
-                <div className="mt-6 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[#6FA8A6] opacity-0 group-hover:opacity-100 transition-opacity">
-                  Learn More <ChevronRight size={12} />
-                </div>
-              </div>
-            ))}
-          </div> */}
+          <Link href="/enterprise/schedule-demo">
+            <button className="px-6 h-12 bg-white text-[#0B252C] text-xs font-bold rounded-full shadow-[0px_2px_8px_rgba(0,0,0,0.1)] hover:bg-white/95 active:scale-[0.98] transition-all cursor-pointer">
+              Book a Demo
+            </button>
+          </Link>
         </div>
-      </main>
 
-      {/* Footer */}
-      <footer className="relative z-20 mt-auto px-6 py-12 md:px-12 lg:px-24">
-        <div className="flex flex-col items-center justify-between gap-8 border-t border-white/5 pt-12 md:flex-row">
-          <div className="flex items-center gap-4">
-            <div className="h-10 w-10 rounded-lg bg-white/5 p-2 grayscale contrast-200 opacity-20">
-              <Image src={Logo} alt="Logo" className="w-full h-full object-contain" />
-            </div>
-            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/10">© 2024 Factory 23 Industrial Architecture</span>
-          </div>
-
-          <div className="flex gap-12">
-            {[
-              { label: "Stability", icon: ShieldCheck },
-              { label: "Privacy", icon: CheckCircle2 },
-              { label: "Architecture", icon: BarChart3 }
-            ].map((item, i) => (
-              <Link
-                key={i}
-                href="#"
-                className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-white/10 hover:text-[#6FA8A6] transition-colors"
-              >
-                <item.icon size={14} strokeWidth={2.5} />
-                {item.label}
-              </Link>
-            ))}
+        {/* Vector Line Art Illustration */}
+        <div className="flex-1 flex items-center justify-center z-10 py-12 lg:py-0">
+          <div className="relative w-64 h-64 md:w-80 md:h-80 lg:w-[350px] lg:h-[350px] flex items-center justify-center">
+            <svg
+              viewBox="0 0 240 240"
+              className="w-full h-full text-white/90 fill-none"
+              stroke="currentColor"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {/* Hand-drawn style loop-the-loop */}
+              <path
+                d="M110,60 
+                   C95,85 85,130 120,120 
+                   C140,115 150,90 130,80 
+                   C100,70 80,140 130,150 
+                   C155,155 170,130 150,110 
+                   C130,90 110,150 145,170 
+                   C170,185 185,165 190,140"
+                className="opacity-95"
+              />
+              
+              {/* Starburst sparks radiating outward */}
+              <path d="M175,85 Q195,80 215,78" className="opacity-90" strokeWidth="3" />
+              <path d="M182,108 Q205,109 228,112" className="opacity-90" strokeWidth="3" />
+              <path d="M178,130 Q198,142 215,155" className="opacity-90" strokeWidth="3" />
+              <path d="M162,148 Q177,165 188,185" className="opacity-90" strokeWidth="3" />
+            </svg>
           </div>
         </div>
-      </footer>
+        {/* Bottom Spacer */}
+        <div className="hidden lg:block h-12" />
+      </div>
+
+      {/* Closes split-screen layout container */}
+      </div>
+
+      {/* Full-width Footer */}
+      <Footer />
+
+      <DownloadAgentAppModal isOpen={agentModalOpen} onClose={() => setAgentModalOpen(false)} />
     </div>
   );
 }

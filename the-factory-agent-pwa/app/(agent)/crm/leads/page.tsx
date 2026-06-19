@@ -17,9 +17,11 @@ export default function AllLeadsPage() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
 
-  const { data: leadsData, isLoading } = useLeads(
-    searchQuery.trim() ? { search: searchQuery.trim() } : undefined,
-  );
+  const leadFilters = searchQuery.trim()
+    ? { search: searchQuery.trim(), source: 'agent_upload' as const }
+    : { source: 'agent_upload' as const };
+
+  const { data: leadsData, isLoading } = useLeads(leadFilters);
   const { data: labels = [] } = useCrmLabels();
   const { count: unreadCount = 0 } = useUnreadCount();
 

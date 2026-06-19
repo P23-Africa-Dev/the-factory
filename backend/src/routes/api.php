@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
 use App\Http\Controllers\Api\V1\Calendar\CalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Calendar\MeetingController;
+use App\Http\Controllers\Api\V1\Company\CompanyLocationController;
 use App\Http\Controllers\Api\V1\CountryController;
 use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
@@ -355,6 +356,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                     ->middleware('throttle:20,1')
                     ->name('invite');
 
+                Route::patch('/{user}', [InternalUserController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('update');
+
                 Route::patch('/{user}/supervisor', [InternalUserController::class, 'assignSupervisor'])
                     ->middleware('throttle:30,1')
                     ->name('supervisor.assign');
@@ -400,6 +405,20 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                 Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
                     ->middleware('throttle:60,1')
                     ->name('leads.activities.store');
+            });
+
+            Route::prefix('locations')->name('locations.')->group(function (): void {
+                Route::get('/', [CompanyLocationController::class, 'index'])->name('index');
+                Route::post('/', [CompanyLocationController::class, 'store'])
+                    ->middleware('throttle:30,1')
+                    ->name('store');
+                Route::get('/{location}', [CompanyLocationController::class, 'show'])->name('show');
+                Route::patch('/{location}', [CompanyLocationController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('update');
+                Route::delete('/{location}', [CompanyLocationController::class, 'destroy'])
+                    ->middleware('throttle:30,1')
+                    ->name('destroy');
             });
 
             Route::get('/dashboard/overview', DashboardOverviewController::class)
@@ -462,6 +481,14 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                 Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
                     ->middleware('throttle:60,1')
                     ->name('leads.activities.store');
+            });
+
+            Route::prefix('locations')->name('locations.')->group(function (): void {
+                Route::get('/', [CompanyLocationController::class, 'index'])->name('index');
+                Route::post('/', [CompanyLocationController::class, 'store'])
+                    ->middleware('throttle:30,1')
+                    ->name('store');
+                Route::get('/{location}', [CompanyLocationController::class, 'show'])->name('show');
             });
 
             Route::prefix('attendance')->name('attendance.')->group(function (): void {
@@ -610,6 +637,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
         Route::post('/{user}/invite', [InternalUserController::class, 'resendInvite'])
             ->middleware('throttle:20,1')
             ->name('invite');
+
+        Route::patch('/{user}', [InternalUserController::class, 'update'])
+            ->middleware('throttle:30,1')
+            ->name('update');
 
         Route::patch('/{user}/supervisor', [InternalUserController::class, 'assignSupervisor'])
             ->middleware('throttle:30,1')

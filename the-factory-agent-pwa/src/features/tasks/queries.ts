@@ -1,23 +1,68 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
+import type { InfiniteData } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
+import { appStore, getActiveCompanyId } from '@/lib/storage/stores';
 import { useTrackingStore } from '@/store/tracking';
 import { toast } from '@/lib/toast';
 import { taskApi } from './api';
+import type { TaskListResult } from './api';
 import { taskKeys } from './queryKeys';
 import type { Task, TaskFilters, UpdateTaskStatusPayload } from './types';
 
+export function flattenTaskPages(data: InfiniteData<TaskListResult> | undefined): Task[] {
+  if (!data?.pages.length) return [];
+  const seen = new Set<string>();
+  const result: Task[] = [];
+  for (const page of data.pages) {
+    for (const task of page.tasks) {
+      if (!seen.has(task.id)) {
+        seen.add(task.id);
+        result.push(task);
+      }
+    }
+  }
+  return result;
+}
+
 export function useTaskList(filters?: TaskFilters) {
-  return useQuery({
+  // The /agent/tasks endpoint is scoped by the bearer token and returns the
+  // agent's tasks even without a company_id param; taskApi.list seeds company_id
+  // from the response for subsequent company-scoped calls. Gating on company_id
+  // (which can be absent on a freshly hydrated session) would wrongly disable the
+  // query and leave the task page and map destination picker empty.
+  const isAuthenticated =
+    typeof window !== 'undefined' && Boolean(appStore.getString('auth_token'));
+  return useInfiniteQuery({
     queryKey: taskKeys.list(filters),
-    queryFn: () => taskApi.list(filters),
+    queryFn: async ({ pageParam }) => {
+      if (pageParam) return taskApi.listByUrl(pageParam as string);
+      return taskApi.list(filters);
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.pagination.nextPageUrl ?? null,
+    enabled: isAuthenticated,
+    staleTime: 1000 * 30,
   });
 }
 
+/** Convenience hook returning a flat task array (dashboard, map). */
+export function useTaskListItems(filters?: TaskFilters) {
+  const query = useTaskList(filters);
+  return {
+    ...query,
+    data: flattenTaskPages(query.data),
+  };
+}
+
 export function useTask(id: string) {
+  const isAuthenticated =
+    typeof window !== 'undefined' && Boolean(appStore.getString('auth_token'));
   return useQuery({
     queryKey: taskKeys.detail(id),
     queryFn: () => taskApi.get(id),
-    enabled: Boolean(id),
+    // Agent task detail is token-scoped; gating on company_id blocks the tracking
+    // resume screen until a list fetch seeds company context.
+    enabled: Boolean(id) && isAuthenticated,
   });
 }
 
@@ -38,6 +83,7 @@ export function useUpdateTaskStatus() {
       }
     },
     onSettled: (_, __, { id }) => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
       if (typeof navigator !== 'undefined' && navigator.onLine) {
         queryClient.invalidateQueries({ queryKey: taskKeys.detail(id) });
       }
@@ -60,6 +106,7 @@ export function useCompleteTask() {
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
       useTrackingStore.getState().setActiveTrackingTaskId(null);
       useTrackingStore.getState().markCompleted(taskId);
+      useTrackingStore.getState().removeTask(taskId);
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         toast.info('Offline queue', 'Task completion queued and will sync automatically.');
       }

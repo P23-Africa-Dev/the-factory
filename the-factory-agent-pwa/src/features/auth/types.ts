@@ -10,11 +10,15 @@ export type ResetPasswordPayload = z.infer<typeof resetPasswordPayloadSchema>;
 
 export type LoginResponse = {
   token: string;
+  access_role?: string;
+  internal_role?: string;
   user?: {
     id: number;
     name: string;
     email: string;
     company_id?: number;
+    avatar_url?: string | null;
+    avatar?: string | null;
   };
 };
 

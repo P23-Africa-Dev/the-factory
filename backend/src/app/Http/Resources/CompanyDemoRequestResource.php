@@ -13,6 +13,7 @@ class CompanyDemoRequestResource extends JsonResource
             'id' => $this->id,
             'full_name' => $this->full_name,
             'email' => $this->email,
+            'phone' => $this->phone,
             'company_name' => $this->company_name,
             'country' => $this->country,
             'team_size' => $this->team_size,

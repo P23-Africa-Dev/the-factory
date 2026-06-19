@@ -8,6 +8,8 @@ const NEXT_PUBLIC_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 const NEXT_PUBLIC_TRACKING_WS_URL = process.env.NEXT_PUBLIC_TRACKING_WS_URL;
 const NEXT_PUBLIC_MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 const NEXT_PUBLIC_APP_ENV = process.env.NEXT_PUBLIC_APP_ENV;
+const NEXT_PUBLIC_PWA_ONLY_MODE = process.env.NEXT_PUBLIC_PWA_ONLY_MODE;
+const NEXT_PUBLIC_AGENT_PWA_URL = process.env.NEXT_PUBLIC_AGENT_PWA_URL;
 
 function validateEnv(value: string | undefined, key: string, fallback = ''): string {
   if (!value) {
@@ -35,4 +37,10 @@ export const env = {
     | 'development'
     | 'staging'
     | 'production',
+  PWA_ONLY_MODE: NEXT_PUBLIC_PWA_ONLY_MODE === 'true',
+  AGENT_PWA_URL: validateEnv(
+    NEXT_PUBLIC_AGENT_PWA_URL,
+    'NEXT_PUBLIC_AGENT_PWA_URL',
+    'https://app.thefactory23.com',
+  ),
 } as const;

@@ -25,6 +25,7 @@ class EnterpriseDemoRequestAdminNotification extends Notification
             ->line('A new company onboarding demo request has been submitted.')
             ->line("Full Name: {$this->payload['full_name']}")
             ->line("Email: {$this->payload['email']}")
+            ->line("Phone: {$this->payload['phone']}")
             ->line("Company: {$this->payload['company_name']}")
             ->line("Country: {$this->payload['country']}")
             ->line("Team Size: {$this->payload['team_size']}")

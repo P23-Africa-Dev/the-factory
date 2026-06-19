@@ -1,0 +1,154 @@
+"use client";
+
+import { apiRequest, ApiEnvelope } from "./onboarding";
+
+export type ApiRoleBasePath = "/admin" | "/agent";
+
+export type SavedLocationActor = {
+  id: number;
+  name: string;
+  email: string;
+};
+
+export type SavedLocation = {
+  id: number;
+  company_id: number;
+  created_by_user_id: number;
+  updated_by_user_id: number | null;
+  name: string;
+  type: string | null;
+  description: string | null;
+  address: string | null;
+  latitude: number;
+  longitude: number;
+  contact_number: string | null;
+  email: string | null;
+  is_active: boolean;
+  meta: Record<string, unknown> | null;
+  created_by?: SavedLocationActor | null;
+  updated_by?: SavedLocationActor | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type SavedLocationPagination = {
+  next_page_url: string | null;
+  prev_page_url: string | null;
+  per_page: number;
+  current_page?: number;
+  total?: number;
+  last_page?: number;
+};
+
+export type SavedLocationsListData = {
+  items: SavedLocation[];
+  pagination: SavedLocationPagination;
+};
+
+export type SavedLocationDetailData = {
+  location: SavedLocation;
+};
+
+export type ListSavedLocationsParams = {
+  company_id?: number | string;
+  q?: string;
+  type?: string;
+  is_active?: boolean;
+  per_page?: number;
+};
+
+export type CreateSavedLocationPayload = {
+  company_id: number | string;
+  name: string;
+  type?: string | null;
+  description?: string | null;
+  address?: string | null;
+  latitude: number;
+  longitude: number;
+  contact_number?: string | null;
+  email?: string | null;
+  is_active?: boolean;
+  meta?: Record<string, unknown> | null;
+};
+
+export type UpdateSavedLocationPayload = Partial<CreateSavedLocationPayload>;
+
+function withBase(basePath: ApiRoleBasePath, path: string) {
+  return `${basePath}${path}`;
+}
+
+export function listSavedLocations(
+  params: ListSavedLocationsParams,
+  token: string,
+  basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<SavedLocationsListData>> {
+  const qs = new URLSearchParams();
+  if (params.company_id != null) qs.set("company_id", String(params.company_id));
+  if (params.q) qs.set("q", params.q);
+  if (params.type) qs.set("type", params.type);
+  if (params.is_active != null) qs.set("is_active", params.is_active ? "1" : "0");
+  qs.set("per_page", String(params.per_page ?? 200));
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+
+  return apiRequest<SavedLocationsListData>({
+    method: "GET",
+    path: withBase(basePath, `/locations${query}`),
+    token,
+  });
+}
+
+export function getSavedLocation(
+  locationId: number | string,
+  params: { company_id?: number | string },
+  token: string,
+  basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<SavedLocationDetailData>> {
+  const qs = new URLSearchParams();
+  if (params.company_id != null) qs.set("company_id", String(params.company_id));
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+
+  return apiRequest<SavedLocationDetailData>({
+    method: "GET",
+    path: withBase(basePath, `/locations/${locationId}${query}`),
+    token,
+  });
+}
+
+export function createSavedLocation(
+  payload: CreateSavedLocationPayload,
+  token: string,
+  basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<SavedLocationDetailData>> {
+  return apiRequest<SavedLocationDetailData>({
+    method: "POST",
+    path: withBase(basePath, "/locations"),
+    body: payload,
+    token,
+  });
+}
+
+export function updateSavedLocation(
+  locationId: number | string,
+  payload: UpdateSavedLocationPayload,
+  token: string
+): Promise<ApiEnvelope<SavedLocationDetailData>> {
+  return apiRequest<SavedLocationDetailData>({
+    method: "PATCH",
+    path: `/admin/locations/${locationId}`,
+    body: payload,
+    token,
+  });
+}
+
+export function deleteSavedLocation(
+  locationId: number | string,
+  payload: { company_id?: number | string },
+  token: string
+): Promise<ApiEnvelope<{ deleted_location_id: number }>> {
+  return apiRequest<{ deleted_location_id: number }>({
+    method: "DELETE",
+    path: `/admin/locations/${locationId}`,
+    body: payload,
+    token,
+  });
+}

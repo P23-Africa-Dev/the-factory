@@ -23,6 +23,7 @@ class BookDemoRequestTest extends TestCase
         $response = $this->postJson('/api/v1/enterprise/demo-requests', [
             'full_name' => 'Ada Lovelace',
             'email' => 'ada@analytical.co',
+            'phone' => '+447911123456',
             'company_name' => 'Analytical Engines Ltd',
             'country' => 'United Kingdom',
             'team_size' => '11-50',
@@ -34,6 +35,7 @@ class BookDemoRequestTest extends TestCase
 
         $this->assertDatabaseHas('company_demo_requests', [
             'email' => 'ada@analytical.co',
+            'phone' => '+447911123456',
             'status' => 'pending',
             'country' => 'United Kingdom',
         ]);
@@ -47,6 +49,7 @@ class BookDemoRequestTest extends TestCase
         CompanyDemoRequest::create([
             'full_name' => 'Ada Lovelace',
             'email' => 'ada@analytical.co',
+            'phone' => '+447911123456',
             'company_name' => 'Analytical Engines Ltd',
             'country' => 'United Kingdom',
             'team_size' => '11-50',
@@ -58,6 +61,7 @@ class BookDemoRequestTest extends TestCase
         $response = $this->postJson('/api/v1/enterprise/demo-requests', [
             'full_name' => 'Ada Lovelace',
             'email' => 'ada@analytical.co',
+            'phone' => '+447911123456',
             'company_name' => 'Analytical Engines Ltd',
             'country' => 'United Kingdom',
             'team_size' => '11-50',
@@ -82,6 +86,7 @@ class BookDemoRequestTest extends TestCase
         $response = $this->postJson('/api/v1/enterprise/demo-requests', [
             'full_name' => 'Ada Lovelace',
             'email' => 'ada@analytical.co',
+            'phone' => '+447911123456',
             'company_name' => 'Analytical Engines Ltd',
             'country' => 'United Kingdom',
             'team_size' => '11-50',
