@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { AlertCircle, RefreshCw, Map as MapIcon } from 'lucide-react';
 
 import { env } from '@/constants/env';
 import { createMapboxTransformRequest, getMapboxPublicToken } from '@/lib/map/public-env';
@@ -304,16 +305,7 @@ export function MapboxMap({
     arrived,
   };
 
-  const fallbackView = (
-    <div className="absolute inset-0 bg-[#0A1D25] flex items-center justify-center overflow-hidden">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/assets/default-map-bg.png"
-        alt="Map fallback"
-        className="w-full h-full object-cover opacity-60"
-      />
-    </div>
-  );
+  // fallbackView is removed
 
   useEffect(() => {
     if (typeof window === 'undefined' || !mapContainerRef.current || mapRef.current) return;
@@ -678,8 +670,42 @@ export function MapboxMap({
 
   if (mapError) {
     return (
-      <div className="relative w-full h-full flex flex-col items-center justify-center">
-        {fallbackView}
+      <div className="relative w-full h-full flex flex-col items-center justify-center bg-[#0A1D25] text-white px-6 font-sans">
+        {/* Subtle grid pattern background */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
+        
+        {/* Soft radial glow */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(29,114,147,0.15)_0%,transparent_70%)] pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col items-center max-w-sm text-center">
+          {/* Animated/Glowing Icon Container */}
+          <div className="relative mb-5 flex items-center justify-center">
+            {/* Outer pulse */}
+            <div className="absolute inset-0 rounded-full bg-[#FD6046]/10 animate-pulse w-20 h-20" />
+            {/* Inner glow */}
+            <div className="absolute -inset-2 rounded-full bg-gradient-to-tr from-[#FD6046] to-[#1D7293] opacity-35 blur-md" />
+            {/* Main icon container */}
+            <div className="relative w-16 h-16 rounded-2xl bg-[#09232D] border border-white/10 flex items-center justify-center shadow-2xl">
+              <MapIcon className="w-8 h-8 text-[#FD6046]" />
+              <AlertCircle className="w-4 h-4 text-[#FD6046] absolute bottom-2 right-2 bg-[#09232D] rounded-full" />
+            </div>
+          </div>
+
+          <h3 className="text-base font-bold text-white mb-2 tracking-tight">
+            Map Loading Issue
+          </h3>
+          <p className="text-xs text-gray-400 mb-5 leading-relaxed max-w-[280px]">
+            There was an issue loading the maps. Please check your network connection and try again.
+          </p>
+
+          <button
+            onClick={() => window.location.reload()}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-[#1D7293] to-[#09232D] hover:opacity-90 active:scale-95 transition-all text-xs font-bold text-white shadow-lg border border-white/10 cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Reload Map</span>
+          </button>
+        </div>
         {dimmed && <div className="absolute inset-0 bg-black/45 pointer-events-none" />}
       </div>
     );
