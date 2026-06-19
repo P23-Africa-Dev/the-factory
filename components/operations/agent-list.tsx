@@ -8,6 +8,7 @@ import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableCont
 export type AgentItem = {
   id: string;
   name: string;
+  email: string;
   description: string;
   zone: string;
   phone: string;
@@ -16,6 +17,11 @@ export type AgentItem = {
   time: string;
   avatar: string;
   active: boolean;
+  // optional extras for pre-populating edit form
+  avatarKey?: string;
+  baseSalary?: number;
+  salaryType?: "daily" | "weekly" | "monthly";
+  salaryCurrency?: string;
 };
 
 const PAGE_SIZE = 4;

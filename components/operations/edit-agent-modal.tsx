@@ -1,0 +1,483 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { X } from "lucide-react";
+import { toast } from "sonner";
+import { Toggle } from "@/components/ui/toggle";
+import { SectionDivider } from "@/components/payroll/payroll/section-divider";
+import { FormRow } from "@/components/payroll/payroll/form-row";
+import { InlineInput } from "@/components/payroll/payroll/inline-input";
+import { InlineSelect } from "@/components/payroll/payroll/inline-select";
+import {
+  AgentDetailsModal,
+  type AgentDetails,
+} from "@/components/operations/agent-details-modal";
+import { useUpdateInternalUser } from "@/hooks/use-internal-users";
+import { useInternalUsers } from "@/hooks/use-projects";
+import { useSupportedCurrencies } from "@/hooks/use-currencies";
+import { useAuthStore } from "@/store/auth";
+import { getActiveCompanyContext } from "@/lib/company-context";
+import { PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
+import type { ApiRequestError } from "@/lib/api/onboarding";
+import type { AgentItem } from "./agent-list";
+
+const ROLE_OPTIONS = [
+  { label: "Admin", value: "admin" },
+  { label: "Supervisor", value: "supervisor" },
+  { label: "Agent", value: "agent" },
+] as const;
+
+const WEEKDAYS = [
+  { label: "Mon", value: "monday" },
+  { label: "Tue", value: "tuesday" },
+  { label: "Wed", value: "wednesday" },
+  { label: "Thu", value: "thursday" },
+  { label: "Fri", value: "friday" },
+  { label: "Sat", value: "saturday" },
+  { label: "Sun", value: "sunday" },
+];
+
+type FormErrors = Partial<{
+  name: string;
+  email: string;
+  role: string;
+  salaryType: string;
+  salary: string;
+  currency: string;
+  workDays: string;
+  supervisorId: string;
+  phone: string;
+  gender: string;
+  avatarKey: string;
+}>;
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="text-[11px] text-red-500 mt-0.5 text-right">{message}</p>;
+}
+
+interface EditAgentModalProps {
+  agent: AgentItem;
+  onClose: () => void;
+}
+
+export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+
+  // Pre-populate from agent data
+  const [name, setName] = useState(agent.name);
+  const [email, setEmail] = useState(agent.email);
+  const [role, setRole] = useState<"admin" | "supervisor" | "agent" | "">(
+    (agent.role as "admin" | "supervisor" | "agent") || ""
+  );
+  const [salaryType, setSalaryType] = useState<"daily" | "weekly" | "monthly">(
+    agent.salaryType ?? "monthly"
+  );
+  const [currencyCode, setCurrencyCode] = useState(
+    agent.salaryCurrency ?? PAYROLL_DEFAULT_CURRENCY
+  );
+  const [salary, setSalary] = useState(
+    agent.baseSalary != null ? String(agent.baseSalary) : ""
+  );
+  const [workDays, setWorkDays] = useState<string[]>([
+    "monday", "tuesday", "wednesday", "thursday", "friday",
+  ]);
+  const [supervisorId, setSupervisorId] = useState("");
+  const [commissionEnabled, setCommissionEnabled] = useState(false);
+  const [agentDetailsOpen, setAgentDetailsOpen] = useState(false);
+  const [agentDetails, setAgentDetails] = useState<AgentDetails>({
+    phone: agent.phone && agent.phone !== "N/A" ? agent.phone : "",
+    gender: "",
+    avatarKey: agent.avatarKey ?? "",
+  });
+  const [errors, setErrors] = useState<FormErrors>({});
+
+  const updateMutation = useUpdateInternalUser();
+  const { data: currenciesData, isLoading: loadingCurrencies } = useSupportedCurrencies();
+  const currencyOptions = currenciesData?.currencies;
+  const currencyOptionList = currencyOptions ?? [];
+  const supportedCurrencyCodes = useMemo(
+    () => new Set((currencyOptions ?? []).map((c) => c.code)),
+    [currencyOptions]
+  );
+  const fallbackCurrencyCode = (
+    currenciesData?.default_currency ?? PAYROLL_DEFAULT_CURRENCY
+  ).toUpperCase();
+  const normalizedCurrencyCode = currencyCode.trim().toUpperCase();
+  const selectedCurrencyCode = useMemo(
+    () =>
+      normalizedCurrencyCode &&
+      (supportedCurrencyCodes.size === 0 ||
+        supportedCurrencyCodes.has(normalizedCurrencyCode))
+        ? normalizedCurrencyCode
+        : fallbackCurrencyCode,
+    [fallbackCurrencyCode, normalizedCurrencyCode, supportedCurrencyCodes]
+  );
+
+  const { data: supervisors = [], isLoading: loadingSupervisors } = useInternalUsers(
+    { role: "supervisor", company_id: companyId ?? undefined }
+  );
+
+  const clearError = (field: keyof FormErrors) =>
+    setErrors((prev) => ({ ...prev, [field]: undefined }));
+
+  const toggleWorkDay = (day: string) => {
+    setWorkDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
+    clearError("workDays");
+  };
+
+  const validate = (): FormErrors => {
+    const e: FormErrors = {};
+    if (!name.trim()) e.name = "Full name is required.";
+    if (!email.trim()) {
+      e.email = "Email is required.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      e.email = "Enter a valid email address.";
+    }
+    if (!role) e.role = "Role is required.";
+    if (!salaryType) e.salaryType = "Salary type is required.";
+    if (!currencyCode.trim()) {
+      e.currency = "Currency is required.";
+    } else if (
+      supportedCurrencyCodes.size > 0 &&
+      !supportedCurrencyCodes.has(normalizedCurrencyCode)
+    ) {
+      e.currency = "Select a supported currency.";
+    }
+    if (salary) {
+      const numeric = salary.replace(/,/g, "");
+      if (isNaN(Number(numeric)) || Number(numeric) < 0)
+        e.salary = "Enter a valid salary amount.";
+    } else {
+      e.salary = "Base salary is required.";
+    }
+    if (workDays.length === 0) e.workDays = "Select at least one work day.";
+    if (role === "agent" && !supervisorId)
+      e.supervisorId = "Supervisor is required for agents.";
+    return e;
+  };
+
+  const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const errs = validate();
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      return;
+    }
+    if (!companyId) {
+      toast.error("No active company found. Please refresh and try again.");
+      return;
+    }
+
+    const baseSalaryNum = Number(salary.replace(/,/g, ""));
+
+    updateMutation.mutate(
+      {
+        userId: agent.id,
+        payload: {
+          company_id: companyId,
+          full_name: name.trim(),
+          email: email.trim(),
+          role: role as "admin" | "supervisor" | "agent",
+          work_days: workDays,
+          base_salary: baseSalaryNum,
+          salary_type: salaryType,
+          currency_code: selectedCurrencyCode,
+          commission_enabled: commissionEnabled,
+          ...(role === "agent" && supervisorId
+            ? { supervisor_user_id: Number(supervisorId) }
+            : {}),
+          ...(agentDetails.phone.trim()
+            ? { phone_number: agentDetails.phone.trim() }
+            : {}),
+          ...(agentDetails.gender
+            ? { gender: agentDetails.gender as "male" | "female" }
+            : {}),
+          ...(agentDetails.avatarKey
+            ? { avatar_key: agentDetails.avatarKey }
+            : {}),
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success("Agent updated successfully.");
+          onClose();
+        },
+        onError: (err) => {
+          const apiErr = err as ApiRequestError;
+          const msg = apiErr.message ?? "Something went wrong. Please try again.";
+          toast.error(msg);
+          if (apiErr.errors) {
+            const fe: FormErrors = {};
+            if (apiErr.errors.full_name) fe.name = apiErr.errors.full_name[0];
+            if (apiErr.errors.email) fe.email = apiErr.errors.email[0];
+            if (apiErr.errors.role) fe.role = apiErr.errors.role[0];
+            if (apiErr.errors.salary_type) fe.salaryType = apiErr.errors.salary_type[0];
+            if (apiErr.errors.base_salary) fe.salary = apiErr.errors.base_salary[0];
+            if (apiErr.errors.currency_code) fe.currency = apiErr.errors.currency_code[0];
+            if (apiErr.errors.work_days) fe.workDays = apiErr.errors.work_days[0];
+            if (apiErr.errors.supervisor_user_id)
+              fe.supervisorId = apiErr.errors.supervisor_user_id[0];
+            if (apiErr.errors.phone_number) fe.phone = apiErr.errors.phone_number[0];
+            if (apiErr.errors.gender) fe.gender = apiErr.errors.gender[0];
+            if (apiErr.errors.avatar_key) fe.avatarKey = apiErr.errors.avatar_key[0];
+            setErrors(fe);
+          }
+        },
+      }
+    );
+  };
+
+  const isPending = updateMutation.isPending;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
+        <div
+          className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 cursor-pointer"
+          onClick={onClose}
+        />
+
+        <div className="relative bg-white rounded-t-[28px] sm:rounded-[28px] w-full sm:w-110 shadow-[0px_8px_32px_rgba(0,0,0,0.15)] overflow-hidden flex flex-col max-h-[90dvh] sm:max-h-[calc(100vh-80px)] transition-all duration-300 ease-out">
+          {/* Header */}
+          <div className="bg-transparent h-18 relative overflow-hidden flex items-center px-7 shrink-0">
+            <div className="absolute top-0 right-0 w-[50%] h-full pointer-events-none">
+              <svg
+                viewBox="0 0 200 72"
+                fill="none"
+                className="w-full h-full"
+                preserveAspectRatio="none"
+              >
+                <path
+                  d="M0 0 C60 24, 20 48, 190 72 L200 92 L200 0 Z"
+                  fill="#09232D"
+                />
+              </svg>
+            </div>
+            <h2 className="text-[18px] font-bold text-dash-dark relative z-10 leading-tight">
+              Edit Agent
+              <br />
+              <span className="text-[13px] font-normal text-gray-400">{agent.name}</span>
+            </h2>
+            <button
+              onClick={onClose}
+              className="absolute right-5 top-1/2 -translate-y-1/2 text-white/60 hover:text-white transition-colors z-10 cursor-pointer"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <form
+            id="edit-agent-form"
+            onSubmit={handleSubmit}
+            className="flex-1 min-h-0 overflow-y-auto px-7 pb-6"
+          >
+            {/* ── Profile Section ─────────────────────────────── */}
+            <div className="space-y-4 mb-5">
+              <SectionDivider label="Agent Details" />
+
+              <div>
+                <FormRow label="Fullname" labelClassName="w-28">
+                  <InlineInput
+                    value={name}
+                    onChange={(e) => { setName(e.target.value); clearError("name"); }}
+                    placeholder="E.g Alison Thomson"
+                    className="col-span-2"
+                  />
+                </FormRow>
+                <FieldError message={errors.name} />
+              </div>
+
+              <div>
+                <FormRow label="Email" labelClassName="w-28">
+                  <InlineInput
+                    value={email}
+                    onChange={(e) => { setEmail(e.target.value); clearError("email"); }}
+                    placeholder="E.g alison@company.com"
+                    className="col-span-2"
+                  />
+                </FormRow>
+                <FieldError message={errors.email} />
+              </div>
+
+              <div>
+                <FormRow label="Role" labelClassName="w-28">
+                  <InlineSelect
+                    value={role}
+                    onChange={(v) => {
+                      const nextRole = v as "admin" | "supervisor" | "agent" | "";
+                      setRole(nextRole);
+                      setSupervisorId("");
+                      clearError("role");
+                      clearError("supervisorId");
+                    }}
+                    options={[...ROLE_OPTIONS]}
+                    placeholder="Select role"
+                    className="col-span-2"
+                  />
+                </FormRow>
+                <FieldError message={errors.role} />
+              </div>
+
+              <div>
+                <FormRow label="Salary Type" labelClassName="w-28">
+                  <InlineSelect
+                    value={salaryType}
+                    onChange={(v) => {
+                      setSalaryType(v as "daily" | "weekly" | "monthly");
+                      clearError("salaryType");
+                    }}
+                    options={[
+                      { value: "daily", label: "Daily" },
+                      { value: "weekly", label: "Weekly" },
+                      { value: "monthly", label: "Monthly" },
+                    ]}
+                    className="col-span-2"
+                  />
+                </FormRow>
+                <FieldError message={errors.salaryType} />
+              </div>
+
+              <div>
+                <FormRow label="Currency" labelClassName="w-28">
+                  <InlineSelect
+                    value={selectedCurrencyCode}
+                    onChange={(v) => { setCurrencyCode(v); clearError("currency"); }}
+                    options={
+                      currencyOptionList.length === 0
+                        ? [
+                            {
+                              value: PAYROLL_DEFAULT_CURRENCY,
+                              label: loadingCurrencies
+                                ? "Loading currencies..."
+                                : "No currencies available",
+                            },
+                          ]
+                        : currencyOptionList.map((c) => ({
+                            value: c.code,
+                            label: c.label,
+                          }))
+                    }
+                    className="col-span-2"
+                  />
+                </FormRow>
+                <FieldError message={errors.currency} />
+              </div>
+
+              {role === "agent" && (
+                <div>
+                  <FormRow label="Supervisor" labelClassName="w-28">
+                    <InlineSelect
+                      value={supervisorId}
+                      onChange={(v) => { setSupervisorId(v); clearError("supervisorId"); }}
+                      options={supervisors.map((s) => ({
+                        value: String(s.id),
+                        label: s.name,
+                      }))}
+                      placeholder={loadingSupervisors ? "Loading…" : "Select supervisor"}
+                      className="col-span-2"
+                    />
+                  </FormRow>
+                  <FieldError message={errors.supervisorId} />
+                </div>
+              )}
+
+              <div>
+                <FormRow label="Salary" labelClassName="w-28">
+                  <InlineInput
+                    value={salary}
+                    onChange={(e) => {
+                      setSalary(e.target.value.replace(/[^0-9,]/g, ""));
+                      clearError("salary");
+                    }}
+                    placeholder="E.g 120000"
+                    className="col-span-2"
+                  />
+                </FormRow>
+                <FieldError message={errors.salary} />
+              </div>
+
+              <FormRow label="Commission Enable" labelClassName="w-28">
+                <Toggle
+                  enabled={commissionEnabled}
+                  onToggle={() => setCommissionEnabled((v) => !v)}
+                />
+              </FormRow>
+            </div>
+
+            {/* ── Work Schedule ───────────────────────────────── */}
+            <div className="space-y-3 mb-5">
+              <SectionDivider label="Work Schedule" />
+              <div>
+                <p className="text-[11px] text-gray-500 mb-2">Work Days</p>
+                <div className="flex flex-wrap gap-2">
+                  {WEEKDAYS.map((day) => {
+                    const selected = workDays.includes(day.value);
+                    return (
+                      <button
+                        key={day.value}
+                        type="button"
+                        onClick={() => toggleWorkDay(day.value)}
+                        className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all border ${
+                          selected
+                            ? "bg-dash-dark text-white border-dash-dark"
+                            : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
+                        }`}
+                      >
+                        {day.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <FieldError message={errors.workDays} />
+              </div>
+
+              {/* Agent profile fields — always shown for edit, open modal to change */}
+              <FormRow label="Agent Profile" labelClassName="w-28">
+                <button
+                  type="button"
+                  onClick={() => setAgentDetailsOpen(true)}
+                  className="col-span-2 h-12.25 w-full px-4 rounded-xl border border-gray-200 text-[10px] font-light text-[#616263] text-left shadow-[0px_1px_3px_1px_#00000026,0px_1px_2px_0px_#0000004D] hover:border-gray-400 transition-colors"
+                >
+                  {agentDetails.phone || agentDetails.avatarKey
+                    ? `${agentDetails.phone || "—"}  ·  ${agentDetails.avatarKey || "no avatar"}`
+                    : "Set phone, gender & avatar…"}
+                </button>
+              </FormRow>
+              {(errors.phone || errors.gender || errors.avatarKey) && (
+                <FieldError
+                  message={errors.phone ?? errors.gender ?? errors.avatarKey}
+                />
+              )}
+            </div>
+
+            <div className="flex items-center justify-start">
+              <button
+                type="submit"
+                disabled={isPending}
+                className="w-full sm:w-auto px-9.25 py-3 sm:py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isPending ? "Saving…" : "Save Changes"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <AgentDetailsModal
+        isOpen={agentDetailsOpen}
+        details={agentDetails}
+        onDetailsChange={setAgentDetails}
+        errors={{
+          phone: errors.phone,
+          gender: errors.gender,
+          avatarKey: errors.avatarKey,
+        }}
+        onClearError={(field) => clearError(field as keyof FormErrors)}
+      />
+    </>
+  );
+}

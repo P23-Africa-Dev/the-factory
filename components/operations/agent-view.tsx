@@ -20,21 +20,30 @@ function mapToAgentItem(input: {
   assigned_zone?: string | null;
   phone_number?: string | null;
   avatar_url?: string | null;
+  avatar_key?: string | null;
   is_active?: boolean;
+  base_salary?: number | null;
+  payroll_salary_type?: "daily" | "monthly" | "weekly" | null;
+  salary_currency?: string | null;
 }): AgentItem {
   const isActive = Boolean(input.is_active);
 
   return {
     id: String(input.id),
     name: input.name,
+    email: input.email,
     description: input.email,
     zone: input.assigned_zone ?? "Unassigned",
-    phone: input.phone_number ?? "N/A",
+    phone: input.phone_number ?? "",
     role: input.role,
     status: isActive ? "Active (View on Map)" : "Offline",
     time: isActive ? "Online" : "Offline",
     avatar: input.avatar_url ?? "/avatars/male-avatar.png",
     active: isActive,
+    avatarKey: input.avatar_key ?? undefined,
+    baseSalary: input.base_salary ?? undefined,
+    salaryType: input.payroll_salary_type ?? undefined,
+    salaryCurrency: input.salary_currency ?? undefined,
   };
 }
 
@@ -82,7 +91,11 @@ export function AgentView({ basePath }: { basePath: string }) {
         assigned_zone: item.assigned_zone,
         phone_number: item.phone_number,
         avatar_url: item.avatar_url,
+        avatar_key: item.avatar_key,
         is_active: item.is_active,
+        base_salary: item.base_salary,
+        payroll_salary_type: item.payroll_salary_type,
+        salary_currency: item.salary_currency,
       })
     );
   }, [paginatedData]);

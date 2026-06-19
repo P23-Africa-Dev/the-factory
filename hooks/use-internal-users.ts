@@ -6,12 +6,14 @@ import {
   getInternalUsersOnboardingStatus,
   listInternalUsers,
   listInternalUsersPaginated,
+  updateInternalUser,
   type CreateInternalUserPayload,
   type CreatedInternalUser,
   type InternalOnboardingStatusData,
   type InternalUserListItem,
   type ListInternalUsersParams,
   type PaginatedInternalUsersData,
+  type UpdateInternalUserPayload,
 } from "@/lib/api/internal-users";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 
@@ -76,6 +78,19 @@ export function useCreateInternalUser(options?: {
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["internal-users"] });
       options?.onSuccess?.(res.data.user);
+    },
+  });
+}
+
+export function useUpdateInternalUser() {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useMutation({
+    mutationFn: ({ userId, payload }: { userId: number | string; payload: UpdateInternalUserPayload }) =>
+      updateInternalUser(userId, payload, token),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["internal-users"] });
     },
   });
 }
