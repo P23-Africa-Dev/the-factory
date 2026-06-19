@@ -12,7 +12,7 @@ export const MAP_SHEET_MEDIUM_SNAP_INDEX = 2;
 export const MAP_SHEET_EXPANDED_SNAP_INDEX = 3;
 
 /** Ascending snap points: closed, collapsed handle, medium, expanded. */
-export const MAP_SHEET_SNAP_POINTS = [0, 56, 0.22, 0.48];
+export const MAP_SHEET_SNAP_POINTS = [0, 56, 0.22, 0.36];
 
 export function MapBottomSheet({
   visible,
