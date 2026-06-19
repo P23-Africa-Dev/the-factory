@@ -356,6 +356,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                     ->middleware('throttle:20,1')
                     ->name('invite');
 
+                Route::patch('/{user}', [InternalUserController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('update');
+
                 Route::patch('/{user}/supervisor', [InternalUserController::class, 'assignSupervisor'])
                     ->middleware('throttle:30,1')
                     ->name('supervisor.assign');
@@ -633,6 +637,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
         Route::post('/{user}/invite', [InternalUserController::class, 'resendInvite'])
             ->middleware('throttle:20,1')
             ->name('invite');
+
+        Route::patch('/{user}', [InternalUserController::class, 'update'])
+            ->middleware('throttle:30,1')
+            ->name('update');
 
         Route::patch('/{user}/supervisor', [InternalUserController::class, 'assignSupervisor'])
             ->middleware('throttle:30,1')

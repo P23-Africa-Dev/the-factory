@@ -9,6 +9,7 @@ use App\Http\Requests\Internal\AssignSupervisorRequest;
 use App\Http\Requests\Internal\CreateInternalUserRequest;
 use App\Http\Requests\Internal\FetchInternalUsersRequest;
 use App\Http\Requests\Internal\ResendInternalInviteRequest;
+use App\Http\Requests\Internal\UpdateInternalUserRequest;
 use App\Http\Resources\InternalUserListResource;
 use App\Http\Resources\InternalUserResource;
 use App\Models\User;
@@ -121,6 +122,16 @@ class InternalUserController extends Controller
             data: [
                 'invite_expires_at' => $result['invite_expires_at']?->toIso8601String(),
             ],
+        );
+    }
+
+    public function update(UpdateInternalUserRequest $request, User $user): JsonResponse
+    {
+        $updated = $this->service->updateByManager($request->user(), $user, $request->validated());
+
+        return $this->success(
+            message: 'Internal user updated successfully.',
+            data: ['user' => new InternalUserResource($updated)],
         );
     }
 

@@ -200,3 +200,24 @@ export function assignInternalUserSupervisor(
     token,
   });
 }
+
+export type UpdateInternalUserPayload = {
+  company_id: number | string;
+  full_name?: string;
+  role?: InternalUserRole;
+  phone_number?: string | null;
+  assigned_zone?: string | null;
+};
+
+export function updateInternalUser(
+  userId: number | string,
+  payload: UpdateInternalUserPayload,
+  token: string
+): Promise<ApiEnvelope<InternalUserSimpleData>> {
+  return apiRequest<InternalUserSimpleData>({
+    method: "PATCH",
+    path: `/internal-users/${userId}`,
+    body: payload,
+    token,
+  });
+}
