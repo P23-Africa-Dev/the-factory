@@ -110,11 +110,6 @@ export function MobileInstallContent() {
               from your home screen.
             </li>
           </ol>
-          <p className="mt-4 text-[11px] text-white/45 leading-relaxed">
-            On localhost, Chrome may not show an automatic install banner. Use the menu option above,
-            or set <span className="text-white/60">NEXT_PUBLIC_PWA_ONLY_MODE=false</span> for browser
-            testing during development.
-          </p>
         </div>
       )}
     </div>
