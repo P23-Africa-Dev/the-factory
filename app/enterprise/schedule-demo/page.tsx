@@ -114,8 +114,7 @@ export default function ScheduleDemoPage() {
 
   return (
     <div className="min-h-screen w-full flex flex-col lg:flex-row bg-white font-sans overflow-x-hidden relative">
-      {/* Left Pane */}
-      <div className="w-full lg:w-[46%] bg-white flex flex-col justify-between p-6 sm:p-10 lg:p-16 min-h-screen lg:min-h-0 relative bg-[radial-gradient(#e5e7eb_1.5px,transparent_1.5px)] [background-size:24px_24px]">
+      <div className="w-full lg:w-[46%] bg-white flex flex-col justify-between p-6 sm:p-10 lg:p-16 lg:min-h-screen relative bg-[radial-gradient(#e5e7eb_1.5px,transparent_1.5px)] [background-size:24px_24px]">
 
         <header className="flex items-center gap-6 sm:gap-12 w-full">
           <Link href="/" className="flex items-center shrink-0">
@@ -160,11 +159,11 @@ export default function ScheduleDemoPage() {
           </p>
         </main>
 
-        <div className="absolute bottom-16 left-0 w-32 h-20 bg-[#9BDD7C] rounded-r-full" />
+        <div className="absolute bottom-4 lg:bottom-16 left-0 w-24 h-16 lg:w-32 lg:h-20 bg-[#9BDD7C] rounded-r-full" />
       </div>
 
       {/* Right Pane */}
-      <div className="w-full lg:w-[54%] bg-[#0B252C] flex flex-col justify-between p-6 sm:p-10 lg:p-16 relative min-h-screen lg:min-h-0">
+      <div className="w-full lg:w-[54%] bg-[#0B252C] flex flex-col justify-between p-6 sm:p-10 lg:p-16 relative lg:min-h-screen">
 
         <div className="flex items-center justify-between w-full z-10">
           <Link href="#" className="text-sm font-semibold text-white/90 hover:opacity-80 transition-opacity">
