@@ -70,6 +70,7 @@ export function NavigationRideSheet({
   totalDistanceM,
   trackingStatus,
   lastUpdatedAt,
+  hasArrived = false,
   onEnd,
 }: {
   destinationName: string;
@@ -78,6 +79,7 @@ export function NavigationRideSheet({
   totalDistanceM: number | null;
   trackingStatus: RideTrackingStatus;
   lastUpdatedAt: string | null;
+  hasArrived?: boolean;
   onEnd: () => void;
 }) {
   const etaLabel =
@@ -123,7 +125,7 @@ export function NavigationRideSheet({
         }}
         className="w-full h-[56px] rounded-[60px] flex items-center justify-center text-white font-sans font-bold text-sm active:scale-[0.98] transition-transform"
       >
-        End Task
+        {hasArrived ? 'Complete Task' : 'Pause Tracking'}
       </button>
     </div>
   );

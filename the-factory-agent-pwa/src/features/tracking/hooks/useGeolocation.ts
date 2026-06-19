@@ -28,6 +28,8 @@ interface GeolocationActions {
   checkPermission: () => Promise<PermissionStatus>;
   requestPermission: () => Promise<PermissionStatus>;
   getCurrentPosition: () => Promise<LocationObject>;
+  /** Prefer a recent fix; fall back through high- then low-accuracy reads. */
+  resolveCurrentPosition: () => Promise<LocationObject>;
   startWatching: (onUpdate: (loc: LocationObject) => void) => Promise<void>;
   stopWatching: () => void;
 }
@@ -40,12 +42,17 @@ const HIGH_ACCURACY_OPTIONS: PositionOptions = {
 
 const LOW_ACCURACY_OPTIONS: PositionOptions = {
   enableHighAccuracy: false,
-  timeout: 15_000,
-  maximumAge: 30_000,
+  timeout: 20_000,
+  maximumAge: 60_000,
 };
 
 const MAX_STREAMING_ACCURACY_HIGH_M = 120;
 const MAX_STREAMING_ACCURACY_LOW_M = 250;
+const RECENT_POSITION_MS = 60_000;
+
+/** Shared across hook instances so permission/GPS survives page navigations. */
+let cachedLastPosition: LocationObject | null = null;
+let cachedPermissionStatus: PermissionStatus = 'unknown';
 
 function toLocationObject(pos: GeolocationPosition): LocationObject {
   return {
@@ -68,14 +75,41 @@ function isValidReading(loc: LocationObject, maxAccuracyM: number): boolean {
   return true;
 }
 
+function readPosition(options: PositionOptions): Promise<LocationObject> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      reject(new Error('Geolocation is not supported by this browser.'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve(toLocationObject(pos)),
+      (err) => reject(err),
+      options,
+    );
+  });
+}
+
 export const useGeolocation = (): GeolocationState & GeolocationActions => {
-  const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>('unknown');
+  const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>(cachedPermissionStatus);
   const [isWatching, setIsWatching] = useState(false);
-  const [lastPosition, setLastPosition] = useState<LocationObject | null>(null);
+  const [lastPosition, setLastPosition] = useState<LocationObject | null>(cachedLastPosition);
   const [error, setError] = useState<string | null>(null);
   const watcherRef = useRef<number | null>(null);
   const onUpdateRef = useRef<((loc: LocationObject) => void) | null>(null);
   const lowAccuracyRef = useRef(false);
+  const lastPositionRef = useRef<LocationObject | null>(cachedLastPosition);
+
+  const rememberPosition = useCallback((loc: LocationObject) => {
+    cachedLastPosition = loc;
+    lastPositionRef.current = loc;
+    setLastPosition(loc);
+    setError(null);
+  }, []);
+
+  const setPermission = useCallback((status: PermissionStatus) => {
+    cachedPermissionStatus = status;
+    setPermissionStatus(status);
+  }, []);
 
   const clearWatcher = useCallback(() => {
     if (typeof window === 'undefined' || !navigator.geolocation) return;
@@ -101,7 +135,7 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
       (pos) => {
         const loc = toLocationObject(pos);
         if (!isValidReading(loc, maxAccuracy)) return;
-        setLastPosition(loc);
+        rememberPosition(loc);
         onUpdateRef.current?.(loc);
       },
       (err) => setError(err.message),
@@ -110,11 +144,11 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
 
     watcherRef.current = watchId;
     setIsWatching(true);
-  }, [clearWatcher]);
+  }, [clearWatcher, rememberPosition]);
 
   const checkPermission = useCallback(async (): Promise<PermissionStatus> => {
     if (typeof window === 'undefined' || !navigator.permissions) {
-      setPermissionStatus('unknown');
+      setPermission('unknown');
       return 'unknown';
     }
 
@@ -126,62 +160,89 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
           : result.state === 'denied'
             ? 'denied'
             : 'prompt';
-      setPermissionStatus(mapped);
+      setPermission(mapped);
       return mapped;
     } catch {
-      setPermissionStatus('unknown');
+      setPermission('unknown');
       return 'unknown';
     }
-  }, []);
+  }, [setPermission]);
 
   const requestPermission = useCallback(async (): Promise<PermissionStatus> => {
     if (typeof window === 'undefined' || !navigator.geolocation) {
-      setPermissionStatus('denied');
+      setPermission('denied');
       return 'denied';
     }
 
-    return new Promise((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          // Populate lastPosition so the start flow doesn't need a second GPS
-          // fix immediately after permission is granted.
-          setLastPosition(toLocationObject(pos));
-          setError(null);
-          setPermissionStatus('granted');
-          resolve('granted');
-        },
-        (err) => {
-          // A timeout/position-unavailable error does not necessarily mean the
-          // user blocked access; only PERMISSION_DENIED is a hard denial.
-          setPermissionStatus(err.code === err.PERMISSION_DENIED ? 'denied' : 'prompt');
-          resolve(err.code === err.PERMISSION_DENIED ? 'denied' : 'prompt');
-        },
-        { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
-      );
-    });
-  }, []);
-
-  const getCurrentPosition = useCallback(async (): Promise<LocationObject> => {
-    if (typeof window === 'undefined' || !navigator.geolocation) {
-      throw new Error('Geolocation is not supported by this browser.');
+    try {
+      const loc = await readPosition(HIGH_ACCURACY_OPTIONS);
+      rememberPosition(loc);
+      setPermission('granted');
+      return 'granted';
+    } catch (err) {
+      const geoErr = err as GeolocationPositionError;
+      if (geoErr.code === geoErr.PERMISSION_DENIED) {
+        setPermission('denied');
+        return 'denied';
+      }
     }
 
-    return new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const loc = toLocationObject(pos);
-          setLastPosition(loc);
-          setError(null);
-          resolve(loc);
-        },
-        (err) => {
-          setError(err.message);
-          reject(err);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
-      );
-    });
-  }, []);
+    try {
+      const loc = await readPosition(LOW_ACCURACY_OPTIONS);
+      rememberPosition(loc);
+      setPermission('granted');
+      return 'granted';
+    } catch (err) {
+      const geoErr = err as GeolocationPositionError;
+      if (geoErr.code === geoErr.PERMISSION_DENIED) {
+        setPermission('denied');
+        return 'denied';
+      }
+    }
+
+    const perm = await checkPermission();
+    if (perm === 'granted') {
+      setPermission('granted');
+      return 'granted';
+    }
+
+    setPermission('prompt');
+    return 'prompt';
+  }, [checkPermission, rememberPosition, setPermission]);
+
+  const getCurrentPosition = useCallback(async (): Promise<LocationObject> => {
+    try {
+      const loc = await readPosition(HIGH_ACCURACY_OPTIONS);
+      rememberPosition(loc);
+      return loc;
+    } catch (err) {
+      const geoErr = err as GeolocationPositionError;
+      setError(geoErr.message);
+      throw err;
+    }
+  }, [rememberPosition]);
+
+  const resolveCurrentPosition = useCallback(async (): Promise<LocationObject> => {
+    const cached = lastPositionRef.current ?? cachedLastPosition;
+    if (cached && Date.now() - cached.timestamp < RECENT_POSITION_MS) {
+      return cached;
+    }
+
+    try {
+      const loc = await readPosition(HIGH_ACCURACY_OPTIONS);
+      rememberPosition(loc);
+      return loc;
+    } catch (err) {
+      const geoErr = err as GeolocationPositionError;
+      if (geoErr.code === geoErr.PERMISSION_DENIED) {
+        setError(geoErr.message);
+        throw err;
+      }
+      const loc = await readPosition(LOW_ACCURACY_OPTIONS);
+      rememberPosition(loc);
+      return loc;
+    }
+  }, [rememberPosition]);
 
   const startWatching = useCallback(
     async (onUpdate: (loc: LocationObject) => void): Promise<void> => {
@@ -217,6 +278,7 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
     checkPermission,
     requestPermission,
     getCurrentPosition,
+    resolveCurrentPosition,
     startWatching,
     stopWatching,
   };

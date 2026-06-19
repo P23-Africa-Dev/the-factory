@@ -55,11 +55,14 @@ export function useTaskListItems(filters?: TaskFilters) {
 }
 
 export function useTask(id: string) {
-  const companyId = getActiveCompanyId();
+  const isAuthenticated =
+    typeof window !== 'undefined' && Boolean(appStore.getString('auth_token'));
   return useQuery({
     queryKey: taskKeys.detail(id),
     queryFn: () => taskApi.get(id),
-    enabled: Boolean(id) && companyId != null,
+    // Agent task detail is token-scoped; gating on company_id blocks the tracking
+    // resume screen until a list fetch seeds company context.
+    enabled: Boolean(id) && isAuthenticated,
   });
 }
 

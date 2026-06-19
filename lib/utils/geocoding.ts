@@ -5,6 +5,54 @@ export type GeocodedCoordinates = {
     lng: number;
 };
 
+export type GeocodedPlaceSuggestion = {
+    name: string;
+    address: string;
+    lat: number;
+    lng: number;
+};
+
+export async function searchPlacesWithMapbox(
+    query: string,
+    options?: { country?: string; token?: string; limit?: number }
+): Promise<GeocodedPlaceSuggestion[]> {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+        return [];
+    }
+
+    const token = options?.token ?? getMapboxPublicToken();
+    if (!token) {
+        return [];
+    }
+
+    const country = options?.country ?? "ng";
+    const limit = options?.limit ?? 5;
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmed)}.json?access_token=${token}&country=${country}&limit=${limit}`;
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            return [];
+        }
+
+        const payload = (await response.json()) as {
+            features?: Array<{ text?: string; place_name?: string; center?: [number, number] }>;
+        };
+
+        return (payload.features ?? [])
+            .filter((f) => f.center && f.center.length === 2)
+            .map((f) => ({
+                name: f.text?.trim() || f.place_name?.split(",")[0]?.trim() || "Location",
+                address: f.place_name?.trim() || "",
+                lng: f.center![0],
+                lat: f.center![1],
+            }));
+    } catch {
+        return [];
+    }
+}
+
 export async function geocodeAddressWithMapbox(
     address: string,
     options?: { country?: string; token?: string }

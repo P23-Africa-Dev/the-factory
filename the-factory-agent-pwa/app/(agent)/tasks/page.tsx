@@ -9,6 +9,7 @@ import {
   useTaskList,
   useUpdateTaskStatus,
   useTaskNavigation,
+  isResumeTrackingStatus,
   flattenTaskPages,
   type Task,
 } from '@/features/tasks';
@@ -184,12 +185,12 @@ export default function TasksPage() {
   const tasks = useMemo(() => flattenTaskPages(listData), [listData]);
 
   const { mutate: updateStatus, isPending: isDeclining } = useUpdateTaskStatus();
-  const { goToTaskDetail, goToTracking } = useTaskNavigation();
+  const { goToTaskDetail, goToTracking, goToContinueTracking } = useTaskNavigation();
 
   const handleTaskAction = (task: Task, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (task.status === 'in_progress' || task.status === 'paused' || task.status === 'resumed') {
-      goToTracking(task.id);
+    if (isResumeTrackingStatus(task.status)) {
+      goToContinueTracking(task.id);
       return;
     }
     goToTaskDetail(task.id);
@@ -311,8 +312,8 @@ export default function TasksPage() {
                 key={task.id}
                 task={task}
                 onPress={() =>
-                  task.status === 'in_progress' || task.status === 'paused' || task.status === 'resumed'
-                    ? goToTracking(task.id)
+                  isResumeTrackingStatus(task.status)
+                    ? goToContinueTracking(task.id)
                     : goToTaskDetail(task.id)
                 }
                 onPrimaryAction={(e) => handleTaskAction(task, e)}

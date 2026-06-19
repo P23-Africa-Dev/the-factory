@@ -9,6 +9,10 @@ type MapDestinationParams = {
   longitude: number;
 };
 
+export function isResumeTrackingStatus(status?: string): boolean {
+  return status === 'in_progress' || status === 'paused' || status === 'resumed';
+}
+
 export function useTaskNavigation() {
   const router = useRouter();
 
@@ -30,8 +34,12 @@ export function useTaskNavigation() {
     },
     goToTaskDetail: (id: string) =>
       router.push(`/task/${id}`),
+    /** Fresh task start — permission gate + POST /start */
     goToTracking: (id: string) =>
       router.push(`/task/${id}/tracking`),
+    /** Active task resume — open map directly (skip tracking gate page) */
+    goToContinueTracking: (id: string) =>
+      router.push(`/map?taskId=${id}`),
     goToTaskComplete: (id: string) =>
       router.replace(`/task/${id}/complete`),
   };
