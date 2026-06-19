@@ -71,7 +71,7 @@ export function SaveLocationSheet({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center font-sans">
+    <div className="fixed inset-0 z-[10000] flex items-end justify-center font-sans">
       <div className="absolute inset-0 bg-[#051014]/70" onClick={onClose} />
       <div className="relative z-10 w-full max-w-md bg-[#0B3343] rounded-t-3xl border-t border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-[#0B3343] px-5 pt-5 pb-3 flex items-center justify-between border-b border-white/10">
