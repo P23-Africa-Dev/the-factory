@@ -24,7 +24,7 @@ export function getActiveCompanyContext(
     internalId: company.id ?? null,
     publicId: company.company_id ?? null,
     role: company.role ?? null,
-    // Prefer public company key where available; backend accepts both.
-    apiCompanyId: company.company_id ?? company.id ?? null,
+    // Prefer internal numeric id — backend company context resolves membership by companies.id.
+    apiCompanyId: company.id ?? company.company_id ?? null,
   };
 }

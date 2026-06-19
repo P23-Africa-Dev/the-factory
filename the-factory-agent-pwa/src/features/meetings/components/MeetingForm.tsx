@@ -9,6 +9,7 @@ import { AttendeeSection } from './AttendeeSection';
 import { ReminderSection } from './ReminderSection';
 import { CalendarStatusNotice } from './CalendarStatusNotice';
 import { useAttendeeCandidates, useCalendarStatus } from '../queries';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 import type { MeetingFormValues, AttendeeCandidate } from '../types';
 
 const TIMEZONES = [
@@ -37,6 +38,7 @@ interface MeetingFormProps {
   isSubmitting: boolean;
   submitLabel: string;
   serverErrors?: Record<string, string[]>;
+  autoAddCreator?: boolean;
 }
 
 export function MeetingForm({
@@ -45,6 +47,7 @@ export function MeetingForm({
   isSubmitting,
   submitLabel,
   serverErrors,
+  autoAddCreator = true,
 }: MeetingFormProps): React.ReactElement {
   const deviceTz = typeof window !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC';
   const defaultTz = TIMEZONES.includes(deviceTz) ? deviceTz : deviceTz;
@@ -79,6 +82,7 @@ export function MeetingForm({
 
   const { data: candidates = [], isLoading: isLoadingCandidates } = useAttendeeCandidates();
   const { data: calendarStatus } = useCalendarStatus();
+  const { user } = useAuth();
 
   const { control, handleSubmit, formState: { errors }, setError } = useForm<FormFields>({
     resolver: zodResolver(formSchema),
@@ -97,6 +101,24 @@ export function MeetingForm({
       setError(field, { message: msgs[0] });
     });
   }, [serverErrors, setError]);
+
+  useEffect(() => {
+    if (!autoAddCreator || !user?.id || candidates.length === 0) return;
+
+    const creatorId = typeof user.id === 'string' ? Number.parseInt(user.id, 10) : user.id;
+    if (!Number.isFinite(creatorId)) return;
+
+    const creator = candidates.find((candidate) => candidate.id === creatorId);
+    if (!creator) return;
+
+    setInternalAttendees((prev) => {
+      if (prev.some((attendee) => attendee.id === creator.id)) return prev;
+      return [
+        ...prev,
+        { id: creator.id, name: creator.name, email: creator.email, isOptional: false },
+      ];
+    });
+  }, [autoAddCreator, candidates, user?.id]);
 
   const formatDateTime = (d: Date): string =>
     d.toLocaleString('en-NG', {

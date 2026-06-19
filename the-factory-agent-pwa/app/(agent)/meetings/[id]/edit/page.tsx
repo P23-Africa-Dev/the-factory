@@ -135,6 +135,7 @@ export default function EditMeetingPage({ params }: EditMeetingPageProps) {
             isSubmitting={isPending}
             submitLabel="Save Changes"
             serverErrors={serverErrors}
+            autoAddCreator={false}
           />
         </div>
       </div>

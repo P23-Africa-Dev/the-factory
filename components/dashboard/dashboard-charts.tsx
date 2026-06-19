@@ -2,10 +2,11 @@
 
 import ArrowUp from "@/assets/images/arrow-57deg.png";
 import { useDashboardOverview } from "@/hooks/use-dashboard";
+import { useLeadPipeline, useLeads } from "@/hooks/use-crm";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -26,15 +27,6 @@ const activitiesData = [
   { name: "Fri", value: 55 },
   { name: "Sat", value: 45 },
   { name: "Sun", value: 60 },
-];
-
-const leadsData = [
-  { name: "1", v1: 3000, v2: 3500 },
-  { name: "2", v1: 3000, v2: 3400 },
-  { name: "3", v1: 3500, v2: 2100 },
-  { name: "4", v1: 3500, v2: 2800 },
-  { name: "5", v1: 3200, v2: 2600 },
-  { name: "6", v1: 4100, v2: 3200 },
 ];
 
 export function MyActivitiesChart() {
@@ -149,18 +141,47 @@ export function MyActivitiesChart() {
   );
 }
 
+const leadsTrendFallback = Array.from({ length: 6 }, (_, index) => ({
+  name: String(index + 1),
+  v1: 0,
+  v2: 0,
+}));
+
 export function TotalLeadsChart() {
   const [mounted, setMounted] = useState(false);
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const basePath = role === "agent" ? "/agent" : "/admin";
+  const isAgent = role === "agent";
 
   const { data: overview } = useDashboardOverview({
     company_id: companyId ?? undefined,
     basePath,
   });
 
-  const totalLeads = overview?.kpis.total_leads ?? 0;
+  const { data: pipeline, isLoading: pipelineLoading } = useLeadPipeline(
+    !isAgent ? (companyId ?? undefined) : undefined,
+    basePath,
+  );
+
+  const { data: agentLeads, isLoading: agentLeadsLoading } = useLeads(
+    isAgent && companyId ? { company_id: companyId, source: "agent_upload", per_page: 1 } : {},
+    basePath,
+  );
+
+  const totalLeads = isAgent
+    ? (agentLeads?.pagination?.total ?? 0)
+    : (pipeline?.total ?? overview?.kpis?.total_leads ?? 0);
+
+  const isLoading = isAgent ? agentLeadsLoading : pipelineLoading;
+
+  const leadsChartData = useMemo(() => {
+    if (overview?.leads_trend?.length === 6) {
+      return overview.leads_trend;
+    }
+    return leadsTrendFallback;
+  }, [overview?.leads_trend]);
+  const hasChartData = leadsChartData.some((point) => point.v1 > 0 || point.v2 > 0);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -178,10 +199,10 @@ export function TotalLeadsChart() {
           </h3>
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-4xl font-bold tracking-tighter">
-              {totalLeads.toLocaleString()}
+              {isLoading ? "—" : totalLeads.toLocaleString()}
             </span>
             <span className="text-dash-dark/40 text-sm font-bold mt-2">
-              Leads
+              {isAgent ? "My uploads" : "Leads"}
             </span>
           </div>
         </div>
@@ -189,18 +210,26 @@ export function TotalLeadsChart() {
       </div>
 
       <div className="w-full h-10.25 mt-auto">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={leadsData}
-            barGap={4}
-            margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-          >
-            <YAxis domain={[0, "dataMax"]} hide />
-            <XAxis hide padding={{ left: 0, right: 0 }} />
-            <Bar dataKey="v1" fill="#7BB6B8" radius={10} barSize={15} />
-            <Bar dataKey="v2" fill="#FD6046" radius={10} barSize={15} />
-          </BarChart>
-        </ResponsiveContainer>
+        {hasChartData ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={leadsChartData}
+              barGap={4}
+              margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+            >
+              <YAxis domain={[0, "dataMax"]} hide />
+              <XAxis hide padding={{ left: 0, right: 0 }} />
+              <Bar dataKey="v1" fill="#7BB6B8" radius={10} barSize={15} />
+              <Bar dataKey="v2" fill="#FD6046" radius={10} barSize={15} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="w-full h-full flex items-end gap-1.5">
+            {leadsChartData.map((point) => (
+              <div key={point.name} className="flex-1 h-1 rounded-full bg-dash-dark/10" />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
