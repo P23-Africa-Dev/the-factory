@@ -116,7 +116,7 @@ export function CreateMeetingModal({
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[1000] flex items-end justify-center bg-black/50 font-sans">
+        <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/50 font-sans">
           <div className="absolute inset-0 z-0" onClick={!isPending ? onClose : undefined} />
           <motion.div
             initial={{ y: '100%' }}

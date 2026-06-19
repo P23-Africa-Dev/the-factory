@@ -62,7 +62,7 @@ export function ClockInModal({ visible, onClose, onPendingChange }: ClockInModal
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 px-6 font-sans">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 px-6 font-sans">
       <div className="w-full max-w-sm rounded-[20px] bg-[#0B1E26] p-6 text-center border border-white/10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
         <h3 className="text-xl font-bold text-white mb-3">
           {isClockedIn ? 'Clock Out' : 'Clock In'}
