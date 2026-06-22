@@ -61,6 +61,8 @@ export type SavedLocationsLayerProps = {
   focusLocation?: SavedLocation | null;
   /** Read-only mode (compact widget): render markers only, no create/edit/move/delete. */
   readOnly?: boolean;
+  /** When provided, only markers whose id is in this set are rendered. */
+  visibleIds?: Set<number> | null;
 };
 
 type PendingPin = {
@@ -79,6 +81,7 @@ export function SavedLocationsLayer({
   onPinModeChange,
   focusLocation,
   readOnly = false,
+  visibleIds = null,
 }: SavedLocationsLayerProps) {
   const { data: locations = [] } = useSavedLocations();
   const permissions = useSavedLocationPermissions();
@@ -87,6 +90,8 @@ export function SavedLocationsLayer({
   const deleteMutation = useDeleteSavedLocation();
 
   const [selected, setSelected] = useState<SavedLocation | null>(null);
+  const visibleIdsRef = useRef<Set<number> | null>(null);
+  useEffect(() => { visibleIdsRef.current = visibleIds; }, [visibleIds]);
   const [pendingPin, setPendingPin] = useState<PendingPin | null>(null);
   const [editing, setEditing] = useState<SavedLocation | null>(null);
   const [moveMode, setMoveMode] = useState(false);
@@ -162,6 +167,7 @@ export function SavedLocationsLayer({
 
     const points = locationsRef.current
       .filter((loc) => !(moveMode && selected && loc.id === selected.id))
+      .filter((loc) => !visibleIdsRef.current || visibleIdsRef.current.has(loc.id))
       .map((loc) => ({
         type: "Feature" as const,
         properties: { locationId: loc.id },
@@ -361,6 +367,7 @@ export function SavedLocationsLayer({
 
     const markers = locationsRef.current
       .filter((loc) => !(moveMode && selected && loc.id === selected.id))
+      .filter((loc) => !visibleIdsRef.current || visibleIdsRef.current.has(loc.id))
       .map((loc) => {
         const marker = new maps.maps.Marker({
           position: { lat: loc.latitude, lng: loc.longitude },
