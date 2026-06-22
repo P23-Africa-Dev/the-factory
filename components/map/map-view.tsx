@@ -46,10 +46,42 @@ import { SavedLocationsLayer, type GoogleMapBridge } from '@/components/map/Save
 import { useSavedLocations, useSavedLocationPermissions } from '@/hooks/use-saved-locations';
 import { getSavedLocationLabel } from '@/lib/map/location-types';
 import type { SavedLocation } from '@/lib/api/saved-locations';
+import { LocationSearchInput } from '@/components/map/LocationSearchInput';
+import { BusinessListPanel } from '@/components/map/BusinessListPanel';
+import { isInsideLocationContext, type LocationContext } from '@/lib/map/location-search';
+import {
+  fetchBusinessesInBbox,
+  fetchBusinessesNearPoint,
+  isBboxTooLarge,
+  type PoiResult,
+} from '@/lib/map/overpass-search';
 
 const STALE_MS = 2 * 60_000;
 const MARKER_ANIMATION_MS = 700;
 const SEARCH_DEBOUNCE_MS = 280;
+
+// ── POI pin helpers (module-level, no component deps) ────────────────────────
+
+function buildPinSvg(color: string): string {
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="38" viewBox="0 0 28 38">` +
+    `<path d="M14 2C7.37 2 2 7.37 2 14c0 9.04 12 22 12 22S26 23.04 26 14C26 7.37 20.63 2 14 2z" ` +
+    `fill="${color}" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>` +
+    `<circle cx="14" cy="14" r="5.5" fill="white" opacity="0.92"/>` +
+    `</svg>`
+  );
+}
+
+function loadPinImage(map: mapboxgl.Map, color: string): Promise<void> {
+  const id = `poi-pin-${color.replace('#', '')}`;
+  if (map.hasImage(id)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const img = new Image(28, 38);
+    img.onload = () => { if (!map.hasImage(id)) map.addImage(id, img); resolve(); };
+    img.onerror = () => resolve();
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildPinSvg(color))}`;
+  });
+}
 
 type GoogleLatLng = { lat: number; lng: number };
 
@@ -230,7 +262,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
   const [searchQuery, setSearchQuery] = useState('');
   const [appearance, setAppearance] = useState<MapAppearance>(() => resolveMapAppearance());
-  const [placeResults, setPlaceResults] = useState<Array<{ id: string; name: string; center: [number, number] }>>([]);
+  const [placeResults, setPlaceResults] = useState<Array<{ id: string; name: string; center: [number, number]; bbox: [number, number, number, number] | null }>>([]);
   const [searchBusy, setSearchBusy] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [historyTask, setHistoryTask] = useState<{ id: number; title: string } | null>(null);
@@ -243,8 +275,24 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const hoverPopupRef = useRef<mapboxgl.Popup | null>(null);
   const [pinMode, setPinMode] = useState(false);
   const [focusLocation, setFocusLocation] = useState<SavedLocation | null>(null);
-  const { data: savedLocations = [] } = useSavedLocations();
+  const [locationCtx, setLocationCtx] = useState<LocationContext | null>(null);
+  const [leftTab, setLeftTab] = useState<'feeds' | 'businesses'>('feeds');
+  const [mapMode, setMapMode] = useState<'2d' | '3d'>('2d');
+  const [poiResults, setPoiResults] = useState<PoiResult[]>([]);
+  const [poiBusy, setPoiBusy] = useState(false);
+  const poiTooltipRef = useRef<mapboxgl.Popup | null>(null);
+  const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
   const savedLocationPermissions = useSavedLocationPermissions();
+
+  const filteredBusinesses = useMemo(() => {
+    if (!locationCtx) return savedLocations;
+    return savedLocations.filter((loc) => isInsideLocationContext(loc, locationCtx));
+  }, [savedLocations, locationCtx]);
+
+  const filteredBusinessIds = useMemo(
+    () => locationCtx ? new Set(filteredBusinesses.map((b) => b.id)) : null,
+    [filteredBusinesses, locationCtx]
+  );
 
   const liveTasks = useTrackingStore((s) => s.liveTasks);
 
@@ -293,6 +341,22 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     }
   }, []);
 
+  const handleLocationSelect = useCallback((ctx: LocationContext | null) => {
+    setLocationCtx(ctx);
+    if (ctx) setLeftTab('businesses');
+    if (!ctx) return;
+    const map = mapRef.current;
+    if (!map) return;
+    if (ctx.bbox) {
+      map.fitBounds(
+        [[ctx.bbox[0], ctx.bbox[1]], [ctx.bbox[2], ctx.bbox[3]]],
+        { padding: 60, duration: 1200 }
+      );
+    } else {
+      map.flyTo({ center: ctx.center, zoom: 13, speed: 1.2 });
+    }
+  }, []);
+
   const showHoverPopup = useCallback((position: [number, number], html: string) => {
     const map = mapRef.current;
     if (!map || !mapLoadedRef.current) return;
@@ -323,6 +387,41 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     },
     [hideHoverPopup, showHoverPopup]
   );
+
+  const handlePoiEnter = useCallback((e: mapboxgl.MapLayerMouseEvent) => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.getCanvas().style.cursor = 'pointer';
+    const feat = e.features?.[0];
+    if (!feat) return;
+    const coords = (feat.geometry as { type: string; coordinates: number[] }).coordinates as [number, number];
+    const p = feat.properties as Record<string, string>;
+    poiTooltipRef.current?.remove();
+    poiTooltipRef.current = new mapboxgl.Popup({
+      offset: [0, -40],
+      closeButton: false,
+      closeOnClick: false,
+      anchor: 'bottom',
+      className: 'poi-tooltip',
+    })
+      .setLngLat(coords)
+      .setHTML(
+        '<div style="padding:8px 10px;min-width:150px;max-width:230px;font-family:ui-sans-serif,system-ui,sans-serif">' +
+        `<p style="font-weight:700;font-size:13px;color:#0f172a;margin:0;line-height:1.35">${p.name}</p>` +
+        `<p style="font-size:11px;color:${p.color};margin:3px 0 0;font-weight:600">${p.category}</p>` +
+        (p.address ? `<p style="font-size:11px;color:#64748b;margin:4px 0 0;line-height:1.4">${p.address}</p>` : '') +
+        (p.phone ? `<p style="font-size:10px;color:#94a3b8;margin:3px 0 0">📞 ${p.phone}</p>` : '') +
+        '</div>'
+      )
+      .addTo(map);
+  }, []);
+
+  const handlePoiLeave = useCallback(() => {
+    const map = mapRef.current;
+    if (map) map.getCanvas().style.cursor = '';
+    poiTooltipRef.current?.remove();
+    poiTooltipRef.current = null;
+  }, []);
 
   const animateMarkerTo = useCallback((taskId: number, marker: mapboxgl.Marker, target: [number, number]) => {
     const cached = markerPositionRef.current.get(taskId);
@@ -401,15 +500,18 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           const features = Array.isArray(json?.features) ? json.features : [];
 
           return features
-            .filter((feature: unknown): feature is { id: string; place_name: string; center: [number, number] } => {
+            .filter((feature: unknown): feature is { id: string; place_name: string; center: [number, number]; bbox?: number[] } => {
               if (!feature || typeof feature !== 'object') return false;
               const candidate = feature as { center?: unknown };
               return Array.isArray(candidate.center) && candidate.center.length === 2;
             })
-            .map((feature: { id: string; place_name: string; center: [number, number] }) => ({
+            .map((feature: { id: string; place_name: string; center: [number, number]; bbox?: number[] }) => ({
               id: feature.id,
               name: feature.place_name,
               center: [feature.center[0], feature.center[1]] as [number, number],
+              bbox: Array.isArray(feature.bbox) && feature.bbox.length === 4
+                ? feature.bbox as [number, number, number, number]
+                : null,
             }));
         })
         .then((results) => {
@@ -944,6 +1046,96 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   // ── Filtered sidebar list ────────────────────────────────────────────────────
   const filteredTasks = searchQuery.trim().length > 0 ? internalSearchResults : tasks;
 
+  // ── Fetch real-world businesses from OpenStreetMap when a location is selected ─
+  useEffect(() => {
+    setPoiResults([]);
+    if (!locationCtx) return;
+
+    if (locationCtx.bbox && isBboxTooLarge(locationCtx.bbox)) return;
+
+    let cancelled = false;
+    setPoiBusy(true);
+
+    const fetch = locationCtx.bbox
+      ? fetchBusinessesInBbox(locationCtx.bbox)
+      : fetchBusinessesNearPoint(locationCtx.center[1], locationCtx.center[0]);
+
+    fetch.then((results) => {
+      if (!cancelled) { setPoiResults(results); setPoiBusy(false); }
+    }).catch(() => { if (!cancelled) setPoiBusy(false); });
+
+    return () => { cancelled = true; setPoiBusy(false); };
+  }, [locationCtx]);
+
+  // ── Render POI markers on the Mapbox map (GeoJSON layer — hover-stable) ──────
+  useEffect(() => {
+    let active = true;
+    const map = mapRef.current;
+
+    const cleanupLayers = () => {
+      poiTooltipRef.current?.remove();
+      poiTooltipRef.current = null;
+      if (!map) return;
+      try {
+        if (map.getLayer('poi-pins')) map.removeLayer('poi-pins');
+        if (map.getSource('poi-data')) map.removeSource('poi-data');
+      } catch { /* map may have been destroyed */ }
+    };
+
+    cleanupLayers();
+
+    if (!map || mapVersion === 0 || poiResults.length === 0) return cleanupLayers;
+
+    (async () => {
+      // Load a pin SVG image into the map for every unique category colour
+      const uniqueColors = [...new Set(poiResults.map((p) => p.categoryColor))];
+      await Promise.all(uniqueColors.map((c) => loadPinImage(map, c)));
+      if (!active) return;
+
+      map.addSource('poi-data', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: poiResults.map((poi) => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [poi.lng, poi.lat] },
+            properties: {
+              name: poi.name,
+              category: poi.categoryLabel,
+              color: poi.categoryColor,
+              address: poi.address ?? '',
+              phone: poi.phone ?? '',
+            },
+          })),
+        },
+      });
+
+      map.addLayer({
+        id: 'poi-pins',
+        type: 'symbol',
+        source: 'poi-data',
+        layout: {
+          // image id = "poi-pin-" + hex without #, e.g. "poi-pin-EA580C"
+          'icon-image': ['concat', 'poi-pin-', ['slice', ['get', 'color'], 1]],
+          'icon-size': 1,
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      });
+
+      map.on('mouseenter', 'poi-pins', handlePoiEnter);
+      map.on('mouseleave', 'poi-pins', handlePoiLeave);
+    })();
+
+    return () => {
+      active = false;
+      map.off('mouseenter', 'poi-pins', handlePoiEnter);
+      map.off('mouseleave', 'poi-pins', handlePoiLeave);
+      cleanupLayers();
+    };
+  }, [poiResults, mapVersion, handlePoiEnter, handlePoiLeave]);
+
   // ── No token fallback ────────────────────────────────────────────────────────
   if (!token) {
     if (compact) {
@@ -1053,7 +1245,14 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
                 key={result.id}
                 className="w-full text-left px-3 py-2 rounded-xl text-[12px] text-slate-700 hover:bg-slate-100"
                 onClick={() => {
-                  mapRef.current?.flyTo({ center: result.center, zoom: 13.5, speed: 1.1 });
+                  handleLocationSelect({
+                    name: result.name,
+                    center: result.center,
+                    bbox: result.bbox,
+                    radiusKm: 5,
+                  });
+                  setSearchQuery('');
+                  setPlaceResults([]);
                 }}
               >
                 {result.name}
@@ -1063,80 +1262,114 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         )}
       </div>
 
-      {/* Search Feeds panel — below search on mobile / top-left on desktop */}
+      {/* Left panel — location search + tabs (Search Feeds / Businesses) */}
       <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-auto md:w-[340px] z-20 bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
-        <div className="flex items-center justify-between px-6 py-6 pb-4">
-          <h3 className="text-[18px] font-bold text-dash-dark">Search Feeds</h3>
-          <button className="w-9 h-9 rounded-full bg-[#0A192F] flex items-center justify-center hover:bg-gray-800 transition-colors">
-            <RefreshCcw size={15} className="text-[#38BDF8]" />
+        {/* Location filter */}
+        <div className="px-4 pt-4 pb-2 shrink-0">
+          <LocationSearchInput
+            activeLocation={locationCtx}
+            onLocationSelect={handleLocationSelect}
+            className="w-full"
+          />
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex border-b border-slate-100 shrink-0 mx-4">
+          <button
+            onClick={() => setLeftTab('feeds')}
+            className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'feeds' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            Live Feeds
+          </button>
+          <button
+            onClick={() => setLeftTab('businesses')}
+            className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'businesses' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            Businesses {locationCtx ? `(${filteredBusinesses.length})` : ''}
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
-          {isInitialHydrating && filteredTasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10 gap-2">
-              <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
-              <p className="text-[12px] text-gray-400">Loading feeds…</p>
-            </div>
-          ) : filteredTasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10 gap-2">
-              <Radio size={24} className="text-gray-200" />
-              <p className="text-[12px] text-gray-400">No feeds available</p>
-            </div>
-          ) : (
-            filteredTasks.map((task) => {
-              const isSelected = selectedTaskId === task.taskId;
-              const operationalStatus = resolveOperationalStatusFromTask(task, nowMs, STALE_MS);
-              const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
-              return (
-                <button
-                  key={task.taskId}
-                  onClick={() => setSelectedTaskId(task.taskId)}
-                  className={`w-full flex items-center gap-4 px-4 py-3.5 text-left transition-all rounded-[20px] ${isSelected ? 'bg-[#0A192F]' : 'bg-[#F8FAFC] hover:bg-gray-100'
-                    }`}
-                >
-                  <AgentAvatar
-                    key={`${task.taskId}-${task.agentAvatarUrl ?? ""}`}
-                    name={task.agentName}
-                    avatarUrl={task.agentAvatarUrl}
-                    sizeClassName="w-12 h-12"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+        {leftTab === 'feeds' ? (
+          <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-2">
+            {isInitialHydrating && filteredTasks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2">
+                <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
+                <p className="text-[12px] text-gray-400">Loading feeds…</p>
+              </div>
+            ) : filteredTasks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2">
+                <Radio size={24} className="text-gray-200" />
+                <p className="text-[12px] text-gray-400">No feeds available</p>
+              </div>
+            ) : (
+              filteredTasks.map((task) => {
+                const isSelected = selectedTaskId === task.taskId;
+                const operationalStatus = resolveOperationalStatusFromTask(task, nowMs, STALE_MS);
+                const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
+                return (
+                  <button
+                    key={task.taskId}
+                    onClick={() => setSelectedTaskId(task.taskId)}
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 text-left transition-all rounded-[20px] ${isSelected ? 'bg-[#0A192F]' : 'bg-[#F8FAFC] hover:bg-gray-100'
+                      }`}
+                  >
+                    <AgentAvatar
+                      key={`${task.taskId}-${task.agentAvatarUrl ?? ""}`}
+                      name={task.agentName}
+                      avatarUrl={task.agentAvatarUrl}
+                      sizeClassName="w-12 h-12"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p
+                          className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
+                            }`}
+                        >
+                          {task.agentName || 'Company Name'}
+                        </p>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${isSelected ? 'bg-white/15 text-white border border-white/20' : statusMeta.badgeClassName
+                            }`}
+                        >
+                          {statusMeta.label}
+                        </span>
+                      </div>
                       <p
-                        className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
+                        className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-gray-300' : 'text-gray-500'
                           }`}
                       >
-                        {task.agentName || 'Company Name'}
+                        {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
                       </p>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${isSelected ? 'bg-white/15 text-white border border-white/20' : statusMeta.badgeClassName
-                          }`}
-                      >
-                        {statusMeta.label}
-                      </span>
+                      {(task.projectName ?? '').length > 0 && (
+                        <p className={`text-[10px] mt-1 truncate ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                          Project {task.projectName}
+                        </p>
+                      )}
+                      <p className={`text-[10px] mt-1 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                        ETA {formatEta(task.etaSeconds)} | Speed {formatSpeed(task.speedMps)} | Left {formatMetricDistance(task.distanceRemainingMeters)}
+                      </p>
                     </div>
-                    <p
-                      className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-gray-300' : 'text-gray-500'
-                        }`}
-                    >
-                      {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
-                    </p>
-                    {(task.projectName ?? '').length > 0 && (
-                      <p className={`text-[10px] mt-1 truncate ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
-                        Project {task.projectName}
-                      </p>
-                    )}
-                    <p className={`text-[10px] mt-1 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
-                      ETA {formatEta(task.etaSeconds)} | Speed {formatSpeed(task.speedMps)} | Left {formatMetricDistance(task.distanceRemainingMeters)}
-                    </p>
-                  </div>
-                  <MoreHorizontal size={20} className={isSelected ? 'text-white/50' : 'text-gray-400'} />
-                </button>
-              );
-            })
-          )}
-        </div>
+                    <MoreHorizontal size={20} className={isSelected ? 'text-white/50' : 'text-gray-400'} />
+                  </button>
+                );
+              })
+            )}
+          </div>
+        ) : (
+          <BusinessListPanel
+            activeLocation={locationCtx}
+            pois={poiResults}
+            poiBusy={poiBusy}
+            savedLocations={savedLocations}
+            savedLocationsLoading={savedLocationsLoading}
+            onPoiClick={(p) => {
+              mapRef.current?.flyTo({ center: [p.lng, p.lat], zoom: 17, speed: 1.2 });
+            }}
+            onSavedClick={(b) => {
+              mapRef.current?.flyTo({ center: [b.longitude, b.latitude], zoom: 17, speed: 1.2 });
+            }}
+          />
+        )}
       </div>
 
 
@@ -1147,6 +1380,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         pinMode={pinMode}
         onPinModeChange={setPinMode}
         focusLocation={focusLocation}
+        visibleIds={filteredBusinessIds}
       />
 
       {selectedTask && (() => {
@@ -1224,6 +1458,34 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           Google map is selected by admin, but NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is missing. Showing Mapbox fallback.
         </div>
       )}
+
+      {/* 2D / 3D toggle — bottom-right, above Mapbox attribution */}
+      <div className="absolute bottom-10 right-4 md:right-6 z-30">
+        <div className="flex rounded-full overflow-hidden border border-slate-200 shadow-lg bg-white/95 backdrop-blur">
+          <button
+            onClick={() => {
+              if (mapMode !== '2d') {
+                setMapMode('2d');
+                mapRef.current?.easeTo({ pitch: 0, bearing: 0, duration: 800 });
+              }
+            }}
+            className={`px-4 py-2 text-[12px] font-semibold transition-colors ${mapMode === '2d' ? 'bg-[#0A192F] text-white' : 'text-slate-500 hover:text-dash-dark'}`}
+          >
+            2D
+          </button>
+          <button
+            onClick={() => {
+              if (mapMode !== '3d') {
+                setMapMode('3d');
+                mapRef.current?.easeTo({ pitch: 55, bearing: -20, duration: 800 });
+              }
+            }}
+            className={`px-4 py-2 text-[12px] font-semibold transition-colors ${mapMode === '3d' ? 'bg-[#0A192F] text-white' : 'text-slate-500 hover:text-dash-dark'}`}
+          >
+            3D
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1246,8 +1508,23 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const [googleReady, setGoogleReady] = useState(false);
   const [pinMode, setPinMode] = useState(false);
   const [focusLocation, setFocusLocation] = useState<SavedLocation | null>(null);
-  const { data: savedLocations = [] } = useSavedLocations();
+  const [locationCtx, setLocationCtx] = useState<LocationContext | null>(null);
+  const [leftTab, setLeftTab] = useState<'feeds' | 'businesses'>('feeds');
+  const [poiResults, setPoiResults] = useState<PoiResult[]>([]);
+  const [poiBusy, setPoiBusy] = useState(false);
+  const googlePoiMarkersRef = useRef<{ setMap: (m: unknown) => void }[]>([]);
+  const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
   const savedLocationPermissions = useSavedLocationPermissions();
+
+  const filteredBusinesses = useMemo(() => {
+    if (!locationCtx) return savedLocations;
+    return savedLocations.filter((loc) => isInsideLocationContext(loc, locationCtx));
+  }, [savedLocations, locationCtx]);
+
+  const filteredBusinessIds = useMemo(
+    () => locationCtx ? new Set(filteredBusinesses.map((b) => b.id)) : null,
+    [filteredBusinesses, locationCtx]
+  );
 
   const liveTasks = useTrackingStore((s) => s.liveTasks);
   const tasks = useMemo(() => Object.values(liveTasks), [liveTasks]);
@@ -1312,6 +1589,80 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       )
       .slice(0, 6);
   }, [searchQuery, savedLocations]);
+
+  const handleLocationSelect = useCallback((ctx: LocationContext | null) => {
+    setLocationCtx(ctx);
+    if (ctx) setLeftTab('businesses');
+    if (!ctx || !mapRef.current || !googleRef.current) return;
+    if (ctx.bbox) {
+      const google = googleRef.current as unknown as { maps: { LatLngBounds: new (sw: { lat: number; lng: number }, ne: { lat: number; lng: number }) => { } } };
+      const bounds = new google.maps.LatLngBounds(
+        { lat: ctx.bbox[1], lng: ctx.bbox[0] },
+        { lat: ctx.bbox[3], lng: ctx.bbox[2] }
+      );
+      mapRef.current.fitBounds(bounds as unknown as GoogleLatLngBoundsLike, 60);
+    } else {
+      mapRef.current.setCenter({ lat: ctx.center[1], lng: ctx.center[0] });
+      mapRef.current.setZoom(13);
+    }
+  }, []);
+
+  // ── Fetch real-world businesses when a location is selected ──────────────────
+  useEffect(() => {
+    setPoiResults([]);
+    if (!locationCtx) return;
+    if (locationCtx.bbox && isBboxTooLarge(locationCtx.bbox)) return;
+
+    let cancelled = false;
+    setPoiBusy(true);
+
+    const req = locationCtx.bbox
+      ? fetchBusinessesInBbox(locationCtx.bbox)
+      : fetchBusinessesNearPoint(locationCtx.center[1], locationCtx.center[0]);
+
+    req.then((results) => {
+      if (!cancelled) { setPoiResults(results); setPoiBusy(false); }
+    }).catch(() => { if (!cancelled) setPoiBusy(false); });
+
+    return () => { cancelled = true; setPoiBusy(false); };
+  }, [locationCtx]);
+
+  // ── Render POI markers on Google Maps ────────────────────────────────────────
+  useEffect(() => {
+    googlePoiMarkersRef.current.forEach((m) => m.setMap(null));
+    googlePoiMarkersRef.current = [];
+
+    if (!googleReady || !mapRef.current || !googleRef.current || poiResults.length === 0) return;
+
+    const maps = googleRef.current as unknown as {
+      maps: {
+        Marker: new (opts: Record<string, unknown>) => { setMap: (m: unknown) => void };
+        SymbolPath: { CIRCLE: unknown };
+      };
+    };
+
+    googlePoiMarkersRef.current = poiResults.map((poi) => {
+      const marker = new maps.maps.Marker({
+        position: { lat: poi.lat, lng: poi.lng },
+        title: `${poi.name} · ${poi.categoryLabel}`,
+        icon: {
+          path: maps.maps.SymbolPath.CIRCLE,
+          fillColor: poi.categoryColor,
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+          scale: 8,
+        },
+        map: mapRef.current,
+      });
+      return marker;
+    });
+
+    return () => {
+      googlePoiMarkersRef.current.forEach((m) => m.setMap(null));
+      googlePoiMarkersRef.current = [];
+    };
+  }, [poiResults, googleReady]);
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current || !googleApiKey) {
@@ -1702,62 +2053,99 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         )}
       </div>
 
+      {/* Left panel — location search + tabs (Search Feeds / Businesses) */}
       <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-auto md:w-[340px] z-20 bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
-        <div className="flex items-center justify-between px-6 py-6 pb-4">
-          <h3 className="text-[18px] font-bold text-dash-dark">Search Feeds</h3>
-          <button className="w-9 h-9 rounded-full bg-[#0A192F] flex items-center justify-center hover:bg-gray-800 transition-colors">
-            <RefreshCcw size={15} className="text-[#38BDF8]" />
+        {/* Location filter */}
+        <div className="px-4 pt-4 pb-2 shrink-0">
+          <LocationSearchInput
+            activeLocation={locationCtx}
+            onLocationSelect={handleLocationSelect}
+            className="w-full"
+          />
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex border-b border-slate-100 shrink-0 mx-4">
+          <button
+            onClick={() => setLeftTab('feeds')}
+            className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'feeds' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            Live Feeds
+          </button>
+          <button
+            onClick={() => setLeftTab('businesses')}
+            className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'businesses' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            Businesses {locationCtx ? `(${filteredBusinesses.length})` : ''}
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
-          {isInitialHydrating && filteredTasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10 gap-2">
-              <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
-              <p className="text-[12px] text-gray-400">Loading feeds…</p>
-            </div>
-          ) : filteredTasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10 gap-2">
-              <Radio size={24} className="text-gray-200" />
-              <p className="text-[12px] text-gray-400">No feeds available</p>
-            </div>
-          ) : (
-            filteredTasks.map((task) => {
-              const isSelected = selectedTaskId === task.taskId;
-              return (
-                <button
-                  key={task.taskId}
-                  onClick={() => setSelectedTaskId(task.taskId)}
-                  className={`w-full flex items-center gap-4 px-4 py-3.5 text-left transition-all rounded-[20px] ${isSelected ? 'bg-[#0A192F]' : 'bg-[#F8FAFC] hover:bg-gray-100'
-                    }`}
-                >
-                  <AgentAvatar
-                    key={`${task.taskId}-${task.agentAvatarUrl ?? ''}`}
-                    name={task.agentName}
-                    avatarUrl={task.agentAvatarUrl}
-                    sizeClassName="w-12 h-12"
-                    allowInitialsFallback={false}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p
-                      className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
-                        }`}
-                    >
-                      {task.agentName || 'Company Name'}
-                    </p>
-                    <p
-                      className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-gray-400' : 'text-gray-500'
-                        }`}
-                    >
-                      {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
-                    </p>
-                  </div>
-                  <MoreHorizontal size={20} className={isSelected ? 'text-white/50' : 'text-gray-400'} />
-                </button>
-              );
-            })
-          )}
-        </div>
+        {leftTab === 'feeds' ? (
+          <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-2">
+            {isInitialHydrating && filteredTasks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2">
+                <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
+                <p className="text-[12px] text-gray-400">Loading feeds…</p>
+              </div>
+            ) : filteredTasks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2">
+                <Radio size={24} className="text-gray-200" />
+                <p className="text-[12px] text-gray-400">No feeds available</p>
+              </div>
+            ) : (
+              filteredTasks.map((task) => {
+                const isSelected = selectedTaskId === task.taskId;
+                return (
+                  <button
+                    key={task.taskId}
+                    onClick={() => setSelectedTaskId(task.taskId)}
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 text-left transition-all rounded-[20px] ${isSelected ? 'bg-[#0A192F]' : 'bg-[#F8FAFC] hover:bg-gray-100'
+                      }`}
+                  >
+                    <AgentAvatar
+                      key={`${task.taskId}-${task.agentAvatarUrl ?? ''}`}
+                      name={task.agentName}
+                      avatarUrl={task.agentAvatarUrl}
+                      sizeClassName="w-12 h-12"
+                      allowInitialsFallback={false}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
+                          }`}
+                      >
+                        {task.agentName || 'Company Name'}
+                      </p>
+                      <p
+                        className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-gray-400' : 'text-gray-500'
+                          }`}
+                      >
+                        {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
+                      </p>
+                    </div>
+                    <MoreHorizontal size={20} className={isSelected ? 'text-white/50' : 'text-gray-400'} />
+                  </button>
+                );
+              })
+            )}
+          </div>
+        ) : (
+          <BusinessListPanel
+            activeLocation={locationCtx}
+            pois={poiResults}
+            poiBusy={poiBusy}
+            savedLocations={savedLocations}
+            savedLocationsLoading={savedLocationsLoading}
+            onPoiClick={(p) => {
+              mapRef.current?.panTo({ lat: p.lat, lng: p.lng });
+              if ((mapRef.current?.getZoom() ?? 0) < 17) mapRef.current?.setZoom(17);
+            }}
+            onSavedClick={(b) => {
+              mapRef.current?.panTo({ lat: b.latitude, lng: b.longitude });
+              if ((mapRef.current?.getZoom() ?? 0) < 17) mapRef.current?.setZoom(17);
+            }}
+          />
+        )}
       </div>
 
 
@@ -1772,6 +2160,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         pinMode={pinMode}
         onPinModeChange={setPinMode}
         focusLocation={focusLocation}
+        visibleIds={filteredBusinessIds}
       />
 
       {historyTask && (
