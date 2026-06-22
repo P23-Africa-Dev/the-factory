@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
-import { Search, Radio, RefreshCcw, MoreHorizontal } from 'lucide-react';
+import { Search, Radio, RefreshCcw, MoreHorizontal, LocateFixed } from 'lucide-react';
 import {
   getGoogleMapsPublicApiKey,
   MAPBOX_PUBLIC_TOKEN_ENV,
@@ -280,6 +280,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const [mapMode, setMapMode] = useState<'2d' | '3d'>('2d');
   const [poiResults, setPoiResults] = useState<PoiResult[]>([]);
   const [poiBusy, setPoiBusy] = useState(false);
+  const [locating, setLocating] = useState(false);
   const poiTooltipRef = useRef<mapboxgl.Popup | null>(null);
   const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
   const savedLocationPermissions = useSavedLocationPermissions();
@@ -422,6 +423,23 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     poiTooltipRef.current?.remove();
     poiTooltipRef.current = null;
   }, []);
+
+  const handleLocateMe = useCallback(() => {
+    if (!navigator.geolocation || locating) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        mapRef.current?.flyTo({
+          center: [pos.coords.longitude, pos.coords.latitude],
+          zoom: 15,
+          duration: 1400,
+        });
+      },
+      () => setLocating(false),
+      { timeout: 10000, enableHighAccuracy: true },
+    );
+  }, [locating]);
 
   const animateMarkerTo = useCallback((taskId: number, marker: mapboxgl.Marker, target: [number, number]) => {
     const cached = markerPositionRef.current.get(taskId);
@@ -1389,11 +1407,20 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
         return (
           <div className="absolute bottom-64 right-4 md:right-10 z-20 w-[min(92vw,380px)] rounded-3xl border border-slate-200 bg-white/95 backdrop-blur shadow-2xl">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h4 className="text-[14px] font-bold text-slate-800">Active Agent Command Panel</h4>
-              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusMeta.badgeClassName}`}>
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-2">
+              <h4 className="text-[14px] font-bold text-slate-800 flex-1 min-w-0">Active Agent Command Panel</h4>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold shrink-0 ${statusMeta.badgeClassName}`}>
                 {statusMeta.label}
               </span>
+              <button
+                onClick={() => setSelectedTaskId(null)}
+                aria-label="Close panel"
+                className="shrink-0 w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M1 1L11 11M11 1L1 11" stroke="#64748b" strokeWidth="1.8" strokeLinecap="round"/>
+                </svg>
+              </button>
             </div>
 
             <div className="px-5 py-4 space-y-3">
@@ -1459,8 +1486,19 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         </div>
       )}
 
-      {/* 2D / 3D toggle — bottom-right, above Mapbox attribution */}
-      <div className="absolute bottom-10 right-4 md:right-6 z-30">
+      {/* Map controls — bottom-center, clear of the AI FAB at bottom-right */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
+        {/* Locate me */}
+        <button
+          onClick={handleLocateMe}
+          disabled={locating}
+          title="Center on my location"
+          className="w-10 h-10 rounded-full bg-white/95 backdrop-blur shadow-lg border border-slate-200 flex items-center justify-center text-dash-teal hover:bg-slate-50 active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <LocateFixed size={18} className={locating ? 'animate-pulse' : ''} />
+        </button>
+
+        {/* 2D / 3D toggle */}
         <div className="flex rounded-full overflow-hidden border border-slate-200 shadow-lg bg-white/95 backdrop-blur">
           <button
             onClick={() => {
@@ -1512,6 +1550,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const [leftTab, setLeftTab] = useState<'feeds' | 'businesses'>('feeds');
   const [poiResults, setPoiResults] = useState<PoiResult[]>([]);
   const [poiBusy, setPoiBusy] = useState(false);
+  const [locating, setLocating] = useState(false);
   const googlePoiMarkersRef = useRef<{ setMap: (m: unknown) => void }[]>([]);
   const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
   const savedLocationPermissions = useSavedLocationPermissions();
@@ -1606,6 +1645,22 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       mapRef.current.setZoom(13);
     }
   }, []);
+
+  const handleLocateMe = useCallback(() => {
+    if (!navigator.geolocation || locating) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        if (mapRef.current) {
+          mapRef.current.panTo({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          mapRef.current.setZoom(15);
+        }
+      },
+      () => setLocating(false),
+      { timeout: 10000, enableHighAccuracy: true },
+    );
+  }, [locating]);
 
   // ── Fetch real-world businesses when a location is selected ──────────────────
   useEffect(() => {
@@ -2170,6 +2225,18 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           onClose={() => setHistoryTask(null)}
         />
       )}
+
+      {/* Map controls — bottom-center, clear of the AI FAB at bottom-right */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
+        <button
+          onClick={handleLocateMe}
+          disabled={locating}
+          title="Center on my location"
+          className="w-10 h-10 rounded-full bg-white/95 backdrop-blur shadow-lg border border-slate-200 flex items-center justify-center text-dash-teal hover:bg-slate-50 active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <LocateFixed size={18} className={locating ? 'animate-pulse' : ''} />
+        </button>
+      </div>
 
       {providerState.fallbackReason === 'missing_mapbox_token' && providerState.requestedProvider === 'mapbox' && (
         <div className="absolute bottom-3 left-3 right-3 md:left-8 md:right-auto md:w-[420px] z-20 rounded-md bg-black/75 px-3 py-2 text-[11px] font-medium text-white">
