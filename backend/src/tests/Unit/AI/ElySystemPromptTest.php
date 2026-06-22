@@ -22,6 +22,6 @@ final class ElySystemPromptTest extends TestCase
     public function test_intro_and_name_match_brand(): void
     {
         $this->assertSame('ELY', ElySystemPrompt::name());
-        $this->assertSame("I'm ELY, your Factory23 AI Assistant.", ElySystemPrompt::intro());
+        $this->assertSame("I'm ELY, your AI Assistant.", ElySystemPrompt::intro());
     }
 }

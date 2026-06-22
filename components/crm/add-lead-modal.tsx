@@ -41,6 +41,31 @@ const PRIORITY_OPTIONS = [
   { label: "Low", value: "low" },
 ] as const;
 
+const COUNTRY_CODES = [
+  { code: "+234", label: "NG (+234)", country: "Nigeria" },
+  { code: "+254", label: "KE (+254)", country: "Kenya" },
+  { code: "+233", label: "GH (+233)", country: "Ghana" },
+  { code: "+27", label: "ZA (+27)", country: "South Africa" },
+  { code: "+1", label: "US (+1)", country: "United States" },
+  { code: "+44", label: "GB (+44)", country: "United Kingdom" },
+] as const;
+
+function parsePhoneNumber(fullPhone: string | null | undefined): { countryCode: string; phonePart: string } {
+  if (!fullPhone) {
+    return { countryCode: "+234", phonePart: "" };
+  }
+  const sortedCodes = [...COUNTRY_CODES].map(c => c.code).sort((a, b) => b.length - a.length);
+  for (const code of sortedCodes) {
+    if (fullPhone.startsWith(code)) {
+      return {
+        countryCode: code,
+        phonePart: fullPhone.slice(code.length).trim(),
+      };
+    }
+  }
+  return { countryCode: "+234", phonePart: fullPhone };
+}
+
 export function AddLeadModal({
   onClose,
   apiBasePath = "/admin",
@@ -58,7 +83,9 @@ export function AddLeadModal({
 
   const [name, setName] = useState(lead?.name ?? "");
   const [email, setEmail] = useState(lead?.email ?? "");
-  const [phone, setPhone] = useState(lead?.phone ?? "");
+  const initialPhone = parsePhoneNumber(lead?.phone);
+  const [countryCode, setCountryCode] = useState(initialPhone.countryCode);
+  const [phonePart, setPhonePart] = useState(initialPhone.phonePart);
   const [location, setLocation] = useState(lead?.location ?? "");
   const [source, setSource] = useState(lead?.source ?? "");
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
@@ -167,7 +194,7 @@ export function AddLeadModal({
       pipeline_id: Number(effectivePipelineId),
       name: name.trim(),
       email: email.trim() || null,
-      phone: phone.trim() || null,
+      phone: phonePart.trim() ? (countryCode + phonePart.trim()) : null,
       location: location.trim() || null,
       source: source.trim() || (isAgentContext ? "agent upload" : null),
       status,
@@ -248,7 +275,7 @@ export function AddLeadModal({
             <SectionDivider label={lead ? "Edit Contact Details" : "Lead Contact Details"} />
 
             <div>
-              <FormRow label="Name" labelClassName="w-28">
+              <FormRow label="Name *" labelClassName="w-28">
                 <InlineInput
                   value={name}
                   onChange={(e) => { setName(e.target.value); clearError("name"); }}
@@ -273,12 +300,25 @@ export function AddLeadModal({
 
             <div>
               <FormRow label="Phone" labelClassName="w-28">
-                <InlineInput
-                  value={phone}
-                  onChange={(e) => { setPhone(e.target.value); clearError("phone"); }}
-                  placeholder="E.g +1 555-0199"
-                  className="col-span-2"
-                />
+                <div className="flex w-full gap-2 col-span-2">
+                  <select
+                    value={countryCode}
+                    onChange={(e) => setCountryCode(e.target.value)}
+                    className="h-12.25 w-[110px] px-3.5 rounded-xl border border-gray-200 text-[10px] font-light text-[#616263] bg-white shadow-[0px_1px_3px_1px_#00000026,0px_1px_2px_0px_#0000004D] cursor-pointer outline-none focus:border-gray-400 transition-colors"
+                  >
+                    {COUNTRY_CODES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                  <InlineInput
+                    value={phonePart}
+                    onChange={(e) => { setPhonePart(e.target.value); clearError("phone"); }}
+                    placeholder="E.g 555-0199"
+                    className="flex-1 min-w-0"
+                  />
+                </div>
               </FormRow>
               <FieldError message={errors.phone} />
             </div>
@@ -300,7 +340,7 @@ export function AddLeadModal({
             <SectionDivider label={lead ? "Edit Lead Classification" : "Lead Classification"} />
 
             <div>
-              <FormRow label="Pipeline" labelClassName="w-28">
+              <FormRow label="Pipeline *" labelClassName="w-28">
                 <InlineSelect
                   value={pipelineId}
                   onChange={(v) => { setPipelineId(v); clearError("pipelineId"); }}
