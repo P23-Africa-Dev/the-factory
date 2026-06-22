@@ -1,6 +1,6 @@
 export const ELY_NAME = "ELY";
 export const ELY_FULL_NAME = "ELY, Factory23 AI Assistant";
-export const ELY_INTRO = "I'm ELY, your Factory23 AI Assistant.";
+export const ELY_INTRO = "I'm ELY, your AI Assistant.";
 export const ELY_SIGNATURE = "— ELY, Factory23 AI Assistant";
 export const ELY_INPUT_PLACEHOLDER = "Ask ELY anything...";
 export const ELY_LANDING_HEADLINE = ELY_INTRO;
