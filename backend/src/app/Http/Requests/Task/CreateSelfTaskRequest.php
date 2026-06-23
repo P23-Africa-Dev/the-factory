@@ -9,6 +9,7 @@ use App\Enums\TaskType;
 use App\Http\Requests\Concerns\ResolvesCompanyContextId;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class CreateSelfTaskRequest extends FormRequest
 {
@@ -52,5 +53,26 @@ class CreateSelfTaskRequest extends FormRequest
         return [
             'company_id.required' => 'Company context is required to create a self task.',
         ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            $latitude = $this->input('latitude');
+            $longitude = $this->input('longitude');
+            $hasLatitude = $latitude !== null && $latitude !== '';
+            $hasLongitude = $longitude !== null && $longitude !== '';
+
+            if ($hasLatitude xor $hasLongitude) {
+                $validator->errors()->add('latitude', 'Latitude and longitude must be provided together.');
+            }
+
+            if ($this->boolean('visit_verification_required') && ! ($hasLatitude && $hasLongitude)) {
+                $validator->errors()->add(
+                    'visit_verification_required',
+                    'Visit verification requires a task destination location.',
+                );
+            }
+        });
     }
 }

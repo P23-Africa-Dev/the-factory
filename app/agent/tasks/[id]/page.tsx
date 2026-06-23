@@ -3,9 +3,11 @@
 import { use } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, MapPin, Calendar, User, ChevronRight, ClipboardList } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
-import { useTaskDetail } from '@/hooks/use-tasks';
+import { useTaskDetail, useUpdateTaskStatus } from '@/hooks/use-tasks';
+import { formatTaskLocationLabel, hasTrackableTaskLocation } from '@/lib/tasks/location';
 
 const PRIORITY_COLORS: Record<string, string> = {
   high: 'bg-red-100 text-red-600',
@@ -17,6 +19,7 @@ const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-orange-100 text-orange-600',
   in_progress: 'bg-blue-100 text-blue-600',
   completed: 'bg-teal-100 text-teal-600',
+  cancelled: 'bg-gray-100 text-gray-500',
 };
 
 export default function AgentTaskDetailPage({
@@ -30,6 +33,11 @@ export default function AgentTaskDetailPage({
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const { data: task, isLoading } = useTaskDetail(taskId, companyId ?? undefined);
+  const { mutate: updateStatus, isPending: isUpdatingStatus } = useUpdateTaskStatus({
+    onSuccess: () => {
+      toast.success('Task updated');
+    },
+  });
 
   if (isLoading) {
     return (
@@ -51,15 +59,22 @@ export default function AgentTaskDetailPage({
     );
   }
 
+  const hasMapLocation = hasTrackableTaskLocation(task);
+  const locationLabel = formatTaskLocationLabel(task.location, task.address);
   const isPending = task.status === 'pending';
   const isInProgress = task.status === 'in_progress';
   const isCompleted = task.status === 'completed';
+  const isCancelled = task.status === 'cancelled';
 
-  const actionLabel = isPending ? 'Start Task' : isInProgress ? 'Continue Tracking' : null;
+  const updateTaskStatus = (status: 'in_progress' | 'completed' | 'cancelled') => {
+    updateStatus({
+      taskId,
+      payload: { company_id: companyId ?? undefined, status },
+    });
+  };
 
   return (
     <div className="min-h-screen bg-[#f8f9fb] pb-32">
-      {/* Header */}
       <div className="bg-white border-b border-gray-100 px-5 pt-5 pb-4 flex items-center gap-3">
         <button
           onClick={() => router.back()}
@@ -85,7 +100,6 @@ export default function AgentTaskDetailPage({
       </div>
 
       <div className="px-4 py-5 space-y-4">
-        {/* Description */}
         {task.description && (
           <div className="bg-white rounded-2xl p-4 border border-gray-100">
             <p className="text-[12px] font-bold text-gray-400 uppercase tracking-wide mb-2">Description</p>
@@ -93,7 +107,6 @@ export default function AgentTaskDetailPage({
           </div>
         )}
 
-        {/* Details grid */}
         <div className="bg-white rounded-2xl p-4 border border-gray-100 space-y-3">
           {task.due_date && (
             <div className="flex items-start gap-3">
@@ -123,20 +136,22 @@ export default function AgentTaskDetailPage({
             </div>
           )}
 
-          {(task.address ?? task.location) && (
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center shrink-0">
-                <MapPin size={14} className="text-rose-500" />
-              </div>
-              <div>
-                <p className="text-[11px] text-gray-400 font-semibold">Location</p>
-                <p className="text-[13px] text-dash-dark font-semibold">{task.address ?? task.location}</p>
-              </div>
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center shrink-0">
+              <MapPin size={14} className="text-rose-500" />
             </div>
-          )}
+            <div>
+              <p className="text-[11px] text-gray-400 font-semibold">Location</p>
+              <p className="text-[13px] text-dash-dark font-semibold">{locationLabel}</p>
+              {!hasMapLocation && (
+                <p className="text-[11px] text-gray-400 mt-1">
+                  No map destination. Use status actions below instead of map tracking.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Required actions */}
         {task.required_actions && task.required_actions.length > 0 && (
           <div className="bg-white rounded-2xl p-4 border border-gray-100">
             <p className="text-[12px] font-bold text-gray-400 uppercase tracking-wide mb-3">Required Actions</p>
@@ -153,7 +168,6 @@ export default function AgentTaskDetailPage({
           </div>
         )}
 
-        {/* Proofs */}
         {task.proofs && task.proofs.length > 0 && (
           <div className="bg-white rounded-2xl p-4 border border-gray-100">
             <p className="text-[12px] font-bold text-gray-400 uppercase tracking-wide mb-3">Submitted Proofs</p>
@@ -180,16 +194,65 @@ export default function AgentTaskDetailPage({
         )}
       </div>
 
-      {/* Bottom action bar */}
-      {actionLabel && !isCompleted && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-5 py-4 pb-safe">
-          <button
-            onClick={() => router.push(`/agent/tasks/${taskId}/tracking`)}
-            className="w-full flex items-center justify-center gap-2 py-4 bg-[#7EB5AE] text-white rounded-2xl text-[15px] font-bold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all"
-          >
-            {actionLabel}
-            <ChevronRight size={18} />
-          </button>
+      {(isPending || isInProgress) && !isCompleted && !isCancelled && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-5 py-4 pb-safe space-y-2">
+          {isPending && hasMapLocation && (
+            <button
+              onClick={() => router.push(`/agent/tasks/${taskId}/tracking`)}
+              className="w-full flex items-center justify-center gap-2 py-4 bg-[#7EB5AE] text-white rounded-2xl text-[15px] font-bold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all"
+            >
+              Start Tracking
+              <ChevronRight size={18} />
+            </button>
+          )}
+
+          {isPending && !hasMapLocation && (
+            <>
+              <button
+                onClick={() => updateTaskStatus('in_progress')}
+                disabled={isUpdatingStatus}
+                className="w-full flex items-center justify-center gap-2 py-4 bg-[#7EB5AE] text-white rounded-2xl text-[15px] font-bold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all disabled:opacity-60"
+              >
+                Start Task
+              </button>
+              <button
+                onClick={() => updateTaskStatus('cancelled')}
+                disabled={isUpdatingStatus}
+                className="w-full py-3 rounded-2xl border border-red-200 text-red-600 text-[14px] font-semibold disabled:opacity-60"
+              >
+                Cancel Task
+              </button>
+            </>
+          )}
+
+          {isInProgress && hasMapLocation && (
+            <button
+              onClick={() => router.push(`/agent/tasks/${taskId}/tracking`)}
+              className="w-full flex items-center justify-center gap-2 py-4 bg-[#7EB5AE] text-white rounded-2xl text-[15px] font-bold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all"
+            >
+              Continue Tracking
+              <ChevronRight size={18} />
+            </button>
+          )}
+
+          {isInProgress && !hasMapLocation && (
+            <>
+              <button
+                onClick={() => updateTaskStatus('completed')}
+                disabled={isUpdatingStatus}
+                className="w-full flex items-center justify-center gap-2 py-4 bg-dash-teal text-white rounded-2xl text-[15px] font-bold shadow-lg shadow-dash-teal/20 hover:opacity-90 transition-all disabled:opacity-60"
+              >
+                Mark Complete
+              </button>
+              <button
+                onClick={() => updateTaskStatus('cancelled')}
+                disabled={isUpdatingStatus}
+                className="w-full py-3 rounded-2xl border border-red-200 text-red-600 text-[14px] font-semibold disabled:opacity-60"
+              >
+                Cancel Task
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -197,6 +260,14 @@ export default function AgentTaskDetailPage({
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-5 py-4 pb-safe">
           <div className="w-full flex items-center justify-center gap-2 py-4 bg-dash-teal/10 text-dash-teal rounded-2xl text-[15px] font-bold border border-dash-teal/20">
             Task Completed
+          </div>
+        </div>
+      )}
+
+      {isCancelled && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-5 py-4 pb-safe">
+          <div className="w-full flex items-center justify-center gap-2 py-4 bg-gray-100 text-gray-500 rounded-2xl text-[15px] font-bold border border-gray-200">
+            Task Cancelled
           </div>
         </div>
       )}

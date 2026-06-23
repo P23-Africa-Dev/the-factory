@@ -15,6 +15,7 @@ import { useProject } from "@/hooks/use-projects";
 import { useTasks, useUpdateTaskStatusAdmin } from "@/hooks/use-tasks";
 import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiTaskStatus, TaskApiItem } from "@/lib/api/tasks";
+import { formatTaskLocationLabel, hasTrackableTaskLocation } from "@/lib/tasks/location";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 
@@ -517,7 +518,10 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     id: String(apiTask.id),
     label: assigneeLabel,
     description: apiTask.title,
-    location: apiTask.location || "No location",
+    location: formatTaskLocationLabel(apiTask.location, apiTask.address),
+    latitude: apiTask.latitude ?? null,
+    longitude: apiTask.longitude ?? null,
+    hasTrackableLocation: hasTrackableTaskLocation(apiTask),
     time: "Just now",
     avatar: apiTask.assignee?.avatar_url || undefined,
     category: (apiTask.type || "agent") as DndItem["category"],

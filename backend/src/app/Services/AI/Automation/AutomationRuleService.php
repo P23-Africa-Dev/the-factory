@@ -256,8 +256,8 @@ class AutomationRuleService
                 'action_args.title' => ['required', 'string', 'max:120'],
                 'action_args.type' => ['required', 'string', 'max:50'],
                 'action_args.description' => ['required', 'string', 'max:500'],
-                'action_args.location' => ['required', 'string', 'max:120'],
-                'action_args.address' => ['required', 'string', 'max:190'],
+                'action_args.location' => ['nullable', 'string', 'max:120'],
+                'action_args.address' => ['nullable', 'string', 'max:500'],
                 'action_args.due_date' => ['required', 'date'],
             ],
             'tasks.reassign' => [

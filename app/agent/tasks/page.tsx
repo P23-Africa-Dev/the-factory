@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { useAgentTasks } from '@/hooks/use-tracking';
 import type { ApiTaskStatus } from '@/lib/api/tasks';
+import { hasTrackableTaskLocation } from '@/lib/tasks/location';
 
 type Tab = 'pending' | 'in_progress' | 'completed';
 
@@ -102,11 +103,12 @@ export default function AgentTasksPage() {
 
         {tasks.map((task) => {
           const overdue = isOverdue(task.due_date);
+          const hasMap = hasTrackableTaskLocation(task);
           const action =
             task.status === 'pending'
-              ? 'Start'
+              ? hasMap ? 'Start' : 'Open'
               : task.status === 'in_progress'
-              ? 'Continue'
+              ? hasMap ? 'Continue' : 'Manage'
               : 'View';
           const actionColor =
             task.status === 'pending'
@@ -157,7 +159,7 @@ export default function AgentTasksPage() {
               <button
                 onClick={() =>
                   router.push(
-                    task.status === 'in_progress'
+                    task.status === 'in_progress' && hasMap
                       ? `/agent/tasks/${task.id}/tracking`
                       : `/agent/tasks/${task.id}`
                   )

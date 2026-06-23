@@ -4,8 +4,16 @@ import React from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, MapPin, Calendar, User, ShieldAlert } from 'lucide-react';
 
-import { useTask, useTaskNavigation, isResumeTrackingStatus } from '@/features/tasks';
+import {
+  useTask,
+  useTaskNavigation,
+  isResumeTrackingStatus,
+  useUpdateTaskStatus,
+  formatTaskLocationLabel,
+  taskHasMapLocation,
+} from '@/features/tasks';
 import { useTrackingStore } from '@/store/tracking';
+import { toast } from '@/lib/toast';
 
 const STATUS_COLOR: Record<string, string> = {
   pending: '#FD6046',
@@ -62,8 +70,29 @@ export default function TaskDetailPage() {
 
   const { data: task, isLoading, error } = useTask(id);
   const { goToTracking, goToContinueTracking, goToTaskComplete } = useTaskNavigation();
+  const { mutate: updateStatus, isPending: isUpdatingStatus } = useUpdateTaskStatus();
   const liveTask = useTrackingStore((s) => s.liveTaskMap[Number(id)]);
   const hasArrived = liveTask?.status === 'arrived' || liveTask?.arrivedAt != null;
+
+  const updateTaskStatus = (status: 'in_progress' | 'completed' | 'cancelled') => {
+    updateStatus(
+      { id, status },
+      {
+        onSuccess: () => {
+          toast.success(
+            status === 'in_progress'
+              ? 'Task started'
+              : status === 'completed'
+                ? 'Task completed'
+                : 'Task cancelled',
+          );
+        },
+        onError: (err: unknown) => {
+          toast.error(err instanceof Error ? err.message : 'Failed to update task status');
+        },
+      },
+    );
+  };
 
   if (isLoading) {
     return (
@@ -92,11 +121,11 @@ export default function TaskDetailPage() {
   const statusColor = STATUS_COLOR[task.status] || '#8F9098';
   const isActive = isResumeTrackingStatus(task.status);
   const isPending = task.status === 'pending';
-  const _isDone = task.status === 'completed' || task.status === 'cancelled';
+  const hasMapLocation = taskHasMapLocation(task);
+  const locationLabel = formatTaskLocationLabel(task);
 
   return (
     <div className="flex flex-col flex-1 bg-[#0A1D25] min-h-screen">
-      {/* Header */}
       <header className="flex items-center gap-3 px-5 py-4 mt-2">
         <button
           onClick={() => router.back()}
@@ -109,9 +138,7 @@ export default function TaskDetailPage() {
         </h2>
       </header>
 
-      {/* Main content scroll container */}
       <div className="flex-1 px-6 pb-8 overflow-y-auto">
-        {/* Status Pill */}
         <div
           className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 mb-4 text-xs font-semibold font-sans tracking-wide"
           style={{ backgroundColor: `${statusColor}22` }}
@@ -120,12 +147,10 @@ export default function TaskDetailPage() {
           <span style={{ color: statusColor }}>{STATUS_LABEL[task.status]}</span>
         </div>
 
-        {/* Title */}
         <h3 className="font-sans font-bold text-xl text-white mb-2.5 leading-snug">
           {task.title}
         </h3>
 
-        {/* Priority */}
         {task.priority && (
           <div
             className="inline-flex rounded-md px-2.5 py-1 mb-5 text-[9px] font-bold tracking-wider font-sans"
@@ -138,9 +163,13 @@ export default function TaskDetailPage() {
           </div>
         )}
 
-        {/* Meta Card */}
         <div className="bg-[#0B3343]/70 rounded-2xl border-[0.5px] border-white/8 p-4 flex flex-col gap-3.5 mb-5 shadow-sm">
-          <MetaRow label="Location" value={task.address} icon={MapPin} />
+          <MetaRow label="Location" value={locationLabel} icon={MapPin} />
+          {!hasMapLocation && (
+            <p className="text-[11px] text-[#8F9098] font-sans pl-[6.5rem]">
+              No map destination. Use status actions below instead of map tracking.
+            </p>
+          )}
           {task.dueDate && (
             <MetaRow
               label="Due Date"
@@ -165,15 +194,13 @@ export default function TaskDetailPage() {
           {task.assignedBy && <MetaRow label="Assigned By" value={task.assignedBy} icon={User} />}
         </div>
 
-        {/* Description / Instructions */}
         {task.description && <Section title="Description" body={task.description} />}
         {task.instructions && <Section title="Instructions" body={task.instructions} />}
 
         <div className="h-[0.5px] bg-white/6 my-6" />
 
-        {/* Actions button group */}
         <div className="flex flex-col gap-3">
-          {isPending && (
+          {isPending && hasMapLocation && (
             <button
               onClick={() => goToTracking(task.id)}
               className="w-full h-[51px] rounded-[30px] bg-[#75ADAF] hover:bg-[#66989A] text-white font-bold text-sm transition-all duration-200 active:scale-95 shadow-md flex items-center justify-center"
@@ -182,7 +209,26 @@ export default function TaskDetailPage() {
             </button>
           )}
 
-          {isActive && (
+          {isPending && !hasMapLocation && (
+            <>
+              <button
+                onClick={() => updateTaskStatus('in_progress')}
+                disabled={isUpdatingStatus}
+                className="w-full h-[51px] rounded-[30px] bg-[#75ADAF] hover:bg-[#66989A] text-white font-bold text-sm transition-all duration-200 active:scale-95 shadow-md flex items-center justify-center disabled:opacity-60"
+              >
+                Start Task
+              </button>
+              <button
+                onClick={() => updateTaskStatus('cancelled')}
+                disabled={isUpdatingStatus}
+                className="w-full h-[46px] rounded-[30px] border border-[#FD6046]/40 text-[#FD6046] font-semibold text-xs bg-transparent transition-all duration-200 active:scale-95 flex items-center justify-center disabled:opacity-60"
+              >
+                Cancel Task
+              </button>
+            </>
+          )}
+
+          {isActive && hasMapLocation && (
             <>
               <button
                 onClick={() => goToContinueTracking(task.id)}
@@ -198,6 +244,25 @@ export default function TaskDetailPage() {
                   Complete Task (proof required)
                 </button>
               )}
+            </>
+          )}
+
+          {isActive && !hasMapLocation && (
+            <>
+              <button
+                onClick={() => updateTaskStatus('completed')}
+                disabled={isUpdatingStatus}
+                className="w-full h-[51px] rounded-[30px] bg-[#4CAF50] hover:bg-[#43A047] text-white font-bold text-sm transition-all duration-200 active:scale-95 shadow-md flex items-center justify-center disabled:opacity-60"
+              >
+                Mark Complete
+              </button>
+              <button
+                onClick={() => updateTaskStatus('cancelled')}
+                disabled={isUpdatingStatus}
+                className="w-full h-[46px] rounded-[30px] border border-[#FD6046]/40 text-[#FD6046] font-semibold text-xs bg-transparent transition-all duration-200 active:scale-95 flex items-center justify-center disabled:opacity-60"
+              >
+                Cancel Task
+              </button>
             </>
           )}
 

@@ -19,6 +19,45 @@ class TaskTrackingTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_task_start_is_rejected_when_task_has_no_trackable_location(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $task = $this->createAssignedTask($company->id, $admin->id, $agent->id, [
+            'status' => 'pending',
+            'latitude' => null,
+            'longitude' => null,
+        ]);
+
+        $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/tasks/' . $task->id . '/start', [
+                'company_id' => $company->id,
+                'location_permission_granted' => true,
+                'latitude' => 6.4500,
+                'longitude' => 3.3500,
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['task']);
+    }
+
+    public function test_task_route_is_rejected_when_task_has_no_trackable_location(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $task = $this->createAssignedTask($company->id, $admin->id, $agent->id, [
+            'status' => 'pending',
+            'latitude' => null,
+            'longitude' => null,
+        ]);
+
+        $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
+            ->getJson('/api/v1/tasks/' . $task->id . '/route?company_id=' . $company->id);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['task']);
+    }
+
     public function test_task_start_requires_location_permission_confirmation(): void
     {
         [$company, $admin, $agent] = $this->seedCompanyUsers();

@@ -11,6 +11,7 @@ import {
   useTaskNavigation,
   isResumeTrackingStatus,
   flattenTaskPages,
+  taskHasMapLocation,
   type Task,
 } from '@/features/tasks';
 import { toast } from '@/lib/toast';
@@ -189,7 +190,7 @@ export default function TasksPage() {
 
   const handleTaskAction = (task: Task, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isResumeTrackingStatus(task.status)) {
+    if (taskHasMapLocation(task) && isResumeTrackingStatus(task.status)) {
       goToContinueTracking(task.id);
       return;
     }
@@ -312,7 +313,7 @@ export default function TasksPage() {
                 key={task.id}
                 task={task}
                 onPress={() =>
-                  isResumeTrackingStatus(task.status)
+                  isResumeTrackingStatus(task.status) && taskHasMapLocation(task)
                     ? goToContinueTracking(task.id)
                     : goToTaskDetail(task.id)
                 }

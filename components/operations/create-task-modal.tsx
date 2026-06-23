@@ -161,9 +161,15 @@ export function CreateTaskModal({
   const placeSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const set = <K extends keyof typeof form>(key: K, val: (typeof form)[K]) => {
-    setForm((p) => ({ ...p, [key]: val }));
+    setForm((p) => {
+      const next = { ...p, [key]: val };
+      if (key === "address" || key === "location") {
+        setCoords(null);
+        next.visitVerification = false;
+      }
+      return next;
+    });
     setErrors((p) => ({ ...p, [key]: "" }));
-    if (key === "address" || key === "location") setCoords(null);
   };
 
   const applyPlaceSuggestion = useCallback((place: GeocodedPlaceSuggestion) => {
@@ -245,7 +251,8 @@ export function CreateTaskModal({
         required_actions: form.requiredActions ? form.requiredActions.split(',').map(s => s.trim()) : undefined,
         priority: form.priority ? priorityVal : undefined,
         minimum_photos_required: form.minPhotos ? Number(form.minPhotos) : undefined,
-        visit_verification_required: form.visitVerification,
+        visit_verification_required:
+          coords?.lat != null && coords?.lng != null ? form.visitVerification : false,
       }, {
         onError: (err: unknown) => {
           const apiErr = err as { errors?: Record<string, string[]>; message?: string };
@@ -418,7 +425,7 @@ export function CreateTaskModal({
 
           {/* Location + Address */}
           <div className="relative">
-            <FieldLabel required>Location</FieldLabel>
+            <FieldLabel>Location (optional)</FieldLabel>
             <InputWrap icon={<MapPin size={13} />}>
               <input
                 type="text"
@@ -597,13 +604,17 @@ export function CreateTaskModal({
             <div>
               <FieldLabel>Visit Verification</FieldLabel>
               <div
-                onClick={() =>
-                  set("visitVerification", !form.visitVerification)
-                }
-                className={`mt-1 flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all select-none ${form.visitVerification
-                    ? "bg-[#09232d] border-[#0B1215]"
-                    : "bg-gray-50 border-gray-200 hover:border-gray-300"
-                  }`}
+                onClick={() => {
+                  if (!coords) return;
+                  set("visitVerification", !form.visitVerification);
+                }}
+                className={`mt-1 flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 transition-all select-none ${
+                  !coords
+                    ? "bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed"
+                    : form.visitVerification
+                      ? "bg-[#09232d] border-[#0B1215] cursor-pointer"
+                      : "bg-gray-50 border-gray-200 hover:border-gray-300 cursor-pointer"
+                }`}
               >
                 <div
                   className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${form.visitVerification ? "bg-white/20" : "bg-gray-300"}`}
@@ -621,6 +632,9 @@ export function CreateTaskModal({
                   {form.visitVerification ? "ON" : "OFF"}
                 </span>
               </div>
+              <p className="text-[10px] text-gray-400 mt-1">
+                Requires a geocoded address with map coordinates.
+              </p>
             </div>
           </div>
 

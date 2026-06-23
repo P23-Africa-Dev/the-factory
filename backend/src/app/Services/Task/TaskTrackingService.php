@@ -39,6 +39,12 @@ class TaskTrackingService
         $this->assertTaskInCompany($task, $context->company->id);
         $this->ensureAssignedUser($task, $user);
 
+        if (! $task->hasTrackableLocation()) {
+            throw ValidationException::withMessages([
+                'task' => ['This task has no destination location. Update its status from the task details instead of using map tracking.'],
+            ]);
+        }
+
         if (! (bool) ($data['location_permission_granted'] ?? false)) {
             Log::warning('[tracking] location_permission_denied', [
                 'source' => 'TaskTrackingService',
@@ -735,6 +741,12 @@ class TaskTrackingService
 
         if (! $context->canManageTasks()) {
             $this->ensureAssignedUser($task, $user);
+        }
+
+        if (! $task->hasTrackableLocation()) {
+            throw ValidationException::withMessages([
+                'task' => ['Map route data is only available for tasks with a destination location.'],
+            ]);
         }
 
         $session = TaskTrackingSession::query()

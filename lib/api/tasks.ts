@@ -25,6 +25,7 @@ export type TaskApiItem = {
   address?: string;
   latitude?: number;
   longitude?: number;
+  has_trackable_location?: boolean;
   due_date?: string;
   started_at?: string | null;
   paused_at?: string | null;
