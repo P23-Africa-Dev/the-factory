@@ -9,7 +9,23 @@ import { useTrackingWebSocket } from '@/hooks/useTrackingWebSocket';
 import { syncEngine } from '@/lib/sync/syncEngine';
 import { useRouteRestoration } from '@/lib/pwa/routeRestoration';
 import { BottomNavBar } from '@/components/shared/BottomNavBar';
+import {
+  BottomNavVisibilityProvider,
+  useBottomNavVisibility,
+} from '@/components/shared/BottomNavVisibility';
 import { OfflineSyncBanner } from '@/components/shared/OfflineSyncBanner';
+
+function AgentShellContent({ children }: { children: React.ReactNode }) {
+  const { isHidden } = useBottomNavVisibility();
+
+  return (
+    <>
+      <OfflineSyncBanner />
+      <div className={`flex flex-col flex-1 ${isHidden ? '' : 'pb-[100px]'}`}>{children}</div>
+      {!isHidden && <BottomNavBar />}
+    </>
+  );
+}
 
 function AgentShell({ children }: { children: React.ReactNode }) {
   useTrackingWebSocket();
@@ -57,11 +73,11 @@ function AgentShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex flex-col flex-1 min-h-screen bg-[#0A1D25] text-white">
-      <OfflineSyncBanner />
-      <div className="flex flex-col flex-1 pb-[100px]">{children}</div>
-      <BottomNavBar />
-    </div>
+    <BottomNavVisibilityProvider>
+      <div className="flex flex-col flex-1 min-h-screen bg-[#0A1D25] text-white">
+        <AgentShellContent>{children}</AgentShellContent>
+      </div>
+    </BottomNavVisibilityProvider>
   );
 }
 
