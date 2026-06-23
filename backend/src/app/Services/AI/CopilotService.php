@@ -426,7 +426,7 @@ class CopilotService
         }
 
         if (str_contains($normalized, 'this software') || str_contains($normalized, 'what is factory23') || str_contains($normalized, 'what does this do')) {
-            return ElySystemPrompt::intro() . ' Factory23 is your operations workspace. Ask for CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.';
+            return ElySystemPrompt::intro() . ' I can help with CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.';
         }
 
         $systemPrompt = ElySystemPrompt::core();
@@ -759,7 +759,7 @@ class CopilotService
         $type = $typeResolution['value'];
 
         $address = $this->extractLabeledValue($message, ['location & address', 'address', 'location'])
-            ?? 'Factory23 Operations Center';
+            ?? 'Operations Center';
         $location = trim((string) Str::of($address)->before(','));
         if ($location === '') {
             $location = 'Operations Center';

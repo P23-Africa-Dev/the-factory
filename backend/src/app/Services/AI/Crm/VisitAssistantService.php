@@ -36,7 +36,7 @@ class VisitAssistantService
         }
 
         $systemPrompt = <<<'PROMPT'
-You are ELY, the Factory23 AI Assistant. Extract structured visit intelligence from field notes.
+You are ELY, your AI Assistant. Extract structured visit intelligence from field notes.
 Return valid JSON only with keys: summary, outcomes (array), opportunities (array), objections (array), follow_up_actions (array), suggested_crm_update (string).
 Do not invent facts not present in the notes. Use empty arrays when a section has no data.
 PROMPT;

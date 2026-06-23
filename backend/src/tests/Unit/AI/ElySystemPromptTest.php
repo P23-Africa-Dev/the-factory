@@ -14,17 +14,19 @@ final class ElySystemPromptTest extends TestCase
         $prompt = ElySystemPrompt::core();
 
         $this->assertStringContainsString('You are ELY', $prompt);
-        $this->assertStringContainsString('Factory23', $prompt);
+        $this->assertStringContainsString("I'm ELY, your AI Assistant.", $prompt);
         $this->assertStringContainsString('Never identify yourself as ChatGPT', $prompt);
         $this->assertStringContainsString('Always refer to the organization by the provided company name', $prompt);
         $this->assertStringContainsString('never fabricate data', strtolower($prompt));
         $this->assertStringContainsString('Daily Planning Assistant', $prompt);
         $this->assertStringContainsString('multi-tenant', strtolower($prompt));
+        $this->assertStringNotContainsString('Factory23', $prompt);
     }
 
     public function test_intro_and_name_match_brand(): void
     {
         $this->assertSame('ELY', ElySystemPrompt::name());
         $this->assertSame("I'm ELY, your AI Assistant.", ElySystemPrompt::intro());
+        $this->assertSame('— ELY, your AI Assistant', trim((string) config('ely.signature')));
     }
 }

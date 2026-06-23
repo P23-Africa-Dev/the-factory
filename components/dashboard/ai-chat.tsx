@@ -1137,7 +1137,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <div className="hidden sm:flex flex-col items-end leading-tight">
                     <span className="text-[#7BB6B8] text-[11px] font-bold uppercase tracking-[0.2em]">{ELY_NAME}</span>
-                    <span className="text-[#88B3B5] text-[10px]">Factory23 AI</span>
+                    <span className="text-[#88B3B5] text-[10px]">AI Assistant</span>
                   </div>
                   <button
                     onClick={() => {
