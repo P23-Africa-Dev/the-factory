@@ -13,6 +13,7 @@ use App\Enums\TaskPriority;
 use App\Enums\TaskType;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\AI\Crm\VisitAssistantService;
 use App\Services\Calendar\MeetingService;
 use App\Services\Notification\NotificationService;
 use App\Services\Project\ProjectService;
@@ -31,6 +32,7 @@ class ActionToolRegistry
         private readonly MeetingService $meetingService,
         private readonly NotificationService $notificationService,
         private readonly ProjectService $projectService,
+        private readonly VisitAssistantService $visitAssistantService,
     ) {}
 
     public function execute(string $tool, User $user, int $companyId, array $args = []): array
@@ -41,6 +43,7 @@ class ActionToolRegistry
             'meetings.schedule' => $this->scheduleMeeting($user, $companyId, $args),
             'notifications.send' => $this->sendNotification($user, $companyId, $args),
             'projects.create' => $this->createProject($user, $companyId, $args),
+            'crm.log_visit' => $this->visitAssistantService->logVisit($user, $companyId, $args),
             default => [
                 'tool' => $tool,
                 'summary' => 'Unsupported action tool requested.',

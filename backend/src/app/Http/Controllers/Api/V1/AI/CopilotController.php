@@ -30,9 +30,15 @@ class CopilotController extends Controller
             'action_confirmed' => ['sometimes', 'boolean'],
             'idempotency_key' => ['nullable', 'string', 'max:120'],
             'client_timezone' => ['nullable', 'string', 'max:64', 'timezone'],
+            'context' => ['sometimes', 'array'],
+            'context.latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'context.longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'context.focus' => ['nullable', 'string', 'in:all,visits,followups,tasks'],
+            'context.limit' => ['nullable', 'integer', 'min:1', 'max:20'],
         ]);
 
         $clientTimezone = isset($validated['client_timezone']) ? (string) $validated['client_timezone'] : null;
+        $chatContext = is_array($validated['context'] ?? null) ? $validated['context'] : [];
 
         $streamRequested = (bool) ($validated['stream'] ?? false);
         $streamingEnabled = (bool) config('services.ai.enable_streaming', true);
@@ -47,6 +53,7 @@ class CopilotController extends Controller
                 actionConfirmed: (bool) ($validated['action_confirmed'] ?? false),
                 idempotencyKey: isset($validated['idempotency_key']) ? (string) $validated['idempotency_key'] : null,
                 clientTimezone: $clientTimezone,
+                context: $chatContext,
             );
 
             return $this->success(
@@ -66,7 +73,7 @@ class CopilotController extends Controller
         $chatClientTimezone = $clientTimezone;
 
         return response()->stream(
-            function () use ($chatUser, $chatMessage, $chatCompanyId, $chatThreadId, $chatActionArgs, $chatActionConfirmed, $chatIdempotencyKey, $chatClientTimezone): void {
+            function () use ($chatUser, $chatMessage, $chatCompanyId, $chatThreadId, $chatActionArgs, $chatActionConfirmed, $chatIdempotencyKey, $chatClientTimezone, $chatContext): void {
                 try {
                     $result = $this->copilotService->chat(
                         user: $chatUser,
@@ -77,6 +84,7 @@ class CopilotController extends Controller
                         actionConfirmed: $chatActionConfirmed,
                         idempotencyKey: $chatIdempotencyKey,
                         clientTimezone: $chatClientTimezone,
+                        context: $chatContext,
                     );
 
                     $content = (string) ($result['response']['content'] ?? '');

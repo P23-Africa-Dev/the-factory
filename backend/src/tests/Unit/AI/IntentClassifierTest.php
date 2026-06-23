@@ -38,4 +38,24 @@ final class IntentClassifierTest extends TestCase
         $this->assertSame('action', $intent['type']);
         $this->assertSame('meetings.schedule', $intent['tool']);
     }
+
+    public function test_classifies_plan_my_day_prompt(): void
+    {
+        $classifier = new IntentClassifier();
+
+        $intent = $classifier->classify('Plan my day');
+
+        $this->assertSame('tool', $intent['type']);
+        $this->assertSame('planning.daily', $intent['tool']);
+    }
+
+    public function test_classifies_what_should_i_visit_next_prompt(): void
+    {
+        $classifier = new IntentClassifier();
+
+        $intent = $classifier->classify('What should I visit next?');
+
+        $this->assertSame('tool', $intent['type']);
+        $this->assertSame('planning.daily', $intent['tool']);
+    }
 }

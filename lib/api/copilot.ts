@@ -37,6 +37,13 @@ export type CopilotThreadSummary = {
     last_message_preview: string | null;
 };
 
+export type CopilotChatContext = {
+    latitude?: number;
+    longitude?: number;
+    focus?: "all" | "visits" | "followups" | "tasks";
+    limit?: number;
+};
+
 export type CopilotChatRequest = {
     message: string;
     company_id?: number | string;
@@ -45,6 +52,7 @@ export type CopilotChatRequest = {
     action_confirmed?: boolean;
     idempotency_key?: string;
     client_timezone?: string;
+    context?: CopilotChatContext;
 };
 
 export type CopilotChatResponse = {

@@ -8,6 +8,9 @@ use App\Enums\ProjectStatus;
 use App\Enums\TaskStatus;
 use App\Models\Project;
 use App\Models\Task;
+use App\Services\AI\Crm\CrmIntelligenceService;
+use App\Services\AI\Crm\VisitAssistantService;
+use App\Services\AI\Planning\DailyPlanningService;
 use App\Services\Attendance\AttendanceService;
 use App\Services\Calendar\MeetingService;
 use App\Services\Company\CompanyContextService;
@@ -27,6 +30,9 @@ class ReadToolRegistry
         private readonly MeetingService $meetingService,
         private readonly AgentLocationSnapshotService $agentLocationSnapshotService,
         private readonly DashboardAggregateService $dashboardAggregateService,
+        private readonly DailyPlanningService $dailyPlanningService,
+        private readonly CrmIntelligenceService $crmIntelligenceService,
+        private readonly VisitAssistantService $visitAssistantService,
     ) {}
 
     public function execute(string $tool, User $user, int $companyId, array $args = []): array
@@ -39,6 +45,10 @@ class ReadToolRegistry
             'meetings.today' => $this->meetingsToday($user, $companyId, $args),
             'tracking.active_agents' => $this->activeAgents($user, $companyId, $args),
             'dashboard.overview' => $this->dashboardOverview($user, $companyId),
+            'planning.daily' => $this->dailyPlanningService->buildPlan($user, $companyId, $args),
+            'crm.follow_up_summary' => $this->crmIntelligenceService->followUpSummary($user, $companyId, $args),
+            'crm.stale_leads' => $this->crmIntelligenceService->staleLeads($user, $companyId, $args),
+            'crm.visit_extract' => $this->visitAssistantService->extractVisitNotes($user, $companyId, $args),
             default => [
                 'tool' => $tool,
                 'summary' => 'Unsupported read tool requested.',

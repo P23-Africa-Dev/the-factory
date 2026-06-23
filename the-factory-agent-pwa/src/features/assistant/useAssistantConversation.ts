@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { appStore } from '@/lib/storage/stores';
 import { useAuth } from '@/features/auth';
 import { assistantApi } from './api';
+import { resolveAssistantGeolocationContext } from './geolocation';
 import {
   clearActiveThreadId,
   getActiveThreadId,
@@ -99,7 +100,7 @@ export function useAssistantConversation() {
   }, [isAuthenticated]);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, options?: { withGeolocation?: boolean }) => {
       const content = text.trim();
       if (!content || isSending) return;
 
@@ -112,7 +113,14 @@ export function useAssistantConversation() {
       setIsSending(true);
 
       try {
-        const result = await assistantApi.sendMessage({ message: content, threadId });
+        const context = options?.withGeolocation
+          ? await resolveAssistantGeolocationContext()
+          : undefined;
+        const result = await assistantApi.sendMessage({
+          message: content,
+          threadId,
+          context,
+        });
         const aiMsg: AssistantMessage = {
           id: nextId('ai'),
           role: 'assistant',

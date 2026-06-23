@@ -6,6 +6,7 @@ import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { resolveUserTimezone } from "@/lib/meeting-timezone";
 import {
     CopilotAssigneeOption,
+    CopilotChatContext,
     CopilotMessage,
     CopilotThread,
     WeeklySummaryStatusResponse,
@@ -51,6 +52,7 @@ type SendMessageParams = {
     actionArgs?: Record<string, unknown>;
     actionConfirmed?: boolean;
     idempotencyKey?: string;
+    context?: CopilotChatContext;
 };
 
 function createIdempotencyKey(): string {
@@ -329,7 +331,7 @@ export function useCopilotChat() {
     useEffect(() => () => stopWeeklyReportPolling(), [stopWeeklyReportPolling]);
 
     const sendMessage = useCallback(
-        async ({ message, companyId, actionArgs, actionConfirmed, idempotencyKey }: SendMessageParams) => {
+        async ({ message, companyId, actionArgs, actionConfirmed, idempotencyKey, context }: SendMessageParams) => {
             if (!token || !message.trim()) return;
 
             const userMessage: CopilotMessage = {
@@ -370,6 +372,7 @@ export function useCopilotChat() {
                         action_confirmed: actionConfirmed,
                         idempotency_key: idempotencyKey ?? createIdempotencyKey(),
                         client_timezone: resolveUserTimezone(),
+                        context,
                     },
                     token,
                     {

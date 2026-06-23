@@ -7,6 +7,8 @@ import {
   type ElyMeetingDraft,
 } from "@/components/dashboard/ely-meeting-action-fields";
 import { ELY_INPUT_PLACEHOLDER, ELY_LANDING_HEADLINE, ELY_LANDING_SUBTEXT, ELY_NAME } from "@/lib/ely-brand";
+import type { CopilotChatContext } from "@/lib/api/copilot";
+import { resolveCopilotGeolocationContext } from "@/lib/copilot-geolocation";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
@@ -303,7 +305,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     return `${year}-${month}-${day}T${hour}:${minute}`;
   }
 
-  function sendMessage(text?: string) {
+  function sendMessage(text?: string, context?: CopilotChatContext) {
     const content = (text ?? input).trim();
     if (!content) return;
 
@@ -312,7 +314,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
     void sendCopilotMessage({
       message: content,
       companyId: companyId ?? undefined,
+      context,
     });
+  }
+
+  async function handlePlanTodayPriorities() {
+    const geoContext = await resolveCopilotGeolocationContext();
+    sendMessage("Plan today's priorities for me", geoContext);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -1426,6 +1434,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     {ELY_LANDING_SUBTEXT}
                   </p>
                   <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      onClick={() => void handlePlanTodayPriorities()}
+                      disabled={isRunningQuickAction || isStreaming}
+                      className="rounded-full border border-[#2D6F63] bg-[#113B37] px-3 py-1.5 text-[11px] font-semibold text-[#B9E9DD] hover:bg-[#1B4D47] disabled:opacity-60"
+                    >
+                      Plan Today&apos;s Priorities
+                    </button>
                     <button
                       onClick={handleQueueWeeklyReport}
                       disabled={isQueueingWeeklyReport || isStreaming}
