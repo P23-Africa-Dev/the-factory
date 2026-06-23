@@ -13,6 +13,29 @@
   import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
   import { useGeolocation } from '@/features/tracking';
 
+  function getCountryCode(countryStr?: string | null): string {
+    if (!countryStr) return 'NG';
+    const clean = countryStr.trim().toUpperCase();
+    if (clean.length === 2) return clean;
+    const countryMap: Record<string, string> = {
+      NIGERIA: 'NG',
+      GHANA: 'GH',
+      KENYA: 'KE',
+      'SOUTH AFRICA': 'ZA',
+      RWANDA: 'RW',
+      UGANDA: 'UG',
+      TANZANIA: 'TZ',
+      EGYPT: 'EG',
+      CAMEROON: 'CM',
+      SENEGAL: 'SN',
+      ETHIOPIA: 'ET',
+      'UNITED STATES': 'US',
+      'UNITED KINGDOM': 'GB',
+      CANADA: 'CA',
+    };
+    return countryMap[clean] || 'NG';
+  }
+
   export default function AgentDashboardPage() {
     const router = useRouter();
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -109,7 +132,7 @@
     const { logout } = useAuth();
     const { mutate: logoutMutate, isPending: isLoggingOut } = useLogoutMutation();
     const { goToProfile } = useAuthNavigation();
-    const { firstName, avatarSrc, userRole } = useAgentIdentity();
+    const { firstName, avatarSrc, userRole, profile } = useAgentIdentity();
 
     const { data: tasks = [], isLoading: isLoadingTasks } = useTaskListItems();
     const { goToTasksList, goToMapScreen } = useTaskNavigation();
@@ -177,7 +200,8 @@
         const proximityParam = lastPosition
           ? `&proximity=${lastPosition.coords.longitude},${lastPosition.coords.latitude}`
           : '';
-        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=NG&limit=5${proximityParam}`;
+        const countryCode = getCountryCode(profile?.organization?.country);
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=${countryCode}&limit=5${proximityParam}`;
         const response = await fetch(url);
         const data = await response.json();
         if (data.features) {
@@ -194,7 +218,7 @@
       } catch {
         // Geocoding is non-critical — silent failure is acceptable
       }
-    }, [lastPosition]);
+    }, [lastPosition, profile]);
 
     const handleLocationQueryChange = (text: string) => {
       setLocationQuery(text);
