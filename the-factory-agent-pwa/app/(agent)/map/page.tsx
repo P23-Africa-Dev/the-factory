@@ -1635,6 +1635,8 @@ function MapContent() {
         .filter((loc) => loc.isActive)
         .map((loc) => ({
           id: loc.id,
+          name: loc.name,
+          type: loc.type,
           longitude: loc.longitude,
           latitude: loc.latitude,
           color: getSavedLocationType(loc.type).color,
