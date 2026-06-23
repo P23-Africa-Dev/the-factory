@@ -13,7 +13,7 @@ type ProjectsTab = "projects" | "tasks";
 
 const TABS: { value: ProjectsTab; label: string }[] = [
   { value: "projects", label: "All Projects" },
-  { value: "tasks", label: "All Tasks" },
+  { value: "tasks", label: "KPIs" },
 ];
 
 // ─── Page content ─────────────────────────────────────────────────────────────
