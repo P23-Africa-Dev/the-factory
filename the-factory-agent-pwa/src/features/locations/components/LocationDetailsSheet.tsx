@@ -1,7 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Clock, Mail, MapPin, Navigation, Phone, X } from 'lucide-react';
+import { useBottomNavVisibility } from '@/components/shared/BottomNavVisibility';
 import { getSavedLocationType, getSavedLocationTypeLabel } from '@/lib/map/locationTypes';
 import { SavedLocationTypeIcon } from '@/features/locations/components/SavedLocationTypeIcon';
 import type { SavedLocation } from '../types';
@@ -17,15 +19,23 @@ export function LocationDetailsSheet({
   onClose,
   onNavigate,
 }: LocationDetailsSheetProps) {
+  const { hide, show } = useBottomNavVisibility();
+
+  useEffect(() => {
+    if (!location) return;
+    hide();
+    return () => show();
+  }, [location, hide, show]);
+
   if (!location) return null;
 
   const typeOption = getSavedLocationType(location.type);
   const typeLabel = getSavedLocationTypeLabel(location.type);
 
-  return (
-    <div className="fixed inset-0 z-[10000] flex items-end justify-center font-sans">
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-end justify-center font-sans">
       <div className="absolute inset-0 bg-[#051014]/60" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md bg-[#0B3343] rounded-t-3xl border-t border-white/10 shadow-2xl max-h-[85vh] overflow-y-auto">
+      <div className="relative z-10 w-full max-w-md bg-[#0B3343] rounded-t-3xl border-t border-white/10 shadow-2xl max-h-[85vh] overflow-y-auto pb-[env(safe-area-inset-bottom,0px)]">
         <div className="sticky top-0 bg-[#0B3343] px-5 pt-5 pb-4 border-b border-white/10">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3 min-w-0">
@@ -118,6 +128,7 @@ export function LocationDetailsSheet({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
