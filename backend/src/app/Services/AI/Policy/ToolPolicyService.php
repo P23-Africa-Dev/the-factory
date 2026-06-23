@@ -31,6 +31,7 @@ class ToolPolicyService
         'tracking.active_agents',
         'dashboard.overview',
         'planning.daily',
+        'kpi.team_performance',
     ];
 
     private const ACTION_TOOLS_MANAGEMENT = [

@@ -6,7 +6,9 @@ namespace App\Http\Controllers\Api\V1\AI;
 
 use App\Http\Controllers\Concerns\ResolvesCompanyContextId;
 use App\Http\Controllers\Controller;
+use App\Services\AI\CopilotProcessingLabels;
 use App\Services\AI\CopilotService;
+use App\Services\AI\IntentClassifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -75,6 +77,21 @@ class CopilotController extends Controller
         return response()->stream(
             function () use ($chatUser, $chatMessage, $chatCompanyId, $chatThreadId, $chatActionArgs, $chatActionConfirmed, $chatIdempotencyKey, $chatClientTimezone, $chatContext): void {
                 try {
+                    $intent = app(IntentClassifier::class)->classify($chatMessage);
+                    $processingLabels = CopilotProcessingLabels::forMessage($chatMessage, $intent);
+
+                    echo "event: meta\n";
+                    echo 'data: ' . $this->encodeSseData(['thread_id' => $chatThreadId ?? '']) . "\n\n";
+                    @ob_flush();
+                    @flush();
+
+                    foreach ($processingLabels as $label) {
+                        echo "event: processing\n";
+                        echo 'data: ' . $this->encodeSseData(['label' => $label]) . "\n\n";
+                        @ob_flush();
+                        @flush();
+                    }
+
                     $result = $this->copilotService->chat(
                         user: $chatUser,
                         message: $chatMessage,
@@ -90,10 +107,12 @@ class CopilotController extends Controller
                     $content = (string) ($result['response']['content'] ?? '');
                     $chunks = preg_split('/\s+/', trim($content)) ?: [];
 
-                    echo "event: meta\n";
-                    echo 'data: ' . $this->encodeSseData(['thread_id' => $result['thread_id']]) . "\n\n";
-                    @ob_flush();
-                    @flush();
+                    if (($result['thread_id'] ?? '') !== ($chatThreadId ?? '')) {
+                        echo "event: meta\n";
+                        echo 'data: ' . $this->encodeSseData(['thread_id' => $result['thread_id']]) . "\n\n";
+                        @ob_flush();
+                        @flush();
+                    }
 
                     foreach ($chunks as $chunk) {
                         if ($chunk === '') {

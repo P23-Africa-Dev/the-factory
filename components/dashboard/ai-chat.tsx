@@ -160,6 +160,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const {
     messages,
     isStreaming,
+    processingLabel,
     weeklyReport,
     isQueueingWeeklyReport,
     initialize,
@@ -1737,21 +1738,30 @@ export function AIChat({ open, onClose }: AIChatProps) {
                 </div>
               ))}
 
-              {isStreaming && (
+              {isStreaming && (() => {
+                const lastMessage = messages[messages.length - 1];
+                const assistantHasContent = lastMessage?.role === "assistant" && Boolean(lastMessage.content?.trim());
+                if (assistantHasContent) return null;
+                return (
                 <div className="max-w-[65%]">
-                  <div className="bg-gradient-to-b from-[#333333] to-[#16384B] rounded-[24px] p-6 shadow-sm w-24">
-                    <div className="flex gap-1.5 items-center justify-center h-4">
-                      {[0, 1, 2].map((i) => (
-                        <span
-                          key={i}
-                          className="w-2.5 h-2.5 bg-[#D0E2E3]/60 rounded-full animate-bounce"
-                          style={{ animationDelay: `${i * 150}ms` }}
-                        />
-                      ))}
-                    </div>
+                  <div className="bg-gradient-to-b from-[#333333] to-[#16384B] rounded-[24px] px-6 py-4 shadow-sm">
+                    {processingLabel ? (
+                      <p className="text-[#D0E2E3]/90 text-[13px] font-medium animate-pulse">{processingLabel}</p>
+                    ) : (
+                      <div className="flex gap-1.5 items-center justify-center h-4">
+                        {[0, 1, 2].map((i) => (
+                          <span
+                            key={i}
+                            className="w-2.5 h-2.5 bg-[#D0E2E3]/60 rounded-full animate-bounce"
+                            style={{ animationDelay: `${i * 150}ms` }}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               <div ref={messagesEndRef} />
             </div>

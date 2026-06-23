@@ -90,7 +90,15 @@ class IntentClassifier
                 '/\bwhere\s+is\b/i',
             ],
             'dashboard.overview' => [
-                '/\b(dashboard|overview|kpi|performance\s+snapshot)\b/i',
+                '/\b(dashboard|overview|kpi\s+snapshot|performance\s+snapshot)\b/i',
+            ],
+            'kpi.team_performance' => [
+                '/\b(who\s+is\s+perform|who\s+performs?\s+best|who\s+performs?\s+(the\s+)?least)\b/i',
+                '/\bperforming\s+the\s+(best|least)\b/i',
+                '/\b(best|top)\s+perform/i',
+                '/\b(worst|lowest|least)\s+perform/i',
+                '/\bteam\s+performance\b/i',
+                '/\b(underperform|top\s+performer)/i',
             ],
             'planning.daily' => [
                 '/\bplan\s+my\s+day\b/i',

@@ -72,6 +72,10 @@ export type CopilotChatResponse = {
     };
 };
 
+export type StreamEventProcessing = {
+    label: string;
+};
+
 export type StreamEventMeta = {
     thread_id: string;
 };
@@ -377,6 +381,7 @@ export async function sendCopilotMessageStream(
     token: string,
     handlers: {
         onMeta?: (event: StreamEventMeta) => void;
+        onProcessing?: (event: StreamEventProcessing) => void;
         onDelta?: (event: StreamEventDelta) => void;
         onDone?: (event: StreamEventDone) => void;
     } = {}
@@ -458,6 +463,8 @@ export async function sendCopilotMessageStream(
             if (eventName === "meta") {
                 lastMeta = parsed as StreamEventMeta;
                 handlers.onMeta?.(lastMeta);
+            } else if (eventName === "processing") {
+                handlers.onProcessing?.(parsed as StreamEventProcessing);
             } else if (eventName === "delta") {
                 const deltaEvent = parsed as StreamEventDelta;
                 accumulatedMessage += deltaEvent.chunk ?? "";

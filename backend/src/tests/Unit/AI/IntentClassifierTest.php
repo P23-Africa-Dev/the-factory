@@ -49,13 +49,13 @@ final class IntentClassifierTest extends TestCase
         $this->assertSame('planning.daily', $intent['tool']);
     }
 
-    public function test_classifies_what_should_i_visit_next_prompt(): void
+    public function test_classifies_team_performance_prompt(): void
     {
         $classifier = new IntentClassifier();
 
-        $intent = $classifier->classify('What should I visit next?');
+        $intent = $classifier->classify('Who is performing the best in my team and who is performing the least?');
 
         $this->assertSame('tool', $intent['type']);
-        $this->assertSame('planning.daily', $intent['tool']);
+        $this->assertSame('kpi.team_performance', $intent['tool']);
     }
 }

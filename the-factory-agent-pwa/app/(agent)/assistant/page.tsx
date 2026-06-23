@@ -46,7 +46,7 @@ function ParsedHtmlText({ text }: { text: string }): React.ReactNode {
 
 export default function AiAssistantPage() {
   const { firstName, avatarSrc, userRole } = useAgentIdentity();
-  const { messages, isRestoring, isSending, send, clearCurrent, clearAll } =
+  const { messages, isRestoring, isSending, processingLabel, send, clearCurrent, clearAll } =
     useAssistantConversation();
   const suggestions = useDynamicSuggestions();
 
@@ -229,7 +229,7 @@ export default function AiAssistantPage() {
           {isSending && (
             <div className="flex items-start">
               <div className="bg-[#16384B]/80 text-[#D0E2E3]/80 border border-white/5 rounded-2xl px-5 py-3 text-xs font-semibold animate-pulse">
-                {ELY_TYPING_LABEL}
+                {processingLabel ?? ELY_TYPING_LABEL}
               </div>
             </div>
           )}

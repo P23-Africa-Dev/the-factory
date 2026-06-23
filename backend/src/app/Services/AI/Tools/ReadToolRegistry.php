@@ -10,6 +10,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Services\AI\Crm\CrmIntelligenceService;
 use App\Services\AI\Crm\VisitAssistantService;
+use App\Services\AI\Kpi\TeamPerformanceService;
 use App\Services\AI\Planning\DailyPlanningService;
 use App\Services\Attendance\AttendanceService;
 use App\Services\Calendar\MeetingService;
@@ -33,6 +34,7 @@ class ReadToolRegistry
         private readonly DailyPlanningService $dailyPlanningService,
         private readonly CrmIntelligenceService $crmIntelligenceService,
         private readonly VisitAssistantService $visitAssistantService,
+        private readonly TeamPerformanceService $teamPerformanceService,
     ) {}
 
     public function execute(string $tool, User $user, int $companyId, array $args = []): array
@@ -49,6 +51,7 @@ class ReadToolRegistry
             'crm.follow_up_summary' => $this->crmIntelligenceService->followUpSummary($user, $companyId, $args),
             'crm.stale_leads' => $this->crmIntelligenceService->staleLeads($user, $companyId, $args),
             'crm.visit_extract' => $this->visitAssistantService->extractVisitNotes($user, $companyId, $args),
+            'kpi.team_performance' => $this->teamPerformanceService->analyze($user, $companyId, $args),
             default => [
                 'tool' => $tool,
                 'summary' => 'Unsupported read tool requested.',
