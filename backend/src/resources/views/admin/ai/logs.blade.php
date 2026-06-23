@@ -10,6 +10,7 @@
 @endsection
 
 @section('content')
+<div class="page-container">
 
     <div class="filter-bar mb-3">
         <form method="GET" action="{{ route('admin.ai.logs.index') }}" class="row g-2 align-items-end">
@@ -163,5 +164,7 @@
             </div>
         @endif
     </div>
+
+</div>
 
 @endsection
