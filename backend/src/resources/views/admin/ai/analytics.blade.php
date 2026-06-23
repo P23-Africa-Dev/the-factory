@@ -38,13 +38,19 @@
         .chart-container {
             position: relative;
             height: 220px;
+            max-width: 100%;
+        }
+
+        .chart-container canvas {
+            max-width: 100% !important;
         }
     </style>
 @endpush
 
 @section('content')
+<div class="page-container">
 
-    <div class="d-flex align-items-center justify-content-between mb-4">
+    <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
         <div>
             <h4 class="fw-bold mb-1" style="font-size:1.1rem">Usage Analytics</h4>
             <p class="mb-0" style="font-size:.82rem;color:var(--text-secondary)">Token consumption, cost, and request
@@ -262,6 +268,8 @@
             </table>
         </div>
     </div>
+
+</div>
 
 @endsection
 

@@ -15,7 +15,7 @@ final class AiProviderRouterPurposeTest extends TestCase
     {
         config([
             'services.ai.exec_model' => 'gpt-test-exec',
-            'services.ai.analyst_model' => 'claude-test-analyst',
+            'services.ai.analyst_model' => 'auto',
         ]);
 
         $router = new AiProviderRouter(
@@ -29,6 +29,6 @@ final class AiProviderRouterPurposeTest extends TestCase
         $method->setAccessible(true);
 
         $this->assertSame('gpt-test-exec', $method->invoke($router, 'operational'));
-        $this->assertSame('claude-test-analyst', $method->invoke($router, 'report'));
+        $this->assertSame('auto', $method->invoke($router, 'report'));
     }
 }

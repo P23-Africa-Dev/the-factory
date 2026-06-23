@@ -38,7 +38,7 @@ class AiProviderRouter
             fn (AiProviderContract $provider) => $provider->generateText(
                 $systemPrompt,
                 $userPrompt,
-                array_merge($options, ['model' => $model]),
+                array_merge($options, ['model' => $model, 'purpose' => $purpose]),
             ),
         );
     }
@@ -46,7 +46,7 @@ class AiProviderRouter
     private function resolveModelForPurpose(string $purpose): string
     {
         return match ($purpose) {
-            'analyst', 'report' => (string) config('services.ai.analyst_model', 'claude-3-5-sonnet-latest'),
+            'analyst', 'report' => (string) config('services.ai.analyst_model', 'auto'),
             default => (string) config('services.ai.exec_model', config('services.ai.default_model', 'gpt-4.1-mini')),
         };
     }

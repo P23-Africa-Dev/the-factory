@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AI\Admin;
 
+use App\Services\AI\Providers\ClaudeModelResolver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
@@ -132,6 +133,10 @@ class AiProviderHealthService
             return $this->result('claude', false, 'not_configured', 'Disconnected', 'No API key configured.', null);
         }
 
+        $resolver = app(ClaudeModelResolver::class);
+        $model = $resolver->resolve('default');
+        $availableModels = $resolver->availableModelIds();
+
         $start = microtime(true);
         try {
             $baseUrl = rtrim((string) config('services.ai.claude.base_url', 'https://api.anthropic.com/v1'), '/');
@@ -141,32 +146,43 @@ class AiProviderHealthService
                     'anthropic-version' => (string) config('services.ai.claude.version', '2023-06-01'),
                 ])
                 ->post($baseUrl . '/messages', [
-                    'model' => (string) config('services.ai.claude.model', 'claude-3-5-sonnet-latest'),
+                    'model' => $model,
                     'max_tokens' => 1,
                     'messages' => [['role' => 'user', 'content' => 'ping']],
                 ]);
 
             $latency = (int) round((microtime(true) - $start) * 1000);
+            $errorMessage = (string) $response->json('error.message', '');
 
             if ($response->status() === 401) {
                 return $this->result('claude', false, 'auth_failed', 'Authentication Failed', 'Invalid API key.', $latency);
+            }
+            if ($response->status() === 404) {
+                return $this->result('claude', false, 'model_not_found', 'Model Not Found', $errorMessage !== '' ? $errorMessage : "Model {$model} is not available.", $latency, [
+                    'resolved_model' => $model,
+                    'available_models' => array_slice($availableModels, 0, 5),
+                ]);
             }
             if ($response->status() === 429) {
                 return $this->result('claude', false, 'rate_limited', 'Rate Limited', 'Rate limit exceeded.', $latency);
             }
             if ($response->status() === 400) {
-                $body = (string) $response->json('error.message', '');
-                if (str_contains(strtolower($body), 'credit') || str_contains(strtolower($body), 'billing')) {
-                    return $this->result('claude', false, 'quota_exceeded', 'Credits Exhausted', $body, $latency);
+                if (str_contains(strtolower($errorMessage), 'credit') || str_contains(strtolower($errorMessage), 'billing')) {
+                    return $this->result('claude', false, 'quota_exceeded', 'Credits Exhausted', $errorMessage, $latency);
                 }
             }
             if (in_array($response->status(), [200, 201], true)) {
                 return $this->result('claude', true, 'connected', 'Connected', 'Claude API reachable.', $latency, [
+                    'resolved_model' => $model,
                     'configured_model' => (string) config('services.ai.claude.model'),
+                    'model_mode' => $this->claudeModelModeLabel(),
+                    'available_models' => array_slice($availableModels, 0, 5),
                 ]);
             }
 
-            return $this->result('claude', false, 'error', 'Error', 'HTTP ' . $response->status(), $latency);
+            return $this->result('claude', false, 'error', 'Error', $errorMessage !== '' ? $errorMessage : 'HTTP ' . $response->status(), $latency, [
+                'resolved_model' => $model,
+            ]);
         } catch (\Throwable $e) {
             $latency = (int) round((microtime(true) - $start) * 1000);
             $message = $e->getMessage();
@@ -174,6 +190,13 @@ class AiProviderHealthService
 
             return $this->result('claude', false, $status, ucfirst(str_replace('_', ' ', $status)), $message, $latency);
         }
+    }
+
+    private function claudeModelModeLabel(): string
+    {
+        $configured = strtolower(trim((string) config('services.ai.claude.model', 'auto')));
+
+        return in_array($configured, ['auto', 'latest', ''], true) ? 'auto' : $configured;
     }
 
     /**

@@ -9,6 +9,32 @@
 
 @push('styles')
     <style>
+        .ai-ops-page {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+        }
+
+        .ai-ops-header {
+            gap: 1rem;
+        }
+
+        .ai-ops-header-actions {
+            flex-shrink: 0;
+        }
+
+        .ai-status-panel {
+            gap: 1rem;
+        }
+
+        .ai-status-panel-metrics {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: .75rem 1.25rem;
+            min-width: 0;
+        }
+
         .ai-status-badge {
             display: inline-flex;
             align-items: center;
@@ -132,6 +158,23 @@
         .chart-container-sm {
             position: relative;
             height: 200px;
+            max-width: 100%;
+        }
+
+        .chart-container-sm canvas {
+            max-width: 100% !important;
+        }
+
+        @media (max-width: 767.98px) {
+            .ai-ops-header {
+                flex-direction: column;
+                align-items: flex-start !important;
+            }
+
+            .ai-ops-header-actions {
+                width: 100%;
+                flex-wrap: wrap;
+            }
         }
 
         .test-result-box {
@@ -145,7 +188,7 @@
 @endpush
 
 @section('content')
-
+<div class="page-container ai-ops-page">
     @if (!$aiLogsReady)
         <div class="alert alert-warning mb-4" role="alert">
             <i class="bi bi-exclamation-triangle me-2"></i>
@@ -174,13 +217,13 @@
     @endforeach
 
     {{-- Header row --}}
-    <div class="d-flex align-items-center justify-content-between mb-4">
-        <div>
+    <div class="d-flex align-items-center justify-content-between mb-4 ai-ops-header flex-wrap">
+        <div class="min-w-0">
             <h4 class="fw-bold mb-1" style="font-size:1.1rem">AI Operations Center</h4>
             <p class="mb-0" style="font-size:.82rem;color:var(--text-secondary)">Monitor providers, usage, health, and
                 troubleshoot ELY AI infrastructure.</p>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 ai-ops-header-actions flex-wrap">
             <a href="{{ route('admin.ai.analytics') }}" class="btn btn-sm btn-primary"><i
                     class="bi bi-bar-chart me-1"></i>Usage Analytics</a>
             <a href="{{ route('admin.ai.logs.index') }}" class="btn btn-sm btn-outline-secondary"><i
@@ -191,7 +234,7 @@
     </div>
 
     {{-- Real-time status widget --}}
-    <div class="metric-card p-4 mb-4 d-flex align-items-center justify-content-between flex-wrap gap-3">
+    <div class="metric-card p-4 mb-4 ai-status-panel d-flex align-items-center justify-content-between flex-wrap">
         <div class="d-flex align-items-center gap-3">
             <div
                 style="width:48px;height:48px;border-radius:var(--radius);background:var(--accent-light);display:flex;align-items:center;justify-content:center;">
@@ -204,7 +247,7 @@
                 </div>
             </div>
         </div>
-        <div class="d-flex align-items-center gap-4 flex-wrap">
+        <div class="d-flex align-items-center gap-4 flex-wrap ai-status-panel-metrics">
             @php
                 $statusClass = match ($aiStatus) {
                     'online' => 'ai-status-online',
@@ -601,8 +644,16 @@
                         <span class="model-label">Execution</span>
                         <span class="model-value">{{ config('services.ai.exec_model') }}</span>
                     </div>
-                    <div class="model-row">
-                        <span class="model-label">Analytics</span>
+                        <div class="model-row">
+                            <span class="model-label">Claude Model</span>
+                            <span class="model-value">{{ config('services.ai.claude.model') }}
+                                @if (($claudeHealth['resolved_model'] ?? null))
+                                    → {{ $claudeHealth['resolved_model'] }}
+                                @endif
+                            </span>
+                        </div>
+                        <div class="model-row">
+                            <span class="model-label">Analytics</span>
                         <span class="model-value">{{ config('services.ai.analyst_model') }}</span>
                     </div>
                     <div class="model-row">
@@ -742,6 +793,8 @@
             </div>
         </div>
     </div>
+
+</div>{{-- /.page-container.ai-ops-page --}}
 
 @endsection
 
