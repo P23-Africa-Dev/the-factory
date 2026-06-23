@@ -1091,7 +1091,10 @@ function MapContent() {
     const token = env.MAPBOX_TOKEN;
     if (!token) return;
     try {
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=NG&limit=5`;
+      const proximityParam = lastPosition
+        ? `&proximity=${lastPosition.coords.longitude},${lastPosition.coords.latitude}`
+        : '';
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=NG&limit=5${proximityParam}`;
       const resp = await fetch(url);
       const data = await resp.json() as { features?: Array<{ text: string; place_name: string; center: [number, number] }> };
       if (data.features) {
@@ -1100,14 +1103,17 @@ function MapContent() {
         );
       }
     } catch {}
-  }, []);
+  }, [lastPosition]);
 
   const searchOriginPlaces = useCallback(async (query: string): Promise<void> => {
     if (!query.trim()) { setOriginGeoResults([]); return; }
     const token = env.MAPBOX_TOKEN;
     if (!token) return;
     try {
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=NG&limit=5`;
+      const proximityParam = lastPosition
+        ? `&proximity=${lastPosition.coords.longitude},${lastPosition.coords.latitude}`
+        : '';
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=NG&limit=5${proximityParam}`;
       const resp = await fetch(url);
       const data = await resp.json() as { features?: Array<{ text: string; place_name: string; center: [number, number] }> };
       if (data.features) {
@@ -1116,7 +1122,7 @@ function MapContent() {
         );
       }
     } catch {}
-  }, []);
+  }, [lastPosition]);
 
   // Boot GPS for map preview. We deliberately do NOT force a permission prompt
   // on page load — the Start flow prompts when the user actually starts a task,

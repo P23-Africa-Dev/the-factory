@@ -1,6 +1,6 @@
   'use client';
 
-  import React, { useState, useEffect, useMemo, useCallback } from 'react';
+  import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
   import { useRouter } from 'next/navigation';
   import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
   import { useAuth, useLogoutMutation, useAuthNavigation, useAgentIdentity } from '@/features/auth';
@@ -11,6 +11,7 @@
   import { NotificationPanel, useUnreadCount } from '@/features/notifications';
   import { MeetingWidget, CreateMeetingModal } from '@/features/meetings';
   import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
+  import { useGeolocation } from '@/features/tracking';
 
   export default function AgentDashboardPage() {
     const router = useRouter();
@@ -29,6 +30,76 @@
     const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
     const [meetingModalDate, setMeetingModalDate] = useState<Date | undefined>(undefined);
     const [recentLocations, setRecentLocations] = useState<RecentDestination[]>([]);
+
+    // Swipable panel states
+    const COLLAPSED_Y = 100;
+    const [panelState, setPanelState] = useState<'expanded' | 'collapsed'>('expanded');
+    const [translateY, setTranslateY] = useState(0);
+    const [isDragging, setIsDragging] = useState(false);
+    const dragStartY = useRef(0);
+    const dragDistance = useRef(0);
+    const currentTranslateY = useRef(0);
+
+    const { lastPosition, checkPermission, getCurrentPosition } = useGeolocation();
+
+    useEffect(() => {
+      checkPermission().then((status) => {
+        if (status === 'granted') {
+          getCurrentPosition().catch(() => {});
+        }
+      });
+    }, [checkPermission, getCurrentPosition]);
+
+    const handlePointerDown = (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+      setIsDragging(true);
+      dragStartY.current = e.clientY;
+      dragDistance.current = 0;
+      currentTranslateY.current = panelState === 'collapsed' ? COLLAPSED_Y : 0;
+      setTranslateY(currentTranslateY.current);
+      e.currentTarget.setPointerCapture(e.pointerId);
+    };
+
+    const handlePointerMove = (e: React.PointerEvent) => {
+      if (!isDragging) return;
+      const deltaY = e.clientY - dragStartY.current;
+      dragDistance.current = Math.abs(deltaY);
+      let nextY = currentTranslateY.current + deltaY;
+      if (nextY < 0) {
+        nextY = nextY * 0.2;
+      } else if (nextY > COLLAPSED_Y) {
+        nextY = COLLAPSED_Y + (nextY - COLLAPSED_Y) * 0.2;
+      }
+      setTranslateY(nextY);
+    };
+
+    const handlePointerUp = (e: React.PointerEvent) => {
+      if (!isDragging) return;
+      setIsDragging(false);
+      e.currentTarget.releasePointerCapture(e.pointerId);
+
+      if (dragDistance.current < 5) {
+        setPanelState((prev) => (prev === 'expanded' ? 'collapsed' : 'expanded'));
+        return;
+      }
+
+      const deltaY = e.clientY - dragStartY.current;
+      const threshold = COLLAPSED_Y / 2;
+
+      if (panelState === 'expanded') {
+        if (deltaY > 30 || translateY > threshold) {
+          setPanelState('collapsed');
+        } else {
+          setPanelState('expanded');
+        }
+      } else {
+        if (deltaY < -30 || translateY < threshold) {
+          setPanelState('expanded');
+        } else {
+          setPanelState('collapsed');
+        }
+      }
+    };
 
     const openMeetingModal = useCallback((date?: Date) => {
       setMeetingModalDate(date ?? selectedDate);
@@ -103,7 +174,10 @@
       if (!token) return;
 
       try {
-        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=NG&limit=5`;
+        const proximityParam = lastPosition
+          ? `&proximity=${lastPosition.coords.longitude},${lastPosition.coords.latitude}`
+          : '';
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=NG&limit=5${proximityParam}`;
         const response = await fetch(url);
         const data = await response.json();
         if (data.features) {
@@ -120,7 +194,7 @@
       } catch {
         // Geocoding is non-critical — silent failure is acceptable
       }
-    }, []);
+    }, [lastPosition]);
 
     const handleLocationQueryChange = (text: string) => {
       setLocationQuery(text);
@@ -399,21 +473,27 @@
 
             {/* Fixed Find Location panel */}
             <div className="fixed bottom-0 left-0 right-0 select-none z-20">
-              <div className="relative mx-auto w-full max-w-md h-[275px] px-5 pt-4 flex flex-col gap-3.5 text-black rounded-t-[28px] overflow-hidden shadow-2xl bg-white"
+              <div 
+                className="relative mx-auto w-full max-w-md h-[275px] px-5 pb-4 flex flex-col gap-2.5 text-black rounded-t-[28px] overflow-hidden shadow-2xl bg-white"
+                style={{
+                  transform: `translateY(${isDragging ? translateY : (panelState === 'collapsed' ? COLLAPSED_Y : 0)}px)`,
+                  transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                }}
               >
-                {/* Top Notch Background Image (clipped to hide bottom waves) */}
-                {/* <div 
-                  className="absolute top-0 left-0 bottom-0 right-0 h-[50px] bg-no-repeat bg-top pointer-events-none z-0"
-                  style={{
-                    backgroundImage: "url('/assets/find-location-backgroud.png')",
-                    backgroundSize: "100% auto",  
-                  }}
-                /> */}
+                {/* Drag handle pill */}
+                <div 
+                  className="w-full pt-3 pb-1 flex flex-col items-center cursor-row-resize touch-none select-none flex-shrink-0"
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                >
+                  <div className="w-12 h-1 bg-gray-300 rounded-full opacity-60 hover:opacity-100 transition-opacity" />
+                </div>
 
                 {/* Content wrapper */}
                 <div className="relative z-10 flex flex-col gap-3.5 h-full">
                   {/* Search row container (transparent outer wrap) */}
-                  <div className="flex items-center bg-white/40 h-[59px] rounded-[30px] p-[4px_7px] gap-[5px] mt-3">
+                  <div className="flex items-center bg-white/40 h-[59px] rounded-[30px] p-[4px_7px] gap-[5px] mt-1">
                     <img
                       src="/assets/magnifying-icon.png"
                       alt="Search icon"

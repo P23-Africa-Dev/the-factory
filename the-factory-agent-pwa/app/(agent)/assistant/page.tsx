@@ -57,12 +57,38 @@ export default function AiAssistantPage() {
   const [isClearing, setIsClearing] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isSending]);
+    const scrollContainer = scrollRef.current;
+    const contentElement = contentRef.current;
+    if (!scrollContainer || !contentElement) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    const scrollToBottom = (delay = 0) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      }, delay);
+    };
+
+    // Delay initial scroll to bypass browser/SPA scroll restoration
+    scrollToBottom(50);
+
+    const observer = new ResizeObserver(() => {
+      scrollToBottom(0);
+    });
+
+    observer.observe(contentElement);
+
+    return () => {
+      observer.disconnect();
+      clearTimeout(timeoutId);
+    };
+  }, [messages, isRestoring, isSending]);
 
   const handleSend = (text?: string) => {
     const content = (text ?? input).trim();
@@ -151,7 +177,7 @@ export default function AiAssistantPage() {
 
   return (
     <ScreenErrorBoundary screenName="AiAssistant">
-      <div className="relative min-h-screen bg-[#091519] text-[#D0E2E3] flex flex-col font-sans select-none overflow-hidden pb-[140px]">
+      <div className="relative h-[calc(100dvh-100px)] bg-[#091519] text-[#D0E2E3] flex flex-col font-sans select-none overflow-hidden pb-0">
         {/* Ambient background texture */}
         <div
           className="absolute inset-0 bg-cover bg-center pointer-events-none opacity-[0.12] z-0"
@@ -193,46 +219,50 @@ export default function AiAssistantPage() {
         {/* Messages Scroll Area */}
         <div
           ref={scrollRef}
-          className="relative z-10 flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5"
+          className="relative z-10 flex-1 overflow-y-auto px-5 pt-4 pb-0"
         >
-          {isRestoring ? (
-            <div className="flex flex-1 items-center justify-center">
-              <div className="h-7 w-7 animate-spin rounded-full border-4 border-[#75ADAF] border-t-transparent" />
-            </div>
-          ) : messages.length === 0 ? (
-            /* Dynamic suggestions empty state */
-            <div className="flex flex-col items-center justify-center py-12 px-2 text-center">
-              <h3 className="font-bold text-xl text-white mb-2">{ELY_INTRO}</h3>
-              <p className="text-xs text-white/50 leading-relaxed max-w-[280px] mb-8">
-                Get assistance with leads, meetings, attendance, CRM operations, and workforce
-                tasks.
-              </p>
-
-              <div className="w-full flex flex-col gap-3">
-                {suggestions.map((suggestion) => (
-                  <button
-                    key={suggestion.id}
-                    type="button"
-                    onClick={() => handleSend(suggestion.prompt)}
-                    className="w-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 rounded-2xl py-4 px-5 text-left text-xs font-semibold text-[#D0E2E3] transition-all active:scale-98 flex items-center gap-3"
-                  >
-                    <Sparkles size={14} className="text-[#75ADAF] flex-shrink-0" />
-                    <span>{suggestion.label}</span>
-                  </button>
-                ))}
+          <div ref={contentRef} className="flex flex-col gap-5">
+            {isRestoring ? (
+              <div className="flex flex-1 items-center justify-center">
+                <div className="h-7 w-7 animate-spin rounded-full border-4 border-[#75ADAF] border-t-transparent" />
               </div>
-            </div>
-          ) : (
-            messages.map(renderMessage)
-          )}
-
-          {isSending && (
-            <div className="flex items-start">
-              <div className="bg-[#16384B]/80 text-[#D0E2E3]/80 border border-white/5 rounded-2xl px-5 py-3 text-xs font-semibold animate-pulse">
-                {ELY_TYPING_LABEL}
+            ) : messages.length === 0 ? (
+              /* Dynamic suggestions empty state */
+              <div className="flex flex-col items-center justify-center py-12 px-2 text-center">
+                <h3 className="font-bold text-xl text-white mb-2">{ELY_INTRO}</h3>
+                <p className="text-xs text-white/50 leading-relaxed max-w-[280px] mb-8">
+                  Get assistance with leads, meetings, attendance, CRM operations, and workforce
+                  tasks.
+                </p>
+  
+                <div className="w-full flex flex-col gap-3">
+                  {suggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      onClick={() => handleSend(suggestion.prompt)}
+                      className="w-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 rounded-2xl py-4 px-5 text-left text-xs font-semibold text-[#D0E2E3] transition-all active:scale-98 flex items-center gap-3"
+                    >
+                      <Sparkles size={14} className="text-[#75ADAF] flex-shrink-0" />
+                      <span>{suggestion.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            ) : (
+              messages.map(renderMessage)
+            )}
+  
+            {isSending && (
+              <div className="flex items-start">
+                <div className="bg-[#16384B]/80 text-[#D0E2E3]/80 border border-white/5 rounded-2xl px-5 py-3 text-xs font-semibold animate-pulse">
+                  {ELY_TYPING_LABEL}
+                </div>
+              </div>
+            )}
+
+            {!isRestoring && <div className="h-24 flex-shrink-0" />}
+          </div>
         </div>
 
         {/* Input Bar pinned above Bottom Navigation */}
