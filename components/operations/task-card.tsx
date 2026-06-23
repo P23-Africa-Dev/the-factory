@@ -9,9 +9,10 @@ import { Maximize2 } from 'lucide-react';
 interface TaskCardProps {
   item: DndItem;
   onClick?: (item: DndItem) => void;
+  onViewMap?: (item: DndItem) => void;
 }
 
-export function TaskCard({ item, onClick }: TaskCardProps) {
+export function TaskCard({ item, onClick, onViewMap }: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -51,12 +52,17 @@ export function TaskCard({ item, onClick }: TaskCardProps) {
             {item.location}
           </span>
           <div className="flex flex-col items-end gap-2.5 shrink-0">
-            <button 
-              onClick={(e) => { e.stopPropagation(); /* Map action */ }}
-              className="bg-[#D15FE2] text-white text-[10px] font-semibold px-3 py-1.5 rounded-full hover:bg-[#B14FC2] transition-colors"
-            >
-              View on Map
-            </button>
+            {item.hasTrackableLocation ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onViewMap?.(item);
+                }}
+                className="bg-[#D15FE2] text-white text-[10px] font-semibold px-3 py-1.5 rounded-full hover:bg-[#B14FC2] transition-colors"
+              >
+                View on Map
+              </button>
+            ) : null}
             <span className="text-gray-400 text-[11px]">{item.time}</span>
           </div>
         </div>

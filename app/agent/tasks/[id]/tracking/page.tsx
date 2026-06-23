@@ -15,6 +15,7 @@ import {
   getMapboxPublicToken,
 } from '@/lib/config/public-env';
 import { useTaskDetail } from '@/hooks/use-tasks';
+import { hasTrackableTaskLocation } from '@/lib/tasks/location';
 import { useTrackingWebSocket } from '@/hooks/use-tracking-ws';
 import { useActiveTracking } from '@/components/tracking/active-tracking-provider';
 import { startTaskTracking } from '@/lib/api/tracking';
@@ -740,6 +741,14 @@ export default function TrackingPage({
   const [arrived, setArrived] = useState(false);
   const [showCompleteSheet, setShowCompleteSheet] = useState(false);
   const [commencing, setCommencing] = useState(false);
+
+  useEffect(() => {
+    if (!task) return;
+    if (!hasTrackableTaskLocation(task)) {
+      toast.error('This task has no map destination. Update status from task details instead.');
+      router.replace(`/agent/tasks/${taskId}`);
+    }
+  }, [task, taskId, router]);
 
   useEffect(() => {
     if (!liveTask) return;

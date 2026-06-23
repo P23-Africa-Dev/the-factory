@@ -18,7 +18,7 @@ final class ElySystemPrompt
 
     public static function intro(): string
     {
-        return (string) config('ely.intro', "I'm ELY, your Factory23 AI Assistant.");
+        return (string) config('ely.intro', "I'm ELY, your AI Assistant.");
     }
 
     public static function name(): string

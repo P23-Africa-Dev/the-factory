@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 
 import {
   useGeolocation,
@@ -12,7 +12,7 @@ import {
   hydrateLiveTaskFromRoute,
   LocationPermissionGate,
 } from '@/features/tracking';
-import { useTask, isResumeTrackingStatus } from '@/features/tasks';
+import { useTask, isResumeTrackingStatus, taskHasMapLocation } from '@/features/tasks';
 import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { flattenApiError, isTrackingAlreadyActiveError } from '@/lib/api/errors';
@@ -24,6 +24,7 @@ function resolveCompanyId(taskCompanyId: number | null | undefined): number {
 
 export default function TrackingPage() {
   const routeParams = useParams();
+  const router = useRouter();
   const id = (routeParams?.id as string) || '';
   const taskId = Number(id);
 
@@ -39,10 +40,19 @@ export default function TrackingPage() {
 
   const { data: task, isLoading: isTaskLoading } = useTask(String(taskId));
   const isResume = isResumeTrackingStatus(task?.status);
+  const hasMapLocation = task ? taskHasMapLocation(task) : false;
+
+  useEffect(() => {
+    if (!task || isTaskLoading) return;
+    if (!hasMapLocation) {
+      toast.error('No map location', 'This task has no destination. Update its status from task details.');
+      router.replace(`/task/${taskId}`);
+    }
+  }, [task, isTaskLoading, hasMapLocation, router, taskId]);
 
   // Active tasks skip this page entirely — resume on the map.
   useEffect(() => {
-    if (!task || !isResume || resumeRedirectedRef.current) return;
+    if (!task || !isResume || !hasMapLocation || resumeRedirectedRef.current) return;
     resumeRedirectedRef.current = true;
     goToMapActivity(taskId);
   }, [task, isResume, taskId, goToMapActivity]);

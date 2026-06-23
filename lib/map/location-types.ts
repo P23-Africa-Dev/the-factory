@@ -78,36 +78,6 @@ export function getSavedLocationColor(type: string | null | undefined): string {
 
 /**
  * Builds a DOM marker element for Mapbox/Google custom markers.
- * Renders a colored teardrop pin with an inner dot keyed to the type color.
+ * @deprecated Use `createSavedLocationMarkerElement` from `@/lib/map/saved-location-marker`.
  */
-export function createSavedLocationMarkerElement(type: string | null | undefined): HTMLElement {
-  const option = getSavedLocationType(type);
-  const el = document.createElement("div");
-  el.className = "saved-location-marker";
-  el.style.cssText = [
-    "width:26px",
-    "height:26px",
-    "border-radius:50% 50% 50% 0",
-    "transform:rotate(-45deg)",
-    `background:${option.color}`,
-    "border:2px solid #ffffff",
-    "box-shadow:0 2px 6px rgba(0,0,0,0.35)",
-    "cursor:pointer",
-    "display:flex",
-    "align-items:center",
-    "justify-content:center",
-  ].join(";");
-
-  const inner = document.createElement("div");
-  inner.style.cssText = [
-    "width:9px",
-    "height:9px",
-    "border-radius:50%",
-    "background:#ffffff",
-    "transform:rotate(45deg)",
-  ].join(";");
-
-  el.appendChild(inner);
-  el.title = option.label;
-  return el;
-}
+export { createSavedLocationMarkerElement } from "@/lib/map/saved-location-marker";

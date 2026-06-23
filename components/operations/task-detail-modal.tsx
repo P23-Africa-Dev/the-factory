@@ -32,6 +32,7 @@ import { ApiRequestError } from '@/lib/api/onboarding';
 import type { GeoReading } from '@/types/tracking';
 import { useEffectiveMapProvider } from '@/hooks/use-effective-map-provider';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
+import { formatTaskLocationLabel, hasTrackableTaskLocation } from '@/lib/tasks/location';
 
 type TaskGoogleMaps = {
   maps: {
@@ -336,7 +337,10 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
 
   const fullMapPath = canOpenManagementMap ? '/map' : '/agent/map';
   const title = detailQuery.data?.title || task.description;
-  const locationText = detailQuery.data?.address || detailQuery.data?.location || task.location;
+  const locationText = formatTaskLocationLabel(
+    detailQuery.data?.location || task.location,
+    detailQuery.data?.address,
+  );
   const dueDateText = detailQuery.data?.due_date
     ? new Date(detailQuery.data.due_date).toLocaleString()
     : task.dueDate || 'No due date';
@@ -349,6 +353,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
 
   const latitude = detailQuery.data?.latitude ?? null;
   const longitude = detailQuery.data?.longitude ?? null;
+  const hasTrackableLocation = hasTrackableTaskLocation(detailQuery.data);
   const latestReassignment = detailQuery.data?.latest_reassignment ?? null;
 
   const canReassignToRoles = role === 'agent' ? ['agent'] : ['agent', 'supervisor'];
@@ -409,11 +414,23 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
   };
 
   const handleTaskDone = () => {
-    if (activeTaskId !== taskId) {
-      toast.error('Start tracking before completing the task.');
+    if (hasTrackableLocation) {
+      if (activeTaskId !== taskId) {
+        toast.error('Start tracking before completing the task.');
+        return;
+      }
+      setShowCompleteSheet(true);
       return;
     }
-    setShowCompleteSheet(true);
+
+    const minPhotos = detailQuery.data?.minimum_photos_required ?? 0;
+    const proofCount = detailQuery.data?.proofs?.length ?? 0;
+    if (minPhotos > 0 && proofCount < minPhotos) {
+      toast.error(`Upload at least ${minPhotos} photo(s) before completing.`);
+      return;
+    }
+
+    updateTaskStatus('completed');
   };
 
   const handleCompleteSuccess = () => {
@@ -513,13 +530,21 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
       <div className="relative w-full max-w-[94%] md:max-w-215 bg-white rounded-[28px] md:rounded-[40px] shadow-2xl overflow-hidden z-10 flex flex-col" style={{ maxHeight: '92vh' }}>
 
         {/* ── Map Section ──────────────────────────────────────────────── */}
-        <div className="relative h-44 md:h-55 w-full bg-[#eef0f3] overflow-hidden shrink-0">
-          <TaskLocationMap
-            latitude={latitude}
-            longitude={longitude}
-            agentName={assigneeName}
-            agentAvatar={assigneeAvatar}
-          />
+        <div className={`relative w-full bg-[#eef0f3] overflow-hidden shrink-0 ${hasTrackableLocation ? 'h-44 md:h-55' : 'h-20'}`}>
+          {hasTrackableLocation ? (
+            <TaskLocationMap
+              latitude={latitude}
+              longitude={longitude}
+              agentName={assigneeName}
+              agentAvatar={assigneeAvatar}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center px-6 text-center">
+              <p className="text-[12px] text-gray-500">
+                This task has no map destination. Update status from the actions below.
+              </p>
+            </div>
+          )}
 
           {/* Status badge */}
           <div
@@ -556,12 +581,18 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                 <p className="text-[14px] text-gray-500 underline decoration-gray-300 underline-offset-4 leading-relaxed mb-3">
                   {locationText}
                 </p>
-                <button
-                  onClick={() => router.push(fullMapPath)}
-                  className="px-4 py-1.5 bg-dash-teal/15 text-[#3A8C88] rounded-full text-[12px] font-semibold hover:bg-dash-teal/25 transition-colors"
-                >
-                  View on Full Map
-                </button>
+                {hasTrackableLocation ? (
+                  <button
+                    onClick={() => router.push(fullMapPath)}
+                    className="px-4 py-1.5 bg-dash-teal/15 text-[#3A8C88] rounded-full text-[12px] font-semibold hover:bg-dash-teal/25 transition-colors"
+                  >
+                    View on Full Map
+                  </button>
+                ) : (
+                  <p className="text-[11px] text-gray-400">
+                    Map tracking is unavailable without destination coordinates.
+                  </p>
+                )}
               </section>
 
               <section>
@@ -640,8 +671,8 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                 </div>
               )}
 
-              {/* Pending: commence button */}
-              {isPending && (
+              {/* Pending: commence or status-only */}
+              {isPending && hasTrackableLocation && (
                 <div className="mt-auto pt-6">
                   <button
                     onClick={handleCommenceAndTrack}
@@ -654,6 +685,24 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                   <button
                     onClick={() => updateTaskStatus('cancelled')}
                     className="w-full mt-2 px-4 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50"
+                  >
+                    Cancel Task
+                  </button>
+                </div>
+              )}
+
+              {isPending && !hasTrackableLocation && (
+                <div className="mt-auto pt-6 space-y-2">
+                  <button
+                    onClick={() => updateTaskStatus('in_progress')}
+                    disabled={updateStatusMutation.isPending}
+                    className="w-full flex items-center justify-center gap-2 px-8 py-4 bg-[#7EB5AE] text-white rounded-[20px] text-[15px] font-semibold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all disabled:opacity-60"
+                  >
+                    Start Task
+                  </button>
+                  <button
+                    onClick={() => updateTaskStatus('cancelled')}
+                    className="w-full px-4 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50"
                   >
                     Cancel Task
                   </button>

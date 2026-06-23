@@ -14,6 +14,7 @@ class CompanyLocation extends Model
 
     protected $fillable = [
         'company_id',
+        'crm_lead_id',
         'created_by_user_id',
         'updated_by_user_id',
         'name',
@@ -41,6 +42,16 @@ class CompanyLocation extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    public function crmLead(): BelongsTo
+    {
+        return $this->belongsTo(Lead::class, 'crm_lead_id');
+    }
+
+    public function isLinkedToCrm(): bool
+    {
+        return $this->crm_lead_id !== null;
     }
 
     public function creator(): BelongsTo

@@ -32,6 +32,11 @@ class IntentClassifier
             'projects.create' => [
                 '/\b(create|start|open|new)\s+(a\s+|an\s+)?project\b/i',
             ],
+            'crm.log_visit' => [
+                '/\blog\s+(this\s+)?visit\s+(to|for)\b/i',
+                '/\brecord\s+(this\s+)?visit\b/i',
+                '/\bupdate\s+crm\s+from\s+visit\b/i',
+            ],
         ];
 
         foreach ($actionPatterns as $tool => $regexPatterns) {
@@ -51,6 +56,18 @@ class IntentClassifier
                 '/\b(top|hot|hottest)\s+leads?\b/i',
                 '/\bcrm\b/i',
                 '/\bpipeline\b/i',
+            ],
+            'crm.follow_up_summary' => [
+                '/\bfollow[\s-]?up\s+(summary|recommend)/i',
+                '/\blead\s+summar/i',
+                '/\bcrm\s+follow[\s-]?ups?\b/i',
+            ],
+            'crm.stale_leads' => [
+                '/\b(stale\s+leads?|not\s+visited\s+recently|businesses?\s+not\s+visited)\b/i',
+            ],
+            'crm.visit_extract' => [
+                '/\b(process|structure|extract)\s+visit\s+notes?\b/i',
+                '/\bvisit\s+notes?\b/i',
             ],
             'tasks.overdue' => [
                 '/\boverdue\s+tasks?\b/i',
@@ -73,7 +90,25 @@ class IntentClassifier
                 '/\bwhere\s+is\b/i',
             ],
             'dashboard.overview' => [
-                '/\b(dashboard|overview|kpi|performance\s+snapshot)\b/i',
+                '/\b(dashboard|overview|kpi\s+snapshot|performance\s+snapshot)\b/i',
+            ],
+            'kpi.team_performance' => [
+                '/\b(who\s+is\s+perform|who\s+performs?\s+best|who\s+performs?\s+(the\s+)?least)\b/i',
+                '/\bperforming\s+the\s+(best|least)\b/i',
+                '/\b(best|top)\s+perform/i',
+                '/\b(worst|lowest|least)\s+perform/i',
+                '/\bteam\s+performance\b/i',
+                '/\b(underperform|top\s+performer)/i',
+            ],
+            'planning.daily' => [
+                '/\bplan\s+my\s+day\b/i',
+                '/\bwhat\s+should\s+i\s+(visit|do)\s+next\b/i',
+                '/\bfollow[\s-]?ups?\s+due\b/i',
+                '/\bnearby\s+opportunit/i',
+                '/\bhelp\s+me\s+achieve\s+my\s+kpi\b/i',
+                '/\bprioriti[sz]e\s+my\s+(day|visits?|tasks?)\b/i',
+                '/\bwhat\s+needs\s+(my\s+)?attention\b/i',
+                '/\bwhat\s+should\s+i\s+focus\s+on\b/i',
             ],
         ];
 

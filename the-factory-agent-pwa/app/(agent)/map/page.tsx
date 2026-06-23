@@ -16,7 +16,7 @@ import {
   trackingApi,
   LocationPermissionGate,
 } from '@/features/tracking';
-import { useTaskListItems, useTask, taskKeys, taskApi } from '@/features/tasks';
+import { useTaskListItems, useTask, taskKeys, taskApi, taskHasMapLocation } from '@/features/tasks';
 import { useAuth, useAgentIdentity } from '@/features/auth';
 import { getSafeAvatarSrc } from '@/lib/avatar';
 import { buildTraveledSegment, sliceRemainingRoute } from '@/lib/map/route-geometry';
@@ -132,16 +132,6 @@ function formatDuration(minutes: number | null): string {
   const days = Math.floor(hours / 24);
   const remainingHours = hours % 24;
   return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
-}
-
-function taskHasMapLocation(t: {
-  latitude: number;
-  longitude: number;
-  address?: string | null;
-}): boolean {
-  if (Math.abs(t.latitude) > 0.0001 && Math.abs(t.longitude) > 0.0001) return true;
-  const addr = t.address?.trim();
-  return Boolean(addr && addr !== '—');
 }
 
 function canStartTaskActivity(status?: string): boolean {
@@ -812,6 +802,7 @@ function AddNoteModal({
 
 function MapContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const queryClient = useQueryClient();
 
   const taskIdParam = searchParams.get('taskId');
@@ -917,6 +908,14 @@ function MapContent() {
   const { data: activeTask } = useTask(resolvedTaskId ? String(resolvedTaskId) : '');
   const { data: trackingTask } = useTask(trackingTaskId ? String(trackingTaskId) : '');
   const companyId = trackingTask?.companyId ?? activeTask?.companyId ?? getActiveCompanyId() ?? 0;
+
+  useEffect(() => {
+    if (!taskIdParam || !trackingTask) return;
+    if (!taskHasMapLocation(trackingTask)) {
+      toast.error('No map location', 'This task has no destination. Open task details to update status.');
+      router.replace(`/task/${taskIdParam}`);
+    }
+  }, [taskIdParam, trackingTask, router]);
 
   const { data: taskRoute } = useTaskRoute(
     trackingTaskId,
@@ -1064,7 +1063,7 @@ function MapContent() {
   // Auto-fill destination from resolved task
   useEffect(() => {
     if (selectedDestination !== null) return;
-    if (!activeTask?.latitude || !activeTask?.longitude) return;
+    if (!activeTask || !taskHasMapLocation(activeTask)) return;
     setTimeout(() => setSelectedDestination({
       name: activeTask.title,
       address: activeTask.address ?? undefined,
@@ -1636,6 +1635,8 @@ function MapContent() {
         .filter((loc) => loc.isActive)
         .map((loc) => ({
           id: loc.id,
+          name: loc.name,
+          type: loc.type,
           longitude: loc.longitude,
           latitude: loc.latitude,
           color: getSavedLocationType(loc.type).color,

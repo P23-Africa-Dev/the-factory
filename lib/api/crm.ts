@@ -43,6 +43,8 @@ export type LeadApiItem = {
     id: number;
     company_id: number;
     pipeline_id?: number | null;
+    company_location_id?: number | null;
+    linked_to_map?: boolean;
     created_by_user_id: number;
     assigned_to_user_id?: number | null;
     name: string;

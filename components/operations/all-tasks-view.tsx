@@ -11,6 +11,7 @@ import { getActiveCompanyContext } from '@/lib/company-context';
 import type { DndContainer, DndItem } from '@/types/operations';
 import { TaskBoardSkeleton } from './skeletons/task-board-skeleton';
 import type { TaskApiItem } from '@/lib/api/tasks';
+import { formatTaskLocationLabel, hasTrackableTaskLocation } from '@/lib/tasks/location';
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { OperationsCalendar } from './operations-calendar';
 
@@ -355,7 +356,10 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     id: String(apiTask.id),
     label: assigneeLabel,
     description: apiTask.title,
-    location: apiTask.location || "No location",
+    location: formatTaskLocationLabel(apiTask.location, apiTask.address),
+    latitude: apiTask.latitude ?? null,
+    longitude: apiTask.longitude ?? null,
+    hasTrackableLocation: hasTrackableTaskLocation(apiTask),
     time: "Just now",
     category: (apiTask.type || "agent") as DndItem["category"],
     dueDate: apiTask.due_date ? new Date(apiTask.due_date).toLocaleDateString() : undefined,

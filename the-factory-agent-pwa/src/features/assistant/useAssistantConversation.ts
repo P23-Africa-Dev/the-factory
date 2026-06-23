@@ -4,12 +4,34 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { appStore } from '@/lib/storage/stores';
 import { useAuth } from '@/features/auth';
 import { assistantApi } from './api';
+import { resolveAssistantGeolocationContext } from './geolocation';
 import {
   clearActiveThreadId,
   getActiveThreadId,
   setActiveThreadId,
 } from './storage';
 import type { AssistantMessage } from './types';
+
+const PROCESSING_LABELS = [
+  'Thinking...',
+  'Analyzing...',
+  'Sorting results...',
+  'Preparing response...',
+];
+
+function processingLabelsForMessage(text: string): string[] {
+  const normalized = text.toLowerCase();
+  if (/\b(perform|performance|team|kpi|rank)\b/.test(normalized)) {
+    return ['Thinking...', 'Analyzing team KPIs...', 'Ranking performers...'];
+  }
+  if (/\bplan\s+my\s+day\b/.test(normalized)) {
+    return ['Thinking...', 'Reviewing your schedule...', 'Prioritizing actions...'];
+  }
+  if (/\b(crm|lead|follow[\s-]?up)\b/.test(normalized)) {
+    return ['Thinking...', 'Scanning CRM records...', 'Sorting leads...'];
+  }
+  return PROCESSING_LABELS;
+}
 
 let messageSeq = 0;
 function nextId(suffix: string): string {
@@ -39,6 +61,7 @@ export function useAssistantConversation() {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [isRestoring, setIsRestoring] = useState(isAuthenticated);
   const [isSending, setIsSending] = useState(false);
+  const [processingLabel, setProcessingLabel] = useState<string | null>(null);
 
   // Restore the most recent conversation on mount (and when the signed-in user
   // changes). Prefer the persisted active thread; otherwise fall back to the
@@ -99,7 +122,7 @@ export function useAssistantConversation() {
   }, [isAuthenticated]);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, options?: { withGeolocation?: boolean }) => {
       const content = text.trim();
       if (!content || isSending) return;
 
@@ -111,8 +134,23 @@ export function useAssistantConversation() {
       setMessages((prev) => [...prev, userMsg]);
       setIsSending(true);
 
+      const labels = processingLabelsForMessage(content);
+      let labelIndex = 0;
+      setProcessingLabel(labels[0] ?? 'Thinking...');
+      const labelTimer = window.setInterval(() => {
+        labelIndex = (labelIndex + 1) % labels.length;
+        setProcessingLabel(labels[labelIndex] ?? 'Thinking...');
+      }, 900);
+
       try {
-        const result = await assistantApi.sendMessage({ message: content, threadId });
+        const context = options?.withGeolocation
+          ? await resolveAssistantGeolocationContext()
+          : undefined;
+        const result = await assistantApi.sendMessage({
+          message: content,
+          threadId,
+          context,
+        });
         const aiMsg: AssistantMessage = {
           id: nextId('ai'),
           role: 'assistant',
@@ -138,6 +176,8 @@ export function useAssistantConversation() {
           },
         ]);
       } finally {
+        window.clearInterval(labelTimer);
+        setProcessingLabel(null);
         setIsSending(false);
       }
     },
@@ -174,6 +214,7 @@ export function useAssistantConversation() {
     threadId,
     isRestoring,
     isSending,
+    processingLabel,
     send,
     clearCurrent,
     clearAll,

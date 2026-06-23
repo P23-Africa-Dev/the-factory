@@ -88,6 +88,20 @@ class LeadController extends Controller
         );
     }
 
+    public function destroy(Request $request, Lead $lead): JsonResponse
+    {
+        $this->leadService->delete(
+            $request->user(),
+            $lead,
+            $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
+        return $this->success(
+            message: 'CRM lead deleted successfully.',
+            data: ['deleted_lead_id' => $lead->id],
+        );
+    }
+
     public function storeNote(StoreLeadNoteRequest $request, Lead $lead): JsonResponse
     {
         $note = $this->leadService->addNote(

@@ -83,6 +83,7 @@ export const locationApi = {
       longitude: input.longitude,
       contact_number: input.contactNumber ?? undefined,
       email: input.email ?? undefined,
+      save_to_crm: input.saveToCrm ?? false,
     };
 
     if (isOffline()) {

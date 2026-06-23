@@ -10,6 +10,7 @@ export type GeocodedPlaceSuggestion = {
     address: string;
     lat: number;
     lng: number;
+    bbox: [number, number, number, number] | null;
 };
 
 export async function searchPlacesWithMapbox(
@@ -28,7 +29,7 @@ export async function searchPlacesWithMapbox(
 
     const country = options?.country ?? "ng";
     const limit = options?.limit ?? 5;
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmed)}.json?access_token=${token}&country=${country}&limit=${limit}`;
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmed)}.json?access_token=${token}&country=${country}&limit=${limit}&types=place,locality,neighborhood,address,poi&autocomplete=true`;
 
     try {
         const response = await fetch(url);
@@ -37,7 +38,7 @@ export async function searchPlacesWithMapbox(
         }
 
         const payload = (await response.json()) as {
-            features?: Array<{ text?: string; place_name?: string; center?: [number, number] }>;
+            features?: Array<{ text?: string; place_name?: string; center?: [number, number]; bbox?: number[] }>;
         };
 
         return (payload.features ?? [])
@@ -47,6 +48,9 @@ export async function searchPlacesWithMapbox(
                 address: f.place_name?.trim() || "",
                 lng: f.center![0],
                 lat: f.center![1],
+                bbox: Array.isArray(f.bbox) && f.bbox.length === 4
+                    ? (f.bbox as [number, number, number, number])
+                    : null,
             }));
     } catch {
         return [];

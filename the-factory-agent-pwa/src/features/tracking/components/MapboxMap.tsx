@@ -21,6 +21,8 @@ export type MapboxMapMode = 'preview' | 'navigation';
 
 export type SavedLocationPin = {
   id: number;
+  name: string;
+  type?: string | null;
   longitude: number;
   latitude: number;
   color: string;
@@ -329,7 +331,7 @@ export function MapboxMap({
       (savedLocations ?? [])
         .map(
           (p) =>
-            `${p.id}:${p.longitude.toFixed(5)},${p.latitude.toFixed(5)}:${p.color}:${p.selected ? 1 : 0}`,
+            `${p.id}:${p.name}:${p.type ?? ''}:${p.longitude.toFixed(5)},${p.latitude.toFixed(5)}:${p.color}:${p.selected ? 1 : 0}`,
         )
         .join('|'),
     [savedLocations],
@@ -440,7 +442,12 @@ export function MapboxMap({
       const existing = markers.get(pin.id);
       if (existing) existing.remove();
 
-      const el = createSavedLocationMarkerElement({ color: pin.color, selected: pin.selected });
+      const el = createSavedLocationMarkerElement({
+        name: pin.name,
+        type: pin.type,
+        color: pin.color,
+        selected: pin.selected,
+      });
       el.addEventListener('click', (event) => {
         event.stopPropagation();
         onSavedLocationClickRef.current?.(pin.id);

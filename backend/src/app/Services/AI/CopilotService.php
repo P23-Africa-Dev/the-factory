@@ -44,6 +44,7 @@ class CopilotService
         bool $actionConfirmed = false,
         ?string $idempotencyKey = null,
         ?string $clientTimezone = null,
+        array $context = [],
     ): array {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
@@ -217,7 +218,15 @@ class CopilotService
                         }
                     }
                 } else {
-                    $toolResult = $this->readToolRegistry->execute($candidateTool, $user, $resolvedCompanyId);
+                    $toolResult = $this->readToolRegistry->execute(
+                        $candidateTool,
+                        $user,
+                        $resolvedCompanyId,
+                        array_merge(
+                            $this->buildReadToolArgs($candidateTool, $context),
+                            $this->buildReadToolMessageArgs($candidateTool, $message),
+                        ),
+                    );
                 }
 
                 $assistantText = (string) ($toolResult['summary'] ?? $assistantText);
@@ -417,7 +426,7 @@ class CopilotService
         }
 
         if (str_contains($normalized, 'this software') || str_contains($normalized, 'what is factory23') || str_contains($normalized, 'what does this do')) {
-            return ElySystemPrompt::intro() . ' Factory23 is your operations workspace. Ask for CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.';
+            return ElySystemPrompt::intro() . ' I can help with CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.';
         }
 
         $systemPrompt = ElySystemPrompt::core();
@@ -433,11 +442,11 @@ class CopilotService
             $this->redactSensitiveText($message),
         );
 
-        $providerText = $this->aiProviderRouter->generateText(
+        $providerText = $this->aiProviderRouter->generateForPurpose(
+            purpose: 'operational',
             systemPrompt: $systemPrompt,
             userPrompt: $userPrompt,
             options: [
-                'model' => (string) config('services.ai.exec_model', config('services.ai.default_model', 'gpt-4.1-mini')),
                 'max_tokens' => max(64, (int) config('services.ai.max_tokens', 4000)),
                 'temperature' => 0.2,
             ],
@@ -750,7 +759,7 @@ class CopilotService
         $type = $typeResolution['value'];
 
         $address = $this->extractLabeledValue($message, ['location & address', 'address', 'location'])
-            ?? 'Factory23 Operations Center';
+            ?? 'Operations Center';
         $location = trim((string) Str::of($address)->before(','));
         if ($location === '') {
             $location = 'Operations Center';
@@ -1282,6 +1291,45 @@ class CopilotService
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    private function buildReadToolArgs(string $tool, array $context): array
+    {
+        if ($tool !== 'planning.daily') {
+            return [];
+        }
+
+        $args = [];
+        if (isset($context['latitude']) && is_numeric($context['latitude'])) {
+            $args['latitude'] = (float) $context['latitude'];
+        }
+        if (isset($context['longitude']) && is_numeric($context['longitude'])) {
+            $args['longitude'] = (float) $context['longitude'];
+        }
+        if (isset($context['focus']) && is_string($context['focus'])) {
+            $args['focus'] = $context['focus'];
+        }
+        if (isset($context['limit']) && is_numeric($context['limit'])) {
+            $args['limit'] = (int) $context['limit'];
+        }
+
+        return $args;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildReadToolMessageArgs(string $tool, string $message): array
+    {
+        if ($tool === 'crm.visit_extract') {
+            return ['notes' => $message];
+        }
+
+        return [];
     }
 
     private function canConsumeCredits(int $companyId): bool

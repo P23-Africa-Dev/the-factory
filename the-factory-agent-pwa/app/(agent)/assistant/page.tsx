@@ -46,7 +46,7 @@ function ParsedHtmlText({ text }: { text: string }): React.ReactNode {
 
 export default function AiAssistantPage() {
   const { firstName, avatarSrc, userRole } = useAgentIdentity();
-  const { messages, isRestoring, isSending, send, clearCurrent, clearAll } =
+  const { messages, isRestoring, isSending, processingLabel, send, clearCurrent, clearAll } =
     useAssistantConversation();
   const suggestions = useDynamicSuggestions();
 
@@ -64,11 +64,11 @@ export default function AiAssistantPage() {
     }
   }, [messages, isSending]);
 
-  const handleSend = (text?: string) => {
+  const handleSend = (text?: string, withGeolocation = false) => {
     const content = (text ?? input).trim();
     if (!content) return;
     setInput('');
-    void send(content);
+    void send(content, { withGeolocation });
   };
 
   const handleAction = (id: string, action: Exclude<LocalAction, null>) => {
@@ -213,7 +213,7 @@ export default function AiAssistantPage() {
                   <button
                     key={suggestion.id}
                     type="button"
-                    onClick={() => handleSend(suggestion.prompt)}
+                    onClick={() => handleSend(suggestion.prompt, suggestion.withGeolocation)}
                     className="w-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 rounded-2xl py-4 px-5 text-left text-xs font-semibold text-[#D0E2E3] transition-all active:scale-98 flex items-center gap-3"
                   >
                     <Sparkles size={14} className="text-[#75ADAF] flex-shrink-0" />
@@ -229,7 +229,7 @@ export default function AiAssistantPage() {
           {isSending && (
             <div className="flex items-start">
               <div className="bg-[#16384B]/80 text-[#D0E2E3]/80 border border-white/5 rounded-2xl px-5 py-3 text-xs font-semibold animate-pulse">
-                {ELY_TYPING_LABEL}
+                {processingLabel ?? ELY_TYPING_LABEL}
               </div>
             </div>
           )}

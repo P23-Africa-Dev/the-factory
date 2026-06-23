@@ -28,6 +28,7 @@ class TaskResource extends JsonResource
             'address' => $this->address_full,
             'latitude' => $this->latitude,
             'longitude' => $this->longitude,
+            'has_trackable_location' => $this->resource->hasTrackableLocation(),
             'due_date' => $this->due_at?->toIso8601String(),
             'required_actions' => $this->required_actions ?? [],
             'priority' => $this->priority?->value,

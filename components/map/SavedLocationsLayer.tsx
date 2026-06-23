@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import Supercluster from "supercluster";
 import { MarkerClusterer } from "@googlemaps/markerclusterer";
-import { Crosshair, MapPin, Move, Pencil, Trash2, X } from "lucide-react";
+import { Crosshair, Move, Pencil, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -17,11 +17,12 @@ import {
 import type { SavedLocation } from "@/lib/api/saved-locations";
 import {
   createSavedLocationMarkerElement,
-  getSavedLocationColor,
-  getSavedLocationLabel,
-} from "@/lib/map/location-types";
+  createSavedLocationMarkerGoogleIcon,
+} from "@/lib/map/saved-location-marker";
+import { getSavedLocationLabel } from "@/lib/map/location-types";
 import { reverseGeocodeWithMapbox } from "@/lib/utils/geocoding";
 import { SaveLocationModal, type SaveLocationSubmitPayload } from "@/components/map/SaveLocationModal";
+import { SavedLocationInfoCard } from "@/components/map/SavedLocationInfoCard";
 
 const LONG_PRESS_MS = 600;
 
@@ -61,6 +62,8 @@ export type SavedLocationsLayerProps = {
   focusLocation?: SavedLocation | null;
   /** Read-only mode (compact widget): render markers only, no create/edit/move/delete. */
   readOnly?: boolean;
+  /** When provided, only markers whose id is in this set are rendered. */
+  visibleIds?: Set<number> | null;
 };
 
 type PendingPin = {
@@ -79,6 +82,7 @@ export function SavedLocationsLayer({
   onPinModeChange,
   focusLocation,
   readOnly = false,
+  visibleIds = null,
 }: SavedLocationsLayerProps) {
   const { data: locations = [] } = useSavedLocations();
   const permissions = useSavedLocationPermissions();
@@ -87,6 +91,8 @@ export function SavedLocationsLayer({
   const deleteMutation = useDeleteSavedLocation();
 
   const [selected, setSelected] = useState<SavedLocation | null>(null);
+  const visibleIdsRef = useRef<Set<number> | null>(null);
+  useEffect(() => { visibleIdsRef.current = visibleIds; }, [visibleIds]);
   const [pendingPin, setPendingPin] = useState<PendingPin | null>(null);
   const [editing, setEditing] = useState<SavedLocation | null>(null);
   const [moveMode, setMoveMode] = useState(false);
@@ -162,6 +168,7 @@ export function SavedLocationsLayer({
 
     const points = locationsRef.current
       .filter((loc) => !(moveMode && selected && loc.id === selected.id))
+      .filter((loc) => !visibleIdsRef.current || visibleIdsRef.current.has(loc.id))
       .map((loc) => ({
         type: "Feature" as const,
         properties: { locationId: loc.id },
@@ -215,7 +222,11 @@ export function SavedLocationsLayer({
 
       const loc = locationsRef.current.find((l) => l.id === props.locationId);
       if (!loc) return;
-      const el = createSavedLocationMarkerElement(loc.type);
+      const el = createSavedLocationMarkerElement({
+        name: loc.name,
+        type: loc.type,
+        selected: selected?.id === loc.id,
+      });
       el.addEventListener("click", (event) => {
         event.stopPropagation();
         setPendingPin(null);
@@ -335,7 +346,11 @@ export function SavedLocationsLayer({
     mbMoveMarkerRef.current = null;
     if (!map || !moveMode || !selected) return;
 
-    const el = createSavedLocationMarkerElement(selected.type);
+    const el = createSavedLocationMarkerElement({
+      name: selected.name,
+      type: selected.type,
+      selected: true,
+    });
     el.style.outline = "3px solid #22D3EE";
     el.style.outlineOffset = "2px";
     const marker = new mapboxgl.Marker({ element: el, anchor: "bottom", draggable: true })
@@ -361,18 +376,26 @@ export function SavedLocationsLayer({
 
     const markers = locationsRef.current
       .filter((loc) => !(moveMode && selected && loc.id === selected.id))
+      .filter((loc) => !visibleIdsRef.current || visibleIdsRef.current.has(loc.id))
       .map((loc) => {
+        const icon = createSavedLocationMarkerGoogleIcon({
+          name: loc.name,
+          type: loc.type,
+          selected: selected?.id === loc.id,
+        });
         const marker = new maps.maps.Marker({
           position: { lat: loc.latitude, lng: loc.longitude },
           title: `${loc.name} · ${getSavedLocationLabel(loc.type)}`,
           icon: {
-            path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z",
-            fillColor: getSavedLocationColor(loc.type),
-            fillOpacity: 1,
-            strokeColor: "#ffffff",
-            strokeWeight: 2,
-            scale: 1.6,
-            anchor: new (window as unknown as { google: { maps: { Point: new (x: number, y: number) => unknown } } }).google.maps.Point(12, 22),
+            url: icon.url,
+            scaledSize: new (window as unknown as { google: { maps: { Size: new (w: number, h: number) => unknown } } }).google.maps.Size(
+              icon.scaledSize.width,
+              icon.scaledSize.height,
+            ),
+            anchor: new (window as unknown as { google: { maps: { Point: new (x: number, y: number) => unknown } } }).google.maps.Point(
+              icon.anchor.x,
+              icon.anchor.y,
+            ),
           },
         });
         marker.addListener("click", () => {
@@ -508,10 +531,15 @@ export function SavedLocationsLayer({
         email: payload.email || null,
         latitude: payload.latitude,
         longitude: payload.longitude,
+        save_to_crm: payload.save_to_crm ?? false,
       },
       {
         onSuccess: (res) => {
-          toast.success("Location saved.");
+          toast.success(
+            res.data.location.linked_to_crm
+              ? "Location saved to map and CRM."
+              : "Location saved."
+          );
           setPendingPin(null);
           setSelected(res.data.location);
         },
@@ -535,7 +563,11 @@ export function SavedLocationsLayer({
       },
       {
         onSuccess: (res) => {
-          toast.success("Location updated.");
+          toast.success(
+            res.data.location.linked_to_crm
+              ? "Location and linked CRM lead updated."
+              : "Location updated."
+          );
           setEditing(null);
           setSelected(res.data.location);
         },
@@ -564,8 +596,6 @@ export function SavedLocationsLayer({
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
-
-  const detailsType = selected ? getSavedLocationLabel(selected.type) : "";
 
   return (
     <>
@@ -598,86 +628,44 @@ export function SavedLocationsLayer({
 
       {/* Details panel */}
       {selected && !editing && (
-        <div className="absolute bottom-24 left-4 md:left-10 z-20 w-[min(92vw,360px)] rounded-3xl border border-slate-200 bg-white/95 backdrop-blur shadow-2xl">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-            <div className="flex items-center gap-2 min-w-0">
-              <span
-                className="flex h-8 w-8 items-center justify-center rounded-full text-white"
-                style={{ background: getSavedLocationColor(selected.type) }}
-              >
-                <MapPin size={16} />
-              </span>
-              <div className="min-w-0">
-                <h4 className="text-[14px] font-bold text-slate-800 truncate">{selected.name}</h4>
-                <p className="text-[11px] text-slate-500">{detailsType}</p>
+        <SavedLocationInfoCard
+          location={selected}
+          onClose={() => {
+            setSelected(null);
+            setMoveMode(false);
+          }}
+          moveMode={moveMode}
+          footer={
+            (permissions.canEdit || permissions.canDelete) && !readOnly ? (
+              <div className="flex items-center gap-2 px-5 py-3">
+                {permissions.canEdit && (
+                  <>
+                    <button
+                      onClick={() => setEditing(selected)}
+                      className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-slate-200"
+                    >
+                      <Pencil size={13} /> Edit
+                    </button>
+                    <button
+                      onClick={() => setMoveMode((v) => !v)}
+                      className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold ${moveMode ? "bg-cyan-500 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                    >
+                      <Move size={13} /> {moveMode ? "Moving…" : "Move"}
+                    </button>
+                  </>
+                )}
+                {permissions.canDelete && (
+                  <button
+                    onClick={() => setConfirmDelete(selected)}
+                    className="ml-auto flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-600 hover:bg-red-100"
+                  >
+                    <Trash2 size={13} /> Delete
+                  </button>
+                )}
               </div>
-            </div>
-            <button
-              onClick={() => {
-                setSelected(null);
-                setMoveMode(false);
-              }}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          <div className="px-5 py-4 space-y-2 text-[12px] text-slate-600">
-            {selected.address && <p>{selected.address}</p>}
-            {selected.description && <p className="text-slate-500">{selected.description}</p>}
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              {selected.contact_number && (
-                <div className="rounded-lg bg-slate-50 px-3 py-2">
-                  <p className="text-[10px] uppercase text-slate-400">Contact</p>
-                  <p className="font-semibold text-slate-700 truncate">{selected.contact_number}</p>
-                </div>
-              )}
-              {selected.email && (
-                <div className="rounded-lg bg-slate-50 px-3 py-2">
-                  <p className="text-[10px] uppercase text-slate-400">Email</p>
-                  <p className="font-semibold text-slate-700 truncate">{selected.email}</p>
-                </div>
-              )}
-            </div>
-            <p className="text-[10px] text-slate-400 pt-1">
-              {selected.created_by?.name ? `Added by ${selected.created_by.name}` : ""}
-              {selected.created_at ? ` · ${new Date(selected.created_at).toLocaleDateString()}` : ""}
-            </p>
-            {moveMode && (
-              <p className="text-[11px] font-semibold text-cyan-600">Drag the highlighted pin to move, then release to save.</p>
-            )}
-          </div>
-
-          {(permissions.canEdit || permissions.canDelete) && !readOnly && (
-            <div className="flex items-center gap-2 px-5 py-3 border-t border-slate-100">
-              {permissions.canEdit && (
-                <>
-                  <button
-                    onClick={() => setEditing(selected)}
-                    className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-slate-200"
-                  >
-                    <Pencil size={13} /> Edit
-                  </button>
-                  <button
-                    onClick={() => setMoveMode((v) => !v)}
-                    className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold ${moveMode ? "bg-cyan-500 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
-                  >
-                    <Move size={13} /> {moveMode ? "Moving…" : "Move"}
-                  </button>
-                </>
-              )}
-              {permissions.canDelete && (
-                <button
-                  onClick={() => setConfirmDelete(selected)}
-                  className="ml-auto flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-600 hover:bg-red-100"
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+            ) : undefined
+          }
+        />
       )}
 
       {/* Create modal */}

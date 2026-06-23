@@ -59,7 +59,10 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="F23 Agent" />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
       </head>
-      <body className="min-h-full flex flex-col bg-[#0A1D25] text-white overflow-x-hidden selection:bg-[#75ADAF]/30">
+      <body
+        className="min-h-full flex flex-col bg-[#0A1D25] text-white overflow-x-hidden selection:bg-[#75ADAF]/30"
+        suppressHydrationWarning
+      >
         <AuthProvider>
           <QueryClientProvider client={queryClient}>
             <PwaAccessGuard>

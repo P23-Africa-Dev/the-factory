@@ -16,6 +16,31 @@ interface LeadDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
+const COUNTRY_CODES = [
+  { code: "+234", label: "NG (+234)" },
+  { code: "+254", label: "KE (+254)" },
+  { code: "+233", label: "GH (+233)" },
+  { code: "+27", label: "ZA (+27)" },
+  { code: "+1", label: "US (+1)" },
+  { code: "+44", label: "GB (+44)" },
+] as const;
+
+function parsePhoneNumber(fullPhone: string | null | undefined): { countryCode: string; phonePart: string } {
+  if (!fullPhone) {
+    return { countryCode: "+234", phonePart: "" };
+  }
+  const sortedCodes = [...COUNTRY_CODES].map(c => c.code).sort((a, b) => b.length - a.length);
+  for (const code of sortedCodes) {
+    if (fullPhone.startsWith(code)) {
+      return {
+        countryCode: code,
+        phonePart: fullPhone.slice(code.length).trim(),
+      };
+    }
+  }
+  return { countryCode: "+234", phonePart: fullPhone };
+}
+
 function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
   return (
@@ -81,7 +106,8 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
 
   const [editMode, setEditMode] = useState(false);
   const [editName, setEditName] = useState('');
-  const [editPhone, setEditPhone] = useState('');
+  const [editCountryCode, setEditCountryCode] = useState('+234');
+  const [editPhonePart, setEditPhonePart] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editLocation, setEditLocation] = useState('');
   const [editSource, setEditSource] = useState('');
@@ -91,7 +117,9 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
     if (lead) {
       setTimeout(() => {
         setEditName(lead.name);
-        setEditPhone(lead.phone ?? '');
+        const parsed = parsePhoneNumber(lead.phone);
+        setEditCountryCode(parsed.countryCode);
+        setEditPhonePart(parsed.phonePart);
         setEditEmail(lead.email ?? '');
         setEditLocation(lead.location ?? '');
         setEditSource(lead.source ?? '');
@@ -131,7 +159,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
         payload: {
           company_id: companyId,
           name: editName.trim(),
-          phone: editPhone.trim() || null,
+          phone: editPhonePart.trim() ? (editCountryCode + editPhonePart.trim()) : null,
           email: editEmail.trim() || null,
           location: editLocation.trim() || null,
           source: editSource.trim() || null,
@@ -146,7 +174,9 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
   const handleCancelEdit = () => {
     if (lead) {
       setEditName(lead.name);
-      setEditPhone(lead.phone ?? '');
+      const parsed = parsePhoneNumber(lead.phone);
+      setEditCountryCode(parsed.countryCode);
+      setEditPhonePart(parsed.phonePart);
       setEditEmail(lead.email ?? '');
       setEditLocation(lead.location ?? '');
       setEditSource(lead.source ?? '');
@@ -277,16 +307,30 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
 
                     {/* Phone field */}
                     <div className="flex flex-col">
-                      <label className="text-[10px] font-bold text-white/50 uppercase tracking-wide mb-1.5">
+                      <label className="text-[10px] font-bold text-white/50 uppercase tracking-wide mb-1.5 font-sans">
                         Phone
                       </label>
-                      <input
-                        type="tel"
-                        value={editPhone}
-                        onChange={(e) => setEditPhone(e.target.value)}
-                        placeholder="Phone number"
-                        className="bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-4 py-2.5 focus:outline-none transition-all placeholder-white/30"
-                      />
+                      <div className="flex gap-2 w-full">
+                        <select
+                          value={editCountryCode}
+                          onChange={(e) => setEditCountryCode(e.target.value)}
+                          className="bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-3 py-2.5 focus:outline-none transition-all"
+                          style={{ backgroundColor: '#0A1D25' }}
+                        >
+                          {COUNTRY_CODES.map((c) => (
+                            <option key={c.code} value={c.code} style={{ backgroundColor: '#0A1D25' }}>
+                              {c.code}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="tel"
+                          value={editPhonePart}
+                          onChange={(e) => setEditPhonePart(e.target.value)}
+                          placeholder="Phone number"
+                          className="flex-1 bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-4 py-2.5 focus:outline-none transition-all placeholder-white/30"
+                        />
+                      </div>
                     </div>
 
                     {/* Location field */}

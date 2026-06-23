@@ -12,6 +12,7 @@ class ActionConfirmationPolicyService
         'meetings.schedule',
         'notifications.send',
         'projects.create',
+        'crm.log_visit',
     ];
 
     public function requiresConfirmation(string $tool): bool

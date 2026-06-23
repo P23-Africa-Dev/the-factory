@@ -130,4 +130,14 @@ class Task extends Model
     {
         return $this->hasOne(TaskReassignment::class)->latestOfMany('id');
     }
+
+    public function hasTrackableLocation(): bool
+    {
+        if ($this->latitude === null || $this->longitude === null) {
+            return false;
+        }
+
+        return abs((float) $this->latitude) > 0.0001
+            && abs((float) $this->longitude) > 0.0001;
+    }
 }

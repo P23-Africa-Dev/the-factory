@@ -7,6 +7,8 @@ import {
   type ElyMeetingDraft,
 } from "@/components/dashboard/ely-meeting-action-fields";
 import { ELY_INPUT_PLACEHOLDER, ELY_LANDING_HEADLINE, ELY_LANDING_SUBTEXT, ELY_NAME } from "@/lib/ely-brand";
+import type { CopilotChatContext } from "@/lib/api/copilot";
+import { resolveCopilotGeolocationContext } from "@/lib/copilot-geolocation";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
@@ -158,6 +160,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const {
     messages,
     isStreaming,
+    processingLabel,
     weeklyReport,
     isQueueingWeeklyReport,
     initialize,
@@ -303,7 +306,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     return `${year}-${month}-${day}T${hour}:${minute}`;
   }
 
-  function sendMessage(text?: string) {
+  function sendMessage(text?: string, context?: CopilotChatContext) {
     const content = (text ?? input).trim();
     if (!content) return;
 
@@ -312,7 +315,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
     void sendCopilotMessage({
       message: content,
       companyId: companyId ?? undefined,
+      context,
     });
+  }
+
+  async function handlePlanTodayPriorities() {
+    const geoContext = await resolveCopilotGeolocationContext();
+    sendMessage("Plan today's priorities for me", geoContext);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -1128,7 +1137,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <div className="hidden sm:flex flex-col items-end leading-tight">
                     <span className="text-[#7BB6B8] text-[11px] font-bold uppercase tracking-[0.2em]">{ELY_NAME}</span>
-                    <span className="text-[#88B3B5] text-[10px]">Factory23 AI</span>
+                    <span className="text-[#88B3B5] text-[10px]">AI Assistant</span>
                   </div>
                   <button
                     onClick={() => {
@@ -1427,6 +1436,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
                   </p>
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <button
+                      onClick={() => void handlePlanTodayPriorities()}
+                      disabled={isRunningQuickAction || isStreaming}
+                      className="rounded-full border border-[#2D6F63] bg-[#113B37] px-3 py-1.5 text-[11px] font-semibold text-[#B9E9DD] hover:bg-[#1B4D47] disabled:opacity-60"
+                    >
+                      Plan Today&apos;s Priorities
+                    </button>
+                    <button
                       onClick={handleQueueWeeklyReport}
                       disabled={isQueueingWeeklyReport || isStreaming}
                       className="rounded-full border border-[#2D6F63] bg-[#113B37] px-3 py-1.5 text-[11px] font-semibold text-[#B9E9DD] hover:bg-[#1B4D47] disabled:opacity-60"
@@ -1722,21 +1738,30 @@ export function AIChat({ open, onClose }: AIChatProps) {
                 </div>
               ))}
 
-              {isStreaming && (
+              {isStreaming && (() => {
+                const lastMessage = messages[messages.length - 1];
+                const assistantHasContent = lastMessage?.role === "assistant" && Boolean(lastMessage.content?.trim());
+                if (assistantHasContent) return null;
+                return (
                 <div className="max-w-[65%]">
-                  <div className="bg-gradient-to-b from-[#333333] to-[#16384B] rounded-[24px] p-6 shadow-sm w-24">
-                    <div className="flex gap-1.5 items-center justify-center h-4">
-                      {[0, 1, 2].map((i) => (
-                        <span
-                          key={i}
-                          className="w-2.5 h-2.5 bg-[#D0E2E3]/60 rounded-full animate-bounce"
-                          style={{ animationDelay: `${i * 150}ms` }}
-                        />
-                      ))}
-                    </div>
+                  <div className="bg-gradient-to-b from-[#333333] to-[#16384B] rounded-[24px] px-6 py-4 shadow-sm">
+                    {processingLabel ? (
+                      <p className="text-[#D0E2E3]/90 text-[13px] font-medium animate-pulse">{processingLabel}</p>
+                    ) : (
+                      <div className="flex gap-1.5 items-center justify-center h-4">
+                        {[0, 1, 2].map((i) => (
+                          <span
+                            key={i}
+                            className="w-2.5 h-2.5 bg-[#D0E2E3]/60 rounded-full animate-bounce"
+                            style={{ animationDelay: `${i * 150}ms` }}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               <div ref={messagesEndRef} />
             </div>

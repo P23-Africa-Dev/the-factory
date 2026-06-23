@@ -8,21 +8,30 @@ class ToolPolicyService
 {
     private const READ_TOOLS_AGENT = [
         'crm.top_leads',
+        'crm.follow_up_summary',
+        'crm.stale_leads',
+        'crm.visit_extract',
         'tasks.overdue',
         'projects.at_risk_summary',
         'attendance.today_summary',
         'meetings.today',
         'dashboard.overview',
+        'planning.daily',
     ];
 
     private const READ_TOOLS_MANAGEMENT = [
         'crm.top_leads',
+        'crm.follow_up_summary',
+        'crm.stale_leads',
+        'crm.visit_extract',
         'tasks.overdue',
         'projects.at_risk_summary',
         'attendance.today_summary',
         'meetings.today',
         'tracking.active_agents',
         'dashboard.overview',
+        'planning.daily',
+        'kpi.team_performance',
     ];
 
     private const ACTION_TOOLS_MANAGEMENT = [
@@ -31,6 +40,11 @@ class ToolPolicyService
         'meetings.schedule',
         'notifications.send',
         'projects.create',
+        'crm.log_visit',
+    ];
+
+    private const ACTION_TOOLS_AGENT = [
+        'crm.log_visit',
     ];
 
     public function canUseTool(string $role, string $tool): bool
@@ -41,13 +55,13 @@ class ToolPolicyService
     public function allowedToolsForRole(string $role): array
     {
         if ($role === 'agent') {
-            return self::READ_TOOLS_AGENT;
+            return [...self::READ_TOOLS_AGENT, ...self::ACTION_TOOLS_AGENT];
         }
 
         if (in_array($role, ['owner', 'admin', 'supervisor'], true)) {
             return [...self::READ_TOOLS_MANAGEMENT, ...self::ACTION_TOOLS_MANAGEMENT];
         }
 
-        return self::READ_TOOLS_AGENT;
+        return [...self::READ_TOOLS_AGENT, ...self::ACTION_TOOLS_AGENT];
     }
 }

@@ -37,6 +37,13 @@ export type CopilotThreadSummary = {
     last_message_preview: string | null;
 };
 
+export type CopilotChatContext = {
+    latitude?: number;
+    longitude?: number;
+    focus?: "all" | "visits" | "followups" | "tasks";
+    limit?: number;
+};
+
 export type CopilotChatRequest = {
     message: string;
     company_id?: number | string;
@@ -45,6 +52,7 @@ export type CopilotChatRequest = {
     action_confirmed?: boolean;
     idempotency_key?: string;
     client_timezone?: string;
+    context?: CopilotChatContext;
 };
 
 export type CopilotChatResponse = {
@@ -62,6 +70,10 @@ export type CopilotChatResponse = {
         sources: CopilotSource[];
         payload: unknown;
     };
+};
+
+export type StreamEventProcessing = {
+    label: string;
 };
 
 export type StreamEventMeta = {
@@ -369,6 +381,7 @@ export async function sendCopilotMessageStream(
     token: string,
     handlers: {
         onMeta?: (event: StreamEventMeta) => void;
+        onProcessing?: (event: StreamEventProcessing) => void;
         onDelta?: (event: StreamEventDelta) => void;
         onDone?: (event: StreamEventDone) => void;
     } = {}
@@ -450,6 +463,8 @@ export async function sendCopilotMessageStream(
             if (eventName === "meta") {
                 lastMeta = parsed as StreamEventMeta;
                 handlers.onMeta?.(lastMeta);
+            } else if (eventName === "processing") {
+                handlers.onProcessing?.(parsed as StreamEventProcessing);
             } else if (eventName === "delta") {
                 const deltaEvent = parsed as StreamEventDelta;
                 accumulatedMessage += deltaEvent.chunk ?? "";

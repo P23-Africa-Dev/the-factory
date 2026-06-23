@@ -79,6 +79,9 @@ return [
             'model' => env('CLAUDE_MODEL', env('AI_ANALYST_MODEL', 'claude-3-5-sonnet-latest')),
             'version' => env('ANTHROPIC_VERSION', '2023-06-01'),
         ],
+        'admin' => [
+            'spending_alert_usd' => (float) env('AI_ADMIN_SPENDING_ALERT_USD', 500),
+        ],
     ],
 
 ];

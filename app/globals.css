@@ -107,11 +107,17 @@
 .phone-input-enterprise {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 8px;
 }
 
 .phone-input-enterprise .PhoneInputCountry {
-  display: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.phone-input-enterprise .PhoneInputCountrySelectArrow {
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .phone-input-enterprise .PhoneInputInput {
@@ -257,4 +263,16 @@
 .custom-dark-popup.mapboxgl-popup-anchor-top-right .mapboxgl-popup-tip {
   border-bottom-color: rgba(255, 255, 255, 0.96) !important;
   border-top-color: transparent !important;
+}
+
+/* POI hover tooltip — must not intercept mouse events */
+.poi-tooltip,
+.poi-tooltip * {
+  pointer-events: none !important;
+}
+.poi-tooltip .mapboxgl-popup-content {
+  padding: 0;
+  border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
 }

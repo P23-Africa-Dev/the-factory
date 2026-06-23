@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { taskHasMapLocation } from './location';
+
 export const taskStatusSchema = z.enum([
   'pending',
   'in_progress',
@@ -27,6 +29,7 @@ const rawTaskSchema = z
     location: z.string().nullable().optional(),
     latitude: z.union([z.number(), z.string(), z.null()]).optional(),
     longitude: z.union([z.number(), z.string(), z.null()]).optional(),
+    has_trackable_location: z.boolean().optional(),
     proximity_threshold: z.number().nullable().optional(),
     status: taskStatusSchema,
     due_date: z.string().nullable().optional(),
@@ -54,6 +57,12 @@ const rawTaskSchema = z
     location: data.location ?? data.address ?? null,
     latitude: coerceCoordinate(data.latitude),
     longitude: coerceCoordinate(data.longitude),
+    hasMapLocation:
+      data.has_trackable_location ??
+      taskHasMapLocation({
+        latitude: coerceCoordinate(data.latitude),
+        longitude: coerceCoordinate(data.longitude),
+      }),
     proximityThreshold: data.proximity_threshold ?? 50,
     status: data.status,
     dueDate: data.due_date ?? null,

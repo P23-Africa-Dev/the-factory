@@ -6,7 +6,9 @@ namespace App\Http\Controllers\Api\V1\AI;
 
 use App\Http\Controllers\Concerns\ResolvesCompanyContextId;
 use App\Http\Controllers\Controller;
+use App\Services\AI\CopilotProcessingLabels;
 use App\Services\AI\CopilotService;
+use App\Services\AI\IntentClassifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -30,9 +32,15 @@ class CopilotController extends Controller
             'action_confirmed' => ['sometimes', 'boolean'],
             'idempotency_key' => ['nullable', 'string', 'max:120'],
             'client_timezone' => ['nullable', 'string', 'max:64', 'timezone'],
+            'context' => ['sometimes', 'array'],
+            'context.latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'context.longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'context.focus' => ['nullable', 'string', 'in:all,visits,followups,tasks'],
+            'context.limit' => ['nullable', 'integer', 'min:1', 'max:20'],
         ]);
 
         $clientTimezone = isset($validated['client_timezone']) ? (string) $validated['client_timezone'] : null;
+        $chatContext = is_array($validated['context'] ?? null) ? $validated['context'] : [];
 
         $streamRequested = (bool) ($validated['stream'] ?? false);
         $streamingEnabled = (bool) config('services.ai.enable_streaming', true);
@@ -47,6 +55,7 @@ class CopilotController extends Controller
                 actionConfirmed: (bool) ($validated['action_confirmed'] ?? false),
                 idempotencyKey: isset($validated['idempotency_key']) ? (string) $validated['idempotency_key'] : null,
                 clientTimezone: $clientTimezone,
+                context: $chatContext,
             );
 
             return $this->success(
@@ -66,8 +75,23 @@ class CopilotController extends Controller
         $chatClientTimezone = $clientTimezone;
 
         return response()->stream(
-            function () use ($chatUser, $chatMessage, $chatCompanyId, $chatThreadId, $chatActionArgs, $chatActionConfirmed, $chatIdempotencyKey, $chatClientTimezone): void {
+            function () use ($chatUser, $chatMessage, $chatCompanyId, $chatThreadId, $chatActionArgs, $chatActionConfirmed, $chatIdempotencyKey, $chatClientTimezone, $chatContext): void {
                 try {
+                    $intent = app(IntentClassifier::class)->classify($chatMessage);
+                    $processingLabels = CopilotProcessingLabels::forMessage($chatMessage, $intent);
+
+                    echo "event: meta\n";
+                    echo 'data: ' . $this->encodeSseData(['thread_id' => $chatThreadId ?? '']) . "\n\n";
+                    @ob_flush();
+                    @flush();
+
+                    foreach ($processingLabels as $label) {
+                        echo "event: processing\n";
+                        echo 'data: ' . $this->encodeSseData(['label' => $label]) . "\n\n";
+                        @ob_flush();
+                        @flush();
+                    }
+
                     $result = $this->copilotService->chat(
                         user: $chatUser,
                         message: $chatMessage,
@@ -77,15 +101,18 @@ class CopilotController extends Controller
                         actionConfirmed: $chatActionConfirmed,
                         idempotencyKey: $chatIdempotencyKey,
                         clientTimezone: $chatClientTimezone,
+                        context: $chatContext,
                     );
 
                     $content = (string) ($result['response']['content'] ?? '');
                     $chunks = preg_split('/\s+/', trim($content)) ?: [];
 
-                    echo "event: meta\n";
-                    echo 'data: ' . $this->encodeSseData(['thread_id' => $result['thread_id']]) . "\n\n";
-                    @ob_flush();
-                    @flush();
+                    if (($result['thread_id'] ?? '') !== ($chatThreadId ?? '')) {
+                        echo "event: meta\n";
+                        echo 'data: ' . $this->encodeSseData(['thread_id' => $result['thread_id']]) . "\n\n";
+                        @ob_flush();
+                        @flush();
+                    }
 
                     foreach ($chunks as $chunk) {
                         if ($chunk === '') {

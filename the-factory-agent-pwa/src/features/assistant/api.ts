@@ -37,6 +37,12 @@ export const assistantApi = {
   sendMessage: async (params: {
     message: string;
     threadId?: string | null;
+    context?: {
+      latitude?: number;
+      longitude?: number;
+      focus?: 'all' | 'visits' | 'followups' | 'tasks';
+      limit?: number;
+    };
   }): Promise<SendMessageResult> => {
     const companyId = getActiveCompanyId();
     const res = await client.post('/copilot/chat', {
@@ -44,6 +50,7 @@ export const assistantApi = {
       company_id: companyId ?? undefined,
       thread_id: params.threadId ?? undefined,
       client_timezone: resolveTimezone(),
+      context: params.context,
       stream: false,
     });
     const data = unwrap(res.data);

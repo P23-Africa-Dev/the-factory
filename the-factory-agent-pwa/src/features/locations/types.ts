@@ -10,6 +10,8 @@ export type SavedLocation = {
   contactNumber: string | null;
   email: string | null;
   isActive: boolean;
+  crmLeadId?: number | null;
+  linkedToCrm?: boolean;
   createdByName: string | null;
   createdAt: string | null;
 };
@@ -23,6 +25,7 @@ export type CreateSavedLocationInput = {
   longitude: number;
   contactNumber?: string | null;
   email?: string | null;
+  saveToCrm?: boolean;
 };
 
 export type SavedLocationFilters = {

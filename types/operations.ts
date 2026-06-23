@@ -5,6 +5,9 @@ export interface DndItem {
   label: string;
   description: string;
   location: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  hasTrackableLocation?: boolean;
   time: string;
   avatar?: string;
   icon?: string;

@@ -27,6 +27,7 @@ class LeadService
     public function __construct(
         private readonly CompanyContextService $companyContextService,
         private readonly NotificationService $notificationService,
+        private readonly MapSavedLeadBridgeService $mapSavedLeadBridgeService,
     ) {}
 
     public function listForUser(User $user, array $filters): Paginator
@@ -230,6 +231,12 @@ class LeadService
             'converted_at' => array_key_exists('converted_at', $data) ? $data['converted_at'] : $lead->converted_at,
         ]);
 
+        $lead = $lead->fresh();
+
+        if ($lead->company_location_id !== null) {
+            $this->mapSavedLeadBridgeService->syncLeadToLocation($lead);
+        }
+
         $this->notifyLeadRecipients(
             lead: $lead,
             actor: $user,
@@ -240,6 +247,20 @@ class LeadService
         );
 
         return $this->findForUser($user, $lead->fresh(), $companyId);
+    }
+
+    public function delete(User $user, Lead $lead, ?int $companyId = null): void
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $role = (string) $context['role'];
+        $resolvedCompanyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($resolvedCompanyId);
+        $this->assertLeadInCompany($lead, $resolvedCompanyId);
+        $this->ensureCanManage($role);
+
+        $this->mapSavedLeadBridgeService->unlinkLeadFromLocation($lead);
+        $lead->update(['company_location_id' => null]);
+        $lead->delete();
     }
 
     public function addNote(User $user, Lead $lead, string $note, ?int $companyId = null): LeadNote
@@ -465,7 +486,15 @@ class LeadService
             ->where('company_id', $resolvedCompanyId)
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->filter(function (LeadPipeline $pipeline) use ($resolvedCompanyId): bool {
+                if ($pipeline->system_key === MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY) {
+                    return $this->mapSavedLeadBridgeService->mapPipelineHasLeads($resolvedCompanyId);
+                }
+
+                return true;
+            })
+            ->values();
     }
 
     public function createPipeline(User $user, array $payload): LeadPipeline

@@ -116,6 +116,13 @@ class TaskService
         }
 
         $task = DB::transaction(function () use ($context, $user, $data, $agentId): Task {
+            $latitude = isset($data['latitude']) ? (float) $data['latitude'] : null;
+            $longitude = isset($data['longitude']) ? (float) $data['longitude'] : null;
+            $trackable = (new Task([
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+            ]))->hasTrackableLocation();
+
             $task = Task::create([
                 'company_id' => $context->company->id,
                 'project_id' => $data['project_id'] ?? null,
@@ -126,13 +133,13 @@ class TaskService
                 'description' => $data['description'] ?? null,
                 'location_text' => $data['location'] ?? null,
                 'address_full' => $data['address'] ?? null,
-                'latitude' => $data['latitude'] ?? null,
-                'longitude' => $data['longitude'] ?? null,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
                 'due_at' => $data['due_date'] ?? null,
                 'required_actions' => $data['required_actions'] ?? [],
                 'priority' => $data['priority'] ?? 'medium',
                 'minimum_photos_required' => (int) ($data['minimum_photos_required'] ?? 0),
-                'visit_verification_required' => (bool) ($data['visit_verification_required'] ?? false),
+                'visit_verification_required' => $trackable && (bool) ($data['visit_verification_required'] ?? false),
                 'status' => TaskStatus::PENDING->value,
             ]);
 
@@ -167,6 +174,13 @@ class TaskService
         }
 
         $task = DB::transaction(function () use ($context, $user, $data): Task {
+            $latitude = isset($data['latitude']) ? (float) $data['latitude'] : null;
+            $longitude = isset($data['longitude']) ? (float) $data['longitude'] : null;
+            $trackable = (new Task([
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+            ]))->hasTrackableLocation();
+
             $task = Task::create([
                 'company_id' => $context->company->id,
                 'project_id' => null,
@@ -177,13 +191,13 @@ class TaskService
                 'description' => $data['description'] ?? null,
                 'location_text' => $data['location'] ?? null,
                 'address_full' => $data['address'] ?? null,
-                'latitude' => $data['latitude'] ?? null,
-                'longitude' => $data['longitude'] ?? null,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
                 'due_at' => $data['due_date'] ?? null,
                 'required_actions' => $data['required_actions'] ?? [],
                 'priority' => $data['priority'] ?? 'medium',
                 'minimum_photos_required' => (int) ($data['minimum_photos_required'] ?? 0),
-                'visit_verification_required' => (bool) ($data['visit_verification_required'] ?? false),
+                'visit_verification_required' => $trackable && (bool) ($data['visit_verification_required'] ?? false),
                 'status' => TaskStatus::PENDING->value,
             ]);
 

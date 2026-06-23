@@ -36,6 +36,7 @@ import {
     type PipelineSnapshot,
     type UpdateLeadPayload,
 } from "@/lib/api/crm";
+import { SAVED_LOCATION_KEYS } from "@/hooks/use-saved-locations";
 
 export const CRM_KEYS = {
     all: ["crm"] as const,
@@ -200,6 +201,9 @@ export function useUpdateLead(
         }) => updateLead(leadId, payload, token, basePath),
         onSuccess: (res) => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            if (res.data.lead.linked_to_map || res.data.lead.company_location_id) {
+                queryClient.invalidateQueries({ queryKey: SAVED_LOCATION_KEYS.all });
+            }
             options?.onSuccess?.(res.data.lead);
         },
     });

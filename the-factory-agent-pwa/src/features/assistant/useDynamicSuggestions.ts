@@ -10,6 +10,8 @@ export interface AssistantSuggestion {
   label: string;
   /** The prompt actually sent to ELY when tapped. */
   prompt: string;
+  /** When true, attach last-known GPS coordinates for planning prompts. */
+  withGeolocation?: boolean;
 }
 
 const ROTATION_INTERVAL_MS = 20_000;
@@ -33,7 +35,14 @@ export function useDynamicSuggestions(): AssistantSuggestion[] {
   const totalLeads = leadsOverview?.total_uploaded_leads ?? 0;
 
   const pool = useMemo<AssistantSuggestion[]>(() => {
-    const items: AssistantSuggestion[] = [];
+    const items: AssistantSuggestion[] = [
+      {
+        id: 'plan-my-day',
+        label: '📋 Plan my day',
+        prompt: 'Plan my day',
+        withGeolocation: true,
+      },
+    ];
 
     // ── User activity / agent context (data-driven) ──────────────────────────
     if (pendingTasks > 0) {

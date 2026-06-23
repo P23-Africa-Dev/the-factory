@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { appStore, getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
+import { crmKeys } from '@/features/crm/queryKeys';
 import { locationApi } from './api';
 import { locationKeys } from './queryKeys';
 import type { CreateSavedLocationInput, SavedLocationFilters } from './types';
@@ -30,15 +31,25 @@ export function useSavedLocation(id: number | null) {
 export function useCreateSavedLocation() {
   return useMutation({
     mutationFn: (input: CreateSavedLocationInput) => locationApi.create(input),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: locationKeys.lists() });
+      if (variables.saveToCrm) {
+        queryClient.invalidateQueries({ queryKey: crmKeys.all });
+      }
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         toast.info(
           'Location saved locally',
-          'Will sync when internet connection is restored.',
+          variables.saveToCrm
+            ? 'Map and CRM sync will run when you are back online.'
+            : 'Will sync when internet connection is restored.',
         );
       } else {
-        toast.success('Location saved', 'Your location has been added to the map.');
+        toast.success(
+          variables.saveToCrm ? 'Saved to map & CRM' : 'Location saved',
+          variables.saveToCrm
+            ? 'Lead added to Saved from Map pipeline.'
+            : 'Your location has been added to the map.',
+        );
       }
     },
   });

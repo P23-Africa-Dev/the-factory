@@ -115,17 +115,13 @@ export function ScheduleTaskModal({
             nextErrors.taskDescription = "Task description is required.";
         }
 
-        if (!form.location.trim()) {
-            nextErrors.location = "Location is required.";
-        }
-
         if (canDelegate && !form.assignTo) {
             nextErrors.assignTo = "Select an agent for this task.";
         }
 
         setErrors(nextErrors);
         return Object.keys(nextErrors).length === 0;
-    }, [canDelegate, form.assignTo, form.location, form.taskDescription]);
+    }, [canDelegate, form.assignTo, form.taskDescription]);
 
     const geocodeAddress = useCallback(async (address: string) => {
         if (!address.trim()) {
@@ -186,7 +182,7 @@ export function ScheduleTaskModal({
         const commonPayload = {
             company_id: companyId,
             title: form.taskDescription.trim(),
-            location: form.location.trim(),
+            location: form.location.trim() || undefined,
             address: form.address.trim() || undefined,
             latitude: coords?.lat,
             longitude: coords?.lng,
@@ -278,7 +274,7 @@ export function ScheduleTaskModal({
                         {errors.assignTo && <p className="text-[11px] text-red-500">{errors.assignTo}</p>}
 
                         <label className="block text-[11px] font-bold uppercase tracking-wide text-[#0B1215]">
-                            Location
+                            Location <span className="font-normal normal-case text-gray-400">(optional)</span>
                         </label>
                         <div className="relative">
                             <MapPin className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />

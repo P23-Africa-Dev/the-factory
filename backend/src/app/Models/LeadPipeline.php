@@ -19,6 +19,7 @@ class LeadPipeline extends Model
         'currency_code',
         'sort_order',
         'is_default',
+        'system_key',
     ];
 
     protected function casts(): array

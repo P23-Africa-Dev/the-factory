@@ -16,6 +16,8 @@ class CompanyLocationResource extends JsonResource
             'company_id' => $this->company_id,
             'created_by_user_id' => $this->created_by_user_id,
             'updated_by_user_id' => $this->updated_by_user_id,
+            'crm_lead_id' => $this->crm_lead_id,
+            'linked_to_crm' => $this->crm_lead_id !== null,
             'name' => $this->name,
             'type' => $this->type,
             'description' => $this->description,
