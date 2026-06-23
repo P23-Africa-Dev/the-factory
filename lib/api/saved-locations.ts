@@ -15,6 +15,8 @@ export type SavedLocation = {
   company_id: number;
   created_by_user_id: number;
   updated_by_user_id: number | null;
+  crm_lead_id?: number | null;
+  linked_to_crm?: boolean;
   name: string;
   type: string | null;
   description: string | null;
@@ -69,6 +71,8 @@ export type CreateSavedLocationPayload = {
   email?: string | null;
   is_active?: boolean;
   meta?: Record<string, unknown> | null;
+  save_to_crm?: boolean;
+  crm_status?: string;
 };
 
 export type UpdateSavedLocationPayload = Partial<CreateSavedLocationPayload>;

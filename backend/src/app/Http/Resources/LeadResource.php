@@ -16,6 +16,8 @@ class LeadResource extends JsonResource
             'id' => $this->id,
             'company_id' => $this->company_id,
             'pipeline_id' => $this->pipeline_id,
+            'company_location_id' => $this->company_location_id,
+            'linked_to_map' => $this->company_location_id !== null,
             'created_by_user_id' => $this->created_by_user_id,
             'assigned_to_user_id' => $this->assigned_to_user_id,
             'name' => $this->name,

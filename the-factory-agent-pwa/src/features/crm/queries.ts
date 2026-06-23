@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getActiveCompanyId } from '@/lib/storage/stores';
+import { locationKeys } from '@/features/locations/queryKeys';
 import { crmApi } from './api';
 import { crmKeys } from './queryKeys';
 import type {
@@ -106,6 +107,7 @@ export function useUpdateLead(options?: { onSuccess?: (lead: Lead) => void }) {
     onSettled: (_data, _err, { id }) => {
       queryClient.invalidateQueries({ queryKey: crmKeys.lead(id) });
       queryClient.invalidateQueries({ queryKey: crmKeys.all });
+      queryClient.invalidateQueries({ queryKey: locationKeys.lists() });
     },
 
     onSuccess: (lead) => {

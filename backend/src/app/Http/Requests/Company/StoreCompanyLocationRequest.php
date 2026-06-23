@@ -39,6 +39,8 @@ class StoreCompanyLocationRequest extends FormRequest
             'email' => ['nullable', 'email', 'max:255'],
             'is_active' => ['sometimes', 'boolean'],
             'meta' => ['nullable', 'array'],
+            'save_to_crm' => ['sometimes', 'boolean'],
+            'crm_status' => ['nullable', 'string', 'max:120'],
         ];
     }
 }

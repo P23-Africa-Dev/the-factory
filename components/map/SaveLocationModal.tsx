@@ -19,6 +19,7 @@ export type SaveLocationFormValues = {
 export type SaveLocationSubmitPayload = SaveLocationFormValues & {
   latitude: number;
   longitude: number;
+  save_to_crm?: boolean;
 };
 
 interface SaveLocationModalProps {
@@ -94,7 +95,7 @@ export function SaveLocationModal({
     return Object.keys(next).length === 0;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = (saveToCrm = false) => {
     if (busy) return;
     if (!validate()) return;
     onSubmit({
@@ -103,6 +104,7 @@ export function SaveLocationModal({
       address: addressValue,
       latitude,
       longitude,
+      ...(mode === "create" ? { save_to_crm: saveToCrm } : {}),
     });
   };
 
@@ -215,24 +217,51 @@ export function SaveLocationModal({
               className={`${BASE_INPUT} px-3 py-2.5 border-gray-200 focus:border-[#094B5C] resize-none`}
             />
           </div>
+
+          {mode === "edit" && initial?.linked_to_crm && (
+            <p className="text-[11px] font-medium text-[#094B5C] bg-[#094B5C]/8 rounded-xl px-3 py-2">
+              Linked to CRM lead bank. Edits here update the matching lead record.
+            </p>
+          )}
         </div>
 
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100">
+        <div className="flex flex-col items-stretch gap-3 px-6 py-4 border-t border-gray-100">
           <button
             onClick={onClose}
             disabled={busy}
-            className="px-4 py-2.5 rounded-full text-sm font-semibold text-gray-600 hover:bg-gray-100"
+            className="px-4 py-2.5 rounded-full text-sm font-semibold text-gray-600 hover:bg-gray-100 self-end"
           >
             Cancel
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={busy}
-            className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-gradient-to-r from-[#094B5C] to-[#0A7E8C] hover:opacity-90 flex items-center gap-2 disabled:opacity-60"
-          >
-            {busy && <Loader2 size={15} className="animate-spin" />}
-            {mode === "create" ? "Save Location" : "Update Location"}
-          </button>
+          {mode === "create" ? (
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => handleSubmit(false)}
+                disabled={busy}
+                className="w-full px-6 py-2.5 rounded-full text-sm font-bold text-[#094B5C] border border-[#094B5C]/30 bg-white hover:bg-[#094B5C]/5 flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {busy && <Loader2 size={15} className="animate-spin" />}
+                Save on Map Only
+              </button>
+              <button
+                onClick={() => handleSubmit(true)}
+                disabled={busy}
+                className="w-full px-6 py-2.5 rounded-full text-sm font-bold text-white bg-gradient-to-r from-[#094B5C] to-[#0A7E8C] hover:opacity-90 flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {busy && <Loader2 size={15} className="animate-spin" />}
+                Save on Map &amp; CRM
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => handleSubmit(false)}
+              disabled={busy}
+              className="w-full px-6 py-2.5 rounded-full text-sm font-bold text-white bg-gradient-to-r from-[#094B5C] to-[#0A7E8C] hover:opacity-90 flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {busy && <Loader2 size={15} className="animate-spin" />}
+              Update Location
+            </button>
+          )}
         </div>
       </div>
     </div>,

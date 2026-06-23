@@ -33,6 +33,9 @@ export function LocationDetailsSheet({
             <div className="min-w-0">
               <h3 className="font-bold text-lg text-white truncate">{location.name}</h3>
               <p className="text-xs text-[#9FC4C6] font-semibold">{typeOption.label}</p>
+              {location.linkedToCrm && (
+                <p className="text-[10px] text-[#75ADAF] font-semibold mt-0.5">Also in CRM lead bank</p>
+              )}
             </div>
           </div>
           <button

@@ -515,10 +515,15 @@ export function SavedLocationsLayer({
         email: payload.email || null,
         latitude: payload.latitude,
         longitude: payload.longitude,
+        save_to_crm: payload.save_to_crm ?? false,
       },
       {
         onSuccess: (res) => {
-          toast.success("Location saved.");
+          toast.success(
+            res.data.location.linked_to_crm
+              ? "Location saved to map and CRM."
+              : "Location saved."
+          );
           setPendingPin(null);
           setSelected(res.data.location);
         },
@@ -542,7 +547,11 @@ export function SavedLocationsLayer({
       },
       {
         onSuccess: (res) => {
-          toast.success("Location updated.");
+          toast.success(
+            res.data.location.linked_to_crm
+              ? "Location and linked CRM lead updated."
+              : "Location updated."
+          );
           setEditing(null);
           setSelected(res.data.location);
         },
@@ -617,6 +626,9 @@ export function SavedLocationsLayer({
               <div className="min-w-0">
                 <h4 className="text-[14px] font-bold text-slate-800 truncate">{selected.name}</h4>
                 <p className="text-[11px] text-slate-500">{detailsType}</p>
+                {selected.linked_to_crm && (
+                  <p className="text-[10px] font-semibold text-[#094B5C]">Also in CRM lead bank</p>
+                )}
               </div>
             </div>
             <button

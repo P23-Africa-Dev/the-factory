@@ -18,6 +18,7 @@ import {
   type SavedLocation,
   type UpdateSavedLocationPayload,
 } from "@/lib/api/saved-locations";
+import { CRM_KEYS } from "@/hooks/use-crm";
 
 export const SAVED_LOCATION_KEYS = {
   all: ["saved-locations"] as const,
@@ -89,6 +90,9 @@ export function useCreateSavedLocation(options?: { onSuccess?: (location: SavedL
       ),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: SAVED_LOCATION_KEYS.all });
+      if (res.data.location.linked_to_crm || res.data.location.crm_lead_id) {
+        queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+      }
       options?.onSuccess?.(res.data.location);
     },
     onError: (err: unknown) => {
@@ -116,6 +120,9 @@ export function useUpdateSavedLocation(options?: { onSuccess?: (location: SavedL
       ),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: SAVED_LOCATION_KEYS.all });
+      if (res.data.location.linked_to_crm || res.data.location.crm_lead_id) {
+        queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+      }
       options?.onSuccess?.(res.data.location);
     },
     onError: (err: unknown) => {
@@ -133,6 +140,7 @@ export function useDeleteSavedLocation(options?: { onSuccess?: (deletedId: numbe
       deleteSavedLocation(locationId, { company_id: companyId as number | string }, token),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: SAVED_LOCATION_KEYS.all });
+      queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
       options?.onSuccess?.(res.data.deleted_location_id);
     },
     onError: (err: unknown) => {

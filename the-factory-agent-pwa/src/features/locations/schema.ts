@@ -21,6 +21,8 @@ const rawSavedLocationSchema = z
     longitude: z.union([z.number(), z.string(), z.null()]).optional(),
     contact_number: z.string().nullable().optional(),
     email: z.string().nullable().optional(),
+    crm_lead_id: z.union([z.string(), z.number(), z.null()]).optional(),
+    linked_to_crm: z.union([z.boolean(), z.number(), z.string()]).optional(),
     is_active: z.union([z.boolean(), z.number(), z.string()]).optional(),
     created_by: z
       .object({ name: z.string().optional() })
@@ -46,6 +48,15 @@ const rawSavedLocationSchema = z
       data.is_active === undefined
         ? true
         : data.is_active === true || data.is_active === 1 || data.is_active === '1',
+    crmLeadId:
+      data.crm_lead_id != null && data.crm_lead_id !== ''
+        ? Number(data.crm_lead_id)
+        : null,
+    linkedToCrm:
+      data.linked_to_crm === true ||
+      data.linked_to_crm === 1 ||
+      data.linked_to_crm === '1' ||
+      (data.crm_lead_id != null && data.crm_lead_id !== ''),
     createdByName: data.created_by?.name ?? null,
     createdAt: data.created_at ?? null,
   }));

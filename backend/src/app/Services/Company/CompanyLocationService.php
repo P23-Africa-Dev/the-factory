@@ -6,6 +6,7 @@ namespace App\Services\Company;
 
 use App\Models\CompanyLocation;
 use App\Models\User;
+use App\Services\Crm\MapSavedLeadBridgeService;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
@@ -14,6 +15,7 @@ class CompanyLocationService
 {
     public function __construct(
         private readonly CompanyContextService $companyContextService,
+        private readonly MapSavedLeadBridgeService $mapSavedLeadBridgeService,
     ) {}
 
     public function listForUser(User $user, array $filters): Paginator
@@ -53,6 +55,7 @@ class CompanyLocationService
 
         $location = CompanyLocation::create([
             'company_id' => $companyId,
+            'crm_lead_id' => null,
             'created_by_user_id' => (int) $user->id,
             'updated_by_user_id' => null,
             'name' => $data['name'],
@@ -66,6 +69,12 @@ class CompanyLocationService
             'is_active' => array_key_exists('is_active', $data) ? (bool) $data['is_active'] : true,
             'meta' => $data['meta'] ?? null,
         ]);
+
+        if (! empty($data['save_to_crm'])) {
+            $status = isset($data['crm_status']) ? (string) $data['crm_status'] : 'newly_lead';
+            $this->mapSavedLeadBridgeService->createLinkedLead($user, $location, $companyId, $status);
+            $location = $location->fresh();
+        }
 
         return $this->findForUser($user, $location, $companyId);
     }
@@ -102,7 +111,13 @@ class CompanyLocationService
             'updated_by_user_id' => (int) $user->id,
         ]);
 
-        return $this->findForUser($user, $location->fresh(), $companyId);
+        $location = $location->fresh();
+
+        if ($location->crm_lead_id !== null) {
+            $this->mapSavedLeadBridgeService->syncLocationToLead($location);
+        }
+
+        return $this->findForUser($user, $location, $companyId);
     }
 
     public function delete(User $user, CompanyLocation $location, ?int $companyId = null): void
@@ -111,6 +126,9 @@ class CompanyLocationService
         $resolvedCompanyId = (int) $context['company']->id;
         $this->assertLocationInCompany($location, $resolvedCompanyId);
         $this->ensureCanDelete((string) $context['role']);
+
+        $this->mapSavedLeadBridgeService->unlinkLocationFromLead($location);
+        $location->update(['crm_lead_id' => null]);
 
         $location->delete();
     }

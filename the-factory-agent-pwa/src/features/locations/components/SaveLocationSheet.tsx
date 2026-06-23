@@ -37,7 +37,7 @@ export function SaveLocationSheet({
 
   if (!visible) return null;
 
-  const handleSubmit = () => {
+  const handleSubmit = (saveToCrm: boolean) => {
     const result = saveLocationFormSchema.safeParse({
       name,
       type,
@@ -67,6 +67,7 @@ export function SaveLocationSheet({
       longitude,
       contactNumber: contactNumber.trim() || null,
       email: email.trim() || null,
+      saveToCrm,
     });
   };
 
@@ -164,25 +165,37 @@ export function SaveLocationSheet({
             Pinned at {latitude.toFixed(5)}, {longitude.toFixed(5)}
           </p>
 
-          <div className="flex gap-3 pt-1 pb-2">
+          <div className="flex flex-col gap-2 pt-1 pb-2">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="flex-1 h-12 rounded-xl border border-white/30 text-white font-bold text-sm hover:bg-white/5 active:scale-95 transition-all"
+              className="w-full h-11 rounded-xl border border-white/30 text-white font-semibold text-sm hover:bg-white/5 active:scale-95 transition-all disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="button"
-              onClick={handleSubmit}
+              onClick={() => handleSubmit(false)}
               disabled={isSubmitting}
-              className="flex-1 h-12 rounded-xl bg-[#75ADAF] hover:bg-[#66989A] text-white font-bold text-sm active:scale-95 transition-all flex items-center justify-center disabled:opacity-50"
+              className="w-full h-12 rounded-xl border border-[#75ADAF]/50 text-[#75ADAF] font-bold text-sm active:scale-95 transition-all flex items-center justify-center disabled:opacity-50"
+            >
+              {isSubmitting ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#75ADAF] border-t-transparent" />
+              ) : (
+                'Save on Map Only'
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSubmit(true)}
+              disabled={isSubmitting}
+              className="w-full h-12 rounded-xl bg-[#75ADAF] hover:bg-[#66989A] text-white font-bold text-sm active:scale-95 transition-all flex items-center justify-center disabled:opacity-50"
             >
               {isSubmitting ? (
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
               ) : (
-                'Save Location'
+                'Save on Map & CRM'
               )}
             </button>
           </div>

@@ -19,6 +19,7 @@ class Lead extends Model
     protected $fillable = [
         'company_id',
         'pipeline_id',
+        'company_location_id',
         'created_by_user_id',
         'assigned_to_user_id',
         'name',
@@ -54,6 +55,11 @@ class Lead extends Model
     public function pipeline(): BelongsTo
     {
         return $this->belongsTo(LeadPipeline::class, 'pipeline_id');
+    }
+
+    public function companyLocation(): BelongsTo
+    {
+        return $this->belongsTo(CompanyLocation::class, 'company_location_id');
     }
 
     public function creator(): BelongsTo
