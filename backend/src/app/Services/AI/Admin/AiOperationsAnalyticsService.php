@@ -56,8 +56,8 @@ class AiOperationsAnalyticsService
     public function topUsers(Carbon $from, int $limit = 5): array
     {
         return AiLog::query()
-            ->where('created_at', '>=', $from)
-            ->whereNotNull('user_id')
+            ->where('ai_logs.created_at', '>=', $from)
+            ->whereNotNull('ai_logs.user_id')
             ->join('users', 'users.id', '=', 'ai_logs.user_id')
             ->selectRaw('ai_logs.user_id, users.name, users.email, COUNT(*) as requests')
             ->groupBy('ai_logs.user_id', 'users.name', 'users.email')
@@ -79,8 +79,8 @@ class AiOperationsAnalyticsService
     public function topOrganizations(Carbon $from, int $limit = 5): array
     {
         return AiLog::query()
-            ->where('created_at', '>=', $from)
-            ->whereNotNull('company_id')
+            ->where('ai_logs.created_at', '>=', $from)
+            ->whereNotNull('ai_logs.company_id')
             ->join('companies', 'companies.id', '=', 'ai_logs.company_id')
             ->selectRaw('ai_logs.company_id, companies.name, COUNT(*) as requests')
             ->groupBy('ai_logs.company_id', 'companies.name')
