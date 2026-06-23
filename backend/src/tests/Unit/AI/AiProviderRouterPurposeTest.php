@@ -21,6 +21,7 @@ final class AiProviderRouterPurposeTest extends TestCase
         $router = new AiProviderRouter(
             $this->createMock(OpenAiProvider::class),
             $this->createMock(ClaudeProvider::class),
+            $this->createMock(\App\Services\AI\Admin\AiFailoverTracker::class),
         );
 
         $reflection = new \ReflectionClass($router);

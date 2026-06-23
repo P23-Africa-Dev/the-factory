@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AI\Providers;
 
+use App\Services\AI\Admin\AiFailoverTracker;
 use Illuminate\Http\UploadedFile;
 
 class AiProviderRouter
@@ -11,22 +12,15 @@ class AiProviderRouter
     public function __construct(
         private readonly OpenAiProvider $openAiProvider,
         private readonly ClaudeProvider $claudeProvider,
+        private readonly AiFailoverTracker $failoverTracker,
     ) {}
 
     public function generateText(string $systemPrompt, string $userPrompt, array $options = []): ?string
     {
-        foreach ($this->orderedProviders() as $provider) {
-            if (! $provider->isConfigured()) {
-                continue;
-            }
-
-            $result = $provider->generateText($systemPrompt, $userPrompt, $options);
-            if (is_string($result) && trim($result) !== '') {
-                return trim($result);
-            }
-        }
-
-        return null;
+        return $this->tryProviders(
+            $this->orderedProviders(),
+            fn (AiProviderContract $provider) => $provider->generateText($systemPrompt, $userPrompt, $options),
+        );
     }
 
     public function generateForPurpose(
@@ -39,18 +33,14 @@ class AiProviderRouter
         $model = $this->resolveModelForPurpose($purpose);
         $providers = $this->orderedProvidersForPurpose($purpose);
 
-        foreach ($providers as $provider) {
-            if (! $provider->isConfigured()) {
-                continue;
-            }
-
-            $result = $provider->generateText($systemPrompt, $userPrompt, array_merge($options, ['model' => $model]));
-            if (is_string($result) && trim($result) !== '') {
-                return trim($result);
-            }
-        }
-
-        return null;
+        return $this->tryProviders(
+            $providers,
+            fn (AiProviderContract $provider) => $provider->generateText(
+                $systemPrompt,
+                $userPrompt,
+                array_merge($options, ['model' => $model]),
+            ),
+        );
     }
 
     private function resolveModelForPurpose(string $purpose): string
@@ -97,18 +87,45 @@ class AiProviderRouter
 
     public function transcribeAudio(UploadedFile $audio, string $prompt = '', array $options = []): ?string
     {
-        foreach ($this->orderedProviders() as $provider) {
+        return $this->tryProviders(
+            $this->orderedProviders(),
+            fn (AiProviderContract $provider) => $provider->transcribeAudio($audio, $prompt, $options),
+        );
+    }
+
+    /**
+     * @param  array<int, AiProviderContract>  $providers
+     */
+    private function tryProviders(array $providers, callable $callback): ?string
+    {
+        $lastFailedProvider = null;
+
+        foreach ($providers as $provider) {
             if (! $provider->isConfigured()) {
                 continue;
             }
 
-            $result = $provider->transcribeAudio($audio, $prompt, $options);
+            $result = $callback($provider);
             if (is_string($result) && trim($result) !== '') {
+                if ($lastFailedProvider !== null) {
+                    $this->failoverTracker->record(
+                        $lastFailedProvider,
+                        $this->providerKey($provider),
+                    );
+                }
+
                 return trim($result);
             }
+
+            $lastFailedProvider = $this->providerKey($provider);
         }
 
         return null;
+    }
+
+    private function providerKey(AiProviderContract $provider): string
+    {
+        return $provider instanceof OpenAiProvider ? 'openai' : 'claude';
     }
 
     /**

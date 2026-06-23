@@ -26,7 +26,7 @@ class AiManagementPageTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->get(route('admin.ai.index'))
             ->assertOk()
-            ->assertSee('ELY Control Center');
+            ->assertSee('AI Operations Center');
     }
 
     public function test_admin_ai_index_renders_when_ai_logs_table_is_missing(): void
