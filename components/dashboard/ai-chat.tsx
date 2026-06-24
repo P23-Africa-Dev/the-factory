@@ -266,8 +266,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [isTranscriptModalOpen, setIsTranscriptModalOpen] = useState(false);
   const [transcriptInput, setTranscriptInput] = useState("");
   const [isVoicePreviewOpen, setIsVoicePreviewOpen] = useState(false);
+  const [isVoiceTranscriptionLoading, setIsVoiceTranscriptionLoading] = useState(false);
+  const [voiceTranscriptionStage, setVoiceTranscriptionStage] = useState("Processing voice note…");
+  const [voiceFileName, setVoiceFileName] = useState("");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceTranscriptSummary, setVoiceTranscriptSummary] = useState("");
+  const [voiceInstruction, setVoiceInstruction] = useState("");
   const [isAnalyzeFilePreviewOpen, setIsAnalyzeFilePreviewOpen] = useState(false);
   const [isFileAnalysisLoading, setIsFileAnalysisLoading] = useState(false);
   const [fileAnalysisStage, setFileAnalysisStage] = useState("Analyzing file…");
@@ -1230,18 +1234,45 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
   async function handleVoiceFile(file: File) {
     setIsRunningQuickAction(true);
+    setVoiceFileName(file.name);
+    setVoiceTranscript("");
+    setVoiceInstruction("");
+    setVoiceTranscriptSummary("");
+    setVoiceTranscriptionStage("Processing voice note…");
+    setIsVoiceTranscriptionLoading(true);
+    setIsVoicePreviewOpen(true);
+
+    const uploadingTimer = window.setTimeout(() => {
+      setVoiceTranscriptionStage("Transcribing your audio…");
+    }, 1200);
+
+    const preparingTimer = window.setTimeout(() => {
+      setVoiceTranscriptionStage("ELY is preparing your transcript…");
+    }, 3200);
+
     try {
       const result = await runVoiceTranscription(file, companyId ?? undefined);
-      const transcript = String(result?.transcript ?? "Voice transcription completed.");
+      const transcript = String(result?.transcript ?? "").trim();
+      if (!transcript) {
+        throw new Error("No speech was detected in this recording. Try a clearer voice note.");
+      }
       setVoiceTranscript(transcript);
-      // Generate a brief summary by requesting it
       setVoiceTranscriptSummary(`Transcript from: ${file.name}`);
-      setIsVoicePreviewOpen(true);
     } catch (err) {
+      setIsVoicePreviewOpen(false);
       toast.error(err instanceof Error ? err.message : "Failed to process voice input.");
     } finally {
+      window.clearTimeout(uploadingTimer);
+      window.clearTimeout(preparingTimer);
+      setIsVoiceTranscriptionLoading(false);
       setIsRunningQuickAction(false);
     }
+  }
+
+  function handleCloseVoiceModal() {
+    setIsVoicePreviewOpen(false);
+    setIsVoiceTranscriptionLoading(false);
+    setVoiceInstruction("");
   }
 
   async function handleAnalysisFile(file: File) {
@@ -1334,12 +1365,21 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function handleSendVoiceTranscriptToChat() {
+    if (!voiceTranscript.trim()) {
+      toast.error("Transcript is not ready yet. Please wait for processing to finish.");
+      return;
+    }
+
+    const instruction =
+      voiceInstruction.trim() ||
+      "Please review this voice note transcript and help me with the most useful next steps.";
+
     void sendCopilotMessage({
-      message: `Voice note transcript:\n\n${voiceTranscript}`,
+      message: `${instruction}\n\nVoice note transcript:\n${voiceTranscript.trim()}`,
       companyId: companyId ?? undefined,
     });
-    setIsVoicePreviewOpen(false);
-    toast.success("Transcript sent to chat!");
+    handleCloseVoiceModal();
+    toast.success("Voice note sent to chat!");
   }
 
   function handleSendFileAnalysisToChat() {
@@ -1547,11 +1587,11 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
                               <button
                                 onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); voiceInputRef.current?.click(); }}
-                                disabled={isRunningQuickAction || isStreaming}
+                                disabled={isRunningQuickAction || isStreaming || isVoiceTranscriptionLoading}
                                 className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#F2D9A6] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
                               >
                                 <FileAudio className="w-4 h-4 flex-shrink-0" />
-                                Voice Input
+                                {isVoiceTranscriptionLoading ? "Processing voice…" : "Voice Input"}
                               </button>
 
                               {canAnalyzeFile && (
@@ -1737,40 +1777,84 @@ export function AIChat({ open, onClose }: AIChatProps) {
             {/* Voice Transcription Preview Modal */}
             {isVoicePreviewOpen && (
               <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
-                <button className="absolute inset-0 bg-black/40" onClick={() => setIsVoicePreviewOpen(false)} aria-label="Close" />
+                <button className="absolute inset-0 bg-black/40" onClick={handleCloseVoiceModal} aria-label="Close" />
                 <div className="relative w-full max-w-2xl bg-[#0F2A2F] border border-white/10 rounded-2xl p-6 max-h-[80vh] overflow-y-auto">
-                  <h3 className="text-white text-[18px] font-semibold mb-2">Voice Transcription</h3>
+                  <div className="flex items-center gap-3 mb-4">
+                    {isVoiceTranscriptionLoading && (
+                      <div className="h-5 w-5 flex-shrink-0 rounded-full border-2 border-[#6B5A3B]/30 border-t-[#F2D9A6] animate-spin" />
+                    )}
+                    <h3 className="text-white text-[18px] font-semibold">
+                      {isVoiceTranscriptionLoading ? "Processing Voice Note…" : "Voice Note Ready"}
+                    </h3>
+                  </div>
+
+                  <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
+                    <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-1">Recording:</p>
+                    <p className="text-[#B9E9DD] text-[13px] truncate">{voiceFileName}</p>
+                  </div>
 
                   <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
                     <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">Transcript:</p>
-                    <p className="text-[#B9E9DD] text-[13px] leading-relaxed whitespace-pre-wrap break-words">
-                      {voiceTranscript}
-                    </p>
+                    {isVoiceTranscriptionLoading ? (
+                      <div className="space-y-3">
+                        <p className="text-[#B9E9DD] text-[13px]">{voiceTranscriptionStage}</p>
+                        <div className="space-y-2.5 pt-1">
+                          {[100, 92, 84, 68, 54].map((width, index) => (
+                            <div
+                              key={`voice-transcription-skeleton-${index}`}
+                              className="h-3 rounded-full bg-white/10 animate-pulse"
+                              style={{ width: `${width}%`, animationDelay: `${index * 120}ms` }}
+                            />
+                          ))}
+                        </div>
+                        <p className="text-[#88B3B5] text-[11px] leading-relaxed pt-1">
+                          Longer recordings may take a moment. Your transcript will appear here automatically.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-[#B9E9DD] text-[13px] leading-relaxed whitespace-pre-wrap break-words">
+                        {voiceTranscript}
+                      </p>
+                    )}
                   </div>
 
-                  {voiceTranscriptSummary && (
+                  {!isVoiceTranscriptionLoading && (
                     <div className="bg-[#132F3C] border border-[#355E73] rounded-lg p-4 mb-4">
-                      <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">What would you like to do?</p>
-                      <p className="text-[#B9E9DD] text-[13px] leading-relaxed">
-                        Send this transcript to chat for further discussion or analysis.
+                      <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">
+                        What should ELY do with this voice note?
                       </p>
+                      <textarea
+                        value={voiceInstruction}
+                        onChange={(event) => setVoiceInstruction(event.target.value)}
+                        placeholder="e.g. Summarize the key points, list action items, and flag anything urgent"
+                        className="w-full h-24 bg-[#1A3D4D] border border-[#355E73] rounded-lg p-3 text-[#B9E9DD] text-[13px] placeholder-[#5B7A87] focus:outline-none focus:border-[#4A7F94] resize-none"
+                      />
+                      <p className="text-[#88B3B5] text-[11px] mt-2 leading-relaxed">
+                        Optional. Leave blank and ELY will review the transcript and suggest useful next steps.
+                      </p>
+                      {voiceTranscriptSummary && (
+                        <p className="text-[#88B3B5] text-[11px] mt-2">{voiceTranscriptSummary}</p>
+                      )}
                     </div>
                   )}
 
                   <div className="flex justify-end gap-2">
                     <button
-                      onClick={() => setIsVoicePreviewOpen(false)}
+                      onClick={handleCloseVoiceModal}
                       className="px-4 py-2 rounded-lg bg-[#132A33] text-[#B9E9DD] hover:bg-[#1A3D4D]"
                     >
                       Close
                     </button>
-                    <button
-                      onClick={handleSendVoiceTranscriptToChat}
-                      className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] flex items-center gap-2"
-                    >
-                      <Send className="w-4 h-4" />
-                      Send to Chat
-                    </button>
+                    {!isVoiceTranscriptionLoading && (
+                      <button
+                        onClick={handleSendVoiceTranscriptToChat}
+                        disabled={!voiceTranscript.trim()}
+                        className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        <Send className="w-4 h-4" />
+                        Send to Chat
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1873,10 +1957,10 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     </button>
                     <button
                       onClick={() => voiceInputRef.current?.click()}
-                      disabled={isRunningQuickAction || isStreaming}
+                      disabled={isRunningQuickAction || isStreaming || isVoiceTranscriptionLoading}
                       className="rounded-full border border-[#6B5A3B] bg-[#342A1A] px-3 py-1.5 text-[11px] text-[#F2D9A6] hover:bg-[#433322] disabled:opacity-60"
                     >
-                      <span className="inline-flex items-center gap-1"><FileAudio className="h-3.5 w-3.5" /> Voice Input</span>
+                      <span className="inline-flex items-center gap-1"><FileAudio className="h-3.5 w-3.5" /> {isVoiceTranscriptionLoading ? "Processing…" : "Voice Input"}</span>
                     </button>
                     <button
                       onClick={() => fileInputRef.current?.click()}
