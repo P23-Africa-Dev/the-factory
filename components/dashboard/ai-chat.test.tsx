@@ -221,4 +221,66 @@ describe("AIChat", () => {
             );
         });
     });
+
+    it("opens voice modal with loading state and sends transcript with instruction", async () => {
+        let resolveVoice: (value: { transcript: string }) => void = () => { };
+        runVoiceTranscriptionMock.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    resolveVoice = resolve;
+                })
+        );
+
+        render(<AIChat open onClose={() => { }} />);
+
+        const voiceInput = document.querySelector('input[type="file"][accept="audio/*"]') as HTMLInputElement;
+        expect(voiceInput).toBeTruthy();
+
+        const audioFile = new File(["audio-bytes"], "field-update.m4a", { type: "audio/mp4" });
+        fireEvent.change(voiceInput, { target: { files: [audioFile] } });
+
+        expect(await screen.findByText("Processing Voice Note…")).toBeTruthy();
+        expect(screen.getByText("Processing voice note…")).toBeTruthy();
+        expect(screen.queryByRole("button", { name: /Send to Chat/i })).toBeNull();
+
+        resolveVoice({ transcript: "Please schedule the warehouse walkthrough for Friday morning." });
+
+        expect(await screen.findByText("Voice Note Ready")).toBeTruthy();
+        expect(
+            screen.getByText("Please schedule the warehouse walkthrough for Friday morning.")
+        ).toBeTruthy();
+
+        const instructionField = screen.getByPlaceholderText(/summarize the key points/i);
+        fireEvent.change(instructionField, {
+            target: { value: "Turn this into a task list with owners and due dates." },
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: /Send to Chat/i }));
+
+        await waitFor(() => {
+            expect(runVoiceTranscriptionMock).toHaveBeenCalled();
+            expect(sendMessageMock).toHaveBeenCalledWith({
+                message:
+                    "Turn this into a task list with owners and due dates.\n\nVoice note transcript:\nPlease schedule the warehouse walkthrough for Friday morning.",
+                companyId: 99,
+            });
+        });
+    });
+
+    it("closes voice modal and shows error when transcription fails", async () => {
+        runVoiceTranscriptionMock.mockRejectedValue(new Error("Transcription service unavailable"));
+
+        render(<AIChat open onClose={() => { }} />);
+
+        const voiceInput = document.querySelector('input[type="file"][accept="audio/*"]') as HTMLInputElement;
+        const audioFile = new File(["audio-bytes"], "note.wav", { type: "audio/wav" });
+        fireEvent.change(voiceInput, { target: { files: [audioFile] } });
+
+        expect(await screen.findByText("Processing Voice Note…")).toBeTruthy();
+
+        await waitFor(() => {
+            expect(screen.queryByText("Processing Voice Note…")).toBeNull();
+            expect(runVoiceTranscriptionMock).toHaveBeenCalled();
+        });
+    });
 });

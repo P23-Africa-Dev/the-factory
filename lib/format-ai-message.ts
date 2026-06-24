@@ -1,8 +1,7 @@
 /**
- * Convert assistant plain/markdown-ish text into safe HTML for chat display.
- * Strips markdown emphasis and normalizes list markers to readable punctuation.
+ * Convert assistant plain/markdown-ish text into readable plain text.
  */
-export function formatAiMessageHtml(content: string): string {
+export function formatPlainAiMessage(content: string): string {
   if (!content) {
     return "";
   }
@@ -14,9 +13,18 @@ export function formatAiMessageHtml(content: string): string {
   text = text.replace(/__([^_]+)__/g, "$1");
   text = text.replace(/_([^_\n]+)_/g, "$1");
   text = text.replace(/^#{1,6}\s+/gm, "");
-  text = text.replace(/^\s*[-*•]\s+/gm, "");
-  text = text.replace(/^\s*\d+\.\s+/gm, "");
-  text = text.replace(/^-{3,}$/gm, "");
+  text = text.replace(/^-{3,}\s*$/gm, "");
+  text = text.replace(/^\s*[-*]\s+/gm, "• ");
+  text = text.replace(/\n{3,}/g, "\n\n");
+
+  return text.trim();
+}
+
+/**
+ * Convert assistant plain/markdown-ish text into safe HTML for chat display.
+ */
+export function formatAiMessageHtml(content: string): string {
+  const text = formatPlainAiMessage(content);
 
   const escaped = text
     .replace(/&/g, "&amp;")

@@ -6,7 +6,7 @@ import {
   ElyMeetingActionFields,
   type ElyMeetingDraft,
 } from "@/components/dashboard/ely-meeting-action-fields";
-import { formatAiMessageHtml } from "@/lib/format-ai-message";
+import { formatAiMessageHtml, formatPlainAiMessage } from "@/lib/format-ai-message";
 import { ELY_INPUT_PLACEHOLDER, ELY_LANDING_HEADLINE, ELY_LANDING_SUBTEXT, ELY_NAME } from "@/lib/ely-brand";
 import type { CopilotChatContext, CopilotThreadSearchResult } from "@/lib/api/copilot";
 import { searchCopilotThreads } from "@/lib/api/copilot";
@@ -240,14 +240,41 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
+  const prevWeeklyReportStatusRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!weeklyReport) {
+      prevWeeklyReportStatusRef.current = null;
+      return;
+    }
+
+    const status = weeklyReport.status;
+    if (prevWeeklyReportStatusRef.current === status) {
+      return;
+    }
+
+    if (status === "completed") {
+      toast.success("Weekly summary is ready to download.");
+    } else if (status === "failed") {
+      toast.error(weeklyReport.error ?? "Weekly summary generation failed.");
+    }
+
+    prevWeeklyReportStatusRef.current = status;
+  }, [weeklyReport]);
 
   // AI Tools modals
   const [isTranscriptModalOpen, setIsTranscriptModalOpen] = useState(false);
   const [transcriptInput, setTranscriptInput] = useState("");
   const [isVoicePreviewOpen, setIsVoicePreviewOpen] = useState(false);
+  const [isVoiceTranscriptionLoading, setIsVoiceTranscriptionLoading] = useState(false);
+  const [voiceTranscriptionStage, setVoiceTranscriptionStage] = useState("Processing voice note…");
+  const [voiceFileName, setVoiceFileName] = useState("");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceTranscriptSummary, setVoiceTranscriptSummary] = useState("");
+  const [voiceInstruction, setVoiceInstruction] = useState("");
   const [isAnalyzeFilePreviewOpen, setIsAnalyzeFilePreviewOpen] = useState(false);
+  const [isFileAnalysisLoading, setIsFileAnalysisLoading] = useState(false);
+  const [fileAnalysisStage, setFileAnalysisStage] = useState("Analyzing file…");
   const [fileAnalysisResult, setFileAnalysisResult] = useState("");
   const [fileAnalysisFileName, setFileAnalysisFileName] = useState("");
 
@@ -1166,13 +1193,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   async function handleQueueWeeklyReport() {
-    await queueWeeklyReport(companyId ?? undefined);
+    if (!companyId) {
+      toast.error("Select a company before generating a weekly summary.");
+      return;
+    }
+
+    try {
+      await queueWeeklyReport(companyId ?? undefined);
+      toast.info("Weekly summary generation started. We'll notify you when it's ready.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start weekly summary generation.");
+    }
   }
 
-  async function handleDownloadWeeklyReport() {
+  async function handleDownloadWeeklyReport(format: "pdf" | "docx" = "pdf") {
     try {
-      await downloadWeeklyReport(companyId ?? undefined);
-      toast.success("Weekly report downloaded successfully!");
+      await downloadWeeklyReport(companyId ?? undefined, format);
+      toast.success(format === "docx" ? "Word document downloaded." : "PDF downloaded.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to download weekly report.");
     }
@@ -1197,33 +1234,81 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
   async function handleVoiceFile(file: File) {
     setIsRunningQuickAction(true);
+    setVoiceFileName(file.name);
+    setVoiceTranscript("");
+    setVoiceInstruction("");
+    setVoiceTranscriptSummary("");
+    setVoiceTranscriptionStage("Processing voice note…");
+    setIsVoiceTranscriptionLoading(true);
+    setIsVoicePreviewOpen(true);
+
+    const uploadingTimer = window.setTimeout(() => {
+      setVoiceTranscriptionStage("Transcribing your audio…");
+    }, 1200);
+
+    const preparingTimer = window.setTimeout(() => {
+      setVoiceTranscriptionStage("ELY is preparing your transcript…");
+    }, 3200);
+
     try {
       const result = await runVoiceTranscription(file, companyId ?? undefined);
-      const transcript = String(result?.transcript ?? "Voice transcription completed.");
+      const transcript = String(result?.transcript ?? "").trim();
+      if (!transcript) {
+        throw new Error("No speech was detected in this recording. Try a clearer voice note.");
+      }
       setVoiceTranscript(transcript);
-      // Generate a brief summary by requesting it
       setVoiceTranscriptSummary(`Transcript from: ${file.name}`);
-      setIsVoicePreviewOpen(true);
     } catch (err) {
+      setIsVoicePreviewOpen(false);
       toast.error(err instanceof Error ? err.message : "Failed to process voice input.");
     } finally {
+      window.clearTimeout(uploadingTimer);
+      window.clearTimeout(preparingTimer);
+      setIsVoiceTranscriptionLoading(false);
       setIsRunningQuickAction(false);
     }
   }
 
+  function handleCloseVoiceModal() {
+    setIsVoicePreviewOpen(false);
+    setIsVoiceTranscriptionLoading(false);
+    setVoiceInstruction("");
+  }
+
   async function handleAnalysisFile(file: File) {
     setIsRunningQuickAction(true);
+    setFileAnalysisFileName(file.name);
+    setFileAnalysisResult("");
+    setFileAnalysisStage("Analyzing file…");
+    setIsFileAnalysisLoading(true);
+    setIsAnalyzeFilePreviewOpen(true);
+
+    const readingTimer = window.setTimeout(() => {
+      setFileAnalysisStage("Reading document content…");
+    }, 1200);
+
+    const analyzingTimer = window.setTimeout(() => {
+      setFileAnalysisStage("ELY is analyzing your document…");
+    }, 3200);
+
     try {
       const result = await runFileAnalysis(file, companyId ?? undefined);
-      const analysis = String((result?.analysis as { summary?: string } | undefined)?.summary ?? "File analysis completed.");
-      setFileAnalysisResult(analysis);
-      setFileAnalysisFileName(file.name);
-      setIsAnalyzeFilePreviewOpen(true);
+      const rawSummary = String((result?.analysis as { summary?: string } | undefined)?.summary ?? "File analysis completed.");
+      setFileAnalysisResult(formatPlainAiMessage(rawSummary));
     } catch (err) {
+      setIsAnalyzeFilePreviewOpen(false);
       toast.error(err instanceof Error ? err.message : "Failed to analyze file.");
     } finally {
+      window.clearTimeout(readingTimer);
+      window.clearTimeout(analyzingTimer);
+      setIsFileAnalysisLoading(false);
       setIsRunningQuickAction(false);
     }
+  }
+
+  function handleCloseFileAnalysisModal() {
+    setIsAnalyzeFilePreviewOpen(false);
+    setIsFileAnalysisLoading(false);
   }
 
   async function handleTranscriptSummaryModalOpen() {
@@ -1280,12 +1365,21 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function handleSendVoiceTranscriptToChat() {
+    if (!voiceTranscript.trim()) {
+      toast.error("Transcript is not ready yet. Please wait for processing to finish.");
+      return;
+    }
+
+    const instruction =
+      voiceInstruction.trim() ||
+      "Please review this voice note transcript and help me with the most useful next steps.";
+
     void sendCopilotMessage({
-      message: `Voice note transcript:\n\n${voiceTranscript}`,
+      message: `${instruction}\n\nVoice note transcript:\n${voiceTranscript.trim()}`,
       companyId: companyId ?? undefined,
     });
-    setIsVoicePreviewOpen(false);
-    toast.success("Transcript sent to chat!");
+    handleCloseVoiceModal();
+    toast.success("Voice note sent to chat!");
   }
 
   function handleSendFileAnalysisToChat() {
@@ -1473,22 +1567,31 @@ export function AIChat({ open, onClose }: AIChatProps) {
                               </button>
 
                               {weeklyReport?.status === "completed" && (
-                                <button
-                                  onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); void handleDownloadWeeklyReport(); }}
-                                  className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E4FF] hover:bg-white/5 transition-colors text-left"
-                                >
-                                  <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
-                                  Download Summary
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); void handleDownloadWeeklyReport("pdf"); }}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E4FF] hover:bg-white/5 transition-colors text-left"
+                                  >
+                                    <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
+                                    Download as PDF
+                                  </button>
+                                  <button
+                                    onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); void handleDownloadWeeklyReport("docx"); }}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E4FF] hover:bg-white/5 transition-colors text-left"
+                                  >
+                                    <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
+                                    Download as Word
+                                  </button>
+                                </>
                               )}
 
                               <button
                                 onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); voiceInputRef.current?.click(); }}
-                                disabled={isRunningQuickAction || isStreaming}
+                                disabled={isRunningQuickAction || isStreaming || isVoiceTranscriptionLoading}
                                 className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#F2D9A6] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
                               >
                                 <FileAudio className="w-4 h-4 flex-shrink-0" />
-                                Voice Input
+                                {isVoiceTranscriptionLoading ? "Processing voice…" : "Voice Input"}
                               </button>
 
                               {canAnalyzeFile && (
@@ -1498,7 +1601,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                                   className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E7A0] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
                                 >
                                   <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
-                                  Analyze File
+                                  {isFileAnalysisLoading ? "Analyzing…" : "Analyze File"}
                                 </button>
                               )}
 
@@ -1674,40 +1777,84 @@ export function AIChat({ open, onClose }: AIChatProps) {
             {/* Voice Transcription Preview Modal */}
             {isVoicePreviewOpen && (
               <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
-                <button className="absolute inset-0 bg-black/40" onClick={() => setIsVoicePreviewOpen(false)} aria-label="Close" />
+                <button className="absolute inset-0 bg-black/40" onClick={handleCloseVoiceModal} aria-label="Close" />
                 <div className="relative w-full max-w-2xl bg-[#0F2A2F] border border-white/10 rounded-2xl p-6 max-h-[80vh] overflow-y-auto">
-                  <h3 className="text-white text-[18px] font-semibold mb-2">Voice Transcription</h3>
+                  <div className="flex items-center gap-3 mb-4">
+                    {isVoiceTranscriptionLoading && (
+                      <div className="h-5 w-5 flex-shrink-0 rounded-full border-2 border-[#6B5A3B]/30 border-t-[#F2D9A6] animate-spin" />
+                    )}
+                    <h3 className="text-white text-[18px] font-semibold">
+                      {isVoiceTranscriptionLoading ? "Processing Voice Note…" : "Voice Note Ready"}
+                    </h3>
+                  </div>
+
+                  <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
+                    <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-1">Recording:</p>
+                    <p className="text-[#B9E9DD] text-[13px] truncate">{voiceFileName}</p>
+                  </div>
 
                   <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
                     <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">Transcript:</p>
-                    <p className="text-[#B9E9DD] text-[13px] leading-relaxed whitespace-pre-wrap break-words">
-                      {voiceTranscript}
-                    </p>
+                    {isVoiceTranscriptionLoading ? (
+                      <div className="space-y-3">
+                        <p className="text-[#B9E9DD] text-[13px]">{voiceTranscriptionStage}</p>
+                        <div className="space-y-2.5 pt-1">
+                          {[100, 92, 84, 68, 54].map((width, index) => (
+                            <div
+                              key={`voice-transcription-skeleton-${index}`}
+                              className="h-3 rounded-full bg-white/10 animate-pulse"
+                              style={{ width: `${width}%`, animationDelay: `${index * 120}ms` }}
+                            />
+                          ))}
+                        </div>
+                        <p className="text-[#88B3B5] text-[11px] leading-relaxed pt-1">
+                          Longer recordings may take a moment. Your transcript will appear here automatically.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-[#B9E9DD] text-[13px] leading-relaxed whitespace-pre-wrap break-words">
+                        {voiceTranscript}
+                      </p>
+                    )}
                   </div>
 
-                  {voiceTranscriptSummary && (
+                  {!isVoiceTranscriptionLoading && (
                     <div className="bg-[#132F3C] border border-[#355E73] rounded-lg p-4 mb-4">
-                      <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">What would you like to do?</p>
-                      <p className="text-[#B9E9DD] text-[13px] leading-relaxed">
-                        Send this transcript to chat for further discussion or analysis.
+                      <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">
+                        What should ELY do with this voice note?
                       </p>
+                      <textarea
+                        value={voiceInstruction}
+                        onChange={(event) => setVoiceInstruction(event.target.value)}
+                        placeholder="e.g. Summarize the key points, list action items, and flag anything urgent"
+                        className="w-full h-24 bg-[#1A3D4D] border border-[#355E73] rounded-lg p-3 text-[#B9E9DD] text-[13px] placeholder-[#5B7A87] focus:outline-none focus:border-[#4A7F94] resize-none"
+                      />
+                      <p className="text-[#88B3B5] text-[11px] mt-2 leading-relaxed">
+                        Optional. Leave blank and ELY will review the transcript and suggest useful next steps.
+                      </p>
+                      {voiceTranscriptSummary && (
+                        <p className="text-[#88B3B5] text-[11px] mt-2">{voiceTranscriptSummary}</p>
+                      )}
                     </div>
                   )}
 
                   <div className="flex justify-end gap-2">
                     <button
-                      onClick={() => setIsVoicePreviewOpen(false)}
+                      onClick={handleCloseVoiceModal}
                       className="px-4 py-2 rounded-lg bg-[#132A33] text-[#B9E9DD] hover:bg-[#1A3D4D]"
                     >
                       Close
                     </button>
-                    <button
-                      onClick={handleSendVoiceTranscriptToChat}
-                      className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] flex items-center gap-2"
-                    >
-                      <Send className="w-4 h-4" />
-                      Send to Chat
-                    </button>
+                    {!isVoiceTranscriptionLoading && (
+                      <button
+                        onClick={handleSendVoiceTranscriptToChat}
+                        disabled={!voiceTranscript.trim()}
+                        className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        <Send className="w-4 h-4" />
+                        Send to Chat
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1716,9 +1863,20 @@ export function AIChat({ open, onClose }: AIChatProps) {
             {/* File Analysis Preview Modal */}
             {isAnalyzeFilePreviewOpen && (
               <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
-                <button className="absolute inset-0 bg-black/40" onClick={() => setIsAnalyzeFilePreviewOpen(false)} aria-label="Close" />
+                <button
+                  className="absolute inset-0 bg-black/40"
+                  onClick={handleCloseFileAnalysisModal}
+                  aria-label="Close"
+                />
                 <div className="relative w-full max-w-2xl bg-[#0F2A2F] border border-white/10 rounded-2xl p-6 max-h-[80vh] overflow-y-auto">
-                  <h3 className="text-white text-[18px] font-semibold mb-2">File Analysis</h3>
+                  <div className="flex items-center gap-3 mb-4">
+                    {isFileAnalysisLoading && (
+                      <div className="h-5 w-5 flex-shrink-0 rounded-full border-2 border-[#4A7F94]/30 border-t-[#7BB6B8] animate-spin" />
+                    )}
+                    <h3 className="text-white text-[18px] font-semibold">
+                      {isFileAnalysisLoading ? "Analyzing File…" : "File Analysis"}
+                    </h3>
+                  </div>
 
                   <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-2">
                     <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-1">File:</p>
@@ -1729,25 +1887,46 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
                   <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
                     <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">Analysis:</p>
-                    <p className="text-[#B9E9DD] text-[13px] leading-relaxed whitespace-pre-wrap break-words">
-                      {fileAnalysisResult}
-                    </p>
+                    {isFileAnalysisLoading ? (
+                      <div className="space-y-3">
+                        <p className="text-[#B9E9DD] text-[13px]">{fileAnalysisStage}</p>
+                        <div className="space-y-2.5 pt-1">
+                          {[100, 94, 88, 72, 58].map((width, index) => (
+                            <div
+                              key={`file-analysis-skeleton-${index}`}
+                              className="h-3 rounded-full bg-white/10 animate-pulse"
+                              style={{ width: `${width}%`, animationDelay: `${index * 120}ms` }}
+                            />
+                          ))}
+                        </div>
+                        <p className="text-[#88B3B5] text-[11px] leading-relaxed pt-1">
+                          PDFs and spreadsheets can take a little longer. Your results will appear here automatically.
+                        </p>
+                      </div>
+                    ) : (
+                      <div
+                        className="text-[#B9E9DD] text-[13px] leading-relaxed ai-message-content"
+                        dangerouslySetInnerHTML={{ __html: formatAiMessageHtml(fileAnalysisResult) }}
+                      />
+                    )}
                   </div>
 
                   <div className="flex justify-end gap-2">
                     <button
-                      onClick={() => setIsAnalyzeFilePreviewOpen(false)}
+                      onClick={handleCloseFileAnalysisModal}
                       className="px-4 py-2 rounded-lg bg-[#132A33] text-[#B9E9DD] hover:bg-[#1A3D4D]"
                     >
                       Close
                     </button>
-                    <button
-                      onClick={handleSendFileAnalysisToChat}
-                      className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] flex items-center gap-2"
-                    >
-                      <Send className="w-4 h-4" />
-                      Send to Chat
-                    </button>
+                    {!isFileAnalysisLoading && (
+                      <button
+                        onClick={handleSendFileAnalysisToChat}
+                        className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] flex items-center gap-2"
+                      >
+                        <Send className="w-4 h-4" />
+                        Send to Chat
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1778,17 +1957,17 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     </button>
                     <button
                       onClick={() => voiceInputRef.current?.click()}
-                      disabled={isRunningQuickAction || isStreaming}
+                      disabled={isRunningQuickAction || isStreaming || isVoiceTranscriptionLoading}
                       className="rounded-full border border-[#6B5A3B] bg-[#342A1A] px-3 py-1.5 text-[11px] text-[#F2D9A6] hover:bg-[#433322] disabled:opacity-60"
                     >
-                      <span className="inline-flex items-center gap-1"><FileAudio className="h-3.5 w-3.5" /> Voice Input</span>
+                      <span className="inline-flex items-center gap-1"><FileAudio className="h-3.5 w-3.5" /> {isVoiceTranscriptionLoading ? "Processing…" : "Voice Input"}</span>
                     </button>
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isRunningQuickAction || isStreaming}
                       className="rounded-full border border-[#4F5D2A] bg-[#2B3418] px-3 py-1.5 text-[11px] text-[#D8E7A0] hover:bg-[#364221] disabled:opacity-60"
                     >
-                      <span className="inline-flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5" /> Analyze File</span>
+                      <span className="inline-flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5" /> {isFileAnalysisLoading ? "Analyzing…" : "Analyze File"}</span>
                     </button>
                     <button
                       onClick={handleTranscriptSummaryModalOpen}
@@ -1805,22 +1984,42 @@ export function AIChat({ open, onClose }: AIChatProps) {
                       <span className="inline-flex items-center gap-1"><LineChart className="h-3.5 w-3.5" /> Forecast</span>
                     </button>
                   </div>
-                  {weeklyReport && (
-                    <div className="flex items-center gap-2 pt-1">
-                      <span className="rounded-full border border-[#3D6A78] bg-[#11303A] px-2.5 py-1 text-[11px] text-[#9CC6CA]">
-                        Report: {weeklyReport.status} ({weeklyReport.progress}%)
-                      </span>
-                      {weeklyReport.status === "completed" && (
-                        <button
-                          onClick={handleDownloadWeeklyReport}
-                          className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
-                        >
-                          Download Summary
-                        </button>
-                      )}
-                    </div>
-                  )}
                 </div>
+              </div>
+            )}
+
+            {(isQueueingWeeklyReport || weeklyReport) && (
+              <div className="mx-6 mt-2 flex flex-wrap items-center gap-2 rounded-2xl border border-[#3D6A78] bg-[#11303A]/90 px-4 py-2.5">
+                <span className="rounded-full border border-[#3D6A78] bg-[#11303A] px-2.5 py-1 text-[11px] text-[#9CC6CA]">
+                  {isQueueingWeeklyReport
+                    ? "Starting weekly summary…"
+                    : weeklyReport?.status === "completed"
+                      ? `Weekly summary ready (${weeklyReport.progress}%)`
+                      : weeklyReport?.status === "failed"
+                        ? "Weekly summary failed"
+                        : weeklyReport?.status === "running"
+                          ? `Generating weekly summary (${weeklyReport.progress}%)`
+                          : `Weekly summary queued (${weeklyReport?.progress ?? 0}%)`}
+                </span>
+                {weeklyReport?.status === "completed" && (
+                  <>
+                    <button
+                      onClick={() => void handleDownloadWeeklyReport("pdf")}
+                      className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
+                    >
+                      Download PDF
+                    </button>
+                    <button
+                      onClick={() => void handleDownloadWeeklyReport("docx")}
+                      className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
+                    >
+                      Download Word
+                    </button>
+                  </>
+                )}
+                {weeklyReport?.status === "failed" && weeklyReport.error && (
+                  <span className="text-[11px] text-[#F2B8B8]">{weeklyReport.error}</span>
+                )}
               </div>
             )}
 

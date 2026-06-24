@@ -120,6 +120,19 @@ class AiProviderRouter
         );
     }
 
+    public function analyzeDocumentFile(
+        UploadedFile $file,
+        string $systemPrompt,
+        string $userPrompt,
+        array $options = [],
+    ): ?string {
+        if (! $this->openAiProvider->isConfigured()) {
+            return null;
+        }
+
+        return $this->openAiProvider->analyzeDocumentFile($file, $systemPrompt, $userPrompt, $options);
+    }
+
     /**
      * @param  array<int, AiProviderContract>  $providers
      */

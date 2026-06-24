@@ -97,10 +97,16 @@ class CopilotReportingController extends Controller
 
     public function downloadWeeklySummary(Request $request, string $reportId): StreamedResponse
     {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'format' => ['nullable', 'in:pdf,docx'],
+        ]);
+
         $download = $this->executiveReportService->downloadPayloadForUser(
             user: $request->user(),
             reportId: $reportId,
-            companyId: $this->resolveCompanyContextId($request->input('company_id')),
+            companyId: $this->resolveCompanyContextId($validated['company_id'] ?? $request->input('company_id')),
+            format: (string) ($validated['format'] ?? 'pdf'),
         );
 
         return response()->streamDownload(

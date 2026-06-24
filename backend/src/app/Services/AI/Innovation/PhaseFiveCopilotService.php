@@ -7,6 +7,7 @@ namespace App\Services\AI\Innovation;
 use App\Models\Meeting;
 use App\Models\User;
 use App\Services\AI\ElySystemPrompt;
+use App\Services\AI\Support\AiPlainTextFormatter;
 use App\Services\AI\Providers\AiProviderRouter;
 use App\Services\Company\CompanyContextService;
 use App\Services\Dashboard\DashboardAggregateService;
@@ -53,18 +54,39 @@ class PhaseFiveCopilotService
 
         $extractedText = $this->fileTextExtractor->extract($file, $extension);
         $aiSummary = null;
+        $analysisMethod = 'none';
+
+        $systemPrompt = <<<'PROMPT'
+You are ELY, an operations assistant. Analyze the uploaded file and return plain text only.
+Do not use markdown. Never use asterisks, hash headings, hyphen bullets, or horizontal rules.
+Structure your response with short section labels on their own line, such as:
+Summary:
+Key findings:
+Recommended next actions:
+Use the bullet character • for list items. Use numbered items like "1." when ordering steps.
+Provide a concise summary, key findings or metrics, and recommended next actions.
+Do not invent data that is not present in the file.
+PROMPT;
 
         if (is_string($extractedText) && trim($extractedText) !== '') {
+            $analysisMethod = 'local_extract';
             $aiSummary = $this->aiProviderRouter->generateForPurpose(
                 purpose: 'operational',
-                systemPrompt: <<<'PROMPT'
-You are ELY, an operations assistant. Analyze the uploaded file excerpt and return plain text only.
-Provide: (1) a concise summary, (2) key findings or metrics, and (3) recommended next actions.
-Do not invent data that is not present in the excerpt.
-PROMPT,
+                systemPrompt: $systemPrompt,
                 userPrompt: "File name: {$file->getClientOriginalName()}\n\nExcerpt:\n" . Str::limit($extractedText, 12000),
                 options: [
-                    'max_tokens' => 700,
+                    'max_tokens' => 900,
+                    'temperature' => 0.2,
+                ],
+            );
+        } elseif ($isPdf) {
+            $analysisMethod = 'openai_pdf';
+            $aiSummary = $this->aiProviderRouter->analyzeDocumentFile(
+                file: $file,
+                systemPrompt: $systemPrompt,
+                userPrompt: 'Analyze this PDF document for operational insights. Return plain text only with section labels Summary, Key findings, and Recommended next actions. Use • for bullets. If the document is image-based or scanned, read visible text from the pages and summarize what you can.',
+                options: [
+                    'max_tokens' => 900,
                     'temperature' => 0.2,
                 ],
             );
@@ -73,15 +95,27 @@ PROMPT,
         $analysis = [
             'kind' => $isSpreadsheet ? 'spreadsheet' : 'document',
             'summary' => is_string($aiSummary) && trim($aiSummary) !== ''
-                ? trim($aiSummary)
+                ? AiPlainTextFormatter::normalize(trim($aiSummary))
                 : ($isPdf
-                    ? 'PDF received but no readable text could be extracted. Try exporting the document as TXT or CSV for full AI analysis.'
+                    ? 'PDF received but analysis could not be completed. The file may be encrypted, corrupted, or unreadable. Try exporting as TXT or re-uploading an unlocked copy.'
                     : ($isSpreadsheet
-                        ? 'Spreadsheet received but no readable rows were found. Upload CSV or XLSX with data for analysis.'
+                        ? 'Spreadsheet received but no readable rows were found. Ensure the file contains data rows (not only charts/images) or export as CSV and upload again.'
                         : 'Document received but no readable text could be extracted. Upload TXT, CSV, DOCX, or a text-based PDF.')),
             'extracted_chars' => is_string($extractedText) ? mb_strlen($extractedText) : 0,
             'ai_generated' => is_string($aiSummary) && trim($aiSummary) !== '',
+            'analysis_method' => $analysisMethod,
         ];
+
+        if (! $analysis['ai_generated']) {
+            logger()->warning('Copilot file analysis produced no AI summary.', [
+                'file_name' => $file->getClientOriginalName(),
+                'extension' => $extension,
+                'extracted_chars' => $analysis['extracted_chars'],
+                'analysis_method' => $analysisMethod,
+                'company_id' => (int) $context['company']->id,
+                'user_id' => (int) $user->id,
+            ]);
+        }
 
         return [
             'company_id' => (int) $context['company']->id,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AI\Reporting;
 
+use App\Models\Company;
 use App\Models\User;
 use App\Services\AI\Analytics\ExecutiveAnalyticsService;
 use App\Services\AI\Providers\AiProviderRouter;
@@ -18,6 +19,7 @@ class ExecutiveReportService
         private readonly CompanyContextService $companyContextService,
         private readonly ExecutiveAnalyticsService $executiveAnalyticsService,
         private readonly AiProviderRouter $aiProviderRouter,
+        private readonly WeeklyExecutiveSummaryExporter $weeklyExecutiveSummaryExporter,
     ) {}
 
     public function queueWeeklySummary(User $user, ?int $companyId = null, ?string $fromDate = null, ?string $toDate = null): array
@@ -121,7 +123,7 @@ class ExecutiveReportService
         return $this->statusByIds((int) $context['company']->id, (int) $user->id, $reportId);
     }
 
-    public function downloadPayloadForUser(User $user, string $reportId, ?int $companyId = null): array
+    public function downloadPayloadForUser(User $user, string $reportId, ?int $companyId = null, string $format = 'pdf'): array
     {
         $status = $this->statusForUser($user, $reportId, $companyId);
 
@@ -129,12 +131,22 @@ class ExecutiveReportService
             throw new HttpException(409, 'Report is not ready for download yet.');
         }
 
-        $content = json_encode($status['report'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $report = $status['report'];
+        $normalizedFormat = $format === 'docx' ? 'docx' : 'pdf';
+        $companyName = Company::query()
+            ->whereKey((int) ($report['company_id'] ?? 0))
+            ->value('name');
+
+        $content = $normalizedFormat === 'docx'
+            ? $this->weeklyExecutiveSummaryExporter->toWordDocument($report, is_string($companyName) ? $companyName : null)
+            : $this->weeklyExecutiveSummaryExporter->toPdf($report, is_string($companyName) ? $companyName : null);
 
         return [
-            'filename' => sprintf('copilot-weekly-summary-%s.json', $reportId),
-            'content_type' => 'application/json',
-            'content' => $content === false ? '{}' : $content,
+            'filename' => $this->weeklyExecutiveSummaryExporter->buildFilename($report, $normalizedFormat),
+            'content_type' => $normalizedFormat === 'docx'
+                ? 'application/msword'
+                : 'application/pdf',
+            'content' => $content,
         ];
     }
 

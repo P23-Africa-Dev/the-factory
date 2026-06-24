@@ -11,62 +11,8 @@
   import { NotificationPanel, useUnreadCount } from '@/features/notifications';
   import { MeetingWidget, CreateMeetingModal } from '@/features/meetings';
   import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
+  import { searchPlacesWithMapbox } from '@/lib/map/geocoding';
   import { useGeolocation } from '@/features/tracking';
-
-  function getCountryCode(countryStr?: string | null): string {
-    if (countryStr) {
-      const clean = countryStr.trim().toUpperCase();
-      if (clean.length === 2) return clean;
-      const countryMap: Record<string, string> = {
-        NIGERIA: 'NG',
-        GHANA: 'GH',
-        KENYA: 'KE',
-        'SOUTH AFRICA': 'ZA',
-        RWANDA: 'RW',
-        UGANDA: 'UG',
-        TANZANIA: 'TZ',
-        EGYPT: 'EG',
-        CAMEROON: 'CM',
-        SENEGAL: 'SN',
-        ETHIOPIA: 'ET',
-        'UNITED STATES': 'US',
-        'UNITED KINGDOM': 'GB',
-        CANADA: 'CA',
-      };
-      if (countryMap[clean]) return countryMap[clean];
-    }
-
-    // Fallback to browser timezone country code detection
-    if (typeof window !== 'undefined' && typeof Intl !== 'undefined') {
-      try {
-        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const tzMap: Record<string, string> = {
-          'Africa/Lagos': 'NG',
-          'Africa/Accra': 'GH',
-          'Africa/Nairobi': 'KE',
-          'Africa/Johannesburg': 'ZA',
-          'Africa/Kigali': 'RW',
-          'Africa/Kampala': 'UG',
-          'Africa/Dar_es_Salaam': 'TZ',
-          'Africa/Cairo': 'EG',
-          'Africa/Douala': 'CM',
-          'Africa/Dakar': 'SN',
-          'Africa/Addis_Ababa': 'ET',
-          'America/New_York': 'US',
-          'America/Chicago': 'US',
-          'America/Denver': 'US',
-          'America/Los_Angeles': 'US',
-          'Europe/London': 'GB',
-          'America/Toronto': 'CA',
-        };
-        for (const [prefix, code] of Object.entries(tzMap)) {
-          if (timeZone.startsWith(prefix)) return code;
-        }
-      } catch (e) {}
-    }
-
-    return 'NG';
-  }
 
   export default function AgentDashboardPage() {
     const router = useRouter();
@@ -95,7 +41,7 @@
     const dragDistance = useRef(0);
     const currentTranslateY = useRef(0);
 
-    const { lastPosition, checkPermission, getCurrentPosition } = useGeolocation();
+    const { checkPermission, getCurrentPosition } = useGeolocation();
 
     useEffect(() => {
       checkPermission().then((status) => {
@@ -218,40 +164,26 @@
       };
     }, []);
 
-    // Mapbox Geocoding Search
     const searchMapboxPlaces = useCallback(async (query: string) => {
       if (!query.trim()) {
         setLocationResults([]);
         return;
       }
 
-      const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-      if (!token) return;
-
       try {
-        const proximityParam = lastPosition
-          ? `&proximity=${lastPosition.coords.longitude},${lastPosition.coords.latitude}`
-          : '';
-        const countryCode = getCountryCode(profile?.organization?.country);
-        const countryFilter = lastPosition ? '' : `&country=${countryCode}`;
-        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}${countryFilter}&limit=5${proximityParam}`;
-        const response = await fetch(url);
-        const data = await response.json();
-        if (data.features) {
-          const places = data.features.map(
-            (feature: { text: string; place_name: string; center: [number, number] }) => ({
-              name: feature.text,
-              address: feature.place_name,
-              longitude: feature.center[0],
-              latitude: feature.center[1],
-            })
-          );
-          setLocationResults(places);
-        }
+        const places = await searchPlacesWithMapbox(query, { limit: 5 });
+        setLocationResults(
+          places.map((place) => ({
+            name: place.name,
+            address: place.address,
+            longitude: place.longitude,
+            latitude: place.latitude,
+          })),
+        );
       } catch {
         // Geocoding is non-critical — silent failure is acceptable
       }
-    }, [lastPosition, profile]);
+    }, []);
 
     const handleLocationQueryChange = (text: string) => {
       setLocationQuery(text);

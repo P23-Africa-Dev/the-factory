@@ -45,6 +45,7 @@ import {
   type CreateSavedLocationInput,
 } from '@/features/locations';
 import { getSavedLocationType } from '@/lib/map/locationTypes';
+import { searchPlacesWithMapbox } from '@/lib/map/geocoding';
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
 import type { SavedLocationPin } from '@/features/tracking/components/MapboxMap';
 import { MapPin, Plus } from 'lucide-react';
@@ -798,61 +799,6 @@ function AddNoteModal({
   );
 }
 
-function getCountryCode(countryStr?: string | null): string {
-  if (countryStr) {
-    const clean = countryStr.trim().toUpperCase();
-    if (clean.length === 2) return clean;
-    const countryMap: Record<string, string> = {
-      NIGERIA: 'NG',
-      GHANA: 'GH',
-      KENYA: 'KE',
-      'SOUTH AFRICA': 'ZA',
-      RWANDA: 'RW',
-      UGANDA: 'UG',
-      TANZANIA: 'TZ',
-      EGYPT: 'EG',
-      CAMEROON: 'CM',
-      SENEGAL: 'SN',
-      ETHIOPIA: 'ET',
-      'UNITED STATES': 'US',
-      'UNITED KINGDOM': 'GB',
-      CANADA: 'CA',
-    };
-    if (countryMap[clean]) return countryMap[clean];
-  }
-
-  // Fallback to browser timezone country code detection
-  if (typeof window !== 'undefined' && typeof Intl !== 'undefined') {
-    try {
-      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const tzMap: Record<string, string> = {
-        'Africa/Lagos': 'NG',
-        'Africa/Accra': 'GH',
-        'Africa/Nairobi': 'KE',
-        'Africa/Johannesburg': 'ZA',
-        'Africa/Kigali': 'RW',
-        'Africa/Kampala': 'UG',
-        'Africa/Dar_es_Salaam': 'TZ',
-        'Africa/Cairo': 'EG',
-        'Africa/Douala': 'CM',
-        'Africa/Dakar': 'SN',
-        'Africa/Addis_Ababa': 'ET',
-        'America/New_York': 'US',
-        'America/Chicago': 'US',
-        'America/Denver': 'US',
-        'America/Los_Angeles': 'US',
-        'Europe/London': 'GB',
-        'America/Toronto': 'CA',
-      };
-      for (const [prefix, code] of Object.entries(tzMap)) {
-        if (timeZone.startsWith(prefix)) return code;
-      }
-    } catch (e) {}
-  }
-
-  return 'NG';
-}
-
 // ─── Main Content Component ───────────────────────────────────────────────────
 
 function MapContent() {
@@ -1141,46 +1087,30 @@ function MapContent() {
   }, []);
 
   const searchGeoDestPlaces = useCallback(async (query: string): Promise<void> => {
-    if (!query.trim()) { setGeoDestResults([]); return; }
-    const token = env.MAPBOX_TOKEN;
-    if (!token) return;
+    if (!query.trim()) {
+      setGeoDestResults([]);
+      return;
+    }
     try {
-      const proximityParam = lastPosition
-        ? `&proximity=${lastPosition.coords.longitude},${lastPosition.coords.latitude}`
-        : '';
-      const countryCode = getCountryCode(profile?.organization?.country);
-      const countryFilter = lastPosition ? '' : `&country=${countryCode}`;
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}${countryFilter}&limit=5${proximityParam}`;
-      const resp = await fetch(url);
-      const data = await resp.json() as { features?: Array<{ text: string; place_name: string; center: [number, number] }> };
-      if (data.features) {
-        setGeoDestResults(
-          data.features.map((f) => ({ name: f.text, address: f.place_name, latitude: f.center[1], longitude: f.center[0] })),
-        );
-      }
-    } catch {}
-  }, [lastPosition, profile]);
+      const places = await searchPlacesWithMapbox(query, { limit: 5 });
+      setGeoDestResults(places);
+    } catch {
+      setGeoDestResults([]);
+    }
+  }, []);
 
   const searchOriginPlaces = useCallback(async (query: string): Promise<void> => {
-    if (!query.trim()) { setOriginGeoResults([]); return; }
-    const token = env.MAPBOX_TOKEN;
-    if (!token) return;
+    if (!query.trim()) {
+      setOriginGeoResults([]);
+      return;
+    }
     try {
-      const proximityParam = lastPosition
-        ? `&proximity=${lastPosition.coords.longitude},${lastPosition.coords.latitude}`
-        : '';
-      const countryCode = getCountryCode(profile?.organization?.country);
-      const countryFilter = lastPosition ? '' : `&country=${countryCode}`;
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}${countryFilter}&limit=5${proximityParam}`;
-      const resp = await fetch(url);
-      const data = await resp.json() as { features?: Array<{ text: string; place_name: string; center: [number, number] }> };
-      if (data.features) {
-        setOriginGeoResults(
-          data.features.map((f) => ({ name: f.text, address: f.place_name, latitude: f.center[1], longitude: f.center[0] })),
-        );
-      }
-    } catch {}
-  }, [lastPosition, profile]);
+      const places = await searchPlacesWithMapbox(query, { limit: 5 });
+      setOriginGeoResults(places);
+    } catch {
+      setOriginGeoResults([]);
+    }
+  }, []);
 
   // Boot GPS for map preview. We deliberately do NOT force a permission prompt
   // on page load — the Start flow prompts when the user actually starts a task,

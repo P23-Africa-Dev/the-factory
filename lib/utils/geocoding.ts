@@ -30,7 +30,7 @@ export async function searchPlacesWithMapbox(
     const country = options?.country;
     const countryParam = country ? `&country=${country}` : '';
     const limit = options?.limit ?? 5;
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmed)}.json?access_token=${token}${countryParam}&limit=${limit}&types=place,locality,neighborhood,address,poi&autocomplete=true`;
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmed)}.json?access_token=${token}${countryParam}&limit=${limit}&types=country,region,place,locality,neighborhood,address,poi&autocomplete=true`;
 
     try {
         const response = await fetch(url);

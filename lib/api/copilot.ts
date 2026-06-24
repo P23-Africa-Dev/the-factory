@@ -125,6 +125,29 @@ export type WeeklySummaryStatusResponse = {
     available: boolean;
 };
 
+const WEEKLY_SUMMARY_STATUSES = new Set<WeeklySummaryStatusResponse["status"]>([
+    "queued",
+    "running",
+    "completed",
+    "failed",
+]);
+
+export function normalizeWeeklySummaryStatus(raw: Record<string, unknown>): WeeklySummaryStatusResponse {
+    const rawStatus = typeof raw.status === "string" ? raw.status : "queued";
+    const status = WEEKLY_SUMMARY_STATUSES.has(rawStatus as WeeklySummaryStatusResponse["status"])
+        ? (rawStatus as WeeklySummaryStatusResponse["status"])
+        : "queued";
+    const downloadReady = raw.download_ready === true || raw.available === true || status === "completed";
+
+    return {
+        report_id: String(raw.report_id ?? ""),
+        status,
+        progress: typeof raw.progress === "number" ? raw.progress : Number(raw.progress) || 0,
+        error: typeof raw.error === "string" ? raw.error : null,
+        available: status === "completed" && downloadReady,
+    };
+}
+
 export type CopilotAssigneeOption = {
     id: number;
     name: string;
@@ -321,29 +344,44 @@ export function queueWeeklySummaryReport(
     });
 }
 
-export function getWeeklySummaryStatus(
+export async function getWeeklySummaryStatus(
     reportId: string,
     token: string,
     companyId?: number | string
 ): Promise<ApiEnvelope<WeeklySummaryStatusResponse>> {
-    return apiRequest<WeeklySummaryStatusResponse>({
+    const response = await apiRequest<Record<string, unknown>>({
         method: "GET",
         path: `/copilot/reports/weekly-summary/${encodeURIComponent(reportId)}${buildQuery(companyId)}`,
         token,
     });
+
+    return {
+        ...response,
+        data: normalizeWeeklySummaryStatus(response.data),
+    };
 }
+
+export type WeeklySummaryDownloadFormat = "pdf" | "docx";
 
 export async function downloadWeeklySummaryReport(
     reportId: string,
     token: string,
-    companyId?: number | string
-): Promise<{ filename: string; content: string }> {
+    companyId?: number | string,
+    format: WeeklySummaryDownloadFormat = "pdf"
+): Promise<{ filename: string; content: ArrayBuffer; mimeType: string }> {
+    const params = new URLSearchParams();
+    if (companyId !== undefined && companyId !== null && String(companyId).trim() !== "") {
+        params.set("company_id", String(companyId));
+    }
+    params.set("format", format);
+    const query = `?${params.toString()}`;
+
     const response = await fetch(
-        `${API_BASE_URL}/copilot/reports/weekly-summary/${encodeURIComponent(reportId)}/download${buildQuery(companyId)}`,
+        `${API_BASE_URL}/copilot/reports/weekly-summary/${encodeURIComponent(reportId)}/download${query}`,
         {
             method: "GET",
             headers: {
-                Accept: "application/json, application/octet-stream, */*",
+                Accept: "application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/octet-stream, */*",
                 ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
         }
@@ -354,14 +392,20 @@ export async function downloadWeeklySummaryReport(
         throw new ApiRequestError(payload?.message ?? "Unable to download weekly summary.", response.status, payload);
     }
 
-    const content = await response.text();
+    const content = await response.arrayBuffer();
     const disposition = response.headers.get("Content-Disposition") ?? "";
     const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+    const mimeType =
+        format === "docx"
+            ? "application/msword"
+            : "application/pdf";
     const filename = filenameMatch?.[1]
         ? decodeURIComponent(filenameMatch[1].replace(/"/g, ""))
-        : `weekly-summary-${reportId}.json`;
+        : format === "docx"
+          ? `Weekly-Executive-Summary.doc`
+          : `Weekly-Executive-Summary.pdf`;
 
-    return { filename, content };
+    return { filename, content, mimeType };
 }
 
 export function transcribeVoiceInput(
