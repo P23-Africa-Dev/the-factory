@@ -6,6 +6,7 @@ export type MeetingStatus = "scheduled" | "cancelled" | "completed";
 export type MeetingAttendee = {
     id?: number;
     user_id?: number | null;
+    lead_id?: number | null;
     email: string;
     display_name?: string | null;
     response_status?: "needs_action" | "accepted" | "tentative" | "declined";
@@ -30,6 +31,14 @@ export type MeetingReminder = {
 
 export type MeetingSettings = {
     [key: string]: unknown;
+};
+
+export type MeetingLead = {
+    id: number;
+    name: string;
+    email?: string | null;
+    phone?: string | null;
+    status?: string | null;
 };
 
 export type MeetingItem = {
@@ -64,6 +73,7 @@ export type MeetingItem = {
     synced_at?: string | null;
     external_updated_at?: string | null;
     attendees?: MeetingAttendee[];
+    leads?: MeetingLead[];
     creator?: {
         id: number;
         name: string;
@@ -115,6 +125,7 @@ export type CreateMeetingPayload = {
         user_id?: number;
         is_optional?: boolean;
     }>;
+    lead_ids?: number[];
 };
 
 export type UpdateMeetingPayload = Partial<
