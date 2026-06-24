@@ -81,6 +81,7 @@ function toRelativeTime(value?: string | null): string {
 }
 
 function mapLeadToItem(lead: LeadApiItem): DndItem {
+  const rawValue = typeof lead.meta?.value === 'number' ? lead.meta.value : 0;
   return {
     id: String(lead.id),
     label: lead.name,
@@ -89,6 +90,8 @@ function mapLeadToItem(lead: LeadApiItem): DndItem {
     assignedBy: lead.assignee?.name ?? "Unassigned",
     time: toRelativeTime(lead.updated_at),
     priority: lead.priority ?? "medium",
+    rawValue,
+    value: `$ ${rawValue.toLocaleString()}`,
   };
 }
 
@@ -238,7 +241,7 @@ function LeadColumn({
             {items.length < 10 ? `0${items.length}` : items.length}
           </div>
         </div>
-        <span className="text-white text-[12px] font-medium">$ 342,000</span>
+        <span className="text-white text-[12px] font-medium">$ {items.reduce((sum, item) => sum + (item.rawValue ?? 0), 0).toLocaleString()}</span>
       </div>
 
       {/* Cards */}
