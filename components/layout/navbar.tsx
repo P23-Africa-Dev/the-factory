@@ -132,7 +132,11 @@ export function Navbar() {
 
     clearAuthSession();
     clearUser();
-    router.push(isAgent ? "/agent/login" : "/login");
+    if (typeof window !== "undefined") {
+      window.location.href = isAgent ? "/agent/login" : "/login";
+    } else {
+      router.push(isAgent ? "/agent/login" : "/login");
+    }
   }
 
   return (

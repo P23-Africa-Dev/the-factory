@@ -5,7 +5,7 @@
 'use client';
 
 import React, { createContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { appStore, setActiveCompanyId } from '@/lib/storage/stores';
+import { appStore, trackingStore, setActiveCompanyId } from '@/lib/storage/stores';
 import { clearSavedRoute } from '@/lib/pwa/routeRestoration';
 
 export type AuthUser = {
@@ -91,11 +91,55 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = () => {
     try {
-      appStore.delete('auth_token');
-      appStore.delete('auth_user');
+      // 1. Clear PWA appStore and trackingStore
+      appStore.clearAll();
+      trackingStore.clearAll();
       clearSavedRoute();
+
+      // 2. Clear all local and session storage
+      if (typeof localStorage !== 'undefined') {
+        localStorage.clear();
+      }
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.clear();
+      }
+
+      // 3. Clear all cookies
+      if (typeof document !== 'undefined') {
+        const cookies = document.cookie.split(';');
+        for (const cookie of cookies) {
+          const eqPos = cookie.indexOf('=');
+          const name = eqPos > -1 ? cookie.substring(0, eqPos).trim() : cookie.trim();
+          document.cookie = `${name}=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+        }
+      }
+
+      // 4. Clear IndexedDB database
+      if (typeof indexedDB !== 'undefined') {
+        try {
+          indexedDB.deleteDatabase('factory-agent-pwa');
+        } catch (dbErr) {
+          console.warn('[Auth] IndexedDB deletion failed:', dbErr);
+        }
+      }
+
+      // 5. Clear Cache Storage (Cache API)
+      if (typeof window !== 'undefined' && 'caches' in window) {
+        caches.keys().then((names) => {
+          for (const name of names) {
+            caches.delete(name);
+          }
+        }).catch(() => {});
+      }
+
+      // 6. Reset React states
       setToken(null);
       setUser(null);
+
+      // 7. Hard redirect to login page to completely clear JS memory space (React Query, etc.)
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
     } catch (err) {
       console.error('[Auth] Logout error:', err);
     }
