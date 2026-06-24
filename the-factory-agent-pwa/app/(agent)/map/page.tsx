@@ -809,26 +809,58 @@ function AddNoteModal({
 }
 
 function getCountryCode(countryStr?: string | null): string {
-  if (!countryStr) return 'NG';
-  const clean = countryStr.trim().toUpperCase();
-  if (clean.length === 2) return clean;
-  const countryMap: Record<string, string> = {
-    NIGERIA: 'NG',
-    GHANA: 'GH',
-    KENYA: 'KE',
-    'SOUTH AFRICA': 'ZA',
-    RWANDA: 'RW',
-    UGANDA: 'UG',
-    TANZANIA: 'TZ',
-    EGYPT: 'EG',
-    CAMEROON: 'CM',
-    SENEGAL: 'SN',
-    ETHIOPIA: 'ET',
-    'UNITED STATES': 'US',
-    'UNITED KINGDOM': 'GB',
-    CANADA: 'CA',
-  };
-  return countryMap[clean] || 'NG';
+  if (countryStr) {
+    const clean = countryStr.trim().toUpperCase();
+    if (clean.length === 2) return clean;
+    const countryMap: Record<string, string> = {
+      NIGERIA: 'NG',
+      GHANA: 'GH',
+      KENYA: 'KE',
+      'SOUTH AFRICA': 'ZA',
+      RWANDA: 'RW',
+      UGANDA: 'UG',
+      TANZANIA: 'TZ',
+      EGYPT: 'EG',
+      CAMEROON: 'CM',
+      SENEGAL: 'SN',
+      ETHIOPIA: 'ET',
+      'UNITED STATES': 'US',
+      'UNITED KINGDOM': 'GB',
+      CANADA: 'CA',
+    };
+    if (countryMap[clean]) return countryMap[clean];
+  }
+
+  // Fallback to browser timezone country code detection
+  if (typeof window !== 'undefined' && typeof Intl !== 'undefined') {
+    try {
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const tzMap: Record<string, string> = {
+        'Africa/Lagos': 'NG',
+        'Africa/Accra': 'GH',
+        'Africa/Nairobi': 'KE',
+        'Africa/Johannesburg': 'ZA',
+        'Africa/Kigali': 'RW',
+        'Africa/Kampala': 'UG',
+        'Africa/Dar_es_Salaam': 'TZ',
+        'Africa/Cairo': 'EG',
+        'Africa/Douala': 'CM',
+        'Africa/Dakar': 'SN',
+        'Africa/Addis_Ababa': 'ET',
+        'America/New_York': 'US',
+        'America/Chicago': 'US',
+        'America/Denver': 'US',
+        'America/Los_Angeles': 'US',
+        'Europe/London': 'GB',
+        'America/Toronto': 'CA',
+      };
+      for (const [prefix, code] of Object.entries(tzMap)) {
+        if (timeZone.startsWith(prefix)) return code;
+      }
+    } catch (e) {}
+  }
+
+  return 'NG';
 }
 
 // ─── Main Content Component ───────────────────────────────────────────────────
@@ -1118,7 +1150,8 @@ function MapContent() {
         ? `&proximity=${lastPosition.coords.longitude},${lastPosition.coords.latitude}`
         : '';
       const countryCode = getCountryCode(profile?.organization?.country);
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=${countryCode}&limit=5${proximityParam}`;
+      const countryFilter = lastPosition ? '' : `&country=${countryCode}`;
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}${countryFilter}&limit=5${proximityParam}`;
       const resp = await fetch(url);
       const data = await resp.json() as { features?: Array<{ text: string; place_name: string; center: [number, number] }> };
       if (data.features) {
@@ -1138,7 +1171,8 @@ function MapContent() {
         ? `&proximity=${lastPosition.coords.longitude},${lastPosition.coords.latitude}`
         : '';
       const countryCode = getCountryCode(profile?.organization?.country);
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=${countryCode}&limit=5${proximityParam}`;
+      const countryFilter = lastPosition ? '' : `&country=${countryCode}`;
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}${countryFilter}&limit=5${proximityParam}`;
       const resp = await fetch(url);
       const data = await resp.json() as { features?: Array<{ text: string; place_name: string; center: [number, number] }> };
       if (data.features) {

@@ -27,9 +27,10 @@ export async function searchPlacesWithMapbox(
         return [];
     }
 
-    const country = options?.country ?? "ng";
+    const country = options?.country;
+    const countryParam = country ? `&country=${country}` : '';
     const limit = options?.limit ?? 5;
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmed)}.json?access_token=${token}&country=${country}&limit=${limit}&types=place,locality,neighborhood,address,poi&autocomplete=true`;
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmed)}.json?access_token=${token}${countryParam}&limit=${limit}&types=place,locality,neighborhood,address,poi&autocomplete=true`;
 
     try {
         const response = await fetch(url);
@@ -71,8 +72,9 @@ export async function geocodeAddressWithMapbox(
         return null;
     }
 
-    const country = options?.country ?? "ng";
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmedAddress)}.json?access_token=${token}&country=${country}&limit=1`;
+    const country = options?.country;
+    const countryParam = country ? `&country=${country}` : '';
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmedAddress)}.json?access_token=${token}${countryParam}&limit=1`;
 
     const response = await fetch(url);
     if (!response.ok) {
