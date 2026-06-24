@@ -7,6 +7,7 @@ namespace App\Services\AI\Innovation;
 use App\Models\Meeting;
 use App\Models\User;
 use App\Services\AI\ElySystemPrompt;
+use App\Services\AI\Support\AiPlainTextFormatter;
 use App\Services\AI\Providers\AiProviderRouter;
 use App\Services\Company\CompanyContextService;
 use App\Services\Dashboard\DashboardAggregateService;
@@ -57,7 +58,13 @@ class PhaseFiveCopilotService
 
         $systemPrompt = <<<'PROMPT'
 You are ELY, an operations assistant. Analyze the uploaded file and return plain text only.
-Provide: (1) a concise summary, (2) key findings or metrics, and (3) recommended next actions.
+Do not use markdown. Never use asterisks, hash headings, hyphen bullets, or horizontal rules.
+Structure your response with short section labels on their own line, such as:
+Summary:
+Key findings:
+Recommended next actions:
+Use the bullet character • for list items. Use numbered items like "1." when ordering steps.
+Provide a concise summary, key findings or metrics, and recommended next actions.
 Do not invent data that is not present in the file.
 PROMPT;
 
@@ -77,7 +84,7 @@ PROMPT;
             $aiSummary = $this->aiProviderRouter->analyzeDocumentFile(
                 file: $file,
                 systemPrompt: $systemPrompt,
-                userPrompt: 'Analyze this PDF document for operational insights. If the document is image-based or scanned, read visible text from the pages and summarize what you can.',
+                userPrompt: 'Analyze this PDF document for operational insights. Return plain text only with section labels Summary, Key findings, and Recommended next actions. Use • for bullets. If the document is image-based or scanned, read visible text from the pages and summarize what you can.',
                 options: [
                     'max_tokens' => 900,
                     'temperature' => 0.2,
@@ -88,7 +95,7 @@ PROMPT;
         $analysis = [
             'kind' => $isSpreadsheet ? 'spreadsheet' : 'document',
             'summary' => is_string($aiSummary) && trim($aiSummary) !== ''
-                ? trim($aiSummary)
+                ? AiPlainTextFormatter::normalize(trim($aiSummary))
                 : ($isPdf
                     ? 'PDF received but analysis could not be completed. The file may be encrypted, corrupted, or unreadable. Try exporting as TXT or re-uploading an unlocked copy.'
                     : ($isSpreadsheet
