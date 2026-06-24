@@ -113,7 +113,8 @@ class PhaseFiveCopilotService
             ];
         }
 
-        $providerSummary = $this->aiProviderRouter->generateText(
+        $providerSummary = $this->aiProviderRouter->generateForPurpose(
+            purpose: 'report',
             systemPrompt: ElySystemPrompt::meetingTranscriptSummary(),
             userPrompt: $transcript,
             options: [

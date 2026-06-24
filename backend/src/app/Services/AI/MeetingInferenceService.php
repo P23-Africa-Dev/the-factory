@@ -195,7 +195,7 @@ class MeetingInferenceService
     private function generateTitleAndDescription(string $message, string $conversationSummary): array
     {
         $providerJson = $this->aiProviderRouter->generateText(
-            systemPrompt: 'You are ELY, the Factory23 AI Assistant. Generate meeting metadata from user requests. Respond ONLY with valid JSON: {"title":"...","description":"..."}. Title must be professional (max 120 chars). Description must be 1-2 sentences about meeting purpose and outcomes (max 500 chars). Never copy the raw user message as the description.',
+            systemPrompt: 'You are ELY, your AI Assistant. Generate meeting metadata from user requests. Respond ONLY with valid JSON: {"title":"...","description":"..."}. Title must be professional (max 120 chars). Description must be 1-2 sentences about meeting purpose and outcomes (max 500 chars). Never copy the raw user message as the description.',
             userPrompt: trim("Conversation context:\n{$conversationSummary}\n\nUser request:\n{$message}"),
             options: [
                 'max_tokens' => 280,

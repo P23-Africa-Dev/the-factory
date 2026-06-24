@@ -39,6 +39,8 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
             Route::get('/logs', [AiLogController::class, 'index'])->name('logs.index');
             Route::get('/logs/{log}', [AiLogController::class, 'show'])->name('logs.show');
             Route::get('/health', [AiHealthController::class, 'check'])->name('health');
+            Route::post('/health/test/{provider}', [AiHealthController::class, 'testProvider'])->name('health.test');
+            Route::post('/alerts/{alert}/resolve', [AiManagementController::class, 'resolveAlert'])->name('alerts.resolve');
         });
 
         // ── Users ──────────────────────────────────────────────

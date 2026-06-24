@@ -55,7 +55,7 @@ return [
         'fallback_provider' => env('AI_FALLBACK_PROVIDER', 'claude'),
         'default_model' => env('AI_DEFAULT_MODEL', 'gpt-4.1-mini'),
         'exec_model' => env('AI_EXEC_MODEL', 'gpt-4.1-mini'),
-        'analyst_model' => env('AI_ANALYST_MODEL', 'claude-3-5-sonnet-latest'),
+        'analyst_model' => env('AI_ANALYST_MODEL', 'auto'),
         'request_timeout_ms' => (int) env('AI_REQUEST_TIMEOUT_MS', 30000),
         'max_tokens' => (int) env('AI_MAX_TOKENS', 4000),
         'enable_streaming' => filter_var(env('AI_ENABLE_STREAMING', true), FILTER_VALIDATE_BOOL),
@@ -76,8 +76,11 @@ return [
         'claude' => [
             'api_key' => env('ANTHROPIC_API_KEY'),
             'base_url' => env('ANTHROPIC_BASE_URL', 'https://api.anthropic.com/v1'),
-            'model' => env('CLAUDE_MODEL', env('AI_ANALYST_MODEL', 'claude-3-5-sonnet-latest')),
+            'model' => env('CLAUDE_MODEL', 'auto'),
             'version' => env('ANTHROPIC_VERSION', '2023-06-01'),
+        ],
+        'admin' => [
+            'spending_alert_usd' => (float) env('AI_ADMIN_SPENDING_ALERT_USD', 500),
         ],
     ],
 

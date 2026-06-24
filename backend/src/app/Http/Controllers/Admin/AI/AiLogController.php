@@ -46,6 +46,10 @@ class AiLogController extends Controller
             });
         }
 
+        if ($tool = $request->input('tool')) {
+            $query->where('tool_name', 'like', '%' . $tool . '%');
+        }
+
         $logs = $query->paginate(50)->withQueryString();
 
         $providers = AiLog::query()->distinct()->pluck('provider')->filter()->sort()->values();

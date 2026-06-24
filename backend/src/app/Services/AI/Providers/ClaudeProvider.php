@@ -9,7 +9,10 @@ use Illuminate\Http\UploadedFile;
 
 class ClaudeProvider implements AiProviderContract
 {
-    public function __construct(private readonly HttpFactory $http) {}
+    public function __construct(
+        private readonly HttpFactory $http,
+        private readonly ClaudeModelResolver $modelResolver,
+    ) {}
 
     public function isConfigured(): bool
     {
@@ -29,6 +32,12 @@ class ClaudeProvider implements AiProviderContract
         $requestedMaxTokens = (int) ($options['max_tokens'] ?? 400);
         $effectiveMaxTokens = max(64, min($configuredMaxTokens, $requestedMaxTokens));
 
+        $purpose = (string) ($options['purpose'] ?? 'default');
+        $model = $this->modelResolver->resolve(
+            $purpose,
+            isset($options['model']) ? (string) $options['model'] : null,
+        );
+
         $response = $this->http
             ->timeout(max(1, (int) ceil($timeoutMs / 1000)))
             ->withHeaders([
@@ -36,7 +45,7 @@ class ClaudeProvider implements AiProviderContract
                 'anthropic-version' => (string) config('services.ai.claude.version', '2023-06-01'),
             ])
             ->post($baseUrl . '/messages', [
-                'model' => (string) ($options['model'] ?? config('services.ai.claude.model', config('services.ai.analyst_model'))),
+                'model' => $model,
                 'max_tokens' => $effectiveMaxTokens,
                 'system' => $systemPrompt,
                 'messages' => [

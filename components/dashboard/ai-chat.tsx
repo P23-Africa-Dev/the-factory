@@ -6,7 +6,10 @@ import {
   ElyMeetingActionFields,
   type ElyMeetingDraft,
 } from "@/components/dashboard/ely-meeting-action-fields";
+import { formatAiMessageHtml } from "@/lib/format-ai-message";
 import { ELY_INPUT_PLACEHOLDER, ELY_LANDING_HEADLINE, ELY_LANDING_SUBTEXT, ELY_NAME } from "@/lib/ely-brand";
+import type { CopilotChatContext } from "@/lib/api/copilot";
+import { resolveCopilotGeolocationContext } from "@/lib/copilot-geolocation";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
@@ -110,6 +113,14 @@ const PRIORITY_OPTIONS: EditFieldOption[] = [
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
   { value: "high", label: "High" },
+  { value: "urgent", label: "Urgent" },
+];
+
+const LEAD_STATUS_OPTIONS: EditFieldOption[] = [
+  { value: "newly_lead", label: "Newly Lead" },
+  { value: "contacted", label: "Contacted" },
+  { value: "qualified", label: "Qualified" },
+  { value: "proposal_sent", label: "Proposal Sent" },
 ];
 
 const NOTIFICATION_PRIORITY_OPTIONS: EditFieldOption[] = [
@@ -158,6 +169,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const {
     messages,
     isStreaming,
+    processingLabel,
     weeklyReport,
     isQueueingWeeklyReport,
     initialize,
@@ -253,7 +265,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const argKeys = rawArgs ? Object.keys(rawArgs) : [];
       const hasUserAssignmentField = argKeys.some((key) => /(^|_)(user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/.test(key));
 
-      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule"].includes(tool) && !hasUserAssignmentField) {
+      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead"].includes(tool) && !hasUserAssignmentField) {
         continue;
       }
 
@@ -262,8 +274,58 @@ export function AIChat({ open, onClose }: AIChatProps) {
         continue;
       }
 
-      void loadAssigneeOptions(msg.id);
+      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead"].includes(tool) || hasUserAssignmentField) {
+        void loadAssigneeOptions(msg.id);
+      }
     }
+  }, [messages]);
+
+  useEffect(() => {
+    setActionDrafts((prev) => {
+      let next = prev;
+      for (const msg of messages) {
+        const payload = messagePayload(msg);
+        if (msg.role !== "assistant" || payload?.confirmation_required !== true) {
+          continue;
+        }
+        if (prev[msg.id]) {
+          continue;
+        }
+
+        const rawArgs = parseRecord(payload.action_args);
+        if (!rawArgs) {
+          continue;
+        }
+
+        const seed: Record<string, string> = {};
+        for (const [key, value] of Object.entries(rawArgs)) {
+          if (key.startsWith("__") || key === "company_id" || key === "meta" || key === "pipeline_id") {
+            continue;
+          }
+          if (value === null || value === undefined) {
+            continue;
+          }
+          seed[key] = String(value);
+        }
+
+        const meta = parseRecord(rawArgs.meta);
+        if (meta) {
+          for (const [key, value] of Object.entries(meta)) {
+            if (value !== null && value !== undefined && seed[key] === undefined) {
+              seed[key] = String(value);
+            }
+          }
+        }
+
+        if (Object.keys(seed).length === 0) {
+          continue;
+        }
+
+        next = { ...next, [msg.id]: seed };
+      }
+
+      return next;
+    });
   }, [messages]);
 
   function toTitleCase(value: string): string {
@@ -303,7 +365,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     return `${year}-${month}-${day}T${hour}:${minute}`;
   }
 
-  function sendMessage(text?: string) {
+  function sendMessage(text?: string, context?: CopilotChatContext) {
     const content = (text ?? input).trim();
     if (!content) return;
 
@@ -312,7 +374,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
     void sendCopilotMessage({
       message: content,
       companyId: companyId ?? undefined,
+      context,
     });
+  }
+
+  async function handlePlanTodayPriorities() {
+    const geoContext = await resolveCopilotGeolocationContext();
+    sendMessage("Plan today's priorities for me", geoContext);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -638,6 +706,22 @@ export function AIChat({ open, onClose }: AIChatProps) {
       ];
     }
 
+    if (tool === "crm.create_lead") {
+      return [
+        { key: "name", label: "Business Name", control: "text" },
+        { key: "phone", label: "Phone Number", control: "text" },
+        { key: "location", label: "Location", control: "text" },
+        { key: "email", label: "Email", control: "text" },
+        { key: "industry", label: "Industry", control: "text" },
+        { key: "contact_person", label: "Contact Person", control: "text" },
+        { key: "status", label: "Status", control: "select", options: LEAD_STATUS_OPTIONS },
+        { key: "priority", label: "Priority", control: "select", options: PRIORITY_OPTIONS },
+        { key: "next_action", label: "Next Action", control: "textarea" },
+        { key: "notes", label: "Notes", control: "textarea" },
+        { key: "assigned_to_user_id", label: "Assign To", control: "select", options: userIdSelectOptions(msg) },
+      ];
+    }
+
     return Object.entries(args)
       .filter(([key]) => key !== "company_id")
       .map(([key]) => {
@@ -743,6 +827,14 @@ export function AIChat({ open, onClose }: AIChatProps) {
       if (code === "used_default_due_date") {
         const due = String(args?.due_date ?? "").trim();
         if (due === "") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_lead_name") {
+        const name = String(args?.name ?? "").trim().toLowerCase();
+        if (name === "" || name === "new lead") {
           remaining.push(code);
         }
         continue;
@@ -860,6 +952,19 @@ export function AIChat({ open, onClose }: AIChatProps) {
       ];
     }
 
+    if (tool === "crm.create_lead") {
+      return [
+        { key: "name", label: "Business Name", value: formatPreviewValue("name", args.name), warning: warningCodes.includes("missing_lead_name") },
+        { key: "phone", label: "Phone", value: formatPreviewValue("phone", args.phone), warning: warningCodes.includes("missing_phone") },
+        { key: "location", label: "Location", value: formatPreviewValue("location", args.location), warning: warningCodes.includes("missing_location") },
+        { key: "email", label: "Email", value: formatPreviewValue("email", args.email) },
+        { key: "industry", label: "Industry", value: formatPreviewValue("industry", args.industry) },
+        { key: "contact_person", label: "Contact Person", value: formatPreviewValue("contact_person", args.contact_person) },
+        { key: "status", label: "Status", value: formatPreviewValue("status", args.status) },
+        { key: "priority", label: "Priority", value: formatPreviewValue("priority", args.priority) },
+      ];
+    }
+
     return Object.entries(args)
       .filter(([key]) => key !== "company_id")
       .map(([key, value]) => ({
@@ -869,21 +974,39 @@ export function AIChat({ open, onClose }: AIChatProps) {
       }));
   }
 
-  function findPreviousUserContent(index: number): string {
+  function findActionContextForConfirm(index: number): string {
+    const parts: string[] = [];
+
     for (let i = index - 1; i >= 0; i -= 1) {
-      if (messages[i]?.role === "user") {
-        return String(messages[i]?.content ?? "");
+      const candidate = messages[i];
+      if (!candidate) {
+        continue;
+      }
+
+      if (candidate.role === "assistant") {
+        const payload = messagePayload(candidate);
+        if (payload?.confirmation_required === true) {
+          break;
+        }
+        continue;
+      }
+
+      if (candidate.role === "user") {
+        const content = String(candidate.content ?? "").trim();
+        if (content !== "" && !/^\s*confirm\b/i.test(content)) {
+          parts.unshift(content);
+        }
       }
     }
 
-    return "";
+    return parts.join("\n");
   }
 
   function handleConfirmAction(index: number, msg: Message) {
     const payload = messagePayload(msg);
     if (!payload) return;
 
-    const priorPrompt = findPreviousUserContent(index);
+    const priorPrompt = findActionContextForConfirm(index);
     if (!priorPrompt.trim()) return;
 
     const actionArgs = actionArgsForMessage(msg);
@@ -899,7 +1022,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function handleEditActionDetails(index: number) {
-    const priorPrompt = findPreviousUserContent(index);
+    const priorPrompt = findActionContextForConfirm(index);
     if (!priorPrompt.trim()) return;
     setInput(priorPrompt);
     setTimeout(() => inputRef.current?.focus(), 0);
@@ -921,6 +1044,10 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     if (issues.includes("used_default_title") || issues.includes("used_default_due_date")) {
       return "Confirmation is blocked until title and due date are explicitly set.";
+    }
+
+    if (issues.includes("missing_lead_name")) {
+      return "Confirmation is blocked until the business name is provided.";
     }
 
     return "Confirmation is currently blocked until required fields are corrected.";
@@ -1128,7 +1255,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <div className="hidden sm:flex flex-col items-end leading-tight">
                     <span className="text-[#7BB6B8] text-[11px] font-bold uppercase tracking-[0.2em]">{ELY_NAME}</span>
-                    <span className="text-[#88B3B5] text-[10px]">Factory23 AI</span>
+                    <span className="text-[#88B3B5] text-[10px]">AI Assistant</span>
                   </div>
                   <button
                     onClick={() => {
@@ -1427,6 +1554,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
                   </p>
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <button
+                      onClick={() => void handlePlanTodayPriorities()}
+                      disabled={isRunningQuickAction || isStreaming}
+                      className="rounded-full border border-[#2D6F63] bg-[#113B37] px-3 py-1.5 text-[11px] font-semibold text-[#B9E9DD] hover:bg-[#1B4D47] disabled:opacity-60"
+                    >
+                      Plan Today&apos;s Priorities
+                    </button>
+                    <button
                       onClick={handleQueueWeeklyReport}
                       disabled={isQueueingWeeklyReport || isStreaming}
                       className="rounded-full border border-[#2D6F63] bg-[#113B37] px-3 py-1.5 text-[11px] font-semibold text-[#B9E9DD] hover:bg-[#1B4D47] disabled:opacity-60"
@@ -1512,7 +1646,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                       <div className="bg-gradient-to-b from-[#333333] to-[#16384B] rounded-[20px] p-4 shadow-sm">
                         <div
                           className="text-[#D0E2E3] text-[13px] leading-[1.7] ai-message-content font-light"
-                          dangerouslySetInnerHTML={{ __html: msg.content.replace(/\n/g, '<br />') }}
+                          dangerouslySetInnerHTML={{ __html: formatAiMessageHtml(msg.content) }}
                         />
                       </div>
                       {Array.isArray(msg.sources) && msg.sources.length > 0 && (
@@ -1722,21 +1856,30 @@ export function AIChat({ open, onClose }: AIChatProps) {
                 </div>
               ))}
 
-              {isStreaming && (
+              {isStreaming && (() => {
+                const lastMessage = messages[messages.length - 1];
+                const assistantHasContent = lastMessage?.role === "assistant" && Boolean(lastMessage.content?.trim());
+                if (assistantHasContent) return null;
+                return (
                 <div className="max-w-[65%]">
-                  <div className="bg-gradient-to-b from-[#333333] to-[#16384B] rounded-[24px] p-6 shadow-sm w-24">
-                    <div className="flex gap-1.5 items-center justify-center h-4">
-                      {[0, 1, 2].map((i) => (
-                        <span
-                          key={i}
-                          className="w-2.5 h-2.5 bg-[#D0E2E3]/60 rounded-full animate-bounce"
-                          style={{ animationDelay: `${i * 150}ms` }}
-                        />
-                      ))}
-                    </div>
+                  <div className="bg-gradient-to-b from-[#333333] to-[#16384B] rounded-[24px] px-6 py-4 shadow-sm">
+                    {processingLabel ? (
+                      <p className="text-[#D0E2E3]/90 text-[13px] font-medium animate-pulse">{processingLabel}</p>
+                    ) : (
+                      <div className="flex gap-1.5 items-center justify-center h-4">
+                        {[0, 1, 2].map((i) => (
+                          <span
+                            key={i}
+                            className="w-2.5 h-2.5 bg-[#D0E2E3]/60 rounded-full animate-bounce"
+                            style={{ animationDelay: `${i * 150}ms` }}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               <div ref={messagesEndRef} />
             </div>

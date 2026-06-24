@@ -46,7 +46,7 @@ function ParsedHtmlText({ text }: { text: string }): React.ReactNode {
 
 export default function AiAssistantPage() {
   const { firstName, avatarSrc, userRole } = useAgentIdentity();
-  const { messages, isRestoring, isSending, send, clearCurrent, clearAll } =
+  const { messages, isRestoring, isSending, processingLabel, send, clearCurrent, clearAll } =
     useAssistantConversation();
   const suggestions = useDynamicSuggestions();
 
@@ -90,11 +90,11 @@ export default function AiAssistantPage() {
     };
   }, [messages, isRestoring, isSending]);
 
-  const handleSend = (text?: string) => {
+  const handleSend = (text?: string, withGeolocation = false) => {
     const content = (text ?? input).trim();
     if (!content) return;
     setInput('');
-    void send(content);
+    void send(content, { withGeolocation });
   };
 
   const handleAction = (id: string, action: Exclude<LocalAction, null>) => {
@@ -234,7 +234,7 @@ export default function AiAssistantPage() {
                   Get assistance with leads, meetings, attendance, CRM operations, and workforce
                   tasks.
                 </p>
-  
+
                 <div className="w-full flex flex-col gap-3">
                   {suggestions.map((suggestion) => (
                     <button
@@ -252,11 +252,11 @@ export default function AiAssistantPage() {
             ) : (
               messages.map(renderMessage)
             )}
-  
+
             {isSending && (
               <div className="flex items-start">
                 <div className="bg-[#16384B]/80 text-[#D0E2E3]/80 border border-white/5 rounded-2xl px-5 py-3 text-xs font-semibold animate-pulse">
-                  {ELY_TYPING_LABEL}
+                  {processingLabel ?? ELY_TYPING_LABEL}
                 </div>
               </div>
             )}
