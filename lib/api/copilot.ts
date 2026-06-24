@@ -462,13 +462,55 @@ export function summarizeMeetingTranscript(
     });
 }
 
+export type ForecastRecommendation = {
+    priority: "high" | "medium" | "low";
+    area: "tasks" | "payroll" | "projects" | "crm" | "attendance" | "team" | "general";
+    text: string;
+};
+
+export type ForecastOverviewResponse = {
+    company_id: number;
+    role?: string;
+    pipeline: string;
+    snapshot: {
+        kpis?: Record<string, unknown>;
+        project_kpis?: Record<string, unknown>;
+        activity_summary?: Record<string, unknown>;
+        payroll_overview?: Record<string, unknown>;
+        attendance_today?: Record<string, unknown>;
+        signals?: Record<string, unknown>;
+        trends?: Record<string, unknown>;
+    };
+    forecast: {
+        outlook: string;
+        horizon_days?: number;
+        confidence: number;
+        risk_level?: "low" | "medium" | "high";
+        recommendations: string[];
+        structured_recommendations?: ForecastRecommendation[];
+        narrative?: string | null;
+        generated_at: string;
+        trace_id: string;
+    };
+};
+
+export type ForecastHorizonDays = 7 | 14 | 30;
+
 export function getForecastOverview(
     token: string,
-    companyId?: number | string
-): Promise<ApiEnvelope<Record<string, unknown>>> {
-    return apiRequest<Record<string, unknown>>({
+    companyId?: number | string,
+    horizonDays: ForecastHorizonDays = 7
+): Promise<ApiEnvelope<ForecastOverviewResponse>> {
+    const params = new URLSearchParams();
+    if (companyId !== undefined && companyId !== null && String(companyId).trim() !== "") {
+        params.set("company_id", String(companyId));
+    }
+    params.set("horizon", String(horizonDays));
+    const query = params.toString();
+
+    return apiRequest<ForecastOverviewResponse>({
         method: "GET",
-        path: `/copilot/forecast/overview${buildQuery(companyId)}`,
+        path: `/copilot/forecast/overview${query ? `?${query}` : ""}`,
         token,
     });
 }

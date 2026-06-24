@@ -9,6 +9,8 @@ import {
     CopilotChatContext,
     CopilotMessage,
     CopilotThread,
+    ForecastHorizonDays,
+    ForecastOverviewResponse,
     WeeklySummaryDownloadFormat,
     WeeklySummaryStatusResponse,
     analyzeCopilotFile,
@@ -304,9 +306,12 @@ export function useCopilotChat() {
     );
 
     const loadForecastOverview = useCallback(
-        async (companyId?: string | number) => {
-            if (!token) return null;
-            const res = await getForecastOverview(token, companyId);
+        async (companyId?: string | number, horizonDays: ForecastHorizonDays = 7): Promise<ForecastOverviewResponse> => {
+            if (!token) {
+                throw new Error("You must be signed in to load a forecast overview.");
+            }
+
+            const res = await getForecastOverview(token, companyId, horizonDays);
             return res.data;
         },
         [token]

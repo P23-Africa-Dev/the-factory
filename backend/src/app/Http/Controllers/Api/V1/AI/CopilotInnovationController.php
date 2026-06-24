@@ -78,9 +78,15 @@ class CopilotInnovationController extends Controller
 
     public function forecastOverview(Request $request): JsonResponse
     {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'horizon' => ['nullable', 'integer', 'in:7,14,30'],
+        ]);
+
         $result = $this->phaseFiveCopilotService->forecastOverview(
             user: $request->user(),
-            companyId: $this->resolveCompanyContextId($request->input('company_id')),
+            companyId: $this->resolveCompanyContextId($validated['company_id'] ?? $request->input('company_id')),
+            horizonDays: isset($validated['horizon']) ? (int) $validated['horizon'] : 7,
         );
 
         return $this->success(

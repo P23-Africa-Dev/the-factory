@@ -95,6 +95,54 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
             ->assertJsonCount(3, 'data.summary.key_points');
     }
 
+    public function test_forecast_overview_returns_snapshot_and_recommendations(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+
+        $mockRouter = \Mockery::mock(\App\Services\AI\Providers\AiProviderRouter::class);
+        $mockRouter->shouldIgnoreMissing();
+        $mockRouter
+            ->shouldReceive('routingMetadata')
+            ->andReturn(['provider' => 'openai', 'model' => 'gpt-test', 'purpose' => 'report']);
+        $mockRouter
+            ->shouldReceive('generateForPurpose')
+            ->once()
+            ->withArgs(function (string $purpose): bool {
+                return $purpose === 'report';
+            })
+            ->andReturn('Operations remain stable with focused attention needed on overdue tasks and payroll approvals.');
+        $this->app->instance(\App\Services\AI\Providers\AiProviderRouter::class, $mockRouter);
+
+        $response = $this
+            ->actingAs($admin)
+            ->getJson('/api/v1/copilot/forecast/overview?company_id=' . $company->id . '&horizon=14');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.pipeline', 'forecast.recommendations.v2')
+            ->assertJsonPath('data.forecast.horizon_days', 14)
+            ->assertJsonPath('data.forecast.outlook', 'next_14_days')
+            ->assertJsonStructure([
+                'data' => [
+                    'snapshot' => [
+                        'kpis',
+                        'activity_summary',
+                        'project_kpis',
+                        'payroll_overview',
+                        'signals',
+                        'trends',
+                    ],
+                    'forecast' => [
+                        'recommendations',
+                        'structured_recommendations',
+                        'narrative',
+                        'confidence',
+                        'risk_level',
+                    ],
+                ],
+            ]);
+    }
+
     /**
      * @return array{0: Company, 1: User}
      */
