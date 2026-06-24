@@ -1,19 +1,21 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense } from "react";
+// import { useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { ProjectsView } from "@/components/operations/projects-view";
+// import { ProjectsView } from "@/components/operations/projects-view";
 import { AllTasksView } from "@/components/operations/all-tasks-view";
-import { useProjects } from "@/hooks/use-projects";
+import { AllProjectsTasksView } from "@/components/operations/all-projects-tasks-view";
+// import { useProjects } from "@/hooks/use-projects";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { buildProjectSlug } from "@/lib/utils/route-slugs";
+// import { buildProjectSlug } from "@/lib/utils/route-slugs";
 
 type ProjectsTab = "projects" | "tasks";
 
 const TABS: { value: ProjectsTab; label: string }[] = [
-  { value: "projects", label: "All Projects" },
-  { value: "tasks", label: "All Tasks" },
+  { value: "projects", label: "All Tasks" },
+  { value: "tasks", label: "KPIs" },
 ];
 
 // ─── Page content ─────────────────────────────────────────────────────────────
@@ -25,18 +27,19 @@ function ProjectsContent() {
   const activeTab = (searchParams.get("tab") as ProjectsTab) || "projects";
 
   const user = useAuthStore((s) => s.user);
-  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const { role } = getActiveCompanyContext(user);
+  // const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const canManageProjects = role === "owner" || role === "admin" || role === "supervisor";
 
-  const [page, setPage] = useState(1);
+  // const [page, setPage] = useState(1);
 
-  const { data, isPending: isLoading } = useProjects(
-    companyId ? { company_id: companyId, page } : {}
-  );
+  // const { data, isPending: isLoading } = useProjects(
+  //   companyId ? { company_id: companyId, page } : {}
+  // );
 
-  const projects = data?.projects ?? [];
-  const pagination = data?.pagination ?? null;
-  const analytics = data?.analytics ?? null;
+  // const projects = data?.projects ?? [];
+  // const pagination = data?.pagination ?? null;
+  // const analytics = data?.analytics ?? null;
 
   const handleTabChange = (tab: ProjectsTab) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -44,10 +47,10 @@ function ProjectsContent() {
     router.push(`${pathname}?${params.toString()}`);
   };
 
-  const handleViewProject = (id: string, name?: string) => {
-    const slug = buildProjectSlug(id, name);
-    router.push(`/projects/${slug}`);
-  };
+  // const handleViewProject = (id: string, name?: string) => {
+  //   const slug = buildProjectSlug(id, name);
+  //   router.push(`/projects/${slug}`);
+  // };
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
@@ -77,15 +80,16 @@ function ProjectsContent() {
               Project management is available to owner, admin, and supervisor roles only.
             </div>
           ) : (
-            <ProjectsView
-              projects={projects}
-              analytics={analytics}
-              onViewProject={handleViewProject}
-              isLoading={isLoading}
-              pagination={pagination}
-              currentPage={page}
-              onPageChange={setPage}
-            />
+            // <ProjectsView
+            //   projects={projects}
+            //   analytics={analytics}
+            //   onViewProject={handleViewProject}
+            //   isLoading={isLoading}
+            //   pagination={pagination}
+            //   currentPage={page}
+            //   onPageChange={setPage}
+            // />
+            <AllProjectsTasksView />
           )
         ) : (
           <AllTasksView />

@@ -276,3 +276,9 @@
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
   overflow: hidden;
 }
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}

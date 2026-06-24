@@ -55,6 +55,7 @@ function toRelativeTime(value?: string | null): string {
 }
 
 function mapLeadToItem(lead: LeadApiItem): DndItem {
+    const rawValue = typeof lead.meta?.value === 'number' ? lead.meta.value : 0;
     return {
         id: String(lead.id),
         label: lead.name,
@@ -64,10 +65,8 @@ function mapLeadToItem(lead: LeadApiItem): DndItem {
         assignedToUserId: lead.assigned_to_user_id ?? null,
         time: toRelativeTime(lead.updated_at),
         priority: lead.priority ?? "medium",
-        // Format the value from meta if it exists, otherwise provide a fallback for the UI showcase
-        value: typeof lead.meta?.value === 'number'
-            ? `N ${lead.meta.value.toLocaleString()}`
-            : "N 40,010",
+        value: `$ ${rawValue.toLocaleString()}`,
+        rawValue,
     };
 }
 
@@ -199,7 +198,7 @@ function LeadColumn({
     companyUsers?: { id: number; name: string }[];
     onAssigneeChange?: (leadId: string, assigneeId: string) => void;
 }) {
-    const totalValue = "N 342,000";
+    const totalValue = `$ ${container.items.reduce((sum, item) => sum + (item.rawValue ?? 0), 0).toLocaleString()}`;
     // Register the column body as a droppable so empty columns accept cards
     const { setNodeRef: setDropRef } = useDroppable({ id: container.id });
 

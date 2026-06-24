@@ -19,6 +19,7 @@ export interface DndItem {
   routeData?: Record<string, unknown>;
   priority?: string;
   value?: string;
+  rawValue?: number;
   assignedToUserId?: string | number | null;
 }
 

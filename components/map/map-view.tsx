@@ -1066,6 +1066,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
   // ── Fetch real-world businesses from OpenStreetMap when a location is selected ─
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPoiResults([]);
     if (!locationCtx) return;
 
@@ -1634,7 +1635,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     if (ctx) setLeftTab('businesses');
     if (!ctx || !mapRef.current || !googleRef.current) return;
     if (ctx.bbox) {
-      const google = googleRef.current as unknown as { maps: { LatLngBounds: new (sw: { lat: number; lng: number }, ne: { lat: number; lng: number }) => { } } };
+      const google = googleRef.current as unknown as { maps: { LatLngBounds: new (sw: { lat: number; lng: number }, ne: { lat: number; lng: number }) => object } };
       const bounds = new google.maps.LatLngBounds(
         { lat: ctx.bbox[1], lng: ctx.bbox[0] },
         { lat: ctx.bbox[3], lng: ctx.bbox[2] }
@@ -1664,6 +1665,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
   // ── Fetch real-world businesses when a location is selected ──────────────────
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPoiResults([]);
     if (!locationCtx) return;
     if (locationCtx.bbox && isBboxTooLarge(locationCtx.bbox)) return;
