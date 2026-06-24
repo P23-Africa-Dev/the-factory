@@ -239,7 +239,7 @@ class DailyPlanningService
             $distanceKm = $this->distanceForTask($task, $agentLat, $agentLng);
             $priorityBonus = $this->taskPriorityBonus($task->priority);
 
-            $score = ($isOverdue ? 80.0 : 55.0) + $priorityBonus;
+            $score = ($isOverdue ? 86.0 : 55.0) + $priorityBonus;
             if ($distanceKm !== null) {
                 $score -= min(20.0, $distanceKm * 0.5);
             }

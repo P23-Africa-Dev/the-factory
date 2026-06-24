@@ -50,6 +50,34 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
             ->assertJsonPath('data.analysis.kind', 'document');
     }
 
+    public function test_file_analysis_endpoint_summarizes_text_files_with_ai(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+
+        $mockRouter = \Mockery::mock(\App\Services\AI\Providers\AiProviderRouter::class);
+        $mockRouter->shouldIgnoreMissing();
+        $mockRouter
+            ->shouldReceive('generateForPurpose')
+            ->once()
+            ->withArgs(function (string $purpose): bool {
+                return $purpose === 'operational';
+            })
+            ->andReturn('Summary: revenue up 12%. Next action: review payroll approvals.');
+        $this->app->instance(\App\Services\AI\Providers\AiProviderRouter::class, $mockRouter);
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/files/analyze', [
+                'company_id' => $company->id,
+                'file' => UploadedFile::fake()->createWithContent('kpi.txt', 'Revenue increased 12 percent in Q2.'),
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.analysis.ai_generated', true)
+            ->assertJsonPath('data.analysis.summary', 'Summary: revenue up 12%. Next action: review payroll approvals.');
+    }
+
     public function test_transcript_summary_endpoint_returns_key_points_and_actions(): void
     {
         [$company, $admin] = $this->seedCompanyUser('admin');
@@ -83,7 +111,9 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
         ]);
 
         /** @var User $user */
-        $user = User::factory()->createOne();
+        $user = User::factory()->createOne([
+            'is_active' => true,
+        ]);
 
         $company->users()->attach($user->id, [
             'role' => $role,

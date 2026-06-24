@@ -37,6 +37,25 @@ export type CopilotThreadSummary = {
     last_message_preview: string | null;
 };
 
+export type CopilotThreadSearchResult = {
+    thread_id: string;
+    title: string;
+    updated_at: string;
+    snippet: string;
+    match_message_id: string;
+    match_role: string;
+    message_count: number;
+};
+
+export type CopilotThreadSearchResponse = {
+    items: CopilotThreadSearchResult[];
+    pagination: {
+        has_more: boolean;
+        next_cursor: string | null;
+        scanned_threads: number;
+    };
+};
+
 export type CopilotChatContext = {
     latitude?: number;
     longitude?: number;
@@ -152,6 +171,35 @@ export function listCopilotThreads(
     return apiRequest<{ items: CopilotThreadSummary[] }>({
         method: "GET",
         path: `/copilot/threads${buildQuery(companyId)}`,
+        token,
+    });
+}
+
+export function searchCopilotThreads(
+    token: string,
+    query: string,
+    companyId?: number | string,
+    limit = 15,
+    cursor?: string
+): Promise<ApiEnvelope<CopilotThreadSearchResponse>> {
+    const params = new URLSearchParams();
+    params.set("q", query.trim());
+
+    if (limit > 0) {
+        params.set("limit", String(limit));
+    }
+
+    if (cursor) {
+        params.set("cursor", cursor);
+    }
+
+    if (companyId !== undefined && companyId !== null && String(companyId).trim() !== "") {
+        params.set("company_id", String(companyId));
+    }
+
+    return apiRequest<CopilotThreadSearchResponse>({
+        method: "GET",
+        path: `/copilot/threads/search?${params.toString()}`,
         token,
     });
 }
@@ -295,20 +343,25 @@ export async function downloadWeeklySummaryReport(
         {
             method: "GET",
             headers: {
-                Accept: "application/json",
+                Accept: "application/json, application/octet-stream, */*",
                 ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
         }
     );
 
-    const payload = await response.json().catch(() => null);
     if (!response.ok) {
+        const payload = await response.json().catch(() => null);
         throw new ApiRequestError(payload?.message ?? "Unable to download weekly summary.", response.status, payload);
     }
 
-    const body = String(payload?.data?.content ?? "");
-    const filename = String(payload?.data?.filename ?? `weekly-summary-${reportId}.json`);
-    return { filename, content: body };
+    const content = await response.text();
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+    const filename = filenameMatch?.[1]
+        ? decodeURIComponent(filenameMatch[1].replace(/"/g, ""))
+        : `weekly-summary-${reportId}.json`;
+
+    return { filename, content };
 }
 
 export function transcribeVoiceInput(

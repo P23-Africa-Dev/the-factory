@@ -72,9 +72,20 @@ final class CopilotReadFlowTest extends TestCase
         $capturedPrompts = [];
         $mockRouter = Mockery::mock(AiProviderRouter::class);
         $mockRouter
-            ->shouldReceive('generateText')
+            ->shouldReceive('routingMetadata')
+            ->with('operational')
+            ->andReturn([
+                'provider' => 'openai',
+                'model' => 'gpt-4.1-mini',
+                'purpose' => 'operational',
+            ]);
+        $mockRouter
+            ->shouldReceive('generateForPurpose')
             ->twice()
-            ->andReturnUsing(function (string $systemPrompt, string $userPrompt) use (&$capturedPrompts): string {
+            ->withArgs(function (string $purpose): bool {
+                return $purpose === 'operational';
+            })
+            ->andReturnUsing(function (string $purpose, string $systemPrompt, string $userPrompt) use (&$capturedPrompts): string {
                 $capturedPrompts[] = $userPrompt;
 
                 return 'Provider response';
@@ -117,9 +128,20 @@ final class CopilotReadFlowTest extends TestCase
         $capturedSystemPrompt = null;
         $mockRouter = Mockery::mock(AiProviderRouter::class);
         $mockRouter
-            ->shouldReceive('generateText')
+            ->shouldReceive('routingMetadata')
+            ->with('operational')
+            ->andReturn([
+                'provider' => 'openai',
+                'model' => 'gpt-4.1-mini',
+                'purpose' => 'operational',
+            ]);
+        $mockRouter
+            ->shouldReceive('generateForPurpose')
             ->once()
-            ->andReturnUsing(function (string $systemPrompt, string $userPrompt) use (&$capturedPrompt, &$capturedSystemPrompt): string {
+            ->withArgs(function (string $purpose): bool {
+                return $purpose === 'operational';
+            })
+            ->andReturnUsing(function (string $purpose, string $systemPrompt, string $userPrompt) use (&$capturedPrompt, &$capturedSystemPrompt): string {
                 $capturedPrompt = $userPrompt;
                 $capturedSystemPrompt = $systemPrompt;
 
@@ -198,7 +220,9 @@ final class CopilotReadFlowTest extends TestCase
             'status' => 'active',
             'activated_at' => now(),
         ]);
-        $admin = User::factory()->createOne();
+        $admin = User::factory()->createOne([
+            'is_active' => true,
+        ]);
 
         $company->users()->attach($admin->id, [
             'role' => 'admin',

@@ -1357,6 +1357,24 @@ class CopilotService
         return $this->conversationMemoryService->listThreads((int) $context['company']->id, (int) $user->id);
     }
 
+    public function searchThreads(
+        User $user,
+        string $query,
+        ?int $companyId = null,
+        int $limit = 15,
+        ?string $cursor = null,
+    ): array {
+        $context = $this->companyContextService->resolve($user, $companyId);
+
+        return $this->conversationMemoryService->searchThreads(
+            (int) $context['company']->id,
+            (int) $user->id,
+            $query,
+            $limit,
+            $cursor,
+        );
+    }
+
     public function getThread(User $user, string $threadId, ?int $companyId = null): ?array
     {
         $context = $this->companyContextService->resolve($user, $companyId);

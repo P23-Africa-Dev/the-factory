@@ -22,6 +22,7 @@ class PhaseFiveCopilotService
         private readonly DashboardAggregateService $dashboardAggregateService,
         private readonly PayrollService $payrollService,
         private readonly AiProviderRouter $aiProviderRouter,
+        private readonly CopilotFileTextExtractor $fileTextExtractor,
     ) {}
 
     public function transcribeVoice(User $user, UploadedFile $audio, ?int $companyId = null): array
@@ -49,15 +50,37 @@ class PhaseFiveCopilotService
 
         $isSpreadsheet = in_array($extension, ['xlsx', 'xls', 'csv'], true);
         $isPdf = $extension === 'pdf';
-        $isDocument = in_array($extension, ['pdf', 'doc', 'docx', 'txt'], true);
+
+        $extractedText = $this->fileTextExtractor->extract($file, $extension);
+        $aiSummary = null;
+
+        if (is_string($extractedText) && trim($extractedText) !== '') {
+            $aiSummary = $this->aiProviderRouter->generateForPurpose(
+                purpose: 'operational',
+                systemPrompt: <<<'PROMPT'
+You are ELY, an operations assistant. Analyze the uploaded file excerpt and return plain text only.
+Provide: (1) a concise summary, (2) key findings or metrics, and (3) recommended next actions.
+Do not invent data that is not present in the excerpt.
+PROMPT,
+                userPrompt: "File name: {$file->getClientOriginalName()}\n\nExcerpt:\n" . Str::limit($extractedText, 12000),
+                options: [
+                    'max_tokens' => 700,
+                    'temperature' => 0.2,
+                ],
+            );
+        }
 
         $analysis = [
             'kind' => $isSpreadsheet ? 'spreadsheet' : 'document',
-            'summary' => $isPdf
-                ? 'PDF pipeline accepted. Text extraction and semantic analysis can be attached in provider stage.'
-                : ($isSpreadsheet
-                    ? 'Spreadsheet pipeline accepted. Tabular inspection can be attached in provider stage.'
-                    : 'Document pipeline accepted. Text extraction and semantic analysis can be attached in provider stage.'),
+            'summary' => is_string($aiSummary) && trim($aiSummary) !== ''
+                ? trim($aiSummary)
+                : ($isPdf
+                    ? 'PDF received but no readable text could be extracted. Try exporting the document as TXT or CSV for full AI analysis.'
+                    : ($isSpreadsheet
+                        ? 'Spreadsheet received but no readable rows were found. Upload CSV or XLSX with data for analysis.'
+                        : 'Document received but no readable text could be extracted. Upload TXT, CSV, DOCX, or a text-based PDF.')),
+            'extracted_chars' => is_string($extractedText) ? mb_strlen($extractedText) : 0,
+            'ai_generated' => is_string($aiSummary) && trim($aiSummary) !== '',
         ];
 
         return [

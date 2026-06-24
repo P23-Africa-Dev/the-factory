@@ -461,6 +461,7 @@ export function useCopilotChat() {
         weeklyReport,
         isQueueingWeeklyReport,
         initialize,
+        loadThread,
         sendMessage,
         clearCurrentThread,
         loadOlderThreadMessages,
