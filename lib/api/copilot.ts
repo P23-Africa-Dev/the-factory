@@ -125,6 +125,29 @@ export type WeeklySummaryStatusResponse = {
     available: boolean;
 };
 
+const WEEKLY_SUMMARY_STATUSES = new Set<WeeklySummaryStatusResponse["status"]>([
+    "queued",
+    "running",
+    "completed",
+    "failed",
+]);
+
+export function normalizeWeeklySummaryStatus(raw: Record<string, unknown>): WeeklySummaryStatusResponse {
+    const rawStatus = typeof raw.status === "string" ? raw.status : "queued";
+    const status = WEEKLY_SUMMARY_STATUSES.has(rawStatus as WeeklySummaryStatusResponse["status"])
+        ? (rawStatus as WeeklySummaryStatusResponse["status"])
+        : "queued";
+    const downloadReady = raw.download_ready === true || raw.available === true || status === "completed";
+
+    return {
+        report_id: String(raw.report_id ?? ""),
+        status,
+        progress: typeof raw.progress === "number" ? raw.progress : Number(raw.progress) || 0,
+        error: typeof raw.error === "string" ? raw.error : null,
+        available: status === "completed" && downloadReady,
+    };
+}
+
 export type CopilotAssigneeOption = {
     id: number;
     name: string;
@@ -321,16 +344,21 @@ export function queueWeeklySummaryReport(
     });
 }
 
-export function getWeeklySummaryStatus(
+export async function getWeeklySummaryStatus(
     reportId: string,
     token: string,
     companyId?: number | string
 ): Promise<ApiEnvelope<WeeklySummaryStatusResponse>> {
-    return apiRequest<WeeklySummaryStatusResponse>({
+    const response = await apiRequest<Record<string, unknown>>({
         method: "GET",
         path: `/copilot/reports/weekly-summary/${encodeURIComponent(reportId)}${buildQuery(companyId)}`,
         token,
     });
+
+    return {
+        ...response,
+        data: normalizeWeeklySummaryStatus(response.data),
+    };
 }
 
 export async function downloadWeeklySummaryReport(

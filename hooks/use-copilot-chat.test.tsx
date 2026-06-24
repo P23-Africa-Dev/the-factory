@@ -36,6 +36,14 @@ vi.mock("@/lib/api/copilot", () => ({
     sendCopilotMessage: sendCopilotMessageMock,
     queueWeeklySummaryReport: queueWeeklySummaryReportMock,
     getWeeklySummaryStatus: getWeeklySummaryStatusMock,
+    normalizeWeeklySummaryStatus: (raw: Record<string, unknown>) => ({
+        report_id: String(raw.report_id ?? ""),
+        status: (raw.status as "queued" | "running" | "completed" | "failed") ?? "queued",
+        progress: typeof raw.progress === "number" ? raw.progress : Number(raw.progress) || 0,
+        error: typeof raw.error === "string" ? raw.error : null,
+        available:
+            raw.status === "completed" && (raw.download_ready === true || raw.available === true),
+    }),
     downloadWeeklySummaryReport: vi.fn(),
     transcribeVoiceInput: vi.fn(),
     analyzeCopilotFile: vi.fn(),

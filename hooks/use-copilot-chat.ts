@@ -19,6 +19,7 @@ import {
     getWeeklySummaryStatus,
     lookupCopilotAssignees,
     listCopilotThreads,
+    normalizeWeeklySummaryStatus,
     queueWeeklySummaryReport,
     sendCopilotMessageStream,
     summarizeMeetingTranscript,
@@ -186,10 +187,9 @@ export function useCopilotChat() {
             const tick = async () => {
                 try {
                     const res = await getWeeklySummaryStatus(reportId, token, companyId);
-                    const status = res.data;
-                    setWeeklyReport(status);
+                    setWeeklyReport(res.data);
 
-                    if (status.status === "completed" || status.status === "failed") {
+                    if (res.data.status === "completed" || res.data.status === "failed") {
                         stopWeeklyReportPolling();
                     }
                 } catch (err) {
@@ -210,9 +210,11 @@ export function useCopilotChat() {
     );
 
     const queueWeeklyReport = useCallback(
-        async (companyId?: string | number) => {
+        async (companyId?: string | number): Promise<boolean> => {
             if (!token) {
-                return;
+                const message = "You must be signed in to generate a weekly summary.";
+                setError(message);
+                throw new Error(message);
             }
 
             setIsQueueingWeeklyReport(true);
@@ -221,16 +223,20 @@ export function useCopilotChat() {
             try {
                 const res = await queueWeeklySummaryReport(token, companyId);
                 const reportId = res.data.report_id;
-                setWeeklyReport({
-                    report_id: reportId,
-                    status: "queued",
-                    progress: 0,
-                    error: null,
-                    available: false,
-                });
+                setWeeklyReport(
+                    normalizeWeeklySummaryStatus({
+                        report_id: reportId,
+                        status: "queued",
+                        progress: 5,
+                        download_ready: false,
+                    })
+                );
                 pollWeeklyReportStatus(reportId, companyId);
+                return true;
             } catch (err) {
-                setError(err instanceof Error ? err.message : "Unable to queue weekly summary report.");
+                const message = err instanceof Error ? err.message : "Unable to queue weekly summary report.";
+                setError(message);
+                throw err instanceof Error ? err : new Error(message);
             } finally {
                 setIsQueueingWeeklyReport(false);
             }

@@ -240,6 +240,27 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
+  const prevWeeklyReportStatusRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!weeklyReport) {
+      prevWeeklyReportStatusRef.current = null;
+      return;
+    }
+
+    const status = weeklyReport.status;
+    if (prevWeeklyReportStatusRef.current === status) {
+      return;
+    }
+
+    if (status === "completed") {
+      toast.success("Weekly summary is ready to download.");
+    } else if (status === "failed") {
+      toast.error(weeklyReport.error ?? "Weekly summary generation failed.");
+    }
+
+    prevWeeklyReportStatusRef.current = status;
+  }, [weeklyReport]);
 
   // AI Tools modals
   const [isTranscriptModalOpen, setIsTranscriptModalOpen] = useState(false);
@@ -1168,7 +1189,17 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   async function handleQueueWeeklyReport() {
-    await queueWeeklyReport(companyId ?? undefined);
+    if (!companyId) {
+      toast.error("Select a company before generating a weekly summary.");
+      return;
+    }
+
+    try {
+      await queueWeeklyReport(companyId ?? undefined);
+      toast.info("Weekly summary generation started. We'll notify you when it's ready.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start weekly summary generation.");
+    }
   }
 
   async function handleDownloadWeeklyReport() {
@@ -1860,22 +1891,34 @@ export function AIChat({ open, onClose }: AIChatProps) {
                       <span className="inline-flex items-center gap-1"><LineChart className="h-3.5 w-3.5" /> Forecast</span>
                     </button>
                   </div>
-                  {weeklyReport && (
-                    <div className="flex items-center gap-2 pt-1">
-                      <span className="rounded-full border border-[#3D6A78] bg-[#11303A] px-2.5 py-1 text-[11px] text-[#9CC6CA]">
-                        Report: {weeklyReport.status} ({weeklyReport.progress}%)
-                      </span>
-                      {weeklyReport.status === "completed" && (
-                        <button
-                          onClick={handleDownloadWeeklyReport}
-                          className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
-                        >
-                          Download Summary
-                        </button>
-                      )}
-                    </div>
-                  )}
                 </div>
+              </div>
+            )}
+
+            {(isQueueingWeeklyReport || weeklyReport) && (
+              <div className="mx-6 mt-2 flex flex-wrap items-center gap-2 rounded-2xl border border-[#3D6A78] bg-[#11303A]/90 px-4 py-2.5">
+                <span className="rounded-full border border-[#3D6A78] bg-[#11303A] px-2.5 py-1 text-[11px] text-[#9CC6CA]">
+                  {isQueueingWeeklyReport
+                    ? "Starting weekly summary…"
+                    : weeklyReport?.status === "completed"
+                      ? `Weekly summary ready (${weeklyReport.progress}%)`
+                      : weeklyReport?.status === "failed"
+                        ? "Weekly summary failed"
+                        : weeklyReport?.status === "running"
+                          ? `Generating weekly summary (${weeklyReport.progress}%)`
+                          : `Weekly summary queued (${weeklyReport?.progress ?? 0}%)`}
+                </span>
+                {weeklyReport?.status === "completed" && (
+                  <button
+                    onClick={() => void handleDownloadWeeklyReport()}
+                    className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
+                  >
+                    Download Summary
+                  </button>
+                )}
+                {weeklyReport?.status === "failed" && weeklyReport.error && (
+                  <span className="text-[11px] text-[#F2B8B8]">{weeklyReport.error}</span>
+                )}
               </div>
             )}
 
