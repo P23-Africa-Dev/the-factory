@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Search, SlidersHorizontal, BookmarkPlus, TrendingUp, Clock, CheckCircle2, XCircle, BarChart3 } from 'lucide-react';
 import { arrayMove } from '@dnd-kit/sortable';
@@ -227,7 +227,9 @@ export function AllTasksView() {
   const [statusFilter, setStatusFilter] = useState(isNotCommencedMode ? 'Pending' : 'All');
 
   const user = useAuthStore((s) => s.user);
-  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const canManage =
+    role === 'owner' || role === 'admin' || role === 'management' || role === 'manager' || role === 'supervisor';
 
   const { data: tasksData, isPending } = useTasks({
     company_id: companyId ?? undefined,
@@ -406,15 +408,17 @@ export function AllTasksView() {
             <span style={{ fontSize: '10px', fontWeight: 400 }}>Filter</span>
           </button>
 
-          <button
-            onClick={() => setShowKpiModal(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
-            style={{ boxShadow: '0 4px 14px rgba(9, 35, 45, 0.3)' }}
-          >
-            <BookmarkPlus size={15} strokeWidth={2} />
-            <span className="hidden sm:inline whitespace-nowrap">Create New KPI</span>
-            <span className="sm:hidden">KPI</span>
-          </button>
+          {canManage && (
+            <button
+              onClick={() => setShowKpiModal(true)}
+              className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
+              style={{ boxShadow: '0 4px 14px rgba(9, 35, 45, 0.3)' }}
+            >
+              <BookmarkPlus size={15} strokeWidth={2} />
+              <span className="hidden sm:inline whitespace-nowrap">Create New KPI</span>
+              <span className="sm:hidden">KPI</span>
+            </button>
+          )}
         </div>
       </div>
 

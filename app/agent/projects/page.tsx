@@ -1,19 +1,21 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense } from "react";
+// import { useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { ProjectsViewAgents } from "@/components/operations/projects-view-agents";
+// import { ProjectsViewAgents } from "@/components/operations/projects-view-agents";
 import { AllTasksView } from "@/components/operations/all-tasks-view";
-import { useProjects } from "@/hooks/use-projects";
-import { useAuthStore } from "@/store/auth";
-import { getActiveCompanyContext } from "@/lib/company-context";
-import { buildProjectSlug } from "@/lib/utils/route-slugs";
+import { AllProjectsTasksView } from "@/components/operations/all-projects-tasks-view";
+// import { useProjects } from "@/hooks/use-projects";
+// import { useAuthStore } from "@/store/auth";
+// import { getActiveCompanyContext } from "@/lib/company-context";
+// import { buildProjectSlug } from "@/lib/utils/route-slugs";
 
 type ProjectsTab = "projects" | "tasks";
 
 const TABS: { value: ProjectsTab; label: string }[] = [
-  { value: "projects", label: "All Projects" },
-  { value: "tasks", label: "All Tasks" },
+  { value: "projects", label: "All Tasks" },
+  { value: "tasks", label: "KPIs" },
 ];
 
 // ─── Page content ─────────────────────────────────────────────────────────────
@@ -24,19 +26,19 @@ function ProjectsContent() {
 
   const activeTab = (searchParams.get("tab") as ProjectsTab) || "projects";
 
-  const user = useAuthStore((s) => s.user);
-  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  // const user = useAuthStore((s) => s.user);
+  // const { apiCompanyId: companyId } = getActiveCompanyContext(user);
 
-  const [page, setPage] = useState(1);
+  // const [page, setPage] = useState(1);
 
-  const { data, isPending: isLoading } = useProjects(
-    companyId ? { company_id: companyId, page } : {},
-    "/agent"
-  );
+  // const { data, isPending: isLoading } = useProjects(
+  //   companyId ? { company_id: companyId, page } : {},
+  //   "/agent"
+  // );
 
-  const projects = data?.projects ?? [];
-  const pagination = data?.pagination ?? null;
-  const analytics = data?.analytics ?? null;
+  // const projects = data?.projects ?? [];
+  // const pagination = data?.pagination ?? null;
+  // const analytics = data?.analytics ?? null;
 
   const handleTabChange = (tab: ProjectsTab) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -44,10 +46,10 @@ function ProjectsContent() {
     router.push(`${pathname}?${params.toString()}`);
   };
 
-  const handleViewProject = (id: string, name?: string) => {
-    const slug = buildProjectSlug(id, name);
-    router.push(`/agent/projects/${slug}`);
-  };
+  // const handleViewProject = (id: string, name?: string) => {
+  //   const slug = buildProjectSlug(id, name);
+  //   router.push(`/agent/projects/${slug}`);
+  // };
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
@@ -72,15 +74,16 @@ function ProjectsContent() {
 
         {/* ── View ── */}
         {activeTab === "projects" ? (
-          <ProjectsViewAgents
-            projects={projects}
-            analytics={analytics}
-            onViewProject={handleViewProject}
-            isLoading={isLoading}
-            pagination={pagination}
-            currentPage={page}
-            onPageChange={setPage}
-          />
+          // <ProjectsViewAgents
+          //   projects={projects}
+          //   analytics={analytics}
+          //   onViewProject={handleViewProject}
+          //   isLoading={isLoading}
+          //   pagination={pagination}
+          //   currentPage={page}
+          //   onPageChange={setPage}
+          // />
+          <AllProjectsTasksView />
         ) : (
           <AllTasksView />
         )}
