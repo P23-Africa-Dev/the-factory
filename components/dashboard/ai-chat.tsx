@@ -248,7 +248,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceTranscriptSummary, setVoiceTranscriptSummary] = useState("");
   const [isAnalyzeFilePreviewOpen, setIsAnalyzeFilePreviewOpen] = useState(false);
-  const [fileAnalysisProgress, setFileAnalysisProgress] = useState<{ fileName: string; stage: string } | null>(null);
+  const [isFileAnalysisLoading, setIsFileAnalysisLoading] = useState(false);
+  const [fileAnalysisStage, setFileAnalysisStage] = useState("Analyzing file…");
   const [fileAnalysisResult, setFileAnalysisResult] = useState("");
   const [fileAnalysisFileName, setFileAnalysisFileName] = useState("");
 
@@ -1214,34 +1215,38 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
   async function handleAnalysisFile(file: File) {
     setIsRunningQuickAction(true);
-    setFileAnalysisProgress({ fileName: file.name, stage: "Uploading file…" });
+    setFileAnalysisFileName(file.name);
+    setFileAnalysisResult("");
+    setFileAnalysisStage("Analyzing file…");
+    setIsFileAnalysisLoading(true);
+    setIsAnalyzeFilePreviewOpen(true);
 
     const readingTimer = window.setTimeout(() => {
-      setFileAnalysisProgress((current) =>
-        current ? { ...current, stage: "Reading document content…" } : null,
-      );
+      setFileAnalysisStage("Reading document content…");
     }, 1200);
 
     const analyzingTimer = window.setTimeout(() => {
-      setFileAnalysisProgress((current) =>
-        current ? { ...current, stage: "ELY is analyzing your document…" } : null,
-      );
+      setFileAnalysisStage("ELY is analyzing your document…");
     }, 3200);
 
     try {
       const result = await runFileAnalysis(file, companyId ?? undefined);
       const rawSummary = String((result?.analysis as { summary?: string } | undefined)?.summary ?? "File analysis completed.");
       setFileAnalysisResult(formatPlainAiMessage(rawSummary));
-      setFileAnalysisFileName(file.name);
-      setIsAnalyzeFilePreviewOpen(true);
     } catch (err) {
+      setIsAnalyzeFilePreviewOpen(false);
       toast.error(err instanceof Error ? err.message : "Failed to analyze file.");
     } finally {
       window.clearTimeout(readingTimer);
       window.clearTimeout(analyzingTimer);
-      setFileAnalysisProgress(null);
+      setIsFileAnalysisLoading(false);
       setIsRunningQuickAction(false);
     }
+  }
+
+  function handleCloseFileAnalysisModal() {
+    setIsAnalyzeFilePreviewOpen(false);
+    setIsFileAnalysisLoading(false);
   }
 
   async function handleTranscriptSummaryModalOpen() {
@@ -1516,7 +1521,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                                   className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E7A0] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
                                 >
                                   <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
-                                  {fileAnalysisProgress ? "Analyzing…" : "Analyze File"}
+                                  {isFileAnalysisLoading ? "Analyzing…" : "Analyze File"}
                                 </button>
                               )}
 
@@ -1731,32 +1736,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
               </div>
             )}
 
-            {/* File analysis in progress */}
-            {fileAnalysisProgress && (
-              <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
-                <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" aria-hidden="true" />
-                <div className="relative w-full max-w-md rounded-2xl border border-[#355E73] bg-[#0F2A2F] p-6 shadow-2xl">
-                  <div className="flex items-start gap-4">
-                    <div className="mt-1 h-10 w-10 flex-shrink-0 rounded-full border-2 border-[#4A7F94]/30 border-t-[#7BB6B8] animate-spin" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-white text-[16px] font-semibold">Analyzing your file</p>
-                      <p className="mt-1 text-[#88B3B5] text-[12px] truncate">{fileAnalysisProgress.fileName}</p>
-                      <p className="mt-3 text-[#B9E9DD] text-[13px]">{fileAnalysisProgress.stage}</p>
-                      <p className="mt-2 text-[#88B3B5] text-[11px] leading-relaxed">
-                        This may take a moment for PDFs and spreadsheets. ELY will show the results as soon as analysis is ready.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* File Analysis Preview Modal */}
             {isAnalyzeFilePreviewOpen && (
               <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
-                <button className="absolute inset-0 bg-black/40" onClick={() => setIsAnalyzeFilePreviewOpen(false)} aria-label="Close" />
+                <button
+                  className="absolute inset-0 bg-black/40"
+                  onClick={handleCloseFileAnalysisModal}
+                  aria-label="Close"
+                />
                 <div className="relative w-full max-w-2xl bg-[#0F2A2F] border border-white/10 rounded-2xl p-6 max-h-[80vh] overflow-y-auto">
-                  <h3 className="text-white text-[18px] font-semibold mb-2">File Analysis</h3>
+                  <div className="flex items-center gap-3 mb-4">
+                    {isFileAnalysisLoading && (
+                      <div className="h-5 w-5 flex-shrink-0 rounded-full border-2 border-[#4A7F94]/30 border-t-[#7BB6B8] animate-spin" />
+                    )}
+                    <h3 className="text-white text-[18px] font-semibold">
+                      {isFileAnalysisLoading ? "Analyzing File…" : "File Analysis"}
+                    </h3>
+                  </div>
 
                   <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-2">
                     <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-1">File:</p>
@@ -1767,26 +1763,46 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
                   <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
                     <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">Analysis:</p>
-                    <div
-                      className="text-[#B9E9DD] text-[13px] leading-relaxed ai-message-content"
-                      dangerouslySetInnerHTML={{ __html: formatAiMessageHtml(fileAnalysisResult) }}
-                    />
+                    {isFileAnalysisLoading ? (
+                      <div className="space-y-3">
+                        <p className="text-[#B9E9DD] text-[13px]">{fileAnalysisStage}</p>
+                        <div className="space-y-2.5 pt-1">
+                          {[100, 94, 88, 72, 58].map((width, index) => (
+                            <div
+                              key={`file-analysis-skeleton-${index}`}
+                              className="h-3 rounded-full bg-white/10 animate-pulse"
+                              style={{ width: `${width}%`, animationDelay: `${index * 120}ms` }}
+                            />
+                          ))}
+                        </div>
+                        <p className="text-[#88B3B5] text-[11px] leading-relaxed pt-1">
+                          PDFs and spreadsheets can take a little longer. Your results will appear here automatically.
+                        </p>
+                      </div>
+                    ) : (
+                      <div
+                        className="text-[#B9E9DD] text-[13px] leading-relaxed ai-message-content"
+                        dangerouslySetInnerHTML={{ __html: formatAiMessageHtml(fileAnalysisResult) }}
+                      />
+                    )}
                   </div>
 
                   <div className="flex justify-end gap-2">
                     <button
-                      onClick={() => setIsAnalyzeFilePreviewOpen(false)}
+                      onClick={handleCloseFileAnalysisModal}
                       className="px-4 py-2 rounded-lg bg-[#132A33] text-[#B9E9DD] hover:bg-[#1A3D4D]"
                     >
                       Close
                     </button>
-                    <button
-                      onClick={handleSendFileAnalysisToChat}
-                      className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] flex items-center gap-2"
-                    >
-                      <Send className="w-4 h-4" />
-                      Send to Chat
-                    </button>
+                    {!isFileAnalysisLoading && (
+                      <button
+                        onClick={handleSendFileAnalysisToChat}
+                        className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] flex items-center gap-2"
+                      >
+                        <Send className="w-4 h-4" />
+                        Send to Chat
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1827,7 +1843,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                       disabled={isRunningQuickAction || isStreaming}
                       className="rounded-full border border-[#4F5D2A] bg-[#2B3418] px-3 py-1.5 text-[11px] text-[#D8E7A0] hover:bg-[#364221] disabled:opacity-60"
                     >
-                      <span className="inline-flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5" /> {fileAnalysisProgress ? "Analyzing…" : "Analyze File"}</span>
+                      <span className="inline-flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5" /> {isFileAnalysisLoading ? "Analyzing…" : "Analyze File"}</span>
                     </button>
                     <button
                       onClick={handleTranscriptSummaryModalOpen}
