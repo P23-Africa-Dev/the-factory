@@ -8,6 +8,7 @@ use App\Enums\LeadPriority;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
 use App\Enums\TaskType;
+use App\Models\AttendanceSetting;
 use App\Models\Company;
 use App\Models\Lead;
 use App\Models\LeadPipeline;
@@ -84,7 +85,7 @@ final class CopilotDailyPlanningTest extends TestCase
             ->actingAs($agent)
             ->postJson('/api/v1/copilot/chat', [
                 'company_id' => $company->id,
-                'message' => 'What follow-ups are due today?',
+                'message' => 'Plan my day',
             ]);
 
         $response->assertOk();
@@ -165,6 +166,15 @@ final class CopilotDailyPlanningTest extends TestCase
         $company->users()->attach($agent->id, [
             'role' => 'agent',
             'joined_at' => now(),
+        ]);
+
+        AttendanceSetting::query()->create([
+            'company_id' => $company->id,
+            'opening_time' => '09:00:00',
+            'closing_time' => '17:00:00',
+            'working_days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+            'clockin_window_minutes' => 15,
+            'auto_clockout_enabled' => true,
         ]);
 
         $pipelineId = LeadPipeline::query()->create([

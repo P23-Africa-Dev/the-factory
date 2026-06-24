@@ -22,6 +22,7 @@ class PhaseFiveCopilotService
         private readonly DashboardAggregateService $dashboardAggregateService,
         private readonly PayrollService $payrollService,
         private readonly AiProviderRouter $aiProviderRouter,
+        private readonly CopilotFileTextExtractor $fileTextExtractor,
     ) {}
 
     public function transcribeVoice(User $user, UploadedFile $audio, ?int $companyId = null): array
@@ -49,9 +50,8 @@ class PhaseFiveCopilotService
 
         $isSpreadsheet = in_array($extension, ['xlsx', 'xls', 'csv'], true);
         $isPdf = $extension === 'pdf';
-        $isDocument = in_array($extension, ['pdf', 'doc', 'docx', 'txt'], true);
 
-        $extractedText = $this->extractFileText($file, $extension);
+        $extractedText = $this->fileTextExtractor->extract($file, $extension);
         $aiSummary = null;
 
         if (is_string($extractedText) && trim($extractedText) !== '') {
@@ -75,10 +75,10 @@ PROMPT,
             'summary' => is_string($aiSummary) && trim($aiSummary) !== ''
                 ? trim($aiSummary)
                 : ($isPdf
-                    ? 'PDF received. Text extraction is limited in this environment; upload a TXT or CSV file for full AI analysis.'
+                    ? 'PDF received but no readable text could be extracted. Try exporting the document as TXT or CSV for full AI analysis.'
                     : ($isSpreadsheet
-                        ? 'Spreadsheet received. Upload CSV for immediate tabular analysis, or export to TXT for richer summaries.'
-                        : 'Document received. Upload TXT or CSV for immediate AI analysis.')),
+                        ? 'Spreadsheet received but no readable rows were found. Upload CSV or XLSX with data for analysis.'
+                        : 'Document received but no readable text could be extracted. Upload TXT, CSV, DOCX, or a text-based PDF.')),
             'extracted_chars' => is_string($extractedText) ? mb_strlen($extractedText) : 0,
             'ai_generated' => is_string($aiSummary) && trim($aiSummary) !== '',
         ];
@@ -91,21 +91,6 @@ PROMPT,
             'size_bytes' => (int) $file->getSize(),
             'analysis' => $analysis,
         ];
-    }
-
-    private function extractFileText(UploadedFile $file, string $extension): ?string
-    {
-        if (in_array($extension, ['txt', 'csv'], true)) {
-            $contents = @file_get_contents($file->getRealPath() ?: '');
-
-            return is_string($contents) ? $contents : null;
-        }
-
-        if ($extension === 'doc' || $extension === 'docx') {
-            return null;
-        }
-
-        return null;
     }
 
     public function summarizeMeetingTranscript(
