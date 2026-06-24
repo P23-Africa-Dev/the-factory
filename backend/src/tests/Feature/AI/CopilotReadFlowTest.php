@@ -198,7 +198,9 @@ final class CopilotReadFlowTest extends TestCase
             'status' => 'active',
             'activated_at' => now(),
         ]);
-        $admin = User::factory()->createOne();
+        $admin = User::factory()->createOne([
+            'is_active' => true,
+        ]);
 
         $company->users()->attach($admin->id, [
             'role' => 'admin',

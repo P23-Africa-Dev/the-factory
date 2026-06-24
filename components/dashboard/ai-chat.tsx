@@ -8,7 +8,8 @@ import {
 } from "@/components/dashboard/ely-meeting-action-fields";
 import { formatAiMessageHtml } from "@/lib/format-ai-message";
 import { ELY_INPUT_PLACEHOLDER, ELY_LANDING_HEADLINE, ELY_LANDING_SUBTEXT, ELY_NAME } from "@/lib/ely-brand";
-import type { CopilotChatContext } from "@/lib/api/copilot";
+import type { CopilotChatContext, CopilotThreadSearchResult } from "@/lib/api/copilot";
+import { searchCopilotThreads } from "@/lib/api/copilot";
 import { resolveCopilotGeolocationContext } from "@/lib/copilot-geolocation";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
@@ -161,6 +162,39 @@ function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
   return null;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function highlightPlainText(content: string, query: string): string {
+  const trimmed = query.trim();
+  if (trimmed === "") {
+    return content;
+  }
+
+  const escaped = content
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  const pattern = new RegExp(`(${escapeRegExp(trimmed)})`, "gi");
+  return escaped.replace(pattern, '<mark class="bg-[#EBA771]/35 text-white rounded px-0.5">$1</mark>');
+}
+
+function formatSearchDate(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function AIChat({ open, onClose }: AIChatProps) {
   const user = useAuthStore((s) => s.user);
   const firstName = user?.name?.split(" ")[0] ?? "User";
@@ -173,6 +207,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     weeklyReport,
     isQueueingWeeklyReport,
     initialize,
+    loadThread,
     sendMessage: sendCopilotMessage,
     clearCurrentThread,
     queueWeeklyReport,
@@ -190,6 +225,11 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [copiedMap, setCopiedMap] = useState<Record<string, boolean>>({});
   const [input, setInput] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<CopilotThreadSearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  const [highlightQuery, setHighlightQuery] = useState("");
   const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
   const [meetingActionDrafts, setMeetingActionDrafts] = useState<Record<string, ElyMeetingDraft>>({});
   const [assigneeOptions, setAssigneeOptions] = useState<Record<string, AssigneeOptionsState>>({});
@@ -214,6 +254,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
   const voiceInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -252,6 +293,77 @@ export function AIChat({ open, onClose }: AIChatProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isStreaming]);
+
+  useEffect(() => {
+    if (!searchOpen) {
+      setSearchQuery("");
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    setTimeout(() => {
+      if (window.innerWidth < 640) {
+        mobileSearchInputRef.current?.focus();
+      } else {
+        searchInputRef.current?.focus();
+      }
+    }, 150);
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (!searchOpen || !companyId) {
+      return;
+    }
+
+    const query = searchQuery.trim();
+    if (query.length < 1) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setSearchLoading(true);
+        try {
+          const token = getAuthTokenFromDocument();
+          if (!token) {
+            setSearchResults([]);
+            return;
+          }
+
+          const response = await searchCopilotThreads(token, query, companyId);
+          setSearchResults(response.data.items ?? []);
+        } catch {
+          setSearchResults([]);
+        } finally {
+          setSearchLoading(false);
+        }
+      })();
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [companyId, searchOpen, searchQuery]);
+
+  useEffect(() => {
+    if (!highlightMessageId) {
+      return;
+    }
+
+    const element = document.getElementById(`copilot-msg-${highlightMessageId}`);
+    if (!element) {
+      return;
+    }
+
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    element.classList.add("ring-2", "ring-[#EBA771]/60", "rounded-[20px]");
+    const timer = window.setTimeout(() => {
+      element.classList.remove("ring-2", "ring-[#EBA771]/60", "rounded-[20px]");
+    }, 3200);
+
+    return () => window.clearTimeout(timer);
+  }, [highlightMessageId, messages]);
 
   useEffect(() => {
     for (const msg of messages) {
@@ -1066,6 +1178,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }
   }
 
+  async function handleOpenSearchResult(result: CopilotThreadSearchResult) {
+    if (!companyId) {
+      return;
+    }
+
+    const query = searchQuery.trim();
+    setSearchOpen(false);
+    setHighlightQuery(query);
+    setHighlightMessageId(result.match_message_id || null);
+
+    try {
+      await loadThread(result.thread_id, companyId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unable to open conversation.");
+    }
+  }
+
   async function handleVoiceFile(file: File) {
     setIsRunningQuickAction(true);
     try {
@@ -1242,13 +1371,54 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
                 {/* Inline search bar — large screens only */}
                 <div className={`hidden sm:flex flex-1 items-center transition-all duration-300 overflow-hidden ${searchOpen ? "opacity-100 max-w-full" : "opacity-0 max-w-0 pointer-events-none"}`}>
-                  <div className="w-full border border-white/20 rounded-full px-5 py-3 flex items-center gap-2 bg-[#091519]">
-                    <Search className="w-4 h-4 text-[#88B3B5] flex-shrink-0" />
-                    <input
-                      ref={searchInputRef}
-                      placeholder="Search..."
-                      className="flex-1 bg-transparent text-white text-sm placeholder:text-[#88B3B5] outline-none"
-                    />
+                  <div className="relative w-full">
+                    <div className="w-full border border-white/20 rounded-full px-5 py-3 flex items-center gap-2 bg-[#091519]">
+                      <Search className="w-4 h-4 text-[#88B3B5] flex-shrink-0" />
+                      <input
+                        ref={searchInputRef}
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        placeholder="Search conversations..."
+                        className="flex-1 bg-transparent text-white text-sm placeholder:text-[#88B3B5] outline-none"
+                      />
+                      {searchQuery.trim() !== "" && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchQuery("")}
+                          className="text-[#88B3B5] hover:text-white"
+                          aria-label="Clear search"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    {searchQuery.trim() !== "" && (
+                      <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-72 overflow-y-auto rounded-2xl border border-white/10 bg-[#0F2228] shadow-2xl">
+                        {searchLoading ? (
+                          <p className="px-4 py-3 text-[12px] text-[#88B3B5]">Searching…</p>
+                        ) : searchResults.length === 0 ? (
+                          <p className="px-4 py-3 text-[12px] text-[#88B3B5]">No conversations found.</p>
+                        ) : (
+                          searchResults.map((result) => (
+                            <button
+                              key={`${result.thread_id}-${result.match_message_id}`}
+                              type="button"
+                              onClick={() => void handleOpenSearchResult(result)}
+                              className="w-full border-b border-white/5 px-4 py-3 text-left hover:bg-white/5 transition-colors last:border-b-0"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-[13px] font-medium text-white truncate">{result.title}</p>
+                                <span className="text-[10px] text-[#88B3B5] flex-shrink-0">{formatSearchDate(result.updated_at)}</span>
+                              </div>
+                              <p
+                                className="mt-1 text-[12px] text-[#9CC6CA] line-clamp-2"
+                                dangerouslySetInnerHTML={{ __html: highlightPlainText(result.snippet, searchQuery) }}
+                              />
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1259,8 +1429,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                   </div>
                   <button
                     onClick={() => {
-                      setSearchOpen((v) => !v);
-                      setTimeout(() => searchInputRef.current?.focus(), 150);
+                      setSearchOpen((value) => !value);
                     }}
                     className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${searchOpen ? "bg-[#7BB6B8]/20" : "bg-[#132A33] hover:bg-[#1A3844]"}`}
                   >
@@ -1370,14 +1539,54 @@ export function AIChat({ open, onClose }: AIChatProps) {
               </div>
 
               {/* Below-header search bar — small screens only */}
-              <div className={`sm:hidden overflow-hidden transition-all duration-300 ease-out ${searchOpen ? "max-h-20 opacity-100 pb-3" : "max-h-0 opacity-0"}`}>
+              <div className={`sm:hidden overflow-hidden transition-all duration-300 ease-out ${searchOpen ? "max-h-[360px] opacity-100 pb-3" : "max-h-0 opacity-0"}`}>
                 <div className="mx-6 border border-white/20 rounded-full px-5 py-3 flex items-center gap-2 bg-[#091519]">
                   <Search className="w-4 h-4 text-[#88B3B5] flex-shrink-0" />
                   <input
-                    placeholder="Search..."
+                    ref={mobileSearchInputRef}
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search conversations..."
                     className="flex-1 bg-transparent text-white text-sm placeholder:text-[#88B3B5] outline-none"
                   />
+                  {searchQuery.trim() !== "" && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      className="text-[#88B3B5] hover:text-white"
+                      aria-label="Clear search"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
+                {searchQuery.trim() !== "" && (
+                  <div className="mx-6 mt-2 max-h-64 overflow-y-auto rounded-2xl border border-white/10 bg-[#0F2228]">
+                    {searchLoading ? (
+                      <p className="px-4 py-3 text-[12px] text-[#88B3B5]">Searching…</p>
+                    ) : searchResults.length === 0 ? (
+                      <p className="px-4 py-3 text-[12px] text-[#88B3B5]">No conversations found.</p>
+                    ) : (
+                      searchResults.map((result) => (
+                        <button
+                          key={`mobile-${result.thread_id}-${result.match_message_id}`}
+                          type="button"
+                          onClick={() => void handleOpenSearchResult(result)}
+                          className="w-full border-b border-white/5 px-4 py-3 text-left hover:bg-white/5 transition-colors last:border-b-0"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-[13px] font-medium text-white truncate">{result.title}</p>
+                            <span className="text-[10px] text-[#88B3B5] flex-shrink-0">{formatSearchDate(result.updated_at)}</span>
+                          </div>
+                          <p
+                            className="mt-1 text-[12px] text-[#9CC6CA] line-clamp-2"
+                            dangerouslySetInnerHTML={{ __html: highlightPlainText(result.snippet, searchQuery) }}
+                          />
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1630,13 +1839,17 @@ export function AIChat({ open, onClose }: AIChatProps) {
                 </div>
               )}
               {messages.map((msg, index) => (
-                <div key={msg.id}>
+                <div key={msg.id} id={`copilot-msg-${msg.id}`}>
                   {msg.role === "user" ? (
                     /* User message */
                     <div className="flex justify-end mb-3">
                       <div className="group relative max-w-[75%]">
                         <div className="bg-[#5B2155] text-white/90 text-[13px] px-4 py-2.5 rounded-[20px] leading-relaxed shadow-sm">
-                          {msg.content}
+                          {highlightMessageId === msg.id && highlightQuery.trim() !== "" ? (
+                            <span dangerouslySetInnerHTML={{ __html: highlightPlainText(msg.content, highlightQuery) }} />
+                          ) : (
+                            msg.content
+                          )}
                         </div>
                       </div>
                     </div>

@@ -214,6 +214,29 @@ class CopilotController extends Controller
         );
     }
 
+    public function search(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'q' => ['required', 'string', 'min:1', 'max:120'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:30'],
+            'cursor' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $result = $this->copilotService->searchThreads(
+            user: $request->user(),
+            query: (string) $validated['q'],
+            companyId: $this->resolveCompanyContextId($validated['company_id'] ?? null),
+            limit: isset($validated['limit']) ? (int) $validated['limit'] : 15,
+            cursor: isset($validated['cursor']) ? (string) $validated['cursor'] : null,
+        );
+
+        return $this->success(
+            message: 'Copilot thread search completed successfully.',
+            data: $result,
+        );
+    }
+
     public function assignees(Request $request): JsonResponse
     {
         $validated = $request->validate([

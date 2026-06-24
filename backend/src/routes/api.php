@@ -164,6 +164,9 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
         Route::get('/assignees', [CopilotController::class, 'assignees'])
             ->middleware('throttle:30,1')
             ->name('assignees.index');
+        Route::get('/threads/search', [CopilotController::class, 'search'])
+            ->middleware('throttle:30,1')
+            ->name('threads.search');
         Route::get('/threads', [CopilotController::class, 'index'])->name('threads.index');
         Route::get('/threads/{thread}', [CopilotController::class, 'show'])->name('threads.show');
         Route::get('/threads/{thread}/messages', [CopilotController::class, 'messages'])->name('threads.messages.index');

@@ -51,13 +51,36 @@ class PhaseFiveCopilotService
         $isPdf = $extension === 'pdf';
         $isDocument = in_array($extension, ['pdf', 'doc', 'docx', 'txt'], true);
 
+        $extractedText = $this->extractFileText($file, $extension);
+        $aiSummary = null;
+
+        if (is_string($extractedText) && trim($extractedText) !== '') {
+            $aiSummary = $this->aiProviderRouter->generateForPurpose(
+                purpose: 'operational',
+                systemPrompt: <<<'PROMPT'
+You are ELY, an operations assistant. Analyze the uploaded file excerpt and return plain text only.
+Provide: (1) a concise summary, (2) key findings or metrics, and (3) recommended next actions.
+Do not invent data that is not present in the excerpt.
+PROMPT,
+                userPrompt: "File name: {$file->getClientOriginalName()}\n\nExcerpt:\n" . Str::limit($extractedText, 12000),
+                options: [
+                    'max_tokens' => 700,
+                    'temperature' => 0.2,
+                ],
+            );
+        }
+
         $analysis = [
             'kind' => $isSpreadsheet ? 'spreadsheet' : 'document',
-            'summary' => $isPdf
-                ? 'PDF pipeline accepted. Text extraction and semantic analysis can be attached in provider stage.'
-                : ($isSpreadsheet
-                    ? 'Spreadsheet pipeline accepted. Tabular inspection can be attached in provider stage.'
-                    : 'Document pipeline accepted. Text extraction and semantic analysis can be attached in provider stage.'),
+            'summary' => is_string($aiSummary) && trim($aiSummary) !== ''
+                ? trim($aiSummary)
+                : ($isPdf
+                    ? 'PDF received. Text extraction is limited in this environment; upload a TXT or CSV file for full AI analysis.'
+                    : ($isSpreadsheet
+                        ? 'Spreadsheet received. Upload CSV for immediate tabular analysis, or export to TXT for richer summaries.'
+                        : 'Document received. Upload TXT or CSV for immediate AI analysis.')),
+            'extracted_chars' => is_string($extractedText) ? mb_strlen($extractedText) : 0,
+            'ai_generated' => is_string($aiSummary) && trim($aiSummary) !== '',
         ];
 
         return [
@@ -68,6 +91,21 @@ class PhaseFiveCopilotService
             'size_bytes' => (int) $file->getSize(),
             'analysis' => $analysis,
         ];
+    }
+
+    private function extractFileText(UploadedFile $file, string $extension): ?string
+    {
+        if (in_array($extension, ['txt', 'csv'], true)) {
+            $contents = @file_get_contents($file->getRealPath() ?: '');
+
+            return is_string($contents) ? $contents : null;
+        }
+
+        if ($extension === 'doc' || $extension === 'docx') {
+            return null;
+        }
+
+        return null;
     }
 
     public function summarizeMeetingTranscript(

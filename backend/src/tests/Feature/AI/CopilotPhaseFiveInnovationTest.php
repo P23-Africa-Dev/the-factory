@@ -83,7 +83,9 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
         ]);
 
         /** @var User $user */
-        $user = User::factory()->createOne();
+        $user = User::factory()->createOne([
+            'is_active' => true,
+        ]);
 
         $company->users()->attach($user->id, [
             'role' => $role,
