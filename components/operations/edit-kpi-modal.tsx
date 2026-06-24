@@ -83,6 +83,7 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
 
   useEffect(() => {
     if (kpi) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm({
         name: kpi.description || "",
         category: kpi.category || "",

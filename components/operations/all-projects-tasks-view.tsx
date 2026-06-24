@@ -251,17 +251,15 @@ export function AllProjectsTasksView() {
           <span style={{ fontSize: "10px", fontWeight: 400 }}>Filter</span>
         </button>
 
-        {canManageTaskStatuses && (
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
-            style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
-          >
-            <BookmarkPlus size={15} strokeWidth={2} />
-            <span className="hidden sm:inline whitespace-nowrap">Create New Task</span>
-            <span className="sm:hidden">Task</span>
-          </button>
-        )}
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
+          style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
+        >
+          <BookmarkPlus size={15} strokeWidth={2} />
+          <span className="hidden sm:inline whitespace-nowrap">Create New Task</span>
+          <span className="sm:hidden">Task</span>
+        </button>
       </div>
 
       {/* ── Filter panel ── */}
