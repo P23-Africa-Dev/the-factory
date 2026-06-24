@@ -9,6 +9,7 @@ import {
     CopilotChatContext,
     CopilotMessage,
     CopilotThread,
+    WeeklySummaryDownloadFormat,
     WeeklySummaryStatusResponse,
     analyzeCopilotFile,
     deleteCopilotThread,
@@ -245,27 +246,15 @@ export function useCopilotChat() {
     );
 
     const downloadWeeklyReport = useCallback(
-        async (companyId?: string | number) => {
+        async (companyId?: string | number, format: WeeklySummaryDownloadFormat = "pdf") => {
             if (!token || !weeklyReport?.report_id || weeklyReport.status !== "completed") {
                 return;
             }
 
             try {
-                const file = await downloadWeeklySummaryReport(weeklyReport.report_id, token, companyId);
+                const file = await downloadWeeklySummaryReport(weeklyReport.report_id, token, companyId, format);
                 if (typeof window !== "undefined") {
-                    // Determine MIME type based on file extension
-                    let mimeType = "application/json";
-                    if (file.filename.endsWith(".docx")) {
-                        mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-                    } else if (file.filename.endsWith(".doc")) {
-                        mimeType = "application/msword";
-                    } else if (file.filename.endsWith(".txt")) {
-                        mimeType = "text/plain";
-                    } else if (file.filename.endsWith(".pdf")) {
-                        mimeType = "application/pdf";
-                    }
-
-                    const blob = new Blob([file.content], { type: mimeType });
+                    const blob = new Blob([file.content], { type: file.mimeType });
                     const url = URL.createObjectURL(blob);
                     const anchor = document.createElement("a");
                     anchor.href = url;

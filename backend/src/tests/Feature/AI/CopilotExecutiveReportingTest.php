@@ -103,12 +103,25 @@ final class CopilotExecutiveReportingTest extends TestCase
 
         $downloadResponse = $this
             ->actingAs($admin)
-            ->get('/api/v1/copilot/reports/weekly-summary/' . $reportId . '/download?company_id=' . $company->id);
+            ->get('/api/v1/copilot/reports/weekly-summary/' . $reportId . '/download?company_id=' . $company->id . '&format=pdf');
 
         $downloadResponse
             ->assertOk()
-            ->assertHeader('Content-Type', 'application/json')
-            ->assertDownload('copilot-weekly-summary-' . $reportId . '.json');
+            ->assertHeader('content-type', 'application/pdf')
+            ->assertDownload('Weekly-Executive-Summary-' . now()->toDateString() . '.pdf');
+
+        $this->assertStringStartsWith('%PDF', $downloadResponse->streamedContent());
+
+        $docxResponse = $this
+            ->actingAs($admin)
+            ->get('/api/v1/copilot/reports/weekly-summary/' . $reportId . '/download?company_id=' . $company->id . '&format=docx');
+
+        $docxResponse
+            ->assertOk()
+            ->assertHeader('content-type', 'application/msword')
+            ->assertDownload('Weekly-Executive-Summary-' . now()->toDateString() . '.doc');
+
+        $this->assertStringStartsWith('{\\rtf1', $docxResponse->streamedContent());
     }
 
     /**

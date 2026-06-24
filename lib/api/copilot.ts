@@ -361,17 +361,27 @@ export async function getWeeklySummaryStatus(
     };
 }
 
+export type WeeklySummaryDownloadFormat = "pdf" | "docx";
+
 export async function downloadWeeklySummaryReport(
     reportId: string,
     token: string,
-    companyId?: number | string
-): Promise<{ filename: string; content: string }> {
+    companyId?: number | string,
+    format: WeeklySummaryDownloadFormat = "pdf"
+): Promise<{ filename: string; content: ArrayBuffer; mimeType: string }> {
+    const params = new URLSearchParams();
+    if (companyId !== undefined && companyId !== null && String(companyId).trim() !== "") {
+        params.set("company_id", String(companyId));
+    }
+    params.set("format", format);
+    const query = `?${params.toString()}`;
+
     const response = await fetch(
-        `${API_BASE_URL}/copilot/reports/weekly-summary/${encodeURIComponent(reportId)}/download${buildQuery(companyId)}`,
+        `${API_BASE_URL}/copilot/reports/weekly-summary/${encodeURIComponent(reportId)}/download${query}`,
         {
             method: "GET",
             headers: {
-                Accept: "application/json, application/octet-stream, */*",
+                Accept: "application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/octet-stream, */*",
                 ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
         }
@@ -382,14 +392,20 @@ export async function downloadWeeklySummaryReport(
         throw new ApiRequestError(payload?.message ?? "Unable to download weekly summary.", response.status, payload);
     }
 
-    const content = await response.text();
+    const content = await response.arrayBuffer();
     const disposition = response.headers.get("Content-Disposition") ?? "";
     const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+    const mimeType =
+        format === "docx"
+            ? "application/msword"
+            : "application/pdf";
     const filename = filenameMatch?.[1]
         ? decodeURIComponent(filenameMatch[1].replace(/"/g, ""))
-        : `weekly-summary-${reportId}.json`;
+        : format === "docx"
+          ? `Weekly-Executive-Summary.doc`
+          : `Weekly-Executive-Summary.pdf`;
 
-    return { filename, content };
+    return { filename, content, mimeType };
 }
 
 export function transcribeVoiceInput(

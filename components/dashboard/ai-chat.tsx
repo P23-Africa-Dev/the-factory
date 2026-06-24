@@ -1202,10 +1202,10 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }
   }
 
-  async function handleDownloadWeeklyReport() {
+  async function handleDownloadWeeklyReport(format: "pdf" | "docx" = "pdf") {
     try {
-      await downloadWeeklyReport(companyId ?? undefined);
-      toast.success("Weekly report downloaded successfully!");
+      await downloadWeeklyReport(companyId ?? undefined, format);
+      toast.success(format === "docx" ? "Word document downloaded." : "PDF downloaded.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to download weekly report.");
     }
@@ -1527,13 +1527,22 @@ export function AIChat({ open, onClose }: AIChatProps) {
                               </button>
 
                               {weeklyReport?.status === "completed" && (
-                                <button
-                                  onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); void handleDownloadWeeklyReport(); }}
-                                  className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E4FF] hover:bg-white/5 transition-colors text-left"
-                                >
-                                  <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
-                                  Download Summary
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); void handleDownloadWeeklyReport("pdf"); }}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E4FF] hover:bg-white/5 transition-colors text-left"
+                                  >
+                                    <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
+                                    Download as PDF
+                                  </button>
+                                  <button
+                                    onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); void handleDownloadWeeklyReport("docx"); }}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E4FF] hover:bg-white/5 transition-colors text-left"
+                                  >
+                                    <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
+                                    Download as Word
+                                  </button>
+                                </>
                               )}
 
                               <button
@@ -1909,12 +1918,20 @@ export function AIChat({ open, onClose }: AIChatProps) {
                           : `Weekly summary queued (${weeklyReport?.progress ?? 0}%)`}
                 </span>
                 {weeklyReport?.status === "completed" && (
-                  <button
-                    onClick={() => void handleDownloadWeeklyReport()}
-                    className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
-                  >
-                    Download Summary
-                  </button>
+                  <>
+                    <button
+                      onClick={() => void handleDownloadWeeklyReport("pdf")}
+                      className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
+                    >
+                      Download PDF
+                    </button>
+                    <button
+                      onClick={() => void handleDownloadWeeklyReport("docx")}
+                      className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
+                    >
+                      Download Word
+                    </button>
+                  </>
                 )}
                 {weeklyReport?.status === "failed" && weeklyReport.error && (
                   <span className="text-[11px] text-[#F2B8B8]">{weeklyReport.error}</span>
