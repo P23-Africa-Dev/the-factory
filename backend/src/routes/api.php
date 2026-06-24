@@ -28,6 +28,9 @@ use App\Http\Controllers\Api\V1\Enterprise\EnterpriseLoginController;
 use App\Http\Controllers\Api\V1\Enterprise\SetupInfoController;
 use App\Http\Controllers\Api\V1\Enterprise\VerifyCompanyIdController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\Kpi\AdminKpiStatusController;
+use App\Http\Controllers\Api\V1\Kpi\KpiController;
+use App\Http\Controllers\Api\V1\Kpi\KpiStatusController;
 use App\Http\Controllers\Api\V1\Internal\InternalLoginController;
 use App\Http\Controllers\Api\V1\Internal\InternalOnboardingController;
 use App\Http\Controllers\Api\V1\Internal\InternalUserController;
@@ -297,6 +300,23 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                 Route::get('/{task}/proofs/{proof}', [TaskProofController::class, 'show'])->name('proofs.show');
             });
 
+            Route::prefix('kpis')->name('kpis.')->group(function (): void {
+                Route::get('/', [KpiController::class, 'index'])->name('index');
+                Route::post('/', [KpiController::class, 'store'])
+                    ->middleware('throttle:30,1')
+                    ->name('store');
+                Route::get('/{kpi}', [KpiController::class, 'show'])->name('show');
+                Route::patch('/{kpi}', [KpiController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('update');
+                Route::delete('/{kpi}', [KpiController::class, 'destroy'])
+                    ->middleware('throttle:20,1')
+                    ->name('destroy');
+                Route::patch('/{kpi}/status', [AdminKpiStatusController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('status.update');
+            });
+
             Route::prefix('projects')->name('projects.')->group(function (): void {
                 Route::get('/', [ProjectController::class, 'index'])->name('index');
                 Route::post('/', [ProjectController::class, 'store'])
@@ -465,6 +485,14 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                     ->name('proofs.store');
             });
 
+            Route::prefix('kpis')->name('kpis.')->group(function (): void {
+                Route::get('/', [KpiController::class, 'index'])->name('index');
+                Route::get('/{kpi}', [KpiController::class, 'show'])->name('show');
+                Route::patch('/{kpi}/status', [KpiStatusController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('status.update');
+            });
+
             Route::prefix('crm')->name('crm.')->group(function (): void {
                 Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
                 Route::post('/leads', [LeadController::class, 'store'])
@@ -548,6 +576,23 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
             ->name('proofs.store');
         Route::get('/{task}/proofs/{proof}', [TaskProofController::class, 'show'])
             ->name('proofs.show');
+    });
+
+    Route::prefix('kpis')->name('kpis.')->group(function (): void {
+        Route::get('/', [KpiController::class, 'index'])->name('index');
+        Route::post('/', [KpiController::class, 'store'])
+            ->middleware('throttle:30,1')
+            ->name('store');
+        Route::get('/{kpi}', [KpiController::class, 'show'])->name('show');
+        Route::patch('/{kpi}', [KpiController::class, 'update'])
+            ->middleware('throttle:30,1')
+            ->name('update');
+        Route::delete('/{kpi}', [KpiController::class, 'destroy'])
+            ->middleware('throttle:20,1')
+            ->name('destroy');
+        Route::patch('/{kpi}/status', [KpiStatusController::class, 'update'])
+            ->middleware('throttle:30,1')
+            ->name('status.update');
     });
 
     Route::prefix('agent/tasks')->name('agent.tasks.')->group(function (): void {

@@ -69,7 +69,7 @@ export function TopCustomers() {
     totalLeads > 0 ? Math.round((convertedLeads / totalLeads) * 100) : 0;
 
   const topProspects = useMemo(
-    () => (overview?.top_prospects ?? []).slice(0, 5),
+    () => (overview?.top_prospects ?? []).slice(0, 3),
     [overview?.top_prospects]
   );
 

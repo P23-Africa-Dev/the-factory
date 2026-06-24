@@ -122,7 +122,7 @@ export function CreateKpiModal({ isOpen, onClose }: CreateKpiModalProps) {
         target_value: form.targetValue,
         start_date: form.startDate,
         end_date: form.endDate,
-        assigned_to: form.assignedTo || undefined,
+        assigned_to_user_id: form.assignedTo ? Number(form.assignedTo) : undefined,
         priority: form.priority as KpiPriority,
         expected_outcome: form.expectedOutcome,
       },
