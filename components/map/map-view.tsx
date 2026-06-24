@@ -507,7 +507,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       setSearchBusy(true);
 
       fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&autocomplete=true&limit=6`
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&autocomplete=true&limit=6&types=country,region,place,locality,neighborhood,address,poi`
       )
         .then(async (res) => {
           if (!res.ok) {
