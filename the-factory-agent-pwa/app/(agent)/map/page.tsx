@@ -798,6 +798,29 @@ function AddNoteModal({
   );
 }
 
+function getCountryCode(countryStr?: string | null): string {
+  if (!countryStr) return 'NG';
+  const clean = countryStr.trim().toUpperCase();
+  if (clean.length === 2) return clean;
+  const countryMap: Record<string, string> = {
+    NIGERIA: 'NG',
+    GHANA: 'GH',
+    KENYA: 'KE',
+    'SOUTH AFRICA': 'ZA',
+    RWANDA: 'RW',
+    UGANDA: 'UG',
+    TANZANIA: 'TZ',
+    EGYPT: 'EG',
+    CAMEROON: 'CM',
+    SENEGAL: 'SN',
+    ETHIOPIA: 'ET',
+    'UNITED STATES': 'US',
+    'UNITED KINGDOM': 'GB',
+    CANADA: 'CA',
+  };
+  return countryMap[clean] || 'NG';
+}
+
 // ─── Main Content Component ───────────────────────────────────────────────────
 
 function MapContent() {
@@ -863,7 +886,7 @@ function MapContent() {
   const { data: tasks = [] } = useTaskListItems();
   const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
   const { user } = useAuth();
-  const { displayName } = useAgentIdentity();
+  const { displayName, profile } = useAgentIdentity();
   const [isOnline, setIsOnline] = useState(true);
   const currentAgentId = user?.id != null ? Number(user.id) : null;
 
@@ -1090,7 +1113,11 @@ function MapContent() {
     const token = env.MAPBOX_TOKEN;
     if (!token) return;
     try {
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=NG&limit=5`;
+      const proximityParam = lastPosition
+        ? `&proximity=${lastPosition.coords.longitude},${lastPosition.coords.latitude}`
+        : '';
+      const countryCode = getCountryCode(profile?.organization?.country);
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=${countryCode}&limit=5${proximityParam}`;
       const resp = await fetch(url);
       const data = await resp.json() as { features?: Array<{ text: string; place_name: string; center: [number, number] }> };
       if (data.features) {
@@ -1099,14 +1126,18 @@ function MapContent() {
         );
       }
     } catch {}
-  }, []);
+  }, [lastPosition, profile]);
 
   const searchOriginPlaces = useCallback(async (query: string): Promise<void> => {
     if (!query.trim()) { setOriginGeoResults([]); return; }
     const token = env.MAPBOX_TOKEN;
     if (!token) return;
     try {
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=NG&limit=5`;
+      const proximityParam = lastPosition
+        ? `&proximity=${lastPosition.coords.longitude},${lastPosition.coords.latitude}`
+        : '';
+      const countryCode = getCountryCode(profile?.organization?.country);
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=${countryCode}&limit=5${proximityParam}`;
       const resp = await fetch(url);
       const data = await resp.json() as { features?: Array<{ text: string; place_name: string; center: [number, number] }> };
       if (data.features) {
@@ -1115,7 +1146,7 @@ function MapContent() {
         );
       }
     } catch {}
-  }, []);
+  }, [lastPosition, profile]);
 
   // Boot GPS for map preview. We deliberately do NOT force a permission prompt
   // on page load — the Start flow prompts when the user actually starts a task,

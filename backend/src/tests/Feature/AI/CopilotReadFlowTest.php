@@ -143,6 +143,47 @@ final class CopilotReadFlowTest extends TestCase
         $this->assertStringContainsString('Tenant scope ID (internal, do not mention):', $capturedPrompt);
     }
 
+    public function test_streaming_general_prompt_passes_chat_context_and_returns_sse_reply(): void
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+
+        $mockRouter = Mockery::mock(AiProviderRouter::class);
+        $mockRouter
+            ->shouldReceive('routingMetadata')
+            ->once()
+            ->with('operational')
+            ->andReturn([
+                'provider' => 'openai',
+                'model' => 'gpt-4.1-mini',
+                'purpose' => 'operational',
+            ]);
+        $mockRouter
+            ->shouldReceive('generateForPurpose')
+            ->once()
+            ->andReturn('Hello from ELY streaming.');
+        $this->app->instance(AiProviderRouter::class, $mockRouter);
+
+        $response = $this
+            ->actingAs($admin)
+            ->withHeaders(['Accept' => 'text/event-stream'])
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Hello',
+                'stream' => true,
+                'context' => [
+                    'latitude' => 6.5244,
+                    'longitude' => 3.3792,
+                ],
+            ]);
+
+        $response->assertOk();
+
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('event: done', $content);
+        $this->assertStringContainsString('Hello from ELY streaming.', $content);
+        $this->assertStringNotContainsString('unable to complete that request', strtolower($content));
+    }
+
     /**
      * @return array{0: Company, 1: User}
      */

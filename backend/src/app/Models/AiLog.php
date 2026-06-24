@@ -28,6 +28,7 @@ class AiLog extends Model
         'status',
         'intent_type',
         'tool_name',
+        'routing_purpose',
         'error_code',
         'error_message',
         'stack_trace',

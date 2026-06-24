@@ -5,25 +5,33 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Admin\AI;
 
 use App\Http\Controllers\Controller;
+use App\Services\AI\Admin\AiProviderHealthService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\DB;
 
 class AiHealthController extends Controller
 {
+    public function __construct(private readonly AiProviderHealthService $healthService) {}
+
     public function check(): JsonResponse
     {
+        $providerChecks = $this->healthService->checkAll(persist: false);
+
         $checks = [
-            'openai' => $this->checkOpenAi(),
-            'claude' => $this->checkClaude(),
+            'openai' => $providerChecks['openai'],
+            'claude' => $providerChecks['claude'],
             'redis' => $this->checkRedis(),
             'queue' => $this->checkQueue(),
         ];
 
-        $overallOk = collect($checks)->every(fn($c) => $c['ok'] === true);
-        $status = $overallOk ? 'healthy' : 'degraded';
+        $providerOk = collect($checks)
+            ->only(['openai', 'claude'])
+            ->every(fn ($c) => ($c['ok'] ?? false) === true);
+        $infraOk = ($checks['redis']['ok'] ?? false) === true && ($checks['queue']['ok'] ?? false) === true;
+        $status = $providerOk && $infraOk ? 'healthy' : ($providerOk || $infraOk ? 'degraded' : 'unhealthy');
 
         return response()->json([
             'status' => $status,
@@ -32,83 +40,18 @@ class AiHealthController extends Controller
         ]);
     }
 
-    private function checkOpenAi(): array
+    public function testProvider(Request $request, string $provider): JsonResponse
     {
-        $apiKey = (string) config('services.ai.openai.api_key');
-        if (trim($apiKey) === '') {
-            return ['ok' => false, 'status' => 'not_configured', 'message' => 'No API key configured.', 'latency_ms' => null];
+        $provider = strtolower($provider);
+        if (! in_array($provider, ['openai', 'claude'], true)) {
+            return response()->json(['ok' => false, 'message' => 'Unknown provider.'], 422);
         }
 
-        $start = microtime(true);
-        try {
-            $response = Http::timeout(10)
-                ->withToken($apiKey)
-                ->get('https://api.openai.com/v1/models');
+        $result = $provider === 'claude'
+            ? $this->healthService->checkClaude(persist: true)
+            : $this->healthService->checkOpenAi(persist: true);
 
-            $latency = (int) round((microtime(true) - $start) * 1000);
-
-            if ($response->status() === 401) {
-                return ['ok' => false, 'status' => 'auth_failed', 'message' => 'Invalid API key.', 'latency_ms' => $latency];
-            }
-
-            if ($response->status() === 429) {
-                return ['ok' => false, 'status' => 'quota_exceeded', 'message' => 'Quota exceeded — billing issue.', 'latency_ms' => $latency];
-            }
-
-            if ($response->successful()) {
-                return ['ok' => true, 'status' => 'reachable', 'message' => 'OpenAI API reachable.', 'latency_ms' => $latency];
-            }
-
-            return ['ok' => false, 'status' => 'error', 'message' => 'HTTP ' . $response->status(), 'latency_ms' => $latency];
-        } catch (\Throwable $e) {
-            $latency = (int) round((microtime(true) - $start) * 1000);
-            return ['ok' => false, 'status' => 'unreachable', 'message' => $e->getMessage(), 'latency_ms' => $latency];
-        }
-    }
-
-    private function checkClaude(): array
-    {
-        $apiKey = (string) config('services.ai.claude.api_key');
-        if (trim($apiKey) === '') {
-            return ['ok' => false, 'status' => 'not_configured', 'message' => 'No API key configured.', 'latency_ms' => null];
-        }
-
-        $start = microtime(true);
-        try {
-            $response = Http::timeout(10)
-                ->withHeaders([
-                    'x-api-key' => $apiKey,
-                    'anthropic-version' => (string) config('services.ai.claude.version', '2023-06-01'),
-                ])
-                ->post('https://api.anthropic.com/v1/messages', [
-                    'model' => (string) config('services.ai.claude.model', 'claude-3-5-sonnet-latest'),
-                    'max_tokens' => 1,
-                    'messages' => [['role' => 'user', 'content' => 'ping']],
-                ]);
-
-            $latency = (int) round((microtime(true) - $start) * 1000);
-
-            if ($response->status() === 401) {
-                return ['ok' => false, 'status' => 'auth_failed', 'message' => 'Invalid API key.', 'latency_ms' => $latency];
-            }
-
-            // 400 with "credit balance too low" = reachable but no funds
-            if ($response->status() === 400) {
-                $body = $response->json('error.message', '');
-                if (str_contains((string) $body, 'credit')) {
-                    return ['ok' => false, 'status' => 'quota_exceeded', 'message' => 'Credit balance too low.', 'latency_ms' => $latency];
-                }
-            }
-
-            if (in_array($response->status(), [200, 201], true)) {
-                return ['ok' => true, 'status' => 'reachable', 'message' => 'Claude API reachable.', 'latency_ms' => $latency];
-            }
-
-            return ['ok' => false, 'status' => 'error', 'message' => 'HTTP ' . $response->status(), 'latency_ms' => $latency];
-        } catch (\Throwable $e) {
-            $latency = (int) round((microtime(true) - $start) * 1000);
-            return ['ok' => false, 'status' => 'unreachable', 'message' => $e->getMessage(), 'latency_ms' => $latency];
-        }
+        return response()->json($result, ($result['ok'] ?? false) ? 200 : 503);
     }
 
     private function checkRedis(): array
@@ -128,6 +71,7 @@ class AiHealthController extends Controller
             return ['ok' => false, 'status' => 'read_mismatch', 'message' => 'Redis returned unexpected value.', 'latency_ms' => $latency];
         } catch (\Throwable $e) {
             $latency = (int) round((microtime(true) - $start) * 1000);
+
             return ['ok' => false, 'status' => 'unreachable', 'message' => $e->getMessage(), 'latency_ms' => $latency];
         }
     }
@@ -136,7 +80,7 @@ class AiHealthController extends Controller
     {
         try {
             $pending = Queue::size();
-            $failed = \Illuminate\Support\Facades\DB::table('failed_jobs')->count();
+            $failed = DB::table('failed_jobs')->count();
 
             return [
                 'ok' => true,

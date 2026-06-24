@@ -10,6 +10,7 @@
 @endsection
 
 @section('content')
+<div class="page-container">
 
     <div class="filter-bar mb-3">
         <form method="GET" action="{{ route('admin.ai.logs.index') }}" class="row g-2 align-items-end">
@@ -45,11 +46,17 @@
                     <option value="">All statuses</option>
                     @foreach (['success', 'failed', 'timeout', 'cancelled'] as $s)
                         <option value="{{ $s }}" {{ request('status') === $s ? 'selected' : '' }}>
-                            {{ ucfirst($s) }}</option>
+                            {{ ucfirst(str_replace('_', ' ', $s)) }}</option>
                     @endforeach
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
+                <label class="form-label"
+                    style="font-size:.75rem;font-weight:600;color:var(--text-secondary)">Tool</label>
+                <input type="text" name="tool" value="{{ request('tool') }}" placeholder="Tool name"
+                    class="form-control form-control-sm">
+            </div>
+            <div class="col-md-2">
                 <label class="form-label"
                     style="font-size:.75rem;font-weight:600;color:var(--text-secondary)">Search</label>
                 <input type="text" name="search" value="{{ request('search') }}" placeholder="Prompt, error…"
@@ -72,8 +79,10 @@
                     <tr>
                         <th>Time</th>
                         <th>User</th>
+                        <th>Organization</th>
                         <th>Provider / Model</th>
-                        <th>Intent</th>
+                        <th>Prompt Type</th>
+                        <th>Tool</th>
                         <th>Tokens</th>
                         <th>Cost</th>
                         <th>Exec</th>
@@ -94,17 +103,19 @@
                                     <span style="color:var(--text-muted)">—</span>
                                 @endif
                             </td>
+                            <td style="font-size:.82rem">
+                                @if ($log->company)
+                                    <div class="fw-500">{{ $log->company->name }}</div>
+                                @else
+                                    <span style="color:var(--text-muted)">—</span>
+                                @endif
+                            </td>
                             <td style="font-size:.78rem">
                                 <div class="fw-600 text-capitalize">{{ $log->provider }}</div>
                                 <div style="color:var(--text-muted);font-family:monospace">{{ $log->model }}</div>
                             </td>
-                            <td style="font-size:.78rem">
-                                <div>{{ $log->intent_type ?? '—' }}</div>
-                                @if ($log->tool_name)
-                                    <div style="color:var(--text-muted);font-family:monospace;font-size:.7rem">
-                                        {{ $log->tool_name }}</div>
-                                @endif
-                            </td>
+                            <td style="font-size:.78rem">{{ $log->intent_type ?? '—' }}</td>
+                            <td style="font-size:.78rem;font-family:monospace">{{ $log->tool_name ?? '—' }}</td>
                             <td style="font-size:.78rem">{{ $log->total_tokens ? number_format($log->total_tokens) : '—' }}
                             </td>
                             <td style="font-size:.78rem">
@@ -113,14 +124,21 @@
                             <td style="font-size:.78rem">{{ $log->execution_ms ? $log->execution_ms . 'ms' : '—' }}</td>
                             <td>
                                 @php
-                                    $badgeClass = match ($log->status) {
+                                    $displayStatus = $log->status;
+                                    if ($log->error_code === 'rate_limit') {
+                                        $displayStatus = 'rate_limited';
+                                    } elseif ($log->error_code === 'validation_error') {
+                                        $displayStatus = 'validation_error';
+                                    }
+                                    $badgeClass = match ($displayStatus) {
                                         'success' => 'badge-active',
                                         'failed' => 'badge-rejected',
                                         'timeout' => 'badge-suspended',
+                                        'rate_limited' => 'badge-suspended',
                                         default => 'badge-inactive',
                                     };
                                 @endphp
-                                <span class="badge-status {{ $badgeClass }}">{{ ucfirst($log->status) }}</span>
+                                <span class="badge-status {{ $badgeClass }}">{{ ucfirst(str_replace('_', ' ', $displayStatus)) }}</span>
                             </td>
                             <td class="action-col">
                                 <a href="{{ route('admin.ai.logs.show', $log) }}" class="btn btn-sm btn-outline-secondary"
@@ -131,7 +149,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="text-center py-5" style="color:var(--text-muted)">
+                            <td colspan="11" class="text-center py-5" style="color:var(--text-muted)">
                                 <i class="bi bi-journal-x d-block mb-2" style="font-size:1.5rem"></i>
                                 No logs found for the current filters.
                             </td>
@@ -146,5 +164,7 @@
             </div>
         @endif
     </div>
+
+</div>
 
 @endsection

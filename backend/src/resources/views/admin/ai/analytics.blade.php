@@ -38,13 +38,19 @@
         .chart-container {
             position: relative;
             height: 220px;
+            max-width: 100%;
+        }
+
+        .chart-container canvas {
+            max-width: 100% !important;
         }
     </style>
 @endpush
 
 @section('content')
+<div class="page-container">
 
-    <div class="d-flex align-items-center justify-content-between mb-4">
+    <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
         <div>
             <h4 class="fw-bold mb-1" style="font-size:1.1rem">Usage Analytics</h4>
             <p class="mb-0" style="font-size:.82rem;color:var(--text-secondary)">Token consumption, cost, and request
@@ -174,6 +180,61 @@
         </div>
     </div>
 
+    <div class="row g-3 mb-4">
+        <div class="col-lg-6">
+            <div class="metric-card p-4">
+                <h6 class="fw-bold mb-3" style="font-size:.88rem">Daily Token Consumption</h6>
+                <div class="chart-container"><canvas id="tokenChart"></canvas></div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="metric-card p-4">
+                <h6 class="fw-bold mb-3" style="font-size:.88rem">Success vs Failed</h6>
+                <div class="chart-container"><canvas id="successChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-lg-4">
+            <div class="metric-card p-4 h-100">
+                <h6 class="fw-bold mb-3" style="font-size:.88rem">Top Users</h6>
+                @forelse($topUsers as $user)
+                    <div class="d-flex justify-content-between py-2" style="border-bottom:1px solid var(--border-light);font-size:.82rem">
+                        <span>{{ $user['name'] }}</span><strong>{{ number_format($user['requests']) }}</strong>
+                    </div>
+                @empty
+                    <div class="text-muted" style="font-size:.85rem">No data.</div>
+                @endforelse
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="metric-card p-4 h-100">
+                <h6 class="fw-bold mb-3" style="font-size:.88rem">Top Organizations</h6>
+                @forelse($topOrganizations as $org)
+                    <div class="d-flex justify-content-between py-2" style="border-bottom:1px solid var(--border-light);font-size:.82rem">
+                        <span>{{ $org['name'] }}</span><strong>{{ number_format($org['requests']) }}</strong>
+                    </div>
+                @empty
+                    <div class="text-muted" style="font-size:.85rem">No data.</div>
+                @endforelse
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="metric-card p-4 h-100">
+                <h6 class="fw-bold mb-3" style="font-size:.88rem">Model Usage</h6>
+                @forelse($modelUsage as $model)
+                    <div class="d-flex justify-content-between py-2" style="border-bottom:1px solid var(--border-light);font-size:.82rem">
+                        <span style="font-family:monospace;font-size:.75rem">{{ $model['model'] }}</span>
+                        <strong>{{ $model['percentage'] }}%</strong>
+                    </div>
+                @empty
+                    <div class="text-muted" style="font-size:.85rem">No data.</div>
+                @endforelse
+            </div>
+        </div>
+    </div>
+
     {{-- Daily table --}}
     <div class="metric-card">
         <div class="table-card-header">
@@ -208,6 +269,8 @@
         </div>
     </div>
 
+</div>
+
 @endsection
 
 @push('scripts')
@@ -217,6 +280,9 @@
             const labels = {!! json_encode(array_keys($days)) !!};
             const requests = {!! json_encode(array_column(array_values($days), 'requests')) !!};
             const costs = {!! json_encode(array_column(array_values($days), 'cost')) !!};
+            const tokens = {!! json_encode(array_column(array_values($days), 'tokens')) !!};
+            const successful = {!! json_encode(array_column(array_values($days), 'successful')) !!};
+            const failed = {!! json_encode(array_column(array_values($days), 'failed')) !!};
 
             new Chart(document.getElementById('requestChart'), {
                 type: 'bar',
@@ -264,6 +330,47 @@
                     }
                 }
             });
+
+            if (document.getElementById('tokenChart')) {
+                new Chart(document.getElementById('tokenChart'), {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label: 'Tokens',
+                            data: tokens,
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'rgba(245,158,11,.1)',
+                            fill: true,
+                            tension: .3,
+                        }],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true } },
+                    },
+                });
+            }
+
+            if (document.getElementById('successChart')) {
+                new Chart(document.getElementById('successChart'), {
+                    type: 'bar',
+                    data: {
+                        labels,
+                        datasets: [
+                            { label: 'Success', data: successful, backgroundColor: 'rgba(16,185,129,.7)' },
+                            { label: 'Failed', data: failed, backgroundColor: 'rgba(239,68,68,.7)' },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
+                    },
+                });
+            }
         })();
     </script>
 @endpush

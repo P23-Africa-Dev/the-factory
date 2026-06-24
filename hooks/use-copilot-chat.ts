@@ -6,6 +6,7 @@ import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { resolveUserTimezone } from "@/lib/meeting-timezone";
 import {
     CopilotAssigneeOption,
+    CopilotChatContext,
     CopilotMessage,
     CopilotThread,
     WeeklySummaryStatusResponse,
@@ -51,6 +52,7 @@ type SendMessageParams = {
     actionArgs?: Record<string, unknown>;
     actionConfirmed?: boolean;
     idempotencyKey?: string;
+    context?: CopilotChatContext;
 };
 
 function createIdempotencyKey(): string {
@@ -72,6 +74,7 @@ export function useCopilotChat() {
     } | null>(null);
     const [threadMessageCount, setThreadMessageCount] = useState<number | null>(null);
     const [isStreaming, setIsStreaming] = useState(false);
+    const [processingLabel, setProcessingLabel] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [weeklyReport, setWeeklyReport] = useState<WeeklySummaryStatusResponse | null>(null);
     const [isQueueingWeeklyReport, setIsQueueingWeeklyReport] = useState(false);
@@ -329,7 +332,7 @@ export function useCopilotChat() {
     useEffect(() => () => stopWeeklyReportPolling(), [stopWeeklyReportPolling]);
 
     const sendMessage = useCallback(
-        async ({ message, companyId, actionArgs, actionConfirmed, idempotencyKey }: SendMessageParams) => {
+        async ({ message, companyId, actionArgs, actionConfirmed, idempotencyKey, context }: SendMessageParams) => {
             if (!token || !message.trim()) return;
 
             const userMessage: CopilotMessage = {
@@ -346,6 +349,7 @@ export function useCopilotChat() {
 
             setError(null);
             setIsStreaming(true);
+            setProcessingLabel("Thinking...");
             setMessages((prev) => [
                 ...prev,
                 userMessage,
@@ -370,6 +374,7 @@ export function useCopilotChat() {
                         action_confirmed: actionConfirmed,
                         idempotency_key: idempotencyKey ?? createIdempotencyKey(),
                         client_timezone: resolveUserTimezone(),
+                        context,
                     },
                     token,
                     {
@@ -379,7 +384,20 @@ export function useCopilotChat() {
                                 localStorage.setItem(persistedKey, meta.thread_id);
                             }
                         },
+                        onProcessing: (event) => {
+                            if (event.label) {
+                                setProcessingLabel(event.label);
+                                setMessages((prev) =>
+                                    prev.map((item) =>
+                                        item.id === assistantMessageId
+                                            ? { ...item, content: event.label }
+                                            : item
+                                    )
+                                );
+                            }
+                        },
                         onDelta: (delta) => {
+                            setProcessingLabel(null);
                             setMessages((prev) =>
                                 prev.map((item) =>
                                     item.id === assistantMessageId
@@ -389,6 +407,7 @@ export function useCopilotChat() {
                             );
                         },
                         onDone: (event) => {
+                            setProcessingLabel(null);
                             setThreadId(event.thread_id);
                             setMessages((prev) =>
                                 prev.map((item) =>
@@ -425,6 +444,7 @@ export function useCopilotChat() {
                 );
             } finally {
                 setIsStreaming(false);
+                setProcessingLabel(null);
             }
         },
         [persistedKey, threadId, token]
@@ -436,6 +456,7 @@ export function useCopilotChat() {
         threadPagination,
         threadMessageCount,
         isStreaming,
+        processingLabel,
         error,
         weeklyReport,
         isQueueingWeeklyReport,

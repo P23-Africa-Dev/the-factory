@@ -15,6 +15,7 @@
     <style>
         :root {
             --sidebar-width: 260px;
+            --sidebar-width-collapsed: 72px;
             --sidebar-bg: #0f172a;
             --sidebar-hover: rgba(255, 255, 255, .06);
             --sidebar-active: rgba(99, 132, 255, .15);
@@ -51,6 +52,11 @@
             color: var(--text-primary);
             line-height: 1.5;
             margin: 0;
+            overflow-x: hidden;
+        }
+
+        body.sidebar-collapsed {
+            --sidebar-width: var(--sidebar-width-collapsed);
         }
 
         /* ── Sidebar ─────────────────────────────────── */
@@ -77,6 +83,28 @@
             align-items: center;
             gap: .65rem;
             min-height: var(--topbar-height);
+            position: relative;
+        }
+
+        .sidebar-collapse-btn {
+            margin-left: auto;
+            background: rgba(255, 255, 255, .06);
+            border: 0;
+            color: rgba(255, 255, 255, .55);
+            width: 28px;
+            height: 28px;
+            border-radius: .4rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: background .15s ease, color .15s ease;
+        }
+
+        .sidebar-collapse-btn:hover {
+            background: rgba(255, 255, 255, .12);
+            color: #fff;
         }
 
         .sidebar-brand-icon {
@@ -134,6 +162,40 @@
             flex-shrink: 0;
             width: 20px;
             text-align: center;
+        }
+
+        .sidebar-nav .nav-link-text {
+            transition: opacity .15s ease;
+        }
+
+        body.sidebar-collapsed .sidebar-brand {
+            justify-content: center;
+            padding: 1rem .75rem;
+            gap: 0;
+        }
+
+        body.sidebar-collapsed .sidebar-brand-text,
+        body.sidebar-collapsed .sidebar-section-label,
+        body.sidebar-collapsed .nav-link-text,
+        body.sidebar-collapsed .sidebar-footer .admin-meta,
+        body.sidebar-collapsed .sidebar-collapse-btn {
+            display: none;
+        }
+
+        body.sidebar-collapsed .sidebar-nav {
+            padding: 0 .5rem;
+        }
+
+        body.sidebar-collapsed .sidebar-nav .nav-link {
+            justify-content: center;
+            padding: .65rem;
+            gap: 0;
+        }
+
+        body.sidebar-collapsed .sidebar-footer {
+            padding: 1rem .5rem;
+            display: flex;
+            justify-content: center;
         }
 
         .sidebar-nav .nav-link:hover {
@@ -197,10 +259,14 @@
         /* ── Main ────────────────────────────────────── */
         .admin-main {
             margin-left: var(--sidebar-width);
+            width: calc(100vw - var(--sidebar-width));
+            max-width: calc(100vw - var(--sidebar-width));
             min-height: 100vh;
+            min-width: 0;
             display: flex;
             flex-direction: column;
-            transition: margin-left .25s cubic-bezier(.4, 0, .2, 1);
+            transition: margin-left .25s cubic-bezier(.4, 0, .2, 1), width .25s cubic-bezier(.4, 0, .2, 1), max-width .25s cubic-bezier(.4, 0, .2, 1);
+            overflow-x: hidden;
         }
 
         .admin-topbar {
@@ -224,7 +290,9 @@
         }
 
         .sidebar-toggle {
-            display: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             background: none;
             border: 1px solid var(--border);
             border-radius: .5rem;
@@ -232,6 +300,7 @@
             color: var(--text-secondary);
             cursor: pointer;
             line-height: 1;
+            flex-shrink: 0;
         }
 
         .sidebar-toggle:hover {
@@ -249,6 +318,24 @@
         .admin-content {
             padding: 1.75rem 2rem;
             flex: 1;
+            min-width: 0;
+            max-width: 100%;
+            overflow-x: auto;
+        }
+
+        .page-container {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+        }
+
+        .page-container .row {
+            --bs-gutter-x: 1rem;
+        }
+
+        .page-container .metric-card,
+        .page-container .stat-card {
+            min-width: 0;
         }
 
         /* ── Cards ───────────────────────────────────── */
@@ -343,6 +430,8 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            flex-wrap: wrap;
+            gap: .5rem;
         }
 
         .table-card-footer {
@@ -555,6 +644,11 @@
         @media (max-width: 991.98px) {
             .admin-sidebar {
                 transform: translateX(-100%);
+                width: var(--sidebar-width);
+            }
+
+            body.sidebar-collapsed {
+                --sidebar-width: 260px;
             }
 
             .admin-sidebar.show {
@@ -563,10 +657,12 @@
 
             .admin-main {
                 margin-left: 0;
+                width: 100vw;
+                max-width: 100vw;
             }
 
-            .sidebar-toggle {
-                display: inline-flex;
+            .sidebar-collapse-btn {
+                display: none;
             }
 
             .admin-content {
@@ -596,7 +692,11 @@
     <aside class="admin-sidebar" id="adminSidebar">
         <div class="sidebar-brand">
             <div class="sidebar-brand-icon"><i class="bi bi-hexagon-fill"></i></div>
-            <h5>{{ config('admin.brand') }}</h5>
+            <h5 class="sidebar-brand-text mb-0">{{ config('admin.brand') }}</h5>
+            <button type="button" class="sidebar-collapse-btn d-none d-lg-inline-flex" id="sidebarCollapseBtn"
+                aria-label="Collapse sidebar" title="Collapse sidebar">
+                <i class="bi bi-chevron-left"></i>
+            </button>
         </div>
 
         <div class="sidebar-section-label">Main Menu</div>
@@ -604,19 +704,19 @@
         <nav class="sidebar-nav">
             <a href="{{ route('admin.dashboard') }}"
                 class="nav-link {{ request()->routeIs('admin.dashboard') ? 'active' : '' }}">
-                <i class="bi bi-grid-1x2"></i>Dashboard
+                <i class="bi bi-grid-1x2"></i><span class="nav-link-text">Dashboard</span>
             </a>
             <a href="{{ route('admin.users.index') }}"
                 class="nav-link {{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
-                <i class="bi bi-people"></i>Users
+                <i class="bi bi-people"></i><span class="nav-link-text">Users</span>
             </a>
             <a href="{{ route('admin.enterprise.demo-requests.index') }}"
                 class="nav-link {{ request()->routeIs('admin.enterprise.*') ? 'active' : '' }}">
-                <i class="bi bi-building"></i>Enterprise
+                <i class="bi bi-building"></i><span class="nav-link-text">Enterprise</span>
             </a>
             <a href="{{ route('admin.ai.index') }}"
                 class="nav-link {{ request()->routeIs('admin.ai.*') ? 'active' : '' }}">
-                <i class="bi bi-cpu"></i>AI Management
+                <i class="bi bi-cpu"></i><span class="nav-link-text">AI Management</span>
             </a>
         </nav>
 
@@ -625,7 +725,7 @@
                 <div class="admin-avatar">
                     {{ strtoupper(substr(auth('admin')->user()?->name ?? '?', 0, 1)) }}
                 </div>
-                <div class="overflow-hidden">
+                <div class="overflow-hidden admin-meta">
                     <div class="admin-name text-truncate">{{ auth('admin')->user()?->name }}</div>
                     <div class="admin-role">{{ ucwords(str_replace('_', ' ', auth('admin')->user()?->role ?? '')) }}
                     </div>
@@ -708,21 +808,64 @@
             const sidebar = document.getElementById('adminSidebar');
             const backdrop = document.getElementById('sidebarBackdrop');
             const toggle = document.getElementById('sidebarToggle');
-            if (!toggle) return;
+            const collapseBtn = document.getElementById('sidebarCollapseBtn');
+            const storageKey = 'admin-sidebar-collapsed';
+            const isMobile = () => window.matchMedia('(max-width: 991.98px)').matches;
 
-            function openSidebar() {
+            function applyCollapsedState(collapsed) {
+                document.body.classList.toggle('sidebar-collapsed', collapsed);
+                if (collapseBtn) {
+                    collapseBtn.setAttribute('title', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+                    collapseBtn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+                }
+            }
+
+            function openMobileSidebar() {
                 sidebar.classList.add('show');
                 backdrop.classList.add('show');
             }
 
-            function closeSidebar() {
+            function closeMobileSidebar() {
                 sidebar.classList.remove('show');
                 backdrop.classList.remove('show');
             }
-            toggle.addEventListener('click', function() {
-                sidebar.classList.contains('show') ? closeSidebar() : openSidebar();
+
+            if (!isMobile() && localStorage.getItem(storageKey) === '1') {
+                applyCollapsedState(true);
+            }
+
+            if (toggle) {
+                toggle.addEventListener('click', function() {
+                    if (isMobile()) {
+                        sidebar.classList.contains('show') ? closeMobileSidebar() : openMobileSidebar();
+                        return;
+                    }
+                    const collapsed = !document.body.classList.contains('sidebar-collapsed');
+                    applyCollapsedState(collapsed);
+                    localStorage.setItem(storageKey, collapsed ? '1' : '0');
+                });
+            }
+
+            if (collapseBtn) {
+                collapseBtn.addEventListener('click', function() {
+                    if (isMobile()) {
+                        return;
+                    }
+                    const collapsed = !document.body.classList.contains('sidebar-collapsed');
+                    applyCollapsedState(collapsed);
+                    localStorage.setItem(storageKey, collapsed ? '1' : '0');
+                });
+            }
+
+            if (backdrop) {
+                backdrop.addEventListener('click', closeMobileSidebar);
+            }
+
+            window.addEventListener('resize', function() {
+                if (!isMobile()) {
+                    closeMobileSidebar();
+                }
             });
-            backdrop.addEventListener('click', closeSidebar);
         })();
     </script>
     @stack('scripts')
