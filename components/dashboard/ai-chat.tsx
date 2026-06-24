@@ -8,8 +8,17 @@ import {
 } from "@/components/dashboard/ely-meeting-action-fields";
 import { formatAiMessageHtml, formatPlainAiMessage } from "@/lib/format-ai-message";
 import { ELY_INPUT_PLACEHOLDER, ELY_LANDING_HEADLINE, ELY_LANDING_SUBTEXT, ELY_NAME } from "@/lib/ely-brand";
-import type { CopilotChatContext, CopilotThreadSearchResult } from "@/lib/api/copilot";
+import type { CopilotChatContext, CopilotThreadSearchResult, ForecastHorizonDays, ForecastOverviewResponse } from "@/lib/api/copilot";
 import { searchCopilotThreads } from "@/lib/api/copilot";
+import {
+  buildForecastChatMessage,
+  buildForecastSnapshotRows,
+  buildForecastTrendRows,
+  formatForecastConfidence,
+  formatForecastGeneratedAt,
+  formatForecastOutlookTitle,
+  getForecastRecommendations,
+} from "@/lib/format-forecast-overview";
 import { resolveCopilotGeolocationContext } from "@/lib/copilot-geolocation";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
@@ -277,6 +286,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [fileAnalysisStage, setFileAnalysisStage] = useState("Analyzing file…");
   const [fileAnalysisResult, setFileAnalysisResult] = useState("");
   const [fileAnalysisFileName, setFileAnalysisFileName] = useState("");
+  const [isForecastModalOpen, setIsForecastModalOpen] = useState(false);
+  const [isForecastLoading, setIsForecastLoading] = useState(false);
+  const [forecastStage, setForecastStage] = useState("Gathering KPIs…");
+  const [forecastHorizonDays, setForecastHorizonDays] = useState<ForecastHorizonDays>(7);
+  const [forecastData, setForecastData] = useState<ForecastOverviewResponse | null>(null);
+  const [forecastInstruction, setForecastInstruction] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1343,25 +1358,65 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }
   }
 
-  async function handleForecastAction() {
+  async function handleForecastAction(horizonDays: ForecastHorizonDays = forecastHorizonDays) {
+    if (!companyId) {
+      toast.error("Select a company before loading a forecast overview.");
+      return;
+    }
+
     setIsRunningQuickAction(true);
+    setForecastHorizonDays(horizonDays);
+    setForecastData(null);
+    setForecastInstruction("");
+    setForecastStage("Gathering KPIs…");
+    setIsForecastLoading(true);
+    setIsForecastModalOpen(true);
+
+    const trendsTimer = window.setTimeout(() => {
+      setForecastStage("Analyzing trends and operational signals…");
+    }, 1200);
+
+    const buildingTimer = window.setTimeout(() => {
+      setForecastStage("Building your forecast overview…");
+    }, 3200);
+
     try {
-      const result = await loadForecastOverview(companyId ?? undefined);
-      const recommendations = Array.isArray((result?.forecast as { recommendations?: unknown } | undefined)?.recommendations)
-        ? ((result?.forecast as { recommendations?: string[] }).recommendations ?? [])
-        : [];
-
-      const text = recommendations.length > 0
-        ? recommendations.map((item) => `- ${item}`).join("\n")
-        : "Forecast overview generated.";
-
-      void sendCopilotMessage({
-        message: `Forecast recommendations:\n${text}`,
-        companyId: companyId ?? undefined,
-      });
+      const result = await loadForecastOverview(companyId ?? undefined, horizonDays);
+      setForecastData(result);
+      toast.success("Forecast overview is ready.");
+    } catch (err) {
+      setIsForecastModalOpen(false);
+      toast.error(err instanceof Error ? err.message : "Failed to load forecast overview.");
     } finally {
+      window.clearTimeout(trendsTimer);
+      window.clearTimeout(buildingTimer);
+      setIsForecastLoading(false);
       setIsRunningQuickAction(false);
     }
+  }
+
+  function handleCloseForecastModal() {
+    setIsForecastModalOpen(false);
+    setIsForecastLoading(false);
+    setForecastInstruction("");
+  }
+
+  function handleSendForecastToChat() {
+    if (!forecastData) {
+      toast.error("Forecast is not ready yet. Please wait for processing to finish.");
+      return;
+    }
+
+    void sendCopilotMessage({
+      message: buildForecastChatMessage(forecastData, forecastInstruction),
+      companyId: companyId ?? undefined,
+    });
+    handleCloseForecastModal();
+    toast.success("Forecast sent to chat!");
+  }
+
+  function handleForecastRecoveryPlanShortcut() {
+    setForecastInstruction("Create a practical recovery plan with owners, due dates, and the first three actions we should take this week.");
   }
 
   function handleSendVoiceTranscriptToChat() {
@@ -1616,11 +1671,11 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
                               <button
                                 onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); void handleForecastAction(); }}
-                                disabled={isRunningQuickAction || isStreaming}
+                                disabled={isRunningQuickAction || isStreaming || isForecastLoading}
                                 className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#BCE7FF] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
                               >
                                 <LineChart className="w-4 h-4 flex-shrink-0" />
-                                Forecast Overview
+                                {isForecastLoading ? "Building forecast…" : "Forecast Overview"}
                               </button>
                             </div>
                           )}
@@ -1932,6 +1987,150 @@ export function AIChat({ open, onClose }: AIChatProps) {
               </div>
             )}
 
+            {/* Forecast Overview Modal */}
+            {isForecastModalOpen && (
+              <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+                <button className="absolute inset-0 bg-black/40" onClick={handleCloseForecastModal} aria-label="Close" />
+                <div className="relative w-full max-w-2xl bg-[#0F2A2F] border border-white/10 rounded-2xl p-6 max-h-[80vh] overflow-y-auto">
+                  <div className="flex items-center gap-3 mb-4">
+                    {isForecastLoading && (
+                      <div className="h-5 w-5 flex-shrink-0 rounded-full border-2 border-[#355E73]/30 border-t-[#BCE7FF] animate-spin" />
+                    )}
+                    <div>
+                      <h3 className="text-white text-[18px] font-semibold">
+                        {isForecastLoading ? "Building Forecast…" : formatForecastOutlookTitle(forecastData ?? { company_id: 0, pipeline: "", snapshot: {}, forecast: { outlook: "next_7_days", horizon_days: forecastHorizonDays, confidence: 0.5, recommendations: [], generated_at: "", trace_id: "" } })}
+                      </h3>
+                      {!isForecastLoading && forecastData && (
+                        <p className="text-[#88B3B5] text-[12px] mt-1">{formatForecastGeneratedAt(forecastData)}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {[7, 14, 30].map((days) => (
+                      <button
+                        key={days}
+                        type="button"
+                        onClick={() => void handleForecastAction(days as ForecastHorizonDays)}
+                        disabled={isForecastLoading || isRunningQuickAction}
+                        className={`rounded-full px-3 py-1 text-[11px] border transition-colors disabled:opacity-50 ${
+                          forecastHorizonDays === days
+                            ? "border-[#4A7F94] bg-[#1A3D4D] text-white"
+                            : "border-[#355E73] bg-[#132F3C] text-[#BCE7FF] hover:bg-[#1A3D4D]"
+                        }`}
+                      >
+                        {days} days
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
+                    <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">Operational snapshot</p>
+                    {isForecastLoading ? (
+                      <div className="space-y-3">
+                        <p className="text-[#B9E9DD] text-[13px]">{forecastStage}</p>
+                        <div className="space-y-2.5 pt-1">
+                          {[100, 88, 76, 64, 52].map((width, index) => (
+                            <div
+                              key={`forecast-skeleton-${index}`}
+                              className="h-3 rounded-full bg-white/10 animate-pulse"
+                              style={{ width: `${width}%`, animationDelay: `${index * 120}ms` }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ) : forecastData ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {buildForecastSnapshotRows(forecastData).map((row) => (
+                          <div key={row.label} className="rounded-lg bg-[#132F3C] px-3 py-2">
+                            <p className="text-[#88B3B5] text-[11px]">{row.label}</p>
+                            <p className="text-[#B9E9DD] text-[13px] font-medium">{row.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {!isForecastLoading && forecastData && buildForecastTrendRows(forecastData).length > 0 && (
+                    <div className="bg-[#132F3C] border border-[#355E73] rounded-lg p-4 mb-4">
+                      <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">Trend signals</p>
+                      <div className="space-y-2">
+                        {buildForecastTrendRows(forecastData).map((row) => (
+                          <p key={row.label} className="text-[#B9E9DD] text-[13px]">
+                            {row.label}: {row.value}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {!isForecastLoading && forecastData && (
+                    <>
+                      {forecastData.forecast.narrative && (
+                        <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
+                          <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">Executive forecast</p>
+                          <p className="text-[#B9E9DD] text-[13px] leading-relaxed whitespace-pre-wrap">{forecastData.forecast.narrative}</p>
+                        </div>
+                      )}
+
+                      <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold">Priority recommendations</p>
+                          <span className="text-[#9CC6CA] text-[11px]">{formatForecastConfidence(forecastData)}</span>
+                        </div>
+                        <div className="space-y-2">
+                          {getForecastRecommendations(forecastData).map((item, index) => (
+                            <p key={`${index}-${item.slice(0, 24)}`} className="text-[#B9E9DD] text-[13px] leading-relaxed">
+                              {index + 1}. {item}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-[#132F3C] border border-[#355E73] rounded-lg p-4 mb-4">
+                        <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">
+                          What should ELY focus on in this forecast?
+                        </p>
+                        <textarea
+                          value={forecastInstruction}
+                          onChange={(event) => setForecastInstruction(event.target.value)}
+                          placeholder="e.g. Turn the highest-risk items into a weekly action plan for my leadership team"
+                          className="w-full h-24 bg-[#1A3D4D] border border-[#355E73] rounded-lg p-3 text-[#B9E9DD] text-[13px] placeholder-[#5B7A87] focus:outline-none focus:border-[#4A7F94] resize-none"
+                        />
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          <button
+                            type="button"
+                            onClick={handleForecastRecoveryPlanShortcut}
+                            className="rounded-full border border-[#355E73] bg-[#1A3D4D] px-3 py-1.5 text-[11px] text-[#BCE7FF] hover:bg-[#243E4D]"
+                          >
+                            Create recovery plan
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={handleCloseForecastModal}
+                      className="px-4 py-2 rounded-lg bg-[#132A33] text-[#B9E9DD] hover:bg-[#1A3D4D]"
+                    >
+                      Close
+                    </button>
+                    {!isForecastLoading && forecastData && (
+                      <button
+                        onClick={handleSendForecastToChat}
+                        className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] flex items-center gap-2"
+                      >
+                        <Send className="w-4 h-4" />
+                        Send to Chat
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Landing panel — only visible before the first message */}
             {!hasMessages && (
               <div className="px-8 py-6 flex-shrink-0">
@@ -1977,11 +2176,11 @@ export function AIChat({ open, onClose }: AIChatProps) {
                       Summarize Transcript
                     </button>
                     <button
-                      onClick={handleForecastAction}
-                      disabled={isRunningQuickAction || isStreaming}
+                      onClick={() => void handleForecastAction()}
+                      disabled={isRunningQuickAction || isStreaming || isForecastLoading}
                       className="rounded-full border border-[#355E73] bg-[#132F3C] px-3 py-1.5 text-[11px] text-[#BCE7FF] hover:bg-[#1A3D4D] disabled:opacity-60"
                     >
-                      <span className="inline-flex items-center gap-1"><LineChart className="h-3.5 w-3.5" /> Forecast</span>
+                      <span className="inline-flex items-center gap-1"><LineChart className="h-3.5 w-3.5" /> {isForecastLoading ? "Building…" : "Forecast"}</span>
                     </button>
                   </div>
                 </div>

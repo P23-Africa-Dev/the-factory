@@ -283,4 +283,111 @@ describe("AIChat", () => {
             expect(runVoiceTranscriptionMock).toHaveBeenCalled();
         });
     });
+
+    it("opens forecast modal with loading state and sends forecast with instruction", async () => {
+        let resolveForecast: (value: Record<string, unknown>) => void = () => { };
+        loadForecastOverviewMock.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    resolveForecast = resolve;
+                })
+        );
+
+        useCopilotChatMock.mockReturnValue({
+            messages: [],
+            isStreaming: false,
+            weeklyReport: null,
+            isQueueingWeeklyReport: false,
+            initialize: initializeMock,
+            sendMessage: sendMessageMock,
+            queueWeeklyReport: queueWeeklyReportMock,
+            downloadWeeklyReport: downloadWeeklyReportMock,
+            runVoiceTranscription: runVoiceTranscriptionMock,
+            runFileAnalysis: runFileAnalysisMock,
+            runTranscriptSummary: runTranscriptSummaryMock,
+            loadForecastOverview: loadForecastOverviewMock,
+        });
+
+        render(<AIChat open onClose={() => { }} />);
+
+        fireEvent.click(screen.getByRole("button", { name: /Forecast$/i }));
+
+        expect(await screen.findByText("Building Forecast…")).toBeTruthy();
+        expect(screen.getByText("Gathering KPIs…")).toBeTruthy();
+        expect(screen.queryByRole("button", { name: /Send to Chat/i })).toBeNull();
+
+        resolveForecast({
+            company_id: 99,
+            pipeline: "forecast.recommendations.v2",
+            snapshot: {
+                kpis: { total_tasks: 12, completed_tasks: 5 },
+                signals: { overdue_tasks: 1 },
+                trends: { activity_score_change: 8, activity_direction: "up" },
+            },
+            forecast: {
+                outlook: "next_7_days",
+                horizon_days: 7,
+                confidence: 0.7,
+                risk_level: "medium",
+                recommendations: ["Clear overdue tasks this week."],
+                structured_recommendations: [
+                    { priority: "high", area: "tasks", text: "Clear overdue tasks this week." },
+                ],
+                narrative: "Focus on overdue recovery and payroll approvals.",
+                generated_at: "2026-06-24T10:00:00.000Z",
+                trace_id: "trace-99",
+            },
+        });
+
+        expect(await screen.findByText("Next 7 days Forecast")).toBeTruthy();
+        expect(await screen.findByText(/Clear overdue tasks this week\./)).toBeTruthy();
+        expect(screen.getByText("Focus on overdue recovery and payroll approvals.")).toBeTruthy();
+
+        const instructionField = screen.getByPlaceholderText(/turn the highest-risk items/i);
+        fireEvent.change(instructionField, {
+            target: { value: "Turn this into an action plan for my leadership team." },
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: /Send to Chat/i }));
+
+        await waitFor(() => {
+            expect(loadForecastOverviewMock).toHaveBeenCalledWith(99, 7);
+            expect(sendMessageMock).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    companyId: 99,
+                    message: expect.stringContaining("Turn this into an action plan for my leadership team."),
+                })
+            );
+        });
+    });
+
+    it("closes forecast modal when loading fails", async () => {
+        loadForecastOverviewMock.mockRejectedValue(new Error("Forecast service unavailable"));
+
+        useCopilotChatMock.mockReturnValue({
+            messages: [],
+            isStreaming: false,
+            weeklyReport: null,
+            isQueueingWeeklyReport: false,
+            initialize: initializeMock,
+            sendMessage: sendMessageMock,
+            queueWeeklyReport: queueWeeklyReportMock,
+            downloadWeeklyReport: downloadWeeklyReportMock,
+            runVoiceTranscription: runVoiceTranscriptionMock,
+            runFileAnalysis: runFileAnalysisMock,
+            runTranscriptSummary: runTranscriptSummaryMock,
+            loadForecastOverview: loadForecastOverviewMock,
+        });
+
+        render(<AIChat open onClose={() => { }} />);
+
+        fireEvent.click(screen.getByRole("button", { name: /Forecast$/i }));
+
+        expect(await screen.findByText("Building Forecast…")).toBeTruthy();
+
+        await waitFor(() => {
+            expect(screen.queryByText("Building Forecast…")).toBeNull();
+            expect(loadForecastOverviewMock).toHaveBeenCalledWith(99, 7);
+        });
+    });
 });
