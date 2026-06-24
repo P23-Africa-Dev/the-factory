@@ -146,6 +146,8 @@ class ActionToolRegistry
             'attendees.*.display_name' => ['nullable', 'string', 'max:255'],
             'attendees.*.user_id' => ['nullable', 'integer', 'exists:users,id'],
             'attendees.*.is_optional' => ['nullable', 'boolean'],
+            'lead_ids' => ['nullable', 'array', 'max:50'],
+            'lead_ids.*' => ['integer', 'distinct', 'exists:leads,id'],
         ])->validate();
 
         $result = $this->meetingService->create($user, [

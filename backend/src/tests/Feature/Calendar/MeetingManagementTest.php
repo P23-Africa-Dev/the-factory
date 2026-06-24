@@ -6,6 +6,8 @@ namespace Tests\Feature\Calendar;
 
 use App\Models\Company;
 use App\Models\CompanyCalendarConnection;
+use App\Models\Lead;
+use App\Models\LeadPipeline;
 use App\Models\Meeting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -119,6 +121,148 @@ class MeetingManagementTest extends TestCase
         $this->assertNotNull($response->json('data.meeting.google_event_id'));
         $this->assertSame('primary', $response->json('data.meeting.google_calendar_id'));
         $this->assertSame('https://meet.google.com/event-owner-123', $response->json('data.meeting.google_meet_url'));
+    }
+
+    public function test_owner_can_create_meeting_with_lead_ids(): void
+    {
+        Http::fake([
+            'https://www.googleapis.com/calendar/v3/calendars/*/events?conferenceDataVersion=1&sendUpdates=all' => Http::response([
+                'id' => 'event-lead-123',
+                'organizer' => ['email' => 'owner@factory23.test'],
+                'hangoutLink' => 'https://meet.google.com/event-lead-123',
+                'htmlLink' => 'https://calendar.google.com/event?eid=lead123',
+                'updated' => now()->toIso8601String(),
+            ], 200),
+        ]);
+
+        [$company, $owner] = $this->seedCompanyUsers();
+        $pipelineId = $this->seedLeadPipeline($company->id);
+
+        CompanyCalendarConnection::create([
+            'company_id' => $company->id,
+            'owner_user_id' => $owner->id,
+            'organizer_email' => 'owner@factory23.test',
+            'organizer_name' => 'Calendar Owner',
+            'organizer_google_user_id' => 'google-owner-123',
+            'access_token_encrypted' => 'access-token',
+            'refresh_token_encrypted' => 'refresh-token',
+            'token_expires_at' => now()->addHour(),
+            'scopes' => ['https://www.googleapis.com/auth/calendar'],
+            'status' => 'active',
+            'connected_at' => now(),
+        ]);
+
+        $leadWithEmail = Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $owner->id,
+            'name' => 'Prospect With Email',
+            'email' => 'prospect@example.com',
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+        ]);
+
+        $leadWithoutEmail = Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $owner->id,
+            'name' => 'Prospect Without Email',
+            'phone' => '+2348000000001',
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+        ]);
+
+        $response = $this->withToken($owner->createToken('owner-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/meetings', [
+                'company_id' => $company->company_id,
+                'title' => 'Lead Discovery Call',
+                'description' => 'Intro call with CRM leads.',
+                'timezone' => 'Africa/Lagos',
+                'start_at' => now()->addDays(2)->setHour(11)->setMinute(0)->toIso8601String(),
+                'end_at' => now()->addDays(2)->setHour(12)->setMinute(0)->toIso8601String(),
+                'source_page' => 'operations',
+                'lead_ids' => [$leadWithEmail->id, $leadWithoutEmail->id],
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('success', true)
+            ->assertJsonCount(2, 'data.meeting.leads');
+
+        $response->assertJsonFragment([
+            'id' => $leadWithEmail->id,
+            'name' => 'Prospect With Email',
+            'email' => 'prospect@example.com',
+        ]);
+        $response->assertJsonFragment([
+            'id' => $leadWithoutEmail->id,
+            'name' => 'Prospect Without Email',
+        ]);
+
+        $meetingId = (int) $response->json('data.meeting.id');
+
+        $this->assertDatabaseHas('meeting_leads', [
+            'meeting_id' => $meetingId,
+            'lead_id' => $leadWithEmail->id,
+        ]);
+        $this->assertDatabaseHas('meeting_leads', [
+            'meeting_id' => $meetingId,
+            'lead_id' => $leadWithoutEmail->id,
+        ]);
+        $this->assertDatabaseHas('meeting_attendees', [
+            'meeting_id' => $meetingId,
+            'lead_id' => $leadWithEmail->id,
+            'email' => 'prospect@example.com',
+        ]);
+        $this->assertDatabaseMissing('meeting_attendees', [
+            'meeting_id' => $meetingId,
+            'lead_id' => $leadWithoutEmail->id,
+        ]);
+    }
+
+    public function test_owner_cannot_create_meeting_with_foreign_lead_ids(): void
+    {
+        [$companyOne, $ownerOne] = $this->seedCompanyUsers('FAC-MEETLEAD1');
+        [$companyTwo, $ownerTwo] = $this->seedCompanyUsers('FAC-MEETLEAD2');
+        $foreignPipelineId = $this->seedLeadPipeline($companyTwo->id);
+
+        CompanyCalendarConnection::create([
+            'company_id' => $companyOne->id,
+            'owner_user_id' => $ownerOne->id,
+            'organizer_email' => 'owner@factory23.test',
+            'organizer_name' => 'Calendar Owner',
+            'organizer_google_user_id' => 'google-owner-123',
+            'access_token_encrypted' => 'access-token',
+            'refresh_token_encrypted' => 'refresh-token',
+            'token_expires_at' => now()->addHour(),
+            'scopes' => ['https://www.googleapis.com/auth/calendar'],
+            'status' => 'active',
+            'connected_at' => now(),
+        ]);
+
+        $foreignLead = Lead::create([
+            'company_id' => $companyTwo->id,
+            'pipeline_id' => $foreignPipelineId,
+            'created_by_user_id' => $ownerTwo->id,
+            'name' => 'Foreign Lead',
+            'email' => 'foreign@example.com',
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+        ]);
+
+        $response = $this->withToken($ownerOne->createToken('owner-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/meetings', [
+                'company_id' => $companyOne->company_id,
+                'title' => 'Invalid Lead Meeting',
+                'description' => 'Should fail lead validation.',
+                'timezone' => 'Africa/Lagos',
+                'start_at' => now()->addDay()->setHour(9)->setMinute(0)->toIso8601String(),
+                'end_at' => now()->addDay()->setHour(10)->setMinute(0)->toIso8601String(),
+                'source_page' => 'operations',
+                'lead_ids' => [$foreignLead->id],
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('errors.lead_ids.0', 'One or more selected leads are invalid for this company.');
     }
 
     public function test_owner_cannot_create_meeting_with_invalid_timezone(): void
@@ -532,5 +676,16 @@ class MeetingManagementTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    private function seedLeadPipeline(int $companyId): int
+    {
+        return (int) LeadPipeline::query()->create([
+            'company_id' => $companyId,
+            'name' => 'Default Pipeline',
+            'currency_code' => 'USD',
+            'sort_order' => 0,
+            'is_default' => true,
+        ])->id;
     }
 }

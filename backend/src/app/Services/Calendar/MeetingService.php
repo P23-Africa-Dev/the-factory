@@ -8,6 +8,7 @@ use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
 use App\Jobs\SendMeetingLifecycleEmailJob;
 use App\Models\CompanyCalendarConnection;
+use App\Models\Lead;
 use App\Models\Meeting;
 use App\Models\MeetingAttendee;
 use App\Models\User;
@@ -15,6 +16,7 @@ use App\Services\Company\CompanyContextService;
 use App\Services\Notification\NotificationService;
 use App\Support\AvatarUrlResolver;
 use Illuminate\Contracts\Pagination\Paginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -86,7 +88,9 @@ class MeetingService
             ]);
         }
 
-        $meeting = DB::transaction(function () use ($data, $companyId, $user, $connection): Meeting {
+        $role = (string) $context['role'];
+
+        $meeting = DB::transaction(function () use ($data, $companyId, $user, $connection, $role): Meeting {
             $meeting = Meeting::create([
                 'company_id' => $companyId,
                 'created_by_user_id' => $user->id,
@@ -106,9 +110,18 @@ class MeetingService
                 'sync_status' => 'pending',
             ]);
 
+            $leadIds = isset($data['lead_ids']) && is_array($data['lead_ids']) ? $data['lead_ids'] : [];
+            $this->syncLeads($meeting, $leadIds, $companyId, $user, $role);
+
+            $leadAttendees = $this->resolveLeadAttendees($leadIds, $companyId, $user, $role);
+            $allAttendees = array_merge(
+                isset($data['attendees']) && is_array($data['attendees']) ? $data['attendees'] : [],
+                $leadAttendees,
+            );
+
             $this->syncAttendees(
                 meeting: $meeting,
-                attendees: $data['attendees'] ?? [],
+                attendees: $allAttendees,
                 organizerEmail: $connection?->organizer_email,
             );
 
@@ -160,7 +173,9 @@ class MeetingService
         $connection = $this->activeConnection($companyId);
         $hasActiveIntegration = $connection !== null;
 
-        DB::transaction(function () use ($meeting, $data, $hasActiveIntegration, $connection): void {
+        $role = (string) $context['role'];
+
+        DB::transaction(function () use ($meeting, $data, $hasActiveIntegration, $connection, $companyId, $user, $role): void {
             $meeting->update([
                 'project_id' => array_key_exists('project_id', $data) ? $data['project_id'] : $meeting->project_id,
                 'task_id' => array_key_exists('task_id', $data) ? $data['task_id'] : $meeting->task_id,
@@ -176,10 +191,40 @@ class MeetingService
                 'sync_error_message' => null,
             ]);
 
-            if (array_key_exists('attendees', $data)) {
+            $leadIdsProvided = array_key_exists('lead_ids', $data);
+            if ($leadIdsProvided) {
+                $leadIds = is_array($data['lead_ids']) ? $data['lead_ids'] : [];
+                $this->syncLeads($meeting, $leadIds, $companyId, $user, $role);
+            }
+
+            $shouldSyncAttendees = array_key_exists('attendees', $data) || $leadIdsProvided;
+            if ($shouldSyncAttendees) {
+                $meeting->loadMissing(['attendees', 'leads']);
+
+                if (array_key_exists('attendees', $data)) {
+                    $baseAttendees = is_array($data['attendees']) ? $data['attendees'] : [];
+                } else {
+                    $baseAttendees = $meeting->attendees
+                        ->filter(static fn(MeetingAttendee $attendee): bool => $attendee->lead_id === null && ! $attendee->is_organizer)
+                        ->map(static fn(MeetingAttendee $attendee): array => [
+                            'user_id' => $attendee->user_id,
+                            'email' => $attendee->email,
+                            'display_name' => $attendee->display_name,
+                            'is_optional' => (bool) $attendee->is_optional,
+                        ])
+                        ->values()
+                        ->all();
+                }
+
+                $effectiveLeadIds = $leadIdsProvided
+                    ? (is_array($data['lead_ids']) ? $data['lead_ids'] : [])
+                    : $meeting->leads->pluck('id')->all();
+
+                $leadAttendees = $this->resolveLeadAttendees($effectiveLeadIds, $companyId, $user, $role);
+
                 $this->syncAttendees(
                     meeting: $meeting,
-                    attendees: is_array($data['attendees']) ? $data['attendees'] : [],
+                    attendees: array_merge($baseAttendees, $leadAttendees),
                     organizerEmail: $connection?->organizer_email,
                 );
             }
@@ -474,6 +519,7 @@ class MeetingService
             ->filter(static fn(mixed $item): bool => is_array($item))
             ->map(static fn(array $attendee): array => [
                 'user_id' => isset($attendee['user_id']) ? (int) $attendee['user_id'] : null,
+                'lead_id' => isset($attendee['lead_id']) ? (int) $attendee['lead_id'] : null,
                 'email' => strtolower(trim((string) ($attendee['email'] ?? ''))),
                 'display_name' => isset($attendee['display_name']) ? (string) $attendee['display_name'] : null,
                 'response_status' => 'needs_action',
@@ -494,6 +540,7 @@ class MeetingService
             if (! $alreadyIncluded) {
                 $normalized->push([
                     'user_id' => null,
+                    'lead_id' => null,
                     'email' => $organizerNormalized,
                     'display_name' => null,
                     'response_status' => 'accepted',
@@ -518,6 +565,7 @@ class MeetingService
             MeetingAttendee::create([
                 'meeting_id' => $meeting->id,
                 'user_id' => $attendee['user_id'],
+                'lead_id' => $attendee['lead_id'],
                 'email' => $attendee['email'],
                 'display_name' => $attendee['display_name'],
                 'response_status' => $attendee['response_status'],
@@ -540,7 +588,79 @@ class MeetingService
 
     private function loadMeeting(Meeting $meeting): Meeting
     {
-        return $meeting->load(['attendees', 'creator', 'reminders']);
+        return $meeting->load(['attendees', 'creator', 'reminders', 'leads']);
+    }
+
+    /**
+     * @param  array<int,int>  $leadIds
+     */
+    private function syncLeads(Meeting $meeting, array $leadIds, int $companyId, User $user, string $role): void
+    {
+        $leads = $this->resolveCompanyLeads($leadIds, $companyId, $user, $role);
+        $meeting->leads()->sync($leads->pluck('id')->all());
+    }
+
+    /**
+     * @param  array<int,int>  $leadIds
+     * @return array<int,array<string,mixed>>
+     */
+    private function resolveLeadAttendees(array $leadIds, int $companyId, User $user, string $role): array
+    {
+        return $this->resolveCompanyLeads($leadIds, $companyId, $user, $role)
+            ->filter(static fn(Lead $lead): bool => is_string($lead->email) && trim($lead->email) !== '')
+            ->map(static fn(Lead $lead): array => [
+                'lead_id' => (int) $lead->id,
+                'email' => strtolower(trim((string) $lead->email)),
+                'display_name' => $lead->name,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int,int>  $leadIds
+     * @return Collection<int, Lead>
+     */
+    private function resolveCompanyLeads(array $leadIds, int $companyId, User $user, string $role): Collection
+    {
+        $normalizedLeadIds = collect($leadIds)
+            ->map(static fn(mixed $id): int => (int) $id)
+            ->filter(static fn(int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($normalizedLeadIds === []) {
+            return collect();
+        }
+
+        $leads = Lead::query()
+            ->where('company_id', $companyId)
+            ->whereIn('id', $normalizedLeadIds)
+            ->get();
+
+        if ($leads->count() !== count($normalizedLeadIds)) {
+            throw ValidationException::withMessages([
+                'lead_ids' => ['One or more selected leads are invalid for this company.'],
+            ]);
+        }
+
+        foreach ($leads as $lead) {
+            if ($role === 'agent') {
+                $this->assertAgentCanAccessLead($lead, (int) $user->id);
+            }
+        }
+
+        return $leads;
+    }
+
+    private function assertAgentCanAccessLead(Lead $lead, int $userId): void
+    {
+        if ((int) $lead->created_by_user_id !== $userId && (int) ($lead->assigned_to_user_id ?? 0) !== $userId) {
+            throw ValidationException::withMessages([
+                'lead_ids' => ['Agents can only add leads they created or are assigned to.'],
+            ]);
+        }
     }
 
     private function dispatchLifecycleEmails(string $eventType, Meeting $meeting, string $organizationName): void

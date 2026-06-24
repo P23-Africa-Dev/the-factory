@@ -42,11 +42,24 @@ class MeetingResource extends JsonResource
                     ->map(fn($attendee): array => [
                         'id' => $attendee->id,
                         'user_id' => $attendee->user_id,
+                        'lead_id' => $attendee->lead_id,
                         'email' => $attendee->email,
                         'display_name' => $attendee->display_name,
                         'response_status' => $attendee->response_status,
                         'is_optional' => (bool) $attendee->is_optional,
                         'is_organizer' => (bool) $attendee->is_organizer,
+                    ])
+                    ->values()
+                    ->all();
+            }),
+            'leads' => $this->whenLoaded('leads', function (): array {
+                return $this->leads
+                    ->map(fn($lead): array => [
+                        'id' => $lead->id,
+                        'name' => $lead->name,
+                        'email' => $lead->email,
+                        'phone' => $lead->phone,
+                        'status' => $lead->status,
                     ])
                     ->values()
                     ->all();

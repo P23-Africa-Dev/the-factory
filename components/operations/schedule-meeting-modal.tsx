@@ -613,6 +613,7 @@ export function ScheduleMeetingModal({
                 end_at: endDate.toISOString(),
                 source_page: effectiveSourcePage,
                 attendees,
+                lead_ids: selectedLeadIds.length > 0 ? selectedLeadIds : undefined,
                 reminders,
             },
             {
