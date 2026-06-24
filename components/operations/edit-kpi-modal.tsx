@@ -6,13 +6,13 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { useUpdateKpi } from "@/hooks/use-kpi";
 import { useInternalUsers } from "@/hooks/use-projects";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import type { KpiCategory, KpiPriority } from "@/lib/api/kpi";
-import type { DndItem } from "@/types/operations";
+import type { KpiCategory, KpiItem, KpiPriority } from "@/lib/api/kpi";
 
 interface EditKpiModalProps {
-  kpi: DndItem | null;
+  kpi: KpiItem | null;
   onClose: () => void;
 }
 
@@ -79,21 +79,26 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
 
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
-  const [isPending, setIsPending] = useState(false);
+
+  const { mutate, isPending } = useUpdateKpi({
+    onSuccess: () => {
+      toast.success("KPI updated successfully.");
+      handleClose();
+    },
+  });
 
   useEffect(() => {
     if (kpi) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm({
-        name: kpi.description || "",
-        category: kpi.category || "",
-        objective: kpi.addedDescription || "Increase engagement and overall conversion rates by focusing on high-quality leads in the target demographic. This involves A/B testing campaigns and weekly performance reviews.",
-        targetValue: "150 Qualified Leads / $25k Revenue",
-        startDate: "2026-06-01",
-        endDate: kpi.dueDate || "2026-06-30",
-        assignedTo: "", // Find matching user ID if possible, skip for mock
-        priority: kpi.priority || "",
-        expectedOutcome: "Achieve a 20% increase in MoM growth and establish a scalable framework for future quarters.",
+        name: kpi.name,
+        category: kpi.category,
+        objective: kpi.objective,
+        targetValue: kpi.target_value,
+        startDate: kpi.start_date,
+        endDate: kpi.end_date,
+        assignedTo: kpi.assigned_to_user_id ? String(kpi.assigned_to_user_id) : "",
+        priority: kpi.priority,
+        expectedOutcome: kpi.expected_outcome,
       });
       setErrors({});
     }
@@ -120,18 +125,34 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
 
   const handleSubmit = () => {
     if (!validate()) return;
-    if (!companyId) {
+    if (!companyId || !kpi) {
       toast.error("Company context is required.");
       return;
     }
 
-    setIsPending(true);
-    // Mock API call
-    setTimeout(() => {
-      setIsPending(false);
-      toast.success("KPI updated successfully.");
-      handleClose();
-    }, 1000);
+    mutate(
+      {
+        kpiId: kpi.id,
+        payload: {
+          company_id: companyId,
+          name: form.name,
+          category: form.category as KpiCategory,
+          objective: form.objective,
+          target_value: form.targetValue,
+          start_date: form.startDate,
+          end_date: form.endDate,
+          assigned_to_user_id: form.assignedTo ? Number(form.assignedTo) : null,
+          priority: form.priority as KpiPriority,
+          expected_outcome: form.expectedOutcome,
+        },
+      },
+      {
+        onError: (err: unknown) => {
+          const apiErr = err as { message?: string };
+          toast.error(apiErr.message || "Failed to update KPI");
+        },
+      }
+    );
   };
 
   const handleClose = () => {

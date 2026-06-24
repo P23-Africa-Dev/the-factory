@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useCallback, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { Search, SlidersHorizontal, BookmarkPlus, TrendingUp, Clock, CheckCircle2, XCircle, BarChart3 } from 'lucide-react';
 import { arrayMove } from '@dnd-kit/sortable';
 import { KpiBoard } from './kpi-board';
@@ -9,11 +8,12 @@ import { CreateKpiModal } from './create-kpi-modal';
 import { KpiDetailsModal } from './kpi-details-modal';
 import { EditKpiModal } from './edit-kpi-modal';
 import { useAuthStore } from '@/store/auth';
-import { useTasks } from '@/hooks/use-tasks';
+import { useKpis, useUpdateKpiStatus } from '@/hooks/use-kpi';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import type { DndContainer, DndItem } from '@/types/operations';
 import { TaskBoardSkeleton } from './skeletons/task-board-skeleton';
-import type { TaskApiItem } from '@/lib/api/tasks';
+import type { KpiItem, KpiStatus, KpiStatusCards } from '@/lib/api/kpi';
+import { toast } from 'sonner';
 // import { OperationsCalendar } from './operations-calendar';
 
 // ─── KPI Stats Panel ──────────────────────────────────────────────────────────
@@ -27,15 +27,29 @@ interface StatDef {
   icon: React.ReactNode;
 }
 
-function KpiStatsPanel({ containers }: { containers: DndContainer[] }) {
-  const pending   = containers.find(c => c.id === 'pending')?.items.length   ?? 0;
-  const inProgress = containers.find(c => c.id === 'in-progress')?.items.length ?? 0;
-  const completed  = containers.find(c => c.id === 'completed')?.items.length  ?? 0;
-  const cancelled  = containers.find(c => c.id === 'cancelled')?.items.length  ?? 0;
-  const total = pending + inProgress + completed + cancelled;
+function KpiStatsPanel({
+  statusCards,
+  containers,
+}: {
+  statusCards?: KpiStatusCards;
+  containers: DndContainer[];
+}) {
+  const pending = statusCards?.cards.find((c) => c.id === 'pending')?.count
+    ?? containers.find((c) => c.id === 'pending')?.items.length
+    ?? 0;
+  const inProgress = statusCards?.cards.find((c) => c.id === 'in-progress')?.count
+    ?? containers.find((c) => c.id === 'in-progress')?.items.length
+    ?? 0;
+  const completed = statusCards?.cards.find((c) => c.id === 'completed')?.count
+    ?? containers.find((c) => c.id === 'completed')?.items.length
+    ?? 0;
+  const cancelled = statusCards?.cards.find((c) => c.id === 'cancelled')?.count
+    ?? containers.find((c) => c.id === 'cancelled')?.items.length
+    ?? 0;
+  const total = statusCards?.total ?? pending + inProgress + completed + cancelled;
 
   const pct = (n: number) => (total === 0 ? 0 : Math.round((n / total) * 100));
-  const completionRate = pct(completed);
+  const completionRate = statusCards?.completion_rate ?? pct(completed);
 
   // Modern, vibrant colors for the stats
   const stats: StatDef[] = [
@@ -214,63 +228,89 @@ function statusToContainerId(s: string): string | null {
   return null;
 }
 
+function statusFilterToApiStatus(s: string): KpiStatus | undefined {
+  if (s === 'Pending') return 'pending';
+  if (s === 'In Progress') return 'in_progress';
+  if (s === 'Completed') return 'completed';
+  if (s === 'Cancelled') return 'cancelled';
+  return undefined;
+}
+
+const CONTAINER_TO_STATUS: Record<string, KpiStatus> = {
+  pending: 'pending',
+  'in-progress': 'in_progress',
+  completed: 'completed',
+  cancelled: 'cancelled',
+};
+
 // ─── Main view ────────────────────────────────────────────────────────────────
 export function AllTasksView() {
-  const searchParams = useSearchParams();
-  const isNotCommencedMode = searchParams.get('status') === 'not_commenced';
-
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [showKpiModal, setShowKpiModal] = useState(false);
-  const [selectedKpi, setSelectedKpi] = useState<DndItem | null>(null);
-  const [kpiToEdit, setKpiToEdit] = useState<DndItem | null>(null);
-  const [statusFilter, setStatusFilter] = useState(isNotCommencedMode ? 'Pending' : 'All');
+  const [selectedKpi, setSelectedKpi] = useState<KpiItem | null>(null);
+  const [kpiToEdit, setKpiToEdit] = useState<KpiItem | null>(null);
+  const [statusFilter, setStatusFilter] = useState('All');
 
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const canManage =
     role === 'owner' || role === 'admin' || role === 'management' || role === 'manager' || role === 'supervisor';
+  const isAgent = role === 'agent';
 
-  const { data: tasksData, isPending } = useTasks({
-    company_id: companyId ?? undefined,
-    ...(isNotCommencedMode ? { status: 'pending' as const } : {}),
+  const { data: kpisData, isPending } = useKpis(
+    {
+      company_id: companyId ?? undefined,
+      search: search.trim() || undefined,
+      status: statusFilter !== 'All' ? statusFilterToApiStatus(statusFilter) : undefined,
+    },
+    { agentScope: isAgent }
+  );
+
+  const updateKpiStatusMutation = useUpdateKpiStatus({
+    adminScope: canManage,
+    agentScope: isAgent,
   });
+
+  const kpiById = useMemo(() => {
+    const map = new Map<string, KpiItem>();
+    for (const kpi of kpisData?.kpis ?? []) {
+      map.set(String(kpi.id), kpi);
+    }
+    return map;
+  }, [kpisData?.kpis]);
 
   // ── Server-derived containers ──────────────────────────────────────────────
   const serverContainers = useMemo((): DndContainer[] => {
-    const items = (tasksData?.tasks || []).filter((task) =>
-      isNotCommencedMode ? isTaskNotCommenced(task) : true
-    );
+    const items = kpisData?.kpis ?? [];
 
     return [
       {
         id: 'pending',
         title: 'Pending KPI',
         color: '#BD7A22',
-        items: items.filter(t => t.status === 'pending').map(mapTaskToKpi),
+        items: items.filter((kpi) => kpi.status === 'pending').map(mapKpiToDndItem),
       },
       {
         id: 'in-progress',
         title: 'KPI In Progress',
         color: '#094B5C',
-        items: items
-          .filter(t => t.status === 'in_progress' || t.status === 'paused' || t.status === 'resumed')
-          .map(mapTaskToKpi),
+        items: items.filter((kpi) => kpi.status === 'in_progress').map(mapKpiToDndItem),
       },
       {
         id: 'completed',
         title: 'Completed KPI',
         color: '#0D9488',
-        items: items.filter(t => t.status === 'completed').map(mapTaskToKpi),
+        items: items.filter((kpi) => kpi.status === 'completed').map(mapKpiToDndItem),
       },
       {
         id: 'cancelled',
         title: 'Cancelled KPI',
         color: '#6B7280',
-        items: items.filter(t => t.status === 'cancelled').map(mapTaskToKpi),
+        items: items.filter((kpi) => kpi.status === 'cancelled').map(mapKpiToDndItem),
       },
     ];
-  }, [isNotCommencedMode, tasksData]);
+  }, [kpisData?.kpis]);
 
   // ── Local DnD state ────────────────────────────────────────────────────────
   const [boardContainers, setBoardContainers] = useState<DndContainer[]>(serverContainers);
@@ -343,25 +383,32 @@ export function AllTasksView() {
     []
   );
 
-  // ── Search + status filter ─────────────────────────────────────────────────
-  const displayContainers: DndContainer[] = boardContainers
-    .filter((c) => {
-      if (statusFilter === 'All') return true;
-      return c.id === statusToContainerId(statusFilter);
-    })
-    .map((c) => {
-      if (!search.trim()) return c;
-      const q = search.toLowerCase();
-      return {
-        ...c,
-        items: c.items.filter(
-          (item) =>
-            item.description.toLowerCase().includes(q) ||
-            item.label.toLowerCase().includes(q) ||
-            (item.addedDescription?.toLowerCase().includes(q) ?? false)
-        ),
-      };
-    });
+  const displayContainers: DndContainer[] = boardContainers.filter((c) => {
+    if (statusFilter === 'All') return true;
+    return c.id === statusToContainerId(statusFilter);
+  });
+
+  const handleStatusDrop = (activeId: string, _fromContainerId: string, toContainerId: string) => {
+    const status = CONTAINER_TO_STATUS[toContainerId];
+    if (!status || !companyId) return;
+
+    updateKpiStatusMutation.mutate(
+      {
+        kpiId: activeId,
+        payload: { company_id: companyId, status },
+      },
+      {
+        onSuccess: () => toast.success('KPI status updated.'),
+        onError: () => {
+          setBoardContainers(serverContainers);
+        },
+      }
+    );
+  };
+
+  const openKpiDetails = (item: DndItem) => {
+    setSelectedKpi(kpiById.get(item.id) ?? null);
+  };
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -461,7 +508,7 @@ export function AllTasksView() {
       ) : (
         <div className="flex flex-col gap-6">
           {/* ── KPI Stats (full width, on top) ────────────────────── */}
-          <KpiStatsPanel containers={boardContainers} />
+          <KpiStatsPanel statusCards={kpisData?.statusCards} containers={boardContainers} />
 
           {/* ── KPI Board (full width, below) ─────────────────────── */}
           <KpiBoard
@@ -470,7 +517,8 @@ export function AllTasksView() {
             moveItem={moveItem}
             moveToContainer={moveToContainer}
             moveBetweenContainers={moveBetweenContainers}
-            onKpiClick={(item) => setSelectedKpi(item)}
+            onKpiClick={(item) => openKpiDetails(item)}
+            onStatusDrop={handleStatusDrop}
           />
         </div>
       )}
@@ -500,40 +548,27 @@ export function AllTasksView() {
   );
 }
 
-// ─── Map task API data to KPI DnD item ────────────────────────────────────────
-function mapTaskToKpi(apiTask: TaskApiItem): DndItem {
+// ─── Map KPI API data to DnD item ─────────────────────────────────────────────
+function mapKpiToDndItem(kpi: KpiItem): DndItem {
   let statusLabel = 'Pending';
-  if (apiTask.status === 'in_progress') statusLabel = 'In Progress';
-  if (apiTask.status === 'paused') statusLabel = 'Paused';
-  if (apiTask.status === 'resumed') statusLabel = 'Resumed';
-  if (apiTask.status === 'completed') statusLabel = 'Completed';
-  if (apiTask.status === 'cancelled') statusLabel = 'Cancelled';
-
-  const assigneeLabel =
-    apiTask.assigned_users && apiTask.assigned_users.length > 0
-      ? apiTask.assigned_users.map((u) => u.name).join(', ')
-      : apiTask.assignee?.name || 'Unassigned';
+  if (kpi.status === 'in_progress') statusLabel = 'In Progress';
+  if (kpi.status === 'completed') statusLabel = 'Completed';
+  if (kpi.status === 'cancelled') statusLabel = 'Cancelled';
 
   return {
-    id: String(apiTask.id),
-    description: apiTask.title,
-    label: assigneeLabel,
-    addedDescription: apiTask.description,
-    category: (apiTask.type || 'general') as DndItem['category'],
-    priority: apiTask.priority ?? undefined,
-    dueDate: apiTask.due_date
-      ? new Date(apiTask.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    id: String(kpi.id),
+    description: kpi.name,
+    label: kpi.assignee?.name ?? 'Unassigned',
+    addedDescription: kpi.objective,
+    category: kpi.category as DndItem['category'],
+    priority: kpi.priority,
+    dueDate: kpi.end_date
+      ? new Date(kpi.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
       : undefined,
     statusLabel,
     location: '',
     time: '',
+    value: kpi.target_value,
+    assignedToUserId: kpi.assigned_to_user_id ?? null,
   };
-}
-
-function isTaskNotCommenced(task: TaskApiItem): boolean {
-  const hasAssignment =
-    (task.assigned_users?.length ?? 0) > 0 ||
-    !!task.assigned_agent_id ||
-    !!task.assignee?.id;
-  return hasAssignment && task.status === 'pending' && !task.started_at;
 }
