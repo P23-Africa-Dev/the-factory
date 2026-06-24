@@ -13,7 +13,8 @@
         "openspout/openspout": "^4.24",
         "predis/predis": "^3.0",
         "resend/resend-php": "^1.0",
-        "symfony/intl": "^7.0|^8.0"
+        "smalot/pdfparser": "^2.0",
+        "symfony/intl": "^7.0"
     },
     "require-dev": {
         "brianium/paratest": "^7.8.5",
@@ -87,6 +88,9 @@
         "allow-plugins": {
             "pestphp/pest-plugin": true,
             "php-http/discovery": true
+        },
+        "platform": {
+            "php": "8.3.30"
         }
     },
     "minimum-stability": "stable",
