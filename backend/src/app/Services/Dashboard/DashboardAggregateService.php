@@ -524,7 +524,23 @@ class DashboardAggregateService
             ->where('status', 'in_progress')
             ->with([
                 'assignedAgent:id,name,avatar,gender',
-                'trackingSession:id,task_id,start_latitude,start_longitude,last_latitude,last_longitude,destination_latitude,destination_longitude,destination_radius_meters,near_detected_at,arrival_detected_at,end_recorded_at,last_recorded_at',
+                'trackingSession' => static function ($query): void {
+                    $query->select([
+                        'task_tracking_sessions.id',
+                        'task_tracking_sessions.task_id',
+                        'task_tracking_sessions.start_latitude',
+                        'task_tracking_sessions.start_longitude',
+                        'task_tracking_sessions.last_latitude',
+                        'task_tracking_sessions.last_longitude',
+                        'task_tracking_sessions.destination_latitude',
+                        'task_tracking_sessions.destination_longitude',
+                        'task_tracking_sessions.destination_radius_meters',
+                        'task_tracking_sessions.near_detected_at',
+                        'task_tracking_sessions.arrival_detected_at',
+                        'task_tracking_sessions.end_recorded_at',
+                        'task_tracking_sessions.last_recorded_at',
+                    ]);
+                },
             ]);
 
         if ($role === 'agent') {

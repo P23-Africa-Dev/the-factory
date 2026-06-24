@@ -58,4 +58,36 @@ final class IntentClassifierTest extends TestCase
         $this->assertSame('tool', $intent['type']);
         $this->assertSame('kpi.team_performance', $intent['tool']);
     }
+
+    public function test_classifies_crm_follow_up_summary_prompt(): void
+    {
+        $intent = (new IntentClassifier())->classify('Give me a CRM follow-up summary');
+
+        $this->assertSame('tool', $intent['type']);
+        $this->assertSame('crm.follow_up_summary', $intent['tool']);
+    }
+
+    public function test_classifies_stale_leads_prompt(): void
+    {
+        $intent = (new IntentClassifier())->classify('Show stale leads not visited recently');
+
+        $this->assertSame('tool', $intent['type']);
+        $this->assertSame('crm.stale_leads', $intent['tool']);
+    }
+
+    public function test_classifies_visit_notes_extraction_prompt(): void
+    {
+        $intent = (new IntentClassifier())->classify('Extract visit notes from my field report');
+
+        $this->assertSame('tool', $intent['type']);
+        $this->assertSame('crm.visit_extract', $intent['tool']);
+    }
+
+    public function test_classifies_create_lead_prompt(): void
+    {
+        $intent = (new IntentClassifier())->classify('I want to add new lead to my CRM');
+
+        $this->assertSame('action', $intent['type']);
+        $this->assertSame('crm.create_lead', $intent['tool']);
+    }
 }

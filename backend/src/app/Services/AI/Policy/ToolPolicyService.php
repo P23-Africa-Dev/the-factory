@@ -41,10 +41,12 @@ class ToolPolicyService
         'notifications.send',
         'projects.create',
         'crm.log_visit',
+        'crm.create_lead',
     ];
 
     private const ACTION_TOOLS_AGENT = [
         'crm.log_visit',
+        'crm.create_lead',
     ];
 
     public function canUseTool(string $role, string $tool): bool

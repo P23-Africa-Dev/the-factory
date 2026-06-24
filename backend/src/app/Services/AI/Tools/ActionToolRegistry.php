@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AI\Tools;
 
+use App\Enums\LeadPriority;
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
 use App\Enums\ProjectPriority;
@@ -14,6 +15,7 @@ use App\Enums\TaskType;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\AI\Crm\VisitAssistantService;
+use App\Services\Crm\LeadService;
 use App\Services\Calendar\MeetingService;
 use App\Services\Notification\NotificationService;
 use App\Services\Project\ProjectService;
@@ -33,6 +35,7 @@ class ActionToolRegistry
         private readonly NotificationService $notificationService,
         private readonly ProjectService $projectService,
         private readonly VisitAssistantService $visitAssistantService,
+        private readonly LeadService $leadService,
     ) {}
 
     public function execute(string $tool, User $user, int $companyId, array $args = []): array
@@ -44,6 +47,7 @@ class ActionToolRegistry
             'notifications.send' => $this->sendNotification($user, $companyId, $args),
             'projects.create' => $this->createProject($user, $companyId, $args),
             'crm.log_visit' => $this->visitAssistantService->logVisit($user, $companyId, $args),
+            'crm.create_lead' => $this->createLead($user, $companyId, $args),
             default => [
                 'tool' => $tool,
                 'summary' => 'Unsupported action tool requested.',
@@ -230,6 +234,56 @@ class ActionToolRegistry
                 'count' => $created->count(),
             ],
             'sources' => ['notifications.send'],
+        ];
+    }
+
+    private function createLead(User $user, int $companyId, array $args): array
+    {
+        $validated = Validator::make($args, [
+            'name' => ['required', 'string', 'min:2', 'max:255'],
+            'pipeline_id' => ['required', 'integer', 'exists:lead_pipelines,id'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:40'],
+            'location' => ['nullable', 'string', 'max:255'],
+            'source' => ['nullable', 'string', 'max:120'],
+            'status' => ['required', 'string', 'max:120'],
+            'priority' => ['required', 'string', Rule::in(LeadPriority::values())],
+            'next_action' => ['nullable', 'string', 'max:255'],
+            'assigned_to_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'meta' => ['nullable', 'array'],
+            'industry' => ['nullable', 'string', 'max:120'],
+            'contact_person' => ['nullable', 'string', 'max:120'],
+            'notes' => ['nullable', 'string', 'max:500'],
+        ])->validate();
+
+        $meta = is_array($validated['meta'] ?? null) ? $validated['meta'] : [];
+        foreach (['industry', 'contact_person', 'notes'] as $metaField) {
+            if (isset($validated[$metaField]) && is_string($validated[$metaField]) && trim($validated[$metaField]) !== '') {
+                $meta[$metaField] = trim($validated[$metaField]);
+            }
+            unset($validated[$metaField]);
+        }
+        if ($meta !== []) {
+            $validated['meta'] = $meta;
+        }
+
+        $lead = $this->leadService->create($user, [
+            ...$validated,
+            'company_id' => $companyId,
+        ]);
+
+        return [
+            'tool' => 'crm.create_lead',
+            'summary' => "CRM lead '{$lead->name}' was created successfully.",
+            'payload' => [
+                'lead_id' => (int) $lead->id,
+                'name' => (string) $lead->name,
+                'phone' => $lead->phone,
+                'location' => $lead->location,
+                'status' => (string) $lead->status,
+                'priority' => $lead->priority?->value,
+            ],
+            'sources' => ['crm.create_lead'],
         ];
     }
 

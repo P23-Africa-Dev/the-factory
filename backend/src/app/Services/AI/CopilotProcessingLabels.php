@@ -18,6 +18,7 @@ final class CopilotProcessingLabels
             return match ($tool) {
                 'kpi.team_performance' => ['Thinking...', 'Analyzing team KPIs...', 'Ranking performers...'],
                 'planning.daily' => ['Thinking...', 'Reviewing your schedule...', 'Prioritizing actions...'],
+                'crm.create_lead' => ['Thinking...', 'Parsing lead details...', 'Preparing CRM record...'],
                 'crm.follow_up_summary', 'crm.stale_leads', 'crm.top_leads' => ['Thinking...', 'Scanning CRM records...', 'Sorting leads...'],
                 'crm.visit_extract' => ['Thinking...', 'Reading visit notes...', 'Extracting insights...'],
                 'tasks.overdue' => ['Thinking...', 'Checking task deadlines...'],

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\AI\Providers;
 
 use App\Services\AI\Admin\AiFailoverTracker;
+use App\Services\AI\Providers\ClaudeModelResolver;
+use App\Services\AI\Providers\ClaudeProvider;
 use Illuminate\Http\UploadedFile;
 
 class AiProviderRouter
@@ -49,6 +51,31 @@ class AiProviderRouter
             'analyst', 'report' => (string) config('services.ai.analyst_model', 'auto'),
             default => (string) config('services.ai.exec_model', config('services.ai.default_model', 'gpt-4.1-mini')),
         };
+    }
+
+    /**
+     * @return array{provider: string, model: string, purpose: string}
+     */
+    public function routingMetadata(string $purpose): array
+    {
+        $purpose = strtolower(trim($purpose));
+        $providers = $this->orderedProvidersForPurpose($purpose);
+        $first = $providers[0] ?? null;
+        $provider = match (true) {
+            $first instanceof OpenAiProvider => 'openai',
+            $first instanceof ClaudeProvider => 'claude',
+            default => strtolower((string) config('services.ai.provider', 'openai')),
+        };
+        $model = $this->resolveModelForPurpose($purpose);
+        if ($provider === 'claude') {
+            $model = app(ClaudeModelResolver::class)->resolve($purpose, $model);
+        }
+
+        return [
+            'provider' => $provider,
+            'model' => $model,
+            'purpose' => $purpose,
+        ];
     }
 
     /**

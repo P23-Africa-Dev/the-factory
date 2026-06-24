@@ -6,6 +6,7 @@ namespace App\Services\AI;
 
 use App\Enums\TaskType;
 use App\Models\User;
+use App\Services\AI\Crm\LeadInferenceService;
 use App\Services\AI\Context\ConversationMemoryService;
 use App\Services\AI\Policy\ActionConfirmationPolicyService;
 use App\Services\AI\Policy\ToolPolicyService;
@@ -33,6 +34,7 @@ class CopilotService
         private readonly ConversationMemoryService $conversationMemoryService,
         private readonly AiProviderRouter $aiProviderRouter,
         private readonly MeetingInferenceService $meetingInferenceService,
+        private readonly LeadInferenceService $leadInferenceService,
     ) {}
 
     public function chat(
@@ -44,12 +46,12 @@ class CopilotService
         bool $actionConfirmed = false,
         ?string $idempotencyKey = null,
         ?string $clientTimezone = null,
-        array $context = [],
+        array $chatContext = [],
     ): array {
-        $context = $this->companyContextService->resolve($user, $companyId);
-        $resolvedCompanyId = (int) $context['company']->id;
-        $role = (string) $context['role'];
-        $companyCountry = (string) ($context['company']->country ?? '');
+        $companyContext = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $companyContext['company']->id;
+        $role = (string) $companyContext['role'];
+        $companyCountry = (string) ($companyContext['company']->country ?? '');
 
         if (! $this->canConsumeCredits($resolvedCompanyId)) {
             $this->aiLoggingService->cancelled(
@@ -92,6 +94,17 @@ class CopilotService
             ];
         } elseif (($intent['type'] ?? 'general') === 'action' && ! is_string($intent['tool'] ?? null) && $resolvedActionTool !== null) {
             $intent['tool'] = $resolvedActionTool;
+        }
+
+        if ($actionConfirmed && $actionArgs !== []) {
+            $pendingTool = $this->resolvePendingActionToolFromThread($threadId, $resolvedCompanyId, (int) $user->id);
+            if (is_string($pendingTool) && $pendingTool !== '') {
+                $intent = [
+                    'type' => 'action',
+                    'tool' => $pendingTool,
+                    'confidence' => 1.0,
+                ];
+            }
         }
 
         $actionMessage = $this->buildActionableMessage($message, $threadId, $resolvedCompanyId, (int) $user->id);
@@ -137,6 +150,7 @@ class CopilotService
                             $actionArgs,
                             $threadId,
                             (int) $user->id,
+                            $role,
                             $clientTimezone,
                             $companyCountry,
                         );
@@ -167,6 +181,7 @@ class CopilotService
                                 $actionArgs,
                                 $threadId,
                                 (int) $user->id,
+                                $role,
                                 $clientTimezone,
                                 $companyCountry,
                             )
@@ -223,7 +238,7 @@ class CopilotService
                         $user,
                         $resolvedCompanyId,
                         array_merge(
-                            $this->buildReadToolArgs($candidateTool, $context),
+                            $this->buildReadToolArgs($candidateTool, $chatContext),
                             $this->buildReadToolMessageArgs($candidateTool, $message),
                         ),
                     );
@@ -244,23 +259,25 @@ class CopilotService
                 ];
             }
         } else {
+            $routing = $this->aiProviderRouter->routingMetadata('operational');
             $aiLog = $this->aiLoggingService->begin(
                 companyId: $resolvedCompanyId,
                 userId: (int) $user->id,
                 sessionId: $threadId,
-                provider: (string) config('services.ai.provider', 'openai'),
-                model: (string) config('services.ai.exec_model', config('services.ai.default_model', 'gpt-4.1-mini')),
+                provider: $routing['provider'],
+                model: $routing['model'],
                 userPrompt: $message,
                 sanitizedPrompt: $this->redactSensitiveText($message),
                 intentType: 'general',
                 toolName: null,
+                routingPurpose: $routing['purpose'],
             );
             $startMs = microtime(true);
             $assistantText = $this->resolveGeneralResponse(
                 user: $user,
                 role: $role,
                 companyId: $resolvedCompanyId,
-                companyName: (string) ($context['company']->name ?? 'your active organization'),
+                companyName: (string) ($companyContext['company']->name ?? 'your active organization'),
                 userId: (int) $user->id,
                 threadId: $threadId,
                 message: $message,
@@ -269,7 +286,7 @@ class CopilotService
             // Approximate token estimate: 1 token ≈ 4 chars
             $inputEst = (int) ceil(mb_strlen($message) / 4);
             $outputEst = (int) ceil(mb_strlen($assistantText) / 4);
-            $this->aiLoggingService->complete($aiLog, $inputEst, $outputEst);
+            $this->aiLoggingService->complete($aiLog, $inputEst, $outputEst, $routing['provider'], $routing['model']);
         }
 
         // Complete AI log for tool/action paths (general path completes its own log inline above)
@@ -396,6 +413,10 @@ class CopilotService
         $contextEntities = is_array($promptContext['entities'] ?? null) ? $promptContext['entities'] : [];
 
         if ($this->looksLikeActionRequest($message) && $this->resolveActionToolFromMessage($message, $threadId, $companyId, $userId) === null) {
+            if (preg_match('/\b(lead|crm|business)\b/i', $message) === 1) {
+                return 'I can add that lead to your CRM. Share the business name, phone number, and location (for example: Business Name: Acme Ltd, Phone: 080..., Location: Lagos), then I will prepare a confirmation form for you.';
+            }
+
             return 'I can help schedule that. Try phrasing it like "Create a meeting with [name] tomorrow at 2 PM" so I can prepare the confirmation form for you.';
         }
 
@@ -480,8 +501,8 @@ class CopilotService
             return false;
         }
 
-        return preg_match('/\b(create|add|start|open|schedule|book|setup|set\s*up|arrange|plan|send|notify|assign|reassign|transfer|move|update|change|cancel|delete)\b/i', $normalized) === 1
-            && preg_match('/\b(task|project|meeting|notification|alert)\b/i', $normalized) === 1;
+        return preg_match('/\b(create|add|start|open|schedule|book|setup|set\s*up|arrange|plan|send|notify|assign|reassign|transfer|move|update|change|cancel|delete|register|save)\b/i', $normalized) === 1
+            && preg_match('/\b(task|project|meeting|notification|alert|lead|crm|business)\b/i', $normalized) === 1;
     }
 
     private function resolveActionToolFromMessage(
@@ -517,6 +538,48 @@ class CopilotService
             return 'notifications.send';
         }
 
+        if (preg_match('/\b(lead|crm)\b/i', $normalized) && preg_match('/\b(create|add|new|register|save)\b/i', $normalized) === 1) {
+            return 'crm.create_lead';
+        }
+
+        if (preg_match('/\b(business\s+name|business\/lead\s+name|lead\s+name|phone\s+number|phone|location)\s*:/i', $normalized) === 1) {
+            return 'crm.create_lead';
+        }
+
+        if (preg_match('/^\s*confirm\b/i', $normalized) === 1) {
+            $pendingTool = $this->resolvePendingActionToolFromThread($threadId, $companyId, $userId);
+            if ($pendingTool !== null) {
+                return $pendingTool;
+            }
+        }
+
+        return null;
+    }
+
+    private function resolvePendingActionToolFromThread(?string $threadId, int $companyId, int $userId): ?string
+    {
+        if (! is_string($threadId) || trim($threadId) === '') {
+            return null;
+        }
+
+        $thread = $this->conversationMemoryService->getThread($companyId, $userId, $threadId);
+        if (! is_array($thread)) {
+            return null;
+        }
+
+        $messages = is_array($thread['messages'] ?? null) ? $thread['messages'] : [];
+        for ($i = count($messages) - 1; $i >= 0; $i--) {
+            $msg = $messages[$i] ?? null;
+            if (! is_array($msg) || (string) ($msg['role'] ?? '') !== 'assistant') {
+                continue;
+            }
+
+            $payload = is_array($msg['payload'] ?? null) ? $msg['payload'] : [];
+            if (($payload['confirmation_required'] ?? false) === true && is_string($payload['tool'] ?? null)) {
+                return (string) $payload['tool'];
+            }
+        }
+
         return null;
     }
 
@@ -548,8 +611,28 @@ class CopilotService
             ->filter(static fn(string $line): bool => preg_match('/\bmeeting\b/i', $line) === 1)
             ->implode(' ');
 
+        $leadContext = collect($userLines)
+            ->filter(static fn(string $line): bool => preg_match('/\b(lead|business\s+name|phone\s+number|location|crm)\b/i', $line) === 1)
+            ->implode(' ');
+
+        $hasLeadDetails = preg_match('/\b(business\s+name|business\/lead\s+name|lead\s+name|phone\s+number|phone|location)\s*:/i', $message) === 1;
+
+        if ($hasLeadDetails) {
+            $leadLines = collect($userLines)
+                ->filter(static fn(string $line): bool => preg_match('/\b(lead|business\s+name|phone|location|crm)\b/i', $line) === 1 || preg_match('/\b(business\s+name|phone|location)\s*:/i', $line) === 1)
+                ->push($message)
+                ->unique()
+                ->implode(' ');
+
+            return trim($leadLines);
+        }
+
         if ($isFollowUp && $meetingContext !== '') {
             return trim($meetingContext . ' ' . $message);
+        }
+
+        if ($isFollowUp && $leadContext !== '') {
+            return trim($leadContext . ' ' . $message);
         }
 
         return trim($message);
@@ -562,6 +645,7 @@ class CopilotService
         array $actionArgs,
         ?string $threadId,
         int $userId,
+        string $role,
         ?string $clientTimezone = null,
         ?string $companyCountry = null,
     ): array {
@@ -578,6 +662,8 @@ class CopilotService
                 $actionArgs,
                 $clientTimezone,
                 $companyCountry,
+                $role,
+                $userId,
             );
         }
 
@@ -602,6 +688,14 @@ class CopilotService
                 'category' => 'system',
                 'user_ids' => [$userId],
             ],
+            'crm.create_lead' => $this->leadInferenceService->infer(
+                message: $message,
+                companyId: $companyId,
+                userId: $userId,
+                role: $role,
+                entities: $entities,
+                conversationSummary: (string) ($context['summary'] ?? ''),
+            ),
             default => $actionArgs,
         };
     }
@@ -619,6 +713,8 @@ class CopilotService
         array $actionArgs,
         ?string $clientTimezone = null,
         ?string $companyCountry = null,
+        string $role = 'admin',
+        int $userId = 0,
     ): array {
         if ($tool === 'tasks.create') {
             return $this->normalizeProvidedActionArgsForTask($message, $companyId, $entities, $actionArgs);
@@ -631,6 +727,15 @@ class CopilotService
                 $actionArgs,
                 $clientTimezone,
                 $companyCountry,
+            );
+        }
+
+        if ($tool === 'crm.create_lead') {
+            return $this->leadInferenceService->normalizeProvidedArgs(
+                $companyId,
+                $actionArgs,
+                $role,
+                $userId,
             );
         }
 
@@ -1053,6 +1158,10 @@ class CopilotService
             return $this->meetingInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
         }
 
+        if ($tool === 'crm.create_lead') {
+            return $this->leadInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
+        }
+
         return 'ELY prepared an action. Review and click Confirm Action to proceed.';
     }
 
@@ -1075,6 +1184,9 @@ class CopilotService
             'used_default_time' => 'Meeting time was not clear and defaulted to tomorrow at 10:00 AM.',
             'attendee_unresolved' => 'Some attendee names could not be matched to organization users. Please verify internal attendees before confirming.',
             'invalid_attendee_email' => 'One or more attendee emails are invalid. Please correct them before confirming.',
+            'missing_lead_name' => 'Lead business name is required before this lead can be saved.',
+            'missing_phone' => 'Phone number was not detected. Add a phone number before confirming.',
+            'missing_location' => 'Location was not detected. Add a location before confirming.',
         ];
 
         return collect($codes)
@@ -1091,6 +1203,10 @@ class CopilotService
     {
         if ($tool === 'meetings.schedule') {
             return $this->meetingInferenceService->warningCodes($args);
+        }
+
+        if ($tool === 'crm.create_lead') {
+            return $this->leadInferenceService->warningCodes($args);
         }
 
         if ($tool !== 'tasks.create') {
@@ -1133,6 +1249,10 @@ class CopilotService
 
         if (in_array('invalid_attendee_email', $validationWarningCodes, true)) {
             $blockingCodes[] = 'invalid_attendee_email';
+        }
+
+        if (in_array('missing_lead_name', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_lead_name';
         }
 
         if ((bool) config('services.ai.strict_confirmation_blocking', false)) {
@@ -1294,27 +1414,27 @@ class CopilotService
     }
 
     /**
-     * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $chatContext
      * @return array<string, mixed>
      */
-    private function buildReadToolArgs(string $tool, array $context): array
+    private function buildReadToolArgs(string $tool, array $chatContext): array
     {
         if ($tool !== 'planning.daily') {
             return [];
         }
 
         $args = [];
-        if (isset($context['latitude']) && is_numeric($context['latitude'])) {
-            $args['latitude'] = (float) $context['latitude'];
+        if (isset($chatContext['latitude']) && is_numeric($chatContext['latitude'])) {
+            $args['latitude'] = (float) $chatContext['latitude'];
         }
-        if (isset($context['longitude']) && is_numeric($context['longitude'])) {
-            $args['longitude'] = (float) $context['longitude'];
+        if (isset($chatContext['longitude']) && is_numeric($chatContext['longitude'])) {
+            $args['longitude'] = (float) $chatContext['longitude'];
         }
-        if (isset($context['focus']) && is_string($context['focus'])) {
-            $args['focus'] = $context['focus'];
+        if (isset($chatContext['focus']) && is_string($chatContext['focus'])) {
+            $args['focus'] = $chatContext['focus'];
         }
-        if (isset($context['limit']) && is_numeric($context['limit'])) {
-            $args['limit'] = (int) $context['limit'];
+        if (isset($chatContext['limit']) && is_numeric($chatContext['limit'])) {
+            $args['limit'] = (int) $chatContext['limit'];
         }
 
         return $args;

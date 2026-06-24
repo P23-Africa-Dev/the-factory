@@ -37,6 +37,11 @@ class IntentClassifier
                 '/\brecord\s+(this\s+)?visit\b/i',
                 '/\bupdate\s+crm\s+from\s+visit\b/i',
             ],
+            'crm.create_lead' => [
+                '/\b(add|create|register|save|new)\b.{0,60}\b(lead|crm\s+lead|crm\s+record)\b/i',
+                '/\b(add|create|register)\b.{0,40}\b(business|company)\b.{0,40}\b(to\s+)?(crm|pipeline)\b/i',
+                '/\bnew\s+lead\b/i',
+            ],
         ];
 
         foreach ($actionPatterns as $tool => $regexPatterns) {
@@ -52,11 +57,6 @@ class IntentClassifier
         }
 
         $toolPatterns = [
-            'crm.top_leads' => [
-                '/\b(top|hot|hottest)\s+leads?\b/i',
-                '/\bcrm\b/i',
-                '/\bpipeline\b/i',
-            ],
             'crm.follow_up_summary' => [
                 '/\bfollow[\s-]?up\s+(summary|recommend)/i',
                 '/\blead\s+summar/i',
@@ -68,6 +68,11 @@ class IntentClassifier
             'crm.visit_extract' => [
                 '/\b(process|structure|extract)\s+visit\s+notes?\b/i',
                 '/\bvisit\s+notes?\b/i',
+            ],
+            'crm.top_leads' => [
+                '/\b(top|hot|hottest)\s+leads?\b/i',
+                '/\bpipeline\b/i',
+                '/\b(show|list)\s+(my\s+)?leads?\b/i',
             ],
             'tasks.overdue' => [
                 '/\boverdue\s+tasks?\b/i',

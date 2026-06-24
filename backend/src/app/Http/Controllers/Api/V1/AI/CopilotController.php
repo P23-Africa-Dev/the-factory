@@ -55,7 +55,7 @@ class CopilotController extends Controller
                 actionConfirmed: (bool) ($validated['action_confirmed'] ?? false),
                 idempotencyKey: isset($validated['idempotency_key']) ? (string) $validated['idempotency_key'] : null,
                 clientTimezone: $clientTimezone,
-                context: $chatContext,
+                chatContext: $chatContext,
             );
 
             return $this->success(
@@ -101,7 +101,7 @@ class CopilotController extends Controller
                         actionConfirmed: $chatActionConfirmed,
                         idempotencyKey: $chatIdempotencyKey,
                         clientTimezone: $chatClientTimezone,
-                        context: $chatContext,
+                        chatContext: $chatContext,
                     );
 
                     $content = (string) ($result['response']['content'] ?? '');
@@ -145,6 +145,14 @@ class CopilotController extends Controller
 
                     $this->emitErrorDone($chatThreadId, 'I could not complete that action because some required details are missing or invalid: ' . $errorMessage);
                 } catch (Throwable $e) {
+                    logger()->error('Copilot streaming chat failed.', [
+                        'user_id' => $chatUser?->id,
+                        'company_id' => $chatCompanyId,
+                        'thread_id' => $chatThreadId,
+                        'message_preview' => mb_substr($chatMessage, 0, 120),
+                        'exception' => $e,
+                    ]);
+
                     $this->emitErrorDone($chatThreadId, 'I was unable to complete that request. Please try again or contact support if the issue persists.');
                 }
             },
