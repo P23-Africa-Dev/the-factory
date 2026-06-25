@@ -20,6 +20,7 @@ final class CopilotProcessingLabels
                 'planning.daily' => ['Thinking...', 'Reviewing your schedule...', 'Prioritizing actions...'],
                 'crm.create_lead' => ['Thinking...', 'Parsing lead details...', 'Preparing CRM record...'],
                 'crm.follow_up_summary', 'crm.stale_leads', 'crm.top_leads' => ['Thinking...', 'Scanning CRM records...', 'Sorting leads...'],
+                'org.users' => ['Thinking...', 'Loading organization users...', 'Applying role scope...'],
                 'crm.visit_extract' => ['Thinking...', 'Reading visit notes...', 'Extracting insights...'],
                 'tasks.overdue' => ['Thinking...', 'Checking task deadlines...'],
                 'dashboard.overview' => ['Thinking...', 'Loading dashboard metrics...'],

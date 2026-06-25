@@ -96,6 +96,15 @@ class CopilotService
             $intent['tool'] = $resolvedActionTool;
         }
 
+        $resolvedReadTool = $this->resolveReadToolFromMessage($message);
+        if (($intent['type'] ?? 'general') === 'general' && $resolvedReadTool !== null) {
+            $intent = [
+                'type' => 'tool',
+                'tool' => $resolvedReadTool,
+                'confidence' => 0.85,
+            ];
+        }
+
         if ($actionConfirmed && $actionArgs !== []) {
             $pendingTool = $this->resolvePendingActionToolFromThread($threadId, $resolvedCompanyId, (int) $user->id);
             if (is_string($pendingTool) && $pendingTool !== '') {
@@ -503,6 +512,34 @@ class CopilotService
 
         return preg_match('/\b(create|add|start|open|schedule|book|setup|set\s*up|arrange|plan|send|notify|assign|reassign|transfer|move|update|change|cancel|delete|register|save)\b/i', $normalized) === 1
             && preg_match('/\b(task|project|meeting|notification|alert|lead|crm|business)\b/i', $normalized) === 1;
+    }
+
+    private function resolveReadToolFromMessage(string $message): ?string
+    {
+        $normalized = strtolower(trim($message));
+        if ($normalized === '') {
+            return null;
+        }
+
+        if ($this->looksLikeActionRequest($message)) {
+            return null;
+        }
+
+        if (
+            preg_match('/\b(lead|leads|crm|pipeline)\b/i', $normalized) === 1
+            && preg_match('/\b(list|show|get|give|provide|pull|fetch|display|retrieve|view|how many|crm|leads?)\b/i', $normalized) === 1
+        ) {
+            return 'crm.top_leads';
+        }
+
+        if (
+            preg_match('/\b(user|users|member|members|staff|workforce|team|agents?)\b/i', $normalized) === 1
+            && preg_match('/\b(list|show|get|who|under|organization|organisation|company|members?)\b/i', $normalized) === 1
+        ) {
+            return 'org.users';
+        }
+
+        return null;
     }
 
     private function resolveActionToolFromMessage(
@@ -1465,6 +1502,19 @@ class CopilotService
     {
         if ($tool === 'crm.visit_extract') {
             return ['notes' => $message];
+        }
+
+        if ($tool === 'crm.top_leads') {
+            $normalized = strtolower(trim($message));
+            $wantsFullList = preg_match('/\b(all|full|complete|entire)\b.{0,30}\b(leads?|list|crm)\b/i', $normalized) === 1
+                || preg_match('/\b(leads?|list|crm)\b.{0,30}\b(all|full|complete|entire)\b/i', $normalized) === 1
+                || preg_match('/\b(list|provide|show)\b.{0,40}\b(leads?|crm)\b/i', $normalized) === 1;
+
+            return $wantsFullList ? ['limit' => 20] : [];
+        }
+
+        if ($tool === 'org.users') {
+            return ['limit' => 50];
         }
 
         return [];

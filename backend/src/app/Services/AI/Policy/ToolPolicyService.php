@@ -32,6 +32,7 @@ class ToolPolicyService
         'dashboard.overview',
         'planning.daily',
         'kpi.team_performance',
+        'org.users',
     ];
 
     private const ACTION_TOOLS_MANAGEMENT = [
