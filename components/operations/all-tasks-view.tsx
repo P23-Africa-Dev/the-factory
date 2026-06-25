@@ -1,7 +1,10 @@
 'use client';
 
-import React, { useCallback, useMemo, useState } from 'react';
-import { Search, SlidersHorizontal, BookmarkPlus, TrendingUp, Clock, CheckCircle2, XCircle, BarChart3 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
+import { AreaChart, Area, ResponsiveContainer } from 'recharts';
+import { Search, SlidersHorizontal, BookmarkPlus, User } from 'lucide-react';
+import Arrow57Deg from '@/assets/images/arrow-57deg.png';
 import { arrayMove } from '@dnd-kit/sortable';
 import { KpiBoard } from './kpi-board';
 import { CreateKpiModal } from './create-kpi-modal';
@@ -17,14 +20,20 @@ import { toast } from 'sonner';
 // import { OperationsCalendar } from './operations-calendar';
 
 // ─── KPI Stats Panel ──────────────────────────────────────────────────────────
-interface StatDef {
-  id: string;
-  label: string;
-  count: number;
-  pct: number;
-  color: string;
-  bg: string;
-  icon: React.ReactNode;
+const KPI_PENDING_DATA = [
+  { value: 30 }, { value: 20 }, { value: 34 }, { value: 22 },
+  { value: 30 }, { value: 28 }, { value: 15 }, { value: 32 },
+];
+const KPI_INPROGRESS_DATA = [
+  { value: 20 }, { value: 35 }, { value: 28 }, { value: 42 },
+  { value: 30 }, { value: 38 }, { value: 25 }, { value: 45 },
+];
+
+const KPI_ARC_LENGTH = 188.5;
+const KPI_CIRCUMFERENCE = 251.3;
+
+function formatKpiCount(value: number): string {
+  return String(value).padStart(3, '0');
 }
 
 function KpiStatsPanel({
@@ -47,172 +56,149 @@ function KpiStatsPanel({
     ?? containers.find((c) => c.id === 'cancelled')?.items.length
     ?? 0;
   const total = statusCards?.total ?? pending + inProgress + completed + cancelled;
-
   const pct = (n: number) => (total === 0 ? 0 : Math.round((n / total) * 100));
   const completionRate = statusCards?.completion_rate ?? pct(completed);
 
-  // Modern, vibrant colors for the stats
-  const stats: StatDef[] = [
-    {
-      id: 'pending',
-      label: 'Pending',
-      count: pending,
-      pct: pct(pending),
-      color: '#F59E0B', // Amber
-      bg: 'rgba(245, 158, 11, 0.12)',
-      icon: <Clock size={18} strokeWidth={2.5} />,
-    },
-    {
-      id: 'in-progress',
-      label: 'In Progress',
-      count: inProgress,
-      pct: pct(inProgress),
-      color: '#3B82F6', // Blue
-      bg: 'rgba(59, 130, 246, 0.12)',
-      icon: <TrendingUp size={18} strokeWidth={2.5} />,
-    },
-    {
-      id: 'completed',
-      label: 'Completed',
-      count: completed,
-      pct: pct(completed),
-      color: '#10B981', // Emerald
-      bg: 'rgba(16, 185, 129, 0.12)',
-      icon: <CheckCircle2 size={18} strokeWidth={2.5} />,
-    },
-    {
-      id: 'cancelled',
-      label: 'Cancelled',
-      count: cancelled,
-      pct: pct(cancelled),
-      color: '#8B5CF6', // Purple instead of gray for a more vibrant look
-      bg: 'rgba(139, 92, 246, 0.12)',
-      icon: <XCircle size={18} strokeWidth={2.5} />,
-    },
-  ];
+  const [animatedPct, setAnimatedPct] = useState(0);
+  useEffect(() => {
+    const duration = 1200;
+    const start = performance.now();
+    const target = completionRate;
+    const ease = (t: number) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t);
+    let raf: number;
+    function frame(now: number) {
+      const t = Math.min((now - start) / duration, 1);
+      setAnimatedPct(ease(t) * target);
+      if (t < 1) raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [completionRate]);
 
-  // Circumference for the SVG ring (r=32)
-  const R = 32;
-  const CIRC = 2 * Math.PI * R;
-  const ringOffset = CIRC - (completionRate / 100) * CIRC;
+  const animatedDash = (animatedPct / 100) * KPI_ARC_LENGTH;
+  const dotAngle = (animatedPct / 100) * 270 * (Math.PI / 180);
+  const dotX = 50 + 40 * Math.cos(dotAngle);
+  const dotY = 50 + 40 * Math.sin(dotAngle);
+  const completedPct = pct(completed);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      
-      {/* ── Hero Block (Overall Completion) ── */}
-      <div className="col-span-1 lg:col-span-4 relative overflow-hidden bg-gradient-to-br from-[#0B1215] to-[#1A262D] text-white rounded-[24px] p-5 shadow-2xl flex flex-col justify-between group">
-        {/* Subtle decorative background elements */}
-        <div className="absolute -right-10 -top-10 w-40 h-40 bg-[#10B981] rounded-full blur-[80px] opacity-20 group-hover:opacity-40 transition-opacity duration-700" />
-        <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-[#3B82F6] rounded-full blur-[80px] opacity-20 group-hover:opacity-40 transition-opacity duration-700" />
-        
-        <div className="flex justify-between items-start z-10">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_auto] gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+
+      {/* Performance */}
+      <div className="bg-[#0B1C25] rounded-[20px] p-5 sm:p-6 relative flex flex-col sm:flex-row items-center text-center sm:text-left gap-4 sm:gap-6 overflow-hidden shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+        <div className="relative w-28 h-28 sm:w-41.5 sm:h-41.5 shrink-0">
+          <svg viewBox="0 0 100 100" className="w-full h-full" style={{ transform: 'rotate(135deg)' }}>
+            <circle cx="50" cy="50" r="40" fill="none" stroke="#6B9A9A" strokeOpacity="0.3" strokeWidth="6" strokeLinecap="round" strokeDasharray={`${KPI_ARC_LENGTH} ${KPI_CIRCUMFERENCE}`} />
+            <circle cx="50" cy="50" r="40" fill="none" stroke="white" strokeWidth="6" strokeLinecap="round" strokeDasharray={`${KPI_ARC_LENGTH} ${KPI_CIRCUMFERENCE}`} />
+            <circle cx="50" cy="50" r="40" fill="none" stroke="#6B9A9A" strokeWidth="6" strokeLinecap="round" strokeDasharray={`${animatedDash} ${KPI_CIRCUMFERENCE}`} />
+            <circle cx={dotX} cy={dotY} r="3" fill="#fff" stroke="#7BB6B8" strokeWidth="4px" />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 sm:gap-1">
+            <div className="w-7 h-7 sm:w-10 sm:h-10 rounded-full bg-[#EF6C55] flex items-center justify-center shadow-lg">
+              <User className="text-white fill-current w-3 h-3 sm:w-4.5 sm:h-4.5" />
+            </div>
+            <span className="text-white font-semibold text-[24px] sm:text-[30px] leading-none">
+              {completionRate}%
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-col z-10 text-white min-w-0">
+          <p className="text-[#E8E8E8] font-normal text-[12px] sm:text-[14px] lg:text-[16px] leading-tight mb-0.5">
+            Overall KPI
+          </p>
+          <h2 className="text-[20px] sm:text-[22px] xl:text-[30px] font-semibold leading-[1.1] mb-2 sm:mb-4 tracking-tight">
+            Performance
+          </h2>
+          <p className="text-[11px] sm:text-[14px] font-medium text-[#E8E8E8]/80">
+            Status:{' '}
+            <span className="text-white font-semibold">
+              {completionRate >= 80 ? 'Excellent' : completionRate >= 60 ? 'Good' : completionRate >= 40 ? 'Fair' : 'Poor'}
+            </span>
+          </p>
+        </div>
+      </div>
+
+      {/* Pending KPIs */}
+      <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-full min-w-0">
+        <div className="flex items-start justify-between pt-5 sm:pt-6">
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-1.5 bg-white/10 rounded-lg backdrop-blur-md">
-                <BarChart3 size={16} className="text-teal-300" />
-              </div>
-              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-teal-300">KPI Overview</span>
-            </div>
-            <p className="text-[42px] font-black mt-1 tracking-tight leading-none">{total}</p>
-            <p className="text-[13px] text-gray-400 font-medium mt-1">Total KPIs tracked</p>
+            <p className="text-[14px] font-medium text-[#2D2D2D]">Pending KPIs</p>
+            <h2 className="text-[64px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
+              {formatKpiCount(pending)}
+            </h2>
           </div>
-          
-          <div className="relative w-[80px] h-[80px] shrink-0 transform group-hover:scale-105 transition-transform duration-500">
-            <svg width="80" height="80" viewBox="0 0 80 80" className="-rotate-90 drop-shadow-[0_0_12px_rgba(16,185,129,0.3)]">
-              <circle cx="40" cy="40" r={R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
-              <circle
-                cx="40" cy="40" r={R}
-                fill="none"
-                stroke="#10B981"
-                strokeWidth="8"
-                strokeLinecap="round"
-                strokeDasharray={CIRC}
-                strokeDashoffset={ringOffset}
-                style={{ transition: 'stroke-dashoffset 1.5s cubic-bezier(0.4, 0, 0.2, 1)' }}
-              />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-[18px] font-black leading-none">{completionRate}%</span>
-              <span className="text-[8px] text-gray-400 font-bold tracking-widest mt-0.5">DONE</span>
-            </div>
-          </div>
+          <span className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#EF8E5B] text-white rounded-full text-[7px] mt-1">
+            All
+            <Image src={Arrow57Deg} alt="" width={7.5} height={7.5} />
+          </span>
         </div>
+        <div className="w-full h-14.5 mt-auto">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={KPI_PENDING_DATA} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gradKpiPending" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#E8875B" stopOpacity={1} />
+                  <stop offset="95%" stopColor="#D9D9D9" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Area type="monotone" dataKey="value" stroke="#E8875B" strokeWidth={3} fillOpacity={1} fill="url(#gradKpiPending)" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
 
-        {/* Progress distribution bar */}
-        <div className="mt-4 z-10">
-          <div className="flex justify-between text-xs font-semibold text-gray-400 mb-3">
-            <span>Distribution</span>
-            <span>{total > 0 ? '100%' : '0%'}</span>
+      {/* In Progress KPIs */}
+      <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-full min-w-0">
+        <div className="flex items-start justify-between pt-5 sm:pt-6">
+          <div>
+            <p className="text-[14px] font-medium text-[#2D2D2D]">In Progress</p>
+            <h2 className="text-[64px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
+              {formatKpiCount(inProgress)}
+            </h2>
           </div>
-          <div className="flex h-3 rounded-full overflow-hidden bg-white/5 backdrop-blur-sm p-0.5 shadow-inner gap-0.5">
-            {stats.map((stat) => stat.pct > 0 && (
-              <div
-                key={stat.id}
-                className="h-full rounded-full hover:brightness-125 transition-all cursor-pointer relative group/bar"
-                style={{
-                  width: `${stat.pct}%`,
-                  backgroundColor: stat.color,
-                }}
-              >
-                {/* Tooltip */}
-                <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-white text-[#0B1215] text-[11px] font-bold py-1.5 px-3 rounded-lg opacity-0 group-hover/bar:opacity-100 pointer-events-none transition-all scale-95 group-hover/bar:scale-100 whitespace-nowrap z-20 shadow-xl border border-gray-100">
-                  {stat.label}: {stat.pct}%
-                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rotate-45 border-b border-r border-gray-100" />
-                </div>
-              </div>
-            ))}
+          <span className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#3AB37E] text-white rounded-full text-[7px] mt-1">
+            All
+            <Image src={Arrow57Deg} alt="" width={7.5} height={7.5} />
+          </span>
+        </div>
+        <div className="w-full h-14.5 mt-auto">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={KPI_INPROGRESS_DATA} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gradKpiProgress" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3AB37E" stopOpacity={1} />
+                  <stop offset="95%" stopColor="#D9D9D9" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Area type="monotone" dataKey="value" stroke="#3AB37E" strokeWidth={3} fillOpacity={1} fill="url(#gradKpiProgress)" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Completed arc card */}
+      <div className="bg-[#7BA9A4] rounded-[20px] p-5 shadow-sm flex flex-col items-center w-full min-w-0 text-center gap-3">
+        <p className="text-white font-light text-[8px] leading-[1.4] max-w-24 mx-auto">
+          KPIs completed out of total
+        </p>
+        <span className="flex items-center gap-1 px-2.5 py-1 bg-[#08393A] text-white rounded-full text-[7px]">
+          Done
+          <Image src={Arrow57Deg} alt="" width={7.5} height={7.5} />
+        </span>
+        <div className="relative w-24 h-24 flex items-center justify-center mt-1">
+          <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full" style={{ transform: 'rotate(135deg)' }}>
+            <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="7" strokeLinecap="round" strokeDasharray="188.5 251.3" />
+            <circle cx="50" cy="50" r="40" fill="none" stroke="white" strokeWidth="7" strokeLinecap="round" strokeDasharray={`${(completedPct / 100) * KPI_ARC_LENGTH} ${KPI_CIRCUMFERENCE}`} />
+          </svg>
+          <div className="relative flex flex-col items-center gap-0.5">
+            <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-sm">
+              <User size={14} className="text-[#09232D] fill-current" />
+            </div>
+            <span className="text-white text-[10px] font-bold">{completedPct}%</span>
           </div>
         </div>
       </div>
 
-      {/* ── Stats Bento Grid ── */}
-      <div className="col-span-1 lg:col-span-8 grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5">
-        {stats.map((stat, i) => (
-          <div 
-            key={stat.id} 
-            className="bg-white rounded-[24px] p-4 border border-gray-100 shadow-[0px_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0px_12px_40px_rgba(0,0,0,0.08)] transition-all duration-500 hover:-translate-y-1.5 relative overflow-hidden group flex flex-col justify-between"
-            style={{ animationDelay: `${i * 100}ms` }}
-          >
-            {/* Subtle glow background on hover */}
-            <div 
-              className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"
-              style={{ background: `radial-gradient(circle at 80% 0%, ${stat.color}15, transparent 70%)` }}
-            />
-            
-            <div className="flex items-start justify-between mb-3 z-10 relative">
-              <div 
-                className="w-10 h-10 rounded-[14px] flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-500 group-hover:rotate-3 shadow-sm border border-white/50"
-                style={{ backgroundColor: stat.bg, color: stat.color }}
-              >
-                {stat.icon}
-              </div>
-              <span className="text-[28px] font-black text-[#0B1215] leading-none tracking-tight">{stat.count}</span>
-            </div>
-            
-            <div className="z-10 relative">
-              <h3 className="text-[13px] font-extrabold text-[#0B1215] mb-1">{stat.label}</h3>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-semibold text-gray-400">{stat.pct}% of total</span>
-              </div>
-              
-              <div className="h-2 rounded-full bg-gray-100/80 overflow-hidden shadow-inner">
-                <div
-                  className="h-full rounded-full relative"
-                  style={{
-                    width: `${stat.pct}%`,
-                    backgroundColor: stat.color,
-                    transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)',
-                  }}
-                >
-                  {/* Shimmer effect */}
-                  <div className="absolute top-0 bottom-0 left-0 right-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]" />
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      
     </div>
   );
 }
