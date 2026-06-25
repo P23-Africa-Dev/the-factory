@@ -21,7 +21,7 @@ import { getActiveCompanyContext } from "@/lib/company-context";
 import { PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
 
 const ROLE_OPTIONS = [
-  { label: "Admin", value: "admin" },
+  // { label: "Admin", value: "admin" },
   { label: "Supervisor", value: "supervisor" },
   { label: "Agent", value: "agent" },
 ] as const;
