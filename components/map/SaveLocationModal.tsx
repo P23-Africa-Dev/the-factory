@@ -6,6 +6,7 @@ import { Building2, Loader2, Mail, MapPin, Phone, X } from "lucide-react";
 
 import { SAVED_LOCATION_TYPES } from "@/lib/map/location-types";
 import type { SavedLocation } from "@/lib/api/saved-locations";
+import type { CrmLabel } from "@/lib/api/crm";
 
 export type SaveLocationFormValues = {
   name: string;
@@ -20,6 +21,7 @@ export type SaveLocationSubmitPayload = SaveLocationFormValues & {
   latitude: number;
   longitude: number;
   save_to_crm?: boolean;
+  crm_status?: string;
 };
 
 interface SaveLocationModalProps {
@@ -32,6 +34,7 @@ interface SaveLocationModalProps {
   addressLoading?: boolean;
   initial?: SavedLocation | null;
   busy?: boolean;
+  crmLabels?: CrmLabel[];
   onSubmit: (payload: SaveLocationSubmitPayload) => void;
   onClose: () => void;
 }
@@ -57,6 +60,7 @@ export function SaveLocationModal({
   addressLoading = false,
   initial,
   busy = false,
+  crmLabels = [],
   onSubmit,
   onClose,
 }: SaveLocationModalProps) {
@@ -72,6 +76,8 @@ export function SaveLocationModal({
   }));
   const [addressDirty, setAddressDirty] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const defaultCrmStatus = crmLabels.find((l) => l.is_default)?.slug ?? crmLabels[0]?.slug ?? "newly_lead";
+  const [crmStatus, setCrmStatus] = useState(defaultCrmStatus);
 
   const title = mode === "create" ? "Save Location" : "Edit Location";
 
@@ -104,7 +110,7 @@ export function SaveLocationModal({
       address: addressValue,
       latitude,
       longitude,
-      ...(mode === "create" ? { save_to_crm: saveToCrm } : {}),
+      ...(mode === "create" ? { save_to_crm: saveToCrm, ...(saveToCrm ? { crm_status: crmStatus } : {}) } : {}),
     });
   };
 
@@ -217,6 +223,23 @@ export function SaveLocationModal({
               className={`${BASE_INPUT} px-3 py-2.5 border-gray-200 focus:border-[#094B5C] resize-none`}
             />
           </div>
+
+          {mode === "create" && crmLabels.length > 0 && (
+            <div>
+              <FieldLabel>CRM Status (when saving to CRM)</FieldLabel>
+              <select
+                value={crmStatus}
+                onChange={(e) => setCrmStatus(e.target.value)}
+                className={`${BASE_INPUT} px-3 py-2.5 border-gray-200 focus:border-[#094B5C] appearance-none`}
+              >
+                {crmLabels.map((label) => (
+                  <option key={label.slug} value={label.slug}>
+                    {label.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {mode === "edit" && initial?.linked_to_crm && (
             <p className="text-[11px] font-medium text-[#094B5C] bg-[#094B5C]/8 rounded-xl px-3 py-2">

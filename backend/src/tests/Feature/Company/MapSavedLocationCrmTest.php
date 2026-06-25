@@ -203,6 +203,44 @@ class MapSavedLocationCrmTest extends TestCase
         $this->assertSame(MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY, $legacyPipeline->system_key);
     }
 
+    public function test_save_to_crm_rejects_invalid_crm_status(): void
+    {
+        [$company, $admin] = $this->seedCompany();
+
+        $response = $this->withToken($admin->createToken('admin-invalid-crm-status', ['*'])->plainTextToken)
+            ->postJson('/api/v1/admin/locations', [
+                'company_id' => $company->id,
+                'name' => 'Invalid Status Pin',
+                'latitude' => 6.4400000,
+                'longitude' => 3.4500000,
+                'save_to_crm' => true,
+                'crm_status' => 'not_a_real_label',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['status']);
+    }
+
+    public function test_save_to_crm_creates_notification_for_management(): void
+    {
+        [$company, $admin] = $this->seedCompany();
+
+        $this->withToken($admin->createToken('admin-map-notify', ['*'])->plainTextToken)
+            ->postJson('/api/v1/admin/locations', [
+                'company_id' => $company->id,
+                'name' => 'Notify Site',
+                'latitude' => 6.4400000,
+                'longitude' => 3.4500000,
+                'save_to_crm' => true,
+            ])
+            ->assertCreated();
+
+        $this->assertDatabaseHas('app_notifications', [
+            'company_id' => $company->id,
+            'type' => 'crm.lead_created',
+        ]);
+    }
+
     /**
      * @return array{0: Company, 1: User}
      */

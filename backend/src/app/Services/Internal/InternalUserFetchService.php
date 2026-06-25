@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace App\Services\Internal;
 
 use App\Models\User;
+use App\Services\Workforce\AgentPresenceService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Builder;
 
 class InternalUserFetchService
 {
-    public function __construct(private readonly InternalUserAccessService $accessService) {}
+    public function __construct(
+        private readonly InternalUserAccessService $accessService,
+        private readonly AgentPresenceService $presenceService,
+    ) {}
 
     /**
      * Fetch internal users within the authenticated user's company context.
@@ -85,8 +89,11 @@ class InternalUserFetchService
             $status = (string) $filters['status'];
 
             if ($status === 'active') {
+                $this->applyLivePresenceFilter($query, (int) $context['company']->id);
+            } elseif ($status === 'offline') {
                 $query->where('onboarding_status', 'active')
                     ->where('is_active', true);
+                $this->applyAbsentPresenceFilter($query, (int) $context['company']->id);
             } elseif ($status === 'pending_onboarding') {
                 $query->where('onboarding_status', 'pending_onboarding');
             } elseif ($status === 'inactive') {
@@ -113,6 +120,59 @@ class InternalUserFetchService
         $perPage = (int) ($filters['per_page'] ?? 20);
 
         return $query->paginate($perPage)->withQueryString();
+    }
+
+    /**
+     * @param  list<int>  $userIds
+     * @return array<int, array<string, mixed>>
+     */
+    public function resolvePresenceForUsers(int $companyId, array $userIds): array
+    {
+        return $this->presenceService->resolveForCompany($companyId, $userIds);
+    }
+
+    private function applyLivePresenceFilter(Builder $query, int $companyId): void
+    {
+        $mapCutoff = $this->presenceService->mapActiveCutoff();
+        $sessionCutoff = $this->presenceService->sessionOnlineCutoff();
+
+        $query->where('onboarding_status', 'active')
+            ->where('is_active', true)
+            ->where(function (Builder $outer) use ($companyId, $mapCutoff, $sessionCutoff): void {
+                $outer->whereExists(function ($sub) use ($companyId, $mapCutoff): void {
+                    $sub->selectRaw('1')
+                        ->from('agent_location_snapshots')
+                        ->whereColumn('agent_location_snapshots.user_id', 'users.id')
+                        ->where('agent_location_snapshots.company_id', $companyId)
+                        ->where('agent_location_snapshots.last_seen_at', '>=', $mapCutoff);
+                })->orWhereExists(function ($sub) use ($sessionCutoff): void {
+                    $sub->selectRaw('1')
+                        ->from('personal_access_tokens')
+                        ->whereColumn('personal_access_tokens.tokenable_id', 'users.id')
+                        ->where('personal_access_tokens.tokenable_type', User::class)
+                        ->where('personal_access_tokens.last_used_at', '>=', $sessionCutoff);
+                });
+            });
+    }
+
+    private function applyAbsentPresenceFilter(Builder $query, int $companyId): void
+    {
+        $mapCutoff = $this->presenceService->mapActiveCutoff();
+        $sessionCutoff = $this->presenceService->sessionOnlineCutoff();
+
+        $query->whereNotExists(function ($sub) use ($companyId, $mapCutoff): void {
+            $sub->selectRaw('1')
+                ->from('agent_location_snapshots')
+                ->whereColumn('agent_location_snapshots.user_id', 'users.id')
+                ->where('agent_location_snapshots.company_id', $companyId)
+                ->where('agent_location_snapshots.last_seen_at', '>=', $mapCutoff);
+        })->whereNotExists(function ($sub) use ($sessionCutoff): void {
+            $sub->selectRaw('1')
+                ->from('personal_access_tokens')
+                ->whereColumn('personal_access_tokens.tokenable_id', 'users.id')
+                ->where('personal_access_tokens.tokenable_type', User::class)
+                ->where('personal_access_tokens.last_used_at', '>=', $sessionCutoff);
+        });
     }
 
     private function baseQuery(int $companyId): Builder

@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\Company\CompanyContextService;
 use App\Services\Notification\NotificationService;
 use App\Support\AvatarUrlResolver;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -38,51 +39,7 @@ class LeadService
         $this->ensureDefaultCrmSetup($companyId);
 
         $query = $this->baseQuery($companyId);
-
-        if ($role === 'agent') {
-            $source = isset($filters['source']) ? (string) $filters['source'] : '';
-            if ($source !== '' && $this->isAgentUploadSourceFilter($source)) {
-                $query->where('created_by_user_id', (int) $user->id);
-            } else {
-                $this->applyAgentLeadScope($query, (int) $user->id);
-            }
-        }
-
-        if (! empty($filters['status'])) {
-            $query->where('status', (string) $filters['status']);
-        }
-
-        if (! empty($filters['priority'])) {
-            $query->where('priority', (string) $filters['priority']);
-        }
-
-        if (! empty($filters['pipeline_id'])) {
-            $query->where('pipeline_id', (int) $filters['pipeline_id']);
-        }
-
-        if (! empty($filters['assigned_to_user_id'])) {
-            $query->where('assigned_to_user_id', (int) $filters['assigned_to_user_id']);
-        }
-
-        if (! empty($filters['source'])) {
-            $source = (string) $filters['source'];
-
-            if ($this->isAgentUploadSourceFilter($source)) {
-                $this->applyAgentUploadedSourceFilter($query);
-            } else {
-                $query->where('source', 'like', '%' . $source . '%');
-            }
-        }
-
-        if (! empty($filters['search'])) {
-            $search = trim((string) $filters['search']);
-            $query->where(function (Builder $builder) use ($search): void {
-                $builder->where('name', 'like', '%' . $search . '%')
-                    ->orWhere('email', 'like', '%' . $search . '%')
-                    ->orWhere('phone', 'like', '%' . $search . '%')
-                    ->orWhere('location', 'like', '%' . $search . '%');
-            });
-        }
+        $this->applyLeadListFilters($query, $user, $role, $filters);
 
         $perPage = (int) ($filters['per_page'] ?? 20);
 
@@ -110,18 +67,28 @@ class LeadService
             $this->assertMemberInCompany($companyId, $assignedToUserId, 'assigned_to_user_id');
         }
 
+        $source = $this->normalizeLeadSource(
+            array_key_exists('source', $data) ? ($data['source'] !== null ? (string) $data['source'] : null) : null,
+            $role,
+        );
+
         $lead = Lead::create([
             'company_id' => $companyId,
             'pipeline_id' => $pipelineId,
+            'company_location_id' => isset($data['company_location_id']) ? (int) $data['company_location_id'] : null,
             'created_by_user_id' => $user->id,
             'assigned_to_user_id' => $assignedToUserId,
             'name' => $data['name'],
             'email' => $data['email'] ?? null,
             'phone' => $data['phone'] ?? null,
             'location' => $data['location'] ?? null,
-            'source' => $data['source'] ?? null,
+            'source' => $source,
             'status' => $data['status'],
             'priority' => $data['priority'],
+            'budget_amount' => $data['budget_amount'] ?? null,
+            'budget_currency' => isset($data['budget_currency']) && $data['budget_currency'] !== ''
+                ? strtoupper((string) $data['budget_currency'])
+                : null,
             'next_action' => $data['next_action'] ?? null,
             'last_interaction' => $data['last_interaction'] ?? null,
             'last_interaction_at' => $data['last_interaction_at'] ?? null,
@@ -224,6 +191,10 @@ class LeadService
             'source' => array_key_exists('source', $data) ? $data['source'] : $lead->source,
             'status' => $data['status'] ?? $lead->status,
             'priority' => $data['priority'] ?? $lead->priority,
+            'budget_amount' => array_key_exists('budget_amount', $data) ? $data['budget_amount'] : $lead->budget_amount,
+            'budget_currency' => array_key_exists('budget_currency', $data)
+                ? ($data['budget_currency'] !== null ? strtoupper((string) $data['budget_currency']) : null)
+                : $lead->budget_currency,
             'next_action' => array_key_exists('next_action', $data) ? $data['next_action'] : $lead->next_action,
             'last_interaction' => array_key_exists('last_interaction', $data) ? $data['last_interaction'] : $lead->last_interaction,
             'last_interaction_at' => array_key_exists('last_interaction_at', $data) ? $data['last_interaction_at'] : $lead->last_interaction_at,
@@ -454,6 +425,106 @@ class LeadService
             'top_agent' => $topAgent,
             'recent_leads' => $recentLeads,
             'source_filter' => 'agent_upload',
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $filters
+     * @return array{
+     *     total_leads: int,
+     *     week_growth_percent: int,
+     *     week_growth_direction: string,
+     *     daily_trend: array<int, array{day: string, value: int, date: string}>,
+     *     month_new_leads: int,
+     *     month_label: string,
+     *     highlight_day: string|null
+     * }
+     */
+    public function leadsAnalytics(User $user, ?int $companyId = null, array $filters = []): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
+        $this->ensureDefaultCrmSetup($resolvedCompanyId);
+
+        $query = Lead::query()->where('company_id', $resolvedCompanyId);
+        $this->applyLeadListFilters($query, $user, $role, $filters);
+
+        $totalLeads = (int) (clone $query)->count();
+
+        $currentWeekStart = now()->startOfWeek(CarbonInterface::MONDAY)->startOfDay();
+        $currentWeekEnd = now()->endOfWeek(CarbonInterface::SUNDAY)->endOfDay();
+        $previousWeekStart = $currentWeekStart->copy()->subWeek();
+        $previousWeekEnd = $currentWeekEnd->copy()->subWeek();
+
+        $currentWeekCreated = (int) (clone $query)
+            ->whereBetween('created_at', [$currentWeekStart, $currentWeekEnd])
+            ->count();
+        $previousWeekCreated = (int) (clone $query)
+            ->whereBetween('created_at', [$previousWeekStart, $previousWeekEnd])
+            ->count();
+
+        if ($previousWeekCreated > 0) {
+            $weekGrowthPercent = (int) round((($currentWeekCreated - $previousWeekCreated) / $previousWeekCreated) * 100);
+        } elseif ($currentWeekCreated > 0) {
+            $weekGrowthPercent = 100;
+        } else {
+            $weekGrowthPercent = 0;
+        }
+
+        $weekGrowthDirection = match (true) {
+            $weekGrowthPercent > 0 => 'up',
+            $weekGrowthPercent < 0 => 'down',
+            default => 'flat',
+        };
+
+        $weekdayLabels = [
+            1 => 'Mon',
+            2 => 'Tues',
+            3 => 'Weds',
+            4 => 'Thurs',
+            5 => 'Fri',
+            6 => 'Sat',
+        ];
+
+        $dailyTrend = [];
+        $highlightDay = null;
+        $highlightValue = -1;
+
+        for ($offset = 0; $offset < 6; $offset++) {
+            $day = $currentWeekStart->copy()->addDays($offset);
+            $dayStart = $day->copy()->startOfDay();
+            $dayEnd = $day->copy()->endOfDay();
+            $value = $day->isFuture()
+                ? 0
+                : (int) (clone $query)->whereBetween('created_at', [$dayStart, $dayEnd])->count();
+            $label = $weekdayLabels[$day->dayOfWeek] ?? $day->format('D');
+
+            $dailyTrend[] = [
+                'day' => $label,
+                'value' => $value,
+                'date' => $day->toDateString(),
+            ];
+
+            if ($value > $highlightValue) {
+                $highlightValue = $value;
+                $highlightDay = $label;
+            }
+        }
+
+        $monthStart = now()->startOfMonth()->startOfDay();
+        $monthNewLeads = (int) (clone $query)
+            ->where('created_at', '>=', $monthStart)
+            ->count();
+
+        return [
+            'total_leads' => $totalLeads,
+            'week_growth_percent' => $weekGrowthPercent,
+            'week_growth_direction' => $weekGrowthDirection,
+            'daily_trend' => $dailyTrend,
+            'month_new_leads' => $monthNewLeads,
+            'month_label' => now()->format('F'),
+            'highlight_day' => $highlightDay,
         ];
     }
 
@@ -753,7 +824,7 @@ class LeadService
             $data = $validation['normalized'];
             $normalizedSource = $data['source'];
             if ($role === 'agent' && $normalizedSource === null) {
-                $normalizedSource = 'agent upload';
+                $normalizedSource = 'agent_upload';
             }
 
             $this->create($user, [
@@ -766,6 +837,8 @@ class LeadService
                 'source' => $normalizedSource,
                 'status' => $data['status'],
                 'priority' => $data['priority'],
+                'budget_amount' => $data['budget_amount'] ?? null,
+                'budget_currency' => $data['budget_currency'] ?? null,
                 'assigned_to_user_id' => $role === 'agent' ? (int) $user->id : null,
             ]);
             $importedCount++;
@@ -834,6 +907,57 @@ class LeadService
             $builder->where('created_by_user_id', $userId)
                 ->orWhere('assigned_to_user_id', $userId);
         });
+    }
+
+    /**
+     * @param array<string,mixed> $filters
+     */
+    private function applyLeadListFilters(Builder $query, User $user, string $role, array $filters): void
+    {
+        if ($role === 'agent') {
+            $source = isset($filters['source']) ? (string) $filters['source'] : '';
+            if ($source !== '' && $this->isAgentUploadSourceFilter($source)) {
+                $query->where('created_by_user_id', (int) $user->id);
+            } else {
+                $this->applyAgentLeadScope($query, (int) $user->id);
+            }
+        }
+
+        if (! empty($filters['status'])) {
+            $query->where('status', (string) $filters['status']);
+        }
+
+        if (! empty($filters['priority'])) {
+            $query->where('priority', (string) $filters['priority']);
+        }
+
+        if (! empty($filters['pipeline_id'])) {
+            $query->where('pipeline_id', (int) $filters['pipeline_id']);
+        }
+
+        if (! empty($filters['assigned_to_user_id'])) {
+            $query->where('assigned_to_user_id', (int) $filters['assigned_to_user_id']);
+        }
+
+        if (! empty($filters['source'])) {
+            $source = (string) $filters['source'];
+
+            if ($this->isAgentUploadSourceFilter($source)) {
+                $this->applyAgentUploadedSourceFilter($query);
+            } else {
+                $query->where('source', 'like', '%' . $source . '%');
+            }
+        }
+
+        if (! empty($filters['search'])) {
+            $search = trim((string) $filters['search']);
+            $query->where(function (Builder $builder) use ($search): void {
+                $builder->where('name', 'like', '%' . $search . '%')
+                    ->orWhere('email', 'like', '%' . $search . '%')
+                    ->orWhere('phone', 'like', '%' . $search . '%')
+                    ->orWhere('location', 'like', '%' . $search . '%');
+            });
+        }
     }
 
     private function assertMemberInCompany(int $companyId, int $userId, string $field): void
@@ -1056,6 +1180,8 @@ class LeadService
         $source = trim((string) ($row['source'] ?? ''));
         $status = trim((string) ($row['status'] ?? 'newly_lead'));
         $priority = trim((string) ($row['priority'] ?? 'medium'));
+        $budgetAmountRaw = trim((string) ($row['budget_amount'] ?? ''));
+        $budgetCurrency = strtoupper(trim((string) ($row['budget_currency'] ?? '')));
 
         $errors = [];
 
@@ -1071,6 +1197,22 @@ class LeadService
             $errors[] = 'Priority must be one of low, medium, high, urgent.';
         }
 
+        $budgetAmount = null;
+        if ($budgetAmountRaw !== '') {
+            if (! is_numeric(str_replace(',', '', $budgetAmountRaw))) {
+                $errors[] = 'Budget amount must be numeric.';
+            } else {
+                $budgetAmount = (float) str_replace(',', '', $budgetAmountRaw);
+                if ($budgetAmount < 0) {
+                    $errors[] = 'Budget amount must be zero or greater.';
+                }
+            }
+        }
+
+        if ($budgetCurrency !== '' && ! preg_match('/^[A-Z]{3}$/', $budgetCurrency)) {
+            $errors[] = 'Budget currency must be a 3-letter ISO code.';
+        }
+
         if (! LeadLabel::query()->where('company_id', $companyId)->where('slug', $status)->exists()) {
             $errors[] = 'Status/label is not recognized.';
         }
@@ -1084,10 +1226,36 @@ class LeadService
                 'source' => $source !== '' ? $source : null,
                 'status' => $status,
                 'priority' => $priority,
+                'budget_amount' => $budgetAmount,
+                'budget_currency' => $budgetCurrency !== '' ? $budgetCurrency : ($budgetAmount !== null ? 'USD' : null),
                 'row_index' => $rowIndex,
             ],
             'errors' => $errors,
         ];
+    }
+
+    private function normalizeLeadSource(?string $source, string $role): ?string
+    {
+        if ($source === null || trim($source) === '') {
+            return $role === 'agent' ? 'agent_upload' : null;
+        }
+
+        $normalized = Str::of($source)
+            ->replace(['-', '_'], ' ')
+            ->trim()
+            ->lower()
+            ->value();
+
+        if (in_array($normalized, [
+            'agent upload',
+            'agent uploaded',
+            'uploaded by agent',
+            'uploaded by agents',
+        ], true)) {
+            return 'agent_upload';
+        }
+
+        return trim($source);
     }
 
     private function notifyLeadRecipients(

@@ -91,11 +91,13 @@ class MapSavedLeadBridgeService
         return DB::transaction(function () use ($user, $location, $companyId, $status): Lead {
             $pipeline = $this->ensureMapPipeline($companyId);
 
-            $lead = Lead::query()->create([
+            /** @var LeadService $leadService */
+            $leadService = app(LeadService::class);
+
+            $lead = $leadService->create($user, [
                 'company_id' => $companyId,
                 'pipeline_id' => $pipeline->id,
-                'created_by_user_id' => $user->id,
-                'assigned_to_user_id' => $user->id,
+                'company_location_id' => $location->id,
                 'name' => $location->name,
                 'email' => $location->email,
                 'phone' => $location->contact_number,
@@ -104,7 +106,6 @@ class MapSavedLeadBridgeService
                 'status' => $status,
                 'priority' => 'medium',
                 'meta' => $this->leadMetaFromLocation($location),
-                'company_location_id' => $location->id,
             ]);
 
             $location->update(['crm_lead_id' => $lead->id]);

@@ -14,6 +14,9 @@ import {
   useSavedLocations,
   useUpdateSavedLocation,
 } from "@/hooks/use-saved-locations";
+import { useCrmLabels } from "@/hooks/use-crm";
+import { useAuthStore } from "@/store/auth";
+import { getActiveCompanyContext } from "@/lib/company-context";
 import type { SavedLocation } from "@/lib/api/saved-locations";
 import {
   createSavedLocationMarkerElement,
@@ -84,6 +87,9 @@ export function SavedLocationsLayer({
   readOnly = false,
   visibleIds = null,
 }: SavedLocationsLayerProps) {
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const { data: crmLabels = [] } = useCrmLabels(companyId ?? undefined);
   const { data: locations = [] } = useSavedLocations();
   const permissions = useSavedLocationPermissions();
   const createMutation = useCreateSavedLocation();
@@ -532,6 +538,7 @@ export function SavedLocationsLayer({
         latitude: payload.latitude,
         longitude: payload.longitude,
         save_to_crm: payload.save_to_crm ?? false,
+        ...(payload.save_to_crm && payload.crm_status ? { crm_status: payload.crm_status } : {}),
       },
       {
         onSuccess: (res) => {
@@ -679,6 +686,7 @@ export function SavedLocationsLayer({
           address={pendingPin.address}
           addressLoading={pendingPin.addressLoading}
           busy={createMutation.isPending}
+          crmLabels={crmLabels}
           onSubmit={handleCreateSubmit}
           onClose={() => setPendingPin(null)}
         />

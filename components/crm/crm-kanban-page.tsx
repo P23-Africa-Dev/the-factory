@@ -6,6 +6,7 @@ import { getActiveCompanyContext } from "@/lib/company-context";
 import { useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { useInternalUsers } from "@/hooks/use-internal-users";
 import type { ApiLeadStatus, ApiRoleBasePath, LeadApiItem } from "@/lib/api/crm";
+import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm";
 import type { DndContainer, DndItem } from "@/types/operations";
 import { AddLeadModal } from "./add-lead-modal";
 import {
@@ -55,17 +56,17 @@ function toRelativeTime(value?: string | null): string {
 }
 
 function mapLeadToItem(lead: LeadApiItem): DndItem {
-    const rawValue = typeof lead.meta?.value === 'number' ? lead.meta.value : 0;
+    const rawValue = resolveLeadBudgetAmount(lead);
     return {
         id: String(lead.id),
         label: lead.name,
         description: lead.location || lead.source || lead.email || lead.phone || "No details",
-        location: "0",
+        location: lead.location ?? "",
         assignedBy: lead.assignee?.name ?? "Unassigned",
         assignedToUserId: lead.assigned_to_user_id ?? null,
         time: toRelativeTime(lead.updated_at),
         priority: lead.priority ?? "medium",
-        value: `$ ${rawValue.toLocaleString()}`,
+        value: formatLeadBudgetDisplay(lead),
         rawValue,
     };
 }

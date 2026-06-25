@@ -278,7 +278,12 @@ class ActionToolRegistry
         ])->validate();
 
         $meta = is_array($validated['meta'] ?? null) ? $validated['meta'] : [];
-        foreach (['industry', 'contact_person', 'notes'] as $metaField) {
+        $noteText = isset($validated['notes']) && is_string($validated['notes'])
+            ? trim($validated['notes'])
+            : '';
+        unset($validated['notes']);
+
+        foreach (['industry', 'contact_person'] as $metaField) {
             if (isset($validated[$metaField]) && is_string($validated[$metaField]) && trim($validated[$metaField]) !== '') {
                 $meta[$metaField] = trim($validated[$metaField]);
             }
@@ -292,6 +297,10 @@ class ActionToolRegistry
             ...$validated,
             'company_id' => $companyId,
         ]);
+
+        if ($noteText !== '') {
+            $this->leadService->addNote($user, $lead, $noteText, $companyId);
+        }
 
         return [
             'tool' => 'crm.create_lead',

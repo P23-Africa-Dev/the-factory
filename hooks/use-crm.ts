@@ -10,6 +10,7 @@ import {
     createCrmPipeline,
     createLead,
     getAgentUploadsOverview,
+    getCrmLeadsAnalytics,
     getLead,
     getLeadPipeline,
     importCrmLeads,
@@ -27,6 +28,8 @@ import {
     type AddLeadNotePayload,
     type AgentUploadOverview,
     type ApiRoleBasePath,
+    type CrmLeadsAnalytics,
+    type CrmLeadsAnalyticsParams,
     type CreateLeadPayload,
     type LeadActivity,
     type LeadApiItem,
@@ -55,6 +58,8 @@ export const CRM_KEYS = {
         ["crm", "labels", basePath, companyId] as const,
     agentUploadsOverview: (companyId: number | string | undefined, basePath: ApiRoleBasePath) =>
         ["crm", "agent-uploads-overview", basePath, companyId] as const,
+    leadsAnalytics: (params: CrmLeadsAnalyticsParams, basePath: ApiRoleBasePath) =>
+        ["crm", "leads-analytics", basePath, params] as const,
 };
 
 export type LeadsResult = {
@@ -164,6 +169,23 @@ export function useAgentUploadsOverview(
             return res.data;
         },
         enabled: !!token && !!companyId,
+        staleTime: 1000 * 60,
+    });
+}
+
+export function useCrmLeadsAnalytics(
+    params: CrmLeadsAnalyticsParams = {},
+    basePath: ApiRoleBasePath = "/admin"
+) {
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useQuery({
+        queryKey: CRM_KEYS.leadsAnalytics(params, basePath),
+        queryFn: async (): Promise<CrmLeadsAnalytics> => {
+            const res = await getCrmLeadsAnalytics(params, token, basePath);
+            return res.data;
+        },
+        enabled: !!token && !!params.company_id,
         staleTime: 1000 * 60,
     });
 }

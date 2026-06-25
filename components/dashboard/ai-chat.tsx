@@ -21,6 +21,7 @@ import {
 } from "@/lib/format-forecast-overview";
 import { resolveCopilotGeolocationContext } from "@/lib/copilot-geolocation";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { useCrmLabels } from "@/hooks/use-crm";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
@@ -231,6 +232,10 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const avatarSrc = getSafeAvatarSrc(user?.avatar) ?? "/avatars/male-avatar.png";
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const isAgent = role === "agent";
+  const { data: crmLabels = [] } = useCrmLabels(companyId ?? undefined);
+  const leadStatusOptions: EditFieldOption[] = crmLabels.length > 0
+    ? crmLabels.map((label) => ({ value: label.slug, label: label.name }))
+    : LEAD_STATUS_OPTIONS;
   const {
     messages,
     isStreaming,
@@ -954,7 +959,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         { key: "email", label: "Email", control: "text" },
         { key: "industry", label: "Industry", control: "text" },
         { key: "contact_person", label: "Contact Person", control: "text" },
-        { key: "status", label: "Status", control: "select", options: LEAD_STATUS_OPTIONS },
+        { key: "status", label: "Status", control: "select", options: leadStatusOptions },
         { key: "priority", label: "Priority", control: "select", options: PRIORITY_OPTIONS },
         { key: "next_action", label: "Next Action", control: "textarea" },
         { key: "notes", label: "Notes", control: "textarea" },
@@ -1257,7 +1262,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         { key: "email", label: "Email", value: formatPreviewValue("email", args.email) },
         { key: "industry", label: "Industry", value: formatPreviewValue("industry", args.industry) },
         { key: "contact_person", label: "Contact Person", value: formatPreviewValue("contact_person", args.contact_person) },
-        { key: "status", label: "Status", value: formatPreviewValue("status", args.status) },
+        { key: "status", label: "Status", value: crmLabels.find((l) => l.slug === args.status)?.name ?? formatPreviewValue("status", args.status) },
         { key: "priority", label: "Priority", value: formatPreviewValue("priority", args.priority) },
       ];
     }

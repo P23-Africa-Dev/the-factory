@@ -8,6 +8,7 @@ import dynamic from 'next/dynamic';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import {
   useGeolocation,
+  useMapPresenceHeartbeat,
   useStartTask,
   useActiveTracking,
   useTaskRoute,
@@ -909,6 +910,14 @@ function MapContent() {
   const { data: activeTask } = useTask(resolvedTaskId ? String(resolvedTaskId) : '');
   const { data: trackingTask } = useTask(trackingTaskId ? String(trackingTaskId) : '');
   const companyId = trackingTask?.companyId ?? activeTask?.companyId ?? getActiveCompanyId() ?? 0;
+
+  useMapPresenceHeartbeat({
+    companyId: companyId > 0 ? companyId : null,
+    enabled: isOnline && trackingTaskId == null && activeTaskId == null,
+    latitude: lastPosition?.coords.latitude ?? null,
+    longitude: lastPosition?.coords.longitude ?? null,
+    accuracyMeters: lastPosition?.coords.accuracy ?? null,
+  });
 
   useEffect(() => {
     if (!taskIdParam || !trackingTask) return;

@@ -27,6 +27,7 @@ export type CreateSavedLocationInput = {
   contactNumber?: string | null;
   email?: string | null;
   saveToCrm?: boolean;
+  crmStatus?: string;
 };
 
 export type SavedLocationFilters = {

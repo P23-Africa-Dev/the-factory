@@ -82,6 +82,7 @@ export const locationApi = {
       contact_number: input.contactNumber ?? undefined,
       email: input.email ?? undefined,
       save_to_crm: input.saveToCrm ?? false,
+      ...(input.saveToCrm && input.crmStatus ? { crm_status: input.crmStatus } : {}),
     };
 
     if (isOffline()) {

@@ -4,6 +4,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from './ops-table';
+import type { AgentPresence } from '@/lib/agent-presence';
+import { getAgentPresenceBadgeClass } from '@/lib/agent-presence';
 
 export type AgentItem = {
   id: string;
@@ -16,7 +18,11 @@ export type AgentItem = {
   status: string;
   time: string;
   avatar: string;
+  /** @deprecated Use isMapActive for map-live styling */
   active: boolean;
+  isMapActive: boolean;
+  isSessionOnline: boolean;
+  presence?: AgentPresence;
   location?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -111,7 +117,7 @@ export function AgentList({
                     label={agent.status}
                     subText={agent.time}
                     isSelected={isSelected}
-                    badgeClass={agent.active ? 'bg-[#2F6C0E] text-white' : 'bg-[#EF7129] text-white'}
+                    badgeClass={getAgentPresenceBadgeClass(agent)}
                   />
                 </OpsTableRow>
               );

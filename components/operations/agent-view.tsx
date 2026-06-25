@@ -11,22 +11,18 @@ import { useInternalUsersPaginated } from "@/hooks/use-internal-users";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  getAgentPresenceLabels,
+  mapApiPresence,
+} from "@/lib/agent-presence";
+import type { InternalUserListItem } from "@/lib/api/internal-users";
 
-function mapToAgentItem(input: {
-  id: number;
-  name: string;
-  email: string;
-  role: string;
-  assigned_zone?: string | null;
-  phone_number?: string | null;
-  avatar_url?: string | null;
-  avatar_key?: string | null;
-  is_active?: boolean;
-  base_salary?: number | null;
-  payroll_salary_type?: "daily" | "monthly" | "weekly" | null;
-  salary_currency?: string | null;
-}): AgentItem {
-  const isActive = Boolean(input.is_active);
+function mapToAgentItem(input: InternalUserListItem): AgentItem {
+  const presence = mapApiPresence(input.presence);
+  const labels = getAgentPresenceLabels(presence, {
+    onboardingStatus: input.onboarding_status,
+    isActive: input.is_active,
+  });
 
   return {
     id: String(input.id),
@@ -35,11 +31,17 @@ function mapToAgentItem(input: {
     description: input.email,
     zone: input.assigned_zone ?? "Unassigned",
     phone: input.phone_number ?? "",
-    role: input.role,
-    status: isActive ? "Active (View on Map)" : "Offline",
-    time: isActive ? "Online" : "Offline",
+    role: input.internal_role ?? input.role,
+    status: labels.badgeLabel,
+    time: labels.subtextLabel,
     avatar: input.avatar_url ?? "/avatars/male-avatar.png",
-    active: isActive,
+    active: labels.isMapActive,
+    isMapActive: labels.isMapActive,
+    isSessionOnline: labels.isSessionOnline,
+    presence,
+    latitude: presence.latitude ?? undefined,
+    longitude: presence.longitude ?? undefined,
+    location: presence.activeTaskTitle ?? null,
     avatarKey: input.avatar_key ?? undefined,
     baseSalary: input.base_salary ?? undefined,
     salaryType: input.payroll_salary_type ?? undefined,
@@ -67,7 +69,7 @@ export function AgentView({ basePath }: { basePath: string }) {
       : statusFilter === "active"
         ? "active"
         : statusFilter === "offline"
-          ? "inactive"
+          ? "offline"
           : "pending_onboarding";
   const zoneParam = zoneFilter === "all" ? undefined : zoneFilter;
 
@@ -79,25 +81,10 @@ export function AgentView({ basePath }: { basePath: string }) {
     search: search.trim() || undefined,
     per_page: 4,
     page,
-  });
+  }, { refetchInterval: 30_000 });
 
   const agents = useMemo(() => {
-    return (paginatedData?.items ?? []).map((item) =>
-      mapToAgentItem({
-        id: item.id,
-        name: item.name,
-        email: item.email,
-        role: item.internal_role ?? item.role,
-        assigned_zone: item.assigned_zone,
-        phone_number: item.phone_number,
-        avatar_url: item.avatar_url,
-        avatar_key: item.avatar_key,
-        is_active: item.is_active,
-        base_salary: item.base_salary,
-        payroll_salary_type: item.payroll_salary_type,
-        salary_currency: item.salary_currency,
-      })
-    );
+    return (paginatedData?.items ?? []).map((item) => mapToAgentItem(item));
   }, [paginatedData]);
 
   const zones = useMemo(() => {

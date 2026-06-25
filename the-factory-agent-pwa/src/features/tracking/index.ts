@@ -1,4 +1,5 @@
 export { useGeolocation } from './hooks/useGeolocation';
+export { useMapPresenceHeartbeat } from './hooks/useMapPresenceHeartbeat';
 export { useLocationReporter } from './hooks/useLocationReporter';
 export { useProximityWatch } from './hooks/useProximityWatch';
 export { useTaskRoute, useStartTask } from './queries';
