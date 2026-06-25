@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
+use Mockery;
 use Tests\TestCase;
 
 final class CopilotActionEngineTest extends TestCase
@@ -346,6 +347,191 @@ final class CopilotActionEngineTest extends TestCase
         $this->assertIsArray($blockingCodes);
         $this->assertContains('used_default_title', $blockingCodes);
         $this->assertContains('used_default_due_date', $blockingCodes);
+    }
+
+    public function test_set_task_for_assignee_returns_confirmation_payload(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+        $kelvin = $this->createCompanyAgent($company, 'Kelvin Hart', 'kelvin.hart@example.com');
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'set a task for kelvin to visit shoprite',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.action_args.assigned_agent_id', $kelvin->id);
+
+        $title = (string) $response->json('data.response.payload.action_args.title');
+        $this->assertStringContainsString('shoprite', strtolower($title));
+
+        $content = strtolower((string) $response->json('data.response.content'));
+        $this->assertStringNotContainsString('task created successfully', $content);
+        $this->assertStringNotContainsString('executing task creation', $content);
+    }
+
+    public function test_multi_turn_task_conversation_creates_task_on_go_ahead(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+        $kelvin = $this->createCompanyAgent($company, 'Kelvin Hart', 'kelvin.hart@example.com');
+
+        $mockRouter = Mockery::mock(\App\Services\AI\Providers\AiProviderRouter::class);
+        $mockRouter
+            ->shouldReceive('routingMetadata')
+            ->andReturn([
+                'provider' => 'openai',
+                'model' => 'gpt-4.1-mini',
+                'purpose' => 'operational',
+            ]);
+        $mockRouter
+            ->shouldReceive('generateForPurpose')
+            ->andReturn('Visit Shoprite, engage store contacts, document observations, and log the visit outcome in CRM.');
+        $this->app->instance(\App\Services\AI\Providers\AiProviderRouter::class, $mockRouter);
+
+        $first = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'set a task for kelvin to visit shoprite',
+            ]);
+
+        $threadId = (string) $first->json('data.thread_id');
+        $this->assertNotSame('', $threadId);
+
+        $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => $threadId,
+                'message' => 'he should do it tomorrow',
+            ])
+            ->assertOk();
+
+        $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => $threadId,
+                'message' => 'priority is medium, description, generate something cool and relative',
+            ])
+            ->assertOk();
+
+        $final = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => $threadId,
+                'message' => 'go ahead',
+            ]);
+
+        $final
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.sources.0', 'tasks.create');
+
+        $this->assertDatabaseHas('tasks', [
+            'company_id' => $company->id,
+            'assigned_agent_id' => $kelvin->id,
+        ]);
+
+        $content = strtolower((string) $final->json('data.response.content'));
+        $this->assertStringContainsString('created successfully', $content);
+        $this->assertStringNotContainsString('executing task creation through', $content);
+    }
+
+    public function test_management_role_can_execute_kpis_create_action(): void
+    {
+        [$company, $owner] = $this->seedCompanyUser('owner');
+        $agent = $this->createCompanyAgent($company, 'John Wick', 'john.wick@example.com');
+
+        $response = $this
+            ->actingAs($owner)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create KPI for retailer visits',
+                'action_confirmed' => true,
+                'action_args' => [
+                    'name' => 'Retailer Visit Target',
+                    'category' => 'customer_visits',
+                    'objective' => 'Increase qualified retailer visits across the assigned territory.',
+                    'target_value' => '50 visits',
+                    'expected_outcome' => 'Reach 50 qualified retailer visits within the KPI period.',
+                    'start_date' => now()->toDateString(),
+                    'end_date' => now()->addMonth()->toDateString(),
+                    'priority' => 'high',
+                    'assigned_to_user_id' => $agent->id,
+                ],
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'kpis.create')
+            ->assertJsonPath('data.response.sources.0', 'kpis.create');
+
+        $this->assertDatabaseHas('kpis', [
+            'company_id' => $company->id,
+            'name' => 'Retailer Visit Target',
+            'assigned_to_user_id' => $agent->id,
+        ]);
+    }
+
+    public function test_agent_is_denied_from_kpis_create_action(): void
+    {
+        [$company, $agent] = $this->seedCompanyUser('agent');
+
+        $response = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'create kpi now',
+                'action_confirmed' => true,
+                'action_args' => [
+                    'name' => 'Unauthorized KPI',
+                    'category' => 'sales',
+                    'objective' => 'Agent should not be able to create this KPI record.',
+                    'target_value' => '10 sales',
+                    'expected_outcome' => 'This KPI creation should be denied by policy.',
+                    'start_date' => now()->toDateString(),
+                    'end_date' => now()->addMonth()->toDateString(),
+                    'priority' => 'medium',
+                ],
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'kpis.create')
+            ->assertJsonPath('data.response.payload.denied', true);
+
+        $this->assertDatabaseMissing('kpis', [
+            'name' => 'Unauthorized KPI',
+        ]);
+    }
+
+    public function test_kpis_create_confirmation_payload_parses_labeled_message(): void
+    {
+        [$company, $owner] = $this->seedCompanyUser('owner');
+        $agent = $this->createCompanyAgent($company, 'John Wick', 'john.wick@example.com');
+
+        $response = $this
+            ->actingAs($owner)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create KPI. KPI name: Retail Visits. Objective: Increase qualified retailer visits in Lagos. Target value: 50 visits. Expected outcome: Reach 50 qualified retailer sign-ups this month. Priority: high. Assign to: John Wick',
+                'action_confirmed' => false,
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'kpis.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.action_args.name', 'Retail Visits')
+            ->assertJsonPath('data.response.payload.action_args.target_value', '50 visits')
+            ->assertJsonPath('data.response.payload.action_args.assigned_to_user_id', $agent->id);
     }
 
     public function test_confirmed_action_can_resolve_assignee_from_inline_edit_field(): void

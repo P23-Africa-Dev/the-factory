@@ -43,6 +43,7 @@ class ToolPolicyService
         'projects.create',
         'crm.log_visit',
         'crm.create_lead',
+        'kpis.create',
     ];
 
     private const ACTION_TOOLS_AGENT = [

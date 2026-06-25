@@ -12,7 +12,10 @@ class IntentClassifier
 
         $actionPatterns = [
             'tasks.create' => [
-                '/\b(create|add|open|new)\s+(a\s+|an\s+)?task\b/i',
+                '/\b(create|add|open|new|set|assign|give)\s+(a\s+|an\s+)?task\b/i',
+                '/\b(set|assign|give)\b.{0,40}\btask\b/i',
+                '/\btask\b.{0,50}\bfor\b/i',
+                '/\bcreate\s+task\b/i',
             ],
             'tasks.reassign' => [
                 '/\b(reassign|transfer|move|change)\s+(the\s+)?task\b/i',
@@ -41,6 +44,11 @@ class IntentClassifier
                 '/\b(add|create|register|save|new)\b.{0,60}\b(lead|crm\s+lead|crm\s+record)\b/i',
                 '/\b(add|create|register)\b.{0,40}\b(business|company)\b.{0,40}\b(to\s+)?(crm|pipeline)\b/i',
                 '/\bnew\s+lead\b/i',
+            ],
+            'kpis.create' => [
+                '/\b(create|add|set|define|new)\b.{0,60}\bkpi\b/i',
+                '/\b(create|add|set|define)\b.{0,60}\b(key\s*performance\s*indicator|performance\s*target)\b/i',
+                '/\bkpi\s+name\b/i',
             ],
         ];
 
