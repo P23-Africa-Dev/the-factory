@@ -90,4 +90,37 @@ final class IntentClassifierTest extends TestCase
         $this->assertSame('action', $intent['type']);
         $this->assertSame('crm.create_lead', $intent['tool']);
     }
+
+    public function test_classifies_crm_leads_list_phrases(): void
+    {
+        $classifier = new IntentClassifier();
+
+        foreach ([
+            'Can you show me the leads on my CRM',
+            'provide me the list of leads in my crm',
+            'CRM leads',
+            'How many leads are in my CRM?',
+        ] as $message) {
+            $intent = $classifier->classify($message);
+
+            $this->assertSame('tool', $intent['type'], "Failed for message: {$message}");
+            $this->assertSame('crm.top_leads', $intent['tool'], "Failed for message: {$message}");
+        }
+    }
+
+    public function test_classifies_organization_users_list_phrases(): void
+    {
+        $classifier = new IntentClassifier();
+
+        foreach ([
+            'list users under this organisation',
+            'Show organization users',
+            'Who are the team members?',
+        ] as $message) {
+            $intent = $classifier->classify($message);
+
+            $this->assertSame('tool', $intent['type'], "Failed for message: {$message}");
+            $this->assertSame('org.users', $intent['tool'], "Failed for message: {$message}");
+        }
+    }
 }
