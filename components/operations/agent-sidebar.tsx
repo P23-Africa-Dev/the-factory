@@ -251,6 +251,13 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
 }
 
 export function AgentLiveDetails({ agent }: { agent: AgentItem }) {
+  const hasLocation = !!(
+    agent.location ||
+    agent.latitude ||
+    agent.longitude ||
+    (agent.zone && agent.zone !== 'Unassigned')
+  );
+
   return (
     <div className="bg-[#0A1A22] rounded-[28px] p-6 shadow-2xl">
       <h3 className="text-[16px] font-extrabold text-white mb-5">Live Details</h3>
@@ -341,7 +348,8 @@ export function AgentLiveDetails({ agent }: { agent: AgentItem }) {
         </div>
       </div>
 
-      {/* Progress bars */}
+      {/* Progress bars - commented out per user request */}
+      {/*
       <div className="mt-6 px-1">
         <div className="flex gap-1 h-3.5">
           <div className="w-[55%] bg-[#4FD1C5] rounded-full" />
@@ -352,19 +360,22 @@ export function AgentLiveDetails({ agent }: { agent: AgentItem }) {
           <p className="text-[12px] text-gray-400 font-medium">Pending</p>
         </div>
       </div>
+      */}
 
       {/* CTA button + status */}
       <div className="mt-6">
-        <button
-          className={`px-6 py-2.5 rounded-full text-[12px] font-bold transition-all inline-flex items-center gap-2 cursor-pointer ${
-            agent.active
-              ? 'bg-[#9333EA] text-white hover:bg-[#7E22CE]'
-              : 'bg-gray-600 text-white hover:bg-gray-500'
-          }`}
-        >
-          {agent.active ? 'Active (View on Map)' : 'Offline'}
-          {agent.active && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
-        </button>
+        {hasLocation && (
+          <button
+            className={`px-6 py-2.5 rounded-full text-[12px] font-bold transition-all inline-flex items-center gap-2 cursor-pointer ${
+              agent.active
+                ? 'bg-[#9333EA] text-white hover:bg-[#7E22CE]'
+                : 'bg-gray-600 text-white hover:bg-gray-500'
+            }`}
+          >
+            {agent.active ? 'Active (View on Map)' : 'Offline'}
+            {agent.active && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+          </button>
+        )}
         <p className="text-[11px] text-gray-500 mt-2.5 ml-1">{agent.active ? 'Online' : 'Offline'}</p>
       </div>
     </div>

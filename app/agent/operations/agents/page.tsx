@@ -25,6 +25,9 @@ type Agent = {
   time: string;
   avatar: string;
   active: boolean;
+  location?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 const ALL_AGENTS: Agent[] = [
@@ -46,6 +49,13 @@ const PAGE_SIZE = 5;
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 function AgentDetailSidebar({ agent }: { agent: Agent }) {
+  const hasLocation = !!(
+    agent.location ||
+    agent.latitude ||
+    agent.longitude ||
+    (agent.zone && agent.zone !== 'Unassigned')
+  );
+
   return (
     <div className="flex flex-col gap-5 w-full xl:w-90 xl:shrink-0">
       {/* Info */}
@@ -144,6 +154,9 @@ function AgentDetailSidebar({ agent }: { agent: Agent }) {
             </div>
           </div>
         </div>
+
+        {/* Progress bars - commented out per user request */}
+        {/*
         <div className="mt-4">
           <div className="flex rounded-full overflow-hidden h-3">
             <div className="w-[38%] bg-dash-teal" />
@@ -154,11 +167,15 @@ function AgentDetailSidebar({ agent }: { agent: Agent }) {
             <p className="text-[11px] text-gray-400">Pending</p>
           </div>
         </div>
+        */}
+
         <div className="mt-4">
-          <button className={`px-5 py-2.5 rounded-full text-[12px] font-bold hover:opacity-90 transition-all inline-flex items-center gap-2 ${agent.active ? 'bg-[#9D4EDD] text-white' : 'bg-gray-600 text-white'}`}>
-            {agent.active ? 'Active (View on Map)' : 'Offline'}
-            {agent.active && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
-          </button>
+          {hasLocation && (
+            <button className={`px-5 py-2.5 rounded-full text-[12px] font-bold hover:opacity-90 transition-all inline-flex items-center gap-2 ${agent.active ? 'bg-[#9D4EDD] text-white' : 'bg-gray-600 text-white'}`}>
+              {agent.active ? 'Active (View on Map)' : 'Offline'}
+              {agent.active && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+            </button>
+          )}
           <p className="text-[11px] text-gray-500 mt-2">{agent.time}</p>
         </div>
       </div>
