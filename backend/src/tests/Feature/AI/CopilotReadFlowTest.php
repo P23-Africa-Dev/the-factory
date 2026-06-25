@@ -8,6 +8,8 @@ use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
 use App\Enums\TaskType;
 use App\Models\Company;
+use App\Models\Lead;
+use App\Models\LeadPipeline;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\AI\Providers\AiProviderRouter;
@@ -165,6 +167,87 @@ final class CopilotReadFlowTest extends TestCase
         $this->assertStringContainsString('Tenant scope ID (internal, do not mention):', $capturedPrompt);
     }
 
+    public function test_owner_can_list_crm_leads_from_natural_language_prompt(): void
+    {
+        [$company, $owner] = $this->seedCompanyAdmin('owner');
+        $pipelineId = $this->seedLeadPipeline($company->id);
+
+        Lead::query()->create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $owner->id,
+            'name' => 'Acme Supplies Ltd',
+            'status' => 'new',
+            'priority' => 'high',
+            'source' => 'manual',
+        ]);
+
+        $response = $this
+            ->actingAs($owner)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'provide me the list of leads in my crm',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'crm.top_leads')
+            ->assertJsonPath('data.response.sources.0', 'crm.top_leads');
+
+        $content = (string) $response->json('data.response.content');
+        $this->assertStringContainsString('Acme Supplies Ltd', $content);
+        $this->assertStringNotContainsString('data connection', strtolower($content));
+    }
+
+    public function test_owner_can_list_organization_users(): void
+    {
+        [$company, $owner] = $this->seedCompanyAdmin('owner');
+        $agent = User::factory()->createOne([
+            'name' => 'John Wick',
+            'email' => 'john.wick@example.com',
+        ]);
+        $company->users()->attach($agent->id, [
+            'role' => 'agent',
+            'joined_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($owner)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'list users under this organisation',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'org.users')
+            ->assertJsonPath('data.response.sources.0', 'org.users');
+
+        $content = (string) $response->json('data.response.content');
+        $this->assertStringContainsString('John Wick', $content);
+        $this->assertStringNotContainsString('data connection', strtolower($content));
+    }
+
+    public function test_agent_cannot_list_organization_users(): void
+    {
+        [$company, $agent] = $this->seedCompanyAdmin('agent');
+
+        $response = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'list users under this organisation',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'org.users')
+            ->assertJsonPath('data.response.payload.denied', true);
+
+        $content = (string) $response->json('data.response.content');
+        $this->assertStringContainsString('not permitted', strtolower($content));
+    }
+
     public function test_streaming_general_prompt_passes_chat_context_and_returns_sse_reply(): void
     {
         [$company, $admin] = $this->seedCompanyAdmin();
@@ -209,7 +292,7 @@ final class CopilotReadFlowTest extends TestCase
     /**
      * @return array{0: Company, 1: User}
      */
-    private function seedCompanyAdmin(): array
+    private function seedCompanyAdmin(string $role = 'admin'): array
     {
         $company = Company::query()->create([
             'company_id' => strtoupper(Str::random(10)),
@@ -225,10 +308,19 @@ final class CopilotReadFlowTest extends TestCase
         ]);
 
         $company->users()->attach($admin->id, [
-            'role' => 'admin',
+            'role' => $role,
             'joined_at' => now(),
         ]);
 
         return [$company, $admin];
+    }
+
+    private function seedLeadPipeline(int $companyId): int
+    {
+        return (int) LeadPipeline::query()->create([
+            'company_id' => $companyId,
+            'name' => 'Default Pipeline',
+            'is_default' => true,
+        ])->id;
     }
 }

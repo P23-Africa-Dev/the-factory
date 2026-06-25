@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\AI\Tools;
 
 use App\Enums\LeadPriority;
+use App\Enums\KpiCategory;
+use App\Enums\KpiPriority;
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
 use App\Enums\ProjectPriority;
@@ -17,6 +19,7 @@ use App\Models\User;
 use App\Services\AI\Crm\VisitAssistantService;
 use App\Services\Crm\LeadService;
 use App\Services\Calendar\MeetingService;
+use App\Services\Kpi\KpiService;
 use App\Services\Notification\NotificationService;
 use App\Services\Project\ProjectService;
 use App\Services\Task\TaskReassignmentService;
@@ -36,6 +39,7 @@ class ActionToolRegistry
         private readonly ProjectService $projectService,
         private readonly VisitAssistantService $visitAssistantService,
         private readonly LeadService $leadService,
+        private readonly KpiService $kpiService,
     ) {}
 
     public function execute(string $tool, User $user, int $companyId, array $args = []): array
@@ -48,6 +52,7 @@ class ActionToolRegistry
             'projects.create' => $this->createProject($user, $companyId, $args),
             'crm.log_visit' => $this->visitAssistantService->logVisit($user, $companyId, $args),
             'crm.create_lead' => $this->createLead($user, $companyId, $args),
+            'kpis.create' => $this->createKpi($user, $companyId, $args),
             default => [
                 'tool' => $tool,
                 'summary' => 'Unsupported action tool requested.',
@@ -286,6 +291,40 @@ class ActionToolRegistry
                 'priority' => $lead->priority?->value,
             ],
             'sources' => ['crm.create_lead'],
+        ];
+    }
+
+    private function createKpi(User $user, int $companyId, array $args): array
+    {
+        $validated = Validator::make($args, [
+            'name' => ['required', 'string', 'min:3', 'max:255'],
+            'category' => ['required', 'string', Rule::in(KpiCategory::values())],
+            'objective' => ['required', 'string', 'min:10', 'max:5000'],
+            'target_value' => ['required', 'string', 'max:255'],
+            'expected_outcome' => ['required', 'string', 'min:10', 'max:5000'],
+            'start_date' => ['required', 'date'],
+            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+            'priority' => ['required', 'string', Rule::in(KpiPriority::values())],
+            'assigned_to_user_id' => ['nullable', 'integer', 'exists:users,id'],
+        ])->validate();
+
+        $kpi = $this->kpiService->create($user, [
+            ...$validated,
+            'company_id' => $companyId,
+        ]);
+
+        return [
+            'tool' => 'kpis.create',
+            'summary' => "KPI '{$kpi->name}' was created successfully.",
+            'payload' => [
+                'kpi_id' => (int) $kpi->id,
+                'name' => (string) $kpi->name,
+                'category' => $kpi->category?->value,
+                'priority' => $kpi->priority?->value,
+                'assigned_to_user_id' => $kpi->assigned_to_user_id,
+                'status' => $kpi->status?->value,
+            ],
+            'sources' => ['kpis.create'],
         ];
     }
 

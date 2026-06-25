@@ -32,6 +32,7 @@ class ToolPolicyService
         'dashboard.overview',
         'planning.daily',
         'kpi.team_performance',
+        'org.users',
     ];
 
     private const ACTION_TOOLS_MANAGEMENT = [
@@ -42,6 +43,7 @@ class ToolPolicyService
         'projects.create',
         'crm.log_visit',
         'crm.create_lead',
+        'kpis.create',
     ];
 
     private const ACTION_TOOLS_AGENT = [

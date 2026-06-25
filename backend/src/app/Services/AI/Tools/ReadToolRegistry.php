@@ -8,6 +8,7 @@ use App\Enums\ProjectStatus;
 use App\Enums\TaskStatus;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\User;
 use App\Services\AI\Crm\CrmIntelligenceService;
 use App\Services\AI\Crm\VisitAssistantService;
 use App\Services\AI\Kpi\TeamPerformanceService;
@@ -18,7 +19,6 @@ use App\Services\Company\CompanyContextService;
 use App\Services\Crm\LeadService;
 use App\Services\Dashboard\DashboardAggregateService;
 use App\Services\Tracking\AgentLocationSnapshotService;
-use App\Models\User;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -52,6 +52,7 @@ class ReadToolRegistry
             'crm.stale_leads' => $this->crmIntelligenceService->staleLeads($user, $companyId, $args),
             'crm.visit_extract' => $this->visitAssistantService->extractVisitNotes($user, $companyId, $args),
             'kpi.team_performance' => $this->teamPerformanceService->analyze($user, $companyId, $args),
+            'org.users' => $this->organizationUsers($user, $companyId, $args),
             default => [
                 'tool' => $tool,
                 'summary' => 'Unsupported read tool requested.',
@@ -71,25 +72,46 @@ class ReadToolRegistry
             'per_page' => $limit,
         ]);
 
+        $assigneeNames = User::query()
+            ->whereIn(
+                'id',
+                collect($leads->items())
+                    ->pluck('assigned_to_user_id')
+                    ->filter(static fn($id): bool => is_numeric($id) && (int) $id > 0)
+                    ->map(static fn($id): int => (int) $id)
+                    ->unique()
+                    ->values()
+                    ->all()
+            )
+            ->pluck('name', 'id');
+
         $items = collect($leads->items())
-            ->map(static fn($lead): array => [
-                'id' => (int) $lead->id,
-                'name' => (string) $lead->name,
-                'status' => $lead->status?->value,
-                'priority' => $lead->priority?->value,
-                'assigned_to_user_id' => $lead->assigned_to_user_id,
-                'company_id' => (int) $lead->company_id,
-            ])
+            ->map(static function ($lead) use ($assigneeNames): array {
+                $assignedToUserId = is_numeric($lead->assigned_to_user_id ?? null) ? (int) $lead->assigned_to_user_id : null;
+
+                return [
+                    'id' => (int) $lead->id,
+                    'name' => (string) $lead->name,
+                    'status' => $lead->status?->value ?? (is_string($lead->status) ? $lead->status : null),
+                    'priority' => $lead->priority?->value,
+                    'assigned_to_user_id' => $assignedToUserId,
+                    'assigned_to_name' => $assignedToUserId !== null
+                        ? (string) ($assigneeNames->get($assignedToUserId) ?? '')
+                        : null,
+                    'phone' => is_string($lead->phone ?? null) ? $lead->phone : null,
+                    'location' => is_string($lead->location ?? null) ? $lead->location : null,
+                    'company_id' => (int) $lead->company_id,
+                ];
+            })
             ->values()
             ->all();
 
         $total = method_exists($leads, 'total') ? (int) $leads->total() : count($items);
+        $summary = $this->formatLeadListSummary($items, $total);
 
         return [
             'tool' => 'crm.top_leads',
-            'summary' => $total > 0
-                ? "You currently have {$total} lead(s) in your CRM. Here are the top records in your active scope."
-                : 'No leads were found in your active organization scope.',
+            'summary' => $summary,
             'payload' => [
                 'items' => $items,
                 'count' => count($items),
@@ -97,6 +119,115 @@ class ReadToolRegistry
             ],
             'sources' => ['crm.top_leads'],
         ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    private function formatLeadListSummary(array $items, int $total): string
+    {
+        if ($total <= 0) {
+            return 'No leads were found in your active organization scope.';
+        }
+
+        $lines = collect($items)
+            ->values()
+            ->map(static function (array $lead, int $index): string {
+                $status = is_string($lead['status'] ?? null) ? $lead['status'] : 'unknown';
+                $priority = is_string($lead['priority'] ?? null) ? $lead['priority'] : 'unknown';
+                $assignee = is_string($lead['assigned_to_name'] ?? null) && trim($lead['assigned_to_name']) !== ''
+                    ? (string) $lead['assigned_to_name']
+                    : 'unassigned';
+
+                return sprintf(
+                    '%d. %s, Status: %s, Priority: %s, Assigned: %s',
+                    $index + 1,
+                    (string) ($lead['name'] ?? 'Lead'),
+                    $status,
+                    $priority,
+                    $assignee,
+                );
+            })
+            ->all();
+
+        $header = $total > count($items)
+            ? sprintf('You have %d lead(s) in your CRM. Showing %d in your active scope:', $total, count($items))
+            : sprintf('You have %d lead(s) in your CRM:', $total);
+
+        return $header . "\n" . implode("\n", $lines);
+    }
+
+    private function organizationUsers(User $user, int $companyId, array $args): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $limit = max(1, min(50, (int) ($args['limit'] ?? 25)));
+
+        $users = User::query()
+            ->select(['users.id', 'users.name', 'users.email'])
+            ->selectRaw('company_users.role as company_role')
+            ->join(
+                'company_users',
+                static fn($join) => $join
+                    ->on('company_users.user_id', '=', 'users.id')
+                    ->where('company_users.company_id', '=', $resolvedCompanyId)
+            )
+            ->orderByRaw("case when company_users.role = 'owner' then 0 when company_users.role = 'admin' then 1 when company_users.role = 'supervisor' then 2 when company_users.role = 'agent' then 3 else 4 end")
+            ->orderBy('users.name')
+            ->limit($limit)
+            ->get();
+
+        $items = $users
+            ->map(static fn(User $member): array => [
+                'id' => (int) $member->id,
+                'name' => (string) $member->name,
+                'email' => (string) ($member->email ?? ''),
+                'role' => is_string($member->company_role ?? null) ? (string) $member->company_role : null,
+            ])
+            ->values()
+            ->all();
+
+        $summary = $this->formatOrganizationUsersSummary($items);
+
+        return [
+            'tool' => 'org.users',
+            'summary' => $summary,
+            'payload' => [
+                'items' => $items,
+                'count' => count($items),
+            ],
+            'sources' => ['org.users'],
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    private function formatOrganizationUsersSummary(array $items): string
+    {
+        if ($items === []) {
+            return 'No users were found in your active organization scope.';
+        }
+
+        $lines = collect($items)
+            ->values()
+            ->map(static function (array $member, int $index): string {
+                $role = is_string($member['role'] ?? null) && trim($member['role']) !== ''
+                    ? (string) $member['role']
+                    : 'member';
+                $email = is_string($member['email'] ?? null) ? (string) $member['email'] : '';
+
+                return sprintf(
+                    '%d. %s (%s)%s',
+                    $index + 1,
+                    (string) ($member['name'] ?? 'User'),
+                    $role,
+                    $email !== '' ? ', ' . $email : '',
+                );
+            })
+            ->all();
+
+        return sprintf("Here are %d user(s) in your organization:\n%s", count($items), implode("\n", $lines));
     }
 
     private function overdueTasks(User $user, int $companyId, array $args): array
