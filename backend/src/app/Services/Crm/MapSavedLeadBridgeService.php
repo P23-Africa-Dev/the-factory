@@ -14,7 +14,10 @@ class MapSavedLeadBridgeService
 {
     public const MAP_PIPELINE_SYSTEM_KEY = 'map_saved';
 
-    public const MAP_PIPELINE_NAME = 'Saved from Map';
+    public const MAP_PIPELINE_NAME = 'Map Leads';
+
+    /** @deprecated Renamed to {@see MAP_PIPELINE_NAME}; kept for lazy migration of existing rows. */
+    public const LEGACY_MAP_PIPELINE_NAME = 'Saved from Map';
 
     public const MAP_LEAD_SOURCE = 'Map';
 
@@ -26,7 +29,11 @@ class MapSavedLeadBridgeService
             ->first();
 
         if ($existing !== null) {
-            return $existing;
+            if ($existing->name !== self::MAP_PIPELINE_NAME) {
+                $existing->update(['name' => self::MAP_PIPELINE_NAME]);
+            }
+
+            return $existing->fresh();
         }
 
         $maxSortOrder = (int) LeadPipeline::query()->where('company_id', $companyId)->max('sort_order');

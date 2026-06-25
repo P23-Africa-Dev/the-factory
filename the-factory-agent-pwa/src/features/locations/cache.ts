@@ -2,6 +2,9 @@ import { getDb } from '@/lib/db/client';
 import type { SavedLocationCacheEntry } from '@/lib/db/schema';
 import type { SavedLocation } from './types';
 
+/** IndexedDB bucket for server-synced global map pins (not org-scoped). */
+export const GLOBAL_SYNCED_CACHE_COMPANY_ID = 0;
+
 function toCacheEntry(
   location: SavedLocation,
   companyId: number,
@@ -29,7 +32,7 @@ function toCacheEntry(
 function fromCacheEntry(entry: SavedLocationCacheEntry): SavedLocation {
   return {
     id: entry.id,
-    companyId: entry.companyId,
+    companyId: entry.companyId === GLOBAL_SYNCED_CACHE_COMPANY_ID ? null : entry.companyId,
     name: entry.name,
     type: entry.type,
     description: entry.description,
@@ -44,30 +47,34 @@ function fromCacheEntry(entry: SavedLocationCacheEntry): SavedLocation {
   };
 }
 
-/** Replace the server-synced subset of the cache for a company with fresh rows. */
-export async function replaceCachedLocations(
-  companyId: number,
-  locations: SavedLocation[],
-): Promise<void> {
+/** Replace the server-synced global cache with fresh rows from the API. */
+export async function replaceCachedLocations(locations: SavedLocation[]): Promise<void> {
   const db = await getDb();
-  const existing = await db.getAllFromIndex('savedLocationsCache', 'by-company', companyId);
+  const existing = await db.getAll('savedLocationsCache');
   const tx = db.transaction('savedLocationsCache', 'readwrite');
-  // Drop previously-synced rows but keep pending offline rows so they remain visible.
   for (const row of existing) {
     if (row.pending !== 1 && row.id != null) {
       await tx.store.delete(row.id);
     }
   }
   for (const location of locations) {
-    await tx.store.put(toCacheEntry(location, companyId, 0));
+    await tx.store.put(
+      toCacheEntry(location, GLOBAL_SYNCED_CACHE_COMPANY_ID, 0),
+    );
   }
   await tx.done;
 }
 
 export async function getCachedLocations(companyId: number): Promise<SavedLocation[]> {
   const db = await getDb();
-  const rows = await db.getAllFromIndex('savedLocationsCache', 'by-company', companyId);
-  return rows.map(fromCacheEntry);
+  const rows = await db.getAll('savedLocationsCache');
+  return rows
+    .filter(
+      (row) =>
+        row.pending !== 1 ||
+        row.companyId === companyId,
+    )
+    .map(fromCacheEntry);
 }
 
 export async function putCachedLocation(

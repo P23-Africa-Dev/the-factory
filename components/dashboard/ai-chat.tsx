@@ -49,8 +49,13 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   sources?: string[];
+  tool?: string | null;
   payload?: unknown;
 }
+
+const ACTION_TOOL_PATTERN = /^(?:tasks|meetings|projects|notifications|crm|kpis)\.[a-z_]+$/;
+
+const USER_ASSIGNMENT_FIELD_PATTERN = /(^|_)(user_id|assigned_to_user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/;
 
 interface AIChatProps {
   open: boolean;
@@ -430,10 +435,10 @@ export function AIChat({ open, onClose }: AIChatProps) {
         continue;
       }
 
-      const tool = String(payload.tool ?? "");
+      const tool = actionToolForMessage(msg);
       const rawArgs = parseRecord(payload.action_args);
       const argKeys = rawArgs ? Object.keys(rawArgs) : [];
-      const hasUserAssignmentField = argKeys.some((key) => /(^|_)(user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/.test(key));
+      const hasUserAssignmentField = argKeys.some((key) => USER_ASSIGNMENT_FIELD_PATTERN.test(key));
 
       if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "kpis.create"].includes(tool) && !hasUserAssignmentField) {
         continue;
@@ -580,6 +585,27 @@ export function AIChat({ open, onClose }: AIChatProps) {
       : null;
   }
 
+  function actionToolForMessage(msg: Message): string {
+    const payload = messagePayload(msg);
+    const payloadTool = typeof payload?.tool === "string" ? payload.tool.trim() : "";
+    if (payloadTool !== "") {
+      return payloadTool;
+    }
+
+    if (typeof msg.tool === "string" && msg.tool.trim() !== "") {
+      return msg.tool.trim();
+    }
+
+    for (const source of msg.sources ?? []) {
+      const candidate = String(source).trim();
+      if (ACTION_TOOL_PATTERN.test(candidate)) {
+        return candidate;
+      }
+    }
+
+    return "";
+  }
+
   function parseRecord(value: unknown): Record<string, unknown> | null {
     return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
   }
@@ -717,7 +743,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     const baseArgs = sanitizeActionArgs(actionArgsRaw);
     const draft = actionDrafts[msg.id] ?? {};
-    const tool = String(payload.tool ?? "");
+    const tool = actionToolForMessage(msg);
 
     if (tool === "tasks.create") {
       const merged: Record<string, unknown> = { ...baseArgs };
@@ -755,6 +781,36 @@ export function AIChat({ open, onClose }: AIChatProps) {
       }
 
       return baseArgs;
+    }
+
+    if (tool === "kpis.create" || tool === "crm.create_lead") {
+      const merged: Record<string, unknown> = { ...baseArgs, ...draft };
+
+      if (Object.prototype.hasOwnProperty.call(draft, "assigned_to_user_id")) {
+        const assigneeId = (draft.assigned_to_user_id ?? "").trim();
+        if (assigneeId === "") {
+          delete merged.assigned_to_user_id;
+        } else {
+          merged.assigned_to_user_id = Number(assigneeId);
+        }
+      }
+
+      return merged;
+    }
+
+    if (tool === "projects.create") {
+      const merged: Record<string, unknown> = { ...baseArgs, ...draft };
+
+      if (Object.prototype.hasOwnProperty.call(draft, "project_manager_user_id")) {
+        const managerId = (draft.project_manager_user_id ?? "").trim();
+        if (managerId === "") {
+          delete merged.project_manager_user_id;
+        } else {
+          merged.project_manager_user_id = Number(managerId);
+        }
+      }
+
+      return merged;
     }
 
     if (Object.keys(draft).length === 0) {
@@ -830,8 +886,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function editFieldsForMessage(msg: Message, args: Record<string, unknown>): EditFieldConfig[] {
-    const payload = messagePayload(msg);
-    const tool = String(payload?.tool ?? "");
+    const tool = actionToolForMessage(msg);
 
     if (tool === "tasks.create") {
       return [
@@ -929,6 +984,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
           } as EditFieldConfig;
         }
 
+        if (USER_ASSIGNMENT_FIELD_PATTERN.test(key) && key !== "task_id") {
+          const label = key === "assigned_to_user_id"
+            ? "Assign To"
+            : key === "to_user_id"
+              ? "Reassign To"
+              : key === "project_manager_user_id"
+                ? "Project Manager"
+                : toTitleCase(key);
+
+          return {
+            key,
+            label,
+            control: "select",
+            options: userIdSelectOptions(msg),
+          } as EditFieldConfig;
+        }
+
         if (/_id$/i.test(key)) {
           return {
             key,
@@ -988,10 +1060,34 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     const args = actionArgsForMessage(msg);
     const argsForChecks: Record<string, unknown> = args ?? {};
+    const draft = actionDrafts[msg.id] ?? {};
+    const tool = actionToolForMessage(msg);
     const remaining: string[] = [];
 
     for (const code of blockingCodes) {
       if (code === "assignee_unresolved") {
+        if (tool === "kpis.create" || tool === "crm.create_lead") {
+          const assignedDraft = String(draft.assigned_to_user_id ?? "").trim();
+          const hasResolvedId =
+            (typeof args?.assigned_to_user_id === "number" && args.assigned_to_user_id > 0)
+            || (assignedDraft !== "" && !Number.isNaN(Number(assignedDraft)));
+          if (!hasResolvedId) {
+            remaining.push(code);
+          }
+          continue;
+        }
+
+        if (tool === "projects.create") {
+          const managerDraft = String(draft.project_manager_user_id ?? "").trim();
+          const hasResolvedId =
+            (typeof args?.project_manager_user_id === "number" && args.project_manager_user_id > 0)
+            || (managerDraft !== "" && !Number.isNaN(Number(managerDraft)));
+          if (!hasResolvedId) {
+            remaining.push(code);
+          }
+          continue;
+        }
+
         const assigneeEdited = assigneeDropdownValue(msg, argsForChecks) !== "";
         const hasResolvedId = typeof args?.assigned_agent_id === "number";
         if (!assigneeEdited && !hasResolvedId) {
@@ -1075,7 +1171,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return [];
     }
 
-    const tool = String(payload.tool ?? "");
+    const tool = actionToolForMessage(msg);
     const args = actionArgsForMessage(msg);
     if (!args) {
       return [];
@@ -2354,7 +2450,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                           })()}
                           {(() => {
                             const args = actionArgsForMessage(msg);
-                            const payloadTool = String(messagePayload(msg)?.tool ?? "");
+                            const payloadTool = actionToolForMessage(msg);
                             if (!args) {
                               return null;
                             }

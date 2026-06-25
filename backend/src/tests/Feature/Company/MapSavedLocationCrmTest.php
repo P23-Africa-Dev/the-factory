@@ -60,7 +60,7 @@ class MapSavedLocationCrmTest extends TestCase
             ->first();
 
         $this->assertNotNull($pipeline);
-        $this->assertSame('Saved from Map', $pipeline->name);
+        $this->assertSame('Map Leads', $pipeline->name);
         $this->assertSame($pipeline->id, Lead::query()->findOrFail($leadId)->pipeline_id);
     }
 
@@ -73,7 +73,7 @@ class MapSavedLocationCrmTest extends TestCase
 
         $before->assertOk();
         $beforeNames = collect($before->json('data.items'))->pluck('name')->all();
-        $this->assertNotContains('Saved from Map', $beforeNames);
+        $this->assertNotContains('Map Leads', $beforeNames);
 
         $this->withToken($admin->createToken('admin-map-crm-create', ['*'])->plainTextToken)
             ->postJson('/api/v1/admin/locations', [
@@ -90,7 +90,7 @@ class MapSavedLocationCrmTest extends TestCase
 
         $after->assertOk();
         $afterNames = collect($after->json('data.items'))->pluck('name')->all();
-        $this->assertContains('Saved from Map', $afterNames);
+        $this->assertContains('Map Leads', $afterNames);
     }
 
     public function test_location_update_syncs_linked_crm_lead_and_delete_unlinks_only(): void

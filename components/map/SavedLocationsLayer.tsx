@@ -636,7 +636,7 @@ export function SavedLocationsLayer({
           }}
           moveMode={moveMode}
           footer={
-            (permissions.canEdit || permissions.canDelete) && !readOnly ? (
+            (permissions.canEdit || permissions.canDelete) && selected.can_manage && !readOnly ? (
               <div className="flex items-center gap-2 px-5 py-3">
                 {permissions.canEdit && (
                   <>

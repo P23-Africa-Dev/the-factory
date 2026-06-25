@@ -18,15 +18,29 @@ class CompanyLocationService
         private readonly MapSavedLeadBridgeService $mapSavedLeadBridgeService,
     ) {}
 
+    /**
+     * @return array{company_id: int, role: string}
+     */
+    public function viewerContext(User $user, ?int $companyId = null): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+
+        return [
+            'company_id' => (int) $context['company']->id,
+            'role' => (string) $context['role'],
+        ];
+    }
+
     public function listForUser(User $user, array $filters): Paginator
     {
-        $context = $this->companyContextService->resolve($user, $filters['company_id'] ?? null);
-        $companyId = (int) $context['company']->id;
+        $this->companyContextService->resolve($user, $filters['company_id'] ?? null);
 
-        $query = $this->baseQuery($companyId);
+        $query = $this->globalQuery();
 
         if (array_key_exists('is_active', $filters) && $filters['is_active'] !== null) {
             $query->where('is_active', (bool) $filters['is_active']);
+        } else {
+            $query->where('is_active', true);
         }
 
         if (! empty($filters['type'])) {
@@ -81,13 +95,24 @@ class CompanyLocationService
 
     public function findForUser(User $user, CompanyLocation $location, ?int $companyId = null): CompanyLocation
     {
-        $context = $this->companyContextService->resolve($user, $companyId);
-        $resolvedCompanyId = (int) $context['company']->id;
-        $this->assertLocationInCompany($location, $resolvedCompanyId);
+        $this->companyContextService->resolve($user, $companyId);
 
-        return $this->baseQuery($resolvedCompanyId)
+        return $this->globalQuery()
             ->whereKey($location->id)
             ->firstOrFail();
+    }
+
+    public function canManageLocation(User $user, CompanyLocation $location, ?int $companyId = null): bool
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
+
+        if ((int) $location->company_id !== $resolvedCompanyId) {
+            return false;
+        }
+
+        return in_array($role, ['owner', 'admin', 'supervisor'], true);
     }
 
     public function update(User $user, CompanyLocation $location, array $data): CompanyLocation
@@ -133,10 +158,9 @@ class CompanyLocationService
         $location->delete();
     }
 
-    private function baseQuery(int $companyId): Builder
+    private function globalQuery(): Builder
     {
         return CompanyLocation::query()
-            ->where('company_id', $companyId)
             ->with(['creator:id,name,email', 'updater:id,name,email']);
     }
 

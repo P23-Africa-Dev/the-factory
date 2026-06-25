@@ -49,9 +49,7 @@ export const locationApi = {
       });
       const items = unwrapList(response.data);
       const locations = savedLocationListSchema.parse(items);
-      if (companyId) {
-        void replaceCachedLocations(companyId, locations).catch(() => {});
-      }
+      void replaceCachedLocations(locations).catch(() => {});
       return locations;
     } catch (err) {
       if (companyId) {

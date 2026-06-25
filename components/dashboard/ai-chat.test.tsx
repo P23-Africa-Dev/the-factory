@@ -12,6 +12,7 @@ const {
     runFileAnalysisMock,
     runTranscriptSummaryMock,
     loadForecastOverviewMock,
+    searchAssigneesMock,
     useCopilotChatMock,
 } = vi.hoisted(() => ({
     initializeMock: vi.fn(),
@@ -22,6 +23,7 @@ const {
     runFileAnalysisMock: vi.fn(),
     runTranscriptSummaryMock: vi.fn(),
     loadForecastOverviewMock: vi.fn(),
+    searchAssigneesMock: vi.fn(),
     useCopilotChatMock: vi.fn(),
 }));
 
@@ -57,6 +59,10 @@ describe("AIChat", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         Element.prototype.scrollIntoView = vi.fn();
+        searchAssigneesMock.mockResolvedValue([
+            { id: 42, name: "John Wick", email: "john.wick@example.com", role: "agent" },
+            { id: 7, name: "Ada Test", email: "ada@example.com", role: "admin" },
+        ]);
 
         useCopilotChatMock.mockReturnValue({
             messages: [
@@ -78,6 +84,7 @@ describe("AIChat", () => {
             runFileAnalysis: runFileAnalysisMock,
             runTranscriptSummary: runTranscriptSummaryMock,
             loadForecastOverview: loadForecastOverviewMock,
+            searchAssignees: searchAssigneesMock,
         });
     });
 
@@ -141,6 +148,7 @@ describe("AIChat", () => {
             runFileAnalysis: runFileAnalysisMock,
             runTranscriptSummary: runTranscriptSummaryMock,
             loadForecastOverview: loadForecastOverviewMock,
+            searchAssignees: searchAssigneesMock,
         });
 
         render(<AIChat open onClose={() => { }} />);
@@ -158,6 +166,64 @@ describe("AIChat", () => {
                 },
             });
         });
+    });
+
+    it("renders KPI assignee as a user select instead of a numeric id input", async () => {
+        useCopilotChatMock.mockReturnValue({
+            messages: [
+                {
+                    id: "u-kpi",
+                    role: "user",
+                    content: "Create KPI for retailer visits and assign to John Wick",
+                    sources: [],
+                },
+                {
+                    id: "a-kpi",
+                    role: "assistant",
+                    content: "Review this KPI before confirming.",
+                    sources: ["kpis.create"],
+                    payload: {
+                        confirmation_required: true,
+                        action_args: {
+                            name: "Retailer Visits",
+                            category: "customer_visits",
+                            objective: "Increase qualified retailer visits across the assigned territory.",
+                            target_value: "50 visits",
+                            expected_outcome: "Reach 50 qualified retailer visits within the KPI period.",
+                            priority: "high",
+                            start_date: "2026-06-01",
+                            end_date: "2026-06-30",
+                            assigned_to_user_id: 42,
+                        },
+                    },
+                },
+            ],
+            isStreaming: false,
+            weeklyReport: null,
+            isQueueingWeeklyReport: false,
+            initialize: initializeMock,
+            sendMessage: sendMessageMock,
+            queueWeeklyReport: queueWeeklyReportMock,
+            downloadWeeklyReport: downloadWeeklyReportMock,
+            runVoiceTranscription: runVoiceTranscriptionMock,
+            runFileAnalysis: runFileAnalysisMock,
+            runTranscriptSummary: runTranscriptSummaryMock,
+            loadForecastOverview: loadForecastOverviewMock,
+            searchAssignees: searchAssigneesMock,
+        });
+
+        render(<AIChat open onClose={() => { }} />);
+
+        await waitFor(() => {
+            expect(searchAssigneesMock).toHaveBeenCalled();
+            expect(screen.getByRole("option", { name: "John Wick" })).toBeTruthy();
+        });
+
+        const assignFieldLabel = screen.getByText("Assign To");
+        const assignSelect = assignFieldLabel.parentElement?.querySelector("select");
+        expect(assignSelect).toBeTruthy();
+        expect(assignSelect?.tagName).toBe("SELECT");
+        expect(screen.queryByText("Assigned To User Id")).toBeNull();
     });
 
     it("queues weekly summary from quick action button", async () => {
