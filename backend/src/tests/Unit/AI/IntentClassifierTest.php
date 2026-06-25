@@ -91,6 +91,22 @@ final class IntentClassifierTest extends TestCase
         $this->assertSame('crm.create_lead', $intent['tool']);
     }
 
+    public function test_classifies_set_task_for_assignee_prompt(): void
+    {
+        $classifier = new IntentClassifier();
+
+        foreach ([
+            'set task for kelvin',
+            'set a task for kelvin to visit shoprite',
+            'assign task to Elijah Stone',
+        ] as $message) {
+            $intent = $classifier->classify($message);
+
+            $this->assertSame('action', $intent['type'], "Failed for message: {$message}");
+            $this->assertSame('tasks.create', $intent['tool'], "Failed for message: {$message}");
+        }
+    }
+
     public function test_classifies_create_kpi_prompt(): void
     {
         $classifier = new IntentClassifier();

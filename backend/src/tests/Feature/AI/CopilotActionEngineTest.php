@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
+use Mockery;
 use Tests\TestCase;
 
 final class CopilotActionEngineTest extends TestCase
@@ -346,6 +347,101 @@ final class CopilotActionEngineTest extends TestCase
         $this->assertIsArray($blockingCodes);
         $this->assertContains('used_default_title', $blockingCodes);
         $this->assertContains('used_default_due_date', $blockingCodes);
+    }
+
+    public function test_set_task_for_assignee_returns_confirmation_payload(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+        $kelvin = $this->createCompanyAgent($company, 'Kelvin Hart', 'kelvin.hart@example.com');
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'set a task for kelvin to visit shoprite',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.action_args.assigned_agent_id', $kelvin->id);
+
+        $title = (string) $response->json('data.response.payload.action_args.title');
+        $this->assertStringContainsString('shoprite', strtolower($title));
+
+        $content = strtolower((string) $response->json('data.response.content'));
+        $this->assertStringNotContainsString('task created successfully', $content);
+        $this->assertStringNotContainsString('executing task creation', $content);
+    }
+
+    public function test_multi_turn_task_conversation_creates_task_on_go_ahead(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+        $kelvin = $this->createCompanyAgent($company, 'Kelvin Hart', 'kelvin.hart@example.com');
+
+        $mockRouter = Mockery::mock(\App\Services\AI\Providers\AiProviderRouter::class);
+        $mockRouter
+            ->shouldReceive('routingMetadata')
+            ->andReturn([
+                'provider' => 'openai',
+                'model' => 'gpt-4.1-mini',
+                'purpose' => 'operational',
+            ]);
+        $mockRouter
+            ->shouldReceive('generateForPurpose')
+            ->andReturn('Visit Shoprite, engage store contacts, document observations, and log the visit outcome in CRM.');
+        $this->app->instance(\App\Services\AI\Providers\AiProviderRouter::class, $mockRouter);
+
+        $first = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'set a task for kelvin to visit shoprite',
+            ]);
+
+        $threadId = (string) $first->json('data.thread_id');
+        $this->assertNotSame('', $threadId);
+
+        $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => $threadId,
+                'message' => 'he should do it tomorrow',
+            ])
+            ->assertOk();
+
+        $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => $threadId,
+                'message' => 'priority is medium, description, generate something cool and relative',
+            ])
+            ->assertOk();
+
+        $final = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => $threadId,
+                'message' => 'go ahead',
+            ]);
+
+        $final
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.sources.0', 'tasks.create');
+
+        $this->assertDatabaseHas('tasks', [
+            'company_id' => $company->id,
+            'assigned_agent_id' => $kelvin->id,
+        ]);
+
+        $content = strtolower((string) $final->json('data.response.content'));
+        $this->assertStringContainsString('created successfully', $content);
+        $this->assertStringNotContainsString('executing task creation through', $content);
     }
 
     public function test_management_role_can_execute_kpis_create_action(): void

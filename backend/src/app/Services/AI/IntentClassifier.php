@@ -12,7 +12,10 @@ class IntentClassifier
 
         $actionPatterns = [
             'tasks.create' => [
-                '/\b(create|add|open|new)\s+(a\s+|an\s+)?task\b/i',
+                '/\b(create|add|open|new|set|assign|give)\s+(a\s+|an\s+)?task\b/i',
+                '/\b(set|assign|give)\b.{0,40}\btask\b/i',
+                '/\btask\b.{0,50}\bfor\b/i',
+                '/\bcreate\s+task\b/i',
             ],
             'tasks.reassign' => [
                 '/\b(reassign|transfer|move|change)\s+(the\s+)?task\b/i',
