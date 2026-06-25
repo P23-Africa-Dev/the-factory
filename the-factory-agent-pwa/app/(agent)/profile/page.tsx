@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { useProfile, useAuth, useAuthNavigation, useAgentIdentity } from '@/features/auth';
-import { toast } from '@/lib/toast';
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—';
@@ -83,17 +82,7 @@ export default function ProfilePage() {
   const { goBack } = useAuthNavigation();
   const { user } = useAuth();
   const { avatarSrc } = useAgentIdentity();
-  const { data: profile, isLoading, isError, error, refetch } = useProfile();
-
-  useEffect(() => {
-    if (isError && error) {
-      const msg =
-        error && typeof error === 'object' && 'message' in error
-          ? String((error as { message: string }).message)
-          : 'Could not load profile. Please try again.';
-      toast.error(msg);
-    }
-  }, [isError, error]);
+  const { data: profile, isLoading, isError, refetch } = useProfile();
 
   const identity = profile?.identity;
   const org = profile?.organization;

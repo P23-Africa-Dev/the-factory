@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
+import { showApiErrorToast } from '@/lib/api/errors';
 import { useCreateLead, useCrmPipelines, useCrmLabels } from '@/features/crm';
 
 interface AddLeadModalProps {
@@ -103,17 +104,22 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
 
     const defaultStatus = labels[0]?.slug ?? 'newly_lead';
 
-    createLead({
-      company_id: companyId,
-      pipeline_id: pipelineId,
-      name: form.name.trim(),
-      email: form.email.trim() || null,
-      phone: phonePart.trim() ? (countryCode + phonePart.trim()) : null,
-      location: form.location.trim() || null,
-      source: form.source.trim() || 'agent_upload',
-      status: form.status || defaultStatus,
-      priority: form.priority,
-    });
+    createLead(
+      {
+        company_id: companyId,
+        pipeline_id: pipelineId,
+        name: form.name.trim(),
+        email: form.email.trim() || null,
+        phone: phonePart.trim() ? (countryCode + phonePart.trim()) : null,
+        location: form.location.trim() || null,
+        source: form.source.trim() || 'agent_upload',
+        status: form.status || defaultStatus,
+        priority: form.priority,
+      },
+      {
+        onError: (err) => showApiErrorToast(err, 'Could not add lead'),
+      },
+    );
   };
 
   const handleClose = () => {

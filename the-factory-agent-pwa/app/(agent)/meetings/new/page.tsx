@@ -7,6 +7,7 @@ import { useMeetingNavigation } from '@/features/meetings/navigation';
 import { MeetingForm } from '@/features/meetings/components/MeetingForm';
 import { CalendarStatusNotice } from '@/features/meetings/components/CalendarStatusNotice';
 import type { MeetingFormValues } from '@/features/meetings/types';
+import { showApiErrorToast } from '@/lib/api/errors';
 
 export default function NewMeetingPage() {
   const nav = useMeetingNavigation();
@@ -54,6 +55,8 @@ export default function NewMeetingPage() {
         'errors' in err
       ) {
         setServerErrors((err as { errors: Record<string, string[]> }).errors);
+      } else {
+        showApiErrorToast(err, 'Could not schedule meeting');
       }
     }
   };

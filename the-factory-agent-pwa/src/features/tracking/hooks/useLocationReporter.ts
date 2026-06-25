@@ -8,6 +8,7 @@ import { trackingApi } from '../api';
 import { useGeolocation, type LocationObject } from './useGeolocation';
 import type { LocationQueueItem } from '../types';
 import { toast } from '@/lib/toast';
+import { isDocumentHidden, notifyTrackingStopped } from '@/lib/notifications/trackingAlerts';
 
 interface LocationReporterOptions {
   taskId: number;
@@ -201,7 +202,13 @@ export const useLocationReporter = ({
         }
 
         useTrackingStore.getState().setActiveTrackingTaskId(null);
-        toast.error('Tracking Stopped', apiErr?.message || 'You can only track tasks currently assigned to you.');
+        const msg =
+          apiErr?.message || 'You can only track tasks currently assigned to you.';
+        if (isDocumentHidden()) {
+          void notifyTrackingStopped(taskId, msg);
+        } else {
+          toast.error('Tracking Stopped', msg);
+        }
       } else {
         console.error('[LocationReporter] Geolocation sync error:', error);
       }
