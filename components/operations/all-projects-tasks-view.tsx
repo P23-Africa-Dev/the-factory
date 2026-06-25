@@ -163,25 +163,23 @@ function TaskSummaryCards({ tasks }: { tasks: TaskApiItem[] }) {
       </div>
 
       {/* In Progress / Arc card */}
-      <div className="bg-[#7BA9A4] rounded-[20px] gap-4 p-5 shadow-sm relative flex flex-col items-center w-full min-w-0 text-center justify-between">
-        <p className="text-white font-light text-[8px] leading-[1.4] max-w-20 mx-auto">
+      <div className="bg-[#7BA9A4] rounded-[20px] p-5 shadow-sm flex flex-col items-center w-full min-w-0 text-center gap-3">
+        <p className="mt-5 text-white font-light text-[10px] leading-[1.4] max-w-20 mx-auto">
           Tasks currently in progress
         </p>
-        <span className="flex items-center gap-1 px-2.5 py-1.5 h-4 bg-[#08393A] text-white rounded-full text-[7px]">
-          Live
-          <Image src={Arrow57Deg} alt="" width={7.5} height={7.5} />
-        </span>
-        <div className="w-18 h-18 relative flex items-center justify-center">
+        <div className="relative w-24 h-24 flex items-center justify-center mt-1">
           <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full" style={{ transform: "rotate(135deg)" }}>
             <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="7" strokeLinecap="round" strokeDasharray="188.5 251.3" />
             <circle cx="50" cy="50" r="40" fill="none" stroke="white" strokeWidth="7" strokeLinecap="round" strokeDasharray={`${(inProgress / Math.max(total, 1)) * ARC_LENGTH} ${CIRCUMFERENCE}`} />
           </svg>
-          <div className="relative w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-sm">
-            <User size={14} className="text-[#09232D] fill-current" />
+          <div className="relative flex flex-col items-center gap-0.5">
+            <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-sm">
+              <User size={14} className="text-[#09232D] fill-current" />
+            </div>
+            <span className="text-white text-[10px] font-bold">
+              {total === 0 ? 0 : Math.round((inProgress / total) * 100)}%
+            </span>
           </div>
-          <span className="text-white text-[10px] font-bold absolute bottom-0">
-            {total === 0 ? 0 : Math.round((inProgress / total) * 100)}%
-          </span>
         </div>
       </div>
     </div>
@@ -386,9 +384,6 @@ export function AllProjectsTasksView() {
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* ── Stat Cards ── */}
-      {!loadingTasks && <TaskSummaryCards tasks={allTasks} />}
-
       {/* ── Toolbar ── */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 sm:justify-end min-w-0 transition-all duration-300 relative z-10">
         <div className="relative w-full md:w-114.5 group shrink-0">
@@ -471,6 +466,9 @@ export function AllProjectsTasksView() {
           )}
         </div>
       )}
+
+      {/* ── Stat Cards ── */}
+      {!loadingTasks && <TaskSummaryCards tasks={allTasks} />}
 
       {/* ── Board ── */}
       {loadingTasks ? (

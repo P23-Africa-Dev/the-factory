@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { X, ChevronDown, Search, Check } from "lucide-react";
 import { toast } from "sonner";
 import { SectionDivider } from "@/components/payroll/payroll/section-divider";
 import { FormRow } from "@/components/payroll/payroll/form-row";
 import { InlineInput } from "@/components/payroll/payroll/inline-input";
 import { InlineSelect } from "@/components/payroll/payroll/inline-select";
+import PhoneNumberInput from "@/components/ui/phone-number-input";
 import { useCreateLead, useUpdateLead } from "@/hooks/use-crm";
 import { useCrmLabels, useCrmPipelines } from "@/hooks/use-crm";
 import { useInternalUsers } from "@/hooks/use-internal-users";
@@ -35,36 +37,143 @@ function FieldError({ message }: { message?: string }) {
   return <p className="text-[11px] text-red-500 mt-0.5 text-right">{message}</p>;
 }
 
+function SearchableCurrencySelect({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { code: string; label: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; above: boolean; triggerHeight: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [mounted] = useState(() => typeof document !== "undefined");
+
+  const selected = options.find((o) => o.code === value);
+
+  const calcPos = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const dropHeight = 290;
+    const above = window.innerHeight - rect.bottom < dropHeight && rect.top > dropHeight;
+    const dropWidth = 220;
+    const left = Math.max(8, Math.min(window.innerWidth - dropWidth - 8, rect.left));
+    setPos({ top: rect.top, left, width: dropWidth, above, triggerHeight: rect.height });
+  }, []);
+
+  const close = useCallback(() => { setOpen(false); setSearch(""); }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!triggerRef.current?.contains(e.target as Node) && !dropdownRef.current?.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", calcPos, true);
+    window.addEventListener("resize", calcPos);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", calcPos, true);
+      window.removeEventListener("resize", calcPos);
+    };
+  }, [open, close, calcPos]);
+
+  useEffect(() => { if (open) setTimeout(() => searchRef.current?.focus(), 30); }, [open]);
+
+  const q = search.trim().toLowerCase();
+  const filtered = options.filter((o) => o.code.toLowerCase().includes(q) || o.label.toLowerCase().includes(q));
+
+  const dropdown = open && pos && mounted
+    ? createPortal(
+        <div
+          ref={dropdownRef}
+          style={{
+            position: "fixed",
+            top: pos.above ? undefined : pos.top + pos.triggerHeight + 6,
+            bottom: pos.above ? window.innerHeight - pos.top + 6 : undefined,
+            left: pos.left,
+            width: pos.width,
+            zIndex: 99999,
+          }}
+          className="overflow-hidden flex flex-col bg-white border border-gray-200 rounded-2xl shadow-[0px_8px_24px_rgba(0,0,0,0.12)]"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+            <Search size={14} className="text-gray-400 shrink-0" />
+            <input
+              ref={searchRef}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search currency..."
+              className="flex-1 text-[12px] text-gray-700 placeholder:text-gray-400 outline-none bg-transparent"
+            />
+          </div>
+          <div className="overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200" style={{ height: 240 }}>
+            {filtered.length === 0 ? (
+              <p className="text-center text-[12px] py-8 text-gray-400">No results</p>
+            ) : (
+              filtered.map((opt) => (
+                <button
+                  key={opt.code}
+                  type="button"
+                  onClick={() => { onChange(opt.code); close(); }}
+                  className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 text-[12px] text-left transition-colors cursor-pointer ${opt.code === value ? "bg-gray-50 text-[#0B1215] font-semibold" : "text-gray-700 hover:bg-gray-50"}`}
+                >
+                  <span>{opt.label}</span>
+                  {opt.code === value && <Check size={13} className="text-[#0B1215] shrink-0" />}
+                </button>
+              ))
+            )}
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={(e) => { e.stopPropagation(); calcPos(); setOpen(true); setSearch(""); }}
+        className="h-full flex items-center gap-1.5 pl-3 pr-2.5 text-[10px] font-light text-[#616263] bg-transparent border-r border-gray-200 outline-none cursor-pointer shrink-0 hover:bg-gray-50 transition-colors"
+      >
+        <span className="whitespace-nowrap">{selected?.label ?? value}</span>
+        <ChevronDown size={12} className={`text-gray-400 transition-transform duration-150 shrink-0 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {dropdown}
+    </>
+  );
+}
+
 const PRIORITY_OPTIONS = [
   { label: "High", value: "high" },
   { label: "Medium", value: "medium" },
   { label: "Low", value: "low" },
 ] as const;
 
-const COUNTRY_CODES = [
-  { code: "+234", label: "NG (+234)", country: "Nigeria" },
-  { code: "+254", label: "KE (+254)", country: "Kenya" },
-  { code: "+233", label: "GH (+233)", country: "Ghana" },
-  { code: "+27", label: "ZA (+27)", country: "South Africa" },
-  { code: "+1", label: "US (+1)", country: "United States" },
-  { code: "+44", label: "GB (+44)", country: "United Kingdom" },
+const CURRENCIES = [
+  { code: "USD", label: "USD ($)" },
+  { code: "EUR", label: "EUR (€)" },
+  { code: "GBP", label: "GBP (£)" },
+  { code: "NGN", label: "NGN (₦)" },
+  { code: "KES", label: "KES (KSh)" },
+  { code: "GHS", label: "GHS (GH₵)" },
+  { code: "ZAR", label: "ZAR (R)" },
+  { code: "JPY", label: "JPY (¥)" },
+  { code: "CAD", label: "CAD (C$)" },
+  { code: "AUD", label: "AUD (A$)" },
 ] as const;
 
-function parsePhoneNumber(fullPhone: string | null | undefined): { countryCode: string; phonePart: string } {
-  if (!fullPhone) {
-    return { countryCode: "+234", phonePart: "" };
-  }
-  const sortedCodes = [...COUNTRY_CODES].map(c => c.code).sort((a, b) => b.length - a.length);
-  for (const code of sortedCodes) {
-    if (fullPhone.startsWith(code)) {
-      return {
-        countryCode: code,
-        phonePart: fullPhone.slice(code.length).trim(),
-      };
-    }
-  }
-  return { countryCode: "+234", phonePart: fullPhone };
-}
 
 export function AddLeadModal({
   onClose,
@@ -83,9 +192,7 @@ export function AddLeadModal({
 
   const [name, setName] = useState(lead?.name ?? "");
   const [email, setEmail] = useState(lead?.email ?? "");
-  const initialPhone = parsePhoneNumber(lead?.phone);
-  const [countryCode, setCountryCode] = useState(initialPhone.countryCode);
-  const [phonePart, setPhonePart] = useState(initialPhone.phonePart);
+  const [phone, setPhone] = useState(lead?.phone ?? "");
   const [location, setLocation] = useState(lead?.location ?? "");
   const [source, setSource] = useState(lead?.source ?? "");
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
@@ -101,6 +208,8 @@ export function AddLeadModal({
   const [status, setStatus] = useState<ApiLeadStatus>(lead?.status ?? defaultStatus);
   const [priority, setPriority] = useState<ApiLeadPriority>(lead?.priority ?? "medium");
   const [assignedToUserId, setAssignedToUserId] = useState(lead?.assigned_to_user_id ? String(lead.assigned_to_user_id) : "");
+  const [budgetCurrency, setBudgetCurrency] = useState(() => lead?.budget?.match(/^([A-Z]{3})/)?.[1] ?? "USD");
+  const [budgetAmount, setBudgetAmount] = useState(() => lead?.budget?.replace(/^[A-Z]{3}\s?/, "") ?? "");
   const [nextAction, setNextAction] = useState(lead?.next_action ?? "");
   const [lastInteraction, setLastInteraction] = useState(lead?.last_interaction ?? "");
 
@@ -194,7 +303,8 @@ export function AddLeadModal({
       pipeline_id: Number(effectivePipelineId),
       name: name.trim(),
       email: email.trim() || null,
-      phone: phonePart.trim() ? (countryCode + phonePart.trim()) : null,
+      phone: phone || null,
+      budget: budgetAmount.trim() ? `${budgetCurrency} ${budgetAmount.trim()}` : null,
       location: location.trim() || null,
       source: source.trim() || (isAgentContext ? "agent upload" : null),
       status,
@@ -300,23 +410,13 @@ export function AddLeadModal({
 
             <div>
               <FormRow label="Phone" labelClassName="w-28">
-                <div className="flex w-full gap-2 col-span-2">
-                  <select
-                    value={countryCode}
-                    onChange={(e) => setCountryCode(e.target.value)}
-                    className="h-12.25 w-[110px] px-3.5 rounded-xl border border-gray-200 text-[10px] font-light text-[#616263] bg-white shadow-[0px_1px_3px_1px_#00000026,0px_1px_2px_0px_#0000004D] cursor-pointer outline-none focus:border-gray-400 transition-colors"
-                  >
-                    {COUNTRY_CODES.map((c) => (
-                      <option key={c.code} value={c.code}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                  <InlineInput
-                    value={phonePart}
-                    onChange={(e) => { setPhonePart(e.target.value); clearError("phone"); }}
+                <div className="col-span-2 w-full">
+                  <PhoneNumberInput
+                    value={phone}
+                    onChange={(val) => { setPhone(val); clearError("phone"); }}
                     placeholder="E.g 555-0199"
-                    className="flex-1 min-w-0"
+                    defaultCountry="NG"
+                    variant="compact"
                   />
                 </div>
               </FormRow>
@@ -361,6 +461,26 @@ export function AddLeadModal({
                 />
               </FormRow>
               <FieldError message={errors.source} />
+            </div>
+
+            <div>
+              <FormRow label="Budget" labelClassName="w-28">
+                <div className="col-span-2 h-12.25 w-full flex rounded-xl border border-gray-200 overflow-hidden shadow-[0px_1px_3px_1px_#00000026,0px_1px_2px_0px_#0000004D] bg-white focus-within:border-gray-400 transition-colors">
+                  <SearchableCurrencySelect
+                    value={budgetCurrency}
+                    onChange={setBudgetCurrency}
+                    options={CURRENCIES as unknown as { code: string; label: string }[]}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    value={budgetAmount}
+                    onChange={(e) => setBudgetAmount(e.target.value)}
+                    placeholder="E.g 10,000"
+                    className="flex-1 h-full px-3 text-[10px] font-light text-[#616263] placeholder:text-[10px] bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </div>
+              </FormRow>
             </div>
 
             <div>

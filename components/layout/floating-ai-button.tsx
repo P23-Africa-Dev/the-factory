@@ -2,22 +2,73 @@
 
 import { AIChat } from "@/components/dashboard/ai-chat";
 import { ELY_OPEN_LABEL } from "@/lib/ely-brand";
-import { Sparkles, Wand2, X } from "lucide-react";
-import { useState } from "react";
+import { X } from "lucide-react";
+import { useRef, useState } from "react";
+
+const BUTTON_SIZE = 64; // px — matches w-16 h-16
 
 export function FloatingAIButton() {
   const [open, setOpen] = useState(false);
   const [chatKey, setChatKey] = useState(0);
+  // null = use CSS default (bottom-right); set after first drag
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const btnRef = useRef<HTMLDivElement>(null);
 
   function openChat() {
     setChatKey((k) => k + 1);
     setOpen(true);
   }
 
+  function handlePointerDown(e: React.PointerEvent) {
+    // Only primary button (left-click / touch)
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    e.preventDefault();
+
+    const rect = btnRef.current!.getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const originX = rect.left;
+    const originY = rect.top;
+    let moved = false;
+
+    function onMove(ev: PointerEvent) {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      // 5 px threshold to distinguish click from drag
+      if (!moved && Math.hypot(dx, dy) < 5) return;
+      moved = true;
+      setPos({
+        x: Math.max(0, Math.min(window.innerWidth - BUTTON_SIZE, originX + dx)),
+        y: Math.max(0, Math.min(window.innerHeight - BUTTON_SIZE, originY + dy)),
+      });
+    }
+
+    function onUp() {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      if (!moved) {
+        // treat as a click
+        open ? setOpen(false) : openChat();
+      }
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  const posStyle: React.CSSProperties = pos
+    ? { left: pos.x, top: pos.y, bottom: "auto", right: "auto" }
+    : { bottom: "2rem", right: "2rem" };
+
   return (
     <>
       {/* FAB */}
-      <div className="fixed bottom-8 right-8 z-[9997] flex items-center justify-center">
+      <div
+        ref={btnRef}
+        className="fixed z-[9997] flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none"
+        style={posStyle}
+        onPointerDown={handlePointerDown}
+      >
         {/* Glow rings */}
         {!open && (
           <>
@@ -34,14 +85,14 @@ export function FloatingAIButton() {
         )}
 
         <button
-          onClick={() => (open ? setOpen(false) : openChat())}
           aria-label={ELY_OPEN_LABEL}
-          className="relative w-16 h-16 rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(168,85,247,0.6)] active:scale-95 transition-transform duration-200"
+          className="relative w-16 h-16 rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(168,85,247,0.6)] active:scale-95 transition-transform duration-200 pointer-events-none"
           style={{
             background: open
               ? "rgba(255,255,255,0.12)"
               : "linear-gradient(135deg, #9333ea 0%, #a855f7 40%, #c026d3 100%)",
           }}
+          tabIndex={-1}
         >
           {open ? (
             <X className="w-6 h-6 text-white" />
@@ -71,9 +122,6 @@ export function FloatingAIButton() {
                   strokeLinejoin="round"
                 />
               </svg>
-
-              {/* <Wand2 className="w-6 h-6 text-white rotate-[-30deg]" strokeWidth={1.8} /> */}
-              {/* <Sparkles className="w-4 h-4 text-white absolute -top-3 -right-3" strokeWidth={1.5} /> */}
             </span>
           )}
         </button>

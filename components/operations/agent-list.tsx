@@ -17,6 +17,9 @@ export type AgentItem = {
   time: string;
   avatar: string;
   active: boolean;
+  location?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   // optional extras for pre-populating edit form
   avatarKey?: string;
   baseSalary?: number;

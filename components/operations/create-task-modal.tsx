@@ -407,21 +407,23 @@ export function CreateTaskModal({
             )}
           </div>
 
-          {/* Assign To */}
-          <div>
-            <FieldLabel required>Assign To</FieldLabel>
-            <SearchableSelect
-              value={form.assignTo}
-              onChange={(v) => set("assignTo", v)}
-              options={loadingAgents ? [] : agents.map((a) => ({ value: a.id.toString(), label: a.name }))}
-              placeholder={loadingAgents ? "Loading…" : "Select agent"}
-              leftIcon={<User size={13} className="text-gray-400" />}
-              className={`${INPUT_CLS(errors.assignTo)} pl-9 pr-4 cursor-pointer`}
-            />
-            {errors.assignTo && (
-              <p className="text-red-400 text-[11px] mt-1">{errors.assignTo}</p>
-            )}
-          </div>
+          {/* Assign To — hidden for agents */}
+          {role !== "agent" && (
+            <div>
+              <FieldLabel required>Assign To</FieldLabel>
+              <SearchableSelect
+                value={form.assignTo}
+                onChange={(v) => set("assignTo", v)}
+                options={loadingAgents ? [] : agents.map((a) => ({ value: a.id.toString(), label: a.name }))}
+                placeholder={loadingAgents ? "Loading…" : "Select agent"}
+                leftIcon={<User size={13} className="text-gray-400" />}
+                className={`${INPUT_CLS(errors.assignTo)} pl-9 pr-4 cursor-pointer`}
+              />
+              {errors.assignTo && (
+                <p className="text-red-400 text-[11px] mt-1">{errors.assignTo}</p>
+              )}
+            </div>
+          )}
 
           {/* Location + Address */}
           <div className="relative">

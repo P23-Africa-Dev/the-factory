@@ -23,6 +23,7 @@ const KPI_CATEGORIES: { value: KpiCategory; label: string }[] = [
   { value: "collection", label: "Collection" },
   { value: "survey", label: "Survey" },
   { value: "merchandising", label: "Merchandising" },
+  { value: "others", label: "Others" },
 ];
 
 
