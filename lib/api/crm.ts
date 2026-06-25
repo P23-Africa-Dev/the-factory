@@ -54,6 +54,7 @@ export type LeadApiItem = {
     source?: string | null;
     status?: ApiLeadStatus | null;
     priority?: ApiLeadPriority | null;
+    budget?: string | null;
     next_action?: string | null;
     last_interaction?: string | null;
     last_interaction_at?: string | null;
