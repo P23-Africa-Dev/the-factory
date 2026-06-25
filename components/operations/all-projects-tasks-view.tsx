@@ -89,6 +89,7 @@ function TaskSummaryCards({ tasks }: { tasks: TaskApiItem[] }) {
           </div>
         </div>
         <div className="flex flex-col z-10 text-white min-w-0">
+          {/* overall task */}
           <p className="text-[#E8E8E8] font-normal text-[12px] sm:text-[14px] lg:text-[16px] leading-tight mb-0.5">
             Overall Task
           </p>
