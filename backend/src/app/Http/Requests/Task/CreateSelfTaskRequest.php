@@ -35,6 +35,8 @@ class CreateSelfTaskRequest extends FormRequest
             'title' => ['required', 'string', 'min:3', 'max:255'],
             'type' => ['nullable', 'string', Rule::in(TaskType::values())],
             'description' => ['nullable', 'string', 'min:10', 'max:5000'],
+            'assigned_agent_id' => ['prohibited'],
+            'assigned_agent_ids' => ['prohibited'],
             'location' => ['nullable', 'string', 'min:2', 'max:255'],
             'address' => ['nullable', 'string', 'min:5', 'max:1000'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],

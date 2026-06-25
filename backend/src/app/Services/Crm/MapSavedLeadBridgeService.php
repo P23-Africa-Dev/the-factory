@@ -29,11 +29,21 @@ class MapSavedLeadBridgeService
             ->first();
 
         if ($existing !== null) {
-            if ($existing->name !== self::MAP_PIPELINE_NAME) {
-                $existing->update(['name' => self::MAP_PIPELINE_NAME]);
-            }
+            return $this->normalizeMapPipeline($existing);
+        }
 
-            return $existing->fresh();
+        $legacy = LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->whereIn('name', [self::MAP_PIPELINE_NAME, self::LEGACY_MAP_PIPELINE_NAME])
+            ->first();
+
+        if ($legacy !== null) {
+            $legacy->update([
+                'name' => self::MAP_PIPELINE_NAME,
+                'system_key' => self::MAP_PIPELINE_SYSTEM_KEY,
+            ]);
+
+            return $legacy->fresh();
         }
 
         $maxSortOrder = (int) LeadPipeline::query()->where('company_id', $companyId)->max('sort_order');
@@ -46,6 +56,16 @@ class MapSavedLeadBridgeService
             'is_default' => false,
             'system_key' => self::MAP_PIPELINE_SYSTEM_KEY,
         ]);
+    }
+
+    private function normalizeMapPipeline(LeadPipeline $pipeline): LeadPipeline
+    {
+        if ($pipeline->name !== self::MAP_PIPELINE_NAME) {
+            $pipeline->update(['name' => self::MAP_PIPELINE_NAME]);
+            $pipeline = $pipeline->fresh();
+        }
+
+        return $pipeline;
     }
 
     public function mapPipelineHasLeads(int $companyId): bool

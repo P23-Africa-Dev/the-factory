@@ -229,7 +229,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const user = useAuthStore((s) => s.user);
   const firstName = user?.name?.split(" ")[0] ?? "User";
   const avatarSrc = getSafeAvatarSrc(user?.avatar) ?? "/avatars/male-avatar.png";
-  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const isAgent = role === "agent";
   const {
     messages,
     isStreaming,
@@ -450,6 +451,9 @@ export function AIChat({ open, onClose }: AIChatProps) {
       }
 
       if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "kpis.create"].includes(tool) || hasUserAssignmentField) {
+        if (isAgent && tool === "tasks.create") {
+          continue;
+        }
         void loadAssigneeOptions(msg.id);
       }
     }
@@ -770,6 +774,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
         }
       }
 
+      if (isAgent) {
+        delete merged.assignee;
+        delete merged.assigned_agent_id;
+        delete merged.assigned_agent_ids;
+      }
+
       return merged;
     }
 
@@ -889,12 +899,17 @@ export function AIChat({ open, onClose }: AIChatProps) {
     const tool = actionToolForMessage(msg);
 
     if (tool === "tasks.create") {
-      return [
+      const fields: EditFieldConfig[] = [
         { key: "title", label: "Title", control: "text" },
         { key: "type", label: "Type", control: "select", options: TASK_TYPE_OPTIONS },
         { key: "due_date", label: "Due Date", control: "date" },
-        { key: "assignee", label: "Assignee", control: "select", options: assigneeSelectOptions(msg) },
       ];
+
+      if (!isAgent) {
+        fields.push({ key: "assignee", label: "Assignee", control: "select", options: assigneeSelectOptions(msg) });
+      }
+
+      return fields;
     }
 
     if (tool === "meetings.schedule") {
@@ -1090,7 +1105,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
         const assigneeEdited = assigneeDropdownValue(msg, argsForChecks) !== "";
         const hasResolvedId = typeof args?.assigned_agent_id === "number";
-        if (!assigneeEdited && !hasResolvedId) {
+        if (!isAgent && !assigneeEdited && !hasResolvedId) {
           remaining.push(code);
         }
         continue;
@@ -1189,19 +1204,21 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const assigneeEdited = assigneeDropdownValue(msg, args) !== "";
       const assigneeResolved = typeof args.assigned_agent_id === "number";
 
-      if (warningCodes.includes("assignee_unresolved") && !assigneeEdited && !assigneeResolved) {
-        rows.push({
-          key: "assigned_agent_id",
-          label: "Assignee",
-          value: "Needs correction",
-          warning: true,
-        });
-      } else {
-        rows.push({
-          key: "assigned_agent_id",
-          label: "Assignee",
-          value: formatPreviewValue("assignee", assigneeDisplayName(msg, args)),
-        });
+      if (!isAgent) {
+        if (warningCodes.includes("assignee_unresolved") && !assigneeEdited && !assigneeResolved) {
+          rows.push({
+            key: "assigned_agent_id",
+            label: "Assignee",
+            value: "Needs correction",
+            warning: true,
+          });
+        } else {
+          rows.push({
+            key: "assigned_agent_id",
+            label: "Assignee",
+            value: formatPreviewValue("assignee", assigneeDisplayName(msg, args)),
+          });
+        }
       }
 
       return rows;

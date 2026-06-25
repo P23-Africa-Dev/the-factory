@@ -21,6 +21,7 @@ use App\Services\Crm\LeadService;
 use App\Services\Calendar\MeetingService;
 use App\Services\Kpi\KpiService;
 use App\Services\Notification\NotificationService;
+use App\Services\Company\CompanyContextService;
 use App\Services\Project\ProjectService;
 use App\Services\Task\TaskReassignmentService;
 use App\Services\Task\TaskService;
@@ -40,6 +41,7 @@ class ActionToolRegistry
         private readonly VisitAssistantService $visitAssistantService,
         private readonly LeadService $leadService,
         private readonly KpiService $kpiService,
+        private readonly CompanyContextService $companyContextService,
     ) {}
 
     public function execute(string $tool, User $user, int $companyId, array $args = []): array
@@ -64,12 +66,18 @@ class ActionToolRegistry
 
     private function createTask(User $user, int $companyId, array $args): array
     {
+        $role = (string) $this->companyContextService->resolve($user, $companyId)['role'];
+        $isAgent = $role === 'agent';
+
         $validated = Validator::make($args, [
             'title' => ['required', 'string', 'min:3', 'max:255'],
             'type' => ['required', 'string', Rule::in(TaskType::values())],
             'description' => ['required', 'string', 'min:10', 'max:5000'],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
-            'assigned_agent_id' => ['nullable', 'integer', 'exists:users,id'],
+            'assigned_agent_id' => $isAgent
+                ? ['prohibited']
+                : ['nullable', 'integer', 'exists:users,id'],
+            'assigned_agent_ids' => ['prohibited'],
             'location' => ['nullable', 'string', 'min:2', 'max:255'],
             'address' => ['nullable', 'string', 'min:5', 'max:1000'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
@@ -82,10 +90,16 @@ class ActionToolRegistry
             'visit_verification_required' => ['nullable', 'boolean'],
         ])->validate();
 
-        $task = $this->taskService->create($user, [
+        unset($validated['assigned_agent_id'], $validated['assigned_agent_ids']);
+
+        $payload = [
             ...$validated,
             'company_id' => $companyId,
-        ]);
+        ];
+
+        $task = $isAgent
+            ? $this->taskService->createSelf($user, $payload)
+            : $this->taskService->create($user, $payload);
 
         return [
             'tool' => 'tasks.create',

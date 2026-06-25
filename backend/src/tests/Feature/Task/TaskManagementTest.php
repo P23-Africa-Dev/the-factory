@@ -768,6 +768,23 @@ class TaskManagementTest extends TestCase
             ->assertJsonPath('data.task.assigned_agent_id', $agent->id);
     }
 
+    public function test_agent_self_task_rejects_assign_to_payload(): void
+    {
+        [$company,, $agent] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/agent/tasks/self', [
+                'company_id' => $company->id,
+                'title' => 'Self Assigned Attempt',
+                'description' => 'Agents cannot choose another assignee during self task creation.',
+                'assigned_agent_id' => $agent->id,
+                'due_date' => now()->addDay()->toISOString(),
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['assigned_agent_id']);
+    }
+
     public function test_agent_cannot_create_self_task_without_company_context(): void
     {
         [,, $agent] = $this->seedCompanyUsers();

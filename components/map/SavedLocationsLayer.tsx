@@ -537,7 +537,7 @@ export function SavedLocationsLayer({
         onSuccess: (res) => {
           toast.success(
             res.data.location.linked_to_crm
-              ? "Location saved to map and CRM."
+              ? "Location saved to map and Map Leads pipeline."
               : "Location saved."
           );
           setPendingPin(null);

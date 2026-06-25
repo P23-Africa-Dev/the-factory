@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Crm\MapSavedLeadBridgeService;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class CompanyLocationService
@@ -67,28 +68,32 @@ class CompanyLocationService
         $this->ensureCanCreate((string) $context['role']);
         $companyId = (int) $context['company']->id;
 
-        $location = CompanyLocation::create([
-            'company_id' => $companyId,
-            'crm_lead_id' => null,
-            'created_by_user_id' => (int) $user->id,
-            'updated_by_user_id' => null,
-            'name' => $data['name'],
-            'type' => $data['type'] ?? null,
-            'description' => $data['description'] ?? null,
-            'address' => $data['address'] ?? null,
-            'latitude' => $data['latitude'],
-            'longitude' => $data['longitude'],
-            'contact_number' => $data['contact_number'] ?? null,
-            'email' => $data['email'] ?? null,
-            'is_active' => array_key_exists('is_active', $data) ? (bool) $data['is_active'] : true,
-            'meta' => $data['meta'] ?? null,
-        ]);
+        $location = DB::transaction(function () use ($user, $data, $companyId): CompanyLocation {
+            $location = CompanyLocation::create([
+                'company_id' => $companyId,
+                'crm_lead_id' => null,
+                'created_by_user_id' => (int) $user->id,
+                'updated_by_user_id' => null,
+                'name' => $data['name'],
+                'type' => $data['type'] ?? null,
+                'description' => $data['description'] ?? null,
+                'address' => $data['address'] ?? null,
+                'latitude' => $data['latitude'],
+                'longitude' => $data['longitude'],
+                'contact_number' => $data['contact_number'] ?? null,
+                'email' => $data['email'] ?? null,
+                'is_active' => array_key_exists('is_active', $data) ? (bool) $data['is_active'] : true,
+                'meta' => $data['meta'] ?? null,
+            ]);
 
-        if (! empty($data['save_to_crm'])) {
-            $status = isset($data['crm_status']) ? (string) $data['crm_status'] : 'newly_lead';
-            $this->mapSavedLeadBridgeService->createLinkedLead($user, $location, $companyId, $status);
-            $location = $location->fresh();
-        }
+            if ($this->shouldSaveToCrm($data)) {
+                $status = isset($data['crm_status']) ? (string) $data['crm_status'] : 'newly_lead';
+                $this->mapSavedLeadBridgeService->createLinkedLead($user, $location, $companyId, $status);
+                $location = $location->fresh();
+            }
+
+            return $location;
+        });
 
         return $this->findForUser($user, $location, $companyId);
     }
@@ -198,5 +203,17 @@ class CompanyLocationService
                 'location' => ['The selected location is outside your company context.'],
             ]);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function shouldSaveToCrm(array $data): bool
+    {
+        if (! array_key_exists('save_to_crm', $data)) {
+            return false;
+        }
+
+        return filter_var($data['save_to_crm'], FILTER_VALIDATE_BOOLEAN);
     }
 }

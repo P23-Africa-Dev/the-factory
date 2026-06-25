@@ -172,6 +172,37 @@ class MapSavedLocationCrmTest extends TestCase
         ]);
     }
 
+    public function test_legacy_named_pipeline_is_reused_for_map_leads(): void
+    {
+        [$company, $admin] = $this->seedCompany();
+
+        $legacyPipeline = LeadPipeline::query()->create([
+            'company_id' => $company->id,
+            'name' => 'Saved from Map',
+            'currency_code' => 'USD',
+            'sort_order' => 99,
+            'is_default' => false,
+        ]);
+
+        $response = $this->withToken($admin->createToken('admin-legacy-map', ['*'])->plainTextToken)
+            ->postJson('/api/v1/admin/locations', [
+                'company_id' => $company->id,
+                'name' => 'Legacy Pipeline Pin',
+                'latitude' => 6.4400000,
+                'longitude' => 3.4500000,
+                'save_to_crm' => true,
+            ]);
+
+        $response->assertCreated();
+
+        $leadId = (int) $response->json('data.location.crm_lead_id');
+        $this->assertSame($legacyPipeline->id, Lead::query()->findOrFail($leadId)->pipeline_id);
+
+        $legacyPipeline->refresh();
+        $this->assertSame('Map Leads', $legacyPipeline->name);
+        $this->assertSame(MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY, $legacyPipeline->system_key);
+    }
+
     /**
      * @return array{0: Company, 1: User}
      */
