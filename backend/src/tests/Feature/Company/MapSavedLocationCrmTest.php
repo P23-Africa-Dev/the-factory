@@ -60,7 +60,7 @@ class MapSavedLocationCrmTest extends TestCase
             ->first();
 
         $this->assertNotNull($pipeline);
-        $this->assertSame('Saved from Map', $pipeline->name);
+        $this->assertSame('Map Leads', $pipeline->name);
         $this->assertSame($pipeline->id, Lead::query()->findOrFail($leadId)->pipeline_id);
     }
 
@@ -73,7 +73,7 @@ class MapSavedLocationCrmTest extends TestCase
 
         $before->assertOk();
         $beforeNames = collect($before->json('data.items'))->pluck('name')->all();
-        $this->assertNotContains('Saved from Map', $beforeNames);
+        $this->assertNotContains('Map Leads', $beforeNames);
 
         $this->withToken($admin->createToken('admin-map-crm-create', ['*'])->plainTextToken)
             ->postJson('/api/v1/admin/locations', [
@@ -90,7 +90,7 @@ class MapSavedLocationCrmTest extends TestCase
 
         $after->assertOk();
         $afterNames = collect($after->json('data.items'))->pluck('name')->all();
-        $this->assertContains('Saved from Map', $afterNames);
+        $this->assertContains('Map Leads', $afterNames);
     }
 
     public function test_location_update_syncs_linked_crm_lead_and_delete_unlinks_only(): void
@@ -169,6 +169,75 @@ class MapSavedLocationCrmTest extends TestCase
             'name' => 'CRM Renamed Site',
             'contact_number' => '+2348099999999',
             'address' => 'CRM address update',
+        ]);
+    }
+
+    public function test_legacy_named_pipeline_is_reused_for_map_leads(): void
+    {
+        [$company, $admin] = $this->seedCompany();
+
+        $legacyPipeline = LeadPipeline::query()->create([
+            'company_id' => $company->id,
+            'name' => 'Saved from Map',
+            'currency_code' => 'USD',
+            'sort_order' => 99,
+            'is_default' => false,
+        ]);
+
+        $response = $this->withToken($admin->createToken('admin-legacy-map', ['*'])->plainTextToken)
+            ->postJson('/api/v1/admin/locations', [
+                'company_id' => $company->id,
+                'name' => 'Legacy Pipeline Pin',
+                'latitude' => 6.4400000,
+                'longitude' => 3.4500000,
+                'save_to_crm' => true,
+            ]);
+
+        $response->assertCreated();
+
+        $leadId = (int) $response->json('data.location.crm_lead_id');
+        $this->assertSame($legacyPipeline->id, Lead::query()->findOrFail($leadId)->pipeline_id);
+
+        $legacyPipeline->refresh();
+        $this->assertSame('Map Leads', $legacyPipeline->name);
+        $this->assertSame(MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY, $legacyPipeline->system_key);
+    }
+
+    public function test_save_to_crm_rejects_invalid_crm_status(): void
+    {
+        [$company, $admin] = $this->seedCompany();
+
+        $response = $this->withToken($admin->createToken('admin-invalid-crm-status', ['*'])->plainTextToken)
+            ->postJson('/api/v1/admin/locations', [
+                'company_id' => $company->id,
+                'name' => 'Invalid Status Pin',
+                'latitude' => 6.4400000,
+                'longitude' => 3.4500000,
+                'save_to_crm' => true,
+                'crm_status' => 'not_a_real_label',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['status']);
+    }
+
+    public function test_save_to_crm_creates_notification_for_management(): void
+    {
+        [$company, $admin] = $this->seedCompany();
+
+        $this->withToken($admin->createToken('admin-map-notify', ['*'])->plainTextToken)
+            ->postJson('/api/v1/admin/locations', [
+                'company_id' => $company->id,
+                'name' => 'Notify Site',
+                'latitude' => 6.4400000,
+                'longitude' => 3.4500000,
+                'save_to_crm' => true,
+            ])
+            ->assertCreated();
+
+        $this->assertDatabaseHas('app_notifications', [
+            'company_id' => $company->id,
+            'type' => 'crm.lead_created',
         ]);
     }
 

@@ -160,6 +160,25 @@ class LeadController extends Controller
         );
     }
 
+    public function leadsAnalytics(Request $request): JsonResponse
+    {
+        $analytics = $this->leadService->leadsAnalytics(
+            $request->user(),
+            $this->resolveCompanyContextId($request->input('company_id')),
+            [
+                'search' => $request->string('search')->toString(),
+                'status' => $request->string('status')->toString(),
+                'pipeline_id' => $request->input('pipeline_id'),
+                'source' => $request->string('source')->toString(),
+            ],
+        );
+
+        return $this->success(
+            message: 'CRM leads analytics fetched successfully.',
+            data: $analytics,
+        );
+    }
+
     public function pipelines(Request $request): JsonResponse
     {
         $companyId = $this->resolveCompanyContextId($request->input('company_id'));

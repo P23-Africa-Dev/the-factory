@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
+import { showApiErrorToast } from '@/lib/api/errors';
 import { useCreateLead, useCrmPipelines, useCrmLabels } from '@/features/crm';
 
 interface AddLeadModalProps {
@@ -20,6 +21,7 @@ interface FormState {
   location: string;
   source: string;
   status: string;
+  priority: 'high' | 'medium' | 'low' | 'urgent';
   pipelineId: string;
 }
 
@@ -30,8 +32,16 @@ const INITIAL_FORM: FormState = {
   location: '',
   source: '',
   status: '',
+  priority: 'medium',
   pipelineId: '',
 };
+
+const PRIORITY_OPTIONS = [
+  { value: 'low' as const, label: 'Low' },
+  { value: 'medium' as const, label: 'Medium' },
+  { value: 'high' as const, label: 'High' },
+  { value: 'urgent' as const, label: 'Urgent' },
+];
 
 const COUNTRY_CODES = [
   { code: "+234", label: "NG (+234)" },
@@ -94,16 +104,22 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
 
     const defaultStatus = labels[0]?.slug ?? 'newly_lead';
 
-    createLead({
-      company_id: companyId,
-      pipeline_id: pipelineId,
-      name: form.name.trim(),
-      email: form.email.trim() || null,
-      phone: phonePart.trim() ? (countryCode + phonePart.trim()) : null,
-      location: form.location.trim() || null,
-      source: form.source.trim() || 'agent upload',
-      status: form.status || defaultStatus,
-    });
+    createLead(
+      {
+        company_id: companyId,
+        pipeline_id: pipelineId,
+        name: form.name.trim(),
+        email: form.email.trim() || null,
+        phone: phonePart.trim() ? (countryCode + phonePart.trim()) : null,
+        location: form.location.trim() || null,
+        source: form.source.trim() || 'agent_upload',
+        status: form.status || defaultStatus,
+        priority: form.priority,
+      },
+      {
+        onError: (err) => showApiErrorToast(err, 'Could not add lead'),
+      },
+    );
   };
 
   const handleClose = () => {
@@ -218,6 +234,28 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                   onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
                   className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
                 />
+              </div>
+
+              {/* Priority */}
+              <div className="flex flex-col">
+                <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Priority</label>
+                <div className="flex overflow-x-auto pb-1 gap-2 scrollbar-none">
+                  {PRIORITY_OPTIONS.map((option) => {
+                    const isSelected = form.priority === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, priority: option.value }))}
+                        className={`px-3.5 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-colors outline-none focus:outline-none ${
+                          isSelected ? 'bg-[#7BB6B8] text-white' : 'bg-white/8 text-white/60'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Status pills selection */}

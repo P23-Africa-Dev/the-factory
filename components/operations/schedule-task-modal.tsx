@@ -253,25 +253,22 @@ export function ScheduleTaskModal({
                         </div>
                         {errors.taskDescription && <p className="text-[11px] text-red-500">{errors.taskDescription}</p>}
 
-                        <label className="block text-[11px] font-bold uppercase tracking-wide text-[#0B1215]">
-                            Agent Name
-                        </label>
-                        {canDelegate ? (
-                            <SearchableSelect
-                                value={form.assignTo}
-                                onChange={(v) => updateField("assignTo", v)}
-                                options={loadingAgents ? [] : agents.map((a) => ({ value: String(a.id), label: a.name }))}
-                                placeholder={loadingAgents ? "Loading agents…" : "Select company agent"}
-                                leftIcon={<User size={14} className="text-gray-400" />}
-                                className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm"
-                            />
-                        ) : (
-                            <div className="flex items-center rounded-xl border border-gray-200 bg-gray-100 px-3 py-2.5 text-sm text-gray-700">
-                                <User size={14} className="mr-2 text-gray-500" />
-                                {user?.name || "Current user"}
-                            </div>
+                        {canDelegate && (
+                            <>
+                                <label className="block text-[11px] font-bold uppercase tracking-wide text-[#0B1215]">
+                                    Agent Name
+                                </label>
+                                <SearchableSelect
+                                    value={form.assignTo}
+                                    onChange={(v) => updateField("assignTo", v)}
+                                    options={loadingAgents ? [] : agents.map((a) => ({ value: String(a.id), label: a.name }))}
+                                    placeholder={loadingAgents ? "Loading agents…" : "Select company agent"}
+                                    leftIcon={<User size={14} className="text-gray-400" />}
+                                    className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm"
+                                />
+                                {errors.assignTo && <p className="text-[11px] text-red-500">{errors.assignTo}</p>}
+                            </>
                         )}
-                        {errors.assignTo && <p className="text-[11px] text-red-500">{errors.assignTo}</p>}
 
                         <label className="block text-[11px] font-bold uppercase tracking-wide text-[#0B1215]">
                             Location <span className="font-normal normal-case text-gray-400">(optional)</span>

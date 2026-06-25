@@ -30,6 +30,8 @@ class Lead extends Model
         'source',
         'status',
         'priority',
+        'budget_amount',
+        'budget_currency',
         'next_action',
         'last_interaction',
         'last_interaction_at',
@@ -42,6 +44,7 @@ class Lead extends Model
         return [
             'status' => 'string',
             'priority' => LeadPriority::class,
+            'budget_amount' => 'decimal:2',
             'meta' => 'array',
             'last_interaction_at' => 'datetime',
             'converted_at' => 'datetime',

@@ -9,6 +9,7 @@ use App\Models\Lead;
 use App\Models\LeadPipeline;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -406,6 +407,155 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.top_agent.total_uploads', 2);
     }
 
+    public function test_crm_leads_analytics_returns_filtered_totals_and_trends(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-25 12:00:00'));
+
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $secondPipeline = LeadPipeline::query()->create([
+            'company_id' => $company->id,
+            'name' => 'Secondary Pipeline',
+            'currency_code' => 'USD',
+            'sort_order' => 2,
+            'is_default' => false,
+        ]);
+
+        $baseLead = [
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+        ];
+
+        $this->createLeadAt(array_merge($baseLead, ['name' => 'Previous Week One']), '2026-06-16 10:00:00');
+        $this->createLeadAt(array_merge($baseLead, ['name' => 'Previous Week Two']), '2026-06-17 10:00:00');
+        $this->createLeadAt(array_merge($baseLead, ['name' => 'Current Week Mon One']), '2026-06-23 10:00:00');
+        $this->createLeadAt(array_merge($baseLead, ['name' => 'Current Week Mon Two']), '2026-06-23 14:00:00');
+        $this->createLeadAt(array_merge($baseLead, ['name' => 'Current Week Tues One']), '2026-06-24 10:00:00');
+        $this->createLeadAt([
+            'company_id' => $company->id,
+            'pipeline_id' => $secondPipeline->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Current Week Other Pipeline',
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+        ], '2026-06-24 12:00:00');
+        $this->createLeadAt(array_merge($baseLead, ['name' => 'Current Week Wed']), '2026-06-25 10:00:00');
+        $this->createLeadAt(array_merge($baseLead, [
+            'name' => 'Agent Upload Lead',
+            'source' => 'agent upload',
+        ]), '2026-06-24 15:00:00');
+
+        $token = $admin->createToken('admin-leads-analytics', ['*'])->plainTextToken;
+
+        $response = $this->withToken($token)
+            ->getJson('/api/v1/crm/leads/analytics?company_id=' . $company->id);
+
+        $response->assertOk()
+            ->assertJsonPath('data.total_leads', 8)
+            ->assertJsonPath('data.week_growth_percent', 200)
+            ->assertJsonPath('data.week_growth_direction', 'up')
+            ->assertJsonPath('data.month_new_leads', 8)
+            ->assertJsonPath('data.month_label', 'June')
+            ->assertJsonPath('data.daily_trend.0.day', 'Mon')
+            ->assertJsonPath('data.daily_trend.0.value', 0)
+            ->assertJsonPath('data.daily_trend.1.day', 'Tues')
+            ->assertJsonPath('data.daily_trend.1.value', 2)
+            ->assertJsonPath('data.daily_trend.2.day', 'Weds')
+            ->assertJsonPath('data.daily_trend.2.value', 3)
+            ->assertJsonPath('data.daily_trend.3.day', 'Thurs')
+            ->assertJsonPath('data.daily_trend.3.value', 1)
+            ->assertJsonPath('data.daily_trend.4.value', 0)
+            ->assertJsonPath('data.daily_trend.5.value', 0)
+            ->assertJsonPath('data.highlight_day', 'Weds');
+
+        $pipelineResponse = $this->withToken($token)
+            ->getJson('/api/v1/crm/leads/analytics?company_id=' . $company->id . '&pipeline_id=' . $pipelineId);
+
+        $pipelineResponse->assertOk()
+            ->assertJsonPath('data.total_leads', 7);
+
+        $sourceResponse = $this->withToken($token)
+            ->getJson('/api/v1/crm/leads/analytics?company_id=' . $company->id . '&source=agent_upload');
+
+        $sourceResponse->assertOk()
+            ->assertJsonPath('data.total_leads', 1);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_crm_leads_analytics_scopes_agent_visible_leads(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $otherAgent = User::factory()->create(['email_verified_at' => now()]);
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $otherAgent->id,
+            'role' => 'agent',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Assigned Lead',
+            'status' => 'contacted',
+            'priority' => 'medium',
+        ]);
+
+        Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'assigned_to_user_id' => $otherAgent->id,
+            'name' => 'Hidden Lead',
+            'status' => 'contacted',
+            'priority' => 'medium',
+        ]);
+
+        $agentToken = $agent->createToken('agent-scope-analytics', ['*'])->plainTextToken;
+
+        $this->withToken($agentToken)
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'name' => 'Agent Created',
+                'status' => 'newly_lead',
+                'priority' => 'low',
+            ])
+            ->assertCreated();
+
+        $this->assertDatabaseCount('leads', 3);
+
+        $this->withToken($agentToken)
+            ->getJson('/api/v1/crm/leads?company_id=' . $company->id)
+            ->assertOk()
+            ->assertJsonPath('data.pagination.total', 2);
+
+        $agentResponse = $this->withToken($agentToken)
+            ->getJson('/api/v1/crm/leads/analytics?company_id=' . $company->id);
+
+        $agentResponse->assertOk()
+            ->assertJsonPath('data.total_leads', 2);
+
+        $adminResponse = $this->withToken($admin->createToken('admin-agent-scope-analytics', ['*'])->plainTextToken)
+            ->getJson('/api/v1/crm/leads/analytics?company_id=' . $company->id);
+
+        $adminResponse->assertOk();
+
+        $this->assertGreaterThanOrEqual(
+            (int) $agentResponse->json('data.total_leads'),
+            (int) $adminResponse->json('data.total_leads'),
+        );
+    }
+
     public function test_admin_can_delete_unused_crm_label(): void
     {
         [$company, $admin] = $this->seedCompanyUsers();
@@ -517,6 +667,115 @@ class LeadManagementTest extends TestCase
             ->assertJsonValidationErrors(['authorization']);
     }
 
+    public function test_create_lead_persists_budget_fields(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($admin->createToken('admin-budget-lead', ['*'])->plainTextToken)
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'name' => 'Budget Prospect',
+                'status' => 'newly_lead',
+                'priority' => 'medium',
+                'budget_amount' => 12500.50,
+                'budget_currency' => 'NGN',
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.lead.budget_amount', 12500.5)
+            ->assertJsonPath('data.lead.budget_currency', 'NGN');
+
+        $this->assertDatabaseHas('leads', [
+            'name' => 'Budget Prospect',
+            'budget_amount' => '12500.50',
+            'budget_currency' => 'NGN',
+        ]);
+    }
+
+    public function test_legacy_budget_string_is_normalized_on_create(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($admin->createToken('admin-legacy-budget', ['*'])->plainTextToken)
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'name' => 'Legacy Budget Lead',
+                'status' => 'newly_lead',
+                'priority' => 'medium',
+                'budget' => 'USD 10000',
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.lead.budget_amount', 10000)
+            ->assertJsonPath('data.lead.budget_currency', 'USD');
+    }
+
+    public function test_agent_create_normalizes_source_to_agent_upload(): void
+    {
+        [$company, , $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($agent->createToken('agent-source-normalize', ['*'])->plainTextToken)
+            ->postJson('/api/v1/agent/crm/leads', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'name' => 'Agent Source Lead',
+                'status' => 'newly_lead',
+                'priority' => 'medium',
+                'source' => 'agent upload',
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.lead.source', 'agent_upload');
+    }
+
+    public function test_agent_create_accepts_explicit_priority(): void
+    {
+        [$company, , $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($agent->createToken('agent-priority-create', ['*'])->plainTextToken)
+            ->postJson('/api/v1/agent/crm/leads', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'name' => 'Urgent Agent Lead',
+                'status' => 'newly_lead',
+                'priority' => 'urgent',
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.lead.priority', 'urgent');
+    }
+
+    public function test_import_leads_with_budget_columns(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($admin->createToken('admin-import-budget', ['*'])->plainTextToken)
+            ->postJson('/api/v1/crm/leads/import', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'rows' => [
+                    [
+                        'name' => 'Imported Budget Lead',
+                        'status' => 'newly_lead',
+                        'priority' => 'high',
+                        'budget_amount' => '5000',
+                        'budget_currency' => 'USD',
+                    ],
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.imported_count', 1);
+
+        $this->assertDatabaseHas('leads', [
+            'name' => 'Imported Budget Lead',
+            'budget_amount' => '5000.00',
+            'budget_currency' => 'USD',
+        ]);
+    }
+
     private function seedCompanyUsers(): array
     {
         $company = Company::create([
@@ -560,5 +819,20 @@ class LeadManagementTest extends TestCase
         ]);
 
         return [$company, $admin, $agent, $pipeline->id];
+    }
+
+    /**
+     * @param array<string, mixed> $attributes
+     */
+    private function createLeadAt(array $attributes, string $createdAt): Lead
+    {
+        $lead = Lead::create($attributes);
+
+        DB::table('leads')->where('id', $lead->id)->update([
+            'created_at' => $createdAt,
+            'updated_at' => $createdAt,
+        ]);
+
+        return $lead->fresh();
     }
 }

@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\V1\Onboarding\WorkspaceController;
 use App\Http\Controllers\Api\V1\Payroll\PayrollController;
 use App\Http\Controllers\Api\V1\Project\ProjectController;
 use App\Http\Controllers\Api\V1\Tracking\AgentLocationController;
+use App\Http\Controllers\Api\V1\Tracking\AgentPresenceController;
 use App\Http\Controllers\Api\V1\Task\AgentTaskController;
 use App\Http\Controllers\Api\V1\Task\AdminTaskStatusController;
 use App\Http\Controllers\Api\V1\Task\TaskAssignmentController;
@@ -397,6 +398,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                     ->middleware('throttle:20,1')
                     ->name('leads.import');
                 Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+                Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
                 Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
                 Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
                 Route::post('/pipelines', [LeadController::class, 'storePipeline'])
@@ -502,6 +504,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                     ->middleware('throttle:20,1')
                     ->name('leads.import');
                 Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+                Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
                 Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
                 Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
                 Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
@@ -547,6 +550,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
 
             Route::get('/workforce/summary', WorkforceSummaryController::class)
                 ->name('workforce.summary');
+
+            Route::post('/presence/heartbeat', [AgentPresenceController::class, 'heartbeat'])
+                ->middleware('throttle:120,1')
+                ->name('presence.heartbeat');
 
             Route::prefix('agents')->name('agents.')->group(function (): void {
                 Route::get('/locations', [AgentLocationController::class, 'index'])->name('locations.index');
@@ -710,6 +717,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
             ->middleware('throttle:20,1')
             ->name('leads.import');
         Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+        Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
         Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
         Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
         Route::post('/pipelines', [LeadController::class, 'storePipeline'])

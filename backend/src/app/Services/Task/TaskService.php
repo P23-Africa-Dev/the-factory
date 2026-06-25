@@ -164,6 +164,8 @@ class TaskService
 
     public function createSelf(User $user, array $data): Task
     {
+        unset($data['assigned_agent_id'], $data['assigned_agent_ids']);
+
         $context = $this->accessService->resolve($user, $data['company_id'] ?? null);
         $this->accessService->ensureAgent($context);
 

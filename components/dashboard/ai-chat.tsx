@@ -21,6 +21,7 @@ import {
 } from "@/lib/format-forecast-overview";
 import { resolveCopilotGeolocationContext } from "@/lib/copilot-geolocation";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { useCrmLabels } from "@/hooks/use-crm";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
@@ -49,8 +50,13 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   sources?: string[];
+  tool?: string | null;
   payload?: unknown;
 }
+
+const ACTION_TOOL_PATTERN = /^(?:tasks|meetings|projects|notifications|crm|kpis)\.[a-z_]+$/;
+
+const USER_ASSIGNMENT_FIELD_PATTERN = /(^|_)(user_id|assigned_to_user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/;
 
 interface AIChatProps {
   open: boolean;
@@ -224,7 +230,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const user = useAuthStore((s) => s.user);
   const firstName = user?.name?.split(" ")[0] ?? "User";
   const avatarSrc = getSafeAvatarSrc(user?.avatar) ?? "/avatars/male-avatar.png";
-  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const isAgent = role === "agent";
+  const { data: crmLabels = [] } = useCrmLabels(companyId ?? undefined);
+  const leadStatusOptions: EditFieldOption[] = crmLabels.length > 0
+    ? crmLabels.map((label) => ({ value: label.slug, label: label.name }))
+    : LEAD_STATUS_OPTIONS;
   const {
     messages,
     isStreaming,
@@ -430,10 +441,10 @@ export function AIChat({ open, onClose }: AIChatProps) {
         continue;
       }
 
-      const tool = String(payload.tool ?? "");
+      const tool = actionToolForMessage(msg);
       const rawArgs = parseRecord(payload.action_args);
       const argKeys = rawArgs ? Object.keys(rawArgs) : [];
-      const hasUserAssignmentField = argKeys.some((key) => /(^|_)(user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/.test(key));
+      const hasUserAssignmentField = argKeys.some((key) => USER_ASSIGNMENT_FIELD_PATTERN.test(key));
 
       if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "kpis.create"].includes(tool) && !hasUserAssignmentField) {
         continue;
@@ -445,6 +456,9 @@ export function AIChat({ open, onClose }: AIChatProps) {
       }
 
       if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "kpis.create"].includes(tool) || hasUserAssignmentField) {
+        if (isAgent && tool === "tasks.create") {
+          continue;
+        }
         void loadAssigneeOptions(msg.id);
       }
     }
@@ -578,6 +592,27 @@ export function AIChat({ open, onClose }: AIChatProps) {
     return msg && typeof msg.payload === "object" && msg.payload !== null
       ? (msg.payload as Record<string, unknown>)
       : null;
+  }
+
+  function actionToolForMessage(msg: Message): string {
+    const payload = messagePayload(msg);
+    const payloadTool = typeof payload?.tool === "string" ? payload.tool.trim() : "";
+    if (payloadTool !== "") {
+      return payloadTool;
+    }
+
+    if (typeof msg.tool === "string" && msg.tool.trim() !== "") {
+      return msg.tool.trim();
+    }
+
+    for (const source of msg.sources ?? []) {
+      const candidate = String(source).trim();
+      if (ACTION_TOOL_PATTERN.test(candidate)) {
+        return candidate;
+      }
+    }
+
+    return "";
   }
 
   function parseRecord(value: unknown): Record<string, unknown> | null {
@@ -717,7 +752,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     const baseArgs = sanitizeActionArgs(actionArgsRaw);
     const draft = actionDrafts[msg.id] ?? {};
-    const tool = String(payload.tool ?? "");
+    const tool = actionToolForMessage(msg);
 
     if (tool === "tasks.create") {
       const merged: Record<string, unknown> = { ...baseArgs };
@@ -744,6 +779,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
         }
       }
 
+      if (isAgent) {
+        delete merged.assignee;
+        delete merged.assigned_agent_id;
+        delete merged.assigned_agent_ids;
+      }
+
       return merged;
     }
 
@@ -755,6 +796,36 @@ export function AIChat({ open, onClose }: AIChatProps) {
       }
 
       return baseArgs;
+    }
+
+    if (tool === "kpis.create" || tool === "crm.create_lead") {
+      const merged: Record<string, unknown> = { ...baseArgs, ...draft };
+
+      if (Object.prototype.hasOwnProperty.call(draft, "assigned_to_user_id")) {
+        const assigneeId = (draft.assigned_to_user_id ?? "").trim();
+        if (assigneeId === "") {
+          delete merged.assigned_to_user_id;
+        } else {
+          merged.assigned_to_user_id = Number(assigneeId);
+        }
+      }
+
+      return merged;
+    }
+
+    if (tool === "projects.create") {
+      const merged: Record<string, unknown> = { ...baseArgs, ...draft };
+
+      if (Object.prototype.hasOwnProperty.call(draft, "project_manager_user_id")) {
+        const managerId = (draft.project_manager_user_id ?? "").trim();
+        if (managerId === "") {
+          delete merged.project_manager_user_id;
+        } else {
+          merged.project_manager_user_id = Number(managerId);
+        }
+      }
+
+      return merged;
     }
 
     if (Object.keys(draft).length === 0) {
@@ -830,16 +901,20 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function editFieldsForMessage(msg: Message, args: Record<string, unknown>): EditFieldConfig[] {
-    const payload = messagePayload(msg);
-    const tool = String(payload?.tool ?? "");
+    const tool = actionToolForMessage(msg);
 
     if (tool === "tasks.create") {
-      return [
+      const fields: EditFieldConfig[] = [
         { key: "title", label: "Title", control: "text" },
         { key: "type", label: "Type", control: "select", options: TASK_TYPE_OPTIONS },
         { key: "due_date", label: "Due Date", control: "date" },
-        { key: "assignee", label: "Assignee", control: "select", options: assigneeSelectOptions(msg) },
       ];
+
+      if (!isAgent) {
+        fields.push({ key: "assignee", label: "Assignee", control: "select", options: assigneeSelectOptions(msg) });
+      }
+
+      return fields;
     }
 
     if (tool === "meetings.schedule") {
@@ -884,7 +959,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         { key: "email", label: "Email", control: "text" },
         { key: "industry", label: "Industry", control: "text" },
         { key: "contact_person", label: "Contact Person", control: "text" },
-        { key: "status", label: "Status", control: "select", options: LEAD_STATUS_OPTIONS },
+        { key: "status", label: "Status", control: "select", options: leadStatusOptions },
         { key: "priority", label: "Priority", control: "select", options: PRIORITY_OPTIONS },
         { key: "next_action", label: "Next Action", control: "textarea" },
         { key: "notes", label: "Notes", control: "textarea" },
@@ -926,6 +1001,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
             options: [
               { value: String(args[key] ?? ""), label: toTitleCase(String(args[key] ?? "current")) },
             ],
+          } as EditFieldConfig;
+        }
+
+        if (USER_ASSIGNMENT_FIELD_PATTERN.test(key) && key !== "task_id") {
+          const label = key === "assigned_to_user_id"
+            ? "Assign To"
+            : key === "to_user_id"
+              ? "Reassign To"
+              : key === "project_manager_user_id"
+                ? "Project Manager"
+                : toTitleCase(key);
+
+          return {
+            key,
+            label,
+            control: "select",
+            options: userIdSelectOptions(msg),
           } as EditFieldConfig;
         }
 
@@ -988,13 +1080,37 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     const args = actionArgsForMessage(msg);
     const argsForChecks: Record<string, unknown> = args ?? {};
+    const draft = actionDrafts[msg.id] ?? {};
+    const tool = actionToolForMessage(msg);
     const remaining: string[] = [];
 
     for (const code of blockingCodes) {
       if (code === "assignee_unresolved") {
+        if (tool === "kpis.create" || tool === "crm.create_lead") {
+          const assignedDraft = String(draft.assigned_to_user_id ?? "").trim();
+          const hasResolvedId =
+            (typeof args?.assigned_to_user_id === "number" && args.assigned_to_user_id > 0)
+            || (assignedDraft !== "" && !Number.isNaN(Number(assignedDraft)));
+          if (!hasResolvedId) {
+            remaining.push(code);
+          }
+          continue;
+        }
+
+        if (tool === "projects.create") {
+          const managerDraft = String(draft.project_manager_user_id ?? "").trim();
+          const hasResolvedId =
+            (typeof args?.project_manager_user_id === "number" && args.project_manager_user_id > 0)
+            || (managerDraft !== "" && !Number.isNaN(Number(managerDraft)));
+          if (!hasResolvedId) {
+            remaining.push(code);
+          }
+          continue;
+        }
+
         const assigneeEdited = assigneeDropdownValue(msg, argsForChecks) !== "";
         const hasResolvedId = typeof args?.assigned_agent_id === "number";
-        if (!assigneeEdited && !hasResolvedId) {
+        if (!isAgent && !assigneeEdited && !hasResolvedId) {
           remaining.push(code);
         }
         continue;
@@ -1075,7 +1191,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return [];
     }
 
-    const tool = String(payload.tool ?? "");
+    const tool = actionToolForMessage(msg);
     const args = actionArgsForMessage(msg);
     if (!args) {
       return [];
@@ -1093,19 +1209,21 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const assigneeEdited = assigneeDropdownValue(msg, args) !== "";
       const assigneeResolved = typeof args.assigned_agent_id === "number";
 
-      if (warningCodes.includes("assignee_unresolved") && !assigneeEdited && !assigneeResolved) {
-        rows.push({
-          key: "assigned_agent_id",
-          label: "Assignee",
-          value: "Needs correction",
-          warning: true,
-        });
-      } else {
-        rows.push({
-          key: "assigned_agent_id",
-          label: "Assignee",
-          value: formatPreviewValue("assignee", assigneeDisplayName(msg, args)),
-        });
+      if (!isAgent) {
+        if (warningCodes.includes("assignee_unresolved") && !assigneeEdited && !assigneeResolved) {
+          rows.push({
+            key: "assigned_agent_id",
+            label: "Assignee",
+            value: "Needs correction",
+            warning: true,
+          });
+        } else {
+          rows.push({
+            key: "assigned_agent_id",
+            label: "Assignee",
+            value: formatPreviewValue("assignee", assigneeDisplayName(msg, args)),
+          });
+        }
       }
 
       return rows;
@@ -1144,7 +1262,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         { key: "email", label: "Email", value: formatPreviewValue("email", args.email) },
         { key: "industry", label: "Industry", value: formatPreviewValue("industry", args.industry) },
         { key: "contact_person", label: "Contact Person", value: formatPreviewValue("contact_person", args.contact_person) },
-        { key: "status", label: "Status", value: formatPreviewValue("status", args.status) },
+        { key: "status", label: "Status", value: crmLabels.find((l) => l.slug === args.status)?.name ?? formatPreviewValue("status", args.status) },
         { key: "priority", label: "Priority", value: formatPreviewValue("priority", args.priority) },
       ];
     }
@@ -2354,7 +2472,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                           })()}
                           {(() => {
                             const args = actionArgsForMessage(msg);
-                            const payloadTool = String(messagePayload(msg)?.tool ?? "");
+                            const payloadTool = actionToolForMessage(msg);
                             if (!args) {
                               return null;
                             }

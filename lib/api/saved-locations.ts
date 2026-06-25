@@ -12,11 +12,12 @@ export type SavedLocationActor = {
 
 export type SavedLocation = {
   id: number;
-  company_id: number;
-  created_by_user_id: number;
-  updated_by_user_id: number | null;
+  company_id?: number;
+  created_by_user_id?: number;
+  updated_by_user_id?: number | null;
   crm_lead_id?: number | null;
   linked_to_crm?: boolean;
+  can_manage?: boolean;
   name: string;
   type: string | null;
   description: string | null;

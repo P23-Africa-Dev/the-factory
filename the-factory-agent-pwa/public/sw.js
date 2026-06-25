@@ -8,10 +8,10 @@
  * - Navigation fallback: cached pages, then /offline shell
  */
 
-const CACHE_NAME = "factory-agent-pwa-v6";
-const STATIC_CACHE = "factory-static-v6";
-const API_CACHE = "factory-api-v6";
-const PAGE_CACHE = "factory-pages-v6";
+const CACHE_NAME = "factory-agent-pwa-v7";
+const STATIC_CACHE = "factory-static-v7";
+const API_CACHE = "factory-api-v7";
+const PAGE_CACHE = "factory-pages-v7";
 
 const STATIC_ASSETS = ["/", "/offline", "/manifest.json"];
 
@@ -120,6 +120,25 @@ self.addEventListener("push", (event) => {
   } catch {
     // Malformed push — ignore
   }
+});
+
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (!data || data.type !== "SHOW_NOTIFICATION") return;
+
+  const options = {
+    body: data.body || "",
+    icon: "/icons/icon-192x192.png",
+    badge: "/icons/icon-72x72.png",
+    tag: data.tag || "factory-notification",
+    data: {
+      url: data.url || "/",
+    },
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title || "Factory 23", options),
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {

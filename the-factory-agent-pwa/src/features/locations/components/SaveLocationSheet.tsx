@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { SAVED_LOCATION_TYPES } from '@/lib/map/locationTypes';
+import { useCrmLabels } from '@/features/crm';
 import { saveLocationFormSchema } from '../schema';
 import type { CreateSavedLocationInput } from '../types';
 
@@ -34,6 +35,9 @@ export function SaveLocationSheet({
   const [contactNumber, setContactNumber] = useState('');
   const [email, setEmail] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const { data: crmLabels = [] } = useCrmLabels();
+  const defaultCrmStatus = crmLabels.find((l) => l.is_default)?.slug ?? crmLabels[0]?.slug ?? 'newly_lead';
+  const [crmStatus, setCrmStatus] = useState(defaultCrmStatus);
 
   if (!visible) return null;
 
@@ -68,6 +72,7 @@ export function SaveLocationSheet({
       contactNumber: contactNumber.trim() || null,
       email: email.trim() || null,
       saveToCrm,
+      ...(saveToCrm ? { crmStatus } : {}),
     });
   };
 
@@ -164,6 +169,23 @@ export function SaveLocationSheet({
           <p className="text-[11px] text-gray-400">
             Pinned at {latitude.toFixed(5)}, {longitude.toFixed(5)}
           </p>
+
+          {crmLabels.length > 0 && (
+            <div>
+              <label className="block text-xs font-semibold text-[#9FC4C6] mb-1.5">CRM Status (when saving to CRM)</label>
+              <select
+                value={crmStatus}
+                onChange={(e) => setCrmStatus(e.target.value)}
+                className="w-full bg-white rounded-xl px-3.5 py-3 text-sm text-[#09232D] font-semibold focus:outline-none focus:ring-2 focus:ring-[#75ADAF]"
+              >
+                {crmLabels.map((label) => (
+                  <option key={label.slug} value={label.slug}>
+                    {label.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="flex flex-col gap-2 pt-1 pb-2">
             <button

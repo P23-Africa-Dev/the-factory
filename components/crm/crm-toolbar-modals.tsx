@@ -310,6 +310,12 @@ function parseCsv(content: string): ImportLeadRow[] {
                 case "priority":
                     row.priority = val.toLowerCase() as ApiLeadPriority;
                     break;
+                case "budget_amount":
+                    row.budget_amount = val;
+                    break;
+                case "budget_currency":
+                    row.budget_currency = val.toUpperCase();
+                    break;
             }
         });
         return row;
@@ -402,7 +408,7 @@ export function ImportLeadsModal({
                 {phase === "upload" ? (
                     <>
                         <div className="border border-dashed border-gray-300 rounded-xl p-4 bg-gray-50">
-                            <p className="text-[12px] text-gray-500 mb-2">Upload CSV with headers: name,email,phone,location,source,status,priority</p>
+                            <p className="text-[12px] text-gray-500 mb-2">Upload CSV with headers: name,email,phone,location,source,status,priority,budget_amount,budget_currency</p>
                             <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onFileChange} className="text-[12px]" />
                         </div>
 

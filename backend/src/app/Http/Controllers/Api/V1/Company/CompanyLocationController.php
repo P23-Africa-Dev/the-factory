@@ -22,8 +22,13 @@ class CompanyLocationController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $viewer = $this->locationService->viewerContext(
+            $request->user(),
+            $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
         $locations = $this->locationService->listForUser($request->user(), [
-            'company_id' => $this->resolveCompanyContextId($request->input('company_id')),
+            'company_id' => $viewer['company_id'],
             'q' => $request->string('q')->toString(),
             'type' => $request->string('type')->toString(),
             'is_active' => $request->has('is_active') ? $request->boolean('is_active') : null,
@@ -33,7 +38,7 @@ class CompanyLocationController extends Controller
         return $this->success(
             message: 'Locations fetched successfully.',
             data: [
-                'items' => CompanyLocationResource::collection($locations->items()),
+                'items' => $this->locationCollection($locations->items(), $viewer),
                 'pagination' => [
                     'next_page_url' => $locations->nextPageUrl(),
                     'prev_page_url' => $locations->previousPageUrl(),
@@ -48,36 +53,53 @@ class CompanyLocationController extends Controller
 
     public function store(StoreCompanyLocationRequest $request): JsonResponse
     {
-        $location = $this->locationService->create($request->user(), $request->validated());
+        $validated = $request->validated();
+        $viewer = $this->locationService->viewerContext(
+            $request->user(),
+            isset($validated['company_id']) ? (int) $validated['company_id'] : null,
+        );
+
+        $location = $this->locationService->create($request->user(), $validated);
 
         return $this->success(
             message: 'Location created successfully.',
-            data: ['location' => new CompanyLocationResource($location)],
+            data: ['location' => $this->locationResource($location, $viewer)],
             status: 201,
         );
     }
 
     public function show(Request $request, CompanyLocation $location): JsonResponse
     {
+        $viewer = $this->locationService->viewerContext(
+            $request->user(),
+            $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
         $location = $this->locationService->findForUser(
             $request->user(),
             $location,
-            $this->resolveCompanyContextId($request->input('company_id')),
+            $viewer['company_id'],
         );
 
         return $this->success(
             message: 'Location fetched successfully.',
-            data: ['location' => new CompanyLocationResource($location)],
+            data: ['location' => $this->locationResource($location, $viewer)],
         );
     }
 
     public function update(UpdateCompanyLocationRequest $request, CompanyLocation $location): JsonResponse
     {
-        $location = $this->locationService->update($request->user(), $location, $request->validated());
+        $validated = $request->validated();
+        $viewer = $this->locationService->viewerContext(
+            $request->user(),
+            isset($validated['company_id']) ? (int) $validated['company_id'] : null,
+        );
+
+        $location = $this->locationService->update($request->user(), $location, $validated);
 
         return $this->success(
             message: 'Location updated successfully.',
-            data: ['location' => new CompanyLocationResource($location)],
+            data: ['location' => $this->locationResource($location, $viewer)],
         );
     }
 
@@ -92,6 +114,28 @@ class CompanyLocationController extends Controller
         return $this->success(
             message: 'Location deleted successfully.',
             data: ['deleted_location_id' => (int) $location->id],
+        );
+    }
+
+    /**
+     * @param  array{company_id: int, role: string}  $viewer
+     */
+    private function locationResource(CompanyLocation $location, array $viewer): CompanyLocationResource
+    {
+        return (new CompanyLocationResource($location))
+            ->withViewerContext($viewer['company_id'], $viewer['role']);
+    }
+
+    /**
+     * @param  array<int, CompanyLocation>  $locations
+     * @param  array{company_id: int, role: string}  $viewer
+     * @return array<int, CompanyLocationResource>
+     */
+    private function locationCollection(array $locations, array $viewer): array
+    {
+        return array_map(
+            fn (CompanyLocation $location): CompanyLocationResource => $this->locationResource($location, $viewer),
+            $locations,
         );
     }
 }

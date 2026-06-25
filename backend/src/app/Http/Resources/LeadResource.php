@@ -27,6 +27,11 @@ class LeadResource extends JsonResource
             'source' => $this->source,
             'status' => $this->status,
             'priority' => $this->priority?->value,
+            'budget_amount' => $this->budget_amount !== null ? (float) $this->budget_amount : null,
+            'budget_currency' => $this->budget_currency,
+            'budget' => $this->budget_amount !== null
+                ? trim(($this->budget_currency ?? 'USD') . ' ' . number_format((float) $this->budget_amount, 2, '.', ''))
+                : null,
             'next_action' => $this->next_action,
             'last_interaction' => $this->last_interaction,
             'last_interaction_at' => $this->last_interaction_at?->toIso8601String(),

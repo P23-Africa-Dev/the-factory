@@ -6,6 +6,7 @@ import { useMeeting, useUpdateMeeting } from '@/features/meetings/queries';
 import { useMeetingNavigation } from '@/features/meetings/navigation';
 import { MeetingForm } from '@/features/meetings/components/MeetingForm';
 import type { MeetingFormValues } from '@/features/meetings/types';
+import { showApiErrorToast } from '@/lib/api/errors';
 
 interface EditMeetingPageProps {
   params: Promise<{ id: string }>;
@@ -108,6 +109,8 @@ export default function EditMeetingPage({ params }: EditMeetingPageProps) {
         'errors' in err
       ) {
         setServerErrors((err as { errors: Record<string, string[]> }).errors);
+      } else {
+        showApiErrorToast(err, 'Could not update meeting');
       }
     }
   };
