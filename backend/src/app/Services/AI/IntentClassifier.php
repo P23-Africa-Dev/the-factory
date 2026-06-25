@@ -42,6 +42,11 @@ class IntentClassifier
                 '/\b(add|create|register)\b.{0,40}\b(business|company)\b.{0,40}\b(to\s+)?(crm|pipeline)\b/i',
                 '/\bnew\s+lead\b/i',
             ],
+            'kpis.create' => [
+                '/\b(create|add|set|define|new)\b.{0,60}\bkpi\b/i',
+                '/\b(create|add|set|define)\b.{0,60}\b(key\s*performance\s*indicator|performance\s*target)\b/i',
+                '/\bkpi\s+name\b/i',
+            ],
         ];
 
         foreach ($actionPatterns as $tool => $regexPatterns) {

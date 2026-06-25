@@ -348,6 +348,96 @@ final class CopilotActionEngineTest extends TestCase
         $this->assertContains('used_default_due_date', $blockingCodes);
     }
 
+    public function test_management_role_can_execute_kpis_create_action(): void
+    {
+        [$company, $owner] = $this->seedCompanyUser('owner');
+        $agent = $this->createCompanyAgent($company, 'John Wick', 'john.wick@example.com');
+
+        $response = $this
+            ->actingAs($owner)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create KPI for retailer visits',
+                'action_confirmed' => true,
+                'action_args' => [
+                    'name' => 'Retailer Visit Target',
+                    'category' => 'customer_visits',
+                    'objective' => 'Increase qualified retailer visits across the assigned territory.',
+                    'target_value' => '50 visits',
+                    'expected_outcome' => 'Reach 50 qualified retailer visits within the KPI period.',
+                    'start_date' => now()->toDateString(),
+                    'end_date' => now()->addMonth()->toDateString(),
+                    'priority' => 'high',
+                    'assigned_to_user_id' => $agent->id,
+                ],
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'kpis.create')
+            ->assertJsonPath('data.response.sources.0', 'kpis.create');
+
+        $this->assertDatabaseHas('kpis', [
+            'company_id' => $company->id,
+            'name' => 'Retailer Visit Target',
+            'assigned_to_user_id' => $agent->id,
+        ]);
+    }
+
+    public function test_agent_is_denied_from_kpis_create_action(): void
+    {
+        [$company, $agent] = $this->seedCompanyUser('agent');
+
+        $response = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'create kpi now',
+                'action_confirmed' => true,
+                'action_args' => [
+                    'name' => 'Unauthorized KPI',
+                    'category' => 'sales',
+                    'objective' => 'Agent should not be able to create this KPI record.',
+                    'target_value' => '10 sales',
+                    'expected_outcome' => 'This KPI creation should be denied by policy.',
+                    'start_date' => now()->toDateString(),
+                    'end_date' => now()->addMonth()->toDateString(),
+                    'priority' => 'medium',
+                ],
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'kpis.create')
+            ->assertJsonPath('data.response.payload.denied', true);
+
+        $this->assertDatabaseMissing('kpis', [
+            'name' => 'Unauthorized KPI',
+        ]);
+    }
+
+    public function test_kpis_create_confirmation_payload_parses_labeled_message(): void
+    {
+        [$company, $owner] = $this->seedCompanyUser('owner');
+        $agent = $this->createCompanyAgent($company, 'John Wick', 'john.wick@example.com');
+
+        $response = $this
+            ->actingAs($owner)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create KPI. KPI name: Retail Visits. Objective: Increase qualified retailer visits in Lagos. Target value: 50 visits. Expected outcome: Reach 50 qualified retailer sign-ups this month. Priority: high. Assign to: John Wick',
+                'action_confirmed' => false,
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'kpis.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.action_args.name', 'Retail Visits')
+            ->assertJsonPath('data.response.payload.action_args.target_value', '50 visits')
+            ->assertJsonPath('data.response.payload.action_args.assigned_to_user_id', $agent->id);
+    }
+
     public function test_confirmed_action_can_resolve_assignee_from_inline_edit_field(): void
     {
         [$company, $admin] = $this->seedCompanyUser('admin');

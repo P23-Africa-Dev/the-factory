@@ -7,6 +7,7 @@ namespace App\Services\AI;
 use App\Enums\TaskType;
 use App\Models\User;
 use App\Services\AI\Crm\LeadInferenceService;
+use App\Services\AI\Kpi\KpiInferenceService;
 use App\Services\AI\Context\ConversationMemoryService;
 use App\Services\AI\Policy\ActionConfirmationPolicyService;
 use App\Services\AI\Policy\ToolPolicyService;
@@ -35,6 +36,7 @@ class CopilotService
         private readonly AiProviderRouter $aiProviderRouter,
         private readonly MeetingInferenceService $meetingInferenceService,
         private readonly LeadInferenceService $leadInferenceService,
+        private readonly KpiInferenceService $kpiInferenceService,
     ) {}
 
     public function chat(
@@ -426,6 +428,10 @@ class CopilotService
                 return 'I can add that lead to your CRM. Share the business name, phone number, and location (for example: Business Name: Acme Ltd, Phone: 080..., Location: Lagos), then I will prepare a confirmation form for you.';
             }
 
+            if (preg_match('/\bkpi\b/i', $message) === 1) {
+                return 'I can create that KPI. Share the KPI name, objective, target value, expected outcome, dates, and assignee (for example: KPI name: Retail Visits, Objective: Increase field visits, Target value: 50 visits, Expected outcome: Reach 50 qualified visits this month, Assign to: John Wick), then I will prepare a confirmation form for you.';
+            }
+
             return 'I can help schedule that. Try phrasing it like "Create a meeting with [name] tomorrow at 2 PM" so I can prepare the confirmation form for you.';
         }
 
@@ -510,8 +516,8 @@ class CopilotService
             return false;
         }
 
-        return preg_match('/\b(create|add|start|open|schedule|book|setup|set\s*up|arrange|plan|send|notify|assign|reassign|transfer|move|update|change|cancel|delete|register|save)\b/i', $normalized) === 1
-            && preg_match('/\b(task|project|meeting|notification|alert|lead|crm|business)\b/i', $normalized) === 1;
+        return preg_match('/\b(create|add|start|open|schedule|book|setup|set\s*up|arrange|plan|send|notify|assign|reassign|transfer|move|update|change|cancel|delete|register|save|define)\b/i', $normalized) === 1
+            && preg_match('/\b(task|project|meeting|notification|alert|lead|crm|business|kpi)\b/i', $normalized) === 1;
     }
 
     private function resolveReadToolFromMessage(string $message): ?string
@@ -577,6 +583,15 @@ class CopilotService
 
         if (preg_match('/\b(lead|crm)\b/i', $normalized) && preg_match('/\b(create|add|new|register|save)\b/i', $normalized) === 1) {
             return 'crm.create_lead';
+        }
+
+        if (preg_match('/\bkpi\b/i', $normalized) && preg_match('/\b(create|add|new|set|define)\b/i', $normalized) === 1) {
+            return 'kpis.create';
+        }
+
+        if (preg_match('/\b(name|objective|target\s*value|expected\s*outcome|kpi\s*name)\s*:/i', $normalized) === 1
+            && preg_match('/\bkpi\b/i', $normalized) === 1) {
+            return 'kpis.create';
         }
 
         if (preg_match('/\b(business\s+name|business\/lead\s+name|lead\s+name|phone\s+number|phone|location)\s*:/i', $normalized) === 1) {
@@ -733,6 +748,12 @@ class CopilotService
                 entities: $entities,
                 conversationSummary: (string) ($context['summary'] ?? ''),
             ),
+            'kpis.create' => $this->kpiInferenceService->infer(
+                message: $message,
+                companyId: $companyId,
+                entities: $entities,
+                conversationSummary: (string) ($context['summary'] ?? ''),
+            ),
             default => $actionArgs,
         };
     }
@@ -773,6 +794,13 @@ class CopilotService
                 $actionArgs,
                 $role,
                 $userId,
+            );
+        }
+
+        if ($tool === 'kpis.create') {
+            return $this->kpiInferenceService->normalizeProvidedArgs(
+                $companyId,
+                $actionArgs,
             );
         }
 
@@ -1199,6 +1227,10 @@ class CopilotService
             return $this->leadInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
         }
 
+        if ($tool === 'kpis.create') {
+            return $this->kpiInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
+        }
+
         return 'ELY prepared an action. Review and click Confirm Action to proceed.';
     }
 
@@ -1224,6 +1256,11 @@ class CopilotService
             'missing_lead_name' => 'Lead business name is required before this lead can be saved.',
             'missing_phone' => 'Phone number was not detected. Add a phone number before confirming.',
             'missing_location' => 'Location was not detected. Add a location before confirming.',
+            'missing_kpi_name' => 'KPI name is required before this KPI can be saved.',
+            'missing_objective' => 'KPI objective is required and must be at least 10 characters.',
+            'missing_target_value' => 'Target value was not detected. Add a measurable target before confirming.',
+            'missing_expected_outcome' => 'Expected outcome is required and must be at least 10 characters.',
+            'used_default_dates' => 'Start or end date was not clear and defaulted to the next month.',
         ];
 
         return collect($codes)
@@ -1244,6 +1281,10 @@ class CopilotService
 
         if ($tool === 'crm.create_lead') {
             return $this->leadInferenceService->warningCodes($args);
+        }
+
+        if ($tool === 'kpis.create') {
+            return $this->kpiInferenceService->warningCodes($args);
         }
 
         if ($tool !== 'tasks.create') {
@@ -1290,6 +1331,22 @@ class CopilotService
 
         if (in_array('missing_lead_name', $validationWarningCodes, true)) {
             $blockingCodes[] = 'missing_lead_name';
+        }
+
+        if (in_array('missing_objective', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_objective';
+        }
+
+        if (in_array('missing_target_value', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_target_value';
+        }
+
+        if (in_array('missing_expected_outcome', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_expected_outcome';
+        }
+
+        if (in_array('missing_kpi_name', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_kpi_name';
         }
 
         if ((bool) config('services.ai.strict_confirmation_blocking', false)) {
