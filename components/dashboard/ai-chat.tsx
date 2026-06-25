@@ -126,6 +126,22 @@ const PRIORITY_OPTIONS: EditFieldOption[] = [
   { value: "urgent", label: "Urgent" },
 ];
 
+const KPI_CATEGORY_OPTIONS: EditFieldOption[] = [
+  { value: "sales", label: "Sales" },
+  { value: "customer_visits", label: "Customer Visits" },
+  { value: "lead_generation", label: "Lead Generation" },
+  { value: "collection", label: "Collection" },
+  { value: "survey", label: "Survey" },
+  { value: "merchandising", label: "Merchandising" },
+];
+
+const KPI_PRIORITY_OPTIONS: EditFieldOption[] = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "critical", label: "Critical" },
+];
+
 const LEAD_STATUS_OPTIONS: EditFieldOption[] = [
   { value: "newly_lead", label: "Newly Lead" },
   { value: "contacted", label: "Contacted" },
@@ -419,7 +435,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const argKeys = rawArgs ? Object.keys(rawArgs) : [];
       const hasUserAssignmentField = argKeys.some((key) => /(^|_)(user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/.test(key));
 
-      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead"].includes(tool) && !hasUserAssignmentField) {
+      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "kpis.create"].includes(tool) && !hasUserAssignmentField) {
         continue;
       }
 
@@ -428,7 +444,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         continue;
       }
 
-      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead"].includes(tool) || hasUserAssignmentField) {
+      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "kpis.create"].includes(tool) || hasUserAssignmentField) {
         void loadAssigneeOptions(msg.id);
       }
     }
@@ -876,6 +892,20 @@ export function AIChat({ open, onClose }: AIChatProps) {
       ];
     }
 
+    if (tool === "kpis.create") {
+      return [
+        { key: "name", label: "KPI Name", control: "text" },
+        { key: "category", label: "Category", control: "select", options: KPI_CATEGORY_OPTIONS },
+        { key: "objective", label: "Objective", control: "textarea" },
+        { key: "target_value", label: "Target Value", control: "text" },
+        { key: "expected_outcome", label: "Expected Outcome", control: "textarea" },
+        { key: "priority", label: "Priority", control: "select", options: KPI_PRIORITY_OPTIONS },
+        { key: "start_date", label: "Start Date", control: "date" },
+        { key: "end_date", label: "End Date", control: "date" },
+        { key: "assigned_to_user_id", label: "Assign To", control: "select", options: userIdSelectOptions(msg) },
+      ];
+    }
+
     return Object.entries(args)
       .filter(([key]) => key !== "company_id")
       .map(([key]) => {
@@ -1116,6 +1146,30 @@ export function AIChat({ open, onClose }: AIChatProps) {
         { key: "contact_person", label: "Contact Person", value: formatPreviewValue("contact_person", args.contact_person) },
         { key: "status", label: "Status", value: formatPreviewValue("status", args.status) },
         { key: "priority", label: "Priority", value: formatPreviewValue("priority", args.priority) },
+      ];
+    }
+
+    if (tool === "kpis.create") {
+      const assignedId = typeof args.assigned_to_user_id === "number" ? args.assigned_to_user_id : null;
+      const assigneeName = assignedId !== null
+        ? (assigneeOptions[msg.id]?.items ?? []).find((item) => item.id === assignedId)?.name ?? `User #${String(assignedId)}`
+        : "Unassigned";
+
+      return [
+        { key: "name", label: "KPI Name", value: formatPreviewValue("name", args.name), warning: warningCodes.includes("missing_kpi_name") },
+        { key: "category", label: "Category", value: formatPreviewValue("category", args.category) },
+        { key: "objective", label: "Objective", value: formatPreviewValue("objective", args.objective), warning: warningCodes.includes("missing_objective") },
+        { key: "target_value", label: "Target Value", value: formatPreviewValue("target_value", args.target_value), warning: warningCodes.includes("missing_target_value") },
+        { key: "expected_outcome", label: "Expected Outcome", value: formatPreviewValue("expected_outcome", args.expected_outcome), warning: warningCodes.includes("missing_expected_outcome") },
+        { key: "priority", label: "Priority", value: formatPreviewValue("priority", args.priority) },
+        { key: "start_date", label: "Start Date", value: formatPreviewValue("start_date", args.start_date), warning: warningCodes.includes("used_default_dates") },
+        { key: "end_date", label: "End Date", value: formatPreviewValue("end_date", args.end_date), warning: warningCodes.includes("used_default_dates") },
+        {
+          key: "assigned_to_user_id",
+          label: "Assignee",
+          value: assigneeName,
+          warning: warningCodes.includes("assignee_unresolved"),
+        },
       ];
     }
 

@@ -8,7 +8,8 @@ export type KpiCategory =
   | "lead_generation"
   | "collection"
   | "survey"
-  | "merchandising";
+  | "merchandising"
+  | "others";
 
 export type KpiStatusCard = {
   id: string;
