@@ -6,6 +6,7 @@ namespace App\Services\AI;
 
 use App\Enums\TaskType;
 use App\Models\User;
+use App\Services\AI\Crm\EmailInferenceService;
 use App\Services\AI\Crm\LeadInferenceService;
 use App\Services\AI\Kpi\KpiInferenceService;
 use App\Services\AI\Context\ConversationMemoryService;
@@ -36,6 +37,7 @@ class CopilotService
         private readonly AiProviderRouter $aiProviderRouter,
         private readonly MeetingInferenceService $meetingInferenceService,
         private readonly LeadInferenceService $leadInferenceService,
+        private readonly EmailInferenceService $emailInferenceService,
         private readonly KpiInferenceService $kpiInferenceService,
     ) {}
 
@@ -637,6 +639,10 @@ class CopilotService
             return 'crm.create_lead';
         }
 
+        if (preg_match('/\b(email|mail|message)\b/i', $normalized) && preg_match('/\b(send|draft|write|follow[\s-]?up)\b/i', $normalized) === 1) {
+            return 'crm.send_email';
+        }
+
         if (preg_match('/\bkpi\b/i', $normalized) && preg_match('/\b(create|add|new|set|define)\b/i', $normalized) === 1) {
             return 'kpis.create';
         }
@@ -893,6 +899,12 @@ class CopilotService
                 entities: $entities,
                 conversationSummary: (string) ($context['summary'] ?? ''),
             ),
+            'crm.send_email' => $this->emailInferenceService->infer(
+                message: $message,
+                companyId: $companyId,
+                entities: $entities,
+                conversationSummary: (string) ($context['summary'] ?? ''),
+            ),
             'kpis.create' => $this->kpiInferenceService->infer(
                 message: $message,
                 companyId: $companyId,
@@ -940,6 +952,10 @@ class CopilotService
                 $role,
                 $userId,
             );
+        }
+
+        if ($tool === 'crm.send_email') {
+            return $this->emailInferenceService->normalizeProvidedArgs($companyId, $actionArgs);
         }
 
         if ($tool === 'kpis.create') {

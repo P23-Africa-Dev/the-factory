@@ -7,6 +7,7 @@ namespace App\Services\Calendar;
 use App\Models\CompanyCalendarConnection;
 use App\Models\User;
 use App\Services\Company\CompanyContextService;
+use App\Services\Google\GoogleScopeHelper;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -47,6 +48,9 @@ class CompanyCalendarConnectionService
             }
         }
 
+        $gmailEnabled = $connected && GoogleScopeHelper::connectionHasGmailScopes($connection);
+        $requiresGmailReconnect = $connected && ! $gmailEnabled;
+
         return [
             'connected' => $connected,
             'status' => $connection?->status ?? 'not_connected',
@@ -58,6 +62,9 @@ class CompanyCalendarConnectionService
             'can_manage_connection' => in_array($role, ['owner', 'admin'], true),
             'token_valid' => $tokenValid,
             'requires_reauthentication' => $connected && ! $tokenValid,
+            'gmail_enabled' => $gmailEnabled,
+            'requires_gmail_reconnect' => $requiresGmailReconnect,
+            'gmail_last_synced_at' => $connection?->gmail_last_synced_at?->toIso8601String(),
             'connection_health_status' => $healthStatus,
             'last_error_message' => $connection?->last_error_message,
             'last_token_refresh_at' => $connection?->last_token_refresh_at?->toIso8601String(),
