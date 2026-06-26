@@ -897,7 +897,7 @@ function MapContent() {
   const [pendingPin, setPendingPin] = useState<{ lat: number; lng: number; address: string | null } | null>(null);
   const [selectedSavedId, setSelectedSavedId] = useState<number | null>(null);
 
-  const { lastPosition, getCurrentPosition, resolveCurrentPosition, checkPermission, requestPermission, startWatching, stopWatching } = useGeolocation();
+  const { lastPosition, getCurrentPosition, resolveCurrentPosition, checkPermission, requestPermission, ensureLocationPermission, startWatching, stopWatching } = useGeolocation();
   const { startTracking, stopTracking, activeTaskId } = useActiveTracking();
   const { data: tasks = [] } = useTaskListItems();
   const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
@@ -1054,10 +1054,7 @@ function MapContent() {
     if (!trackingTaskId) return;
     setResumePermBusy(true);
     try {
-      let status = await checkPermission();
-      if (status !== 'granted') {
-        status = await requestPermission();
-      }
+      let status = await ensureLocationPermission();
       if (status === 'denied') {
         setPermGate('denied');
         return;
@@ -1078,7 +1075,7 @@ function MapContent() {
     } finally {
       setResumePermBusy(false);
     }
-  }, [trackingTaskId, companyId, checkPermission, requestPermission, resolveCurrentPosition]);
+  }, [trackingTaskId, companyId, ensureLocationPermission, resolveCurrentPosition]);
 
   // Restore destination on resume (e.g. /map?taskId=…) before task detail fetch completes.
   useEffect(() => {
@@ -1401,7 +1398,8 @@ function MapContent() {
     setIsOriginSearchOpen(false);
     setOriginQuery('');
     setOriginGeoResults([]);
-    void requestPermission().then(async (status) => {
+    void (async () => {
+      const status = await ensureLocationPermission();
       if (status !== 'granted') {
         toast.error('Location access needed', 'Enable location permission to use Your Location.');
         return;
@@ -1411,8 +1409,8 @@ function MapContent() {
       } catch {
         toast.error('Location unavailable', 'Could not get your current position. Try again.');
       }
-    });
-  }, [requestPermission, getCurrentPosition]);
+    })();
+  }, [ensureLocationPermission, getCurrentPosition]);
 
   const handleClearOrigin = useCallback(() => {
     setCustomOrigin(null);
@@ -1501,8 +1499,7 @@ function MapContent() {
           : null,
         effectiveOriginLng,
         effectiveOriginLat,
-        checkPermission,
-        requestPermission,
+        ensureLocationPermission,
         resolveCurrentPosition,
         startTaskAsync,
         beginSession,
@@ -1555,8 +1552,7 @@ function MapContent() {
     startTaskAsync,
     startTracking,
     stopTracking,
-    requestPermission,
-    checkPermission,
+    ensureLocationPermission,
     resolveCurrentPosition,
     lastPosition,
     customOrigin,
@@ -1742,7 +1738,8 @@ function MapContent() {
 
   const handleSaveCurrentLocation = useCallback(() => {
     setPinMode(false);
-    void requestPermission().then(async (status) => {
+    void (async () => {
+      const status = await ensureLocationPermission();
       if (status !== 'granted') {
         toast.error('Location access needed', 'Enable location permission to save your current spot.');
         return;
@@ -1758,8 +1755,8 @@ function MapContent() {
       } catch {
         toast.error('Location unavailable', 'Could not get your current position. Try again.');
       }
-    });
-  }, [requestPermission, getCurrentPosition]);
+    })();
+  }, [ensureLocationPermission, getCurrentPosition]);
 
   const handleSubmitSavedLocation = useCallback(
     async (input: CreateSavedLocationInput) => {

@@ -27,6 +27,8 @@ interface GeolocationState {
 interface GeolocationActions {
   checkPermission: () => Promise<PermissionStatus>;
   requestPermission: () => Promise<PermissionStatus>;
+  /** Check permission; if prompt/unknown, trigger the browser location prompt. */
+  ensureLocationPermission: () => Promise<PermissionStatus>;
   getCurrentPosition: () => Promise<LocationObject>;
   /** Prefer a recent fix; fall back through high- then low-accuracy reads. */
   resolveCurrentPosition: () => Promise<LocationObject>;
@@ -210,6 +212,13 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
     return 'prompt';
   }, [checkPermission, rememberPosition, setPermission]);
 
+  const ensureLocationPermission = useCallback(async (): Promise<PermissionStatus> => {
+    const status = await checkPermission();
+    if (status === 'granted') return 'granted';
+    if (status === 'denied') return 'denied';
+    return requestPermission();
+  }, [checkPermission, requestPermission]);
+
   const getCurrentPosition = useCallback(async (): Promise<LocationObject> => {
     try {
       const loc = await readPosition(HIGH_ACCURACY_OPTIONS);
@@ -228,6 +237,21 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
       return cached;
     }
 
+    const perm = await ensureLocationPermission();
+    if (perm === 'denied') {
+      setPermission('denied');
+      const message = 'Location permission denied';
+      setError(message);
+      const deniedErr = {
+        code: 1,
+        message,
+        PERMISSION_DENIED: 1,
+        POSITION_UNAVAILABLE: 2,
+        TIMEOUT: 3,
+      } as GeolocationPositionError;
+      throw deniedErr;
+    }
+
     try {
       const loc = await readPosition(HIGH_ACCURACY_OPTIONS);
       rememberPosition(loc);
@@ -235,6 +259,7 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
     } catch (err) {
       const geoErr = err as GeolocationPositionError;
       if (geoErr.code === geoErr.PERMISSION_DENIED) {
+        setPermission('denied');
         setError(geoErr.message);
         throw err;
       }
@@ -242,7 +267,7 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
       rememberPosition(loc);
       return loc;
     }
-  }, [rememberPosition]);
+  }, [ensureLocationPermission, rememberPosition, setPermission]);
 
   const startWatching = useCallback(
     async (onUpdate: (loc: LocationObject) => void): Promise<void> => {
@@ -277,6 +302,7 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
     error,
     checkPermission,
     requestPermission,
+    ensureLocationPermission,
     getCurrentPosition,
     resolveCurrentPosition,
     startWatching,
