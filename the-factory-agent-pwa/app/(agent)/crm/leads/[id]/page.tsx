@@ -11,6 +11,7 @@ import {
 } from '@/features/crm';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
+import { showApiErrorToast } from '@/lib/api/errors';
 
 interface LeadDetailPageProps {
   params: Promise<{ id: string }>;
@@ -134,10 +135,15 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
       toast.error('No active company selected');
       return;
     }
-    updateLead({
-      id: lead.id,
-      payload: { company_id: companyId, status: slug },
-    });
+    updateLead(
+      {
+        id: lead.id,
+        payload: { company_id: companyId, status: slug },
+      },
+      {
+        onError: (err) => showApiErrorToast(err, 'Could not update lead status'),
+      },
+    );
   };
 
   const handleSaveEdit = () => {
@@ -167,6 +173,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
       },
       {
         onSuccess: () => setEditMode(false),
+        onError: (err) => showApiErrorToast(err, 'Could not save lead'),
       },
     );
   };

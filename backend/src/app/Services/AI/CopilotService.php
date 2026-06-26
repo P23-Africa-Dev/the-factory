@@ -187,8 +187,8 @@ class CopilotService
                             $clientTimezone,
                             $companyCountry,
                         );
-                        $validationWarningCodes = $this->inferActionWarningCodes($candidateTool, $inferredArgs);
-                        $validationWarnings = $this->inferActionWarnings($candidateTool, $inferredArgs);
+                        $validationWarningCodes = $this->inferActionWarningCodes($candidateTool, $inferredArgs, $role);
+                        $validationWarnings = $this->inferActionWarnings($candidateTool, $inferredArgs, $role);
                         $blockingWarningCodes = $this->determineBlockingWarningCodes($validationWarningCodes);
                         $blockingConfirmation = $blockingWarningCodes !== [];
                         $toolResult = [
@@ -865,7 +865,7 @@ class CopilotService
         }
 
         return match ($tool) {
-            'tasks.create' => $this->inferTaskCreateArgs($message, $companyId, $entities),
+            'tasks.create' => $this->inferTaskCreateArgs($message, $companyId, $entities, $role),
             'projects.create' => [
                 'name' => $normalized !== '' ? $normalized : 'New Project',
                 'description' => $normalized !== '' ? $normalized : 'Project created by ELY',
@@ -920,7 +920,7 @@ class CopilotService
         int $userId = 0,
     ): array {
         if ($tool === 'tasks.create') {
-            return $this->normalizeProvidedActionArgsForTask($message, $companyId, $entities, $actionArgs);
+            return $this->normalizeProvidedActionArgsForTask($message, $companyId, $entities, $actionArgs, $role);
         }
 
         if ($tool === 'meetings.schedule') {
@@ -962,8 +962,14 @@ class CopilotService
         int $companyId,
         array $entities,
         array $actionArgs,
+        string $role = 'admin',
     ): array {
         $normalized = $actionArgs;
+        $isAgent = $role === 'agent';
+
+        if ($isAgent) {
+            unset($normalized['assigned_agent_id'], $normalized['assigned_agent_ids'], $normalized['assignee']);
+        }
 
         if (is_string($normalized['title'] ?? null)) {
             $title = Str::limit(trim((string) $normalized['title']), 255, '');
@@ -1005,21 +1011,23 @@ class CopilotService
             }
         }
 
-        if (is_string($normalized['assignee'] ?? null)) {
-            $assigneeToken = trim((string) $normalized['assignee']);
-            unset($normalized['assignee']);
+        if (! $isAgent) {
+            if (is_string($normalized['assignee'] ?? null)) {
+                $assigneeToken = trim((string) $normalized['assignee']);
+                unset($normalized['assignee']);
 
-            if ($assigneeToken !== '') {
-                $normalized['assigned_agent_id'] = $this->resolveAgentIdFromAssigneeToken($assigneeToken, $companyId);
+                if ($assigneeToken !== '') {
+                    $normalized['assigned_agent_id'] = $this->resolveAgentIdFromAssigneeToken($assigneeToken, $companyId);
+                }
+            } elseif (is_string($normalized['assigned_agent_id'] ?? null) && is_numeric($normalized['assigned_agent_id'])) {
+                $normalized['assigned_agent_id'] = (int) $normalized['assigned_agent_id'];
             }
-        } elseif (is_string($normalized['assigned_agent_id'] ?? null) && is_numeric($normalized['assigned_agent_id'])) {
-            $normalized['assigned_agent_id'] = (int) $normalized['assigned_agent_id'];
-        }
 
-        if (($normalized['assigned_agent_id'] ?? null) === null) {
-            $fallbackAgent = $this->resolveAgentIdForTaskMessage($message, $companyId, $entities);
-            if ($fallbackAgent !== null) {
-                $normalized['assigned_agent_id'] = $fallbackAgent;
+            if (($normalized['assigned_agent_id'] ?? null) === null) {
+                $fallbackAgent = $this->resolveAgentIdForTaskMessage($message, $companyId, $entities);
+                if ($fallbackAgent !== null) {
+                    $normalized['assigned_agent_id'] = $fallbackAgent;
+                }
             }
         }
 
@@ -1054,9 +1062,10 @@ class CopilotService
      * @param array<string,string> $entities
      * @return array<string,mixed>
      */
-    private function inferTaskCreateArgs(string $message, int $companyId, array $entities): array
+    private function inferTaskCreateArgs(string $message, int $companyId, array $entities, string $role = 'admin'): array
     {
         $normalized = trim($message);
+        $isAgent = $role === 'agent';
 
         $rawTitle = $this->extractLabeledValue($message, ['task title', 'title'])
             ?? $this->extractTaskTitleFromSentence($message)
@@ -1094,7 +1103,7 @@ class CopilotService
         $dueAt = $this->resolveDueDate($dueDateText);
         $usedDefaultDueDate = ! is_string($dueDateText) || trim($dueDateText) === '';
 
-        $assignedAgentId = $this->resolveAgentIdForTaskMessage($message, $companyId, $entities);
+        $assignedAgentId = $isAgent ? null : $this->resolveAgentIdForTaskMessage($message, $companyId, $entities);
 
         return [
             'title' => $title,
@@ -1103,12 +1112,12 @@ class CopilotService
             'location' => Str::limit($location, 255, ''),
             'address' => Str::limit($address, 1000, ''),
             'due_date' => $dueAt,
-            'assigned_agent_id' => $assignedAgentId,
+            ...($isAgent ? [] : ['assigned_agent_id' => $assignedAgentId]),
             '__inference' => [
                 'used_default_title' => $usedDefaultTitle,
                 'used_default_due_date' => $usedDefaultDueDate,
                 'raw_type_unrecognized' => $typeResolution['raw_unrecognized'],
-                'assignee_unresolved' => $assignedAgentId === null,
+                'assignee_unresolved' => ! $isAgent && $assignedAgentId === null,
             ],
         ];
     }
@@ -1476,9 +1485,9 @@ class CopilotService
      * @param array<string,mixed> $args
      * @return array<int,string>
      */
-    private function inferActionWarnings(string $tool, array $args): array
+    private function inferActionWarnings(string $tool, array $args, string $role = 'admin'): array
     {
-        $codes = $this->inferActionWarningCodes($tool, $args);
+        $codes = $this->inferActionWarningCodes($tool, $args, $role);
         if ($codes === []) {
             return [];
         }
@@ -1511,7 +1520,7 @@ class CopilotService
      * @param array<string,mixed> $args
      * @return array<int,string>
      */
-    private function inferActionWarningCodes(string $tool, array $args): array
+    private function inferActionWarningCodes(string $tool, array $args, string $role = 'admin'): array
     {
         if ($tool === 'meetings.schedule') {
             return $this->meetingInferenceService->warningCodes($args);
@@ -1532,7 +1541,7 @@ class CopilotService
         $warningCodes = [];
         $inference = is_array($args['__inference'] ?? null) ? $args['__inference'] : [];
 
-        if (($inference['assignee_unresolved'] ?? false) === true || ($args['assigned_agent_id'] ?? null) === null) {
+        if ($role !== 'agent' && (($inference['assignee_unresolved'] ?? false) === true || ($args['assigned_agent_id'] ?? null) === null)) {
             $warningCodes[] = 'assignee_unresolved';
         }
 

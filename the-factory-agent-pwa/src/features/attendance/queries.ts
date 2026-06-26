@@ -8,6 +8,7 @@ export function useTodayAttendance() {
   return useQuery({
     queryKey: attendanceKeys.today(),
     queryFn: attendanceApi.getToday,
+    retry: false,
   });
 }
 

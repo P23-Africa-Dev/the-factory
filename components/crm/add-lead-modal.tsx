@@ -208,8 +208,13 @@ export function AddLeadModal({
   const [status, setStatus] = useState<ApiLeadStatus>(lead?.status ?? defaultStatus);
   const [priority, setPriority] = useState<ApiLeadPriority>(lead?.priority ?? "medium");
   const [assignedToUserId, setAssignedToUserId] = useState(lead?.assigned_to_user_id ? String(lead.assigned_to_user_id) : "");
-  const [budgetCurrency, setBudgetCurrency] = useState(() => lead?.budget?.match(/^([A-Z]{3})/)?.[1] ?? "USD");
-  const [budgetAmount, setBudgetAmount] = useState(() => lead?.budget?.replace(/^[A-Z]{3}\s?/, "") ?? "");
+  const [budgetCurrency, setBudgetCurrency] = useState(() =>
+    lead?.budget_currency ?? lead?.budget?.match(/^([A-Z]{3})/)?.[1] ?? "USD"
+  );
+  const [budgetAmount, setBudgetAmount] = useState(() => {
+    if (lead?.budget_amount != null) return String(lead.budget_amount);
+    return lead?.budget?.replace(/^[A-Z]{3}\s?/, "") ?? "";
+  });
   const [nextAction, setNextAction] = useState(lead?.next_action ?? "");
   const [lastInteraction, setLastInteraction] = useState(lead?.last_interaction ?? "");
 
@@ -304,9 +309,10 @@ export function AddLeadModal({
       name: name.trim(),
       email: email.trim() || null,
       phone: phone || null,
-      budget: budgetAmount.trim() ? `${budgetCurrency} ${budgetAmount.trim()}` : null,
+      budget_amount: budgetAmount.trim() ? Number(budgetAmount.replace(/,/g, "")) : null,
+      budget_currency: budgetAmount.trim() ? budgetCurrency : null,
       location: location.trim() || null,
-      source: source.trim() || (isAgentContext ? "agent upload" : null),
+      source: source.trim() || (isAgentContext ? "agent_upload" : null),
       status,
       priority,
       assigned_to_user_id: isAgentContext ? null : (assignedToUserId ? Number(assignedToUserId) : null),

@@ -7,6 +7,7 @@ import { useMeetingNavigation } from '@/features/meetings/navigation';
 import { MeetingStatusBadge } from '@/features/meetings/components/MeetingStatusBadge';
 import { SyncStatusBanner } from '@/features/meetings/components/SyncStatusBanner';
 import { toast } from '@/lib/toast';
+import { showApiErrorToast } from '@/lib/api/errors';
 
 interface MeetingDetailPageProps {
   params: Promise<{ id: string }>;
@@ -78,6 +79,7 @@ export default function MeetingDetailPage({ params }: MeetingDetailPageProps) {
         onSuccess: () => {
           toast.success('Meeting cancelled successfully');
         },
+        onError: (err) => showApiErrorToast(err, 'Could not cancel meeting'),
       });
     }
   };
@@ -89,6 +91,7 @@ export default function MeetingDetailPage({ params }: MeetingDetailPageProps) {
           toast.success('Meeting deleted successfully');
           nav.goBack();
         },
+        onError: (err) => showApiErrorToast(err, 'Could not delete meeting'),
       });
     }
   };

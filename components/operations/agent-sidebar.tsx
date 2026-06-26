@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AgentItem } from './agent-list';
+import { getAgentSessionBadgeClass } from '@/lib/agent-presence';
 import { useUpdateInternalUser } from '@/hooks/use-internal-users';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
@@ -201,11 +202,9 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-gray-400">{agent.zone}</span>
                 <span
-                  className={`px-2.5 py-0.75 rounded-full text-[9px] font-bold ${
-                    agent.active ? 'bg-[#22C55E] text-white' : 'bg-gray-200 text-gray-500'
-                  }`}
+                  className={`px-2.5 py-0.75 rounded-full text-[9px] font-bold ${getAgentSessionBadgeClass(agent.isSessionOnline)}`}
                 >
-                  {agent.active ? 'Online' : 'Offline'}
+                  {agent.isSessionOnline ? 'Online' : 'Offline'}
                 </span>
               </div>
             </div>
@@ -251,12 +250,15 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
 }
 
 export function AgentLiveDetails({ agent }: { agent: AgentItem }) {
-  const hasLocation = !!(
-    agent.location ||
-    agent.latitude ||
-    agent.longitude ||
-    (agent.zone && agent.zone !== 'Unassigned')
+  const hasLocation = Boolean(
+    agent.isMapActive &&
+      (agent.location || agent.latitude || agent.longitude),
   );
+  const locationLabel = agent.presence?.activeTaskTitle
+    ? `Active at ${agent.presence.activeTaskTitle}`
+    : agent.isMapActive
+      ? 'Sharing live location'
+      : 'Active at Kemsi Street';
 
   return (
     <div className="bg-[#0A1A22] rounded-[28px] p-6 shadow-2xl">
@@ -336,7 +338,7 @@ export function AgentLiveDetails({ agent }: { agent: AgentItem }) {
           </div>
           <div className="bg-white px-2.5 py-1 rounded-lg mt-1.5 whitespace-nowrap shadow-lg border border-gray-100/50">
             <p className="text-[9px] font-bold text-dash-dark">{agent.name}</p>
-            <p className="text-[7px] text-gray-400">Active at Kemsi Street</p>
+            <p className="text-[7px] text-gray-400">{locationLabel}</p>
           </div>
         </div>
 
@@ -367,16 +369,16 @@ export function AgentLiveDetails({ agent }: { agent: AgentItem }) {
         {hasLocation && (
           <button
             className={`px-6 py-2.5 rounded-full text-[12px] font-bold transition-all inline-flex items-center gap-2 cursor-pointer ${
-              agent.active
+              agent.isMapActive
                 ? 'bg-[#9333EA] text-white hover:bg-[#7E22CE]'
                 : 'bg-gray-600 text-white hover:bg-gray-500'
             }`}
           >
-            {agent.active ? 'Active (View on Map)' : 'Offline'}
-            {agent.active && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+            {agent.isMapActive ? 'Active (View on Map)' : 'Offline'}
+            {agent.isMapActive && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
           </button>
         )}
-        <p className="text-[11px] text-gray-500 mt-2.5 ml-1">{agent.active ? 'Online' : 'Offline'}</p>
+        <p className="text-[11px] text-gray-500 mt-2.5 ml-1">{agent.time}</p>
       </div>
     </div>
   );

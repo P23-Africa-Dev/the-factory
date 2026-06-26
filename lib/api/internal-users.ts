@@ -53,13 +53,23 @@ export type InternalUserListItem = {
   invite_expires_at?: string | null;
   invite_accepted_at?: string | null;
   invite_revoked_at?: string | null;
+  presence?: {
+    is_session_online: boolean;
+    is_map_active: boolean;
+    last_seen_at?: string | null;
+    last_session_at?: string | null;
+    active_task_id?: number | null;
+    active_task_title?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  };
 };
 
 export type ListInternalUsersParams = {
   company_id?: number | string;
   role?: InternalUserRole;
   onboarding_status?: "active" | "pending_onboarding" | "inactive";
-  status?: "active" | "pending_onboarding" | "inactive";
+  status?: "active" | "offline" | "pending_onboarding" | "inactive";
   search?: string;
   zone?: string;
   include_inactive?: 0 | 1;

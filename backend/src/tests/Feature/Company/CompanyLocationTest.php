@@ -134,7 +134,7 @@ class CompanyLocationTest extends TestCase
             ->assertJsonValidationErrors(['authorization']);
     }
 
-    public function test_user_cannot_access_cross_company_location(): void
+    public function test_cross_company_user_can_view_location_with_stripped_fields(): void
     {
         [$company, $admin] = $this->seedCompany('FAC-LOC004', 'Tenant A Ltd');
         [$otherCompany, $otherAdmin] = $this->seedCompany('FAC-LOC005', 'Tenant B Ltd');
@@ -151,8 +151,13 @@ class CompanyLocationTest extends TestCase
         $showResponse = $this->withToken($admin->createToken('cross-show-location', ['*'])->plainTextToken)
             ->getJson('/api/v1/admin/locations/' . $foreignLocation->id . '?company_id=' . $company->id);
 
-        $showResponse->assertUnprocessable()
-            ->assertJsonValidationErrors(['location']);
+        $showResponse->assertOk()
+            ->assertJsonPath('data.location.id', $foreignLocation->id)
+            ->assertJsonPath('data.location.name', 'Foreign Office')
+            ->assertJsonPath('data.location.can_manage', false)
+            ->assertJsonMissingPath('data.location.company_id')
+            ->assertJsonMissingPath('data.location.created_by')
+            ->assertJsonMissingPath('data.location.linked_to_crm');
 
         $updateResponse = $this->withToken($admin->createToken('cross-update-location', ['*'])->plainTextToken)
             ->patchJson('/api/v1/admin/locations/' . $foreignLocation->id, [
@@ -175,6 +180,51 @@ class CompanyLocationTest extends TestCase
             'id' => $foreignLocation->id,
             'company_id' => $otherCompany->id,
         ]);
+    }
+
+    public function test_global_list_shows_cross_company_pins_without_org_attribution(): void
+    {
+        [$companyA, $adminA] = $this->seedCompany('FAC-LOC007', 'Tenant Alpha Ltd');
+        [$companyB, $adminB] = $this->seedCompany('FAC-LOC008', 'Tenant Beta Ltd');
+
+        CompanyLocation::create([
+            'company_id' => $companyA->id,
+            'created_by_user_id' => $adminA->id,
+            'name' => 'Alpha Pin',
+            'type' => 'office',
+            'latitude' => 6.1000000,
+            'longitude' => 3.1000000,
+        ]);
+
+        $listResponse = $this->withToken($adminB->createToken('beta-list-global', ['*'])->plainTextToken)
+            ->getJson('/api/v1/admin/locations?company_id=' . $companyB->id);
+
+        $listResponse->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.name', 'Alpha Pin')
+            ->assertJsonPath('data.items.0.can_manage', false)
+            ->assertJsonMissingPath('data.items.0.company_id')
+            ->assertJsonMissingPath('data.items.0.created_by');
+    }
+
+    public function test_own_company_sees_full_metadata_when_saved_to_crm(): void
+    {
+        [$company, $admin] = $this->seedCompany('FAC-LOC009', 'CRM Metadata Ltd');
+
+        $createResponse = $this->withToken($admin->createToken('admin-crm-pin', ['*'])->plainTextToken)
+            ->postJson('/api/v1/admin/locations', [
+                'company_id' => $company->id,
+                'name' => 'CRM Pin Site',
+                'latitude' => 6.4400000,
+                'longitude' => 3.4500000,
+                'save_to_crm' => true,
+            ]);
+
+        $createResponse->assertCreated()
+            ->assertJsonPath('data.location.linked_to_crm', true)
+            ->assertJsonPath('data.location.company_id', $company->id)
+            ->assertJsonPath('data.location.can_manage', true)
+            ->assertJsonPath('data.location.created_by.id', $admin->id);
     }
 
     public function test_list_supports_search_and_type_filters(): void

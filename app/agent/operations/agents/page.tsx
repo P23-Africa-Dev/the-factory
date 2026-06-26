@@ -1,18 +1,26 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
+import { ArrowLeft, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight, MapPin, Loader2 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { AddAgentModal } from '@/components/operations/add-agent-modal';
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from '@/components/operations/ops-table';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
+import { useInternalUsersPaginated } from '@/hooks/use-internal-users';
 import {
   useInternalOnboardingStatus,
   useResendInternalInvite,
 } from '@/hooks/use-internal-user-onboarding';
 import { toast } from 'sonner';
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  getAgentPresenceBadgeClass,
+  getAgentPresenceLabels,
+  getAgentSessionBadgeClass,
+  mapApiPresence,
+} from '@/lib/agent-presence';
+import type { InternalUserListItem } from '@/lib/api/internal-users';
 
 type Agent = {
   id: string;
@@ -25,35 +33,53 @@ type Agent = {
   time: string;
   avatar: string;
   active: boolean;
+  isMapActive: boolean;
+  isSessionOnline: boolean;
   location?: string | null;
   latitude?: number | null;
   longitude?: number | null;
 };
 
-const ALL_AGENTS: Agent[] = [
-  { id: '1', name: 'Francis Nasyomba', description: 'Visit the Ikeja Computer village, and promote...', zone: 'Ikeja LGA', phone: '+234 803 4567890', role: 'Field Agent', status: 'Offline', time: '12 hours ago', avatar: '/avatars/male-avatar.png', active: false },
-  { id: '2', name: 'Lade Wane', description: 'Visit the Ikeja Computer village, and promote...', zone: 'Ikeja LGA', phone: '+234 803 4567890', role: 'Field Agent', status: 'Active (View on Map)', time: 'Online', avatar: '/avatars/female-avatar.png', active: true },
-  { id: '3', name: 'Francis Nasyomba', description: 'Visit the Ikeja Computer village, and promote...', zone: 'Ikeja LGA', phone: '+234 803 4567890', role: 'Field Agent', status: 'Offline', time: '12 hours ago', avatar: '/avatars/male-avatar.png', active: false },
-  { id: '4', name: 'Amina Bello', description: 'Visit the Ikeja Computer village, and promote...', zone: 'Surulere LGA', phone: '+234 803 1234567', role: 'Field Agent', status: 'Active (View on Map)', time: 'Online', avatar: '/avatars/female-avatar.png', active: true },
-  { id: '5', name: 'Chidi Okonkwo', description: 'Visit the Ikeja Computer village, and promote...', zone: 'Lekki LGA', phone: '+234 803 9876543', role: 'Senior Agent', status: 'Offline', time: '3 hours ago', avatar: '/avatars/male-avatar.png', active: false },
-  { id: '6', name: 'Ngozi Eze', description: 'Visit the Ikeja Computer village, and promote...', zone: 'Victoria Island', phone: '+234 803 5551234', role: 'Field Agent', status: 'Offline', time: '1 day ago', avatar: '/avatars/female-avatar.png', active: false },
-  { id: '7', name: 'Tunde Adeyemi', description: 'Cover the Yaba tech hub area and engage startups...', zone: 'Yaba LGA', phone: '+234 803 2223333', role: 'Senior Agent', status: 'Active (View on Map)', time: 'Online', avatar: '/avatars/male-avatar.png', active: true },
-  { id: '8', name: 'Fatima Sule', description: 'Visit the Ikeja Computer village, and promote...', zone: 'Surulere LGA', phone: '+234 803 4445555', role: 'Field Agent', status: 'Offline', time: '5 hours ago', avatar: '/avatars/female-avatar.png', active: false },
-  { id: '9', name: 'Emeka Obi', description: 'Cover the Oshodi market area and promote products...', zone: 'Oshodi LGA', phone: '+234 803 6667777', role: 'Field Agent', status: 'Offline', time: '2 days ago', avatar: '/avatars/male-avatar.png', active: false },
-  { id: '10', name: 'Blessing Okafor', description: 'Visit the Ikeja Computer village, and promote...', zone: 'Ikeja LGA', phone: '+234 803 8889999', role: 'Senior Agent', status: 'Active (View on Map)', time: 'Online', avatar: '/avatars/female-avatar.png', active: true },
-];
-
-const ZONES = ['All Zones', ...Array.from(new Set(ALL_AGENTS.map((a) => a.zone)))];
-const ROLES = ['All Roles', ...Array.from(new Set(ALL_AGENTS.map((a) => a.role)))];
 const PAGE_SIZE = 5;
+const ROLES = ['All Roles', 'Admin', 'Field Agent', 'Supervisor'] as const;
+
+function normalizeRole(role?: string): 'admin' | 'agent' | 'supervisor' {
+  if (role === 'admin') return 'admin';
+  if (role === 'supervisor') return 'supervisor';
+  return 'agent';
+}
+
+function mapAgent(user: InternalUserListItem): Agent {
+  const internalRole = normalizeRole(user.internal_role ?? user.role);
+  const presence = mapApiPresence(user.presence);
+  const labels = getAgentPresenceLabels(presence, {
+    onboardingStatus: user.onboarding_status,
+    isActive: user.is_active,
+  });
+
+  return {
+    id: String(user.id),
+    name: user.name,
+    description: user.email,
+    zone: user.assigned_zone ?? 'Unassigned',
+    phone: user.phone_number ?? '—',
+    role: internalRole === 'admin' ? 'Admin' : internalRole === 'supervisor' ? 'Supervisor' : 'Field Agent',
+    status: labels.badgeLabel,
+    time: labels.subtextLabel,
+    avatar: user.avatar_url ?? '/avatars/male-avatar.png',
+    active: labels.isMapActive,
+    isMapActive: labels.isMapActive,
+    isSessionOnline: labels.isSessionOnline,
+    latitude: presence.latitude ?? undefined,
+    longitude: presence.longitude ?? undefined,
+    location: presence.activeTaskTitle ?? null,
+  };
+}
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 function AgentDetailSidebar({ agent }: { agent: Agent }) {
-  const hasLocation = !!(
-    agent.location ||
-    agent.latitude ||
-    agent.longitude ||
-    (agent.zone && agent.zone !== 'Unassigned')
+  const hasLocation = Boolean(
+    agent.isMapActive && (agent.location || agent.latitude || agent.longitude),
   );
 
   return (
@@ -88,8 +114,8 @@ function AgentDetailSidebar({ agent }: { agent: Agent }) {
                 <p className="text-[12px] font-bold text-dash-dark">{agent.name}</p>
                 <div className="flex items-center justify-center gap-1.5 mt-0.5">
                   <span className="text-[11px] text-gray-400">{agent.zone}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${agent.active ? 'bg-[#9D4EDD] text-white' : 'bg-gray-200 text-gray-500'}`}>
-                    {agent.active ? 'Online' : 'Offline'}
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${getAgentSessionBadgeClass(agent.isSessionOnline)}`}>
+                    {agent.isSessionOnline ? 'Online' : 'Offline'}
                   </span>
                 </div>
               </div>
@@ -171,9 +197,9 @@ function AgentDetailSidebar({ agent }: { agent: Agent }) {
 
         <div className="mt-4">
           {hasLocation && (
-            <button className={`px-5 py-2.5 rounded-full text-[12px] font-bold hover:opacity-90 transition-all inline-flex items-center gap-2 ${agent.active ? 'bg-[#9D4EDD] text-white' : 'bg-gray-600 text-white'}`}>
-              {agent.active ? 'Active (View on Map)' : 'Offline'}
-              {agent.active && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+            <button className={`px-5 py-2.5 rounded-full text-[12px] font-bold hover:opacity-90 transition-all inline-flex items-center gap-2 ${agent.isMapActive ? 'bg-[#9D4EDD] text-white' : 'bg-gray-600 text-white'}`}>
+              {agent.isMapActive ? 'Active (View on Map)' : 'Offline'}
+              {agent.isMapActive && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
             </button>
           )}
           <p className="text-[11px] text-gray-500 mt-2">{agent.time}</p>
@@ -195,7 +221,7 @@ function AgentRow({ agent, isSelected, onClick }: { agent: Agent; isSelected: bo
         label={agent.status}
         subText={agent.time}
         isSelected={isSelected}
-        badgeClass={agent.active ? 'bg-[#2F6C0E] text-white' : 'bg-[#EF7129] text-white'}
+        badgeClass={getAgentPresenceBadgeClass(agent)}
       />
     </OpsTableRow>
   );
@@ -210,31 +236,50 @@ export default function AllAgentsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage]               = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState<Agent>(ALL_AGENTS[0]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const onboardingStatusQuery = useInternalOnboardingStatus(companyId ?? undefined);
   const resendInviteMutation = useResendInternalInvite();
 
-  const filtered = useMemo(() => {
-    return ALL_AGENTS.filter((a) => {
-      const matchesSearch =
-        a.name.toLowerCase().includes(search.toLowerCase()) ||
-        a.zone.toLowerCase().includes(search.toLowerCase()) ||
-        a.phone.includes(search);
-      const matchesZone   = zoneFilter === 'All Zones' || a.zone === zoneFilter;
-      const matchesRole   = roleFilter === 'All Roles' || a.role === roleFilter;
-      const matchesStatus =
-        statusFilter === 'all' ||
-        (statusFilter === 'active' && a.active) ||
-        (statusFilter === 'offline' && !a.active);
-      return matchesSearch && matchesZone && matchesRole && matchesStatus;
-    });
-  }, [search, zoneFilter, roleFilter, statusFilter]);
+  const roleParam = roleFilter === 'All Roles'
+    ? undefined
+    : roleFilter === 'Admin'
+      ? 'admin'
+      : roleFilter === 'Supervisor'
+        ? 'supervisor'
+        : 'agent';
+  const statusParam = statusFilter === 'all' ? undefined : statusFilter === 'active' ? 'active' : 'offline';
+  const zoneParam = zoneFilter === 'All Zones' ? undefined : zoneFilter;
 
-  const totalPages   = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage  = Math.min(page, totalPages);
-  const paginated    = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const { data: paginatedData, isLoading: isAgentsLoading } = useInternalUsersPaginated({
+    company_id: companyId ?? undefined,
+    role: roleParam,
+    status: statusParam,
+    zone: zoneParam,
+    search: search || undefined,
+    per_page: PAGE_SIZE,
+    page,
+  }, { refetchInterval: 30_000 });
+
+  const filtered = (paginatedData?.items ?? []).map(mapAgent);
+  const pagination = paginatedData?.pagination;
+  const totalPages = Math.max(1, pagination?.last_page ?? 1);
+  const currentPage = pagination?.current_page ?? page;
+
+  const zones = ['All Zones', ...Array.from(new Set((paginatedData?.items ?? [])
+    .map((item) => item.assigned_zone)
+    .filter((zone): zone is string => !!zone)))];
+
+  const selectedAgent = useMemo(() => {
+    if (filtered.length === 0) return null;
+    if (selectedAgentId) {
+      return filtered.find((agent) => agent.id === selectedAgentId) ?? filtered[0];
+    }
+    return filtered[0];
+  }, [filtered, selectedAgentId]);
+
+  const paginated = filtered;
 
   const handleSearch = (val: string) => { setSearch(val); setPage(1); };
   const handleFilter = (key: 'zone' | 'role' | 'status', val: string) => {
@@ -256,7 +301,7 @@ export default function AllAgentsPage() {
             </Link>
             <div>
               <h1 className="text-[22px] font-bold text-dash-dark">All Agents</h1>
-              <p className="text-[13px] text-gray-400 mt-0.5">{filtered.length} agents found</p>
+              <p className="text-[13px] text-gray-400 mt-0.5">{pagination?.total ?? filtered.length} agents found</p>
             </div>
           </div>
           <button
@@ -352,7 +397,7 @@ export default function AllAgentsPage() {
               <SearchableSelect
                 value={zoneFilter}
                 onChange={(v) => handleFilter('zone', v)}
-                options={ZONES.map((z) => ({ value: z, label: z }))}
+                options={zones.map((z) => ({ value: z, label: z }))}
                 className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
               />
             </div>
@@ -394,7 +439,11 @@ export default function AllAgentsPage() {
 
           {/* List */}
           <OpsTableContainer className="flex-1 min-w-0">
-            {paginated.length === 0 ? (
+            {isAgentsLoading ? (
+              <div className="py-16 flex justify-center">
+                <Loader2 size={22} className="animate-spin text-gray-400" />
+              </div>
+            ) : paginated.length === 0 ? (
               <div className="py-16 text-center text-gray-400 text-[14px] font-medium">No agents match your search.</div>
             ) : (
               <div className="space-y-3">
@@ -402,8 +451,8 @@ export default function AllAgentsPage() {
                   <AgentRow
                     key={agent.id}
                     agent={agent}
-                    isSelected={selectedAgent.id === agent.id}
-                    onClick={() => setSelectedAgent(agent)}
+                    isSelected={selectedAgent?.id === agent.id}
+                    onClick={() => setSelectedAgentId(agent.id)}
                   />
                 ))}
               </div>
@@ -413,7 +462,7 @@ export default function AllAgentsPage() {
             {totalPages > 1 && (
               <div className="flex items-center justify-between mt-6 pt-5 border-t border-gray-100">
                 <p className="text-[12px] text-gray-400">
-                  Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
+                  Showing {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, pagination?.total ?? filtered.length)} of {pagination?.total ?? filtered.length}
                 </p>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}
@@ -436,7 +485,13 @@ export default function AllAgentsPage() {
           </OpsTableContainer>
 
           {/* Sidebar */}
-          <AgentDetailSidebar agent={selectedAgent} />
+          {selectedAgent ? (
+            <AgentDetailSidebar agent={selectedAgent} />
+          ) : (
+            <div className="flex items-center justify-center w-full xl:w-90 xl:shrink-0 h-40 text-gray-400 text-[13px]">
+              Select an agent to view details
+            </div>
+          )}
         </div>
       </div>
 

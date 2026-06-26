@@ -15,6 +15,8 @@ use App\Http\Resources\InternalUserResource;
 use App\Models\User;
 use App\Services\Internal\InternalUserFetchService;
 use App\Services\Internal\InternalUserOnboardingService;
+use App\Services\Internal\InternalUserAccessService;
+use App\Services\Workforce\AgentPresenceService;
 use Illuminate\Http\JsonResponse;
 
 class InternalUserController extends Controller
@@ -22,6 +24,7 @@ class InternalUserController extends Controller
     public function __construct(
         private readonly InternalUserOnboardingService $service,
         private readonly InternalUserFetchService $fetchService,
+        private readonly InternalUserAccessService $accessService,
     ) {}
 
     public function index(FetchInternalUsersRequest $request): JsonResponse
@@ -40,6 +43,20 @@ class InternalUserController extends Controller
                 actor: $request->user(),
                 filters: $request->validated(),
             );
+
+            $companyId = (int) ($request->validated('company_id') ?? 0);
+            if ($companyId <= 0) {
+                $companyId = (int) $this->accessService
+                    ->resolveCompanyContext($request->user(), null)['company']->id;
+            }
+            $userIds = collect($paginated->items())->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+            $presenceMap = $this->fetchService->resolvePresenceForUsers($companyId, $userIds);
+            foreach ($paginated->items() as $user) {
+                $user->setAttribute(
+                    'agent_presence',
+                    $presenceMap[(int) $user->id] ?? $presenceMap[$user->id] ?? app(AgentPresenceService::class)->emptyPresence(),
+                );
+            }
 
             return $this->success(
                 'Internal users retrieved successfully',

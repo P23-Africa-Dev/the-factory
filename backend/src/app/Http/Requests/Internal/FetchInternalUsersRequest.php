@@ -31,7 +31,7 @@ class FetchInternalUsersRequest extends FormRequest
             'company_id' => ['nullable', 'integer', 'exists:companies,id'],
             'role' => ['nullable', 'string', Rule::in(['admin', 'supervisor', 'agent'])],
             'onboarding_status' => ['nullable', 'string', Rule::in(['pending_onboarding', 'active'])],
-            'status' => ['nullable', 'string', Rule::in(['active', 'pending_onboarding', 'inactive'])],
+            'status' => ['nullable', 'string', Rule::in(['active', 'offline', 'pending_onboarding', 'inactive'])],
             'search' => ['nullable', 'string', 'max:255'],
             'zone' => ['nullable', 'string', 'max:120'],
             'include_inactive' => ['nullable', 'boolean'],

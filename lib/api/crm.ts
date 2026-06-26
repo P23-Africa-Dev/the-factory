@@ -54,6 +54,8 @@ export type LeadApiItem = {
     source?: string | null;
     status?: ApiLeadStatus | null;
     priority?: ApiLeadPriority | null;
+    budget_amount?: number | null;
+    budget_currency?: string | null;
     budget?: string | null;
     next_action?: string | null;
     last_interaction?: string | null;
@@ -125,6 +127,8 @@ export type CreateLeadPayload = {
     source?: string | null;
     status?: ApiLeadStatus;
     priority?: ApiLeadPriority;
+    budget_amount?: number | null;
+    budget_currency?: string | null;
     next_action?: string | null;
     last_interaction?: string | null;
     last_interaction_at?: string | null;
@@ -142,6 +146,8 @@ export type UpdateLeadPayload = {
     source?: string | null;
     status?: ApiLeadStatus;
     priority?: ApiLeadPriority;
+    budget_amount?: number | null;
+    budget_currency?: string | null;
     next_action?: string | null;
     last_interaction?: string | null;
     last_interaction_at?: string | null;
@@ -191,7 +197,31 @@ export type ImportLeadRow = {
     source?: string;
     status?: string;
     priority?: ApiLeadPriority;
+    budget_amount?: number | string;
+    budget_currency?: string;
 };
+
+/** Resolve display amount from lead budget fields (falls back to legacy meta.value). */
+export function resolveLeadBudgetAmount(lead: Pick<LeadApiItem, "budget_amount" | "meta">): number {
+    if (typeof lead.budget_amount === "number" && !Number.isNaN(lead.budget_amount)) {
+        return lead.budget_amount;
+    }
+    if (typeof lead.meta?.value === "number" && !Number.isNaN(lead.meta.value)) {
+        return lead.meta.value;
+    }
+    return 0;
+}
+
+export function formatLeadBudgetDisplay(
+    lead: Pick<LeadApiItem, "budget_amount" | "budget_currency" | "meta" | "pipeline">,
+): string {
+    const amount = resolveLeadBudgetAmount(lead);
+    if (amount <= 0) {
+        return "$ 0";
+    }
+    const currency = lead.budget_currency ?? lead.pipeline?.currency_code ?? "USD";
+    return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
 
 export type FailedImportRow = {
     row_index: number;
@@ -223,6 +253,27 @@ export type AgentUploadOverview = {
     }>;
     source_filter: string;
 };
+
+export type CrmDailyTrendPoint = {
+    day: string;
+    value: number;
+    date: string;
+};
+
+export type CrmLeadsAnalytics = {
+    total_leads: number;
+    week_growth_percent: number;
+    week_growth_direction: "up" | "down" | "flat";
+    daily_trend: CrmDailyTrendPoint[];
+    month_new_leads: number;
+    month_label: string;
+    highlight_day: string | null;
+};
+
+export type CrmLeadsAnalyticsParams = Pick<
+    ListLeadsParams,
+    "company_id" | "pipeline_id" | "status" | "source" | "search"
+>;
 
 function buildQuery(params: Record<string, string | number | undefined>) {
     const qs = new URLSearchParams();
@@ -479,6 +530,26 @@ export function getAgentUploadsOverview(
     return apiRequest<AgentUploadOverview>({
         method: "GET",
         path: withBase(basePath, `/crm/leads/agent-uploads-overview${query}`),
+        token,
+    });
+}
+
+export function getCrmLeadsAnalytics(
+    params: CrmLeadsAnalyticsParams,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<CrmLeadsAnalytics>> {
+    const query = buildQuery({
+        company_id: params.company_id,
+        pipeline_id: params.pipeline_id,
+        status: params.status,
+        source: params.source,
+        search: params.search,
+    });
+
+    return apiRequest<CrmLeadsAnalytics>({
+        method: "GET",
+        path: withBase(basePath, `/crm/leads/analytics${query}`),
         token,
     });
 }

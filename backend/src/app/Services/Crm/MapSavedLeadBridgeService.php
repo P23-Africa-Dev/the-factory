@@ -14,7 +14,10 @@ class MapSavedLeadBridgeService
 {
     public const MAP_PIPELINE_SYSTEM_KEY = 'map_saved';
 
-    public const MAP_PIPELINE_NAME = 'Saved from Map';
+    public const MAP_PIPELINE_NAME = 'Map Leads';
+
+    /** @deprecated Renamed to {@see MAP_PIPELINE_NAME}; kept for lazy migration of existing rows. */
+    public const LEGACY_MAP_PIPELINE_NAME = 'Saved from Map';
 
     public const MAP_LEAD_SOURCE = 'Map';
 
@@ -26,7 +29,21 @@ class MapSavedLeadBridgeService
             ->first();
 
         if ($existing !== null) {
-            return $existing;
+            return $this->normalizeMapPipeline($existing);
+        }
+
+        $legacy = LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->whereIn('name', [self::MAP_PIPELINE_NAME, self::LEGACY_MAP_PIPELINE_NAME])
+            ->first();
+
+        if ($legacy !== null) {
+            $legacy->update([
+                'name' => self::MAP_PIPELINE_NAME,
+                'system_key' => self::MAP_PIPELINE_SYSTEM_KEY,
+            ]);
+
+            return $legacy->fresh();
         }
 
         $maxSortOrder = (int) LeadPipeline::query()->where('company_id', $companyId)->max('sort_order');
@@ -39,6 +56,16 @@ class MapSavedLeadBridgeService
             'is_default' => false,
             'system_key' => self::MAP_PIPELINE_SYSTEM_KEY,
         ]);
+    }
+
+    private function normalizeMapPipeline(LeadPipeline $pipeline): LeadPipeline
+    {
+        if ($pipeline->name !== self::MAP_PIPELINE_NAME) {
+            $pipeline->update(['name' => self::MAP_PIPELINE_NAME]);
+            $pipeline = $pipeline->fresh();
+        }
+
+        return $pipeline;
     }
 
     public function mapPipelineHasLeads(int $companyId): bool
@@ -64,11 +91,13 @@ class MapSavedLeadBridgeService
         return DB::transaction(function () use ($user, $location, $companyId, $status): Lead {
             $pipeline = $this->ensureMapPipeline($companyId);
 
-            $lead = Lead::query()->create([
+            /** @var LeadService $leadService */
+            $leadService = app(LeadService::class);
+
+            $lead = $leadService->create($user, [
                 'company_id' => $companyId,
                 'pipeline_id' => $pipeline->id,
-                'created_by_user_id' => $user->id,
-                'assigned_to_user_id' => $user->id,
+                'company_location_id' => $location->id,
                 'name' => $location->name,
                 'email' => $location->email,
                 'phone' => $location->contact_number,
@@ -77,7 +106,6 @@ class MapSavedLeadBridgeService
                 'status' => $status,
                 'priority' => 'medium',
                 'meta' => $this->leadMetaFromLocation($location),
-                'company_location_id' => $location->id,
             ]);
 
             $location->update(['crm_lead_id' => $lead->id]);

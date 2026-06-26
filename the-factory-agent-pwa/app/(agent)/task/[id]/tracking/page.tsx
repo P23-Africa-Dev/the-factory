@@ -29,7 +29,7 @@ export default function TrackingPage() {
   const taskId = Number(id);
 
   const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
-  const { resolveCurrentPosition, requestPermission, checkPermission } = useGeolocation();
+  const { resolveCurrentPosition, ensureLocationPermission, checkPermission } = useGeolocation();
   const { goToMapActivity, goToTrackingComplete } = useTrackingNavigation();
   const { startTracking } = useActiveTracking();
   const [gateMode, setGateMode] = useState<'request' | 'denied'>('request');
@@ -144,17 +144,13 @@ export default function TrackingPage() {
     flowInFlightRef.current = true;
     setIsRequesting(true);
     try {
-      let status = await checkPermission();
-      if (status !== 'granted') {
-        status = await requestPermission();
-      }
+      const status = await ensureLocationPermission();
 
       if (status === 'denied') {
         setGateMode('denied');
         return;
       }
 
-      setGateMode('request');
       await proceedWithTracking();
     } catch (err) {
       const geoErr = err as GeolocationPositionError;
@@ -167,7 +163,7 @@ export default function TrackingPage() {
       flowInFlightRef.current = false;
       setIsRequesting(false);
     }
-  }, [checkPermission, requestPermission, proceedWithTracking]);
+  }, [ensureLocationPermission, proceedWithTracking]);
 
   const handleRequest = useCallback(() => {
     autoStartAttemptedRef.current = true;

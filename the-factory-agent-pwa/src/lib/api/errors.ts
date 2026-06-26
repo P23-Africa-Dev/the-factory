@@ -1,4 +1,5 @@
 import type { ApiError } from '@/types';
+import { toast } from '@/lib/toast';
 
 export function flattenApiError(error: unknown): string {
   if (typeof error === 'object' && error !== null) {
@@ -17,4 +18,9 @@ export function flattenApiError(error: unknown): string {
 export function isTrackingAlreadyActiveError(error: unknown): boolean {
   const text = flattenApiError(error).toLowerCase();
   return text.includes('already active') || text.includes('already tracking');
+}
+
+export function showApiErrorToast(error: unknown, title = 'Something went wrong'): void {
+  const message = flattenApiError(error);
+  toast.error(title, message || 'Please try again.');
 }
