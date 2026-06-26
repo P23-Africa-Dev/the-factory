@@ -9,10 +9,11 @@
   import { AddLeadModal } from '@/features/crm/components/AddLeadModal';
   import { AttendanceCard } from '@/features/attendance';
   import { NotificationPanel, useUnreadCount } from '@/features/notifications';
-  import { MeetingWidget, CreateMeetingModal } from '@/features/meetings';
+  import { MeetingWidget, CreateMeetingModal, ViewMeetingsModal, useMeetingList } from '@/features/meetings';
   import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
   import { searchPlacesWithMapbox } from '@/lib/map/geocoding';
   import { useGeolocation } from '@/features/tracking';
+  import { AnimatePresence, motion } from 'framer-motion';
 
   export default function AgentDashboardPage() {
     const router = useRouter();
@@ -30,11 +31,13 @@
     const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
     const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
     const [meetingModalDate, setMeetingModalDate] = useState<Date | undefined>(undefined);
+    const [isViewMeetingsOpen, setIsViewMeetingsOpen] = useState(false);
+    const [showTooltip, setShowTooltip] = useState(false);
     const [recentLocations, setRecentLocations] = useState<RecentDestination[]>([]);
 
     // Swipable panel states
     const COLLAPSED_Y = 100;
-    const [panelState, setPanelState] = useState<'expanded' | 'collapsed'>('expanded');
+    const [panelState, setPanelState] = useState<'expanded' | 'collapsed'>('collapsed');
     const [translateY, setTranslateY] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
     const dragStartY = useRef(0);
@@ -113,6 +116,7 @@
     const { firstName, avatarSrc, userRole, profile } = useAgentIdentity();
 
     const { data: tasks = [], isLoading: isLoadingTasks } = useTaskListItems();
+    const { data: meetingsData } = useMeetingList({ per_page: 100 });
     const { goToTasksList, goToMapScreen } = useTaskNavigation();
     const { goToAllLeads } = useCrmNavigation();
     const { data: leadsOverview, isLoading: isLoadingLeadsOverview } = useAgentUploadsOverview();
@@ -148,6 +152,20 @@
         d.getDate() === target.getDate()
       );
     }, []);
+
+    const selectedDayMeetings = useMemo(() => {
+      if (!meetingsData?.pages) return [];
+      const all = meetingsData.pages.flatMap((p) => p.items);
+      return all.filter((m) => isSameDay(m.startAt, selectedDate) && m.status !== 'cancelled');
+    }, [meetingsData, selectedDate, isSameDay]);
+
+    // Tooltip auto-hide timer
+    useEffect(() => {
+      if (showTooltip) {
+        const timer = setTimeout(() => setShowTooltip(false), 2000);
+        return () => clearTimeout(timer);
+      }
+    }, [showTooltip]);
 
     // Offline status tracking
     useEffect(() => {
@@ -348,7 +366,7 @@
                     key={index}
                     onClick={() => {
                       setSelectedDate(item.fullDate);
-                      openMeetingModal(item.fullDate);
+                      setIsViewMeetingsOpen(true);
                     }}
                     className={`flex flex-col items-center justify-center w-[42px] h-[65px] rounded-[16px] transition-all active:scale-95 ${
                       isActive ? 'bg-[#7BB6B8]' : 'bg-transparent'
@@ -383,6 +401,7 @@
                 )}
               </button>
 
+              {/*
               <div
                 role="button"
                 tabIndex={0}
@@ -396,6 +415,30 @@
                 <div className="flex-1 bg-[#09232D] h-[36px] rounded-[20px] flex items-center justify-center px-1 min-w-0">
                   <span className="text-[10px] text-white tracking-wide truncate font-normal text-center">{formattedSelectedDate}</span>
                 </div>
+              </div>
+              */}
+              <div className="relative flex-[1.6]">
+                <button
+                  type="button"
+                  onClick={() => setShowTooltip(true)}
+                  className="w-full h-[44px] bg-[#7BB6B8] rounded-[20px] flex items-center justify-center text-white text-[10px] font-semibold tracking-wide opacity-50 cursor-pointer active:scale-95 transition-transform"
+                >
+                  Plan my day
+                </button>
+                <AnimatePresence>
+                  {showTooltip && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 4, scale: 0.95 }}
+                      transition={{ duration: 0.12, ease: 'easeOut' }}
+                      className="absolute bottom-[54px] left-1/2 -translate-x-1/2 z-[100] bg-black/90 backdrop-blur-md border border-white/10 px-3.5 py-1.5 rounded-xl shadow-xl flex items-center justify-center whitespace-nowrap gap-1.5"
+                    >
+                      <span className="text-[11px] font-bold text-[#7BB6B8]">✨ coming soon!</span>
+                      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-black/95 rotate-45 border-r border-b border-white/10" />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               <button
@@ -592,6 +635,14 @@
           open={isMeetingModalOpen}
           onClose={() => setIsMeetingModalOpen(false)}
           defaultDate={meetingModalDate}
+        />
+
+        <ViewMeetingsModal
+          open={isViewMeetingsOpen}
+          onClose={() => setIsViewMeetingsOpen(false)}
+          date={selectedDate}
+          meetings={selectedDayMeetings}
+          onScheduleNew={() => openMeetingModal(selectedDate)}
         />
 
         {/* Logout modal */}
