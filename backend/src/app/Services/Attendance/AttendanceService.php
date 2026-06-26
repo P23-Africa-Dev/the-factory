@@ -248,6 +248,170 @@ class AttendanceService
         return $query->simplePaginate((int) ($filters['per_page'] ?? 20))->withQueryString();
     }
 
+    public function historyForManagedAgent(User $user, User $agent, array $filters): array
+    {
+        $context = $this->attendanceAccessService->resolve($user, $filters['company_id'] ?? null);
+        $this->attendanceAccessService->ensureCanManage($context);
+
+        $companyId = (int) $context->company->id;
+
+        $belongsToCompany = DB::table('company_users')
+            ->where('company_id', $companyId)
+            ->where('user_id', $agent->id)
+            ->exists();
+
+        if (! $belongsToCompany) {
+            throw ValidationException::withMessages([
+                'user_id' => ['The selected agent does not belong to this company.'],
+            ]);
+        }
+
+        $today = now()->startOfDay();
+
+        $toDate = ! empty($filters['to_date'])
+            ? Carbon::parse((string) $filters['to_date'])->startOfDay()
+            : $today->copy();
+
+        $fromDate = ! empty($filters['from_date'])
+            ? Carbon::parse((string) $filters['from_date'])->startOfDay()
+            : $toDate->copy()->subDays(29);
+
+        if ($fromDate->gt($toDate)) {
+            [$fromDate, $toDate] = [$toDate, $fromDate];
+        }
+
+        $setting = AttendanceSetting::query()->where('company_id', $companyId)->first();
+        $workingDays = collect($setting?->working_days ?? self::DEFAULT_WORKING_DAYS)
+            ->map(static fn(mixed $day): string => strtolower((string) $day))
+            ->all();
+
+        $records = AttendanceRecord::query()
+            ->where('company_id', $companyId)
+            ->where('user_id', $agent->id)
+            ->whereBetween('attendance_date', [$fromDate->toDateString(), $toDate->toDateString()])
+            ->get()
+            ->keyBy(static fn(AttendanceRecord $record): string => $record->attendance_date->toDateString());
+
+        // Build a descending day-by-day series. Concluded scheduled working days
+        // without a record are synthesized as "absent" so the timeline and summary
+        // reflect the full range rather than only days with a stored record.
+        $rangeEnd = $today->lt($toDate) ? $today->copy() : $toDate->copy();
+        $items = collect();
+
+        for ($day = $rangeEnd->copy(); $day->gte($fromDate); $day->subDay()) {
+            $dateString = $day->toDateString();
+            $record = $records->get($dateString);
+
+            if ($record !== null) {
+                $items->push($this->formatHistoryRecord($record));
+
+                continue;
+            }
+
+            $isWorkingDay = in_array(strtolower($day->englishDayOfWeek), $workingDays, true);
+
+            if ($isWorkingDay && $day->lt($today)) {
+                $items->push($this->formatAbsentDay($companyId, (int) $agent->id, $dateString));
+            }
+        }
+
+        $presentDays = $items->filter(static fn(array $item): bool => $item['clock_in_at'] !== null && $item['is_late'] === false)->count();
+        $lateDays = $items->filter(static fn(array $item): bool => $item['is_late'] === true)->count();
+        $absentDays = $items->filter(static fn(array $item): bool => $item['status'] === 'absent')->count();
+        $totalDays = $items->count();
+        $attendanceRate = $totalDays > 0
+            ? (int) round((($presentDays + $lateDays) / $totalDays) * 100)
+            : 0;
+
+        $statusFilter = ! empty($filters['status']) ? (string) $filters['status'] : null;
+
+        $filtered = $statusFilter !== null
+            ? $items->filter(static function (array $item) use ($statusFilter): bool {
+                return match ($statusFilter) {
+                    'present' => $item['clock_in_at'] !== null && $item['is_late'] === false,
+                    'late' => $item['is_late'] === true,
+                    'absent' => $item['status'] === 'absent',
+                    'auto_clocked_out' => $item['is_auto_clocked_out'] === true,
+                    default => true,
+                };
+            })->values()
+            : $items->values();
+
+        $perPage = (int) ($filters['per_page'] ?? 30);
+        $page = max(1, (int) ($filters['page'] ?? 1));
+        $total = $filtered->count();
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $pageItems = $filtered->forPage($page, $perPage)->values();
+
+        return [
+            'user_id' => (int) $agent->id,
+            'agent_name' => (string) $agent->name,
+            'avatar_url' => AvatarUrlResolver::resolve($agent->avatar, $agent->gender ?? null),
+            'summary' => [
+                'present_days' => $presentDays,
+                'late_days' => $lateDays,
+                'absent_days' => $absentDays,
+                'total_days' => $totalDays,
+                'attendance_rate_percent' => $attendanceRate,
+            ],
+            'items' => $pageItems->all(),
+            'pagination' => [
+                'total' => $total,
+                'per_page' => $perPage,
+                'current_page' => $page,
+                'last_page' => $lastPage,
+                'next_page_url' => $page < $lastPage
+                    ? request()->fullUrlWithQuery(['page' => $page + 1])
+                    : null,
+                'prev_page_url' => $page > 1
+                    ? request()->fullUrlWithQuery(['page' => $page - 1])
+                    : null,
+            ],
+        ];
+    }
+
+    private function formatHistoryRecord(AttendanceRecord $record): array
+    {
+        return [
+            'id' => (int) $record->id,
+            'company_id' => (int) $record->company_id,
+            'user_id' => (int) $record->user_id,
+            'attendance_date' => $record->attendance_date?->toDateString(),
+            'clock_in_at' => $record->clock_in_at?->toIso8601String(),
+            'clock_out_at' => $record->clock_out_at?->toIso8601String(),
+            'status' => $record->status?->value,
+            'work_duration_minutes' => $record->work_duration_minutes !== null ? (int) $record->work_duration_minutes : null,
+            'work_duration_hours' => $record->work_duration_minutes !== null
+                ? round(((int) $record->work_duration_minutes) / 60, 2)
+                : null,
+            'is_late' => (bool) $record->is_late,
+            'is_auto_clocked_out' => (bool) $record->is_auto_clocked_out,
+            'metadata' => $record->metadata,
+            'created_at' => $record->created_at?->toIso8601String(),
+            'updated_at' => $record->updated_at?->toIso8601String(),
+        ];
+    }
+
+    private function formatAbsentDay(int $companyId, int $userId, string $dateString): array
+    {
+        return [
+            'id' => 'absent-' . $dateString,
+            'company_id' => $companyId,
+            'user_id' => $userId,
+            'attendance_date' => $dateString,
+            'clock_in_at' => null,
+            'clock_out_at' => null,
+            'status' => 'absent',
+            'work_duration_minutes' => null,
+            'work_duration_hours' => null,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+            'metadata' => null,
+            'created_at' => null,
+            'updated_at' => null,
+        ];
+    }
+
     public function statsForAgent(User $user, array $filters): array
     {
         $context = $this->attendanceAccessService->resolve($user, $filters['company_id'] ?? null);
