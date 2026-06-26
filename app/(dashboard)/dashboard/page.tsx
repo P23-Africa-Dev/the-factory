@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense } from "react";
 import {
   MyActivitiesChart,
   TotalLeadsChart,
@@ -70,7 +70,9 @@ export default function DashboardPage() {
         <div className="max-w-1340 mx-auto gap-4.25 flex flex-col lg:flex-row px-4 md:px-6 lg:px-4 justify-center">
           <TopCustomers />
           {/* <WeeklyTasks /> */}
-          <WeeklyTasksAgents />
+          <Suspense fallback={<div className="flex-1 min-h-[300px] bg-white rounded-2xl animate-pulse" />}>
+            <WeeklyTasksAgents />
+          </Suspense>
           <DashboardMap basePath="" />
           <div className="w-full lg:max-w-34 mt-0 lg:mt-23.75">
             <CRMPipeline />
