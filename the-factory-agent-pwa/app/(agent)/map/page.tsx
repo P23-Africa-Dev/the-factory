@@ -897,7 +897,7 @@ function MapContent() {
   const [pendingPin, setPendingPin] = useState<{ lat: number; lng: number; address: string | null } | null>(null);
   const [selectedSavedId, setSelectedSavedId] = useState<number | null>(null);
 
-  const { lastPosition, getCurrentPosition, resolveCurrentPosition, checkPermission, requestPermission, ensureLocationPermission, startWatching, stopWatching } = useGeolocation();
+  const { lastPosition, getCurrentPosition, resolveCurrentPosition, checkPermission, requestPermission, ensureLocationPermission, retryLocationPermission, startWatching, stopWatching } = useGeolocation();
   const { startTracking, stopTracking, activeTaskId } = useActiveTracking();
   const { data: tasks = [] } = useTaskListItems();
   const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
@@ -1054,7 +1054,7 @@ function MapContent() {
     if (!trackingTaskId) return;
     setResumePermBusy(true);
     try {
-      let status = await ensureLocationPermission();
+      let status = await retryLocationPermission();
       if (status === 'denied') {
         setPermGate('denied');
         return;
@@ -1075,7 +1075,7 @@ function MapContent() {
     } finally {
       setResumePermBusy(false);
     }
-  }, [trackingTaskId, companyId, ensureLocationPermission, resolveCurrentPosition]);
+  }, [trackingTaskId, companyId, retryLocationPermission, resolveCurrentPosition]);
 
   // Restore destination on resume (e.g. /map?taskId=…) before task detail fetch completes.
   useEffect(() => {
@@ -1427,7 +1427,7 @@ function MapContent() {
     searchOriginPlaces(q);
   }, [searchOriginPlaces]);
 
-  const runStartSession = useCallback(async () => {
+  const runStartSession = useCallback(async (permissionRetry = false) => {
     if (!selectedDestination?.taskId) return null;
     if (startRideInFlightRef.current || isLaunchingRide) return null;
 
@@ -1499,7 +1499,9 @@ function MapContent() {
           : null,
         effectiveOriginLng,
         effectiveOriginLat,
-        ensureLocationPermission,
+        resolveLocationPermission: permissionRetry
+          ? retryLocationPermission
+          : ensureLocationPermission,
         resolveCurrentPosition,
         startTaskAsync,
         beginSession,
@@ -1553,6 +1555,7 @@ function MapContent() {
     startTracking,
     stopTracking,
     ensureLocationPermission,
+    retryLocationPermission,
     resolveCurrentPosition,
     lastPosition,
     customOrigin,
@@ -1563,9 +1566,30 @@ function MapContent() {
     queryClient,
   ]);
 
-  const handleStartActivity = useCallback(async (): Promise<void> => {
-    await runStartSession();
+  const handleStartActivity = useCallback(async (permissionRetry = false): Promise<void> => {
+    await runStartSession(permissionRetry);
   }, [runStartSession]);
+
+  useEffect(() => {
+    if (!permGate) return;
+
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void checkPermission().then((status) => {
+        if (status !== 'granted') return;
+        if (isFromTrackingScreen && phase === 'activity_started') {
+          void handleResumePermission();
+        } else if (permGate === 'denied') {
+          void handleStartActivity(true);
+        } else {
+          setPermGate(null);
+        }
+      });
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [permGate, checkPermission, isFromTrackingScreen, phase, handleResumePermission, handleStartActivity]);
 
   const handleProceedWithGoogleMaps = useCallback(async (): Promise<void> => {
     const notifPerm = await requestTrackingNotificationPermission();
@@ -2106,7 +2130,7 @@ function MapContent() {
               if (isFromTrackingScreen && phase === 'activity_started') {
                 void handleResumePermission();
               } else {
-                void handleStartActivity();
+                void handleStartActivity(permGate === 'denied');
               }
             }}
             onDismiss={() => setPermGate(null)}

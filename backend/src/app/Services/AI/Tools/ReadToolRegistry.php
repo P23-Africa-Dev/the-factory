@@ -6,9 +6,11 @@ namespace App\Services\AI\Tools;
 
 use App\Enums\ProjectStatus;
 use App\Enums\TaskStatus;
+use App\Models\CrmEmailMessage;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\AI\Crm\EmailInferenceService;
 use App\Services\AI\Crm\CrmIntelligenceService;
 use App\Services\AI\Crm\VisitAssistantService;
 use App\Services\AI\Kpi\TeamPerformanceService;
@@ -16,6 +18,7 @@ use App\Services\AI\Planning\DailyPlanningService;
 use App\Services\Attendance\AttendanceService;
 use App\Services\Calendar\MeetingService;
 use App\Services\Company\CompanyContextService;
+use App\Services\Crm\CrmEmailService;
 use App\Services\Crm\LeadService;
 use App\Services\Dashboard\DashboardAggregateService;
 use App\Services\Tracking\AgentLocationSnapshotService;
@@ -33,6 +36,8 @@ class ReadToolRegistry
         private readonly DashboardAggregateService $dashboardAggregateService,
         private readonly DailyPlanningService $dailyPlanningService,
         private readonly CrmIntelligenceService $crmIntelligenceService,
+        private readonly CrmEmailService $crmEmailService,
+        private readonly EmailInferenceService $emailInferenceService,
         private readonly VisitAssistantService $visitAssistantService,
         private readonly TeamPerformanceService $teamPerformanceService,
     ) {}
@@ -51,6 +56,9 @@ class ReadToolRegistry
             'crm.follow_up_summary' => $this->crmIntelligenceService->followUpSummary($user, $companyId, $args),
             'crm.stale_leads' => $this->crmIntelligenceService->staleLeads($user, $companyId, $args),
             'crm.visit_extract' => $this->visitAssistantService->extractVisitNotes($user, $companyId, $args),
+            'crm.email_threads' => $this->emailThreads($user, $companyId, $args),
+            'crm.unread_emails' => $this->unreadEmails($user, $companyId, $args),
+            'crm.draft_email' => $this->draftEmail($user, $companyId, $args),
             'kpi.team_performance' => $this->teamPerformanceService->analyze($user, $companyId, $args),
             'org.users' => $this->organizationUsers($user, $companyId, $args),
             default => [
@@ -438,6 +446,82 @@ class ReadToolRegistry
             'summary' => 'Dashboard overview is ready.',
             'payload' => $overview,
             'sources' => ['dashboard.overview'],
+        ];
+    }
+
+    private function emailThreads(User $user, int $companyId, array $args): array
+    {
+        $leadId = isset($args['lead_id']) ? (int) $args['lead_id'] : null;
+
+        if ($leadId === null) {
+            return [
+                'tool' => 'crm.email_threads',
+                'summary' => 'Please specify a lead_id to summarize email threads.',
+                'payload' => [],
+                'sources' => ['crm.email_threads'],
+            ];
+        }
+
+        $lead = \App\Models\Lead::query()->where('company_id', $companyId)->findOrFail($leadId);
+        $threads = $this->crmEmailService->listThreadsForLead($user, $lead, [
+            'company_id' => $companyId,
+            'per_page' => 10,
+        ]);
+
+        return [
+            'tool' => 'crm.email_threads',
+            'summary' => 'Lead email thread summary is ready.',
+            'payload' => [
+                'lead_id' => $leadId,
+                'items' => $threads->items(),
+            ],
+            'sources' => ['crm.email_threads'],
+        ];
+    }
+
+    private function unreadEmails(User $user, int $companyId, array $args): array
+    {
+        $stats = $this->crmEmailService->emailStats($user, $companyId);
+        $activity = $this->crmEmailService->recentActivity($user, $companyId, 10);
+
+        $unreadMessages = CrmEmailMessage::query()
+            ->where('company_id', $companyId)
+            ->where('is_read', false)
+            ->where('direction', 'received')
+            ->latest('id')
+            ->limit(10)
+            ->get(['id', 'lead_id', 'subject', 'from_email', 'received_at']);
+
+        return [
+            'tool' => 'crm.unread_emails',
+            'summary' => ($stats['unread_crm_emails'] ?? 0) . ' unread CRM emails found.',
+            'payload' => [
+                'stats' => $stats,
+                'recent_activity' => $activity,
+                'unread_messages' => $unreadMessages,
+            ],
+            'sources' => ['crm.unread_emails'],
+        ];
+    }
+
+    private function draftEmail(User $user, int $companyId, array $args): array
+    {
+        $message = trim((string) ($args['message'] ?? ''));
+        $draft = $this->emailInferenceService->infer(
+            message: $message,
+            companyId: $companyId,
+            entities: is_array($args['entities'] ?? null) ? $args['entities'] : [],
+        );
+
+        return [
+            'tool' => 'crm.draft_email',
+            'summary' => 'Draft email prepared. Confirm to send with crm.send_email.',
+            'payload' => [
+                ...$draft,
+                'suggested_action_tool' => 'crm.send_email',
+                'requires_confirmation' => true,
+            ],
+            'sources' => ['crm.draft_email'],
         ];
     }
 }

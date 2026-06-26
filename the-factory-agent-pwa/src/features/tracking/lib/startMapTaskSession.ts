@@ -18,7 +18,7 @@ export type StartMapTaskSessionParams = {
   customOrigin: { latitude: number; longitude: number } | null;
   effectiveOriginLng: number | null;
   effectiveOriginLat: number | null;
-  ensureLocationPermission: () => Promise<PermissionStatus>;
+  resolveLocationPermission: () => Promise<PermissionStatus>;
   resolveCurrentPosition: () => Promise<LocationObject>;
   startTaskAsync: (args: {
     taskId: number;
@@ -65,7 +65,7 @@ export async function startMapTaskSession(
     companyId,
     isResume,
     lastPosition,
-    ensureLocationPermission,
+    resolveLocationPermission,
     startTaskAsync,
     beginSession,
     markTrackingLive,
@@ -74,7 +74,7 @@ export async function startMapTaskSession(
     onRouteHydrated,
   } = params;
 
-  const permStatus = await ensureLocationPermission();
+  const permStatus = await resolveLocationPermission();
   if (permStatus === 'denied') {
     return { ok: false, reason: 'permission_denied' };
   }

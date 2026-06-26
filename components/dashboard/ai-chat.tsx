@@ -446,7 +446,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const argKeys = rawArgs ? Object.keys(rawArgs) : [];
       const hasUserAssignmentField = argKeys.some((key) => USER_ASSIGNMENT_FIELD_PATTERN.test(key));
 
-      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "kpis.create"].includes(tool) && !hasUserAssignmentField) {
+      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "crm.send_email", "kpis.create"].includes(tool) && !hasUserAssignmentField) {
         continue;
       }
 
@@ -455,7 +455,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         continue;
       }
 
-      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "kpis.create"].includes(tool) || hasUserAssignmentField) {
+      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "crm.send_email", "kpis.create"].includes(tool) || hasUserAssignmentField) {
         if (isAgent && tool === "tasks.create") {
           continue;
         }
@@ -967,6 +967,14 @@ export function AIChat({ open, onClose }: AIChatProps) {
       ];
     }
 
+    if (tool === "crm.send_email") {
+      return [
+        { key: "lead_id", label: "Lead ID", control: "number" },
+        { key: "subject", label: "Subject", control: "text" },
+        { key: "body_text", label: "Message", control: "textarea" },
+      ];
+    }
+
     if (tool === "kpis.create") {
       return [
         { key: "name", label: "KPI Name", control: "text" },
@@ -1264,6 +1272,20 @@ export function AIChat({ open, onClose }: AIChatProps) {
         { key: "contact_person", label: "Contact Person", value: formatPreviewValue("contact_person", args.contact_person) },
         { key: "status", label: "Status", value: crmLabels.find((l) => l.slug === args.status)?.name ?? formatPreviewValue("status", args.status) },
         { key: "priority", label: "Priority", value: formatPreviewValue("priority", args.priority) },
+      ];
+    }
+
+    if (tool === "crm.send_email") {
+      const to = Array.isArray(args.to) ? args.to : [];
+      const recipient = to[0] && typeof to[0] === "object" && to[0] !== null
+        ? String((to[0] as Record<string, unknown>).email ?? "")
+        : formatPreviewValue("to", args.to);
+
+      return [
+        { key: "lead_id", label: "Lead ID", value: formatPreviewValue("lead_id", args.lead_id) },
+        { key: "to", label: "To", value: recipient },
+        { key: "subject", label: "Subject", value: formatPreviewValue("subject", args.subject) },
+        { key: "body_text", label: "Message", value: formatPreviewValue("body_text", args.body_text) },
       ];
     }
 
