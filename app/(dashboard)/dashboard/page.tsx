@@ -11,7 +11,6 @@ import {
   AIWorkspace,
   WeeklyTasksAgents,
 } from "@/components/dashboard/dashboard-cards";
-import { DashboardEmailActivity } from "@/components/dashboard/dashboard-email-activity";
 import { DashboardMap } from "@/components/dashboard/dashboard-map";
 import { getCurrentDateParts } from "@/lib/utils/date";
 
@@ -76,7 +75,6 @@ export default function DashboardPage() {
           <DashboardMap basePath="" />
           <div className="w-full lg:max-w-34 mt-0 lg:mt-23.75">
             <CRMPipeline />
-            <DashboardEmailActivity />
             <AIWorkspace />
           </div>
         </div>
