@@ -356,6 +356,8 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                     ->name('settings.update');
                 Route::get('/metrics', [AttendanceManagementController::class, 'metrics'])->name('metrics');
                 Route::get('/records', [AttendanceManagementController::class, 'index'])->name('records.index');
+                Route::get('/agents/{agent}/history', [AttendanceManagementController::class, 'agentHistory'])
+                    ->name('agents.history');
                 Route::get('/payroll-summaries', [AttendanceManagementController::class, 'payrollSummaries'])
                     ->name('payroll-summaries.index');
                 Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
@@ -655,6 +657,9 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
         Route::get('/records', [AttendanceManagementController::class, 'index'])
             ->middleware('access.role:management')
             ->name('records.index');
+        Route::get('/agents/{agent}/history', [AttendanceManagementController::class, 'agentHistory'])
+            ->middleware('access.role:management')
+            ->name('agents.history');
         Route::get('/payroll-summaries', [AttendanceManagementController::class, 'payrollSummaries'])
             ->middleware('access.role:management')
             ->name('payroll-summaries.index');

@@ -6,10 +6,10 @@ import { MapPin, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRi
 import { toast } from "sonner";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { useAttendanceSettings, useUpdateAttendanceSettings } from "@/hooks/use-attendance";
-import { endOfMonth, endOfWeek, format, parseISO, startOfMonth, startOfWeek } from "date-fns";
+import { endOfMonth, endOfWeek, format, parseISO, startOfMonth, startOfWeek, subDays } from "date-fns";
 import { AddAgentModal } from "./add-agent-modal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
-import { useAttendanceMetrics, useAttendanceRecords } from "@/hooks/use-attendance";
+import { useAttendanceMetrics, useAttendanceRecords, useAgentAttendanceHistory } from "@/hooks/use-attendance";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -124,22 +124,6 @@ function MgmtStatCard({
   );
 }
 
-// Mock history records — replace with useAttendanceHistory(userId) when the per-agent history endpoint is ready
-const MOCK_ATTENDANCE_HISTORY: AgentAttendanceRecord[] = [
-  { id: 1, company_id: 1, user_id: 0, attendance_date: "2026-06-25", clock_in_at: "2026-06-25T08:58:00Z", clock_out_at: "2026-06-25T17:12:00Z", status: "present", work_duration_minutes: 494, work_duration_hours: 8.2, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
-  { id: 2, company_id: 1, user_id: 0, attendance_date: "2026-06-24", clock_in_at: "2026-06-24T09:43:00Z", clock_out_at: "2026-06-24T17:00:00Z", status: "late", work_duration_minutes: 437, work_duration_hours: 7.3, is_late: true, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
-  { id: 3, company_id: 1, user_id: 0, attendance_date: "2026-06-23", clock_in_at: "2026-06-23T09:01:00Z", clock_out_at: "2026-06-23T17:30:00Z", status: "present", work_duration_minutes: 509, work_duration_hours: 8.5, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
-  { id: 4, company_id: 1, user_id: 0, attendance_date: "2026-06-20", clock_in_at: null, clock_out_at: null, status: "absent", work_duration_minutes: null, work_duration_hours: null, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
-  { id: 5, company_id: 1, user_id: 0, attendance_date: "2026-06-19", clock_in_at: "2026-06-19T09:05:00Z", clock_out_at: "2026-06-19T17:00:00Z", status: "present", work_duration_minutes: 475, work_duration_hours: 7.9, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
-  { id: 6, company_id: 1, user_id: 0, attendance_date: "2026-06-18", clock_in_at: "2026-06-18T09:52:00Z", clock_out_at: "2026-06-18T17:00:00Z", status: "late", work_duration_minutes: 428, work_duration_hours: 7.1, is_late: true, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
-  { id: 7, company_id: 1, user_id: 0, attendance_date: "2026-06-17", clock_in_at: "2026-06-17T08:55:00Z", clock_out_at: "2026-06-17T17:00:00Z", status: "present", work_duration_minutes: 485, work_duration_hours: 8.1, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
-  { id: 8, company_id: 1, user_id: 0, attendance_date: "2026-06-16", clock_in_at: "2026-06-16T09:00:00Z", clock_out_at: "2026-06-16T17:00:00Z", status: "auto_clocked_out", work_duration_minutes: 480, work_duration_hours: 8.0, is_late: false, is_auto_clocked_out: true, metadata: null, created_at: "", updated_at: "" },
-  { id: 9, company_id: 1, user_id: 0, attendance_date: "2026-06-13", clock_in_at: null, clock_out_at: null, status: "absent", work_duration_minutes: null, work_duration_hours: null, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
-  { id: 10, company_id: 1, user_id: 0, attendance_date: "2026-06-12", clock_in_at: "2026-06-12T09:03:00Z", clock_out_at: "2026-06-12T17:45:00Z", status: "present", work_duration_minutes: 522, work_duration_hours: 8.7, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
-  { id: 11, company_id: 1, user_id: 0, attendance_date: "2026-06-11", clock_in_at: "2026-06-11T09:38:00Z", clock_out_at: "2026-06-11T17:00:00Z", status: "late", work_duration_minutes: 442, work_duration_hours: 7.4, is_late: true, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
-  { id: 12, company_id: 1, user_id: 0, attendance_date: "2026-06-10", clock_in_at: "2026-06-10T08:50:00Z", clock_out_at: "2026-06-10T17:00:00Z", status: "present", work_duration_minutes: 490, work_duration_hours: 8.2, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
-];
-
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string; ring: string }> = {
   present:         { label: "Present",   bg: "bg-emerald-50",  text: "text-emerald-700", dot: "bg-emerald-400",  ring: "ring-emerald-200"  },
   late:            { label: "Late",      bg: "bg-orange-50",   text: "text-orange-600",  dot: "bg-orange-400",   ring: "ring-orange-200"   },
@@ -236,12 +220,30 @@ function HistoryEntry({ record }: { record: AgentAttendanceRecord }) {
   );
 }
 
-function AttendanceHistoryPanel({ selected }: { selected: AttendanceItem }) {
-  const records = MOCK_ATTENDANCE_HISTORY;
+function AttendanceHistoryPanel({
+  selected,
+  companyId,
+}: {
+  selected: AttendanceItem;
+  companyId: number | string | undefined;
+}) {
+  const toDate = format(new Date(), "yyyy-MM-dd");
+  const fromDate = format(subDays(new Date(), 29), "yyyy-MM-dd");
 
-  const presentCount = records.filter(r => r.status === "present" || r.status === "clocked_out" || r.status === "auto_clocked_out").length;
-  const lateCount    = records.filter(r => r.is_late).length;
-  const absentCount  = records.filter(r => r.status === "absent").length;
+  const { data, isLoading } = useAgentAttendanceHistory(selected.id, {
+    company_id: companyId,
+    from_date: fromDate,
+    to_date: toDate,
+    per_page: 60,
+  });
+
+  const records: AgentAttendanceRecord[] = data?.items ?? [];
+  const summary = data?.summary;
+
+  const presentCount = summary?.present_days ?? 0;
+  const lateCount    = summary?.late_days ?? 0;
+  const absentCount  = summary?.absent_days ?? 0;
+  const attendanceRate = summary?.attendance_rate_percent ?? 0;
 
   return (
     <div className="flex flex-col rounded-3xl overflow-hidden shadow-[0px_4px_14px_rgba(9,35,45,0.18)]">
@@ -284,7 +286,7 @@ function AttendanceHistoryPanel({ selected }: { selected: AttendanceItem }) {
         </div>
 
         {/* Attendance rate bar */}
-        {records.length > 0 && (
+        {(summary?.total_days ?? 0) > 0 && (
           <div className="mt-4">
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-1.5">
@@ -292,13 +294,13 @@ function AttendanceHistoryPanel({ selected }: { selected: AttendanceItem }) {
                 <span className="text-[10px] text-white/50 font-medium">Attendance rate</span>
               </div>
               <span className="text-[11px] font-bold text-white">
-                {Math.round(((presentCount + lateCount) / records.length) * 100)}%
+                {attendanceRate}%
               </span>
             </div>
             <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
               <div
                 className="h-full rounded-full bg-linear-to-r from-emerald-400 to-teal-400 transition-all duration-500"
-                style={{ width: `${Math.round(((presentCount + lateCount) / records.length) * 100)}%` }}
+                style={{ width: `${attendanceRate}%` }}
               />
             </div>
           </div>
@@ -307,7 +309,11 @@ function AttendanceHistoryPanel({ selected }: { selected: AttendanceItem }) {
 
       {/* Scrollable timeline */}
       <div className="bg-[#F8F9FA] flex-1 overflow-y-auto max-h-80 p-4 pt-5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200">
-        {records.length === 0 ? (
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 size={22} className="animate-spin text-gray-300" />
+          </div>
+        ) : records.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-2">
             <CalendarDays size={28} className="text-gray-300" />
             <p className="text-[12px] text-gray-400 font-medium">No history available</p>
@@ -1025,7 +1031,7 @@ export function AttendanceView({ basePath }: { basePath: string }) {
               </div>
 
               {/* Attendance history panel */}
-              <AttendanceHistoryPanel selected={selected} />
+              <AttendanceHistoryPanel selected={selected} companyId={apiCompanyId ?? undefined} />
 
               {/* Tracking card */}
               {/* <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
