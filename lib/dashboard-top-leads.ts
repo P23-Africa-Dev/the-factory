@@ -70,7 +70,7 @@ export function getLeadConversionRate(
   const pipelineTotal = pipeline?.total ?? 0;
 
   if (pipelineTotal > 0) {
-    const wonCount = (pipeline.stages ?? []).reduce((sum, stage) => {
+    const wonCount = (pipeline?.stages ?? []).reduce((sum, stage) => {
       const status = (stage.status ?? "").toLowerCase();
       return status === "won" ? sum + stage.count : sum;
     }, 0);
