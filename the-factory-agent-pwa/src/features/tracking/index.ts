@@ -1,4 +1,6 @@
 export { useGeolocation } from './hooks/useGeolocation';
+export type { PermissionStatus, LocationObject } from './hooks/useGeolocation';
+export { useLocationPermissionBootstrap } from './hooks/useLocationPermissionBootstrap';
 export { useMapPresenceHeartbeat } from './hooks/useMapPresenceHeartbeat';
 export { useLocationReporter } from './hooks/useLocationReporter';
 export { useProximityWatch } from './hooks/useProximityWatch';
