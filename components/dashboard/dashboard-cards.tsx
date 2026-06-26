@@ -15,8 +15,8 @@ import { CalendarTooltip } from "@/components/ui/calendar-tooltip";
 import { useAuthStore } from "@/store/auth";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { ScheduleMeetingModal } from "@/components/operations/schedule-meeting-modal";
 import { MeetingDetailsModal } from "@/components/dashboard/meeting-details-modal";
 import { AIChat } from "@/components/dashboard/ai-chat";
@@ -377,6 +377,17 @@ export function WeeklyTasksAgents() {
   const [showCreateMeetingModal, setShowCreateMeetingModal] = useState(false);
   const [meetingModalKey, setMeetingModalKey] = useState(0);
   const [selectedMeetingId, setSelectedMeetingId] = useState<number | null>(null);
+  const searchParams = useSearchParams();
+  const meetingIdParam = searchParams.get('meetingId');
+
+  useEffect(() => {
+    if (meetingIdParam) {
+      const parsed = parseInt(meetingIdParam, 10);
+      if (!isNaN(parsed)) {
+        setSelectedMeetingId(parsed);
+      }
+    }
+  }, [meetingIdParam]);
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const basePath = role === "agent" ? "/agent" : "/admin";
