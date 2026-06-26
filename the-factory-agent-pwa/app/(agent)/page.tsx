@@ -421,7 +421,7 @@
                 <button
                   type="button"
                   onClick={() => setShowTooltip(true)}
-                  className="w-full h-[44px] bg-[#7BB6B8] rounded-[20px] flex items-center justify-center text-white text-[10px] font-semibold tracking-wide opacity-50 cursor-pointer active:scale-95 transition-transform"
+                  className="w-full h-[44px] bg-[#FD6046] rounded-[20px] flex items-center justify-center text-white text-[10px] font-semibold tracking-wide opacity-50 cursor-pointer active:scale-95 transition-transform shadow-[0_8px_20px_rgba(253,96,70,0.35)]"
                 >
                   Plan my day
                 </button>
@@ -434,7 +434,7 @@
                       transition={{ duration: 0.12, ease: 'easeOut' }}
                       className="absolute bottom-[54px] left-1/2 -translate-x-1/2 z-[100] bg-black/90 backdrop-blur-md border border-white/10 px-3.5 py-1.5 rounded-xl shadow-xl flex items-center justify-center whitespace-nowrap gap-1.5"
                     >
-                      <span className="text-[11px] font-bold text-[#7BB6B8]">✨ coming soon!</span>
+                      <span className="text-[11px] font-bold text-[#FD6046]">✨ coming soon!</span>
                       <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-black/95 rotate-45 border-r border-b border-white/10" />
                     </motion.div>
                   )}

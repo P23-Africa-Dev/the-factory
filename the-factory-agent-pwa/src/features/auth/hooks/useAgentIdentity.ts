@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { resolveAvatarSrc } from '@/lib/avatar';
 import { useAuth } from './useAuth';
 import { useProfile } from '../queries';
+import { setActiveCompanyId } from '@/lib/storage/stores';
 
 export function useAgentIdentity(enabled = true) {
   const { user, updateUser, isSignedIn } = useAuth();
@@ -14,21 +15,29 @@ export function useAgentIdentity(enabled = true) {
     if (!profile) return;
     const identity = profile.identity;
     const perms = profile.permissions;
+    const org = profile.organization;
+    const compId = org?.company_id ? Number(org.company_id) : undefined;
+    console.log("profile", profile, compId);
     const syncKey = JSON.stringify({
       name: identity?.name,
       avatar_url: identity?.avatar_url,
       access_role: perms?.access_role,
       internal_role: perms?.internal_role,
+      company_id: compId,
     });
     if (syncedRef.current === syncKey) return;
     syncedRef.current = syncKey;
+    if (compId) {
+      setActiveCompanyId(compId);
+    }
     updateUser({
       name: identity?.name ?? user?.name,
       avatar_url: identity?.avatar_url ?? user?.avatar_url ?? null,
       access_role: perms?.access_role ?? user?.access_role,
       internal_role: perms?.internal_role ?? user?.internal_role,
+      company_id: compId ?? (user?.company_id ? Number(user.company_id) : undefined),
     });
-  }, [profile, updateUser, user?.name, user?.avatar_url, user?.access_role, user?.internal_role]);
+  }, [profile, updateUser, user?.name, user?.avatar_url, user?.access_role, user?.internal_role, user?.company_id]);
 
   const displayName = profile?.identity?.name ?? user?.name ?? 'Agent';
   const firstName = displayName.split(' ')[0] || 'Agent';
