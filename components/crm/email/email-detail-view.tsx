@@ -5,13 +5,101 @@ import type { EmailMessageView } from "./email-types";
 
 type EmailDetailViewProps = {
     email: EmailMessageView;
+    threadMessages?: EmailMessageView[];
     onBack: () => void;
     onReply: () => void;
     onDelete: () => void;
 };
 
-export function EmailDetailView({ email, onBack, onReply, onDelete }: EmailDetailViewProps) {
+function MessageBlock({ email }: { email: EmailMessageView }) {
     const isSent = email.direction === "sent";
+
+    return (
+        <article className="rounded-[14px] border border-gray-100 bg-gray-50/60 p-4">
+            <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex items-center gap-3 min-w-0">
+                    <div
+                        className={`w-9 h-9 rounded-full flex items-center justify-center shadow-sm shrink-0 ${
+                            isSent
+                                ? "bg-[#0B1215] text-white"
+                                : "bg-gradient-to-br from-[#3B82F6] to-[#2563EB] text-white"
+                        }`}
+                    >
+                        {isSent ? (
+                            <Send size={13} className="rotate-[-30deg]" />
+                        ) : (
+                            <span className="text-[12px] font-semibold">{email.from.charAt(0)}</span>
+                        )}
+                    </div>
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[13px] font-semibold text-[#0B1215]">{email.from}</span>
+                            {isSent && (
+                                <span className="text-[10px] font-medium text-[#10B981] bg-emerald-50 px-2 py-0.5 rounded-full">
+                                    {email.status === "failed" ? "Failed" : "Sent"}
+                                </span>
+                            )}
+                            {!isSent && !email.isRead && (
+                                <span className="text-[10px] font-medium text-[#3B82F6] bg-blue-50 px-2 py-0.5 rounded-full">
+                                    New
+                                </span>
+                            )}
+                        </div>
+                        <span className="text-[11px] text-gray-400 break-all">
+                            {isSent ? `To: ${email.toEmail}` : email.fromEmail}
+                        </span>
+                    </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-gray-400 shrink-0">
+                    <Clock size={12} />
+                    <span className="text-[11px] font-normal">{email.timestamp}</span>
+                </div>
+            </div>
+
+            <div className="text-[13px] text-[#374151] leading-[1.85] whitespace-pre-wrap">
+                {email.body}
+            </div>
+
+            {email.errorMessage && (
+                <p className="text-[11px] text-red-500 mt-3">{email.errorMessage}</p>
+            )}
+
+            {email.attachments && email.attachments.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                    <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider mb-2">
+                        Attachments ({email.attachments.length})
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                        {email.attachments.map((att) => (
+                            <a
+                                key={att.id ?? att.name}
+                                href={att.downloadUrl ?? "#"}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-2 bg-white hover:bg-gray-100 transition-colors rounded-xl px-3 py-2 border border-gray-100"
+                            >
+                                <Paperclip size={13} className="text-red-400" />
+                                <span className="text-[12px] font-medium text-[#0B1215]">{att.name}</span>
+                            </a>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </article>
+    );
+}
+
+export function EmailDetailView({
+    email,
+    threadMessages,
+    onBack,
+    onReply,
+    onDelete,
+}: EmailDetailViewProps) {
+    const conversation =
+        threadMessages && threadMessages.length > 0
+            ? [...threadMessages].sort((a, b) => a.messageId - b.messageId)
+            : [email];
 
     return (
         <div className="flex flex-col h-full animate-in fade-in duration-200">
@@ -46,88 +134,17 @@ export function EmailDetailView({ email, onBack, onReply, onDelete }: EmailDetai
                 <h3 className="text-[15px] sm:text-[17px] font-semibold text-[#0B1215] leading-tight">
                     {email.subject}
                 </h3>
-            </div>
-
-            <div className="flex items-center justify-between py-4 border-b border-gray-50">
-                <div className="flex items-center gap-3">
-                    <div
-                        className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-sm ${
-                            isSent
-                                ? "bg-[#0B1215] text-white"
-                                : "bg-gradient-to-br from-[#3B82F6] to-[#2563EB] text-white"
-                        }`}
-                    >
-                        {isSent ? (
-                            <Send size={14} className="rotate-[-30deg]" />
-                        ) : (
-                            <span className="text-[13px] sm:text-[14px] font-semibold">
-                                {email.from.charAt(0)}
-                            </span>
-                        )}
-                    </div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-[13px] font-semibold text-[#0B1215]">
-                                {email.from}
-                            </span>
-                            {isSent && (
-                                <span className="text-[10px] font-medium text-[#10B981] bg-emerald-50 px-2 py-0.5 rounded-full">
-                                    {email.status === "failed" ? "Failed" : "Sent"}
-                                </span>
-                            )}
-                        </div>
-                        <span className="text-[11px] text-gray-400">
-                            {isSent ? `To: ${email.toEmail}` : email.fromEmail}
-                        </span>
-                        {email.gmailAccountEmail && (
-                            <p className="text-[10px] text-gray-400">via {email.gmailAccountEmail}</p>
-                        )}
-                        {email.errorMessage && (
-                            <p className="text-[10px] text-red-500 mt-1">{email.errorMessage}</p>
-                        )}
-                    </div>
-                </div>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 text-gray-400">
-                    <div className="flex items-center gap-1.5">
-                        <Clock size={12} />
-                        <span className="text-[11px] font-normal">{email.timestamp}</span>
-                    </div>
-                </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto py-6">
-                <div className="text-[13px] text-[#374151] leading-[1.85] whitespace-pre-wrap">
-                    {email.body}
-                </div>
-
-                {email.attachments && email.attachments.length > 0 && (
-                    <div className="mt-6 pt-5 border-t border-gray-100">
-                        <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider mb-3">
-                            Attachments ({email.attachments.length})
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                            {email.attachments.map((att) => (
-                                <a
-                                    key={att.id ?? att.name}
-                                    href={att.downloadUrl ?? "#"}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="flex items-center gap-2.5 bg-gray-50 hover:bg-gray-100 transition-colors rounded-xl px-4 py-2.5 border border-gray-100 cursor-pointer group"
-                                >
-                                    <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center">
-                                        <Paperclip size={14} className="text-red-400" />
-                                    </div>
-                                    <div>
-                                        <p className="text-[12px] font-medium text-[#0B1215] group-hover:text-[#3B82F6] transition-colors">
-                                            {att.name}
-                                        </p>
-                                        <p className="text-[10px] text-gray-400">{att.size}</p>
-                                    </div>
-                                </a>
-                            ))}
-                        </div>
-                    </div>
+                {conversation.length > 1 && (
+                    <p className="text-[11px] text-gray-400 mt-1">
+                        {conversation.length} messages in this thread
+                    </p>
                 )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-4 space-y-3">
+                {conversation.map((message) => (
+                    <MessageBlock key={message.id} email={message} />
+                ))}
             </div>
 
             <div className="pt-4 border-t border-gray-100">

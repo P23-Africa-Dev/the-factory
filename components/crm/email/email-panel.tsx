@@ -7,6 +7,7 @@ import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import {
     useDeleteLeadEmail,
     useLeadEmails,
+    useLeadEmailThread,
     useMarkLeadEmailRead,
     useSendLeadEmail,
     useUploadEmailAttachment,
@@ -42,6 +43,12 @@ export function EmailPanel({
     const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
 
     const emailsQuery = useLeadEmails(leadId, companyId, basePath, { sync: true });
+    const threadQuery = useLeadEmailThread(
+        leadId,
+        selectedEmail?.threadId ?? null,
+        companyId,
+        basePath,
+    );
     const statusQuery = useCalendarIntegrationStatus(companyId);
     const sendMutation = useSendLeadEmail(leadId, companyId, basePath, {
         onSuccess: () => {
@@ -61,6 +68,20 @@ export function EmailPanel({
         }));
         return mapped;
     }, [emailsQuery.data?.items, leadName, starredIds]);
+
+    const selectedThreadMessages = useMemo(() => {
+        if (!selectedEmail) return [];
+
+        const fromThread = threadQuery.data?.messages?.map((message) =>
+            mapMessageToView(message, leadName),
+        );
+
+        if (fromThread?.length) {
+            return fromThread;
+        }
+
+        return emails.filter((email) => email.threadId === selectedEmail.threadId);
+    }, [selectedEmail, threadQuery.data?.messages, emails, leadName]);
 
     const unreadCount = emails.filter((email) => !email.isRead).length;
     const resolvedLeadEmail = leadEmail?.trim() ?? "";
@@ -158,12 +179,18 @@ export function EmailPanel({
                     <>
                         <EmailDetailView
                             email={selectedEmail}
+                            threadMessages={selectedThreadMessages}
                             onBack={() => {
                                 setSelectedEmail(null);
                                 setView("list");
                             }}
                             onReply={() => {
-                                setReplyTo(selectedEmail);
+                                const latestInThread = [...selectedThreadMessages].sort((a, b) => {
+                                    const aTime = new Date(a.timestamp).getTime();
+                                    const bTime = new Date(b.timestamp).getTime();
+                                    return bTime - aTime;
+                                })[0];
+                                setReplyTo(latestInThread ?? selectedEmail);
                                 setView("compose");
                             }}
                             onDelete={() => setShowDeleteEmailConfirm(true)}

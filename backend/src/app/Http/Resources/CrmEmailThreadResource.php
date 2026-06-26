@@ -11,7 +11,13 @@ class CrmEmailThreadResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $latestMessage = $this->relationLoaded('messages') ? $this->messages->first() : null;
+        $latestMessage = null;
+
+        if ($this->relationLoaded('messages') && $this->messages->isNotEmpty()) {
+            $latestMessage = $this->messages
+                ->sortByDesc(fn ($message) => $message->sent_at ?? $message->received_at)
+                ->first();
+        }
 
         return [
             'id' => $this->id,

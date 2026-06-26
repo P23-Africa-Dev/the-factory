@@ -26,6 +26,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -56,7 +57,7 @@ class CrmEmailService
         return CrmEmailThread::query()
             ->where('company_id', $companyId)
             ->where('lead_id', $lead->id)
-            ->with(['messages' => fn ($q) => $q->latest('sent_at')->latest('received_at')->limit(1)])
+            ->with(['messages' => fn ($q) => $this->applyMessageTimelineOrder($q)])
             ->orderByDesc('last_message_at')
             ->paginate($perPage)
             ->withQueryString();
@@ -69,7 +70,9 @@ class CrmEmailService
         $this->assertThreadBelongsToLead($thread, $resolvedCompanyId, (int) $lead->id);
 
         return $thread->load([
-            'messages' => fn ($q) => $q->with(['attachments', 'sentBy:id,name,email'])->orderBy('sent_at')->orderBy('received_at'),
+            'messages' => fn ($q) => $this->applyMessageTimelineOrder(
+                $q->with(['attachments', 'sentBy:id,name,email']),
+            ),
         ]);
     }
 
@@ -581,18 +584,27 @@ class CrmEmailService
         ]);
 
         foreach ($parsed['attachments'] as $attachmentMeta) {
-            $attachment = CrmEmailAttachment::query()->create([
-                'company_id' => $companyId,
-                'message_id' => $message->id,
-                'gmail_attachment_id' => $attachmentMeta['attachment_id'],
-                'gmail_message_id' => $parsed['gmail_message_id'],
-                'filename' => $attachmentMeta['filename'],
-                'mime_type' => $attachmentMeta['mime_type'],
-                'size_bytes' => $attachmentMeta['size'],
-                'sync_status' => 'pending',
-            ]);
+            try {
+                $attachment = CrmEmailAttachment::query()->create([
+                    'company_id' => $companyId,
+                    'message_id' => $message->id,
+                    'gmail_attachment_id' => $attachmentMeta['attachment_id'],
+                    'gmail_message_id' => $parsed['gmail_message_id'],
+                    'filename' => $attachmentMeta['filename'],
+                    'mime_type' => $attachmentMeta['mime_type'],
+                    'size_bytes' => $attachmentMeta['size'],
+                    'sync_status' => 'pending',
+                ]);
 
-            ProcessEmailAttachmentJob::dispatch((int) $attachment->id);
+                ProcessEmailAttachmentJob::dispatch((int) $attachment->id);
+            } catch (\Throwable $exception) {
+                Log::warning('CRM email attachment metadata could not be stored.', [
+                    'company_id' => $companyId,
+                    'message_id' => $message->id,
+                    'gmail_message_id' => $parsed['gmail_message_id'],
+                    'error' => $exception->getMessage(),
+                ]);
+            }
         }
 
         $thread->update([
@@ -812,5 +824,14 @@ class CrmEmailService
     private function invalidateLeadCache(int $companyId, int $leadId): void
     {
         Cache::forget(sprintf('crm:emails:lead:%d:%d', $companyId, $leadId));
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\CrmEmailMessage>  $query
+     * @return \Illuminate\Database\Eloquent\Builder<\App\Models\CrmEmailMessage>
+     */
+    private function applyMessageTimelineOrder($query)
+    {
+        return $query->orderByRaw('COALESCE(sent_at, received_at) ASC');
     }
 }

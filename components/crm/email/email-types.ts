@@ -86,20 +86,34 @@ export function flattenThreadsToMessages(
     const messages: EmailMessageView[] = [];
 
     for (const thread of threads) {
-        if (thread.latest_message) {
-            messages.push(mapMessageToView(thread.latest_message, leadName));
+        if (thread.messages?.length) {
+            const sortedMessages = [...thread.messages].sort(
+                (a, b) => messageSortKey(b) - messageSortKey(a),
+            );
+
+            for (const message of sortedMessages) {
+                messages.push(mapMessageToView(message, leadName));
+            }
             continue;
         }
 
-        if (thread.messages?.length) {
-            const latest = thread.messages[thread.messages.length - 1];
-            messages.push(mapMessageToView(latest, leadName));
+        if (thread.latest_message) {
+            messages.push(mapMessageToView(thread.latest_message, leadName));
         }
     }
 
-    return messages.sort((a, b) => {
-        const aTime = new Date(a.timestamp).getTime();
-        const bTime = new Date(b.timestamp).getTime();
-        return bTime - aTime;
-    });
+    return messages.sort((a, b) => messageSortKeyFromView(b) - messageSortKeyFromView(a));
+}
+
+function messageSortKey(message: CrmEmailMessage): number {
+    const iso = message.sent_at ?? message.received_at ?? message.timestamp ?? null;
+    if (!iso) return 0;
+
+    const time = new Date(iso).getTime();
+    return Number.isNaN(time) ? 0 : time;
+}
+
+function messageSortKeyFromView(message: EmailMessageView): number {
+    const time = new Date(message.timestamp).getTime();
+    return Number.isNaN(time) ? Number(message.messageId) : time;
 }

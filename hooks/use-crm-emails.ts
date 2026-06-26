@@ -44,6 +44,7 @@ export function useLeadEmails(
     return useQuery({
         queryKey: [...CRM_EMAIL_KEYS.lead(leadId, companyId, basePath), options?.sync ?? false],
         enabled: Boolean(token && leadId),
+        refetchInterval: options?.sync ? 15_000 : false,
         queryFn: async () => {
             const response = await listLeadEmails(
                 basePath,
