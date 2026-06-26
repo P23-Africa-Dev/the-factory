@@ -129,7 +129,7 @@ function AttendanceSidebar({ record }: { record: AttendanceItem }) {
       </div>
 
       {/* Tracking card */}
-      <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
+      {/* <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
         <div className="flex items-start gap-4 mb-5">
           <div className="flex-1 min-w-0">
             <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-In Time</p>
@@ -151,7 +151,6 @@ function AttendanceSidebar({ record }: { record: AttendanceItem }) {
           <p className="text-[12px] text-gray-400">{record.address}</p>
         </div>
 
-        {/* Map */}
         <div className="relative h-44 w-full rounded-[18px] bg-[#e8ecef] overflow-hidden">
           <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-50">
             <defs>
@@ -185,7 +184,7 @@ function AttendanceSidebar({ record }: { record: AttendanceItem }) {
             </div>
           </div>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 }
