@@ -11,6 +11,9 @@ class ToolPolicyService
         'crm.follow_up_summary',
         'crm.stale_leads',
         'crm.visit_extract',
+        'crm.email_threads',
+        'crm.unread_emails',
+        'crm.draft_email',
         'tasks.overdue',
         'projects.at_risk_summary',
         'attendance.today_summary',
@@ -24,6 +27,9 @@ class ToolPolicyService
         'crm.follow_up_summary',
         'crm.stale_leads',
         'crm.visit_extract',
+        'crm.email_threads',
+        'crm.unread_emails',
+        'crm.draft_email',
         'tasks.overdue',
         'projects.at_risk_summary',
         'attendance.today_summary',
@@ -43,12 +49,14 @@ class ToolPolicyService
         'projects.create',
         'crm.log_visit',
         'crm.create_lead',
+        'crm.send_email',
         'kpis.create',
     ];
 
     private const ACTION_TOOLS_AGENT = [
         'crm.log_visit',
         'crm.create_lead',
+        'crm.send_email',
     ];
 
     public function canUseTool(string $role, string $tool): bool

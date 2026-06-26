@@ -36,8 +36,8 @@ export type AgentAttendanceRecord = {
     clock_out_longitude?: number;
     [key: string]: unknown;
   } | null;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 export type AttendanceTodayResponse = {
@@ -82,6 +82,34 @@ export type AttendanceStatsResponse = {
 
 export type PayrollSummaryResponse = {
   [key: string]: unknown;
+};
+
+// ─── Management: Per-Agent History Types ──────────────────────────────────────
+
+export type AgentAttendanceHistorySummary = {
+  present_days: number;
+  late_days: number;
+  absent_days: number;
+  total_days: number;
+  attendance_rate_percent: number;
+};
+
+export type ManagedAgentHistoryParams = {
+  company_id?: number | string;
+  from_date?: string;
+  to_date?: string;
+  status?: string;
+  per_page?: number;
+  page?: number;
+};
+
+export type AgentAttendanceHistoryResponse = {
+  user_id: number;
+  agent_name: string;
+  avatar_url: string | null;
+  summary: AgentAttendanceHistorySummary;
+  items: AgentAttendanceRecord[];
+  pagination: PaginationData;
 };
 
 // ─── Management Types ─────────────────────────────────────────────────────────
@@ -252,6 +280,19 @@ export function getAttendanceRecords(params: AttendanceRecordsParams, token: str
   return apiRequest<AttendanceRecordsResponse>({
     method: "GET",
     path: `/attendance/records${query}`,
+    token,
+  });
+}
+
+export function getAgentAttendanceHistory(
+  userId: number | string,
+  params: ManagedAgentHistoryParams,
+  token: string
+) {
+  const query = buildQuery(params as Record<string, unknown>);
+  return apiRequest<AgentAttendanceHistoryResponse>({
+    method: "GET",
+    path: `/attendance/agents/${userId}/history${query}`,
     token,
   });
 }

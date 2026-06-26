@@ -11,6 +11,9 @@ export type CalendarIntegrationStatus = {
     can_manage_connection?: boolean;
     token_valid?: boolean;
     requires_reauthentication?: boolean;
+    gmail_enabled?: boolean;
+    requires_gmail_reconnect?: boolean;
+    gmail_last_synced_at?: string | null;
     connection_health_status?: string;
     last_error_message?: string | null;
     last_token_refresh_at?: string | null;

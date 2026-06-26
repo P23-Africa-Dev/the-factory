@@ -156,6 +156,7 @@ services:
         "artisan",
         "queue:work",
         "redis",
+        "--queue=email-sync,email-attachments,default",
         "--sleep=1",
         "--tries=3",
         "--max-time=3600",

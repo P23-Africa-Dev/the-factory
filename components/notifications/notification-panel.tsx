@@ -273,6 +273,89 @@ function EmptyState({ filter }: { filter: "all" | "unread" }) {
   );
 }
 
+function resolveWebNotificationUrl(notification: AppNotification, isAgent: boolean): string | null {
+  const target = notification.action_url || notification.action_route;
+
+  // Let's first try to resolve based on action_url/action_route
+  if (target) {
+    // 1. Tasks: e.g. /tasks/123
+    const taskMatch = target.match(/^\/tasks\/(\d+)/);
+    if (taskMatch) {
+      return isAgent ? `/agent/tasks/${taskMatch[1]}` : `/tasks?taskId=${taskMatch[1]}`;
+    }
+
+    // 2. Meetings: e.g. /meetings/123
+    const meetingMatch = target.match(/^\/meetings\/(\d+)/);
+    if (meetingMatch) {
+      return isAgent ? `/agent/dashboard?meetingId=${meetingMatch[1]}` : `/dashboard?meetingId=${meetingMatch[1]}`;
+    }
+
+    // 3. CRM Leads: e.g. /crm/leads/123
+    const leadMatch = target.match(/^\/crm\/leads\/(\d+)/);
+    if (leadMatch) {
+      return isAgent ? `/agent/crm/leads/${leadMatch[1]}` : `/crm/leads/${leadMatch[1]}`;
+    }
+
+    // 4. Projects: e.g. /projects/123
+    const projectMatch = target.match(/^\/projects\/(\d+)/);
+    if (projectMatch) {
+      return isAgent ? `/agent/projects/${projectMatch[1]}` : `/projects/${projectMatch[1]}`;
+    }
+
+    // 5. Operations/Attendance
+    if (target.includes('/operations/attendance')) {
+      return isAgent ? '/agent/operations/attendance' : '/operations/attendance';
+    }
+
+    // 6. Task reassignments inbox
+    if (target.includes('/reassignments/inbox')) {
+      return isAgent ? '/agent/tasks' : '/tasks';
+    }
+
+    // 7. Payroll
+    if (target === '/payroll') {
+      return isAgent ? '/agent/payroll' : '/payroll';
+    }
+
+    // 8. Dashboard
+    if (target === '/dashboard' || target === '/') {
+      return isAgent ? '/agent/dashboard' : '/dashboard';
+    }
+
+    // 9. User Profile
+    if (target === '/user/profile') {
+      return isAgent ? '/agent/profile' : '/profile';
+    }
+
+    // Default fallback for action_url - make sure it starts with /agent if they are an agent
+    if (isAgent && !target.startsWith('/agent')) {
+      return `/agent${target}`;
+    }
+    return target;
+  }
+
+  // Fallback to reference_type and reference_id if no action_url is present
+  if (notification.reference_type && notification.reference_id) {
+    const type = notification.reference_type;
+    const id = notification.reference_id;
+
+    if (type.includes('Task')) {
+      return isAgent ? `/agent/tasks/${id}` : `/tasks?taskId=${id}`;
+    }
+    if (type.includes('Meeting')) {
+      return isAgent ? `/agent/dashboard?meetingId=${id}` : `/dashboard?meetingId=${id}`;
+    }
+    if (type.includes('Lead') || type.includes('Crm')) {
+      return isAgent ? `/agent/crm/leads/${id}` : `/crm/leads/${id}`;
+    }
+    if (type.includes('Project')) {
+      return isAgent ? `/agent/projects/${id}` : `/projects/${id}`;
+    }
+  }
+
+  return null;
+}
+
 export function NotificationPanel({
   open,
   onClose,
@@ -282,7 +365,7 @@ export function NotificationPanel({
 }) {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
-  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -332,10 +415,10 @@ export function NotificationPanel({
     if (!n.is_read) {
       markRead.mutate({ ids: [n.id], companyId: companyId ?? undefined });
     }
-    const target = n.action_url || n.action_route;
-    if (target) {
+    const resolvedUrl = resolveWebNotificationUrl(n, role === 'agent');
+    if (resolvedUrl) {
       onClose();
-      router.push(target);
+      router.push(resolvedUrl);
     }
   }
 

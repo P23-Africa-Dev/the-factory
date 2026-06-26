@@ -106,7 +106,7 @@ function AttendanceSidebar({ record }: { record: AttendanceItem }) {
             </div>
           </div>
         </div>
-        <div className="flex justify-center gap-3 mt-5">
+        {/* <div className="flex justify-center gap-3 mt-5">
           <svg width="33" height="33" viewBox="0 0 33 33" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="16.2378" cy="16.2378" r="15.9878" fill="#EAEAEA" stroke="#DFDFDF" strokeWidth="0.5" />
             <path d="M13.9717 18.5035H19.2584M13.9717 14.7273H16.615" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
@@ -125,11 +125,11 @@ function AttendanceSidebar({ record }: { record: AttendanceItem }) {
             <path d="M16.6154 9.06299C20.7865 9.06299 24.1679 12.4443 24.1679 16.6154C24.1679 20.7866 20.7865 24.1679 16.6154 24.1679C12.4443 24.1679 9.06299 20.7866 9.06299 16.6154M14.281 9.43069C13.5189 9.67812 12.81 10.0434 12.1758 10.5051M10.5051 12.1757C10.0433 12.8101 9.678 13.5192 9.43057 14.2814" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
             <path d="M16.6157 13.5945V19.6364M19.6367 16.6154H13.5947" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-        </div>
+        </div> */}
       </div>
 
       {/* Tracking card */}
-      <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
+      {/* <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
         <div className="flex items-start gap-4 mb-5">
           <div className="flex-1 min-w-0">
             <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-In Time</p>
@@ -151,7 +151,6 @@ function AttendanceSidebar({ record }: { record: AttendanceItem }) {
           <p className="text-[12px] text-gray-400">{record.address}</p>
         </div>
 
-        {/* Map */}
         <div className="relative h-44 w-full rounded-[18px] bg-[#e8ecef] overflow-hidden">
           <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-50">
             <defs>
@@ -185,7 +184,7 @@ function AttendanceSidebar({ record }: { record: AttendanceItem }) {
             </div>
           </div>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 }

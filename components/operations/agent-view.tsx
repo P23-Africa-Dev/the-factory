@@ -273,11 +273,11 @@ export function AgentView({ basePath }: { basePath: string }) {
         )}
 
         {/* Row 2 / Col 2 — Live Details (aligns with agents list) */}
-        {selectedAgent && (
+        {/* {selectedAgent && (
           <div className="xl:col-start-2 xl:row-start-2">
             <AgentLiveDetails agent={selectedAgent} />
           </div>
-        )}
+        )} */}
       </div>
 
       {/* ── Modal ─────────────────────────────────────────────── */}

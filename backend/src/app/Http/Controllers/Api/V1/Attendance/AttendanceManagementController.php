@@ -9,7 +9,9 @@ use App\Http\Requests\Attendance\AttendanceListRequest;
 use App\Http\Requests\Attendance\AttendanceMetricsRequest;
 use App\Http\Requests\Attendance\AttendancePayrollGenerateRequest;
 use App\Http\Requests\Attendance\AttendancePayrollSummaryRequest;
+use App\Http\Requests\Attendance\ManagedAttendanceHistoryRequest;
 use App\Http\Resources\AttendancePayrollSummaryResource;
+use App\Models\User;
 use App\Services\Attendance\AttendancePayrollService;
 use App\Services\Attendance\AttendanceService;
 use Illuminate\Http\JsonResponse;
@@ -44,6 +46,20 @@ class AttendanceManagementController extends Controller
         return $this->success(
             message: 'Attendance list fetched successfully.',
             data: $result,
+        );
+    }
+
+    public function agentHistory(ManagedAttendanceHistoryRequest $request, User $agent): JsonResponse
+    {
+        $history = $this->attendanceService->historyForManagedAgent(
+            user: $request->user(),
+            agent: $agent,
+            filters: $request->validated(),
+        );
+
+        return $this->success(
+            message: 'Agent attendance history fetched successfully.',
+            data: $history,
         );
     }
 
