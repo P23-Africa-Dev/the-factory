@@ -37,6 +37,7 @@ import { syncEngine } from '@/lib/sync/syncEngine';
 import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 import { showApiErrorToast } from '@/lib/api/errors';
 import { mapTransportMode, openGoogleMapsNavigation } from '@/lib/map/googleMapsNavigation';
+import { resolveTaskDestinationCoords } from '@/lib/map/resolveTaskDestinationCoords';
 import {
   isDocumentHidden,
   notifyTrackingArrived,
@@ -1591,6 +1592,41 @@ function MapContent() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [permGate, checkPermission, isFromTrackingScreen, phase, handleResumePermission, handleStartActivity]);
 
+  const openTaskInGoogleMaps = useCallback(() => {
+    const taskRecord =
+      trackingTask ??
+      (selectedDestination?.taskId
+        ? tasks.find((t) => t.id === String(selectedDestination.taskId))
+        : undefined);
+
+    const dest = resolveTaskDestinationCoords({
+      liveDestination: liveTask?.destination ?? null,
+      routeDestination: taskRoute?.destination ?? null,
+      selectedDestination,
+      taskRecord: taskRecord
+        ? { latitude: taskRecord.latitude, longitude: taskRecord.longitude }
+        : null,
+    });
+
+    if (!dest) {
+      toast.error('Destination unavailable', 'This task has no valid map coordinates.');
+      return;
+    }
+
+    openGoogleMapsNavigation({
+      destination: dest,
+      travelMode: mapTransportMode(transportMode),
+      useDeviceLocationAsOrigin: true,
+    });
+  }, [
+    trackingTask,
+    selectedDestination,
+    tasks,
+    liveTask?.destination,
+    taskRoute?.destination,
+    transportMode,
+  ]);
+
   const handleProceedWithGoogleMaps = useCallback(async (): Promise<void> => {
     const notifPerm = await requestTrackingNotificationPermission();
     if (notifPerm === 'denied' || notifPerm === 'unsupported') {
@@ -1601,54 +1637,14 @@ function MapContent() {
     }
 
     const result = await runStartSession();
-    if (!result?.ok || !selectedDestination) return;
+    if (!result?.ok) return;
 
-    openGoogleMapsNavigation({
-      origin: { latitude: result.startPoint[1], longitude: result.startPoint[0] },
-      destination: {
-        latitude: selectedDestination.latitude,
-        longitude: selectedDestination.longitude,
-      },
-      travelMode: mapTransportMode(transportMode),
-    });
-  }, [runStartSession, selectedDestination, transportMode]);
+    openTaskInGoogleMaps();
+  }, [runStartSession, openTaskInGoogleMaps]);
 
   const handleOpenGoogleMaps = useCallback((): void => {
-    if (!selectedDestination) return;
-
-    const lng =
-      liveTask?.lastPosition?.[0] ??
-      lastPosition?.coords.longitude ??
-      customOrigin?.longitude ??
-      effectiveOriginLng;
-    const lat =
-      liveTask?.lastPosition?.[1] ??
-      lastPosition?.coords.latitude ??
-      customOrigin?.latitude ??
-      effectiveOriginLat;
-
-    if (lng == null || lat == null) {
-      toast.error('Location unavailable', 'Could not determine your current position.');
-      return;
-    }
-
-    openGoogleMapsNavigation({
-      origin: { latitude: lat, longitude: lng },
-      destination: {
-        latitude: selectedDestination.latitude,
-        longitude: selectedDestination.longitude,
-      },
-      travelMode: mapTransportMode(transportMode),
-    });
-  }, [
-    selectedDestination,
-    liveTask?.lastPosition,
-    lastPosition,
-    customOrigin,
-    effectiveOriginLng,
-    effectiveOriginLat,
-    transportMode,
-  ]);
+    openTaskInGoogleMaps();
+  }, [openTaskInGoogleMaps]);
 
   useEffect(() => {
     if (phase !== 'activity_started' || trackingStatus === 'live') return;
