@@ -35,6 +35,10 @@ vi.mock("@/hooks/use-copilot-chat", () => ({
     useCopilotChat: () => useCopilotChatMock(),
 }));
 
+vi.mock("@/hooks/use-crm", () => ({
+    useCrmLabels: vi.fn(() => ({ data: [] })),
+}));
+
 vi.mock("@/store/auth", () => ({
     useAuthStore: vi.fn((selector: (state: { user: unknown }) => unknown) =>
         selector({

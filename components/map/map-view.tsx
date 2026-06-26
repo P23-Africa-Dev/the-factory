@@ -258,6 +258,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const popupRef = useRef<mapboxgl.Popup | null>(null);
   const pulseMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const userLocationMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const locateMePinRef = useRef<mapboxgl.Marker | null>(null);
   const directionRoutesRef = useRef<Map<number, [number, number][]>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -430,11 +431,21 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false);
+        const { latitude: lat, longitude: lng } = pos.coords;
         mapRef.current?.flyTo({
-          center: [pos.coords.longitude, pos.coords.latitude],
+          center: [lng, lat],
           zoom: 15,
           duration: 1400,
         });
+        // Remove blue dot and previous locate pin, then place a red pin
+        userLocationMarkerRef.current?.remove();
+        userLocationMarkerRef.current = null;
+        locateMePinRef.current?.remove();
+        if (mapRef.current) {
+          locateMePinRef.current = new mapboxgl.Marker({ color: '#EF4444' })
+            .setLngLat([lng, lat])
+            .addTo(mapRef.current);
+        }
       },
       () => setLocating(false),
       { timeout: 10000, enableHighAccuracy: true },
@@ -702,9 +713,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       if (popupRef.current) popupRef.current.remove();
       if (pulseMarkerRef.current) pulseMarkerRef.current.remove();
       if (userLocationMarkerRef.current) userLocationMarkerRef.current.remove();
+      if (locateMePinRef.current) locateMePinRef.current.remove();
       popupRef.current = null;
       pulseMarkerRef.current = null;
       userLocationMarkerRef.current = null;
+      locateMePinRef.current = null;
       if (hoverPopupRef.current) hoverPopupRef.current.remove();
       hoverPopupRef.current = null;
       directionRoutesRef.current.clear();
@@ -1537,6 +1550,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const destinationMarkersRef = useRef<Map<number, GoogleMarkerLike>>(new Map());
   const routeLinesRef = useRef<Map<number, GooglePolylineLike>>(new Map());
   const userLocationMarkerRef = useRef<GoogleMarkerLike | null>(null);
+  const locateMePinRef = useRef<GoogleMarkerLike | null>(null);
   const markerAnimationsRef = useRef<Map<number, number>>(new Map());
   const markerPositionRef = useRef<Map<number, [number, number]>>(new Map());
 
@@ -1653,9 +1667,21 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false);
+        const { latitude: lat, longitude: lng } = pos.coords;
         if (mapRef.current) {
-          mapRef.current.panTo({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          mapRef.current.panTo({ lat, lng });
           mapRef.current.setZoom(15);
+        }
+        // Remove blue dot and previous locate pin, then place a red pin
+        userLocationMarkerRef.current?.setMap(null);
+        userLocationMarkerRef.current = null;
+        locateMePinRef.current?.setMap(null);
+        if (mapRef.current && googleRef.current) {
+          locateMePinRef.current = new googleRef.current.maps.Marker({
+            map: mapRef.current,
+            position: { lat, lng },
+            title: 'Your current location',
+          });
         }
       },
       () => setLocating(false),
@@ -1766,11 +1792,13 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       destinationMarkersRef.current.forEach((marker) => marker.setMap(null));
       agentMarkersRef.current.forEach((marker) => marker.setMap(null));
       userLocationMarkerRef.current?.setMap(null);
+      locateMePinRef.current?.setMap(null);
 
       routeLinesRef.current.clear();
       destinationMarkersRef.current.clear();
       agentMarkersRef.current.clear();
       userLocationMarkerRef.current = null;
+      locateMePinRef.current = null;
       mapRef.current = null;
       googleRef.current = null;
     };

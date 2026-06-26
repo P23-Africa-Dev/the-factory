@@ -278,13 +278,7 @@ export function CreateTaskModal({
       };
 
       if (isAgent) {
-        createSelfTask(
-          {
-            ...payload,
-            project_id: undefined,
-          },
-          { onError },
-        );
+        createSelfTask(payload, { onError });
         return;
       }
 
