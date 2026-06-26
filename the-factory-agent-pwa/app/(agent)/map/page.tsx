@@ -31,7 +31,7 @@ import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { env } from '@/constants/env';
 import { getMapboxPublicToken } from '@/lib/map/public-env';
-import { fetchDirectionsRoute } from '@/lib/map/directions';
+import { fetchDirectionsRoute, type DirectionsResult } from '@/lib/map/directions';
 import { getDb } from '@/lib/db/client';
 import { syncEngine } from '@/lib/sync/syncEngine';
 import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
@@ -85,11 +85,12 @@ const MODE_LABELS: Record<TransportMode, string> = {
   walking: 'Walking',
 };
 
-// Lagos traffic-adjusted speed constants (Q3:C)
-const SPEED_KPH: Record<TransportMode, number> = {
-  driving: 30,
-  cycling: 20,
-  walking: 5,
+// Map UI transport modes to Mapbox routing profiles.
+// driving-traffic uses real-time + historical congestion data for accuracy.
+const PROFILE_MAP: Record<TransportMode, 'driving-traffic' | 'cycling' | 'walking'> = {
+  driving: 'driving-traffic',
+  cycling: 'cycling',
+  walking: 'walking',
 };
 
 interface SelectedDestination {
@@ -122,11 +123,6 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
       Math.cos((lat2 * Math.PI) / 180) *
       Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function etaMinutes(distanceM: number, mode: TransportMode): number {
-  const speedMps = (SPEED_KPH[mode] * 1000) / 3600;
-  return Math.max(1, Math.ceil(distanceM / speedMps / 60));
 }
 
 function formatDuration(minutes: number | null): string {
@@ -885,6 +881,9 @@ function MapContent() {
   const startRideInFlightRef = useRef(false);
   const nearAlertShownRef = useRef(false);
   const [distanceRemainingM, setDistanceRemainingM] = useState<number | null>(null);
+  const [routesByMode, setRoutesByMode] = useState<Partial<Record<TransportMode, DirectionsResult>>>({});
+  const transportModeRef = useRef<TransportMode>(transportMode);
+  transportModeRef.current = transportMode;
   // Permission gate overlay for the Start flow: null = hidden.
   const [permGate, setPermGate] = useState<'request' | 'denied' | null>(null);
   const [resumePermBusy, setResumePermBusy] = useState(false);
@@ -1216,8 +1215,9 @@ function MapContent() {
   const effectiveOriginLat = routeOriginPosition?.[1] ?? null;
   const effectiveOriginLng = routeOriginPosition?.[0] ?? null;
 
-  // Planned driving route (preview / navigation). Do not clear an already-restored
-  // route while destination or GPS is still loading on resume.
+  // Fetch routes for all 3 transport modes in parallel using the Mapbox Directions API.
+  // Each mode uses its correct profile: driving-traffic (real congestion), cycling, walking.
+  // The displayed route geometry on the map also switches per mode from the pre-fetched data.
   useEffect(() => {
     const token = getMapboxPublicToken() || env.MAPBOX_TOKEN;
     if (!token || !selectedDestination) {
@@ -1231,13 +1231,36 @@ function MapContent() {
 
     const origin: [number, number] = [effectiveOriginLng, effectiveOriginLat];
     const destination: [number, number] = [selectedDestination.longitude, selectedDestination.latitude];
+    const fallback: [number, number][] = [origin, destination];
     let cancelled = false;
     setIsRouteLoading(true);
 
-    void fetchDirectionsRoute(origin, destination, token).then((coords) => {
+    const modes = (['driving', 'cycling', 'walking'] as const);
+
+    void Promise.all(
+      modes.map((mode) =>
+        fetchDirectionsRoute(origin, destination, token, PROFILE_MAP[mode]).then((result) => ({
+          mode,
+          result,
+        })),
+      ),
+    ).then((results) => {
       if (cancelled) return;
-      const route = coords && coords.length > 1 ? coords : [origin, destination];
-      setPlannedRoute(route);
+
+      const byMode: Partial<Record<TransportMode, DirectionsResult>> = {};
+      for (const { mode, result } of results) {
+        if (result) byMode[mode] = result;
+      }
+      setRoutesByMode(byMode);
+
+      // Set the map route to whichever mode is currently selected
+      const current = byMode[transportModeRef.current];
+      setPlannedRoute(current && current.coords.length > 1 ? current.coords : fallback);
+
+      // Seed distance remaining from the driving route (most relevant for initial display)
+      const seedDist = byMode.driving?.distance ?? byMode.cycling?.distance ?? null;
+      setDistanceRemainingM((prev) => (prev == null ? seedDist : prev));
+
       setIsRouteLoading(false);
     });
 
@@ -1249,29 +1272,24 @@ function MapContent() {
     effectiveOriginLat,
     selectedDestination?.latitude,
     selectedDestination?.longitude,
-    liveTask?.lastPosition,
-    taskRoute?.polyline,
   ]);
 
-  // Static ETAs
-  const etaByMode = useMemo((): Record<TransportMode, number | null> => {
-    if (effectiveOriginLat == null || effectiveOriginLng == null || !selectedDestination) {
-      return { driving: null, cycling: null, walking: null };
+  // When the user switches transport mode, instantly swap the map route from cached data
+  useEffect(() => {
+    const result = routesByMode[transportMode];
+    if (result && result.coords.length > 1) {
+      setPlannedRoute(result.coords);
     }
-    const dist =
-      distanceRemainingM ??
-      haversineMeters(
-        effectiveOriginLat,
-        effectiveOriginLng,
-        selectedDestination.latitude,
-        selectedDestination.longitude,
-      );
+  }, [transportMode, routesByMode]);
+
+  // ETA per mode — directly from the Mapbox API duration (seconds → minutes)
+  const etaByMode = useMemo((): Record<TransportMode, number | null> => {
     return {
-      driving: etaMinutes(dist, 'driving'),
-      cycling: etaMinutes(dist, 'cycling'),
-      walking: etaMinutes(dist, 'walking'),
+      driving:  routesByMode.driving  ? Math.ceil(routesByMode.driving.duration  / 60) : null,
+      cycling:  routesByMode.cycling  ? Math.ceil(routesByMode.cycling.duration  / 60) : null,
+      walking:  routesByMode.walking  ? Math.ceil(routesByMode.walking.duration  / 60) : null,
     };
-  }, [effectiveOriginLat, effectiveOriginLng, selectedDestination, distanceRemainingM]);
+  }, [routesByMode]);
 
   // Search results: active task destinations + recents
   const taskDestOptions = useMemo((): RecentDestination[] =>
@@ -1799,7 +1817,10 @@ function MapContent() {
     return agentPosition ? sliceRemainingRoute(plannedRoute, agentPosition) : plannedRoute;
   }, [isNavigating, plannedRoute, agentPosition]);
 
+  // Use the API's accurate distance for the selected mode; fall back to haversine if not yet loaded
   const totalRouteDistanceM = useMemo(() => {
+    const apiDist = routesByMode[transportMode]?.distance;
+    if (apiDist != null) return apiDist;
     if (plannedRoute.length < 2) return null;
     let total = 0;
     for (let i = 1; i < plannedRoute.length; i++) {
@@ -1811,7 +1832,7 @@ function MapContent() {
       );
     }
     return total;
-  }, [plannedRoute]);
+  }, [routesByMode, transportMode, plannedRoute]);
 
   const agentAvatarUrl = getSafeAvatarSrc(user?.avatar_url ?? null);
   const agentMarker = useMemo(
