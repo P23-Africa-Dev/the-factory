@@ -21,16 +21,35 @@ export function EmailConnectionBanner({ companyId }: EmailConnectionBannerProps)
     const needsConnection = !status?.connected || status?.requires_gmail_reconnect || status?.requires_reauthentication;
 
     useEffect(() => {
-        const handleOAuthMessage = (event: MessageEvent) => {
-            const payload = event.data as { type?: string; status?: "success" | "error"; message?: string };
+        const handleOAuthMessage = async (event: MessageEvent) => {
+            const payload = event.data as {
+                type?: string;
+                status?: "success" | "error";
+                message?: string;
+                gmail_enabled?: boolean;
+                requires_gmail_reconnect?: boolean;
+            };
             if (!payload || payload.type !== "google-calendar-oauth") return;
-            if (payload.status === "success") {
-                toast.success(payload.message || "Google account connected successfully.");
-                statusQuery.refetch();
+
+            const result = await statusQuery.refetch();
+
+            const gmailReady =
+                payload.gmail_enabled === true ||
+                (result.data?.gmail_enabled === true && result.data?.requires_gmail_reconnect !== true);
+
+            if (payload.status === "success" && gmailReady) {
+                toast.success(payload.message || "Google account connected for calendar and email.");
                 return;
             }
+
+            if (payload.status === "success" && !gmailReady) {
+                toast.warning(
+                    "Google connected for calendar only. Reconnect and approve Gmail permissions to send CRM emails.",
+                );
+                return;
+            }
+
             toast.error(payload.message || "Google connection failed.");
-            statusQuery.refetch();
         };
 
         window.addEventListener("message", handleOAuthMessage);

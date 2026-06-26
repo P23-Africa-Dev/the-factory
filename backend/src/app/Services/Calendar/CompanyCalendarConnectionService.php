@@ -212,6 +212,10 @@ class CompanyCalendarConnectionService
             ]
         );
 
+        $connection->refresh();
+
+        $gmailEnabled = GoogleScopeHelper::connectionHasGmailScopes($connection);
+
         return [
             'connected' => true,
             'status' => 'active',
@@ -221,6 +225,8 @@ class CompanyCalendarConnectionService
             'requires_owner_action' => false,
             'token_valid' => $this->isTokenValid($connection),
             'requires_reauthentication' => false,
+            'gmail_enabled' => $gmailEnabled,
+            'requires_gmail_reconnect' => ! $gmailEnabled,
             'connection_health_status' => 'healthy',
             'last_error_message' => null,
             'last_token_refresh_at' => $connection->last_token_refresh_at?->toIso8601String(),

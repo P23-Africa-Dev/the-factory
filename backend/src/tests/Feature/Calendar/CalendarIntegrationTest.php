@@ -326,7 +326,7 @@ class CalendarIntegrationTest extends TestCase
                 'access_token' => 'oauth-access-token',
                 'refresh_token' => 'oauth-refresh-token',
                 'expires_in' => 3600,
-                'scope' => 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+                'scope' => 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify',
                 'token_type' => 'Bearer',
             ], 200),
             'https://www.googleapis.com/oauth2/v3/userinfo' => Http::response([
@@ -340,7 +340,7 @@ class CalendarIntegrationTest extends TestCase
         $callbackResponse->assertOk();
         $callbackResponse->assertHeader('Content-Type', 'text/html; charset=UTF-8');
         $callbackResponse->assertSee('google-calendar-oauth', false);
-        $callbackResponse->assertSee('Google Calendar connected successfully. You can close this window.', false);
+        $callbackResponse->assertSee('Google Workspace connected successfully for calendar and email. You can close this window.', false);
     }
 
     public function test_oauth_callback_persists_connection_for_admin(): void
