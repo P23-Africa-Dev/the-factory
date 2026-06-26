@@ -2,7 +2,7 @@
 
 import { useState, useEffect, startTransition } from "react";
 import Link from "next/link";
-import { MapPin, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight, Loader2, Settings, X, ArrowUpRight } from "lucide-react";
+import { MapPin, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight, Loader2, Settings, X, ArrowUpRight, Clock, CalendarDays, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { useAttendanceSettings, useUpdateAttendanceSettings } from "@/hooks/use-attendance";
@@ -13,7 +13,7 @@ import { useAttendanceMetrics, useAttendanceRecords } from "@/hooks/use-attendan
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import type { ManagementAttendanceRecord } from "@/lib/api/attendance";
+import type { ManagementAttendanceRecord, AgentAttendanceRecord } from "@/lib/api/attendance";
 
 type AttendanceItem = {
   id: number | string;
@@ -119,6 +119,206 @@ function MgmtStatCard({
             <Area type="monotone" dataKey="v" stroke={strokeColor} strokeWidth={2.5} fill={`url(#${gradientId})`} dot={false} />
           </AreaChart>
         </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// Mock history records — replace with useAttendanceHistory(userId) when the per-agent history endpoint is ready
+const MOCK_ATTENDANCE_HISTORY: AgentAttendanceRecord[] = [
+  { id: 1, company_id: 1, user_id: 0, attendance_date: "2026-06-25", clock_in_at: "2026-06-25T08:58:00Z", clock_out_at: "2026-06-25T17:12:00Z", status: "present", work_duration_minutes: 494, work_duration_hours: 8.2, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
+  { id: 2, company_id: 1, user_id: 0, attendance_date: "2026-06-24", clock_in_at: "2026-06-24T09:43:00Z", clock_out_at: "2026-06-24T17:00:00Z", status: "late", work_duration_minutes: 437, work_duration_hours: 7.3, is_late: true, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
+  { id: 3, company_id: 1, user_id: 0, attendance_date: "2026-06-23", clock_in_at: "2026-06-23T09:01:00Z", clock_out_at: "2026-06-23T17:30:00Z", status: "present", work_duration_minutes: 509, work_duration_hours: 8.5, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
+  { id: 4, company_id: 1, user_id: 0, attendance_date: "2026-06-20", clock_in_at: null, clock_out_at: null, status: "absent", work_duration_minutes: null, work_duration_hours: null, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
+  { id: 5, company_id: 1, user_id: 0, attendance_date: "2026-06-19", clock_in_at: "2026-06-19T09:05:00Z", clock_out_at: "2026-06-19T17:00:00Z", status: "present", work_duration_minutes: 475, work_duration_hours: 7.9, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
+  { id: 6, company_id: 1, user_id: 0, attendance_date: "2026-06-18", clock_in_at: "2026-06-18T09:52:00Z", clock_out_at: "2026-06-18T17:00:00Z", status: "late", work_duration_minutes: 428, work_duration_hours: 7.1, is_late: true, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
+  { id: 7, company_id: 1, user_id: 0, attendance_date: "2026-06-17", clock_in_at: "2026-06-17T08:55:00Z", clock_out_at: "2026-06-17T17:00:00Z", status: "present", work_duration_minutes: 485, work_duration_hours: 8.1, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
+  { id: 8, company_id: 1, user_id: 0, attendance_date: "2026-06-16", clock_in_at: "2026-06-16T09:00:00Z", clock_out_at: "2026-06-16T17:00:00Z", status: "auto_clocked_out", work_duration_minutes: 480, work_duration_hours: 8.0, is_late: false, is_auto_clocked_out: true, metadata: null, created_at: "", updated_at: "" },
+  { id: 9, company_id: 1, user_id: 0, attendance_date: "2026-06-13", clock_in_at: null, clock_out_at: null, status: "absent", work_duration_minutes: null, work_duration_hours: null, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
+  { id: 10, company_id: 1, user_id: 0, attendance_date: "2026-06-12", clock_in_at: "2026-06-12T09:03:00Z", clock_out_at: "2026-06-12T17:45:00Z", status: "present", work_duration_minutes: 522, work_duration_hours: 8.7, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
+  { id: 11, company_id: 1, user_id: 0, attendance_date: "2026-06-11", clock_in_at: "2026-06-11T09:38:00Z", clock_out_at: "2026-06-11T17:00:00Z", status: "late", work_duration_minutes: 442, work_duration_hours: 7.4, is_late: true, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
+  { id: 12, company_id: 1, user_id: 0, attendance_date: "2026-06-10", clock_in_at: "2026-06-10T08:50:00Z", clock_out_at: "2026-06-10T17:00:00Z", status: "present", work_duration_minutes: 490, work_duration_hours: 8.2, is_late: false, is_auto_clocked_out: false, metadata: null, created_at: "", updated_at: "" },
+];
+
+const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string; ring: string }> = {
+  present:         { label: "Present",   bg: "bg-emerald-50",  text: "text-emerald-700", dot: "bg-emerald-400",  ring: "ring-emerald-200"  },
+  late:            { label: "Late",      bg: "bg-orange-50",   text: "text-orange-600",  dot: "bg-orange-400",   ring: "ring-orange-200"   },
+  absent:          { label: "Absent",    bg: "bg-red-50",      text: "text-red-600",     dot: "bg-red-400",      ring: "ring-red-200"      },
+  auto_clocked_out:{ label: "Auto-Out",  bg: "bg-gray-100",    text: "text-gray-500",    dot: "bg-gray-400",     ring: "ring-gray-200"     },
+  clocked_out:     { label: "Present",   bg: "bg-emerald-50",  text: "text-emerald-700", dot: "bg-emerald-400",  ring: "ring-emerald-200"  },
+};
+
+function formatDuration(minutes: number | null): string {
+  if (!minutes) return "";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function HistoryEntry({ record }: { record: AgentAttendanceRecord }) {
+  const date = parseISO(record.attendance_date);
+  const dayLabel  = format(date, "EEE");
+  const dayNum    = format(date, "d");
+  const monthLabel= format(date, "MMM");
+  const clockIn   = record.clock_in_at  ? format(parseISO(record.clock_in_at),  "h:mma") : null;
+  const clockOut  = record.clock_out_at ? format(parseISO(record.clock_out_at), "h:mma") : null;
+  const cfg = STATUS_CONFIG[record.status] ?? STATUS_CONFIG.present;
+  const duration  = formatDuration(record.work_duration_minutes);
+
+  return (
+    <div className="flex items-stretch gap-3 group">
+      {/* Date column */}
+      <div className="flex flex-col items-center w-10 shrink-0 pt-0.5">
+        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider leading-none">{dayLabel}</p>
+        <p className="text-[18px] font-black text-[#0B1215] leading-tight">{dayNum}</p>
+        <p className="text-[9px] text-gray-400 uppercase leading-none">{monthLabel}</p>
+      </div>
+
+      {/* Timeline line + dot */}
+      <div className="flex flex-col items-center gap-0 shrink-0">
+        <div className={`w-3 h-3 rounded-full mt-1 shrink-0 ring-2 ${cfg.dot} ${cfg.ring}`} />
+        <div className="w-px flex-1 bg-gray-100 mt-1" />
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0 pb-3">
+        <div className="bg-white border border-gray-100 rounded-2xl px-4 py-3 shadow-[0_1px_4px_rgba(0,0,0,0.06)] group-hover:shadow-[0_2px_8px_rgba(0,0,0,0.1)] transition-shadow">
+          <div className="flex items-start justify-between gap-2">
+            {/* Times */}
+            <div className="flex flex-col gap-1">
+              {clockIn ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                    <span className="text-[11px] font-bold text-[#0B1215]">{clockIn}</span>
+                  </div>
+                  {clockOut && (
+                    <>
+                      <span className="text-[10px] text-gray-300">→</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0" />
+                        <span className="text-[11px] text-gray-500">{clockOut}</span>
+                      </div>
+                    </>
+                  )}
+                  {!clockOut && (
+                    <span className="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">Active</span>
+                  )}
+                </div>
+              ) : (
+                <span className="text-[11px] text-gray-400 italic">No clock-in recorded</span>
+              )}
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {duration && (
+                  <div className="flex items-center gap-1">
+                    <Clock size={9} className="text-gray-400" />
+                    <span className="text-[10px] text-gray-400 font-medium">{duration}</span>
+                  </div>
+                )}
+                {record.is_late && (
+                  <span className="text-[9px] font-bold text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full">Late arrival</span>
+                )}
+                {record.is_auto_clocked_out && (
+                  <span className="text-[9px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Auto clocked-out</span>
+                )}
+              </div>
+            </div>
+
+            {/* Status badge */}
+            <span className={`shrink-0 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wide ${cfg.bg} ${cfg.text}`}>
+              {cfg.label}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AttendanceHistoryPanel({ selected }: { selected: AttendanceItem }) {
+  const records = MOCK_ATTENDANCE_HISTORY;
+
+  const presentCount = records.filter(r => r.status === "present" || r.status === "clocked_out" || r.status === "auto_clocked_out").length;
+  const lateCount    = records.filter(r => r.is_late).length;
+  const absentCount  = records.filter(r => r.status === "absent").length;
+
+  return (
+    <div className="flex flex-col rounded-3xl overflow-hidden shadow-[0px_4px_14px_rgba(9,35,45,0.18)]">
+      {/* Dark header */}
+      <div className="bg-dash-dark px-5 py-5 shrink-0">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Attendance History</p>
+            <p className="text-[15px] font-bold text-white mt-0.5">{selected.name}</p>
+          </div>
+          <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-full">
+            <CalendarDays size={11} className="text-white/60" />
+            <span className="text-[10px] font-bold text-white/70">Last 30 days</span>
+          </div>
+        </div>
+
+        {/* Summary stats */}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-white/8 border border-white/10 rounded-2xl px-3 py-3 flex flex-col items-center gap-0.5">
+            <span className="text-[22px] font-black text-white leading-none">{presentCount}</span>
+            <div className="flex items-center gap-1 mt-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wide">Present</span>
+            </div>
+          </div>
+          <div className="bg-white/8 border border-white/10 rounded-2xl px-3 py-3 flex flex-col items-center gap-0.5">
+            <span className="text-[22px] font-black text-white leading-none">{lateCount}</span>
+            <div className="flex items-center gap-1 mt-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+              <span className="text-[9px] font-bold text-orange-400 uppercase tracking-wide">Late</span>
+            </div>
+          </div>
+          <div className="bg-white/8 border border-white/10 rounded-2xl px-3 py-3 flex flex-col items-center gap-0.5">
+            <span className="text-[22px] font-black text-white leading-none">{absentCount}</span>
+            <div className="flex items-center gap-1 mt-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+              <span className="text-[9px] font-bold text-red-400 uppercase tracking-wide">Absent</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Attendance rate bar */}
+        {records.length > 0 && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-1.5">
+                <TrendingUp size={10} className="text-white/50" />
+                <span className="text-[10px] text-white/50 font-medium">Attendance rate</span>
+              </div>
+              <span className="text-[11px] font-bold text-white">
+                {Math.round(((presentCount + lateCount) / records.length) * 100)}%
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-linear-to-r from-emerald-400 to-teal-400 transition-all duration-500"
+                style={{ width: `${Math.round(((presentCount + lateCount) / records.length) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Scrollable timeline */}
+      <div className="bg-[#F8F9FA] flex-1 overflow-y-auto max-h-80 p-4 pt-5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200">
+        {records.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-2">
+            <CalendarDays size={28} className="text-gray-300" />
+            <p className="text-[12px] text-gray-400 font-medium">No history available</p>
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            {records.map((record) => (
+              <HistoryEntry key={record.id} record={record} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -824,8 +1024,11 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                 </div>
               </div>
 
+              {/* Attendance history panel */}
+              <AttendanceHistoryPanel selected={selected} />
+
               {/* Tracking card */}
-              <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
+              {/* <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
                 <div className="flex items-start gap-4 mb-5">
                   <div className="flex-1 min-w-0">
                     <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-In Time</p>
@@ -852,7 +1055,7 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                   <p className="text-[12px] text-gray-400">{selected.address}</p>
                 </div>
 
-                {/* Map */}
+              
                 <div className="relative h-44 w-full rounded-[18px] bg-[#e8ecef] overflow-hidden">
                   <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-50">
                     <defs>
@@ -904,7 +1107,7 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                     </div>
                   </div>
                 </div>
-              </div>
+              </div> */}
             </>
           ) : (
             <div className="flex items-center justify-center h-40 text-gray-400 text-[13px]">
