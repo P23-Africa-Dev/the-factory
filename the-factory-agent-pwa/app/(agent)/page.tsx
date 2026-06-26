@@ -12,7 +12,7 @@
   import { MeetingWidget, CreateMeetingModal } from '@/features/meetings';
   import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
   import { searchPlacesWithMapbox } from '@/lib/map/geocoding';
-  import { useGeolocation } from '@/features/tracking';
+  import { LocationPermissionGate, useLocationPermissionBootstrap } from '@/features/tracking';
 
   export default function AgentDashboardPage() {
     const router = useRouter();
@@ -41,15 +41,8 @@
     const dragDistance = useRef(0);
     const currentTranslateY = useRef(0);
 
-    const { checkPermission, getCurrentPosition } = useGeolocation();
-
-    useEffect(() => {
-      checkPermission().then((status) => {
-        if (status === 'granted') {
-          getCurrentPosition().catch(() => {});
-        }
-      });
-    }, [checkPermission, getCurrentPosition]);
+    const { gateVisible, gateMode, isGateBusy, dismissGate, retryGate } =
+      useLocationPermissionBootstrap();
 
     const handlePointerDown = (e: React.PointerEvent) => {
       if (e.button !== 0) return;
@@ -623,6 +616,18 @@
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+        {gateVisible && (
+          <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 backdrop-blur-sm">
+            <div className="relative w-full max-w-md rounded-t-3xl bg-[#0A1D25] border-t border-white/10 pb-[env(safe-area-inset-bottom,0px)]">
+              <LocationPermissionGate
+                mode={gateMode}
+                isBusy={isGateBusy}
+                onRequest={() => void retryGate()}
+                onDismiss={dismissGate}
+              />
             </div>
           </div>
         )}

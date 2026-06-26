@@ -4,6 +4,10 @@ import ArrowUp from "@/assets/images/arrow-57deg.png";
 import { useDashboardOverview } from "@/hooks/use-dashboard";
 import { useLeadPipeline, useLeads } from "@/hooks/use-crm";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import {
+  buildCalibratedLeadsTrendChart,
+  LEADS_TREND_BAR_COLORS,
+} from "@/lib/dashboard-leads-chart";
 import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
@@ -141,12 +145,6 @@ export function MyActivitiesChart() {
   );
 }
 
-const leadsTrendFallback = Array.from({ length: 6 }, (_, index) => ({
-  name: String(index + 1),
-  v1: 0,
-  v2: 0,
-}));
-
 export function TotalLeadsChart() {
   const [mounted, setMounted] = useState(false);
   const user = useAuthStore((s) => s.user);
@@ -175,13 +173,10 @@ export function TotalLeadsChart() {
 
   const isLoading = isAgent ? agentLeadsLoading : pipelineLoading;
 
-  const leadsChartData = useMemo(() => {
-    if (overview?.leads_trend?.length === 6) {
-      return overview.leads_trend;
-    }
-    return leadsTrendFallback;
-  }, [overview?.leads_trend]);
-  const hasChartData = leadsChartData.some((point) => point.v1 > 0 || point.v2 > 0);
+  const leadsChartData = useMemo(
+    () => buildCalibratedLeadsTrendChart(overview?.leads_trend ?? []),
+    [overview?.leads_trend],
+  );
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -210,26 +205,28 @@ export function TotalLeadsChart() {
       </div>
 
       <div className="w-full h-10.25 mt-auto">
-        {hasChartData ? (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={leadsChartData}
-              barGap={4}
-              margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-            >
-              <YAxis domain={[0, "dataMax"]} hide />
-              <XAxis hide padding={{ left: 0, right: 0 }} />
-              <Bar dataKey="v1" fill="#7BB6B8" radius={10} barSize={15} />
-              <Bar dataKey="v2" fill="#FD6046" radius={10} barSize={15} />
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
-          <div className="w-full h-full flex items-end gap-1.5">
-            {leadsChartData.map((point) => (
-              <div key={point.name} className="flex-1 h-1 rounded-full bg-dash-dark/10" />
-            ))}
-          </div>
-        )}
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={leadsChartData}
+            barGap={4}
+            margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+          >
+            <YAxis domain={[0, "dataMax"]} hide />
+            <XAxis hide padding={{ left: 0, right: 0 }} />
+            <Bar
+              dataKey="v1"
+              fill={LEADS_TREND_BAR_COLORS.rise}
+              radius={10}
+              barSize={15}
+            />
+            <Bar
+              dataKey="v2"
+              fill={LEADS_TREND_BAR_COLORS.fall}
+              radius={10}
+              barSize={15}
+            />
+          </BarChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );

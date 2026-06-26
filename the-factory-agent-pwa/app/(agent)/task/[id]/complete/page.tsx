@@ -30,8 +30,10 @@ export default function TaskCompletePage() {
   const { goToTaskList } = useTaskNavigation();
   const { goToMapActivity } = useTrackingNavigation();
   const { mutate: completeTask, isPending, isError, error } = useCompleteTask();
-  const { getCurrentPosition } = useGeolocation();
+  const { getCurrentPosition, ensureLocationPermission } = useGeolocation();
   const { stopTracking } = useActiveTracking();
+
+  const [locationPermissionBlocked, setLocationPermissionBlocked] = useState(false);
 
   const liveTask = useTrackingStore((s) => s.liveTaskMap[taskId]);
   const hasArrived =
@@ -93,6 +95,13 @@ export default function TaskCompletePage() {
     };
 
     try {
+      const perm = await ensureLocationPermission();
+      if (perm === 'denied') {
+        setLocationPermissionBlocked(true);
+        return;
+      }
+      setLocationPermissionBlocked(false);
+
       const pos = await getCurrentPosition();
       position = {
         latitude: pos.coords.latitude,
@@ -158,6 +167,15 @@ export default function TaskCompletePage() {
             >
               Continue Tracking →
             </button>
+          </div>
+        )}
+
+        {locationPermissionBlocked && (
+          <div className="bg-[#FD6046]/10 border-l-[3px] border-[#FD6046] rounded-xl p-3.5 mb-5">
+            <p className="font-sans text-xs text-white leading-relaxed">
+              Location access is required to record your completion position. Enable location in your
+              device settings, then try again.
+            </p>
           </div>
         )}
 
