@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\V1\Calendar\MeetingController;
 use App\Http\Controllers\Api\V1\Company\CompanyLocationController;
 use App\Http\Controllers\Api\V1\CountryController;
 use App\Http\Controllers\Api\V1\CurrencyController;
+use App\Http\Controllers\Api\V1\Crm\CrmEmailController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
 use App\Http\Controllers\Api\V1\Enterprise\BookDemoController;
@@ -356,6 +357,8 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                     ->name('settings.update');
                 Route::get('/metrics', [AttendanceManagementController::class, 'metrics'])->name('metrics');
                 Route::get('/records', [AttendanceManagementController::class, 'index'])->name('records.index');
+                Route::get('/agents/{agent}/history', [AttendanceManagementController::class, 'agentHistory'])
+                    ->name('agents.history');
                 Route::get('/payroll-summaries', [AttendanceManagementController::class, 'payrollSummaries'])
                     ->name('payroll-summaries.index');
                 Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
@@ -433,6 +436,21 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                 Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
                     ->middleware('throttle:60,1')
                     ->name('leads.activities.store');
+                Route::get('/emails/activity', [CrmEmailController::class, 'activity'])->name('emails.activity');
+                Route::get('/emails/attachments/{attachment}', [CrmEmailController::class, 'downloadAttachment'])->name('emails.attachments.download');
+                Route::get('/leads/{lead}/emails', [CrmEmailController::class, 'index'])->name('leads.emails.index');
+                Route::get('/leads/{lead}/emails/threads/{thread}', [CrmEmailController::class, 'showThread'])->name('leads.emails.threads.show');
+                Route::post('/leads/{lead}/emails/send', [CrmEmailController::class, 'send'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.emails.send');
+                Route::post('/leads/{lead}/emails/threads/{thread}/reply', [CrmEmailController::class, 'reply'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.emails.reply');
+                Route::patch('/leads/{lead}/emails/messages/{message}/read', [CrmEmailController::class, 'markRead'])->name('leads.emails.messages.read');
+                Route::delete('/leads/{lead}/emails/messages/{message}', [CrmEmailController::class, 'destroy'])->name('leads.emails.messages.destroy');
+                Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.emails.attachments.upload');
             });
 
             Route::prefix('locations')->name('locations.')->group(function (): void {
@@ -521,6 +539,21 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                 Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
                     ->middleware('throttle:60,1')
                     ->name('leads.activities.store');
+                Route::get('/emails/activity', [CrmEmailController::class, 'activity'])->name('emails.activity');
+                Route::get('/emails/attachments/{attachment}', [CrmEmailController::class, 'downloadAttachment'])->name('emails.attachments.download');
+                Route::get('/leads/{lead}/emails', [CrmEmailController::class, 'index'])->name('leads.emails.index');
+                Route::get('/leads/{lead}/emails/threads/{thread}', [CrmEmailController::class, 'showThread'])->name('leads.emails.threads.show');
+                Route::post('/leads/{lead}/emails/send', [CrmEmailController::class, 'send'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.emails.send');
+                Route::post('/leads/{lead}/emails/threads/{thread}/reply', [CrmEmailController::class, 'reply'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.emails.reply');
+                Route::patch('/leads/{lead}/emails/messages/{message}/read', [CrmEmailController::class, 'markRead'])->name('leads.emails.messages.read');
+                Route::delete('/leads/{lead}/emails/messages/{message}', [CrmEmailController::class, 'destroy'])->name('leads.emails.messages.destroy');
+                Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.emails.attachments.upload');
             });
 
             Route::prefix('locations')->name('locations.')->group(function (): void {
@@ -655,6 +688,9 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
         Route::get('/records', [AttendanceManagementController::class, 'index'])
             ->middleware('access.role:management')
             ->name('records.index');
+        Route::get('/agents/{agent}/history', [AttendanceManagementController::class, 'agentHistory'])
+            ->middleware('access.role:management')
+            ->name('agents.history');
         Route::get('/payroll-summaries', [AttendanceManagementController::class, 'payrollSummaries'])
             ->middleware('access.role:management')
             ->name('payroll-summaries.index');
@@ -749,6 +785,21 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
         Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
             ->middleware('throttle:60,1')
             ->name('leads.activities.store');
+        Route::get('/emails/activity', [CrmEmailController::class, 'activity'])->name('emails.activity');
+        Route::get('/emails/attachments/{attachment}', [CrmEmailController::class, 'downloadAttachment'])->name('emails.attachments.download');
+        Route::get('/leads/{lead}/emails', [CrmEmailController::class, 'index'])->name('leads.emails.index');
+        Route::get('/leads/{lead}/emails/threads/{thread}', [CrmEmailController::class, 'showThread'])->name('leads.emails.threads.show');
+        Route::post('/leads/{lead}/emails/send', [CrmEmailController::class, 'send'])
+            ->middleware('throttle:30,1')
+            ->name('leads.emails.send');
+        Route::post('/leads/{lead}/emails/threads/{thread}/reply', [CrmEmailController::class, 'reply'])
+            ->middleware('throttle:30,1')
+            ->name('leads.emails.reply');
+        Route::patch('/leads/{lead}/emails/messages/{message}/read', [CrmEmailController::class, 'markRead'])->name('leads.emails.messages.read');
+        Route::delete('/leads/{lead}/emails/messages/{message}', [CrmEmailController::class, 'destroy'])->name('leads.emails.messages.destroy');
+        Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
+            ->middleware('throttle:30,1')
+            ->name('leads.emails.attachments.upload');
     });
 
     Route::get('/dashboard/overview', DashboardOverviewController::class)

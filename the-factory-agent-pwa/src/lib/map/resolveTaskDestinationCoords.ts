@@ -1,4 +1,4 @@
-import { isValidMapCoordinate } from './googleMapsNavigation';
+import { formatMapCoordinate, isValidMapCoordinate } from './googleMapsNavigation';
 
 export type LatLng = { latitude: number; longitude: number };
 
@@ -29,8 +29,4 @@ export function resolveTaskDestinationCoords(sources: {
 
 export function formatCoordsLabel(point: LatLng): string {
   return `${formatMapCoordinate(point.latitude)}, ${formatMapCoordinate(point.longitude)}`;
-}
-
-function formatMapCoordinate(value: number): string {
-  return value.toFixed(6);
 }

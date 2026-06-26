@@ -1,12 +1,9 @@
-/**
- * Auth TanStack Query hooks — ported from mobile.
- */
-'use client';
-
+import { useEffect } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { authApi } from './api';
 import { authKeys } from './queryKeys';
 import type { LoginPayload, ForgotPasswordPayload, ResetPasswordPayload } from './types';
+import { setActiveCompanyId } from '@/lib/storage/stores';
 
 export function useLoginMutation() {
   return useMutation({
@@ -48,10 +45,21 @@ export function useLogoutMutation() {
 }
 
 export function useProfile(enabled: boolean = true) {
-  return useQuery({
+  const query = useQuery({
     queryKey: authKeys.profile(),
     queryFn: () => authApi.getProfile(),
     enabled,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
+
+  useEffect(() => {
+    if (query.data?.organization?.company_id) {
+      const cid = Number(query.data.organization.company_id);
+      if (!isNaN(cid) && cid > 0) {
+        setActiveCompanyId(cid);
+      }
+    }
+  }, [query.data]);
+
+  return query;
 }

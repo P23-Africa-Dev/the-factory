@@ -14,6 +14,7 @@ class ActionConfirmationPolicyService
         'projects.create',
         'crm.log_visit',
         'crm.create_lead',
+        'crm.send_email',
         'kpis.create',
     ];
 
