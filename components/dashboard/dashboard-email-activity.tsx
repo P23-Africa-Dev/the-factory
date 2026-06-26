@@ -7,7 +7,7 @@ import { useAuthStore } from "@/store/auth";
 
 export function DashboardEmailActivity() {
     const user = useAuthStore((s) => s.user);
-    const companyId = getActiveCompanyContext(user)?.companyId;
+    const companyId = getActiveCompanyContext(user)?.apiCompanyId ?? undefined;
     const { data, isLoading } = useCrmEmailActivity(companyId, "/admin");
 
     const stats = data?.stats;

@@ -13,7 +13,7 @@ type EmailConnectionBannerProps = {
 
 export function EmailConnectionBanner({ companyId }: EmailConnectionBannerProps) {
     const user = useAuthStore((s) => s.user);
-    const resolvedCompanyId = companyId ?? getActiveCompanyContext(user)?.companyId;
+    const resolvedCompanyId = companyId ?? getActiveCompanyContext(user)?.apiCompanyId ?? undefined;
     const statusQuery = useCalendarIntegrationStatus(resolvedCompanyId);
     const connectMutation = useCreateCalendarConnectUrl();
 
