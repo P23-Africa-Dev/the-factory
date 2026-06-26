@@ -36,7 +36,8 @@ import { getDb } from '@/lib/db/client';
 import { syncEngine } from '@/lib/sync/syncEngine';
 import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 import { showApiErrorToast } from '@/lib/api/errors';
-import { mapTransportMode, openGoogleMapsNavigation } from '@/lib/map/googleMapsNavigation';
+import { openGoogleMapsNavigation, resolveGoogleMapsTravelMode } from '@/lib/map/googleMapsNavigation';
+import { resolveTaskDestinationCoords } from '@/lib/map/resolveTaskDestinationCoords';
 import {
   isDocumentHidden,
   notifyTrackingArrived,
@@ -1567,7 +1568,63 @@ function MapContent() {
     await runStartSession();
   }, [runStartSession]);
 
+  const resolveOpenDestination = useCallback(() => {
+    const taskRecord =
+      trackingTask ??
+      (selectedDestination?.taskId
+        ? tasks.find((t) => t.id === String(selectedDestination.taskId))
+        : undefined);
+
+    return resolveTaskDestinationCoords({
+      liveDestination: liveTask?.destination ?? null,
+      routeDestination: taskRoute?.destination ?? null,
+      selectedDestination,
+      taskRecord: taskRecord
+        ? { latitude: taskRecord.latitude, longitude: taskRecord.longitude }
+        : null,
+    });
+  }, [
+    trackingTask,
+    selectedDestination,
+    tasks,
+    liveTask?.destination,
+    taskRoute?.destination,
+  ]);
+
+  const openTaskInGoogleMaps = useCallback(() => {
+    const destination = resolveOpenDestination();
+
+    if (!destination) {
+      toast.error(
+        'Destination unavailable',
+        'This task has no valid map coordinates. Update the task location before navigating.',
+      );
+      return;
+    }
+
+    try {
+      openGoogleMapsNavigation({
+        destination,
+        travelMode: resolveGoogleMapsTravelMode(transportMode),
+        useDeviceLocationAsOrigin: true,
+      });
+    } catch {
+      toast.error(
+        'Destination unavailable',
+        'Could not open Google Maps with a valid destination for this task.',
+      );
+    }
+  }, [resolveOpenDestination, transportMode]);
+
   const handleProceedWithGoogleMaps = useCallback(async (): Promise<void> => {
+    if (!resolveOpenDestination()) {
+      toast.error(
+        'Destination unavailable',
+        'This task has no valid map coordinates. Update the task location before navigating.',
+      );
+      return;
+    }
+
     const notifPerm = await requestTrackingNotificationPermission();
     if (notifPerm === 'denied' || notifPerm === 'unsupported') {
       toast.info(
@@ -1577,54 +1634,14 @@ function MapContent() {
     }
 
     const result = await runStartSession();
-    if (!result?.ok || !selectedDestination) return;
+    if (!result?.ok) return;
 
-    openGoogleMapsNavigation({
-      origin: { latitude: result.startPoint[1], longitude: result.startPoint[0] },
-      destination: {
-        latitude: selectedDestination.latitude,
-        longitude: selectedDestination.longitude,
-      },
-      travelMode: mapTransportMode(transportMode),
-    });
-  }, [runStartSession, selectedDestination, transportMode]);
+    openTaskInGoogleMaps();
+  }, [runStartSession, openTaskInGoogleMaps]);
 
   const handleOpenGoogleMaps = useCallback((): void => {
-    if (!selectedDestination) return;
-
-    const lng =
-      liveTask?.lastPosition?.[0] ??
-      lastPosition?.coords.longitude ??
-      customOrigin?.longitude ??
-      effectiveOriginLng;
-    const lat =
-      liveTask?.lastPosition?.[1] ??
-      lastPosition?.coords.latitude ??
-      customOrigin?.latitude ??
-      effectiveOriginLat;
-
-    if (lng == null || lat == null) {
-      toast.error('Location unavailable', 'Could not determine your current position.');
-      return;
-    }
-
-    openGoogleMapsNavigation({
-      origin: { latitude: lat, longitude: lng },
-      destination: {
-        latitude: selectedDestination.latitude,
-        longitude: selectedDestination.longitude,
-      },
-      travelMode: mapTransportMode(transportMode),
-    });
-  }, [
-    selectedDestination,
-    liveTask?.lastPosition,
-    lastPosition,
-    customOrigin,
-    effectiveOriginLng,
-    effectiveOriginLat,
-    transportMode,
-  ]);
+    openTaskInGoogleMaps();
+  }, [openTaskInGoogleMaps]);
 
   useEffect(() => {
     if (phase !== 'activity_started' || trackingStatus === 'live') return;
