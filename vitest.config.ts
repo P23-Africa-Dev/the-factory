@@ -16,6 +16,7 @@ export default defineConfig({
             "lib/**/*.test.tsx",
             "components/**/*.test.ts",
             "components/**/*.test.tsx",
+            "the-factory-agent-pwa/src/**/*.test.ts",
         ],
         exclude: ["backend/**", "node_modules/**"],
     },
