@@ -17,6 +17,7 @@ import type { DndContainer, DndItem } from '@/types/operations';
 import { TaskBoardSkeleton } from './skeletons/task-board-skeleton';
 import type { KpiItem, KpiStatus, KpiStatusCards } from '@/lib/api/kpi';
 import { toast } from 'sonner';
+import { useSearchParams } from 'next/navigation';
 // import { OperationsCalendar } from './operations-calendar';
 
 // ─── KPI Stats Panel ──────────────────────────────────────────────────────────
@@ -238,6 +239,9 @@ export function AllTasksView() {
   const [kpiToEdit, setKpiToEdit] = useState<KpiItem | null>(null);
   const [statusFilter, setStatusFilter] = useState('All');
 
+  const searchParams = useSearchParams();
+  const taskIdParam = searchParams.get('taskId') || searchParams.get('kpiId');
+
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const canManage =
@@ -257,6 +261,15 @@ export function AllTasksView() {
     adminScope: canManage,
     agentScope: isAgent,
   });
+
+  useEffect(() => {
+    if (taskIdParam && kpisData?.kpis) {
+      const kpi = kpisData.kpis.find((k) => String(k.id) === taskIdParam);
+      if (kpi) {
+        setSelectedKpi(kpi);
+      }
+    }
+  }, [taskIdParam, kpisData?.kpis]);
 
   const kpiById = useMemo(() => {
     const map = new Map<string, KpiItem>();

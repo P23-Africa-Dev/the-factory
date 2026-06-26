@@ -19,6 +19,7 @@ final class CopilotProcessingLabels
                 'kpi.team_performance' => ['Thinking...', 'Analyzing team KPIs...', 'Ranking performers...'],
                 'planning.daily' => ['Thinking...', 'Reviewing your schedule...', 'Prioritizing actions...'],
                 'crm.create_lead' => ['Thinking...', 'Parsing lead details...', 'Preparing CRM record...'],
+                'crm.send_email' => ['Thinking...', 'Drafting email...', 'Preparing send confirmation...'],
                 'kpis.create' => ['Thinking...', 'Parsing KPI details...', 'Preparing KPI record...'],
                 'crm.follow_up_summary', 'crm.stale_leads', 'crm.top_leads' => ['Thinking...', 'Scanning CRM records...', 'Sorting leads...'],
                 'org.users' => ['Thinking...', 'Loading organization users...', 'Applying role scope...'],

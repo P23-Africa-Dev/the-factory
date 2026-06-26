@@ -125,7 +125,7 @@ class CalendarIntegrationController extends Controller
                 'state' => ['required', 'string'],
             ]);
 
-            $this->connectionService->completeCallback(
+            $result = $this->connectionService->completeCallback(
                 code: (string) $validated['code'],
                 state: (string) $validated['state'],
             );
@@ -140,20 +140,32 @@ class CalendarIntegrationController extends Controller
             return $this->browserCallbackResponse(success: false, message: $message, status: 422);
         }
 
+        $gmailEnabled = (bool) ($result['gmail_enabled'] ?? false);
+
+        if ($gmailEnabled) {
+            return $this->browserCallbackResponse(
+                success: true,
+                message: 'Google Workspace connected successfully for calendar and email. You can close this window.',
+                status: 200,
+                extra: ['gmail_enabled' => true],
+            );
+        }
+
         return $this->browserCallbackResponse(
-            success: true,
-            message: 'Google Calendar connected successfully. You can close this window.',
+            success: false,
+            message: 'Google connected for calendar only. Gmail permissions were not granted — reconnect after your admin updates Google scopes, then approve all Gmail permissions.',
             status: 200,
+            extra: ['gmail_enabled' => false, 'requires_gmail_reconnect' => true],
         );
     }
 
-    private function browserCallbackResponse(bool $success, string $message, int $status): Response
+    private function browserCallbackResponse(bool $success, string $message, int $status, array $extra = []): Response
     {
-        $payload = json_encode([
+        $payload = json_encode(array_merge([
             'type' => 'google-calendar-oauth',
             'status' => $success ? 'success' : 'error',
             'message' => $message,
-        ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+        ], $extra), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 
         if (! is_string($payload) || trim($payload) === '') {
             $payload = '{"type":"google-calendar-oauth","status":"error","message":"Invalid callback payload."}';

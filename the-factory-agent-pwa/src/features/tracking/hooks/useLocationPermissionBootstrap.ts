@@ -13,7 +13,12 @@ export function useLocationPermissionBootstrap(): {
   dismissGate: () => void;
   retryGate: () => Promise<void>;
 } {
-  const { ensureLocationPermission, requestPermission, getCurrentPosition } = useGeolocation();
+  const {
+    ensureLocationPermission,
+    retryLocationPermission,
+    checkPermission,
+    getCurrentPosition,
+  } = useGeolocation();
   const [gateVisible, setGateVisible] = useState(false);
   const [gateMode, setGateMode] = useState<'request' | 'denied'>('request');
   const [isGateBusy, setIsGateBusy] = useState(false);
@@ -46,12 +51,12 @@ export function useLocationPermissionBootstrap(): {
   const retryGate = useCallback(async () => {
     setIsGateBusy(true);
     try {
-      const status = await requestPermission();
+      const status = await retryLocationPermission();
       applyStatus(status);
     } finally {
       setIsGateBusy(false);
     }
-  }, [requestPermission, applyStatus]);
+  }, [retryLocationPermission, applyStatus]);
 
   useEffect(() => {
     if (bootstrappedRef.current) return;
@@ -62,6 +67,20 @@ export function useLocationPermissionBootstrap(): {
       applyStatus(status);
     })();
   }, [ensureLocationPermission, applyStatus]);
+
+  useEffect(() => {
+    if (!gateVisible) return;
+
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void checkPermission().then((status) => {
+        if (status === 'granted') applyStatus('granted');
+      });
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [gateVisible, checkPermission, applyStatus]);
 
   return {
     gateVisible,

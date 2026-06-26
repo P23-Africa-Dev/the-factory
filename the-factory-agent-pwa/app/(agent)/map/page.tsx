@@ -36,7 +36,8 @@ import { getDb } from '@/lib/db/client';
 import { syncEngine } from '@/lib/sync/syncEngine';
 import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 import { showApiErrorToast } from '@/lib/api/errors';
-import { mapTransportMode, openGoogleMapsNavigation } from '@/lib/map/googleMapsNavigation';
+import { openGoogleMapsNavigation, resolveGoogleMapsTravelMode } from '@/lib/map/googleMapsNavigation';
+import { resolveTaskDestinationCoords } from '@/lib/map/resolveTaskDestinationCoords';
 import {
   isDocumentHidden,
   notifyTrackingArrived,
@@ -896,7 +897,7 @@ function MapContent() {
   const [pendingPin, setPendingPin] = useState<{ lat: number; lng: number; address: string | null } | null>(null);
   const [selectedSavedId, setSelectedSavedId] = useState<number | null>(null);
 
-  const { lastPosition, getCurrentPosition, resolveCurrentPosition, checkPermission, requestPermission, ensureLocationPermission, startWatching, stopWatching } = useGeolocation();
+  const { lastPosition, getCurrentPosition, resolveCurrentPosition, checkPermission, requestPermission, ensureLocationPermission, retryLocationPermission, startWatching, stopWatching } = useGeolocation();
   const { startTracking, stopTracking, activeTaskId } = useActiveTracking();
   const { data: tasks = [] } = useTaskListItems();
   const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
@@ -1053,7 +1054,7 @@ function MapContent() {
     if (!trackingTaskId) return;
     setResumePermBusy(true);
     try {
-      let status = await ensureLocationPermission();
+      let status = await retryLocationPermission();
       if (status === 'denied') {
         setPermGate('denied');
         return;
@@ -1074,7 +1075,7 @@ function MapContent() {
     } finally {
       setResumePermBusy(false);
     }
-  }, [trackingTaskId, companyId, ensureLocationPermission, resolveCurrentPosition]);
+  }, [trackingTaskId, companyId, retryLocationPermission, resolveCurrentPosition]);
 
   // Restore destination on resume (e.g. /map?taskId=…) before task detail fetch completes.
   useEffect(() => {
@@ -1445,7 +1446,7 @@ function MapContent() {
     searchOriginPlaces(q);
   }, [searchOriginPlaces]);
 
-  const runStartSession = useCallback(async () => {
+  const runStartSession = useCallback(async (permissionRetry = false) => {
     if (!selectedDestination?.taskId) return null;
     if (startRideInFlightRef.current || isLaunchingRide) return null;
 
@@ -1517,7 +1518,9 @@ function MapContent() {
           : null,
         effectiveOriginLng,
         effectiveOriginLat,
-        ensureLocationPermission,
+        resolveLocationPermission: permissionRetry
+          ? retryLocationPermission
+          : ensureLocationPermission,
         resolveCurrentPosition,
         startTaskAsync,
         beginSession,
@@ -1571,6 +1574,7 @@ function MapContent() {
     startTracking,
     stopTracking,
     ensureLocationPermission,
+    retryLocationPermission,
     resolveCurrentPosition,
     lastPosition,
     customOrigin,
@@ -1581,11 +1585,88 @@ function MapContent() {
     queryClient,
   ]);
 
-  const handleStartActivity = useCallback(async (): Promise<void> => {
-    await runStartSession();
+  const handleStartActivity = useCallback(async (permissionRetry = false): Promise<void> => {
+    await runStartSession(permissionRetry);
   }, [runStartSession]);
 
+  useEffect(() => {
+    if (!permGate) return;
+
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void checkPermission().then((status) => {
+        if (status !== 'granted') return;
+        if (isFromTrackingScreen && phase === 'activity_started') {
+          void handleResumePermission();
+        } else if (permGate === 'denied') {
+          void handleStartActivity(true);
+        } else {
+          setPermGate(null);
+        }
+      });
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [permGate, checkPermission, isFromTrackingScreen, phase, handleResumePermission, handleStartActivity]);
+
+  const resolveOpenDestination = useCallback(() => {
+    const taskRecord =
+      trackingTask ??
+      (selectedDestination?.taskId
+        ? tasks.find((t) => t.id === String(selectedDestination.taskId))
+        : undefined);
+
+    return resolveTaskDestinationCoords({
+      liveDestination: liveTask?.destination ?? null,
+      routeDestination: taskRoute?.destination ?? null,
+      selectedDestination,
+      taskRecord: taskRecord
+        ? { latitude: taskRecord.latitude, longitude: taskRecord.longitude }
+        : null,
+    });
+  }, [
+    trackingTask,
+    selectedDestination,
+    tasks,
+    liveTask?.destination,
+    taskRoute?.destination,
+  ]);
+
+  const openTaskInGoogleMaps = useCallback(() => {
+    const destination = resolveOpenDestination();
+
+    if (!destination) {
+      toast.error(
+        'Destination unavailable',
+        'This task has no valid map coordinates. Update the task location before navigating.',
+      );
+      return;
+    }
+
+    try {
+      openGoogleMapsNavigation({
+        destination,
+        travelMode: resolveGoogleMapsTravelMode(transportMode),
+        useDeviceLocationAsOrigin: true,
+      });
+    } catch {
+      toast.error(
+        'Destination unavailable',
+        'Could not open Google Maps with a valid destination for this task.',
+      );
+    }
+  }, [resolveOpenDestination, transportMode]);
+
   const handleProceedWithGoogleMaps = useCallback(async (): Promise<void> => {
+    if (!resolveOpenDestination()) {
+      toast.error(
+        'Destination unavailable',
+        'This task has no valid map coordinates. Update the task location before navigating.',
+      );
+      return;
+    }
+
     const notifPerm = await requestTrackingNotificationPermission();
     if (notifPerm === 'denied' || notifPerm === 'unsupported') {
       toast.info(
@@ -1595,54 +1676,14 @@ function MapContent() {
     }
 
     const result = await runStartSession();
-    if (!result?.ok || !selectedDestination) return;
+    if (!result?.ok) return;
 
-    openGoogleMapsNavigation({
-      origin: { latitude: result.startPoint[1], longitude: result.startPoint[0] },
-      destination: {
-        latitude: selectedDestination.latitude,
-        longitude: selectedDestination.longitude,
-      },
-      travelMode: mapTransportMode(transportMode),
-    });
-  }, [runStartSession, selectedDestination, transportMode]);
+    openTaskInGoogleMaps();
+  }, [runStartSession, openTaskInGoogleMaps]);
 
   const handleOpenGoogleMaps = useCallback((): void => {
-    if (!selectedDestination) return;
-
-    const lng =
-      liveTask?.lastPosition?.[0] ??
-      lastPosition?.coords.longitude ??
-      customOrigin?.longitude ??
-      effectiveOriginLng;
-    const lat =
-      liveTask?.lastPosition?.[1] ??
-      lastPosition?.coords.latitude ??
-      customOrigin?.latitude ??
-      effectiveOriginLat;
-
-    if (lng == null || lat == null) {
-      toast.error('Location unavailable', 'Could not determine your current position.');
-      return;
-    }
-
-    openGoogleMapsNavigation({
-      origin: { latitude: lat, longitude: lng },
-      destination: {
-        latitude: selectedDestination.latitude,
-        longitude: selectedDestination.longitude,
-      },
-      travelMode: mapTransportMode(transportMode),
-    });
-  }, [
-    selectedDestination,
-    liveTask?.lastPosition,
-    lastPosition,
-    customOrigin,
-    effectiveOriginLng,
-    effectiveOriginLat,
-    transportMode,
-  ]);
+    openTaskInGoogleMaps();
+  }, [openTaskInGoogleMaps]);
 
   useEffect(() => {
     if (phase !== 'activity_started' || trackingStatus === 'live') return;
@@ -2127,7 +2168,7 @@ function MapContent() {
               if (isFromTrackingScreen && phase === 'activity_started') {
                 void handleResumePermission();
               } else {
-                void handleStartActivity();
+                void handleStartActivity(permGate === 'denied');
               }
             }}
             onDismiss={() => setPermGate(null)}

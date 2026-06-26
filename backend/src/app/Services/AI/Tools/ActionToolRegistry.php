@@ -14,9 +14,11 @@ use App\Enums\ProjectStatus;
 use App\Enums\ProjectType;
 use App\Enums\TaskPriority;
 use App\Enums\TaskType;
+use App\Models\Lead;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\AI\Crm\VisitAssistantService;
+use App\Services\Crm\CrmEmailService;
 use App\Services\Crm\LeadService;
 use App\Services\Calendar\MeetingService;
 use App\Services\Kpi\KpiService;
@@ -40,6 +42,7 @@ class ActionToolRegistry
         private readonly ProjectService $projectService,
         private readonly VisitAssistantService $visitAssistantService,
         private readonly LeadService $leadService,
+        private readonly CrmEmailService $crmEmailService,
         private readonly KpiService $kpiService,
         private readonly CompanyContextService $companyContextService,
     ) {}
@@ -54,6 +57,7 @@ class ActionToolRegistry
             'projects.create' => $this->createProject($user, $companyId, $args),
             'crm.log_visit' => $this->visitAssistantService->logVisit($user, $companyId, $args),
             'crm.create_lead' => $this->createLead($user, $companyId, $args),
+            'crm.send_email' => $this->sendLeadEmail($user, $companyId, $args),
             'kpis.create' => $this->createKpi($user, $companyId, $args),
             default => [
                 'tool' => $tool,
@@ -314,6 +318,39 @@ class ActionToolRegistry
                 'priority' => $lead->priority?->value,
             ],
             'sources' => ['crm.create_lead'],
+        ];
+    }
+
+    private function sendLeadEmail(User $user, int $companyId, array $args): array
+    {
+        $validated = Validator::make($args, [
+            'lead_id' => ['required', 'integer', 'exists:leads,id'],
+            'to' => ['required', 'array', 'min:1'],
+            'to.*.email' => ['required', 'email', 'max:255'],
+            'cc' => ['sometimes', 'array'],
+            'bcc' => ['sometimes', 'array'],
+            'subject' => ['required', 'string', 'max:255'],
+            'body_text' => ['required', 'string', 'min:10', 'max:50000'],
+            'body_html' => ['nullable', 'string', 'max:50000'],
+            'attachment_ids' => ['sometimes', 'array'],
+        ])->validate();
+
+        $lead = Lead::query()->where('company_id', $companyId)->findOrFail((int) $validated['lead_id']);
+        $message = $this->crmEmailService->queueSend($user, $lead, [
+            ...$validated,
+            'company_id' => $companyId,
+        ]);
+
+        return [
+            'tool' => 'crm.send_email',
+            'summary' => "Email to lead '{$lead->name}' was queued for sending.",
+            'payload' => [
+                'message_id' => (int) $message->id,
+                'lead_id' => (int) $lead->id,
+                'subject' => (string) $message->subject,
+                'status' => $message->status?->value,
+            ],
+            'sources' => ['crm.send_email'],
         ];
     }
 

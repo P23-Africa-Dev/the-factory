@@ -45,6 +45,11 @@ class IntentClassifier
                 '/\b(add|create|register)\b.{0,40}\b(business|company)\b.{0,40}\b(to\s+)?(crm|pipeline)\b/i',
                 '/\bnew\s+lead\b/i',
             ],
+            'crm.send_email' => [
+                '/\b(send|email|write|draft)\b.{0,80}\b(email|mail|message)\b/i',
+                '/\bfollow[\s-]?up\b.{0,60}\b(email|mail|client|lead|customer)\b/i',
+                '/\bemail\b.{0,40}\b(about|regarding|for)\b/i',
+            ],
             'kpis.create' => [
                 '/\b(create|add|set|define|new)\b.{0,60}\bkpi\b/i',
                 '/\b(create|add|set|define)\b.{0,60}\b(key\s*performance\s*indicator|performance\s*target)\b/i',
@@ -76,6 +81,18 @@ class IntentClassifier
             'crm.visit_extract' => [
                 '/\b(process|structure|extract)\s+visit\s+notes?\b/i',
                 '/\bvisit\s+notes?\b/i',
+            ],
+            'crm.email_threads' => [
+                '/\b(summarize|summary|show)\b.{0,60}\b(email|conversation|thread)\b/i',
+                '/\bconversation\b.{0,40}\b(with|for)\b/i',
+            ],
+            'crm.unread_emails' => [
+                '/\bunread\b.{0,40}\b(email|mail|message)\b/i',
+                '/\b(show|list)\b.{0,40}\bunread\b/i',
+            ],
+            'crm.draft_email' => [
+                '/\bdraft\b.{0,60}\b(email|mail|message|reminder|follow[\s-]?up)\b/i',
+                '/\bwrite\b.{0,40}\b(email|mail)\b/i',
             ],
             'crm.top_leads' => [
                 '/\b(top|hot|hottest)\s+leads?\b/i',
