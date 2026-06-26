@@ -7,6 +7,7 @@ import { useAuth } from '@/features/auth';
 import { ActiveTrackingProvider } from '@/features/tracking/ActiveTrackingProvider';
 import { useTrackingWebSocket } from '@/hooks/useTrackingWebSocket';
 import { syncEngine } from '@/lib/sync/syncEngine';
+import { warmAgentRoutes } from '@/lib/pwa/routeWarming';
 import { useRouteRestoration } from '@/lib/pwa/routeRestoration';
 import { BottomNavBar } from '@/components/shared/BottomNavBar';
 import {
@@ -55,6 +56,7 @@ function AgentShell({ children }: { children: React.ReactNode }) {
     if (navigator.onLine) {
       syncEngine.syncAll();
       syncEngine.scheduleSync();
+      void warmAgentRoutes();
     }
 
     return () => {

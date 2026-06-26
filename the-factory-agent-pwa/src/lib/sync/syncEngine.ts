@@ -16,12 +16,43 @@ import {
 } from '@/lib/offline/queue';
 import { getActiveCompanyId, appStore } from '@/lib/storage/stores';
 import { buildCompleteFormData } from '@/features/tracking/completeTaskForm';
+import { leadSchema } from '@/features/crm/schema';
+import { putCachedLeadDetail, remapLeadId } from '@/features/crm/cache';
+import { queryClient } from '@/lib/queryClient';
+import { taskKeys } from '@/features/tasks/queryKeys';
+import { meetingKeys } from '@/features/meetings/queryKeys';
+import { crmKeys } from '@/features/crm/queryKeys';
+import { locationKeys } from '@/features/locations/queryKeys';
+import { setShowingCachedData } from '@/lib/offline/cacheIndicator';
 
 const MAX_BATCH_SIZE = 50;
 const RETRY_DELAYS_MS = [0, 30_000, 120_000, 300_000, 900_000] as const;
 const BACKGROUND_REQUEST = { suppressErrorToast: true };
 
 let syncInFlight = false;
+type SyncStatusListener = (syncing: boolean) => void;
+const syncStatusListeners = new Set<SyncStatusListener>();
+
+function setSyncInFlight(value: boolean): void {
+  syncInFlight = value;
+  syncStatusListeners.forEach((listener) => listener(value));
+}
+
+function unwrapCrmLead(raw: unknown): unknown {
+  const wrapped = raw as Record<string, unknown>;
+  const data = (wrapped?.data as Record<string, unknown>) ?? wrapped;
+  return data?.lead ?? data;
+}
+
+async function invalidateSyncedQueries(): Promise<void> {
+  setShowingCachedData(false);
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: taskKeys.all }),
+    queryClient.invalidateQueries({ queryKey: meetingKeys.all }),
+    queryClient.invalidateQueries({ queryKey: crmKeys.all }),
+    queryClient.invalidateQueries({ queryKey: locationKeys.lists() }),
+  ]);
+}
 
 function getCurrentUserId(): string | null {
   try {
@@ -335,6 +366,26 @@ async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<voi
       });
       return;
     }
+    case 'crm.lead.create': {
+      const payload = parseOfflinePayload<{ tempId: number; body: Record<string, unknown> }>(entry);
+      const response = await client.post('/agent/crm/leads', payload.body, BACKGROUND_REQUEST);
+      const lead = leadSchema.parse(unwrapCrmLead(response.data));
+      if (payload.tempId < 0) {
+        await remapLeadId(entry.companyId, payload.tempId, lead);
+      }
+      return;
+    }
+    case 'crm.lead.update': {
+      const payload = parseOfflinePayload<{ id: number | string; body: Record<string, unknown> }>(entry);
+      const response = await client.patch(
+        `/agent/crm/leads/${payload.id}`,
+        payload.body,
+        BACKGROUND_REQUEST,
+      );
+      const lead = leadSchema.parse(unwrapCrmLead(response.data));
+      await putCachedLeadDetail(entry.companyId, lead, 0);
+      return;
+    }
   }
 }
 
@@ -405,15 +456,28 @@ async function syncAll(): Promise<void> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
   if (isPoorConnection()) return;
 
-  syncInFlight = true;
+  setSyncInFlight(true);
   try {
     await syncProofQueue();
     await syncOfflineActionQueue();
     await syncLocationQueue();
+    await invalidateSyncedQueries();
   } finally {
-    syncInFlight = false;
+    setSyncInFlight(false);
     await scheduleNextSyncIfNeeded();
   }
+}
+
+export function subscribeSyncStatus(listener: SyncStatusListener): () => void {
+  syncStatusListeners.add(listener);
+  listener(syncInFlight);
+  return () => {
+    syncStatusListeners.delete(listener);
+  };
+}
+
+export function getIsSyncing(): boolean {
+  return syncInFlight;
 }
 
 export const syncEngine = {
@@ -426,4 +490,6 @@ export const syncEngine = {
     await requestBackgroundSync('proof-sync');
   },
   syncAll,
+  subscribeSyncStatus,
+  getIsSyncing,
 };

@@ -1,5 +1,15 @@
 import { client } from '@/lib/api/client';
 import { getActiveCompanyId } from '@/lib/storage/stores';
+import { isOffline, shouldUseCache } from '@/lib/offline/connectivity';
+import { setShowingCachedData } from '@/lib/offline/cacheIndicator';
+import { urlPageKey } from '@/lib/offline/cacheKeys';
+import {
+  getCachedMeetingDetail,
+  getCachedMeetingList,
+  meetingsFilterPageKey,
+  putCachedMeetingDetail,
+  putCachedMeetingList,
+} from './cache';
 import {
   meetingItemSchema,
   meetingListResponseSchema,
@@ -29,25 +39,104 @@ function unwrapMeeting(raw: unknown): unknown {
 export const meetingsApi = {
   list: async (filters?: MeetingFilters): Promise<MeetingListResponse> => {
     const companyId = getActiveCompanyId();
-    const response = await client.get('/meetings', {
-      params: { company_id: companyId ?? undefined, ...filters },
-    });
-    const data = unwrapData(response.data) as Record<string, unknown>;
-    return meetingListResponseSchema.parse(data);
+    const pageKey = meetingsFilterPageKey(filters);
+
+    if (isOffline() && companyId) {
+      const cached = await getCachedMeetingList(companyId, pageKey);
+      if (cached) {
+        setShowingCachedData(true);
+        return cached;
+      }
+    }
+
+    try {
+      const response = await client.get('/meetings', {
+        params: { company_id: companyId ?? undefined, ...filters },
+      });
+      const data = unwrapData(response.data) as Record<string, unknown>;
+      const result = meetingListResponseSchema.parse(data);
+      if (companyId) {
+        void putCachedMeetingList(companyId, pageKey, result).catch(() => {});
+      }
+      setShowingCachedData(false);
+      return result;
+    } catch (err) {
+      if (companyId && shouldUseCache(err)) {
+        const cached = await getCachedMeetingList(companyId, pageKey);
+        if (cached) {
+          setShowingCachedData(true);
+          return cached;
+        }
+      }
+      throw err;
+    }
   },
 
   listByUrl: async (url: string): Promise<MeetingListResponse> => {
-    const response = await client.get(url);
-    const data = unwrapData(response.data) as Record<string, unknown>;
-    return meetingListResponseSchema.parse(data);
+    const companyId = getActiveCompanyId();
+    const pageKey = urlPageKey(url);
+
+    if (isOffline() && companyId) {
+      const cached = await getCachedMeetingList(companyId, pageKey);
+      if (cached) {
+        setShowingCachedData(true);
+        return cached;
+      }
+    }
+
+    try {
+      const response = await client.get(url);
+      const data = unwrapData(response.data) as Record<string, unknown>;
+      const result = meetingListResponseSchema.parse(data);
+      if (companyId) {
+        void putCachedMeetingList(companyId, pageKey, result).catch(() => {});
+      }
+      setShowingCachedData(false);
+      return result;
+    } catch (err) {
+      if (companyId && shouldUseCache(err)) {
+        const cached = await getCachedMeetingList(companyId, pageKey);
+        if (cached) {
+          setShowingCachedData(true);
+          return cached;
+        }
+      }
+      throw err;
+    }
   },
 
   get: async (id: number | string): Promise<Meeting> => {
     const companyId = getActiveCompanyId();
-    const response = await client.get(`/meetings/${id}`, {
-      params: { company_id: companyId ?? undefined },
-    });
-    return meetingItemSchema.parse(unwrapMeeting(response.data));
+    const meetingId = Number(id);
+
+    if (isOffline() && companyId) {
+      const cached = await getCachedMeetingDetail(companyId, meetingId);
+      if (cached) {
+        setShowingCachedData(true);
+        return cached;
+      }
+    }
+
+    try {
+      const response = await client.get(`/meetings/${id}`, {
+        params: { company_id: companyId ?? undefined },
+      });
+      const meeting = meetingItemSchema.parse(unwrapMeeting(response.data));
+      if (companyId) {
+        void putCachedMeetingDetail(companyId, meeting).catch(() => {});
+      }
+      setShowingCachedData(false);
+      return meeting;
+    } catch (err) {
+      if (companyId && shouldUseCache(err)) {
+        const cached = await getCachedMeetingDetail(companyId, meetingId);
+        if (cached) {
+          setShowingCachedData(true);
+          return cached;
+        }
+      }
+      throw err;
+    }
   },
 
   create: async (payload: CreateMeetingPayload & { company_id: number; source_page: 'agent' }): Promise<{

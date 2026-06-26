@@ -2,17 +2,23 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { WifiOff } from 'lucide-react';
+import { Loader2, WifiOff } from 'lucide-react';
 import { useOfflineSyncStatus } from '@/lib/offline/useOfflineSyncStatus';
 
 export function OfflineSyncBanner(): React.ReactElement | null {
-  const { isOffline, stats, totalPending } = useOfflineSyncStatus();
+  const { isOffline, isSyncing, showingCachedData, stats, totalPending } = useOfflineSyncStatus();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 
-  const shouldShow = isOffline;
+  const shouldShow = isOffline || isSyncing || showingCachedData;
   if (!shouldShow) return null;
 
-  const title = 'Offline mode active';
+  const title = isSyncing
+    ? `Syncing ${totalPending > 0 ? totalPending : ''} changes…`
+    : isOffline
+      ? 'Offline mode active'
+      : 'Showing saved data';
+
+  const Icon = isSyncing ? Loader2 : WifiOff;
 
   return (
     <div className="fixed bottom-24 right-4 z-40 group">
@@ -23,8 +29,8 @@ export function OfflineSyncBanner(): React.ReactElement | null {
         aria-label={title}
         title={title}
       >
-        <WifiOff size={18} />
-        {totalPending > 0 ? (
+        <Icon size={18} className={isSyncing ? 'animate-spin' : undefined} />
+        {totalPending > 0 && !isSyncing ? (
           <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-[#0B2330]">
             {totalPending > 99 ? '99+' : totalPending}
           </span>
@@ -42,9 +48,16 @@ export function OfflineSyncBanner(): React.ReactElement | null {
           {stats.pendingLocations}
           {stats.pendingConflicts > 0 ? ` | Conflicts: ${stats.pendingConflicts}` : ''}
         </div>
-        {isOffline ? (
+        {isOffline || showingCachedData ? (
           <div className="mt-1 text-[11px] text-amber-100/80">
-            Changes are saved locally and will sync when you reconnect.
+            {isOffline
+              ? 'Changes are saved locally and will sync when you reconnect.'
+              : 'Displaying the last saved copy from this device.'}
+          </div>
+        ) : null}
+        {isSyncing ? (
+          <div className="mt-1 text-[11px] text-[#75ADAF]">
+            Uploading queued changes to the server…
           </div>
         ) : null}
         <div className="mt-2 flex flex-wrap gap-2">
