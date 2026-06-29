@@ -3,17 +3,28 @@
  *
  * Cache strategies:
  * - Cache First: static assets (CSS, JS, images, fonts)
- * -                Network First: API calls (/api/v1/*)
+ * - Network First: API calls (/api/v1/*)
  * - Stale While Revalidate: Mapbox tiles + RSC payloads
- * - Navigation fallback: cached pages, then /offline shell
+ * - Navigation fallback: cached pages, then /offline.html shell
  */
 
-const CACHE_NAME = "factory-agent-pwa-v7";
-const STATIC_CACHE = "factory-static-v7";
-const API_CACHE = "factory-api-v7";
-const PAGE_CACHE = "factory-pages-v7";
+const CACHE_NAME = "factory-agent-pwa-v8";
+const STATIC_CACHE = "factory-static-v8";
+const API_CACHE = "factory-api-v8";
+const PAGE_CACHE = "factory-pages-v8";
 
-const STATIC_ASSETS = ["/", "/offline", "/manifest.json"];
+const STATIC_ASSETS = [
+  "/",
+  "/offline.html",
+  "/offline",
+  "/manifest.json",
+  "/tasks",
+  "/map",
+  "/meetings",
+  "/crm",
+  "/crm/leads",
+  "/sync/queue",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -124,21 +135,28 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("message", (event) => {
   const data = event.data;
-  if (!data || data.type !== "SHOW_NOTIFICATION") return;
+  if (!data || !data.type) return;
 
-  const options = {
-    body: data.body || "",
-    icon: "/icons/icon-192x192.png",
-    badge: "/icons/icon-72x72.png",
-    tag: data.tag || "factory-notification",
-    data: {
-      url: data.url || "/",
-    },
-  };
+  if (data.type === "SHOW_NOTIFICATION") {
+    const options = {
+      body: data.body || "",
+      icon: "/icons/icon-192x192.png",
+      badge: "/icons/icon-72x72.png",
+      tag: data.tag || "factory-notification",
+      data: {
+        url: data.url || "/",
+      },
+    };
 
-  event.waitUntil(
-    self.registration.showNotification(data.title || "Factory 23", options),
-  );
+    event.waitUntil(
+      self.registration.showNotification(data.title || "Factory 23", options),
+    );
+    return;
+  }
+
+  if (data.type === "CACHE_ROUTES" && Array.isArray(data.routes)) {
+    event.waitUntil(cacheRoutes(data.routes));
+  }
 });
 
 self.addEventListener("notificationclick", (event) => {
@@ -156,6 +174,23 @@ self.addEventListener("notificationclick", (event) => {
     }),
   );
 });
+
+async function cacheRoutes(routes) {
+  const cache = await caches.open(PAGE_CACHE);
+
+  for (const route of routes) {
+    if (typeof route !== "string" || !route.startsWith("/")) continue;
+
+    try {
+      const response = await fetch(route);
+      if (response.ok) {
+        await cache.put(route, response.clone());
+      }
+    } catch {
+      // Skip routes that fail to fetch.
+    }
+  }
+}
 
 function shouldCacheNavigationResponse(request, response) {
   if (!response.ok) return false;
@@ -189,8 +224,11 @@ async function handleNavigation(request) {
     const cached = await cache.match(request);
     if (cached) return cached;
 
-    const offlinePage = await caches.match("/offline");
+    const offlinePage = await caches.match("/offline.html");
     if (offlinePage) return offlinePage;
+
+    const legacyOffline = await caches.match("/offline");
+    if (legacyOffline) return legacyOffline;
 
     const shell = await caches.match("/");
     return shell || new Response("Offline", { status: 503 });
@@ -210,6 +248,7 @@ async function cacheFirst(request) {
     return response;
   } catch {
     return (
+      caches.match("/offline.html") ||
       caches.match("/offline") ||
       caches.match("/") ||
       new Response("Offline", { status: 503 })

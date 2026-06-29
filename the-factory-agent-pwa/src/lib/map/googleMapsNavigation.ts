@@ -26,6 +26,15 @@ export function mapTransportMode(mode: PwaTransportMode): GoogleMapsTravelMode {
   return mode;
 }
 
+/**
+ * Google Maps bicycle routing is unavailable in many regions. Use driving for
+ * external turn-by-turn handoff so agents always get a navigable route.
+ */
+export function resolveGoogleMapsTravelMode(mode: PwaTransportMode): GoogleMapsTravelMode {
+  if (mode === 'cycling') return 'driving';
+  return mapTransportMode(mode);
+}
+
 function formatLatLng(point: { latitude: number; longitude: number }): string {
   return `${formatMapCoordinate(point.latitude)},${formatMapCoordinate(point.longitude)}`;
 }
@@ -88,6 +97,10 @@ export function openGoogleMapsNavigation(params: {
 }): void {
   if (typeof window === 'undefined') return;
 
+  if (!isValidMapCoordinate(params.destination.latitude, params.destination.longitude)) {
+    throw new Error('Invalid destination coordinates');
+  }
+
   const travelMode = params.travelMode ?? 'driving';
   const useDeviceLocationAsOrigin = params.useDeviceLocationAsOrigin ?? !params.origin;
 
@@ -99,10 +112,9 @@ export function openGoogleMapsNavigation(params: {
     return;
   }
 
-  const url = buildGoogleMapsDirectionsUrl({
+  window.location.href = buildGoogleMapsDirectionsUrl({
     ...params,
     travelMode,
     useDeviceLocationAsOrigin,
   });
-  window.location.href = url;
 }

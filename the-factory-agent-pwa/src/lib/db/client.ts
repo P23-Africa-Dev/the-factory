@@ -6,16 +6,23 @@
  */
 import { openDB, type IDBPDatabase } from 'idb';
 import type {
+  CrmMetaCacheEntry,
+  LeadDetailCacheEntry,
+  LeadsListCacheEntry,
   LocationQueueEntry,
+  MeetingDetailCacheEntry,
+  MeetingsListCacheEntry,
   OfflineActionQueueEntry,
   OfflineConflictEntry,
   ProofQueueEntry,
   SavedLocationCacheEntry,
+  TaskDetailCacheEntry,
   TaskDestinationCacheEntry,
+  TasksListCacheEntry,
 } from './schema';
 
 const DB_NAME = 'factory-agent-pwa';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 export type FactoryDB = IDBPDatabase<{
   locationQueue: {
@@ -69,6 +76,56 @@ export type FactoryDB = IDBPDatabase<{
     indexes: {
       'by-company': number;
       'by-pending': number;
+    };
+  };
+  tasksListCache: {
+    key: string;
+    value: TasksListCacheEntry;
+    indexes: {
+      'by-company': number;
+    };
+  };
+  taskDetailCache: {
+    key: string;
+    value: TaskDetailCacheEntry;
+    indexes: {
+      'by-company': number;
+    };
+  };
+  meetingsListCache: {
+    key: string;
+    value: MeetingsListCacheEntry;
+    indexes: {
+      'by-company': number;
+    };
+  };
+  meetingDetailCache: {
+    key: string;
+    value: MeetingDetailCacheEntry;
+    indexes: {
+      'by-company': number;
+    };
+  };
+  leadsListCache: {
+    key: string;
+    value: LeadsListCacheEntry;
+    indexes: {
+      'by-company': number;
+    };
+  };
+  leadDetailCache: {
+    key: string;
+    value: LeadDetailCacheEntry;
+    indexes: {
+      'by-company': number;
+      'by-pending': number;
+    };
+  };
+  crmMetaCache: {
+    key: string;
+    value: CrmMetaCacheEntry;
+    indexes: {
+      'by-company': number;
     };
   };
 }>;
@@ -155,6 +212,38 @@ export async function getDb(): Promise<FactoryDB> {
         });
         savedLocationsStore.createIndex('by-company', 'companyId');
         savedLocationsStore.createIndex('by-pending', 'pending');
+      }
+
+      if (oldVersion < 4) {
+        if (!db.objectStoreNames.contains('tasksListCache')) {
+          const store = db.createObjectStore('tasksListCache', { keyPath: 'id' });
+          store.createIndex('by-company', 'companyId');
+        }
+        if (!db.objectStoreNames.contains('taskDetailCache')) {
+          const store = db.createObjectStore('taskDetailCache', { keyPath: 'id' });
+          store.createIndex('by-company', 'companyId');
+        }
+        if (!db.objectStoreNames.contains('meetingsListCache')) {
+          const store = db.createObjectStore('meetingsListCache', { keyPath: 'id' });
+          store.createIndex('by-company', 'companyId');
+        }
+        if (!db.objectStoreNames.contains('meetingDetailCache')) {
+          const store = db.createObjectStore('meetingDetailCache', { keyPath: 'id' });
+          store.createIndex('by-company', 'companyId');
+        }
+        if (!db.objectStoreNames.contains('leadsListCache')) {
+          const store = db.createObjectStore('leadsListCache', { keyPath: 'id' });
+          store.createIndex('by-company', 'companyId');
+        }
+        if (!db.objectStoreNames.contains('leadDetailCache')) {
+          const store = db.createObjectStore('leadDetailCache', { keyPath: 'id' });
+          store.createIndex('by-company', 'companyId');
+          store.createIndex('by-pending', 'pending');
+        }
+        if (!db.objectStoreNames.contains('crmMetaCache')) {
+          const store = db.createObjectStore('crmMetaCache', { keyPath: 'id' });
+          store.createIndex('by-company', 'companyId');
+        }
       }
     },
   })) as unknown as FactoryDB;

@@ -36,7 +36,7 @@ import { getDb } from '@/lib/db/client';
 import { syncEngine } from '@/lib/sync/syncEngine';
 import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 import { showApiErrorToast } from '@/lib/api/errors';
-import { mapTransportMode, openGoogleMapsNavigation } from '@/lib/map/googleMapsNavigation';
+import { openGoogleMapsNavigation, resolveGoogleMapsTravelMode } from '@/lib/map/googleMapsNavigation';
 import { resolveTaskDestinationCoords } from '@/lib/map/resolveTaskDestinationCoords';
 import {
   isDocumentHidden,
@@ -1592,14 +1592,14 @@ function MapContent() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [permGate, checkPermission, isFromTrackingScreen, phase, handleResumePermission, handleStartActivity]);
 
-  const openTaskInGoogleMaps = useCallback(() => {
+  const resolveOpenDestination = useCallback(() => {
     const taskRecord =
       trackingTask ??
       (selectedDestination?.taskId
         ? tasks.find((t) => t.id === String(selectedDestination.taskId))
         : undefined);
 
-    const dest = resolveTaskDestinationCoords({
+    return resolveTaskDestinationCoords({
       liveDestination: liveTask?.destination ?? null,
       routeDestination: taskRoute?.destination ?? null,
       selectedDestination,
@@ -1607,27 +1607,48 @@ function MapContent() {
         ? { latitude: taskRecord.latitude, longitude: taskRecord.longitude }
         : null,
     });
-
-    if (!dest) {
-      toast.error('Destination unavailable', 'This task has no valid map coordinates.');
-      return;
-    }
-
-    openGoogleMapsNavigation({
-      destination: dest,
-      travelMode: mapTransportMode(transportMode),
-      useDeviceLocationAsOrigin: true,
-    });
   }, [
     trackingTask,
     selectedDestination,
     tasks,
     liveTask?.destination,
     taskRoute?.destination,
-    transportMode,
   ]);
 
+  const openTaskInGoogleMaps = useCallback(() => {
+    const destination = resolveOpenDestination();
+
+    if (!destination) {
+      toast.error(
+        'Destination unavailable',
+        'This task has no valid map coordinates. Update the task location before navigating.',
+      );
+      return;
+    }
+
+    try {
+      openGoogleMapsNavigation({
+        destination,
+        travelMode: resolveGoogleMapsTravelMode(transportMode),
+        useDeviceLocationAsOrigin: true,
+      });
+    } catch {
+      toast.error(
+        'Destination unavailable',
+        'Could not open Google Maps with a valid destination for this task.',
+      );
+    }
+  }, [resolveOpenDestination, transportMode]);
+
   const handleProceedWithGoogleMaps = useCallback(async (): Promise<void> => {
+    if (!resolveOpenDestination()) {
+      toast.error(
+        'Destination unavailable',
+        'This task has no valid map coordinates. Update the task location before navigating.',
+      );
+      return;
+    }
+
     const notifPerm = await requestTrackingNotificationPermission();
     if (notifPerm === 'denied' || notifPerm === 'unsupported') {
       toast.info(

@@ -4,6 +4,7 @@ import {
   buildGoogleMapsDirectionsUrl,
   buildGoogleNavigationIntentUrl,
   isValidMapCoordinate,
+  resolveGoogleMapsTravelMode,
 } from './googleMapsNavigation';
 import { resolveTaskDestinationCoords } from './resolveTaskDestinationCoords';
 
@@ -18,6 +19,17 @@ describe('isValidMapCoordinate', () => {
 
   it('rejects non-finite values', () => {
     expect(isValidMapCoordinate(Number.NaN, 3.4)).toBe(false);
+  });
+});
+
+describe('resolveGoogleMapsTravelMode', () => {
+  it('uses driving for cycling handoff', () => {
+    expect(resolveGoogleMapsTravelMode('cycling')).toBe('driving');
+  });
+
+  it('keeps walking and driving modes', () => {
+    expect(resolveGoogleMapsTravelMode('walking')).toBe('walking');
+    expect(resolveGoogleMapsTravelMode('driving')).toBe('driving');
   });
 });
 
@@ -63,6 +75,14 @@ describe('buildGoogleMapsDirectionsUrl', () => {
 });
 
 describe('buildGoogleNavigationIntentUrl', () => {
+  it('builds android navigation intent with driving mode by default', () => {
+    expect(
+      buildGoogleNavigationIntentUrl({
+        destination: { latitude: 6.601838, longitude: 3.351486 },
+      }),
+    ).toBe('google.navigation:q=6.601838,3.351486&mode=d');
+  });
+
   it('builds android navigation intent with destination and mode', () => {
     expect(
       buildGoogleNavigationIntentUrl({
