@@ -58,6 +58,7 @@ class WorkspaceCreationTest extends TestCase
             'country' => 'NG',
             'team_size' => '2-10',
             'status' => 'active',
+            'subscription_status' => 'pending_payment',
         ]);
 
         $companyId = (int) \App\Models\Company::query()

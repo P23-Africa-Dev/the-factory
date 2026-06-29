@@ -2,10 +2,15 @@
 
 namespace App\Providers;
 
+use App\Models\Company;
 use App\Models\Lead;
 use App\Models\Task;
 use App\Observers\LeadObserver;
 use App\Observers\TaskObserver;
+use App\Listeners\HandleStripeWebhook;
+use Illuminate\Support\Facades\Event;
+use Laravel\Cashier\Cashier;
+use Laravel\Cashier\Events\WebhookReceived;
 use Illuminate\Database\Console\Migrations\FreshCommand;
 use Illuminate\Database\Console\Migrations\RefreshCommand;
 use Illuminate\Database\Console\Migrations\ResetCommand;
@@ -43,5 +48,10 @@ class AppServiceProvider extends ServiceProvider
 
         Task::observe(TaskObserver::class);
         Lead::observe(LeadObserver::class);
+
+        Cashier::useCustomerModel(Company::class);
+        Cashier::ignoreRoutes();
+
+        Event::listen(WebhookReceived::class, HandleStripeWebhook::class);
     }
 }

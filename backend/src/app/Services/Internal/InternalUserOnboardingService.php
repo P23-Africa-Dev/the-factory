@@ -30,12 +30,14 @@ class InternalUserOnboardingService
     public function __construct(
         private readonly InternalUserAccessService $accessService,
         private readonly NotificationService $notificationService,
+        private readonly \App\Services\Billing\CompanySeatLimitService $seatLimitService,
     ) {}
 
     public function createByManager(User $creator, array $data): array
     {
         ['company' => $company, 'role' => $actorRole] = $this->accessService->resolveCompanyContext($creator, $data['company_id'] ?? null);
         $this->accessService->ensureCanManageInternalUsers($actorRole);
+        $this->seatLimitService->assertCanAddMember($company);
 
         $role = (string) $data['role'];
         $supervisorUserId = $data['supervisor_user_id'] ?? null;

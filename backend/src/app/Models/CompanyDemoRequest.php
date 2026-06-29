@@ -33,6 +33,8 @@ class CompanyDemoRequest extends Model
         'approved_at',
         'activated_at',
         'admin_notes',
+        'assigned_plan_key',
+        'assigned_billing_interval',
     ];
 
     protected function casts(): array

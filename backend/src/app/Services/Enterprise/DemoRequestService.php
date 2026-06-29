@@ -6,6 +6,7 @@ use App\Enums\CompanyUserRole;
 use App\Enums\DemoRequestStatus;
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
+use App\Enums\SubscriptionStatus;
 use App\Exceptions\EnterpriseNotificationDeliveryException;
 use App\Models\Admin;
 use App\Models\Company;
@@ -112,6 +113,8 @@ class DemoRequestService
                 'reviewed_by_admin_id' => $admin->id,
                 'reviewed_at' => now(),
                 'admin_notes' => $registration['admin_notes'],
+                'assigned_plan_key' => $registration['assigned_plan_key'],
+                'assigned_billing_interval' => $registration['assigned_billing_interval'],
             ]);
 
             if ($action === 'draft') {
@@ -142,6 +145,9 @@ class DemoRequestService
                     'use_case' => $registration['purpose'],
                     'status' => 'active',
                     'activated_at' => now(),
+                    'assigned_plan_key' => $registration['assigned_plan_key'],
+                    'assigned_billing_interval' => $registration['assigned_billing_interval'],
+                    'subscription_status' => SubscriptionStatus::PENDING_PAYMENT->value,
                 ]);
             } else {
                 $company->update([
@@ -151,6 +157,11 @@ class DemoRequestService
                     'use_case' => $registration['purpose'],
                     'status' => 'active',
                     'activated_at' => $company->activated_at ?? now(),
+                    'assigned_plan_key' => $registration['assigned_plan_key'],
+                    'assigned_billing_interval' => $registration['assigned_billing_interval'],
+                    'subscription_status' => $company->hasActiveSubscription()
+                        ? $company->subscription_status
+                        : SubscriptionStatus::PENDING_PAYMENT->value,
                 ]);
             }
 
@@ -400,7 +411,16 @@ class DemoRequestService
             'purpose' => (string) ($data['purpose'] ?? $demoRequest->registration_purpose ?? $demoRequest->use_case),
             'user_type' => (string) ($data['user_type'] ?? $demoRequest->registration_user_type ?? 'other'),
             'admin_notes' => $data['admin_notes'] ?? $demoRequest->admin_notes,
+            'assigned_plan_key' => $this->normalizeOptionalString($data['assigned_plan_key'] ?? $demoRequest->assigned_plan_key),
+            'assigned_billing_interval' => $this->normalizeOptionalString($data['assigned_billing_interval'] ?? $demoRequest->assigned_billing_interval),
         ];
+    }
+
+    private function normalizeOptionalString(mixed $value): ?string
+    {
+        $normalized = trim((string) ($value ?? ''));
+
+        return $normalized !== '' ? $normalized : null;
     }
 
     private function assertEnterpriseEmailEligible(string $email, ?int $currentUserId): void

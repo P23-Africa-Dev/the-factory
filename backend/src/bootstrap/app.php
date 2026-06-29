@@ -4,6 +4,7 @@ use App\Exceptions\AccountAccessDeniedException;
 use App\Http\Middleware\EnsureAdminHasPermission;
 use App\Http\Middleware\EnsureAdminIsActive;
 use App\Http\Middleware\EnsureApiAccessRole;
+use App\Http\Middleware\EnsureCompanyHasActiveSubscription;
 use App\Http\Middleware\EnsureUserAccountIsActive;
 use App\Http\Middleware\NormalizeRequestPath;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -42,6 +43,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin.permission' => EnsureAdminHasPermission::class,
             'access.role' => EnsureApiAccessRole::class,
             'account.active' => EnsureUserAccountIsActive::class,
+            'subscription.active' => EnsureCompanyHasActiveSubscription::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
