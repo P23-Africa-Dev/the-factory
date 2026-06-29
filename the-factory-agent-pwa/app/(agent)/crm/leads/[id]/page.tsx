@@ -12,6 +12,8 @@ import {
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
 import { showApiErrorToast } from '@/lib/api/errors';
+import { formatPhoneNumber } from '@/lib/phone';
+
 
 interface LeadDetailPageProps {
   params: Promise<{ id: string }>;
@@ -165,7 +167,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
         payload: {
           company_id: companyId,
           name: editName.trim(),
-          phone: editPhonePart.trim() ? (editCountryCode + editPhonePart.trim()) : null,
+          phone: formatPhoneNumber(editCountryCode, editPhonePart),
           email: editEmail.trim() || null,
           location: editLocation.trim() || null,
           source: editSource.trim() || null,

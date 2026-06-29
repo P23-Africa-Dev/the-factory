@@ -2,7 +2,10 @@
 
 import React, { useState, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useLeads } from '@/features/crm';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 import type { AttendeeCandidate } from '../types';
+
 
 interface InternalAttendee {
   id: number;
@@ -43,7 +46,38 @@ export function AttendeeSection({
   const [externalName, setExternalName] = useState('');
   const [externalError, setExternalError] = useState('');
 
+  const [leadPickerOpen, setLeadPickerOpen] = useState(false);
+  const [leadSearchQuery, setLeadSearchQuery] = useState('');
+
+  const { user } = useAuth();
+  const { data: leadsData, isLoading: isLoadingLeads } = useLeads({
+    source: 'agent_upload',
+    per_page: 1000,
+  });
+
+  const myLeads = useMemo(() => {
+    if (!leadsData?.leads) return [];
+    const userId = user?.id ? String(user.id) : null;
+    return leadsData.leads.filter(
+      (lead) =>
+        lead.email &&
+        lead.createdByUserId &&
+        String(lead.createdByUserId) === userId
+    );
+  }, [leadsData, user?.id]);
+
+  const filteredLeads = useMemo(() => {
+    if (!leadSearchQuery.trim()) return myLeads;
+    const q = leadSearchQuery.toLowerCase();
+    return myLeads.filter(
+      (l) =>
+        l.name.toLowerCase().includes(q) ||
+        (l.email && l.email.toLowerCase().includes(q))
+    );
+  }, [myLeads, leadSearchQuery]);
+
   const selectedInternalIds = useMemo(() => new Set(internalAttendees.map((a) => a.id)), [internalAttendees]);
+
 
   const filteredCandidates = useMemo(() => {
     if (!searchQuery.trim()) return candidates;
@@ -105,14 +139,27 @@ export function AttendeeSection({
         </div>
       )}
 
-      {/* Add team member button */}
-      <button
-        type="button"
-        onClick={() => setPickerOpen(true)}
-        className="w-full flex items-center justify-center py-3 border border-dashed border-[#75ADAF] hover:border-[#5DA1A3] rounded-xl text-xs font-semibold text-[#75ADAF] hover:text-[#5DA1A3] transition-colors focus:outline-none"
-      >
-        + Add team member
-      </button>
+      {/* Add buttons container */}
+      <div className="flex flex-col gap-2">
+        {/* Add team member button */}
+        <button
+          type="button"
+          onClick={() => setPickerOpen(true)}
+          className="w-full flex items-center justify-center py-3 border border-dashed border-[#75ADAF] hover:border-[#5DA1A3] rounded-xl text-xs font-semibold text-[#75ADAF] hover:text-[#5DA1A3] transition-colors focus:outline-none"
+        >
+          + Add team member
+        </button>
+
+        {/* Add from My Leads button */}
+        <button
+          type="button"
+          onClick={() => setLeadPickerOpen(true)}
+          className="w-full flex items-center justify-center py-3 border border-dashed border-emerald-500/50 hover:border-emerald-500 rounded-xl text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors focus:outline-none"
+        >
+          + Add from My Leads
+        </button>
+      </div>
+
 
       {/* External Attendee input fields */}
       <div className="flex flex-col gap-2 mt-2">
@@ -227,6 +274,93 @@ export function AttendeeSection({
           </>
         )}
       </AnimatePresence>
+
+      {/* Lead Candidate Picker Modal */}
+      <AnimatePresence>
+        {leadPickerOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setLeadPickerOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10010] cursor-pointer"
+            />
+
+            {/* Picker Sheet Container */}
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-[#0A1D25] border-t border-white/10 rounded-t-2xl z-[10020] flex flex-col p-5 max-h-[75vh] shadow-2xl font-sans text-white"
+            >
+              <div className="w-12 h-1 bg-white/10 rounded-full mx-auto mb-4" />
+              <h3 className="text-base font-bold text-white mb-3">Add External Leads</h3>
+
+              {/* Search bar */}
+              <input
+                type="text"
+                placeholder="Search leads by name or email…"
+                value={leadSearchQuery}
+                onChange={(e) => setLeadSearchQuery(e.target.value)}
+                autoFocus
+                className="bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-4 py-2.5 focus:outline-none transition-all placeholder-white/30 mb-4"
+              />
+
+              {/* Leads list wrapper */}
+              <div className="flex-1 overflow-y-auto mb-4 flex flex-col gap-2">
+                {isLoadingLeads ? (
+                  <div className="flex justify-center items-center py-8">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+                  </div>
+                ) : filteredLeads.length === 0 ? (
+                  <p className="text-center text-xs text-white/40 py-8">No matching leads found.</p>
+                ) : (
+                  filteredLeads.map((lead) => {
+                    const selected = externalAttendees.some((a) => a.email === lead.email);
+                    return (
+                      <div
+                        key={lead.id}
+                        onClick={() => {
+                          if (selected) {
+                            onRemoveExternal(lead.email!);
+                          } else {
+                            onAddExternal(lead.email!, lead.name);
+                          }
+                        }}
+                        className={`flex items-center gap-3 p-3 rounded-xl border border-white/5 cursor-pointer active:scale-98 transition-all ${
+                          selected ? 'bg-white/[0.08]' : 'hover:bg-white/[0.02]'
+                        }`}
+                      >
+                        <div className="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center font-bold text-white text-sm">
+                          {lead.name[0]?.toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-white truncate">{lead.name}</p>
+                          <p className="text-[10px] text-white/50 truncate">{lead.email}</p>
+                        </div>
+                        {selected && <span className="text-emerald-400 font-bold text-sm">✓</span>}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Done Button */}
+              <button
+                type="button"
+                onClick={() => setLeadPickerOpen(false)}
+                className="w-full h-12 flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl active:scale-95 transition-all"
+              >
+                Done
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }
