@@ -49,3 +49,52 @@ input:-webkit-autofill:active {
   caret-color: var(--input-text);
 }
 
+/* ─── Phone Number Input ──────────────────────────────────────────────────────
+ * Styling for the react-phone-number-input inside the PWA dark theme.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+.pwa-phone-input {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  overflow: visible;
+  gap: 0;
+  padding: 0 4px 0 2px;
+  transition: border-color 150ms;
+}
+
+.pwa-phone-input:focus-within {
+  border-color: #75ADAF;
+}
+
+/* Country selector button area */
+.pwa-phone-input .PhoneInputCountry {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  padding-right: 4px;
+  margin-right: 4px;
+}
+
+/* The actual phone number input */
+.pwa-phone-input .PhoneInputInput {
+  flex: 1;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  color: #FFFFFF;
+  font-family: inherit;
+  padding: 0 10px 0 4px;
+}
+
+.pwa-phone-input .PhoneInputInput::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
