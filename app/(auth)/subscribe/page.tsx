@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -27,7 +27,7 @@ const FEATURES = [
   "Mobile app",
 ];
 
-export default function SubscribePage() {
+function SubscribePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const reason = searchParams.get("reason");
@@ -192,5 +192,13 @@ export default function SubscribePage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function SubscribePage() {
+  return (
+    <Suspense fallback={<div className="py-16 text-center">Loading...</div>}>
+      <SubscribePageInner />
+    </Suspense>
   );
 }

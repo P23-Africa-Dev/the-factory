@@ -295,6 +295,14 @@ export type ActiveCompany = {
   name: string;
   status: string;
   role: string;
+  subscription_status?: string;
+  has_active_subscription?: boolean;
+};
+
+export type BillingSnapshot = {
+  subscription_status: string;
+  has_active_subscription: boolean;
+  assigned_plan_key?: string | null;
 };
 
 export type MeResponse = {
@@ -306,6 +314,7 @@ export type MeResponse = {
   onboarding_completed: boolean;
   onboarding_completed_at: string | null;
   active_company: ActiveCompany | null;
+  billing?: BillingSnapshot | null;
   created_at: string;
 };
 
