@@ -150,11 +150,6 @@ export default function LoginPage() {
     }
   };
 
-  const handleTermsPress = (e: React.MouseEvent): void => {
-    e.preventDefault();
-    alert('Mock Terms, conditions and Privacy Policy URL navigation.');
-  };
-
   const handleForgotPassword = (e: React.MouseEvent): void => {
     e.preventDefault();
     router.push(`/forgot-password${emailVal ? `?email=${encodeURIComponent(emailVal)}` : ''}`);
@@ -216,12 +211,23 @@ export default function LoginPage() {
                 <span className="text-xs text-[#FAFAFA]/80 font-sans leading-relaxed">
                   By using Factory 23, you agree to our{' '}
                   <a
-                    href="#"
-                    onClick={handleTermsPress}
+                    href="/files/Factory23 Terms of Service.pdf"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="font-semibold text-[#75ADAF] underline underline-offset-2"
                   >
-                    Terms, conditions and Privacy Policy.
+                    Terms &amp; Conditions
+                  </a>{' '}
+                  and{' '}
+                  <a
+                    href="/files/Factory23 Privacy Policy.pdf"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-[#75ADAF] underline underline-offset-2"
+                  >
+                    Privacy Policy
                   </a>
+                  .
                 </span>
               }
             />
