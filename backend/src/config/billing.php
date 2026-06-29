@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 return [
 
+    'enforce' => (bool) env('BILLING_ENFORCE', true),
+
     'currency' => env('BILLING_CURRENCY', 'usd'),
 
     'grace_period_days' => (int) env('BILLING_GRACE_PERIOD_DAYS', 7),

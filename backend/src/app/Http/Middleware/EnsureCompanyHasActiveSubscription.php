@@ -20,6 +20,10 @@ class EnsureCompanyHasActiveSubscription
 
     public function handle(Request $request, Closure $next): Response
     {
+        if (! config('billing.enforce', true)) {
+            return $next($request);
+        }
+
         if (app()->environment('testing') && ! config('billing.enforce_in_tests')) {
             return $next($request);
         }
