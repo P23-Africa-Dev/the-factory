@@ -226,11 +226,19 @@ function EnterpriseSetupContent() {
           avatar: meRes.data.avatar,
           active_company: meRes.data.active_company,
         });
+
+        const hasActiveSubscription =
+          meRes.data.billing?.has_active_subscription ??
+          meRes.data.active_company?.has_active_subscription ??
+          false;
+
+        router.push(hasActiveSubscription ? "/dashboard" : "/subscribe");
+        return;
       } catch {
-        // /me failure is non-fatal — session is saved, dashboard will re-fetch
+        // /me failure is non-fatal — session is saved, continue to subscribe gate
       }
 
-      router.push("/dashboard");
+      router.push("/subscribe");
     },
     onError: (error: ApiRequestError | Error) => {
       setGlobalError(error.message || "Unable to complete setup.");

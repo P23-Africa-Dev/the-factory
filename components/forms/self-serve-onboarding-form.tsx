@@ -156,7 +156,7 @@ export default function SelfServeOnboardingForm() {
       });
 
       toast.success(workspaceResponse.message);
-      router.push("/dashboard");
+      router.push("/subscribe");
     },
     onError: (error) => {
       const err = error as ApiRequestError;
@@ -168,8 +168,8 @@ export default function SelfServeOnboardingForm() {
       }
 
       if (err.status === 409) {
-        toast.success("Onboarding already completed. Redirecting to dashboard.");
-        router.push("/dashboard");
+        toast.success("Onboarding already completed. Redirecting to subscription.");
+        router.push("/subscribe");
         return;
       }
 

@@ -662,7 +662,7 @@ class InternalUserOnboardingTest extends TestCase
             'password' => 'StrongPass!123',
         ]);
 
-        $failResponse->assertUnauthorized();
+        $failResponse->assertForbidden();
     }
 
     private function seedCompanyWithManagerAndSupervisor(): array
@@ -676,6 +676,11 @@ class InternalUserOnboardingTest extends TestCase
             'use_case' => 'Internal operations',
             'status' => 'active',
             'activated_at' => now(),
+            'subscription_status' => 'active',
+            'subscription_plan_key' => 'up_to_50',
+            'subscription_billing_interval' => 'monthly',
+            'subscription_current_period_start' => now(),
+            'subscription_current_period_end' => now()->addMonth(),
         ]);
 
         $manager = User::factory()->create(['email_verified_at' => now()]);

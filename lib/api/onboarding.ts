@@ -3,7 +3,9 @@
 import {
   extractAccountStatusCode,
   handleAccountAccessDenied,
+  handleSubscriptionRequired,
   isAccountStatusCode,
+  isSubscriptionStatusCode,
 } from "@/lib/auth/account-status";
 import {
   enqueueOfflineHttpMutation,
@@ -146,6 +148,12 @@ export async function apiRequest<TData>({
           ? (payload.data as { account_status?: string })
           : null,
     });
+
+    const statusCode = (payload as { code?: string }).code ?? accountStatus;
+
+    if (response.status === 402 && isSubscriptionStatusCode(statusCode)) {
+      handleSubscriptionRequired(statusCode, payload.message || undefined);
+    }
 
     if (response.status === 403 && isAccountStatusCode(accountStatus) && token) {
       handleAccountAccessDenied(payload.message || "Your account access has been restricted.", {
