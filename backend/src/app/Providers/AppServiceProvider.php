@@ -49,9 +49,10 @@ class AppServiceProvider extends ServiceProvider
         Task::observe(TaskObserver::class);
         Lead::observe(LeadObserver::class);
 
-        Cashier::useCustomerModel(Company::class);
-        Cashier::ignoreRoutes();
-
-        Event::listen(WebhookReceived::class, HandleStripeWebhook::class);
+        if (class_exists(Cashier::class) && class_exists(WebhookReceived::class)) {
+            Cashier::useCustomerModel(Company::class);
+            Cashier::ignoreRoutes();
+            Event::listen(WebhookReceived::class, HandleStripeWebhook::class);
+        }
     }
 }
