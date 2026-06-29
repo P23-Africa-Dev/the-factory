@@ -18,7 +18,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth";
 import { useInternalUsers } from "@/hooks/use-projects";
-import { useCreateTask } from "@/hooks/use-tasks";
+import { useCreateTask, useCreateSelfTask } from "@/hooks/use-tasks";
 import type { DndItem, TaskCategory } from "@/types/operations";
 import type { ApiTaskPriority } from "@/lib/api/tasks";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -124,6 +124,7 @@ export function CreateTaskModal({
 }: CreateTaskModalProps) {
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const isAgent = role === "agent";
   const canManageTasks = role === "owner" || role === "admin" || role === "supervisor";
 
   const { data: agents = [], isLoading: loadingAgents } = useInternalUsers({
@@ -131,7 +132,13 @@ export function CreateTaskModal({
   });
 
   const { mutate, isPending } = useCreateTask({
-    onSuccess: (task) => {
+    onSuccess: () => {
+      toast.success("Task created successfully.");
+      handleClose();
+    },
+  });
+  const { mutate: createSelfTask, isPending: isSelfTaskPending } = useCreateSelfTask({
+    onSuccess: () => {
       toast.success("Task created successfully.");
       handleClose();
     },
@@ -226,23 +233,14 @@ export function CreateTaskModal({
   const handleSubmit = () => {
     if (!validate()) return;
 
-    if (!canManageTasks) {
-      toast.error("You are not allowed to create management tasks.");
-      return;
-    }
-
-    // If real API mode is requested
     if (companyId) {
       const typeKey = TASK_TYPES[form.taskType] || "general";
       const priorityVal = form.priority.toLowerCase() as ApiTaskPriority;
-
-      mutate({
+      const payload = {
         company_id: companyId,
-        project_id: projectId ?? undefined,
         title: form.title,
         type: form.taskType ? typeKey : undefined,
         description: form.description || undefined,
-        assigned_agent_id: form.assignTo ? Number(form.assignTo) : undefined,
         location: form.location || undefined,
         address: form.address || undefined,
         latitude: coords?.lat,
@@ -253,41 +251,58 @@ export function CreateTaskModal({
         minimum_photos_required: form.minPhotos ? Number(form.minPhotos) : undefined,
         visit_verification_required:
           coords?.lat != null && coords?.lng != null ? form.visitVerification : false,
-      }, {
-        onError: (err: unknown) => {
-          const apiErr = err as { errors?: Record<string, string[]>; message?: string };
-          if (apiErr.errors) {
-            const backendErrors = apiErr.errors as Record<string, string[]>;
-            const mappedErrors: Record<string, string> = {};
-            const ERROR_MAP: Record<string, string> = {
-              type: "taskType",
-              assigned_agent_id: "assignTo",
-              due_date: "dueDate",
-              required_actions: "requiredActions",
-              minimum_photos_required: "minPhotos",
-              visit_verification_required: "visitVerification"
-            };
+      };
+      const onError = (err: unknown) => {
+        const apiErr = err as { errors?: Record<string, string[]>; message?: string };
+        if (apiErr.errors) {
+          const backendErrors = apiErr.errors as Record<string, string[]>;
+          const mappedErrors: Record<string, string> = {};
+          const ERROR_MAP: Record<string, string> = {
+            type: "taskType",
+            assigned_agent_id: "assignTo",
+            due_date: "dueDate",
+            required_actions: "requiredActions",
+            minimum_photos_required: "minPhotos",
+            visit_verification_required: "visitVerification"
+          };
 
-            for (const key in backendErrors) {
-              const formKey = ERROR_MAP[key] || key;
-              mappedErrors[formKey] = backendErrors[key][0];
-            }
-            setErrors(mappedErrors);
-            toast.error(apiErr.message || "Please fix the validation errors");
-          } else {
-            toast.error(apiErr.message || "Failed to create task");
+          for (const key in backendErrors) {
+            const formKey = ERROR_MAP[key] || key;
+            mappedErrors[formKey] = backendErrors[key][0];
           }
+          setErrors(mappedErrors);
+          toast.error(apiErr.message || "Please fix the validation errors");
+        } else {
+          toast.error(apiErr.message || "Failed to create task");
         }
-      });
+      };
+
+      if (isAgent) {
+        createSelfTask(payload, { onError });
+        return;
+      }
+
+      if (!canManageTasks) {
+        toast.error("You are not allowed to create management tasks.");
+        return;
+      }
+
+      mutate(
+        {
+          ...payload,
+          project_id: projectId ?? undefined,
+          assigned_agent_id: form.assignTo ? Number(form.assignTo) : undefined,
+        },
+        { onError },
+      );
       return;
     }
 
     // Fallback to local DnD mock mode
     if (onCreateTask) {
-      const agentName = agents.find((a) => a.id.toString() === form.assignTo)?.name || form.assignTo;
       const newItem: DndItem = {
         id: `task-${++taskIdRef.current}`,
-        label: agentName,
+        label: user?.name || form.title,
         description: form.title,
         location: `${form.location}${form.address ? `, ${form.address}` : ""}`,
         time: "Just now",
@@ -407,21 +422,23 @@ export function CreateTaskModal({
             )}
           </div>
 
-          {/* Assign To */}
-          <div>
-            <FieldLabel required>Assign To</FieldLabel>
-            <SearchableSelect
-              value={form.assignTo}
-              onChange={(v) => set("assignTo", v)}
-              options={loadingAgents ? [] : agents.map((a) => ({ value: a.id.toString(), label: a.name }))}
-              placeholder={loadingAgents ? "Loading…" : "Select agent"}
-              leftIcon={<User size={13} className="text-gray-400" />}
-              className={`${INPUT_CLS(errors.assignTo)} pl-9 pr-4 cursor-pointer`}
-            />
-            {errors.assignTo && (
-              <p className="text-red-400 text-[11px] mt-1">{errors.assignTo}</p>
-            )}
-          </div>
+          {/* Assign To — managers only */}
+          {canManageTasks && (
+            <div>
+              <FieldLabel required>Assign To</FieldLabel>
+              <SearchableSelect
+                value={form.assignTo}
+                onChange={(v) => set("assignTo", v)}
+                options={loadingAgents ? [] : agents.map((a) => ({ value: a.id.toString(), label: a.name }))}
+                placeholder={loadingAgents ? "Loading…" : "Select agent"}
+                leftIcon={<User size={13} className="text-gray-400" />}
+                className={`${INPUT_CLS(errors.assignTo)} pl-9 pr-4 cursor-pointer`}
+              />
+              {errors.assignTo && (
+                <p className="text-red-400 text-[11px] mt-1">{errors.assignTo}</p>
+              )}
+            </div>
+          )}
 
           {/* Location + Address */}
           <div className="relative">
@@ -691,15 +708,15 @@ export function CreateTaskModal({
         <div className="px-7 py-5 shrink-0">
           <button
             onClick={handleSubmit}
-            disabled={isPending}
+            disabled={isPending || isSelfTaskPending}
             className="w-fit px-9.25 py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            {isPending ? (
+            {isPending || isSelfTaskPending ? (
               <Loader2 className="animate-spin" size={15} />
             ) : (
               <CheckCircle size={15} />
             )}
-            {isPending ? "Creating..." : "Create Task"}
+            {isPending || isSelfTaskPending ? "Creating..." : "Create Task"}
           </button>
         </div>
       </div>

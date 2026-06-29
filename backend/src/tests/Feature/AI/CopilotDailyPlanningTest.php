@@ -8,6 +8,7 @@ use App\Enums\LeadPriority;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
 use App\Enums\TaskType;
+use App\Models\AttendanceSetting;
 use App\Models\Company;
 use App\Models\Lead;
 use App\Models\LeadPipeline;
@@ -84,7 +85,7 @@ final class CopilotDailyPlanningTest extends TestCase
             ->actingAs($agent)
             ->postJson('/api/v1/copilot/chat', [
                 'company_id' => $company->id,
-                'message' => 'What follow-ups are due today?',
+                'message' => 'Plan my day',
             ]);
 
         $response->assertOk();
@@ -96,7 +97,7 @@ final class CopilotDailyPlanningTest extends TestCase
         $this->assertNotContains('Follow up: Other Agent Lead', $titles);
     }
 
-    public function test_context_coordinates_are_accepted(): void
+    public function test_context_coordinates_set_agent_location_available(): void
     {
         [$company, $agent] = $this->seedAgentCompany();
 
@@ -113,7 +114,35 @@ final class CopilotDailyPlanningTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertJsonPath('data.response.tool', 'planning.daily');
+            ->assertJsonPath('data.response.tool', 'planning.daily')
+            ->assertJsonPath('data.response.payload.agent_location_available', true);
+    }
+
+    public function test_follow_up_summary_routes_to_crm_tool(): void
+    {
+        [$company, $agent, $pipelineId] = $this->seedAgentCompany();
+
+        Lead::query()->create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $agent->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Follow Up Lead',
+            'status' => 'contacted',
+            'priority' => LeadPriority::HIGH->value,
+            'last_interaction_at' => now()->subDays(21),
+        ]);
+
+        $response = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Give me a CRM follow-up summary',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'crm.follow_up_summary');
     }
 
     /**
@@ -137,6 +166,15 @@ final class CopilotDailyPlanningTest extends TestCase
         $company->users()->attach($agent->id, [
             'role' => 'agent',
             'joined_at' => now(),
+        ]);
+
+        AttendanceSetting::query()->create([
+            'company_id' => $company->id,
+            'opening_time' => '09:00:00',
+            'closing_time' => '17:00:00',
+            'working_days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+            'clockin_window_minutes' => 15,
+            'auto_clockout_enabled' => true,
         ]);
 
         $pipelineId = LeadPipeline::query()->create([

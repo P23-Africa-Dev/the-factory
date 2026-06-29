@@ -12,6 +12,7 @@ const {
     runFileAnalysisMock,
     runTranscriptSummaryMock,
     loadForecastOverviewMock,
+    searchAssigneesMock,
     useCopilotChatMock,
 } = vi.hoisted(() => ({
     initializeMock: vi.fn(),
@@ -22,6 +23,7 @@ const {
     runFileAnalysisMock: vi.fn(),
     runTranscriptSummaryMock: vi.fn(),
     loadForecastOverviewMock: vi.fn(),
+    searchAssigneesMock: vi.fn(),
     useCopilotChatMock: vi.fn(),
 }));
 
@@ -31,6 +33,10 @@ vi.mock("next/image", () => ({
 
 vi.mock("@/hooks/use-copilot-chat", () => ({
     useCopilotChat: () => useCopilotChatMock(),
+}));
+
+vi.mock("@/hooks/use-crm", () => ({
+    useCrmLabels: vi.fn(() => ({ data: [] })),
 }));
 
 vi.mock("@/store/auth", () => ({
@@ -57,6 +63,10 @@ describe("AIChat", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         Element.prototype.scrollIntoView = vi.fn();
+        searchAssigneesMock.mockResolvedValue([
+            { id: 42, name: "John Wick", email: "john.wick@example.com", role: "agent" },
+            { id: 7, name: "Ada Test", email: "ada@example.com", role: "admin" },
+        ]);
 
         useCopilotChatMock.mockReturnValue({
             messages: [
@@ -78,6 +88,7 @@ describe("AIChat", () => {
             runFileAnalysis: runFileAnalysisMock,
             runTranscriptSummary: runTranscriptSummaryMock,
             loadForecastOverview: loadForecastOverviewMock,
+            searchAssignees: searchAssigneesMock,
         });
     });
 
@@ -141,6 +152,7 @@ describe("AIChat", () => {
             runFileAnalysis: runFileAnalysisMock,
             runTranscriptSummary: runTranscriptSummaryMock,
             loadForecastOverview: loadForecastOverviewMock,
+            searchAssignees: searchAssigneesMock,
         });
 
         render(<AIChat open onClose={() => { }} />);
@@ -158,6 +170,64 @@ describe("AIChat", () => {
                 },
             });
         });
+    });
+
+    it("renders KPI assignee as a user select instead of a numeric id input", async () => {
+        useCopilotChatMock.mockReturnValue({
+            messages: [
+                {
+                    id: "u-kpi",
+                    role: "user",
+                    content: "Create KPI for retailer visits and assign to John Wick",
+                    sources: [],
+                },
+                {
+                    id: "a-kpi",
+                    role: "assistant",
+                    content: "Review this KPI before confirming.",
+                    sources: ["kpis.create"],
+                    payload: {
+                        confirmation_required: true,
+                        action_args: {
+                            name: "Retailer Visits",
+                            category: "customer_visits",
+                            objective: "Increase qualified retailer visits across the assigned territory.",
+                            target_value: "50 visits",
+                            expected_outcome: "Reach 50 qualified retailer visits within the KPI period.",
+                            priority: "high",
+                            start_date: "2026-06-01",
+                            end_date: "2026-06-30",
+                            assigned_to_user_id: 42,
+                        },
+                    },
+                },
+            ],
+            isStreaming: false,
+            weeklyReport: null,
+            isQueueingWeeklyReport: false,
+            initialize: initializeMock,
+            sendMessage: sendMessageMock,
+            queueWeeklyReport: queueWeeklyReportMock,
+            downloadWeeklyReport: downloadWeeklyReportMock,
+            runVoiceTranscription: runVoiceTranscriptionMock,
+            runFileAnalysis: runFileAnalysisMock,
+            runTranscriptSummary: runTranscriptSummaryMock,
+            loadForecastOverview: loadForecastOverviewMock,
+            searchAssignees: searchAssigneesMock,
+        });
+
+        render(<AIChat open onClose={() => { }} />);
+
+        await waitFor(() => {
+            expect(searchAssigneesMock).toHaveBeenCalled();
+            expect(screen.getByRole("option", { name: "John Wick" })).toBeTruthy();
+        });
+
+        const assignFieldLabel = screen.getByText("Assign To");
+        const assignSelect = assignFieldLabel.parentElement?.querySelector("select");
+        expect(assignSelect).toBeTruthy();
+        expect(assignSelect?.tagName).toBe("SELECT");
+        expect(screen.queryByText("Assigned To User Id")).toBeNull();
     });
 
     it("queues weekly summary from quick action button", async () => {
@@ -219,6 +289,175 @@ describe("AIChat", () => {
                     message: expect.stringContaining("Transcript Summary"),
                 })
             );
+        });
+    });
+
+    it("opens voice modal with loading state and sends transcript with instruction", async () => {
+        let resolveVoice: (value: { transcript: string }) => void = () => { };
+        runVoiceTranscriptionMock.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    resolveVoice = resolve;
+                })
+        );
+
+        render(<AIChat open onClose={() => { }} />);
+
+        const voiceInput = document.querySelector('input[type="file"][accept="audio/*"]') as HTMLInputElement;
+        expect(voiceInput).toBeTruthy();
+
+        const audioFile = new File(["audio-bytes"], "field-update.m4a", { type: "audio/mp4" });
+        fireEvent.change(voiceInput, { target: { files: [audioFile] } });
+
+        expect(await screen.findByText("Processing Voice Note…")).toBeTruthy();
+        expect(screen.getByText("Processing voice note…")).toBeTruthy();
+        expect(screen.queryByRole("button", { name: /Send to Chat/i })).toBeNull();
+
+        resolveVoice({ transcript: "Please schedule the warehouse walkthrough for Friday morning." });
+
+        expect(await screen.findByText("Voice Note Ready")).toBeTruthy();
+        expect(
+            screen.getByText("Please schedule the warehouse walkthrough for Friday morning.")
+        ).toBeTruthy();
+
+        const instructionField = screen.getByPlaceholderText(/summarize the key points/i);
+        fireEvent.change(instructionField, {
+            target: { value: "Turn this into a task list with owners and due dates." },
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: /Send to Chat/i }));
+
+        await waitFor(() => {
+            expect(runVoiceTranscriptionMock).toHaveBeenCalled();
+            expect(sendMessageMock).toHaveBeenCalledWith({
+                message:
+                    "Turn this into a task list with owners and due dates.\n\nVoice note transcript:\nPlease schedule the warehouse walkthrough for Friday morning.",
+                companyId: 99,
+            });
+        });
+    });
+
+    it("closes voice modal and shows error when transcription fails", async () => {
+        runVoiceTranscriptionMock.mockRejectedValue(new Error("Transcription service unavailable"));
+
+        render(<AIChat open onClose={() => { }} />);
+
+        const voiceInput = document.querySelector('input[type="file"][accept="audio/*"]') as HTMLInputElement;
+        const audioFile = new File(["audio-bytes"], "note.wav", { type: "audio/wav" });
+        fireEvent.change(voiceInput, { target: { files: [audioFile] } });
+
+        expect(await screen.findByText("Processing Voice Note…")).toBeTruthy();
+
+        await waitFor(() => {
+            expect(screen.queryByText("Processing Voice Note…")).toBeNull();
+            expect(runVoiceTranscriptionMock).toHaveBeenCalled();
+        });
+    });
+
+    it("opens forecast modal with loading state and sends forecast with instruction", async () => {
+        let resolveForecast: (value: Record<string, unknown>) => void = () => { };
+        loadForecastOverviewMock.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    resolveForecast = resolve;
+                })
+        );
+
+        useCopilotChatMock.mockReturnValue({
+            messages: [],
+            isStreaming: false,
+            weeklyReport: null,
+            isQueueingWeeklyReport: false,
+            initialize: initializeMock,
+            sendMessage: sendMessageMock,
+            queueWeeklyReport: queueWeeklyReportMock,
+            downloadWeeklyReport: downloadWeeklyReportMock,
+            runVoiceTranscription: runVoiceTranscriptionMock,
+            runFileAnalysis: runFileAnalysisMock,
+            runTranscriptSummary: runTranscriptSummaryMock,
+            loadForecastOverview: loadForecastOverviewMock,
+        });
+
+        render(<AIChat open onClose={() => { }} />);
+
+        fireEvent.click(screen.getByRole("button", { name: /Forecast$/i }));
+
+        expect(await screen.findByText("Building Forecast…")).toBeTruthy();
+        expect(screen.getByText("Gathering KPIs…")).toBeTruthy();
+        expect(screen.queryByRole("button", { name: /Send to Chat/i })).toBeNull();
+
+        resolveForecast({
+            company_id: 99,
+            pipeline: "forecast.recommendations.v2",
+            snapshot: {
+                kpis: { total_tasks: 12, completed_tasks: 5 },
+                signals: { overdue_tasks: 1 },
+                trends: { activity_score_change: 8, activity_direction: "up" },
+            },
+            forecast: {
+                outlook: "next_7_days",
+                horizon_days: 7,
+                confidence: 0.7,
+                risk_level: "medium",
+                recommendations: ["Clear overdue tasks this week."],
+                structured_recommendations: [
+                    { priority: "high", area: "tasks", text: "Clear overdue tasks this week." },
+                ],
+                narrative: "Focus on overdue recovery and payroll approvals.",
+                generated_at: "2026-06-24T10:00:00.000Z",
+                trace_id: "trace-99",
+            },
+        });
+
+        expect(await screen.findByText("Next 7 days Forecast")).toBeTruthy();
+        expect(await screen.findByText(/Clear overdue tasks this week\./)).toBeTruthy();
+        expect(screen.getByText("Focus on overdue recovery and payroll approvals.")).toBeTruthy();
+
+        const instructionField = screen.getByPlaceholderText(/turn the highest-risk items/i);
+        fireEvent.change(instructionField, {
+            target: { value: "Turn this into an action plan for my leadership team." },
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: /Send to Chat/i }));
+
+        await waitFor(() => {
+            expect(loadForecastOverviewMock).toHaveBeenCalledWith(99, 7);
+            expect(sendMessageMock).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    companyId: 99,
+                    message: expect.stringContaining("Turn this into an action plan for my leadership team."),
+                })
+            );
+        });
+    });
+
+    it("closes forecast modal when loading fails", async () => {
+        loadForecastOverviewMock.mockRejectedValue(new Error("Forecast service unavailable"));
+
+        useCopilotChatMock.mockReturnValue({
+            messages: [],
+            isStreaming: false,
+            weeklyReport: null,
+            isQueueingWeeklyReport: false,
+            initialize: initializeMock,
+            sendMessage: sendMessageMock,
+            queueWeeklyReport: queueWeeklyReportMock,
+            downloadWeeklyReport: downloadWeeklyReportMock,
+            runVoiceTranscription: runVoiceTranscriptionMock,
+            runFileAnalysis: runFileAnalysisMock,
+            runTranscriptSummary: runTranscriptSummaryMock,
+            loadForecastOverview: loadForecastOverviewMock,
+        });
+
+        render(<AIChat open onClose={() => { }} />);
+
+        fireEvent.click(screen.getByRole("button", { name: /Forecast$/i }));
+
+        expect(await screen.findByText("Building Forecast…")).toBeTruthy();
+
+        await waitFor(() => {
+            expect(screen.queryByText("Building Forecast…")).toBeNull();
+            expect(loadForecastOverviewMock).toHaveBeenCalledWith(99, 7);
         });
     });
 });

@@ -6,10 +6,22 @@ import {
   ElyMeetingActionFields,
   type ElyMeetingDraft,
 } from "@/components/dashboard/ely-meeting-action-fields";
+import { formatAiMessageHtml, formatPlainAiMessage } from "@/lib/format-ai-message";
 import { ELY_INPUT_PLACEHOLDER, ELY_LANDING_HEADLINE, ELY_LANDING_SUBTEXT, ELY_NAME } from "@/lib/ely-brand";
-import type { CopilotChatContext } from "@/lib/api/copilot";
+import type { CopilotChatContext, CopilotThreadSearchResult, ForecastHorizonDays, ForecastOverviewResponse } from "@/lib/api/copilot";
+import { searchCopilotThreads } from "@/lib/api/copilot";
+import {
+  buildForecastChatMessage,
+  buildForecastSnapshotRows,
+  buildForecastTrendRows,
+  formatForecastConfidence,
+  formatForecastGeneratedAt,
+  formatForecastOutlookTitle,
+  getForecastRecommendations,
+} from "@/lib/format-forecast-overview";
 import { resolveCopilotGeolocationContext } from "@/lib/copilot-geolocation";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { useCrmLabels } from "@/hooks/use-crm";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
@@ -38,8 +50,13 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   sources?: string[];
+  tool?: string | null;
   payload?: unknown;
 }
+
+const ACTION_TOOL_PATTERN = /^(?:tasks|meetings|projects|notifications|crm|kpis)\.[a-z_]+$/;
+
+const USER_ASSIGNMENT_FIELD_PATTERN = /(^|_)(user_id|assigned_to_user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/;
 
 interface AIChatProps {
   open: boolean;
@@ -112,6 +129,30 @@ const PRIORITY_OPTIONS: EditFieldOption[] = [
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
   { value: "high", label: "High" },
+  { value: "urgent", label: "Urgent" },
+];
+
+const KPI_CATEGORY_OPTIONS: EditFieldOption[] = [
+  { value: "sales", label: "Sales" },
+  { value: "customer_visits", label: "Customer Visits" },
+  { value: "lead_generation", label: "Lead Generation" },
+  { value: "collection", label: "Collection" },
+  { value: "survey", label: "Survey" },
+  { value: "merchandising", label: "Merchandising" },
+];
+
+const KPI_PRIORITY_OPTIONS: EditFieldOption[] = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "critical", label: "Critical" },
+];
+
+const LEAD_STATUS_OPTIONS: EditFieldOption[] = [
+  { value: "newly_lead", label: "Newly Lead" },
+  { value: "contacted", label: "Contacted" },
+  { value: "qualified", label: "Qualified" },
+  { value: "proposal_sent", label: "Proposal Sent" },
 ];
 
 const NOTIFICATION_PRIORITY_OPTIONS: EditFieldOption[] = [
@@ -152,11 +193,49 @@ function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
   return null;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function highlightPlainText(content: string, query: string): string {
+  const trimmed = query.trim();
+  if (trimmed === "") {
+    return content;
+  }
+
+  const escaped = content
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  const pattern = new RegExp(`(${escapeRegExp(trimmed)})`, "gi");
+  return escaped.replace(pattern, '<mark class="bg-[#EBA771]/35 text-white rounded px-0.5">$1</mark>');
+}
+
+function formatSearchDate(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function AIChat({ open, onClose }: AIChatProps) {
   const user = useAuthStore((s) => s.user);
   const firstName = user?.name?.split(" ")[0] ?? "User";
   const avatarSrc = getSafeAvatarSrc(user?.avatar) ?? "/avatars/male-avatar.png";
-  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const isAgent = role === "agent";
+  const { data: crmLabels = [] } = useCrmLabels(companyId ?? undefined);
+  const leadStatusOptions: EditFieldOption[] = crmLabels.length > 0
+    ? crmLabels.map((label) => ({ value: label.slug, label: label.name }))
+    : LEAD_STATUS_OPTIONS;
   const {
     messages,
     isStreaming,
@@ -164,6 +243,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     weeklyReport,
     isQueueingWeeklyReport,
     initialize,
+    loadThread,
     sendMessage: sendCopilotMessage,
     clearCurrentThread,
     queueWeeklyReport,
@@ -181,6 +261,11 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [copiedMap, setCopiedMap] = useState<Record<string, boolean>>({});
   const [input, setInput] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<CopilotThreadSearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  const [highlightQuery, setHighlightQuery] = useState("");
   const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
   const [meetingActionDrafts, setMeetingActionDrafts] = useState<Record<string, ElyMeetingDraft>>({});
   const [assigneeOptions, setAssigneeOptions] = useState<Record<string, AssigneeOptionsState>>({});
@@ -191,20 +276,54 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
+  const prevWeeklyReportStatusRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!weeklyReport) {
+      prevWeeklyReportStatusRef.current = null;
+      return;
+    }
+
+    const status = weeklyReport.status;
+    if (prevWeeklyReportStatusRef.current === status) {
+      return;
+    }
+
+    if (status === "completed") {
+      toast.success("Weekly summary is ready to download.");
+    } else if (status === "failed") {
+      toast.error(weeklyReport.error ?? "Weekly summary generation failed.");
+    }
+
+    prevWeeklyReportStatusRef.current = status;
+  }, [weeklyReport]);
 
   // AI Tools modals
   const [isTranscriptModalOpen, setIsTranscriptModalOpen] = useState(false);
   const [transcriptInput, setTranscriptInput] = useState("");
   const [isVoicePreviewOpen, setIsVoicePreviewOpen] = useState(false);
+  const [isVoiceTranscriptionLoading, setIsVoiceTranscriptionLoading] = useState(false);
+  const [voiceTranscriptionStage, setVoiceTranscriptionStage] = useState("Processing voice note…");
+  const [voiceFileName, setVoiceFileName] = useState("");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceTranscriptSummary, setVoiceTranscriptSummary] = useState("");
+  const [voiceInstruction, setVoiceInstruction] = useState("");
   const [isAnalyzeFilePreviewOpen, setIsAnalyzeFilePreviewOpen] = useState(false);
+  const [isFileAnalysisLoading, setIsFileAnalysisLoading] = useState(false);
+  const [fileAnalysisStage, setFileAnalysisStage] = useState("Analyzing file…");
   const [fileAnalysisResult, setFileAnalysisResult] = useState("");
   const [fileAnalysisFileName, setFileAnalysisFileName] = useState("");
+  const [isForecastModalOpen, setIsForecastModalOpen] = useState(false);
+  const [isForecastLoading, setIsForecastLoading] = useState(false);
+  const [forecastStage, setForecastStage] = useState("Gathering KPIs…");
+  const [forecastHorizonDays, setForecastHorizonDays] = useState<ForecastHorizonDays>(7);
+  const [forecastData, setForecastData] = useState<ForecastOverviewResponse | null>(null);
+  const [forecastInstruction, setForecastInstruction] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
   const voiceInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -245,18 +364,89 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }, [messages, isStreaming]);
 
   useEffect(() => {
+    if (!searchOpen) {
+      setSearchQuery("");
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    setTimeout(() => {
+      if (window.innerWidth < 640) {
+        mobileSearchInputRef.current?.focus();
+      } else {
+        searchInputRef.current?.focus();
+      }
+    }, 150);
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (!searchOpen || !companyId) {
+      return;
+    }
+
+    const query = searchQuery.trim();
+    if (query.length < 1) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setSearchLoading(true);
+        try {
+          const token = getAuthTokenFromDocument();
+          if (!token) {
+            setSearchResults([]);
+            return;
+          }
+
+          const response = await searchCopilotThreads(token, query, companyId);
+          setSearchResults(response.data.items ?? []);
+        } catch {
+          setSearchResults([]);
+        } finally {
+          setSearchLoading(false);
+        }
+      })();
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [companyId, searchOpen, searchQuery]);
+
+  useEffect(() => {
+    if (!highlightMessageId) {
+      return;
+    }
+
+    const element = document.getElementById(`copilot-msg-${highlightMessageId}`);
+    if (!element) {
+      return;
+    }
+
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    element.classList.add("ring-2", "ring-[#EBA771]/60", "rounded-[20px]");
+    const timer = window.setTimeout(() => {
+      element.classList.remove("ring-2", "ring-[#EBA771]/60", "rounded-[20px]");
+    }, 3200);
+
+    return () => window.clearTimeout(timer);
+  }, [highlightMessageId, messages]);
+
+  useEffect(() => {
     for (const msg of messages) {
       const payload = messagePayload(msg);
       if (msg.role !== "assistant" || payload?.confirmation_required !== true) {
         continue;
       }
 
-      const tool = String(payload.tool ?? "");
+      const tool = actionToolForMessage(msg);
       const rawArgs = parseRecord(payload.action_args);
       const argKeys = rawArgs ? Object.keys(rawArgs) : [];
-      const hasUserAssignmentField = argKeys.some((key) => /(^|_)(user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/.test(key));
+      const hasUserAssignmentField = argKeys.some((key) => USER_ASSIGNMENT_FIELD_PATTERN.test(key));
 
-      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule"].includes(tool) && !hasUserAssignmentField) {
+      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "crm.send_email", "kpis.create"].includes(tool) && !hasUserAssignmentField) {
         continue;
       }
 
@@ -265,8 +455,61 @@ export function AIChat({ open, onClose }: AIChatProps) {
         continue;
       }
 
-      void loadAssigneeOptions(msg.id);
+      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "crm.send_email", "kpis.create"].includes(tool) || hasUserAssignmentField) {
+        if (isAgent && tool === "tasks.create") {
+          continue;
+        }
+        void loadAssigneeOptions(msg.id);
+      }
     }
+  }, [messages]);
+
+  useEffect(() => {
+    setActionDrafts((prev) => {
+      let next = prev;
+      for (const msg of messages) {
+        const payload = messagePayload(msg);
+        if (msg.role !== "assistant" || payload?.confirmation_required !== true) {
+          continue;
+        }
+        if (prev[msg.id]) {
+          continue;
+        }
+
+        const rawArgs = parseRecord(payload.action_args);
+        if (!rawArgs) {
+          continue;
+        }
+
+        const seed: Record<string, string> = {};
+        for (const [key, value] of Object.entries(rawArgs)) {
+          if (key.startsWith("__") || key === "company_id" || key === "meta" || key === "pipeline_id") {
+            continue;
+          }
+          if (value === null || value === undefined) {
+            continue;
+          }
+          seed[key] = String(value);
+        }
+
+        const meta = parseRecord(rawArgs.meta);
+        if (meta) {
+          for (const [key, value] of Object.entries(meta)) {
+            if (value !== null && value !== undefined && seed[key] === undefined) {
+              seed[key] = String(value);
+            }
+          }
+        }
+
+        if (Object.keys(seed).length === 0) {
+          continue;
+        }
+
+        next = { ...next, [msg.id]: seed };
+      }
+
+      return next;
+    });
   }, [messages]);
 
   function toTitleCase(value: string): string {
@@ -349,6 +592,27 @@ export function AIChat({ open, onClose }: AIChatProps) {
     return msg && typeof msg.payload === "object" && msg.payload !== null
       ? (msg.payload as Record<string, unknown>)
       : null;
+  }
+
+  function actionToolForMessage(msg: Message): string {
+    const payload = messagePayload(msg);
+    const payloadTool = typeof payload?.tool === "string" ? payload.tool.trim() : "";
+    if (payloadTool !== "") {
+      return payloadTool;
+    }
+
+    if (typeof msg.tool === "string" && msg.tool.trim() !== "") {
+      return msg.tool.trim();
+    }
+
+    for (const source of msg.sources ?? []) {
+      const candidate = String(source).trim();
+      if (ACTION_TOOL_PATTERN.test(candidate)) {
+        return candidate;
+      }
+    }
+
+    return "";
   }
 
   function parseRecord(value: unknown): Record<string, unknown> | null {
@@ -488,7 +752,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     const baseArgs = sanitizeActionArgs(actionArgsRaw);
     const draft = actionDrafts[msg.id] ?? {};
-    const tool = String(payload.tool ?? "");
+    const tool = actionToolForMessage(msg);
 
     if (tool === "tasks.create") {
       const merged: Record<string, unknown> = { ...baseArgs };
@@ -515,6 +779,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
         }
       }
 
+      if (isAgent) {
+        delete merged.assignee;
+        delete merged.assigned_agent_id;
+        delete merged.assigned_agent_ids;
+      }
+
       return merged;
     }
 
@@ -526,6 +796,36 @@ export function AIChat({ open, onClose }: AIChatProps) {
       }
 
       return baseArgs;
+    }
+
+    if (tool === "kpis.create" || tool === "crm.create_lead") {
+      const merged: Record<string, unknown> = { ...baseArgs, ...draft };
+
+      if (Object.prototype.hasOwnProperty.call(draft, "assigned_to_user_id")) {
+        const assigneeId = (draft.assigned_to_user_id ?? "").trim();
+        if (assigneeId === "") {
+          delete merged.assigned_to_user_id;
+        } else {
+          merged.assigned_to_user_id = Number(assigneeId);
+        }
+      }
+
+      return merged;
+    }
+
+    if (tool === "projects.create") {
+      const merged: Record<string, unknown> = { ...baseArgs, ...draft };
+
+      if (Object.prototype.hasOwnProperty.call(draft, "project_manager_user_id")) {
+        const managerId = (draft.project_manager_user_id ?? "").trim();
+        if (managerId === "") {
+          delete merged.project_manager_user_id;
+        } else {
+          merged.project_manager_user_id = Number(managerId);
+        }
+      }
+
+      return merged;
     }
 
     if (Object.keys(draft).length === 0) {
@@ -601,16 +901,20 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function editFieldsForMessage(msg: Message, args: Record<string, unknown>): EditFieldConfig[] {
-    const payload = messagePayload(msg);
-    const tool = String(payload?.tool ?? "");
+    const tool = actionToolForMessage(msg);
 
     if (tool === "tasks.create") {
-      return [
+      const fields: EditFieldConfig[] = [
         { key: "title", label: "Title", control: "text" },
         { key: "type", label: "Type", control: "select", options: TASK_TYPE_OPTIONS },
         { key: "due_date", label: "Due Date", control: "date" },
-        { key: "assignee", label: "Assignee", control: "select", options: assigneeSelectOptions(msg) },
       ];
+
+      if (!isAgent) {
+        fields.push({ key: "assignee", label: "Assignee", control: "select", options: assigneeSelectOptions(msg) });
+      }
+
+      return fields;
     }
 
     if (tool === "meetings.schedule") {
@@ -647,6 +951,44 @@ export function AIChat({ open, onClose }: AIChatProps) {
       ];
     }
 
+    if (tool === "crm.create_lead") {
+      return [
+        { key: "name", label: "Business Name", control: "text" },
+        { key: "phone", label: "Phone Number", control: "text" },
+        { key: "location", label: "Location", control: "text" },
+        { key: "email", label: "Email", control: "text" },
+        { key: "industry", label: "Industry", control: "text" },
+        { key: "contact_person", label: "Contact Person", control: "text" },
+        { key: "status", label: "Status", control: "select", options: leadStatusOptions },
+        { key: "priority", label: "Priority", control: "select", options: PRIORITY_OPTIONS },
+        { key: "next_action", label: "Next Action", control: "textarea" },
+        { key: "notes", label: "Notes", control: "textarea" },
+        { key: "assigned_to_user_id", label: "Assign To", control: "select", options: userIdSelectOptions(msg) },
+      ];
+    }
+
+    if (tool === "crm.send_email") {
+      return [
+        { key: "lead_id", label: "Lead ID", control: "number" },
+        { key: "subject", label: "Subject", control: "text" },
+        { key: "body_text", label: "Message", control: "textarea" },
+      ];
+    }
+
+    if (tool === "kpis.create") {
+      return [
+        { key: "name", label: "KPI Name", control: "text" },
+        { key: "category", label: "Category", control: "select", options: KPI_CATEGORY_OPTIONS },
+        { key: "objective", label: "Objective", control: "textarea" },
+        { key: "target_value", label: "Target Value", control: "text" },
+        { key: "expected_outcome", label: "Expected Outcome", control: "textarea" },
+        { key: "priority", label: "Priority", control: "select", options: KPI_PRIORITY_OPTIONS },
+        { key: "start_date", label: "Start Date", control: "date" },
+        { key: "end_date", label: "End Date", control: "date" },
+        { key: "assigned_to_user_id", label: "Assign To", control: "select", options: userIdSelectOptions(msg) },
+      ];
+    }
+
     return Object.entries(args)
       .filter(([key]) => key !== "company_id")
       .map(([key]) => {
@@ -667,6 +1009,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
             options: [
               { value: String(args[key] ?? ""), label: toTitleCase(String(args[key] ?? "current")) },
             ],
+          } as EditFieldConfig;
+        }
+
+        if (USER_ASSIGNMENT_FIELD_PATTERN.test(key) && key !== "task_id") {
+          const label = key === "assigned_to_user_id"
+            ? "Assign To"
+            : key === "to_user_id"
+              ? "Reassign To"
+              : key === "project_manager_user_id"
+                ? "Project Manager"
+                : toTitleCase(key);
+
+          return {
+            key,
+            label,
+            control: "select",
+            options: userIdSelectOptions(msg),
           } as EditFieldConfig;
         }
 
@@ -729,13 +1088,37 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     const args = actionArgsForMessage(msg);
     const argsForChecks: Record<string, unknown> = args ?? {};
+    const draft = actionDrafts[msg.id] ?? {};
+    const tool = actionToolForMessage(msg);
     const remaining: string[] = [];
 
     for (const code of blockingCodes) {
       if (code === "assignee_unresolved") {
+        if (tool === "kpis.create" || tool === "crm.create_lead") {
+          const assignedDraft = String(draft.assigned_to_user_id ?? "").trim();
+          const hasResolvedId =
+            (typeof args?.assigned_to_user_id === "number" && args.assigned_to_user_id > 0)
+            || (assignedDraft !== "" && !Number.isNaN(Number(assignedDraft)));
+          if (!hasResolvedId) {
+            remaining.push(code);
+          }
+          continue;
+        }
+
+        if (tool === "projects.create") {
+          const managerDraft = String(draft.project_manager_user_id ?? "").trim();
+          const hasResolvedId =
+            (typeof args?.project_manager_user_id === "number" && args.project_manager_user_id > 0)
+            || (managerDraft !== "" && !Number.isNaN(Number(managerDraft)));
+          if (!hasResolvedId) {
+            remaining.push(code);
+          }
+          continue;
+        }
+
         const assigneeEdited = assigneeDropdownValue(msg, argsForChecks) !== "";
         const hasResolvedId = typeof args?.assigned_agent_id === "number";
-        if (!assigneeEdited && !hasResolvedId) {
+        if (!isAgent && !assigneeEdited && !hasResolvedId) {
           remaining.push(code);
         }
         continue;
@@ -752,6 +1135,14 @@ export function AIChat({ open, onClose }: AIChatProps) {
       if (code === "used_default_due_date") {
         const due = String(args?.due_date ?? "").trim();
         if (due === "") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_lead_name") {
+        const name = String(args?.name ?? "").trim().toLowerCase();
+        if (name === "" || name === "new lead") {
           remaining.push(code);
         }
         continue;
@@ -808,7 +1199,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return [];
     }
 
-    const tool = String(payload.tool ?? "");
+    const tool = actionToolForMessage(msg);
     const args = actionArgsForMessage(msg);
     if (!args) {
       return [];
@@ -826,19 +1217,21 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const assigneeEdited = assigneeDropdownValue(msg, args) !== "";
       const assigneeResolved = typeof args.assigned_agent_id === "number";
 
-      if (warningCodes.includes("assignee_unresolved") && !assigneeEdited && !assigneeResolved) {
-        rows.push({
-          key: "assigned_agent_id",
-          label: "Assignee",
-          value: "Needs correction",
-          warning: true,
-        });
-      } else {
-        rows.push({
-          key: "assigned_agent_id",
-          label: "Assignee",
-          value: formatPreviewValue("assignee", assigneeDisplayName(msg, args)),
-        });
+      if (!isAgent) {
+        if (warningCodes.includes("assignee_unresolved") && !assigneeEdited && !assigneeResolved) {
+          rows.push({
+            key: "assigned_agent_id",
+            label: "Assignee",
+            value: "Needs correction",
+            warning: true,
+          });
+        } else {
+          rows.push({
+            key: "assigned_agent_id",
+            label: "Assignee",
+            value: formatPreviewValue("assignee", assigneeDisplayName(msg, args)),
+          });
+        }
       }
 
       return rows;
@@ -869,6 +1262,57 @@ export function AIChat({ open, onClose }: AIChatProps) {
       ];
     }
 
+    if (tool === "crm.create_lead") {
+      return [
+        { key: "name", label: "Business Name", value: formatPreviewValue("name", args.name), warning: warningCodes.includes("missing_lead_name") },
+        { key: "phone", label: "Phone", value: formatPreviewValue("phone", args.phone), warning: warningCodes.includes("missing_phone") },
+        { key: "location", label: "Location", value: formatPreviewValue("location", args.location), warning: warningCodes.includes("missing_location") },
+        { key: "email", label: "Email", value: formatPreviewValue("email", args.email) },
+        { key: "industry", label: "Industry", value: formatPreviewValue("industry", args.industry) },
+        { key: "contact_person", label: "Contact Person", value: formatPreviewValue("contact_person", args.contact_person) },
+        { key: "status", label: "Status", value: crmLabels.find((l) => l.slug === args.status)?.name ?? formatPreviewValue("status", args.status) },
+        { key: "priority", label: "Priority", value: formatPreviewValue("priority", args.priority) },
+      ];
+    }
+
+    if (tool === "crm.send_email") {
+      const to = Array.isArray(args.to) ? args.to : [];
+      const recipient = to[0] && typeof to[0] === "object" && to[0] !== null
+        ? String((to[0] as Record<string, unknown>).email ?? "")
+        : formatPreviewValue("to", args.to);
+
+      return [
+        { key: "lead_id", label: "Lead ID", value: formatPreviewValue("lead_id", args.lead_id) },
+        { key: "to", label: "To", value: recipient },
+        { key: "subject", label: "Subject", value: formatPreviewValue("subject", args.subject) },
+        { key: "body_text", label: "Message", value: formatPreviewValue("body_text", args.body_text) },
+      ];
+    }
+
+    if (tool === "kpis.create") {
+      const assignedId = typeof args.assigned_to_user_id === "number" ? args.assigned_to_user_id : null;
+      const assigneeName = assignedId !== null
+        ? (assigneeOptions[msg.id]?.items ?? []).find((item) => item.id === assignedId)?.name ?? `User #${String(assignedId)}`
+        : "Unassigned";
+
+      return [
+        { key: "name", label: "KPI Name", value: formatPreviewValue("name", args.name), warning: warningCodes.includes("missing_kpi_name") },
+        { key: "category", label: "Category", value: formatPreviewValue("category", args.category) },
+        { key: "objective", label: "Objective", value: formatPreviewValue("objective", args.objective), warning: warningCodes.includes("missing_objective") },
+        { key: "target_value", label: "Target Value", value: formatPreviewValue("target_value", args.target_value), warning: warningCodes.includes("missing_target_value") },
+        { key: "expected_outcome", label: "Expected Outcome", value: formatPreviewValue("expected_outcome", args.expected_outcome), warning: warningCodes.includes("missing_expected_outcome") },
+        { key: "priority", label: "Priority", value: formatPreviewValue("priority", args.priority) },
+        { key: "start_date", label: "Start Date", value: formatPreviewValue("start_date", args.start_date), warning: warningCodes.includes("used_default_dates") },
+        { key: "end_date", label: "End Date", value: formatPreviewValue("end_date", args.end_date), warning: warningCodes.includes("used_default_dates") },
+        {
+          key: "assigned_to_user_id",
+          label: "Assignee",
+          value: assigneeName,
+          warning: warningCodes.includes("assignee_unresolved"),
+        },
+      ];
+    }
+
     return Object.entries(args)
       .filter(([key]) => key !== "company_id")
       .map(([key, value]) => ({
@@ -878,21 +1322,39 @@ export function AIChat({ open, onClose }: AIChatProps) {
       }));
   }
 
-  function findPreviousUserContent(index: number): string {
+  function findActionContextForConfirm(index: number): string {
+    const parts: string[] = [];
+
     for (let i = index - 1; i >= 0; i -= 1) {
-      if (messages[i]?.role === "user") {
-        return String(messages[i]?.content ?? "");
+      const candidate = messages[i];
+      if (!candidate) {
+        continue;
+      }
+
+      if (candidate.role === "assistant") {
+        const payload = messagePayload(candidate);
+        if (payload?.confirmation_required === true) {
+          break;
+        }
+        continue;
+      }
+
+      if (candidate.role === "user") {
+        const content = String(candidate.content ?? "").trim();
+        if (content !== "" && !/^\s*confirm\b/i.test(content)) {
+          parts.unshift(content);
+        }
       }
     }
 
-    return "";
+    return parts.join("\n");
   }
 
   function handleConfirmAction(index: number, msg: Message) {
     const payload = messagePayload(msg);
     if (!payload) return;
 
-    const priorPrompt = findPreviousUserContent(index);
+    const priorPrompt = findActionContextForConfirm(index);
     if (!priorPrompt.trim()) return;
 
     const actionArgs = actionArgsForMessage(msg);
@@ -908,7 +1370,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function handleEditActionDetails(index: number) {
-    const priorPrompt = findPreviousUserContent(index);
+    const priorPrompt = findActionContextForConfirm(index);
     if (!priorPrompt.trim()) return;
     setInput(priorPrompt);
     setTimeout(() => inputRef.current?.focus(), 0);
@@ -932,51 +1394,130 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return "Confirmation is blocked until title and due date are explicitly set.";
     }
 
+    if (issues.includes("missing_lead_name")) {
+      return "Confirmation is blocked until the business name is provided.";
+    }
+
     return "Confirmation is currently blocked until required fields are corrected.";
   }
 
   async function handleQueueWeeklyReport() {
-    await queueWeeklyReport(companyId ?? undefined);
+    if (!companyId) {
+      toast.error("Select a company before generating a weekly summary.");
+      return;
+    }
+
+    try {
+      await queueWeeklyReport(companyId ?? undefined);
+      toast.info("Weekly summary generation started. We'll notify you when it's ready.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start weekly summary generation.");
+    }
   }
 
-  async function handleDownloadWeeklyReport() {
+  async function handleDownloadWeeklyReport(format: "pdf" | "docx" = "pdf") {
     try {
-      await downloadWeeklyReport(companyId ?? undefined);
-      toast.success("Weekly report downloaded successfully!");
+      await downloadWeeklyReport(companyId ?? undefined, format);
+      toast.success(format === "docx" ? "Word document downloaded." : "PDF downloaded.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to download weekly report.");
     }
   }
 
+  async function handleOpenSearchResult(result: CopilotThreadSearchResult) {
+    if (!companyId) {
+      return;
+    }
+
+    const query = searchQuery.trim();
+    setSearchOpen(false);
+    setHighlightQuery(query);
+    setHighlightMessageId(result.match_message_id || null);
+
+    try {
+      await loadThread(result.thread_id, companyId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unable to open conversation.");
+    }
+  }
+
   async function handleVoiceFile(file: File) {
     setIsRunningQuickAction(true);
+    setVoiceFileName(file.name);
+    setVoiceTranscript("");
+    setVoiceInstruction("");
+    setVoiceTranscriptSummary("");
+    setVoiceTranscriptionStage("Processing voice note…");
+    setIsVoiceTranscriptionLoading(true);
+    setIsVoicePreviewOpen(true);
+
+    const uploadingTimer = window.setTimeout(() => {
+      setVoiceTranscriptionStage("Transcribing your audio…");
+    }, 1200);
+
+    const preparingTimer = window.setTimeout(() => {
+      setVoiceTranscriptionStage("ELY is preparing your transcript…");
+    }, 3200);
+
     try {
       const result = await runVoiceTranscription(file, companyId ?? undefined);
-      const transcript = String(result?.transcript ?? "Voice transcription completed.");
+      const transcript = String(result?.transcript ?? "").trim();
+      if (!transcript) {
+        throw new Error("No speech was detected in this recording. Try a clearer voice note.");
+      }
       setVoiceTranscript(transcript);
-      // Generate a brief summary by requesting it
       setVoiceTranscriptSummary(`Transcript from: ${file.name}`);
-      setIsVoicePreviewOpen(true);
     } catch (err) {
+      setIsVoicePreviewOpen(false);
       toast.error(err instanceof Error ? err.message : "Failed to process voice input.");
     } finally {
+      window.clearTimeout(uploadingTimer);
+      window.clearTimeout(preparingTimer);
+      setIsVoiceTranscriptionLoading(false);
       setIsRunningQuickAction(false);
     }
   }
 
+  function handleCloseVoiceModal() {
+    setIsVoicePreviewOpen(false);
+    setIsVoiceTranscriptionLoading(false);
+    setVoiceInstruction("");
+  }
+
   async function handleAnalysisFile(file: File) {
     setIsRunningQuickAction(true);
+    setFileAnalysisFileName(file.name);
+    setFileAnalysisResult("");
+    setFileAnalysisStage("Analyzing file…");
+    setIsFileAnalysisLoading(true);
+    setIsAnalyzeFilePreviewOpen(true);
+
+    const readingTimer = window.setTimeout(() => {
+      setFileAnalysisStage("Reading document content…");
+    }, 1200);
+
+    const analyzingTimer = window.setTimeout(() => {
+      setFileAnalysisStage("ELY is analyzing your document…");
+    }, 3200);
+
     try {
       const result = await runFileAnalysis(file, companyId ?? undefined);
-      const analysis = String((result?.analysis as { summary?: string } | undefined)?.summary ?? "File analysis completed.");
-      setFileAnalysisResult(analysis);
-      setFileAnalysisFileName(file.name);
-      setIsAnalyzeFilePreviewOpen(true);
+      const rawSummary = String((result?.analysis as { summary?: string } | undefined)?.summary ?? "File analysis completed.");
+      setFileAnalysisResult(formatPlainAiMessage(rawSummary));
     } catch (err) {
+      setIsAnalyzeFilePreviewOpen(false);
       toast.error(err instanceof Error ? err.message : "Failed to analyze file.");
     } finally {
+      window.clearTimeout(readingTimer);
+      window.clearTimeout(analyzingTimer);
+      setIsFileAnalysisLoading(false);
       setIsRunningQuickAction(false);
     }
+  }
+
+  function handleCloseFileAnalysisModal() {
+    setIsAnalyzeFilePreviewOpen(false);
+    setIsFileAnalysisLoading(false);
   }
 
   async function handleTranscriptSummaryModalOpen() {
@@ -1011,34 +1552,83 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }
   }
 
-  async function handleForecastAction() {
+  async function handleForecastAction(horizonDays: ForecastHorizonDays = forecastHorizonDays) {
+    if (!companyId) {
+      toast.error("Select a company before loading a forecast overview.");
+      return;
+    }
+
     setIsRunningQuickAction(true);
+    setForecastHorizonDays(horizonDays);
+    setForecastData(null);
+    setForecastInstruction("");
+    setForecastStage("Gathering KPIs…");
+    setIsForecastLoading(true);
+    setIsForecastModalOpen(true);
+
+    const trendsTimer = window.setTimeout(() => {
+      setForecastStage("Analyzing trends and operational signals…");
+    }, 1200);
+
+    const buildingTimer = window.setTimeout(() => {
+      setForecastStage("Building your forecast overview…");
+    }, 3200);
+
     try {
-      const result = await loadForecastOverview(companyId ?? undefined);
-      const recommendations = Array.isArray((result?.forecast as { recommendations?: unknown } | undefined)?.recommendations)
-        ? ((result?.forecast as { recommendations?: string[] }).recommendations ?? [])
-        : [];
-
-      const text = recommendations.length > 0
-        ? recommendations.map((item) => `- ${item}`).join("\n")
-        : "Forecast overview generated.";
-
-      void sendCopilotMessage({
-        message: `Forecast recommendations:\n${text}`,
-        companyId: companyId ?? undefined,
-      });
+      const result = await loadForecastOverview(companyId ?? undefined, horizonDays);
+      setForecastData(result);
+      toast.success("Forecast overview is ready.");
+    } catch (err) {
+      setIsForecastModalOpen(false);
+      toast.error(err instanceof Error ? err.message : "Failed to load forecast overview.");
     } finally {
+      window.clearTimeout(trendsTimer);
+      window.clearTimeout(buildingTimer);
+      setIsForecastLoading(false);
       setIsRunningQuickAction(false);
     }
   }
 
-  function handleSendVoiceTranscriptToChat() {
+  function handleCloseForecastModal() {
+    setIsForecastModalOpen(false);
+    setIsForecastLoading(false);
+    setForecastInstruction("");
+  }
+
+  function handleSendForecastToChat() {
+    if (!forecastData) {
+      toast.error("Forecast is not ready yet. Please wait for processing to finish.");
+      return;
+    }
+
     void sendCopilotMessage({
-      message: `Voice note transcript:\n\n${voiceTranscript}`,
+      message: buildForecastChatMessage(forecastData, forecastInstruction),
       companyId: companyId ?? undefined,
     });
-    setIsVoicePreviewOpen(false);
-    toast.success("Transcript sent to chat!");
+    handleCloseForecastModal();
+    toast.success("Forecast sent to chat!");
+  }
+
+  function handleForecastRecoveryPlanShortcut() {
+    setForecastInstruction("Create a practical recovery plan with owners, due dates, and the first three actions we should take this week.");
+  }
+
+  function handleSendVoiceTranscriptToChat() {
+    if (!voiceTranscript.trim()) {
+      toast.error("Transcript is not ready yet. Please wait for processing to finish.");
+      return;
+    }
+
+    const instruction =
+      voiceInstruction.trim() ||
+      "Please review this voice note transcript and help me with the most useful next steps.";
+
+    void sendCopilotMessage({
+      message: `${instruction}\n\nVoice note transcript:\n${voiceTranscript.trim()}`,
+      companyId: companyId ?? undefined,
+    });
+    handleCloseVoiceModal();
+    toast.success("Voice note sent to chat!");
   }
 
   function handleSendFileAnalysisToChat() {
@@ -1079,10 +1669,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
       <div
         className={`fixed top-20 inset-x-0 bottom-0 z-[9999] flex items-end justify-end sm:items-start sm:justify-end p-4 sm:p-6 transition-all duration-300 ${open ? "pointer-events-auto" : "pointer-events-none"
           }`}
+        onClick={onClose}
       >
         <div
           className={`w-full sm:w-[800px] max-w-full h-full sm:h-[calc(100vh-130px)] bg-[#10232A] p-2 sm:p-3 rounded-t-[32px] sm:rounded-[36px] flex flex-col shadow-2xl transition-transform duration-300 ease-out border border-white/5 ${open ? "translate-y-0 sm:translate-x-0 opacity-100" : "translate-y-full sm:translate-y-0 sm:translate-x-8 opacity-0"
             }`}
+          onClick={(e) => e.stopPropagation()}
         >
           <div className="flex-1 relative bg-[#091519] rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden">
             <div
@@ -1124,13 +1716,54 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
                 {/* Inline search bar — large screens only */}
                 <div className={`hidden sm:flex flex-1 items-center transition-all duration-300 overflow-hidden ${searchOpen ? "opacity-100 max-w-full" : "opacity-0 max-w-0 pointer-events-none"}`}>
-                  <div className="w-full border border-white/20 rounded-full px-5 py-3 flex items-center gap-2 bg-[#091519]">
-                    <Search className="w-4 h-4 text-[#88B3B5] flex-shrink-0" />
-                    <input
-                      ref={searchInputRef}
-                      placeholder="Search..."
-                      className="flex-1 bg-transparent text-white text-sm placeholder:text-[#88B3B5] outline-none"
-                    />
+                  <div className="relative w-full">
+                    <div className="w-full border border-white/20 rounded-full px-5 py-3 flex items-center gap-2 bg-[#091519]">
+                      <Search className="w-4 h-4 text-[#88B3B5] flex-shrink-0" />
+                      <input
+                        ref={searchInputRef}
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        placeholder="Search conversations..."
+                        className="flex-1 bg-transparent text-white text-sm placeholder:text-[#88B3B5] outline-none"
+                      />
+                      {searchQuery.trim() !== "" && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchQuery("")}
+                          className="text-[#88B3B5] hover:text-white"
+                          aria-label="Clear search"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    {searchQuery.trim() !== "" && (
+                      <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-72 overflow-y-auto rounded-2xl border border-white/10 bg-[#0F2228] shadow-2xl">
+                        {searchLoading ? (
+                          <p className="px-4 py-3 text-[12px] text-[#88B3B5]">Searching…</p>
+                        ) : searchResults.length === 0 ? (
+                          <p className="px-4 py-3 text-[12px] text-[#88B3B5]">No conversations found.</p>
+                        ) : (
+                          searchResults.map((result) => (
+                            <button
+                              key={`${result.thread_id}-${result.match_message_id}`}
+                              type="button"
+                              onClick={() => void handleOpenSearchResult(result)}
+                              className="w-full border-b border-white/5 px-4 py-3 text-left hover:bg-white/5 transition-colors last:border-b-0"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-[13px] font-medium text-white truncate">{result.title}</p>
+                                <span className="text-[10px] text-[#88B3B5] flex-shrink-0">{formatSearchDate(result.updated_at)}</span>
+                              </div>
+                              <p
+                                className="mt-1 text-[12px] text-[#9CC6CA] line-clamp-2"
+                                dangerouslySetInnerHTML={{ __html: highlightPlainText(result.snippet, searchQuery) }}
+                              />
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1141,8 +1774,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                   </div>
                   <button
                     onClick={() => {
-                      setSearchOpen((v) => !v);
-                      setTimeout(() => searchInputRef.current?.focus(), 150);
+                      setSearchOpen((value) => !value);
                     }}
                     className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${searchOpen ? "bg-[#7BB6B8]/20" : "bg-[#132A33] hover:bg-[#1A3844]"}`}
                   >
@@ -1186,22 +1818,31 @@ export function AIChat({ open, onClose }: AIChatProps) {
                               </button>
 
                               {weeklyReport?.status === "completed" && (
-                                <button
-                                  onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); void handleDownloadWeeklyReport(); }}
-                                  className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E4FF] hover:bg-white/5 transition-colors text-left"
-                                >
-                                  <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
-                                  Download Summary
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); void handleDownloadWeeklyReport("pdf"); }}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E4FF] hover:bg-white/5 transition-colors text-left"
+                                  >
+                                    <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
+                                    Download as PDF
+                                  </button>
+                                  <button
+                                    onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); void handleDownloadWeeklyReport("docx"); }}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E4FF] hover:bg-white/5 transition-colors text-left"
+                                  >
+                                    <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
+                                    Download as Word
+                                  </button>
+                                </>
                               )}
 
                               <button
                                 onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); voiceInputRef.current?.click(); }}
-                                disabled={isRunningQuickAction || isStreaming}
+                                disabled={isRunningQuickAction || isStreaming || isVoiceTranscriptionLoading}
                                 className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#F2D9A6] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
                               >
                                 <FileAudio className="w-4 h-4 flex-shrink-0" />
-                                Voice Input
+                                {isVoiceTranscriptionLoading ? "Processing voice…" : "Voice Input"}
                               </button>
 
                               {canAnalyzeFile && (
@@ -1211,7 +1852,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                                   className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#D8E7A0] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
                                 >
                                   <FileSpreadsheet className="w-4 h-4 flex-shrink-0" />
-                                  Analyze File
+                                  {isFileAnalysisLoading ? "Analyzing…" : "Analyze File"}
                                 </button>
                               )}
 
@@ -1226,11 +1867,11 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
                               <button
                                 onClick={() => { setIsMenuOpen(false); setIsAiToolsOpen(false); void handleForecastAction(); }}
-                                disabled={isRunningQuickAction || isStreaming}
+                                disabled={isRunningQuickAction || isStreaming || isForecastLoading}
                                 className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#BCE7FF] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
                               >
                                 <LineChart className="w-4 h-4 flex-shrink-0" />
-                                Forecast Overview
+                                {isForecastLoading ? "Building forecast…" : "Forecast Overview"}
                               </button>
                             </div>
                           )}
@@ -1252,14 +1893,54 @@ export function AIChat({ open, onClose }: AIChatProps) {
               </div>
 
               {/* Below-header search bar — small screens only */}
-              <div className={`sm:hidden overflow-hidden transition-all duration-300 ease-out ${searchOpen ? "max-h-20 opacity-100 pb-3" : "max-h-0 opacity-0"}`}>
+              <div className={`sm:hidden overflow-hidden transition-all duration-300 ease-out ${searchOpen ? "max-h-[360px] opacity-100 pb-3" : "max-h-0 opacity-0"}`}>
                 <div className="mx-6 border border-white/20 rounded-full px-5 py-3 flex items-center gap-2 bg-[#091519]">
                   <Search className="w-4 h-4 text-[#88B3B5] flex-shrink-0" />
                   <input
-                    placeholder="Search..."
+                    ref={mobileSearchInputRef}
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search conversations..."
                     className="flex-1 bg-transparent text-white text-sm placeholder:text-[#88B3B5] outline-none"
                   />
+                  {searchQuery.trim() !== "" && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      className="text-[#88B3B5] hover:text-white"
+                      aria-label="Clear search"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
+                {searchQuery.trim() !== "" && (
+                  <div className="mx-6 mt-2 max-h-64 overflow-y-auto rounded-2xl border border-white/10 bg-[#0F2228]">
+                    {searchLoading ? (
+                      <p className="px-4 py-3 text-[12px] text-[#88B3B5]">Searching…</p>
+                    ) : searchResults.length === 0 ? (
+                      <p className="px-4 py-3 text-[12px] text-[#88B3B5]">No conversations found.</p>
+                    ) : (
+                      searchResults.map((result) => (
+                        <button
+                          key={`mobile-${result.thread_id}-${result.match_message_id}`}
+                          type="button"
+                          onClick={() => void handleOpenSearchResult(result)}
+                          className="w-full border-b border-white/5 px-4 py-3 text-left hover:bg-white/5 transition-colors last:border-b-0"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-[13px] font-medium text-white truncate">{result.title}</p>
+                            <span className="text-[10px] text-[#88B3B5] flex-shrink-0">{formatSearchDate(result.updated_at)}</span>
+                          </div>
+                          <p
+                            className="mt-1 text-[12px] text-[#9CC6CA] line-clamp-2"
+                            dangerouslySetInnerHTML={{ __html: highlightPlainText(result.snippet, searchQuery) }}
+                          />
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1347,40 +2028,84 @@ export function AIChat({ open, onClose }: AIChatProps) {
             {/* Voice Transcription Preview Modal */}
             {isVoicePreviewOpen && (
               <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
-                <button className="absolute inset-0 bg-black/40" onClick={() => setIsVoicePreviewOpen(false)} aria-label="Close" />
+                <button className="absolute inset-0 bg-black/40" onClick={handleCloseVoiceModal} aria-label="Close" />
                 <div className="relative w-full max-w-2xl bg-[#0F2A2F] border border-white/10 rounded-2xl p-6 max-h-[80vh] overflow-y-auto">
-                  <h3 className="text-white text-[18px] font-semibold mb-2">Voice Transcription</h3>
+                  <div className="flex items-center gap-3 mb-4">
+                    {isVoiceTranscriptionLoading && (
+                      <div className="h-5 w-5 flex-shrink-0 rounded-full border-2 border-[#6B5A3B]/30 border-t-[#F2D9A6] animate-spin" />
+                    )}
+                    <h3 className="text-white text-[18px] font-semibold">
+                      {isVoiceTranscriptionLoading ? "Processing Voice Note…" : "Voice Note Ready"}
+                    </h3>
+                  </div>
+
+                  <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
+                    <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-1">Recording:</p>
+                    <p className="text-[#B9E9DD] text-[13px] truncate">{voiceFileName}</p>
+                  </div>
 
                   <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
                     <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">Transcript:</p>
-                    <p className="text-[#B9E9DD] text-[13px] leading-relaxed whitespace-pre-wrap break-words">
-                      {voiceTranscript}
-                    </p>
+                    {isVoiceTranscriptionLoading ? (
+                      <div className="space-y-3">
+                        <p className="text-[#B9E9DD] text-[13px]">{voiceTranscriptionStage}</p>
+                        <div className="space-y-2.5 pt-1">
+                          {[100, 92, 84, 68, 54].map((width, index) => (
+                            <div
+                              key={`voice-transcription-skeleton-${index}`}
+                              className="h-3 rounded-full bg-white/10 animate-pulse"
+                              style={{ width: `${width}%`, animationDelay: `${index * 120}ms` }}
+                            />
+                          ))}
+                        </div>
+                        <p className="text-[#88B3B5] text-[11px] leading-relaxed pt-1">
+                          Longer recordings may take a moment. Your transcript will appear here automatically.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-[#B9E9DD] text-[13px] leading-relaxed whitespace-pre-wrap break-words">
+                        {voiceTranscript}
+                      </p>
+                    )}
                   </div>
 
-                  {voiceTranscriptSummary && (
+                  {!isVoiceTranscriptionLoading && (
                     <div className="bg-[#132F3C] border border-[#355E73] rounded-lg p-4 mb-4">
-                      <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">What would you like to do?</p>
-                      <p className="text-[#B9E9DD] text-[13px] leading-relaxed">
-                        Send this transcript to chat for further discussion or analysis.
+                      <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">
+                        What should ELY do with this voice note?
                       </p>
+                      <textarea
+                        value={voiceInstruction}
+                        onChange={(event) => setVoiceInstruction(event.target.value)}
+                        placeholder="e.g. Summarize the key points, list action items, and flag anything urgent"
+                        className="w-full h-24 bg-[#1A3D4D] border border-[#355E73] rounded-lg p-3 text-[#B9E9DD] text-[13px] placeholder-[#5B7A87] focus:outline-none focus:border-[#4A7F94] resize-none"
+                      />
+                      <p className="text-[#88B3B5] text-[11px] mt-2 leading-relaxed">
+                        Optional. Leave blank and ELY will review the transcript and suggest useful next steps.
+                      </p>
+                      {voiceTranscriptSummary && (
+                        <p className="text-[#88B3B5] text-[11px] mt-2">{voiceTranscriptSummary}</p>
+                      )}
                     </div>
                   )}
 
                   <div className="flex justify-end gap-2">
                     <button
-                      onClick={() => setIsVoicePreviewOpen(false)}
+                      onClick={handleCloseVoiceModal}
                       className="px-4 py-2 rounded-lg bg-[#132A33] text-[#B9E9DD] hover:bg-[#1A3D4D]"
                     >
                       Close
                     </button>
-                    <button
-                      onClick={handleSendVoiceTranscriptToChat}
-                      className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] flex items-center gap-2"
-                    >
-                      <Send className="w-4 h-4" />
-                      Send to Chat
-                    </button>
+                    {!isVoiceTranscriptionLoading && (
+                      <button
+                        onClick={handleSendVoiceTranscriptToChat}
+                        disabled={!voiceTranscript.trim()}
+                        className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        <Send className="w-4 h-4" />
+                        Send to Chat
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1389,9 +2114,20 @@ export function AIChat({ open, onClose }: AIChatProps) {
             {/* File Analysis Preview Modal */}
             {isAnalyzeFilePreviewOpen && (
               <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
-                <button className="absolute inset-0 bg-black/40" onClick={() => setIsAnalyzeFilePreviewOpen(false)} aria-label="Close" />
+                <button
+                  className="absolute inset-0 bg-black/40"
+                  onClick={handleCloseFileAnalysisModal}
+                  aria-label="Close"
+                />
                 <div className="relative w-full max-w-2xl bg-[#0F2A2F] border border-white/10 rounded-2xl p-6 max-h-[80vh] overflow-y-auto">
-                  <h3 className="text-white text-[18px] font-semibold mb-2">File Analysis</h3>
+                  <div className="flex items-center gap-3 mb-4">
+                    {isFileAnalysisLoading && (
+                      <div className="h-5 w-5 flex-shrink-0 rounded-full border-2 border-[#4A7F94]/30 border-t-[#7BB6B8] animate-spin" />
+                    )}
+                    <h3 className="text-white text-[18px] font-semibold">
+                      {isFileAnalysisLoading ? "Analyzing File…" : "File Analysis"}
+                    </h3>
+                  </div>
 
                   <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-2">
                     <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-1">File:</p>
@@ -1402,25 +2138,190 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
                   <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
                     <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">Analysis:</p>
-                    <p className="text-[#B9E9DD] text-[13px] leading-relaxed whitespace-pre-wrap break-words">
-                      {fileAnalysisResult}
-                    </p>
+                    {isFileAnalysisLoading ? (
+                      <div className="space-y-3">
+                        <p className="text-[#B9E9DD] text-[13px]">{fileAnalysisStage}</p>
+                        <div className="space-y-2.5 pt-1">
+                          {[100, 94, 88, 72, 58].map((width, index) => (
+                            <div
+                              key={`file-analysis-skeleton-${index}`}
+                              className="h-3 rounded-full bg-white/10 animate-pulse"
+                              style={{ width: `${width}%`, animationDelay: `${index * 120}ms` }}
+                            />
+                          ))}
+                        </div>
+                        <p className="text-[#88B3B5] text-[11px] leading-relaxed pt-1">
+                          PDFs and spreadsheets can take a little longer. Your results will appear here automatically.
+                        </p>
+                      </div>
+                    ) : (
+                      <div
+                        className="text-[#B9E9DD] text-[13px] leading-relaxed ai-message-content"
+                        dangerouslySetInnerHTML={{ __html: formatAiMessageHtml(fileAnalysisResult) }}
+                      />
+                    )}
                   </div>
 
                   <div className="flex justify-end gap-2">
                     <button
-                      onClick={() => setIsAnalyzeFilePreviewOpen(false)}
+                      onClick={handleCloseFileAnalysisModal}
                       className="px-4 py-2 rounded-lg bg-[#132A33] text-[#B9E9DD] hover:bg-[#1A3D4D]"
                     >
                       Close
                     </button>
+                    {!isFileAnalysisLoading && (
+                      <button
+                        onClick={handleSendFileAnalysisToChat}
+                        className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] flex items-center gap-2"
+                      >
+                        <Send className="w-4 h-4" />
+                        Send to Chat
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Forecast Overview Modal */}
+            {isForecastModalOpen && (
+              <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+                <button className="absolute inset-0 bg-black/40" onClick={handleCloseForecastModal} aria-label="Close" />
+                <div className="relative w-full max-w-2xl bg-[#0F2A2F] border border-white/10 rounded-2xl p-6 max-h-[80vh] overflow-y-auto">
+                  <div className="flex items-center gap-3 mb-4">
+                    {isForecastLoading && (
+                      <div className="h-5 w-5 flex-shrink-0 rounded-full border-2 border-[#355E73]/30 border-t-[#BCE7FF] animate-spin" />
+                    )}
+                    <div>
+                      <h3 className="text-white text-[18px] font-semibold">
+                        {isForecastLoading ? "Building Forecast…" : formatForecastOutlookTitle(forecastData ?? { company_id: 0, pipeline: "", snapshot: {}, forecast: { outlook: "next_7_days", horizon_days: forecastHorizonDays, confidence: 0.5, recommendations: [], generated_at: "", trace_id: "" } })}
+                      </h3>
+                      {!isForecastLoading && forecastData && (
+                        <p className="text-[#88B3B5] text-[12px] mt-1">{formatForecastGeneratedAt(forecastData)}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {[7, 14, 30].map((days) => (
+                      <button
+                        key={days}
+                        type="button"
+                        onClick={() => void handleForecastAction(days as ForecastHorizonDays)}
+                        disabled={isForecastLoading || isRunningQuickAction}
+                        className={`rounded-full px-3 py-1 text-[11px] border transition-colors disabled:opacity-50 ${
+                          forecastHorizonDays === days
+                            ? "border-[#4A7F94] bg-[#1A3D4D] text-white"
+                            : "border-[#355E73] bg-[#132F3C] text-[#BCE7FF] hover:bg-[#1A3D4D]"
+                        }`}
+                      >
+                        {days} days
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
+                    <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">Operational snapshot</p>
+                    {isForecastLoading ? (
+                      <div className="space-y-3">
+                        <p className="text-[#B9E9DD] text-[13px]">{forecastStage}</p>
+                        <div className="space-y-2.5 pt-1">
+                          {[100, 88, 76, 64, 52].map((width, index) => (
+                            <div
+                              key={`forecast-skeleton-${index}`}
+                              className="h-3 rounded-full bg-white/10 animate-pulse"
+                              style={{ width: `${width}%`, animationDelay: `${index * 120}ms` }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ) : forecastData ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {buildForecastSnapshotRows(forecastData).map((row) => (
+                          <div key={row.label} className="rounded-lg bg-[#132F3C] px-3 py-2">
+                            <p className="text-[#88B3B5] text-[11px]">{row.label}</p>
+                            <p className="text-[#B9E9DD] text-[13px] font-medium">{row.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {!isForecastLoading && forecastData && buildForecastTrendRows(forecastData).length > 0 && (
+                    <div className="bg-[#132F3C] border border-[#355E73] rounded-lg p-4 mb-4">
+                      <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">Trend signals</p>
+                      <div className="space-y-2">
+                        {buildForecastTrendRows(forecastData).map((row) => (
+                          <p key={row.label} className="text-[#B9E9DD] text-[13px]">
+                            {row.label}: {row.value}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {!isForecastLoading && forecastData && (
+                    <>
+                      {forecastData.forecast.narrative && (
+                        <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
+                          <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">Executive forecast</p>
+                          <p className="text-[#B9E9DD] text-[13px] leading-relaxed whitespace-pre-wrap">{forecastData.forecast.narrative}</p>
+                        </div>
+                      )}
+
+                      <div className="bg-[#1A3D4D] border border-[#355E73] rounded-lg p-4 mb-4">
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold">Priority recommendations</p>
+                          <span className="text-[#9CC6CA] text-[11px]">{formatForecastConfidence(forecastData)}</span>
+                        </div>
+                        <div className="space-y-2">
+                          {getForecastRecommendations(forecastData).map((item, index) => (
+                            <p key={`${index}-${item.slice(0, 24)}`} className="text-[#B9E9DD] text-[13px] leading-relaxed">
+                              {index + 1}. {item}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-[#132F3C] border border-[#355E73] rounded-lg p-4 mb-4">
+                        <p className="text-[#88B3B5] text-[12px] uppercase tracking-wider font-semibold mb-2">
+                          What should ELY focus on in this forecast?
+                        </p>
+                        <textarea
+                          value={forecastInstruction}
+                          onChange={(event) => setForecastInstruction(event.target.value)}
+                          placeholder="e.g. Turn the highest-risk items into a weekly action plan for my leadership team"
+                          className="w-full h-24 bg-[#1A3D4D] border border-[#355E73] rounded-lg p-3 text-[#B9E9DD] text-[13px] placeholder-[#5B7A87] focus:outline-none focus:border-[#4A7F94] resize-none"
+                        />
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          <button
+                            type="button"
+                            onClick={handleForecastRecoveryPlanShortcut}
+                            className="rounded-full border border-[#355E73] bg-[#1A3D4D] px-3 py-1.5 text-[11px] text-[#BCE7FF] hover:bg-[#243E4D]"
+                          >
+                            Create recovery plan
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="flex justify-end gap-2">
                     <button
-                      onClick={handleSendFileAnalysisToChat}
-                      className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] flex items-center gap-2"
+                      onClick={handleCloseForecastModal}
+                      className="px-4 py-2 rounded-lg bg-[#132A33] text-[#B9E9DD] hover:bg-[#1A3D4D]"
                     >
-                      <Send className="w-4 h-4" />
-                      Send to Chat
+                      Close
                     </button>
+                    {!isForecastLoading && forecastData && (
+                      <button
+                        onClick={handleSendForecastToChat}
+                        className="px-4 py-2 rounded-lg bg-[#4A7F94] text-white hover:bg-[#5A8FA4] flex items-center gap-2"
+                      >
+                        <Send className="w-4 h-4" />
+                        Send to Chat
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1451,17 +2352,17 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     </button>
                     <button
                       onClick={() => voiceInputRef.current?.click()}
-                      disabled={isRunningQuickAction || isStreaming}
+                      disabled={isRunningQuickAction || isStreaming || isVoiceTranscriptionLoading}
                       className="rounded-full border border-[#6B5A3B] bg-[#342A1A] px-3 py-1.5 text-[11px] text-[#F2D9A6] hover:bg-[#433322] disabled:opacity-60"
                     >
-                      <span className="inline-flex items-center gap-1"><FileAudio className="h-3.5 w-3.5" /> Voice Input</span>
+                      <span className="inline-flex items-center gap-1"><FileAudio className="h-3.5 w-3.5" /> {isVoiceTranscriptionLoading ? "Processing…" : "Voice Input"}</span>
                     </button>
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isRunningQuickAction || isStreaming}
                       className="rounded-full border border-[#4F5D2A] bg-[#2B3418] px-3 py-1.5 text-[11px] text-[#D8E7A0] hover:bg-[#364221] disabled:opacity-60"
                     >
-                      <span className="inline-flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5" /> Analyze File</span>
+                      <span className="inline-flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5" /> {isFileAnalysisLoading ? "Analyzing…" : "Analyze File"}</span>
                     </button>
                     <button
                       onClick={handleTranscriptSummaryModalOpen}
@@ -1471,29 +2372,49 @@ export function AIChat({ open, onClose }: AIChatProps) {
                       Summarize Transcript
                     </button>
                     <button
-                      onClick={handleForecastAction}
-                      disabled={isRunningQuickAction || isStreaming}
+                      onClick={() => void handleForecastAction()}
+                      disabled={isRunningQuickAction || isStreaming || isForecastLoading}
                       className="rounded-full border border-[#355E73] bg-[#132F3C] px-3 py-1.5 text-[11px] text-[#BCE7FF] hover:bg-[#1A3D4D] disabled:opacity-60"
                     >
-                      <span className="inline-flex items-center gap-1"><LineChart className="h-3.5 w-3.5" /> Forecast</span>
+                      <span className="inline-flex items-center gap-1"><LineChart className="h-3.5 w-3.5" /> {isForecastLoading ? "Building…" : "Forecast"}</span>
                     </button>
                   </div>
-                  {weeklyReport && (
-                    <div className="flex items-center gap-2 pt-1">
-                      <span className="rounded-full border border-[#3D6A78] bg-[#11303A] px-2.5 py-1 text-[11px] text-[#9CC6CA]">
-                        Report: {weeklyReport.status} ({weeklyReport.progress}%)
-                      </span>
-                      {weeklyReport.status === "completed" && (
-                        <button
-                          onClick={handleDownloadWeeklyReport}
-                          className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
-                        >
-                          Download Summary
-                        </button>
-                      )}
-                    </div>
-                  )}
                 </div>
+              </div>
+            )}
+
+            {(isQueueingWeeklyReport || weeklyReport) && (
+              <div className="mx-6 mt-2 flex flex-wrap items-center gap-2 rounded-2xl border border-[#3D6A78] bg-[#11303A]/90 px-4 py-2.5">
+                <span className="rounded-full border border-[#3D6A78] bg-[#11303A] px-2.5 py-1 text-[11px] text-[#9CC6CA]">
+                  {isQueueingWeeklyReport
+                    ? "Starting weekly summary…"
+                    : weeklyReport?.status === "completed"
+                      ? `Weekly summary ready (${weeklyReport.progress}%)`
+                      : weeklyReport?.status === "failed"
+                        ? "Weekly summary failed"
+                        : weeklyReport?.status === "running"
+                          ? `Generating weekly summary (${weeklyReport.progress}%)`
+                          : `Weekly summary queued (${weeklyReport?.progress ?? 0}%)`}
+                </span>
+                {weeklyReport?.status === "completed" && (
+                  <>
+                    <button
+                      onClick={() => void handleDownloadWeeklyReport("pdf")}
+                      className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
+                    >
+                      Download PDF
+                    </button>
+                    <button
+                      onClick={() => void handleDownloadWeeklyReport("docx")}
+                      className="rounded-full border border-[#425FA6] bg-[#1A2F5E] px-3 py-1.5 text-[11px] font-semibold text-[#D8E4FF] hover:bg-[#243E79]"
+                    >
+                      Download Word
+                    </button>
+                  </>
+                )}
+                {weeklyReport?.status === "failed" && weeklyReport.error && (
+                  <span className="text-[11px] text-[#F2B8B8]">{weeklyReport.error}</span>
+                )}
               </div>
             )}
 
@@ -1512,13 +2433,17 @@ export function AIChat({ open, onClose }: AIChatProps) {
                 </div>
               )}
               {messages.map((msg, index) => (
-                <div key={msg.id}>
+                <div key={msg.id} id={`copilot-msg-${msg.id}`}>
                   {msg.role === "user" ? (
                     /* User message */
                     <div className="flex justify-end mb-3">
                       <div className="group relative max-w-[75%]">
                         <div className="bg-[#5B2155] text-white/90 text-[13px] px-4 py-2.5 rounded-[20px] leading-relaxed shadow-sm">
-                          {msg.content}
+                          {highlightMessageId === msg.id && highlightQuery.trim() !== "" ? (
+                            <span dangerouslySetInnerHTML={{ __html: highlightPlainText(msg.content, highlightQuery) }} />
+                          ) : (
+                            msg.content
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1528,7 +2453,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                       <div className="bg-gradient-to-b from-[#333333] to-[#16384B] rounded-[20px] p-4 shadow-sm">
                         <div
                           className="text-[#D0E2E3] text-[13px] leading-[1.7] ai-message-content font-light"
-                          dangerouslySetInnerHTML={{ __html: msg.content.replace(/\n/g, '<br />') }}
+                          dangerouslySetInnerHTML={{ __html: formatAiMessageHtml(msg.content) }}
                         />
                       </div>
                       {Array.isArray(msg.sources) && msg.sources.length > 0 && (
@@ -1569,7 +2494,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                           })()}
                           {(() => {
                             const args = actionArgsForMessage(msg);
-                            const payloadTool = String(messagePayload(msg)?.tool ?? "");
+                            const payloadTool = actionToolForMessage(msg);
                             if (!args) {
                               return null;
                             }

@@ -6,6 +6,7 @@ namespace App\Services\Calendar;
 
 use App\Models\CompanyCalendarConnection;
 use App\Models\Meeting;
+use App\Services\Google\GoogleTokenService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -13,12 +14,16 @@ use Illuminate\Validation\ValidationException;
 
 class GoogleCalendarEventService
 {
+    public function __construct(
+        private readonly GoogleTokenService $tokenService,
+    ) {}
+
     /**
      * @return array{event_id:string,calendar_id:?string,meet_url:?string,html_link:?string,external_updated_at:?string}
      */
     public function upsertMeeting(Meeting $meeting, CompanyCalendarConnection $connection): array
     {
-        $accessToken = $this->resolveAccessToken($connection);
+        $accessToken = $this->tokenService->resolveAccessToken($connection);
         $eventId = trim((string) ($meeting->google_event_id ?? ''));
         $calendarId = 'primary';
 
@@ -101,7 +106,7 @@ class GoogleCalendarEventService
             return;
         }
 
-        $accessToken = $this->resolveAccessToken($connection);
+        $accessToken = $this->tokenService->resolveAccessToken($connection);
 
         $response = Http::withToken($accessToken)
             ->timeout(30)
@@ -124,73 +129,6 @@ class GoogleCalendarEventService
             'meeting_id' => $meeting->id,
             'google_event_id' => $eventId,
         ]);
-    }
-
-    private function resolveAccessToken(CompanyCalendarConnection $connection): string
-    {
-        $expiresAt = $connection->token_expires_at;
-
-        if ($expiresAt !== null && $expiresAt->subSeconds(30)->isFuture()) {
-            return (string) $connection->access_token_encrypted;
-        }
-
-        return $this->refreshAccessToken($connection);
-    }
-
-    private function refreshAccessToken(CompanyCalendarConnection $connection): string
-    {
-        $clientId = trim((string) config('services.google_calendar.client_id'));
-        $clientSecret = trim((string) config('services.google_calendar.client_secret'));
-
-        if ($clientId === '' || $clientSecret === '') {
-            throw ValidationException::withMessages([
-                'integration' => ['Google Calendar credentials are not configured.'],
-            ]);
-        }
-
-        $response = Http::asForm()
-            ->timeout(30)
-            ->post('https://oauth2.googleapis.com/token', [
-                'client_id' => $clientId,
-                'client_secret' => $clientSecret,
-                'grant_type' => 'refresh_token',
-                'refresh_token' => (string) $connection->refresh_token_encrypted,
-            ]);
-
-        if (! $response->successful()) {
-            $connection->update([
-                'status' => 'error',
-                'last_error_message' => 'Google token refresh failed.',
-                'last_error_at' => now(),
-            ]);
-
-            throw ValidationException::withMessages([
-                'integration' => ['Google token refresh failed. Owner reconnection may be required.'],
-            ]);
-        }
-
-        /** @var array<string,mixed> $payload */
-        $payload = $response->json();
-        $newAccessToken = trim((string) ($payload['access_token'] ?? ''));
-
-        if ($newAccessToken === '') {
-            throw ValidationException::withMessages([
-                'integration' => ['Google token refresh did not return an access token.'],
-            ]);
-        }
-
-        $expiresIn = isset($payload['expires_in']) ? max(0, (int) $payload['expires_in']) : 0;
-
-        $connection->update([
-            'access_token_encrypted' => $newAccessToken,
-            'token_expires_at' => $expiresIn > 0 ? now()->addSeconds($expiresIn) : null,
-            'last_token_refresh_at' => now(),
-            'status' => 'active',
-            'last_error_message' => null,
-            'last_error_at' => null,
-        ]);
-
-        return $newAccessToken;
     }
 
     /**

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\AI\Reporting;
 
+use App\Models\Company;
 use App\Models\User;
 use App\Services\AI\Analytics\ExecutiveAnalyticsService;
+use App\Services\AI\Providers\AiProviderRouter;
 use App\Services\Company\CompanyContextService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -16,6 +18,8 @@ class ExecutiveReportService
     public function __construct(
         private readonly CompanyContextService $companyContextService,
         private readonly ExecutiveAnalyticsService $executiveAnalyticsService,
+        private readonly AiProviderRouter $aiProviderRouter,
+        private readonly WeeklyExecutiveSummaryExporter $weeklyExecutiveSummaryExporter,
     ) {}
 
     public function queueWeeklySummary(User $user, ?int $companyId = null, ?string $fromDate = null, ?string $toDate = null): array
@@ -92,6 +96,9 @@ class ExecutiveReportService
             ? $pack['dashboard_overview']['activity_summary']
             : [];
 
+        $routing = $this->aiProviderRouter->routingMetadata('report');
+        $narrative = $this->generateExecutiveNarrative($pack, $routing);
+
         return [
             'title' => 'Weekly Executive Summary',
             'generated_at' => now()->toIso8601String(),
@@ -104,6 +111,8 @@ class ExecutiveReportService
                 'attendance_today' => $pack['attendance_today'] ?? [],
             ],
             'context_pack' => $pack,
+            'narrative' => $narrative,
+            'routing' => $routing,
         ];
     }
 
@@ -114,7 +123,7 @@ class ExecutiveReportService
         return $this->statusByIds((int) $context['company']->id, (int) $user->id, $reportId);
     }
 
-    public function downloadPayloadForUser(User $user, string $reportId, ?int $companyId = null): array
+    public function downloadPayloadForUser(User $user, string $reportId, ?int $companyId = null, string $format = 'pdf'): array
     {
         $status = $this->statusForUser($user, $reportId, $companyId);
 
@@ -122,13 +131,47 @@ class ExecutiveReportService
             throw new HttpException(409, 'Report is not ready for download yet.');
         }
 
-        $content = json_encode($status['report'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $report = $status['report'];
+        $normalizedFormat = $format === 'docx' ? 'docx' : 'pdf';
+        $companyName = Company::query()
+            ->whereKey((int) ($report['company_id'] ?? 0))
+            ->value('name');
+
+        $content = $normalizedFormat === 'docx'
+            ? $this->weeklyExecutiveSummaryExporter->toWordDocument($report, is_string($companyName) ? $companyName : null)
+            : $this->weeklyExecutiveSummaryExporter->toPdf($report, is_string($companyName) ? $companyName : null);
 
         return [
-            'filename' => sprintf('copilot-weekly-summary-%s.json', $reportId),
-            'content_type' => 'application/json',
-            'content' => $content === false ? '{}' : $content,
+            'filename' => $this->weeklyExecutiveSummaryExporter->buildFilename($report, $normalizedFormat),
+            'content_type' => $normalizedFormat === 'docx'
+                ? 'application/msword'
+                : 'application/pdf',
+            'content' => $content,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $pack
+     * @param  array{provider: string, model: string, purpose: string}  $routing
+     */
+    private function generateExecutiveNarrative(array $pack, array $routing): ?string
+    {
+        $systemPrompt = <<<'PROMPT'
+You are ELY, your AI Assistant. Write a concise weekly executive narrative from the provided operational metrics JSON.
+Focus on KPI trends, risks, and recommended leadership actions. Do not invent metrics not present in the data.
+Use 3-5 short paragraphs in plain business language.
+PROMPT;
+
+        $userPrompt = "Weekly executive metrics JSON:\n" . json_encode($pack, JSON_UNESCAPED_SLASHES);
+
+        $text = $this->aiProviderRouter->generateForPurpose(
+            purpose: 'report',
+            systemPrompt: $systemPrompt,
+            userPrompt: $userPrompt,
+            options: ['max_tokens' => 900, 'temperature' => 0.2, 'model' => $routing['model']],
+        );
+
+        return is_string($text) && trim($text) !== '' ? trim($text) : null;
     }
 
     private function statusByIds(int $companyId, int $userId, string $reportId): array

@@ -8,6 +8,7 @@ use App\Enums\LeadPriority;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -29,6 +30,8 @@ class Lead extends Model
         'source',
         'status',
         'priority',
+        'budget_amount',
+        'budget_currency',
         'next_action',
         'last_interaction',
         'last_interaction_at',
@@ -41,6 +44,7 @@ class Lead extends Model
         return [
             'status' => 'string',
             'priority' => LeadPriority::class,
+            'budget_amount' => 'decimal:2',
             'meta' => 'array',
             'last_interaction_at' => 'datetime',
             'converted_at' => 'datetime',
@@ -80,5 +84,10 @@ class Lead extends Model
     public function activities(): HasMany
     {
         return $this->hasMany(LeadActivity::class);
+    }
+
+    public function meetings(): BelongsToMany
+    {
+        return $this->belongsToMany(Meeting::class, 'meeting_leads')->withTimestamps();
     }
 }

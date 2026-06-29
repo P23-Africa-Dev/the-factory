@@ -81,9 +81,9 @@ export default function Footer() {
         {/* Bottom Section */}
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-medium">
           <div className="flex gap-4">
-            <Link href="#" className="hover:underline">Terms & Conditions</Link>
+            <Link href="/files/Factory23 Terms of Service.pdf" target="_blank" rel="noopener noreferrer" className="hover:underline">Terms &amp; Conditions</Link>
             <span>|</span>
-            <Link href="#" className="hover:underline">Privacy Policy</Link>
+            <Link href="/files/Factory23 Privacy Policy.pdf" target="_blank" rel="noopener noreferrer" className="hover:underline">Privacy Policy</Link>
           </div>
           <span>2026. All right reserved</span>
         </div>

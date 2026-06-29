@@ -30,6 +30,9 @@ class CalendarIntegrationTest extends TestCase
             'profile',
             'https://www.googleapis.com/auth/calendar',
             'https://www.googleapis.com/auth/calendar.events',
+            'https://www.googleapis.com/auth/gmail.readonly',
+            'https://www.googleapis.com/auth/gmail.send',
+            'https://www.googleapis.com/auth/gmail.modify',
         ]);
     }
 
@@ -56,6 +59,8 @@ class CalendarIntegrationTest extends TestCase
         $this->assertStringContainsString('openid', (string) $response->json('data.authorization_url'));
         $this->assertStringContainsString('email', (string) $response->json('data.authorization_url'));
         $this->assertStringContainsString('profile', (string) $response->json('data.authorization_url'));
+        $this->assertStringContainsString('gmail.readonly', (string) $response->json('data.authorization_url'));
+        $this->assertStringContainsString('gmail.send', (string) $response->json('data.authorization_url'));
     }
 
     public function test_admin_can_request_google_calendar_connect_url(): void
@@ -163,12 +168,13 @@ class CalendarIntegrationTest extends TestCase
             ->assertJsonPath('data.access_token_revoked', true)
             ->assertJsonPath('data.refresh_token_revoked', true);
 
-        $this->assertDatabaseHas('company_calendar_connections', [
-            'company_id' => $company->id,
-            'status' => 'revoked',
-            'access_token_encrypted' => '',
-            'refresh_token_encrypted' => '',
-        ]);
+        $connection = CompanyCalendarConnection::query()
+            ->where('company_id', $company->id)
+            ->firstOrFail();
+
+        $this->assertSame('revoked', $connection->status);
+        $this->assertSame('', (string) $connection->access_token_encrypted);
+        $this->assertSame('', (string) $connection->refresh_token_encrypted);
     }
 
     public function test_owner_can_request_switch_url_and_existing_connection_is_invalidated(): void
@@ -204,12 +210,13 @@ class CalendarIntegrationTest extends TestCase
                 'data' => ['authorization_url', 'expires_in_seconds'],
             ]);
 
-        $this->assertDatabaseHas('company_calendar_connections', [
-            'company_id' => $company->id,
-            'status' => 'revoked',
-            'access_token_encrypted' => '',
-            'refresh_token_encrypted' => '',
-        ]);
+        $connection = CompanyCalendarConnection::query()
+            ->where('company_id', $company->id)
+            ->firstOrFail();
+
+        $this->assertSame('revoked', $connection->status);
+        $this->assertSame('', (string) $connection->access_token_encrypted);
+        $this->assertSame('', (string) $connection->refresh_token_encrypted);
     }
 
     public function test_admin_can_request_reconnect_url(): void
@@ -319,7 +326,7 @@ class CalendarIntegrationTest extends TestCase
                 'access_token' => 'oauth-access-token',
                 'refresh_token' => 'oauth-refresh-token',
                 'expires_in' => 3600,
-                'scope' => 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+                'scope' => 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify',
                 'token_type' => 'Bearer',
             ], 200),
             'https://www.googleapis.com/oauth2/v3/userinfo' => Http::response([
@@ -333,7 +340,7 @@ class CalendarIntegrationTest extends TestCase
         $callbackResponse->assertOk();
         $callbackResponse->assertHeader('Content-Type', 'text/html; charset=UTF-8');
         $callbackResponse->assertSee('google-calendar-oauth', false);
-        $callbackResponse->assertSee('Google Calendar connected successfully. You can close this window.', false);
+        $callbackResponse->assertSee('Google Workspace connected successfully for calendar and email. You can close this window.', false);
     }
 
     public function test_oauth_callback_persists_connection_for_admin(): void
@@ -463,6 +470,28 @@ class CalendarIntegrationTest extends TestCase
             'status' => 'active',
             'connected_at' => now(),
         ]);
+
+        $this->assertSame(1, CompanyCalendarConnection::query()->where('company_id', $company->id)->count());
+
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            CompanyCalendarConnection::query()->updateOrCreate(
+                ['company_id' => $company->id],
+                [
+                    'owner_user_id' => $owner->id,
+                    'organizer_email' => 'owner-two@factory23.test',
+                    'organizer_google_user_id' => 'google-owner-456',
+                    'access_token_encrypted' => 'access-token-two',
+                    'refresh_token_encrypted' => 'refresh-token-two',
+                    'token_expires_at' => now()->addHour(),
+                    'status' => 'active',
+                    'connected_at' => now(),
+                ],
+            );
+
+            $this->assertSame(1, CompanyCalendarConnection::query()->where('company_id', $company->id)->count());
+
+            return;
+        }
 
         $this->expectException(QueryException::class);
 

@@ -10,6 +10,7 @@ import {
   getAttendanceStats,
   getAttendanceMetrics,
   getAttendanceRecords,
+  getAgentAttendanceHistory,
   getAttendanceSettings,
   updateAttendanceSettings,
   generatePayrollSummaries,
@@ -27,6 +28,8 @@ import {
   type AttendanceRecordsResponse,
   type AttendanceSettings,
   type PayrollSummariesParams,
+  type ManagedAgentHistoryParams,
+  type AgentAttendanceHistoryResponse,
 } from "@/lib/api/attendance";
 import { toast } from "sonner";
 
@@ -41,6 +44,8 @@ export const ATTENDANCE_KEYS = {
     ["attendance", "metrics", companyId, date] as const,
   records: (params: AttendanceRecordsParams) =>
     ["attendance", "records", params] as const,
+  agentHistory: (userId: number | string | undefined, params: ManagedAgentHistoryParams) =>
+    ["attendance", "agent-history", userId, params] as const,
   settings: (companyId: number | string | undefined) =>
     ["attendance", "settings", companyId] as const,
 };
@@ -153,6 +158,23 @@ export function useAttendanceRecords(params: AttendanceRecordsParams) {
       return res.data;
     },
     enabled: !!token,
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+export function useAgentAttendanceHistory(
+  userId: number | string | undefined,
+  params: ManagedAgentHistoryParams
+) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useQuery({
+    queryKey: ATTENDANCE_KEYS.agentHistory(userId, params),
+    queryFn: async (): Promise<AgentAttendanceHistoryResponse> => {
+      const res = await getAgentAttendanceHistory(userId!, params, token);
+      return res.data;
+    },
+    enabled: !!token && !!userId && !!params.company_id,
     staleTime: 1000 * 60 * 2,
   });
 }

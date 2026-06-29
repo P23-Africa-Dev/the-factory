@@ -5,7 +5,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
+import { showApiErrorToast } from '@/lib/api/errors';
 import { useCreateLead, useCrmPipelines, useCrmLabels } from '@/features/crm';
+import PhoneNumberInput from '@/components/ui/PhoneNumberInput';
+
 
 interface AddLeadModalProps {
   visible: boolean;
@@ -20,6 +23,7 @@ interface FormState {
   location: string;
   source: string;
   status: string;
+  priority: 'high' | 'medium' | 'low' | 'urgent';
   pipelineId: string;
 }
 
@@ -30,22 +34,20 @@ const INITIAL_FORM: FormState = {
   location: '',
   source: '',
   status: '',
+  priority: 'medium',
   pipelineId: '',
 };
 
-const COUNTRY_CODES = [
-  { code: "+234", label: "NG (+234)" },
-  { code: "+254", label: "KE (+254)" },
-  { code: "+233", label: "GH (+233)" },
-  { code: "+27", label: "ZA (+27)" },
-  { code: "+1", label: "US (+1)" },
-  { code: "+44", label: "GB (+44)" },
-] as const;
+const PRIORITY_OPTIONS = [
+  { value: 'low' as const, label: 'Low' },
+  { value: 'medium' as const, label: 'Medium' },
+  { value: 'high' as const, label: 'High' },
+  { value: 'urgent' as const, label: 'Urgent' },
+];
 
 export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps): React.ReactElement | null {
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
-  const [countryCode, setCountryCode] = useState('+234');
-  const [phonePart, setPhonePart] = useState('');
+  const [phone, setPhone] = useState('');
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
   const { data: pipelines = [] } = useCrmPipelines();
@@ -55,8 +57,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
     onSuccess: () => {
       toast.success('Lead added');
       setForm(INITIAL_FORM);
-      setCountryCode('+234');
-      setPhonePart('');
+      setPhone('');
       setErrors({});
       onSuccess?.();
       onClose();
@@ -94,23 +95,28 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
 
     const defaultStatus = labels[0]?.slug ?? 'newly_lead';
 
-    createLead({
-      company_id: companyId,
-      pipeline_id: pipelineId,
-      name: form.name.trim(),
-      email: form.email.trim() || null,
-      phone: phonePart.trim() ? (countryCode + phonePart.trim()) : null,
-      location: form.location.trim() || null,
-      source: form.source.trim() || 'agent upload',
-      status: form.status || defaultStatus,
-    });
+    createLead(
+      {
+        company_id: companyId,
+        pipeline_id: pipelineId,
+        name: form.name.trim(),
+        email: form.email.trim() || null,
+        phone: phone || null,
+        location: form.location.trim() || null,
+        source: form.source.trim() || 'agent_upload',
+        status: form.status || defaultStatus,
+        priority: form.priority,
+      },
+      {
+        onError: (err) => showApiErrorToast(err, 'Could not add lead'),
+      },
+    );
   };
 
   const handleClose = () => {
     if (isPending) return;
     setForm(INITIAL_FORM);
-    setCountryCode('+234');
-    setPhonePart('');
+    setPhone('');
     setErrors({});
     onClose();
   };
@@ -174,27 +180,12 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
               {/* Phone */}
               <div className="flex flex-col">
                 <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 font-sans">Phone</label>
-                <div className="flex gap-2 w-full">
-                  <select
-                    value={countryCode}
-                    onChange={(e) => setCountryCode(e.target.value)}
-                    className="h-12 border-1.5 border-white/12 rounded-xl px-3 text-sm text-white bg-[#0A1D25] outline-none transition-colors focus:border-[#75ADAF]"
-                    style={{ backgroundColor: '#0A1D25' }}
-                  >
-                    {COUNTRY_CODES.map((c) => (
-                      <option key={c.code} value={c.code} style={{ backgroundColor: '#0A1D25' }}>
-                        {c.code}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="tel"
-                    placeholder="Enter phone number"
-                    value={phonePart}
-                    onChange={(e) => setPhonePart(e.target.value)}
-                    className="flex-1 h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
-                  />
-                </div>
+                <PhoneNumberInput
+                  value={phone}
+                  onChange={setPhone}
+                  placeholder="Phone number"
+                  defaultCountry="NG"
+                />
               </div>
               {/* Location */}
               <div className="flex flex-col">
@@ -218,6 +209,28 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                   onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
                   className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
                 />
+              </div>
+
+              {/* Priority */}
+              <div className="flex flex-col">
+                <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Priority</label>
+                <div className="flex overflow-x-auto pb-1 gap-2 scrollbar-none">
+                  {PRIORITY_OPTIONS.map((option) => {
+                    const isSelected = form.priority === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, priority: option.value }))}
+                        className={`px-3.5 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-colors outline-none focus:outline-none ${
+                          isSelected ? 'bg-[#7BB6B8] text-white' : 'bg-white/8 text-white/60'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Status pills selection */}

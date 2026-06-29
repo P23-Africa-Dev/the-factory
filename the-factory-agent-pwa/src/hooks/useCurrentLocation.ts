@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useGeolocation } from '@/features/tracking';
 
 type LocationState = {
   latitude: number;
@@ -16,7 +17,25 @@ type UseCurrentLocationReturn = {
   refresh: () => Promise<void>;
 };
 
+function mapGeolocationError(err: unknown): string {
+  const geoErr = err as GeolocationPositionError;
+  if (geoErr?.code === geoErr?.PERMISSION_DENIED) {
+    return 'Location permission denied';
+  }
+  if (geoErr?.code === geoErr?.POSITION_UNAVAILABLE) {
+    return 'Location position unavailable';
+  }
+  if (geoErr?.code === geoErr?.TIMEOUT) {
+    return 'Location request timed out';
+  }
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  return 'Failed to get location';
+}
+
 export function useCurrentLocation(): UseCurrentLocationReturn {
+  const { ensureLocationPermission, resolveCurrentPosition } = useGeolocation();
   const [location, setLocation] = useState<LocationState>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,36 +48,32 @@ export function useCurrentLocation(): UseCurrentLocationReturn {
     }
 
     setIsLoading(true);
-    setTimeout(() => setError(null), 0);
+    setError(null);
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocation({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          timestamp: pos.timestamp,
-        });
+    try {
+      const status = await ensureLocationPermission();
+      if (status === 'denied') {
+        setError('Location permission denied');
         setIsLoading(false);
-      },
-      (err) => {
-        let message = 'Failed to get location';
-        if (err.code === err.PERMISSION_DENIED) {
-          message = 'Location permission denied';
-        } else if (err.code === err.POSITION_UNAVAILABLE) {
-          message = 'Location position unavailable';
-        } else if (err.code === err.TIMEOUT) {
-          message = 'Location request timed out';
-        }
-        setError(message);
-        setIsLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-  }, []);
+        return;
+      }
+
+      const pos = await resolveCurrentPosition();
+      setLocation({
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        timestamp: pos.timestamp,
+      });
+    } catch (err) {
+      setError(mapGeolocationError(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [ensureLocationPermission, resolveCurrentPosition]);
 
   useEffect(() => {
-    setTimeout(fetchLocation, 0);
+    void fetchLocation();
   }, [fetchLocation]);
 
   return { location, error, isLoading, refresh: fetchLocation };

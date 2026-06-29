@@ -37,6 +37,25 @@ export type CopilotThreadSummary = {
     last_message_preview: string | null;
 };
 
+export type CopilotThreadSearchResult = {
+    thread_id: string;
+    title: string;
+    updated_at: string;
+    snippet: string;
+    match_message_id: string;
+    match_role: string;
+    message_count: number;
+};
+
+export type CopilotThreadSearchResponse = {
+    items: CopilotThreadSearchResult[];
+    pagination: {
+        has_more: boolean;
+        next_cursor: string | null;
+        scanned_threads: number;
+    };
+};
+
 export type CopilotChatContext = {
     latitude?: number;
     longitude?: number;
@@ -106,6 +125,29 @@ export type WeeklySummaryStatusResponse = {
     available: boolean;
 };
 
+const WEEKLY_SUMMARY_STATUSES = new Set<WeeklySummaryStatusResponse["status"]>([
+    "queued",
+    "running",
+    "completed",
+    "failed",
+]);
+
+export function normalizeWeeklySummaryStatus(raw: Record<string, unknown>): WeeklySummaryStatusResponse {
+    const rawStatus = typeof raw.status === "string" ? raw.status : "queued";
+    const status = WEEKLY_SUMMARY_STATUSES.has(rawStatus as WeeklySummaryStatusResponse["status"])
+        ? (rawStatus as WeeklySummaryStatusResponse["status"])
+        : "queued";
+    const downloadReady = raw.download_ready === true || raw.available === true || status === "completed";
+
+    return {
+        report_id: String(raw.report_id ?? ""),
+        status,
+        progress: typeof raw.progress === "number" ? raw.progress : Number(raw.progress) || 0,
+        error: typeof raw.error === "string" ? raw.error : null,
+        available: status === "completed" && downloadReady,
+    };
+}
+
 export type CopilotAssigneeOption = {
     id: number;
     name: string;
@@ -152,6 +194,35 @@ export function listCopilotThreads(
     return apiRequest<{ items: CopilotThreadSummary[] }>({
         method: "GET",
         path: `/copilot/threads${buildQuery(companyId)}`,
+        token,
+    });
+}
+
+export function searchCopilotThreads(
+    token: string,
+    query: string,
+    companyId?: number | string,
+    limit = 15,
+    cursor?: string
+): Promise<ApiEnvelope<CopilotThreadSearchResponse>> {
+    const params = new URLSearchParams();
+    params.set("q", query.trim());
+
+    if (limit > 0) {
+        params.set("limit", String(limit));
+    }
+
+    if (cursor) {
+        params.set("cursor", cursor);
+    }
+
+    if (companyId !== undefined && companyId !== null && String(companyId).trim() !== "") {
+        params.set("company_id", String(companyId));
+    }
+
+    return apiRequest<CopilotThreadSearchResponse>({
+        method: "GET",
+        path: `/copilot/threads/search?${params.toString()}`,
         token,
     });
 }
@@ -273,42 +344,68 @@ export function queueWeeklySummaryReport(
     });
 }
 
-export function getWeeklySummaryStatus(
+export async function getWeeklySummaryStatus(
     reportId: string,
     token: string,
     companyId?: number | string
 ): Promise<ApiEnvelope<WeeklySummaryStatusResponse>> {
-    return apiRequest<WeeklySummaryStatusResponse>({
+    const response = await apiRequest<Record<string, unknown>>({
         method: "GET",
         path: `/copilot/reports/weekly-summary/${encodeURIComponent(reportId)}${buildQuery(companyId)}`,
         token,
     });
+
+    return {
+        ...response,
+        data: normalizeWeeklySummaryStatus(response.data),
+    };
 }
+
+export type WeeklySummaryDownloadFormat = "pdf" | "docx";
 
 export async function downloadWeeklySummaryReport(
     reportId: string,
     token: string,
-    companyId?: number | string
-): Promise<{ filename: string; content: string }> {
+    companyId?: number | string,
+    format: WeeklySummaryDownloadFormat = "pdf"
+): Promise<{ filename: string; content: ArrayBuffer; mimeType: string }> {
+    const params = new URLSearchParams();
+    if (companyId !== undefined && companyId !== null && String(companyId).trim() !== "") {
+        params.set("company_id", String(companyId));
+    }
+    params.set("format", format);
+    const query = `?${params.toString()}`;
+
     const response = await fetch(
-        `${API_BASE_URL}/copilot/reports/weekly-summary/${encodeURIComponent(reportId)}/download${buildQuery(companyId)}`,
+        `${API_BASE_URL}/copilot/reports/weekly-summary/${encodeURIComponent(reportId)}/download${query}`,
         {
             method: "GET",
             headers: {
-                Accept: "application/json",
+                Accept: "application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/octet-stream, */*",
                 ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
         }
     );
 
-    const payload = await response.json().catch(() => null);
     if (!response.ok) {
+        const payload = await response.json().catch(() => null);
         throw new ApiRequestError(payload?.message ?? "Unable to download weekly summary.", response.status, payload);
     }
 
-    const body = String(payload?.data?.content ?? "");
-    const filename = String(payload?.data?.filename ?? `weekly-summary-${reportId}.json`);
-    return { filename, content: body };
+    const content = await response.arrayBuffer();
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+    const mimeType =
+        format === "docx"
+            ? "application/msword"
+            : "application/pdf";
+    const filename = filenameMatch?.[1]
+        ? decodeURIComponent(filenameMatch[1].replace(/"/g, ""))
+        : format === "docx"
+          ? `Weekly-Executive-Summary.doc`
+          : `Weekly-Executive-Summary.pdf`;
+
+    return { filename, content, mimeType };
 }
 
 export function transcribeVoiceInput(
@@ -365,13 +462,55 @@ export function summarizeMeetingTranscript(
     });
 }
 
+export type ForecastRecommendation = {
+    priority: "high" | "medium" | "low";
+    area: "tasks" | "payroll" | "projects" | "crm" | "attendance" | "team" | "general";
+    text: string;
+};
+
+export type ForecastOverviewResponse = {
+    company_id: number;
+    role?: string;
+    pipeline: string;
+    snapshot: {
+        kpis?: Record<string, unknown>;
+        project_kpis?: Record<string, unknown>;
+        activity_summary?: Record<string, unknown>;
+        payroll_overview?: Record<string, unknown>;
+        attendance_today?: Record<string, unknown>;
+        signals?: Record<string, unknown>;
+        trends?: Record<string, unknown>;
+    };
+    forecast: {
+        outlook: string;
+        horizon_days?: number;
+        confidence: number;
+        risk_level?: "low" | "medium" | "high";
+        recommendations: string[];
+        structured_recommendations?: ForecastRecommendation[];
+        narrative?: string | null;
+        generated_at: string;
+        trace_id: string;
+    };
+};
+
+export type ForecastHorizonDays = 7 | 14 | 30;
+
 export function getForecastOverview(
     token: string,
-    companyId?: number | string
-): Promise<ApiEnvelope<Record<string, unknown>>> {
-    return apiRequest<Record<string, unknown>>({
+    companyId?: number | string,
+    horizonDays: ForecastHorizonDays = 7
+): Promise<ApiEnvelope<ForecastOverviewResponse>> {
+    const params = new URLSearchParams();
+    if (companyId !== undefined && companyId !== null && String(companyId).trim() !== "") {
+        params.set("company_id", String(companyId));
+    }
+    params.set("horizon", String(horizonDays));
+    const query = params.toString();
+
+    return apiRequest<ForecastOverviewResponse>({
         method: "GET",
-        path: `/copilot/forecast/overview${buildQuery(companyId)}`,
+        path: `/copilot/forecast/overview${query ? `?${query}` : ""}`,
         token,
     });
 }

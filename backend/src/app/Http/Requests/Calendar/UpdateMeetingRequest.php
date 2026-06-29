@@ -46,6 +46,8 @@ class UpdateMeetingRequest extends FormRequest
             'attendees.*.display_name' => ['nullable', 'string', 'max:255'],
             'attendees.*.user_id' => ['nullable', 'integer', 'exists:users,id'],
             'attendees.*.is_optional' => ['nullable', 'boolean'],
+            'lead_ids' => ['sometimes', 'nullable', 'array', 'max:50'],
+            'lead_ids.*' => ['integer', 'distinct', 'exists:leads,id'],
         ];
     }
 }

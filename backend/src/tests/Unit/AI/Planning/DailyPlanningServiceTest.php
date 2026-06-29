@@ -8,6 +8,7 @@ use App\Enums\LeadPriority;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
 use App\Enums\TaskType;
+use App\Models\AttendanceSetting;
 use App\Models\Company;
 use App\Models\CompanyLocation;
 use App\Models\Lead;
@@ -121,6 +122,15 @@ final class DailyPlanningServiceTest extends TestCase
         $company->users()->attach($agent->id, [
             'role' => 'agent',
             'joined_at' => now(),
+        ]);
+
+        AttendanceSetting::query()->create([
+            'company_id' => $company->id,
+            'opening_time' => '09:00:00',
+            'closing_time' => '17:00:00',
+            'working_days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+            'clockin_window_minutes' => 15,
+            'auto_clockout_enabled' => true,
         ]);
 
         $pipelineId = LeadPipeline::query()->create([

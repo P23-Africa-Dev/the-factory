@@ -10,9 +10,8 @@ import type { CreateSavedLocationInput, SavedLocationFilters } from './types';
 export function useSavedLocations(filters?: SavedLocationFilters) {
   const isAuthenticated =
     typeof window !== 'undefined' && Boolean(appStore.getString('auth_token'));
-  const companyId = getActiveCompanyId();
   return useQuery({
-    queryKey: locationKeys.list(companyId, filters),
+    queryKey: locationKeys.list(filters),
     queryFn: () => locationApi.list(filters),
     enabled: isAuthenticated,
     staleTime: 1000 * 60,
@@ -47,7 +46,7 @@ export function useCreateSavedLocation() {
         toast.success(
           variables.saveToCrm ? 'Saved to map & CRM' : 'Location saved',
           variables.saveToCrm
-            ? 'Lead added to Saved from Map pipeline.'
+            ? 'Lead added to Map Leads pipeline.'
             : 'Your location has been added to the map.',
         );
       }

@@ -12,7 +12,10 @@ class IntentClassifier
 
         $actionPatterns = [
             'tasks.create' => [
-                '/\b(create|add|open|new)\s+(a\s+|an\s+)?task\b/i',
+                '/\b(create|add|open|new|set|assign|give)\s+(a\s+|an\s+)?task\b/i',
+                '/\b(set|assign|give)\b.{0,40}\btask\b/i',
+                '/\btask\b.{0,50}\bfor\b/i',
+                '/\bcreate\s+task\b/i',
             ],
             'tasks.reassign' => [
                 '/\b(reassign|transfer|move|change)\s+(the\s+)?task\b/i',
@@ -37,6 +40,21 @@ class IntentClassifier
                 '/\brecord\s+(this\s+)?visit\b/i',
                 '/\bupdate\s+crm\s+from\s+visit\b/i',
             ],
+            'crm.create_lead' => [
+                '/\b(add|create|register|save|new)\b.{0,60}\b(lead|crm\s+lead|crm\s+record)\b/i',
+                '/\b(add|create|register)\b.{0,40}\b(business|company)\b.{0,40}\b(to\s+)?(crm|pipeline)\b/i',
+                '/\bnew\s+lead\b/i',
+            ],
+            'crm.send_email' => [
+                '/\b(send|email|write|draft)\b.{0,80}\b(email|mail|message)\b/i',
+                '/\bfollow[\s-]?up\b.{0,60}\b(email|mail|client|lead|customer)\b/i',
+                '/\bemail\b.{0,40}\b(about|regarding|for)\b/i',
+            ],
+            'kpis.create' => [
+                '/\b(create|add|set|define|new)\b.{0,60}\bkpi\b/i',
+                '/\b(create|add|set|define)\b.{0,60}\b(key\s*performance\s*indicator|performance\s*target)\b/i',
+                '/\bkpi\s+name\b/i',
+            ],
         ];
 
         foreach ($actionPatterns as $tool => $regexPatterns) {
@@ -52,11 +70,6 @@ class IntentClassifier
         }
 
         $toolPatterns = [
-            'crm.top_leads' => [
-                '/\b(top|hot|hottest)\s+leads?\b/i',
-                '/\bcrm\b/i',
-                '/\bpipeline\b/i',
-            ],
             'crm.follow_up_summary' => [
                 '/\bfollow[\s-]?up\s+(summary|recommend)/i',
                 '/\blead\s+summar/i',
@@ -68,6 +81,36 @@ class IntentClassifier
             'crm.visit_extract' => [
                 '/\b(process|structure|extract)\s+visit\s+notes?\b/i',
                 '/\bvisit\s+notes?\b/i',
+            ],
+            'crm.email_threads' => [
+                '/\b(summarize|summary|show)\b.{0,60}\b(email|conversation|thread)\b/i',
+                '/\bconversation\b.{0,40}\b(with|for)\b/i',
+            ],
+            'crm.unread_emails' => [
+                '/\bunread\b.{0,40}\b(email|mail|message)\b/i',
+                '/\b(show|list)\b.{0,40}\bunread\b/i',
+            ],
+            'crm.draft_email' => [
+                '/\bdraft\b.{0,60}\b(email|mail|message|reminder|follow[\s-]?up)\b/i',
+                '/\bwrite\b.{0,40}\b(email|mail)\b/i',
+            ],
+            'crm.top_leads' => [
+                '/\b(top|hot|hottest)\s+leads?\b/i',
+                '/\bpipeline\b/i',
+                '/\b(show|list)\s+(my\s+)?leads?\b/i',
+                '/\bcrm\s+leads?\b/i',
+                '/\bleads?\s+(in|on|from)\s+(my\s+)?crm\b/i',
+                '/\b(my\s+)?crm\s+(leads?|records?|pipeline)\b/i',
+                '/\bhow\s+many\s+leads?\b/i',
+                '/\b(list|show|get|give|provide|pull|fetch|display|retrieve|view)\b.{0,60}\bleads?\b/i',
+                '/\bleads?\s+(list|listing|overview|summary)\b/i',
+            ],
+            'org.users' => [
+                '/\b(list|show|get|display|view|who\s+are)\b.{0,60}\b(users?|members?|staff|workforce|team\s+members?)\b/i',
+                '/\busers?\s+(in|under|of)\s+(this\s+)?(organi[sz]ation|company|team)\b/i',
+                '/\bteam\s+(members?|roster|directory)\b/i',
+                '/\b(organi[sz]ation|company)\s+users?\b/i',
+                '/\blist\s+(all\s+)?(users?|members?|agents?)\b/i',
             ],
             'tasks.overdue' => [
                 '/\boverdue\s+tasks?\b/i',

@@ -14,6 +14,13 @@ import {
 } from '@/hooks/use-internal-user-onboarding';
 import { toast } from 'sonner';
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  getAgentPresenceBadgeClass,
+  getAgentPresenceLabels,
+  getAgentSessionBadgeClass,
+  mapApiPresence,
+} from "@/lib/agent-presence";
+import type { InternalUserListItem } from "@/lib/api/internal-users";
 
 type Agent = {
   id: string;
@@ -26,6 +33,11 @@ type Agent = {
   time: string;
   avatar: string;
   active: boolean;
+  isMapActive: boolean;
+  isSessionOnline: boolean;
+  location?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 const PAGE_SIZE = 5;
 const ROLES = ['All Roles', 'Admin', 'Field Agent', 'Supervisor'] as const;
@@ -36,20 +48,13 @@ function normalizeRole(role?: string): 'admin' | 'agent' | 'supervisor' {
   return 'agent';
 }
 
-function mapAgent(user: {
-  id: number;
-  name: string;
-  email: string;
-  role?: string;
-  internal_role?: string;
-  assigned_zone?: string | null;
-  phone_number?: string | null;
-  avatar_url?: string | null;
-  onboarding_status?: string;
-  is_active?: boolean;
-}): Agent {
+function mapAgent(user: InternalUserListItem): Agent {
   const internalRole = normalizeRole(user.internal_role ?? user.role);
-  const isActive = user.is_active !== false && user.onboarding_status === 'active';
+  const presence = mapApiPresence(user.presence);
+  const labels = getAgentPresenceLabels(presence, {
+    onboardingStatus: user.onboarding_status,
+    isActive: user.is_active,
+  });
 
   return {
     id: String(user.id),
@@ -58,15 +63,24 @@ function mapAgent(user: {
     zone: user.assigned_zone ?? 'Unassigned',
     phone: user.phone_number ?? '—',
     role: internalRole === 'admin' ? 'Admin' : internalRole === 'supervisor' ? 'Supervisor' : 'Field Agent',
-    status: isActive ? 'Active (View on Map)' : 'Offline',
-    time: isActive ? 'Online' : user.onboarding_status === 'pending_onboarding' ? 'Pending onboarding' : 'Offline',
+    status: labels.badgeLabel,
+    time: labels.subtextLabel,
     avatar: user.avatar_url ?? '/avatars/male-avatar.png',
-    active: isActive,
+    active: labels.isMapActive,
+    isMapActive: labels.isMapActive,
+    isSessionOnline: labels.isSessionOnline,
+    latitude: presence.latitude ?? undefined,
+    longitude: presence.longitude ?? undefined,
+    location: presence.activeTaskTitle ?? null,
   };
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 function AgentDetailSidebar({ agent }: { agent: Agent }) {
+  const hasLocation = Boolean(
+    agent.isMapActive && (agent.location || agent.latitude || agent.longitude),
+  );
+
   return (
     <div className="flex flex-col gap-5 w-full xl:w-90 xl:shrink-0">
       {/* Info */}
@@ -99,8 +113,8 @@ function AgentDetailSidebar({ agent }: { agent: Agent }) {
                 <p className="text-[12px] font-bold text-dash-dark">{agent.name}</p>
                 <div className="flex items-center justify-center gap-1.5 mt-0.5">
                   <span className="text-[11px] text-gray-400">{agent.zone}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${agent.active ? 'bg-[#9D4EDD] text-white' : 'bg-gray-200 text-gray-500'}`}>
-                    {agent.active ? 'Online' : 'Offline'}
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${getAgentSessionBadgeClass(agent.isSessionOnline)}`}>
+                    {agent.isSessionOnline ? 'Online' : 'Offline'}
                   </span>
                 </div>
               </div>
@@ -165,6 +179,9 @@ function AgentDetailSidebar({ agent }: { agent: Agent }) {
             </div>
           </div>
         </div>
+
+        {/* Progress bars - commented out per user request */}
+        {/*
         <div className="mt-4">
           <div className="flex rounded-full overflow-hidden h-3">
             <div className="w-[38%] bg-dash-teal" />
@@ -175,11 +192,15 @@ function AgentDetailSidebar({ agent }: { agent: Agent }) {
             <p className="text-[11px] text-gray-400">Pending</p>
           </div>
         </div>
+        */}
+
         <div className="mt-4">
-          <button className={`px-5 py-2.5 rounded-full text-[12px] font-bold hover:opacity-90 transition-all inline-flex items-center gap-2 ${agent.active ? 'bg-[#9D4EDD] text-white' : 'bg-gray-600 text-white'}`}>
-            {agent.active ? 'Active (View on Map)' : 'Offline'}
-            {agent.active && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
-          </button>
+          {hasLocation && (
+            <button className={`px-5 py-2.5 rounded-full text-[12px] font-bold hover:opacity-90 transition-all inline-flex items-center gap-2 ${agent.isMapActive ? 'bg-[#9D4EDD] text-white' : 'bg-gray-600 text-white'}`}>
+              {agent.isMapActive ? 'Active (View on Map)' : 'Offline'}
+              {agent.isMapActive && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+            </button>
+          )}
           <p className="text-[11px] text-gray-500 mt-2">{agent.time}</p>
         </div>
       </div>
@@ -199,7 +220,7 @@ function AgentRow({ agent, isSelected, onClick }: { agent: Agent; isSelected: bo
         label={agent.status}
         subText={agent.time}
         isSelected={isSelected}
-        badgeClass={agent.active ? 'bg-[#2F6C0E] text-white' : 'bg-[#EF7129] text-white'}
+        badgeClass={getAgentPresenceBadgeClass(agent)}
       />
     </OpsTableRow>
   );
@@ -227,7 +248,7 @@ export default function AllAgentsPage() {
       : roleFilter === 'Supervisor'
         ? 'supervisor'
         : 'agent';
-  const statusParam = statusFilter === 'all' ? undefined : statusFilter === 'active' ? 'active' : 'inactive';
+  const statusParam = statusFilter === 'all' ? undefined : statusFilter === 'active' ? 'active' : 'offline';
   const zoneParam = zoneFilter === 'All Zones' ? undefined : zoneFilter;
 
   const { data: paginatedData, isLoading: isAgentsLoading } = useInternalUsersPaginated({
@@ -238,7 +259,7 @@ export default function AllAgentsPage() {
     search: search || undefined,
     per_page: PAGE_SIZE,
     page,
-  });
+  }, { refetchInterval: 30_000 });
 
   const filtered = (paginatedData?.items ?? []).map(mapAgent);
   const pagination = paginatedData?.pagination;

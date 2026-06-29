@@ -49,9 +49,7 @@ export const locationApi = {
       });
       const items = unwrapList(response.data);
       const locations = savedLocationListSchema.parse(items);
-      if (companyId) {
-        void replaceCachedLocations(companyId, locations).catch(() => {});
-      }
+      void replaceCachedLocations(locations).catch(() => {});
       return locations;
     } catch (err) {
       if (companyId) {
@@ -84,6 +82,7 @@ export const locationApi = {
       contact_number: input.contactNumber ?? undefined,
       email: input.email ?? undefined,
       save_to_crm: input.saveToCrm ?? false,
+      ...(input.saveToCrm && input.crmStatus ? { crm_status: input.crmStatus } : {}),
     };
 
     if (isOffline()) {

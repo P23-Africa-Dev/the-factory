@@ -4,6 +4,14 @@ import { useMemo, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { useDashboardOverview } from "@/hooks/use-dashboard";
+import {
+  buildTopLeadsChartData,
+  getLeadConversionRate,
+  getTopLeadsCenterRate,
+  getTopLeadsDateRange,
+  TOP_LEADS_FILTER_OPTIONS,
+  type TopLeadsFilter,
+} from "@/lib/dashboard-top-leads";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useAuthStore } from "@/store/auth";
 import {
@@ -13,19 +21,7 @@ import {
   PolarAngleAxis,
 } from "recharts";
 
-const chartData = [
-  { name: "Customer 3", value: 65, fill: "#7BB6B8" },
-  { name: "Customer 2", value: 80, fill: "#146AFA" },
-  { name: "Customer 1", value: 95, fill: "#FD6046" },
-];
-
-const datasets = {
-  Weekly: chartData,
-  Monthly: chartData.map((d) => ({ ...d, value: d.value + 5 })),
-  Yearly: chartData.map((d) => ({ ...d, value: d.value - 10 })),
-};
-
-const filterOptions = Object.keys(datasets) as FilterOption[];
+const filterOptions = [...TOP_LEADS_FILTER_OPTIONS];
 
 const avatarPalette = ["#B29D8B", "#7BB6B8", "#D086E6", "#FD6046", "#146AFA"] as const;
 
@@ -49,33 +45,43 @@ function getInitials(name: string) {
     .join("");
 }
 
-type FilterOption = keyof typeof datasets;
-
 export function TopCustomers() {
-  const [filter, setFilter] = useState<FilterOption>("Weekly");
+  const [filter, setFilter] = useState<TopLeadsFilter>("Weekly");
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const basePath = role === "agent" ? "/agent" : "/admin";
+  const dateRange = useMemo(() => getTopLeadsDateRange(filter), [filter]);
 
   const { data: overview } = useDashboardOverview({
     company_id: companyId ?? undefined,
     basePath,
+    from_date: dateRange.from_date,
+    to_date: dateRange.to_date,
   });
 
-  const data = datasets[filter];
-  const totalLeads = overview?.kpis.total_leads ?? 0;
-  const convertedLeads = overview?.kpis.converted_leads ?? 0;
-  const conversionRate =
-    totalLeads > 0 ? Math.round((convertedLeads / totalLeads) * 100) : 0;
-
   const topProspects = useMemo(
-    () => (overview?.top_prospects ?? []).slice(0, 5),
-    [overview?.top_prospects]
+    () => (overview?.top_prospects ?? []).slice(0, 3),
+    [overview?.top_prospects],
   );
 
-  const legendItems = topProspects.slice(0, 3).map((prospect, index) => ({
-    name: prospect.name,
-    fill: chartData[index]?.fill ?? "#7BB6B8",
+  const fallbackRate = useMemo(
+    () => getLeadConversionRate(overview?.crm_pipeline_snapshot, overview?.kpis),
+    [overview?.crm_pipeline_snapshot, overview?.kpis],
+  );
+
+  const chartData = useMemo(
+    () => buildTopLeadsChartData(topProspects, fallbackRate),
+    [topProspects, fallbackRate],
+  );
+
+  const centerRate = useMemo(
+    () => getTopLeadsCenterRate(chartData),
+    [chartData],
+  );
+
+  const legendItems = chartData.map((item) => ({
+    name: item.name,
+    fill: item.fill,
   }));
 
   return (
@@ -93,7 +99,7 @@ export function TopCustomers() {
       <div className="relative h-48 md:h-56 lg:h-66 w-full mx-auto">
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <span className="text-[24px] font-bold text-white mt-1">
-            {conversionRate}%
+            {centerRate}%
           </span>
         </div>
         <ResponsiveContainer width="100%" height="100%">
@@ -103,7 +109,7 @@ export function TopCustomers() {
             innerRadius="35%"
             outerRadius="95%"
             barSize={16}
-            data={data}
+            data={chartData}
             startAngle={90}
             endAngle={450}
           >
@@ -124,7 +130,7 @@ export function TopCustomers() {
 
       {/* Legend */}
       <div className="flex flex-wrap items-center justify-center gap-3 mb-3 md:mb-4 lg:mb-6.25">
-        {(legendItems.length ? legendItems : chartData).map((item) => (
+        {legendItems.map((item) => (
           <div key={item.name} className="flex items-center gap-2.5">
             <div
               className="w-[14px] h-[14px] rounded-full"

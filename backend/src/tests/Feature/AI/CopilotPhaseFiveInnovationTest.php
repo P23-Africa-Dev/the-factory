@@ -50,6 +50,34 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
             ->assertJsonPath('data.analysis.kind', 'document');
     }
 
+    public function test_file_analysis_endpoint_summarizes_text_files_with_ai(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+
+        $mockRouter = \Mockery::mock(\App\Services\AI\Providers\AiProviderRouter::class);
+        $mockRouter->shouldIgnoreMissing();
+        $mockRouter
+            ->shouldReceive('generateForPurpose')
+            ->once()
+            ->withArgs(function (string $purpose): bool {
+                return $purpose === 'operational';
+            })
+            ->andReturn('Summary: revenue up 12%. Next action: review payroll approvals.');
+        $this->app->instance(\App\Services\AI\Providers\AiProviderRouter::class, $mockRouter);
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/files/analyze', [
+                'company_id' => $company->id,
+                'file' => UploadedFile::fake()->createWithContent('kpi.txt', 'Revenue increased 12 percent in Q2.'),
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.analysis.ai_generated', true)
+            ->assertJsonPath('data.analysis.summary', 'Summary: revenue up 12%. Next action: review payroll approvals.');
+    }
+
     public function test_transcript_summary_endpoint_returns_key_points_and_actions(): void
     {
         [$company, $admin] = $this->seedCompanyUser('admin');
@@ -65,6 +93,54 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.pipeline', 'meeting.transcript.summary.v1')
             ->assertJsonCount(3, 'data.summary.key_points');
+    }
+
+    public function test_forecast_overview_returns_snapshot_and_recommendations(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+
+        $mockRouter = \Mockery::mock(\App\Services\AI\Providers\AiProviderRouter::class);
+        $mockRouter->shouldIgnoreMissing();
+        $mockRouter
+            ->shouldReceive('routingMetadata')
+            ->andReturn(['provider' => 'openai', 'model' => 'gpt-test', 'purpose' => 'report']);
+        $mockRouter
+            ->shouldReceive('generateForPurpose')
+            ->once()
+            ->withArgs(function (string $purpose): bool {
+                return $purpose === 'report';
+            })
+            ->andReturn('Operations remain stable with focused attention needed on overdue tasks and payroll approvals.');
+        $this->app->instance(\App\Services\AI\Providers\AiProviderRouter::class, $mockRouter);
+
+        $response = $this
+            ->actingAs($admin)
+            ->getJson('/api/v1/copilot/forecast/overview?company_id=' . $company->id . '&horizon=14');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.pipeline', 'forecast.recommendations.v2')
+            ->assertJsonPath('data.forecast.horizon_days', 14)
+            ->assertJsonPath('data.forecast.outlook', 'next_14_days')
+            ->assertJsonStructure([
+                'data' => [
+                    'snapshot' => [
+                        'kpis',
+                        'activity_summary',
+                        'project_kpis',
+                        'payroll_overview',
+                        'signals',
+                        'trends',
+                    ],
+                    'forecast' => [
+                        'recommendations',
+                        'structured_recommendations',
+                        'narrative',
+                        'confidence',
+                        'risk_level',
+                    ],
+                ],
+            ]);
     }
 
     /**
@@ -83,7 +159,9 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
         ]);
 
         /** @var User $user */
-        $user = User::factory()->createOne();
+        $user = User::factory()->createOne([
+            'is_active' => true,
+        ]);
 
         $company->users()->attach($user->id, [
             'role' => $role,

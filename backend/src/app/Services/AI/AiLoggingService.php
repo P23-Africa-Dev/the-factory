@@ -6,6 +6,7 @@ namespace App\Services\AI;
 
 use App\Models\AiLog;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 class AiLoggingService
@@ -23,8 +24,9 @@ class AiLoggingService
         string $sanitizedPrompt,
         ?string $intentType = null,
         ?string $toolName = null,
+        ?string $routingPurpose = null,
     ): AiLog {
-        return AiLog::create([
+        $attributes = [
             'company_id' => $companyId,
             'user_id' => $userId,
             'session_id' => $sessionId,
@@ -37,7 +39,13 @@ class AiLoggingService
             'intent_type' => $intentType,
             'tool_name' => $toolName,
             'started_at' => Carbon::now(),
-        ]);
+        ];
+
+        if ($routingPurpose !== null && Schema::hasColumn('ai_logs', 'routing_purpose')) {
+            $attributes['routing_purpose'] = $routingPurpose;
+        }
+
+        return AiLog::create($attributes);
     }
 
     /**
@@ -47,21 +55,28 @@ class AiLoggingService
         AiLog $log,
         int $inputTokens = 0,
         int $outputTokens = 0,
+        ?string $provider = null,
+        ?string $model = null,
     ): void {
         $now = Carbon::now();
         $executionMs = $log->started_at
             ? (int) $log->started_at->diffInMilliseconds($now)
             : null;
 
+        $resolvedProvider = $provider ?? (string) $log->provider;
+        $resolvedModel = $model ?? (string) $log->model;
+
         $estimatedCost = AiLog::estimateCost(
-            provider: (string) $log->provider,
-            model: (string) $log->model,
+            provider: $resolvedProvider,
+            model: $resolvedModel,
             inputTokens: $inputTokens,
             outputTokens: $outputTokens,
         );
 
         $log->update([
             'status' => 'success',
+            'provider' => $resolvedProvider,
+            'model' => $resolvedModel,
             'input_tokens' => $inputTokens,
             'output_tokens' => $outputTokens,
             'total_tokens' => $inputTokens + $outputTokens,

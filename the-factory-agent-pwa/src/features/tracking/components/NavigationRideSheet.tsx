@@ -72,6 +72,7 @@ export function NavigationRideSheet({
   lastUpdatedAt,
   hasArrived = false,
   onEnd,
+  onOpenGoogleMaps,
 }: {
   destinationName: string;
   etaMinutes: number | null;
@@ -81,6 +82,7 @@ export function NavigationRideSheet({
   lastUpdatedAt: string | null;
   hasArrived?: boolean;
   onEnd: () => void;
+  onOpenGoogleMaps?: () => void;
 }) {
   const etaLabel =
     etaMinutes === null ? '—' : etaMinutes < 60 ? `${etaMinutes} min` : `${Math.floor(etaMinutes / 60)}h ${etaMinutes % 60}m`;
@@ -115,6 +117,17 @@ export function NavigationRideSheet({
       )}
 
       <p className="font-sans font-semibold text-sm text-[#09232D] truncate mb-4">{destinationName}</p>
+
+      {onOpenGoogleMaps && !hasArrived ? (
+        <button
+          type="button"
+          onClick={onOpenGoogleMaps}
+          className="w-full h-11 mb-3 rounded-[60px] border border-[#1D7293] bg-white flex items-center justify-center gap-2 text-[#1D7293] font-sans font-bold text-sm active:scale-[0.98] transition-transform"
+        >
+          <img src="/assets/navigation-03.png" alt="" className="w-5 h-5 object-contain" />
+          Open in Google Maps
+        </button>
+      ) : null}
 
       <button
         type="button"

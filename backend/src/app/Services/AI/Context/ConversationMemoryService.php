@@ -208,6 +208,133 @@ class ConversationMemoryService
             ->all();
     }
 
+    /**
+     * @return array{
+     *   items: array<int, array<string, mixed>>,
+     *   pagination: array{has_more: bool, next_cursor: string|null, scanned_threads: int}
+     * }
+     */
+    public function searchThreads(
+        int $companyId,
+        int $userId,
+        string $query,
+        int $limit = 15,
+        ?string $cursor = null,
+    ): array {
+        $needle = strtolower(trim($query));
+        if ($needle === '') {
+            return [
+                'items' => [],
+                'pagination' => [
+                    'has_more' => false,
+                    'next_cursor' => null,
+                    'scanned_threads' => 0,
+                ],
+            ];
+        }
+
+        $boundedLimit = max(1, min(30, $limit));
+        $index = Cache::get($this->indexKey($companyId, $userId), []);
+        if (! is_array($index)) {
+            return [
+                'items' => [],
+                'pagination' => [
+                    'has_more' => false,
+                    'next_cursor' => null,
+                    'scanned_threads' => 0,
+                ],
+            ];
+        }
+
+        $orderedThreadIds = collect($index)
+            ->filter(static fn(mixed $updatedAt, mixed $threadId): bool => is_string($threadId) && $threadId !== '')
+            ->sortByDesc(static fn(mixed $updatedAt): string => is_string($updatedAt) ? $updatedAt : '')
+            ->keys()
+            ->values()
+            ->all();
+
+        $startIndex = 0;
+        if (is_string($cursor) && $cursor !== '') {
+            $cursorPos = array_search($cursor, $orderedThreadIds, true);
+            if ($cursorPos === false) {
+                return [
+                    'items' => [],
+                    'pagination' => [
+                        'has_more' => false,
+                        'next_cursor' => null,
+                        'scanned_threads' => 0,
+                    ],
+                ];
+            }
+
+            $startIndex = (int) $cursorPos + 1;
+        }
+
+        $items = [];
+        $scanned = 0;
+        $lastScannedId = null;
+
+        for ($i = $startIndex; $i < count($orderedThreadIds); $i++) {
+            $threadId = (string) $orderedThreadIds[$i];
+            $lastScannedId = $threadId;
+            $scanned++;
+
+            $thread = $this->getThread($companyId, $userId, $threadId);
+            if (! is_array($thread)) {
+                continue;
+            }
+
+            $messages = is_array($thread['messages'] ?? null) ? $thread['messages'] : [];
+            $title = $this->threadTitle($messages);
+            $match = $this->firstMessageMatch($messages, $needle);
+
+            if ($match === null && ! str_contains(strtolower($title), $needle)) {
+                continue;
+            }
+
+            if ($match === null) {
+                $match = [
+                    'message_id' => '',
+                    'role' => 'assistant',
+                    'snippet' => Str::limit($title, 180),
+                ];
+            }
+
+            $items[] = [
+                'thread_id' => (string) $thread['thread_id'],
+                'title' => $title,
+                'updated_at' => (string) ($thread['updated_at'] ?? ''),
+                'snippet' => (string) $match['snippet'],
+                'match_message_id' => (string) $match['message_id'],
+                'match_role' => (string) $match['role'],
+                'message_count' => count($messages),
+            ];
+
+            if (count($items) >= $boundedLimit) {
+                break;
+            }
+        }
+
+        $hasMore = false;
+        $nextCursor = null;
+        if ($lastScannedId !== null) {
+            $lastIndex = array_search($lastScannedId, $orderedThreadIds, true);
+            if (is_int($lastIndex) && $lastIndex < count($orderedThreadIds) - 1) {
+                $hasMore = true;
+                $nextCursor = $lastScannedId;
+            }
+        }
+
+        return [
+            'items' => $items,
+            'pagination' => [
+                'has_more' => $hasMore,
+                'next_cursor' => $nextCursor,
+                'scanned_threads' => $scanned,
+            ],
+        ];
+    }
+
     public function deleteThread(int $companyId, int $userId, string $threadId): bool
     {
         $indexKey = $this->indexKey($companyId, $userId);
@@ -338,5 +465,77 @@ class ConversationMemoryService
     private function indexKey(int $companyId, int $userId): string
     {
         return "copilot:threads:{$companyId}:{$userId}";
+    }
+
+    /**
+     * @param  array<int,array<string,mixed>>  $messages
+     */
+    private function threadTitle(array $messages): string
+    {
+        foreach ($messages as $message) {
+            if (! is_array($message) || (string) ($message['role'] ?? '') !== 'user') {
+                continue;
+            }
+
+            $content = trim((string) ($message['content'] ?? ''));
+            if ($content !== '') {
+                return Str::limit($content, 80);
+            }
+        }
+
+        return 'ELY Conversation';
+    }
+
+    /**
+     * @param  array<int,array<string,mixed>>  $messages
+     * @return array{message_id:string,role:string,snippet:string}|null
+     */
+    private function firstMessageMatch(array $messages, string $needle): ?array
+    {
+        foreach ($messages as $message) {
+            if (! is_array($message)) {
+                continue;
+            }
+
+            $content = (string) ($message['content'] ?? '');
+            if ($content === '') {
+                continue;
+            }
+
+            if (! str_contains(strtolower($content), $needle)) {
+                continue;
+            }
+
+            return [
+                'message_id' => (string) ($message['id'] ?? ''),
+                'role' => (string) ($message['role'] ?? 'assistant'),
+                'snippet' => $this->snippetAroundMatch($content, $needle),
+            ];
+        }
+
+        return null;
+    }
+
+    private function snippetAroundMatch(string $content, string $needle): string
+    {
+        $lower = strtolower($content);
+        $pos = strpos($lower, $needle);
+        if ($pos === false) {
+            return Str::limit($content, 180);
+        }
+
+        $start = max(0, $pos - 60);
+        $length = min(mb_strlen($content) - $start, 180);
+        $snippet = trim(mb_substr($content, $start, $length));
+
+        if ($start > 0) {
+            $snippet = '…' . $snippet;
+        }
+
+        if ($start + $length < mb_strlen($content)) {
+            $snippet .= '…';
+        }
+
+        return $snippet;
     }
 }

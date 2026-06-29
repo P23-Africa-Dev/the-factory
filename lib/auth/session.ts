@@ -28,9 +28,47 @@ export function setOnboardingCompletedCookie() {
 }
 
 export function clearAuthSession() {
-  if (typeof document === "undefined") return;
-  document.cookie = `${AUTH_TOKEN_COOKIE}=; Path=/; Max-Age=0`;
-  document.cookie = `${ONBOARDING_DONE_COOKIE}=; Path=/; Max-Age=0`;
+  if (typeof document !== "undefined") {
+    // Clear specific known cookies
+    document.cookie = `${AUTH_TOKEN_COOKIE}=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+    document.cookie = `${ONBOARDING_DONE_COOKIE}=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+
+    // Clear all cookies
+    const cookies = document.cookie.split(";");
+    for (const cookie of cookies) {
+      const eqPos = cookie.indexOf("=");
+      const name = eqPos > -1 ? cookie.substring(0, eqPos).trim() : cookie.trim();
+      document.cookie = `${name}=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+    }
+  }
+
+  if (typeof localStorage !== "undefined") {
+    try {
+      localStorage.clear();
+    } catch (e) {
+      console.warn("localStorage.clear() failed:", e);
+    }
+  }
+
+  if (typeof sessionStorage !== "undefined") {
+    try {
+      sessionStorage.clear();
+    } catch (e) {
+      console.warn("sessionStorage.clear() failed:", e);
+    }
+  }
+
+  if (typeof window !== "undefined" && "caches" in window) {
+    try {
+      caches.keys().then((names) => {
+        for (const name of names) {
+          caches.delete(name);
+        }
+      }).catch(() => {});
+    } catch (e) {
+      console.warn("caches.delete() failed:", e);
+    }
+  }
 }
 
 export function setCompanyId(id: number | string) {

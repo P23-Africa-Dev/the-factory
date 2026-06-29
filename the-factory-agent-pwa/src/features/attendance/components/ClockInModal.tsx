@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import { useCurrentLocation } from '@/hooks/useCurrentLocation';
 import { toast } from '@/lib/toast';
+import { flattenApiError } from '@/lib/api/errors';
 import { useTodayAttendance, useClockIn, useClockOut } from '../queries';
 
 type ClockInModalProps = {
@@ -12,7 +13,7 @@ type ClockInModalProps = {
 };
 
 export function ClockInModal({ visible, onClose, onPendingChange }: ClockInModalProps): React.ReactElement | null {
-  const { data: today } = useTodayAttendance();
+  const { data: today, isError: isTodayError, error: todayError } = useTodayAttendance();
   const { location, error: locationError, isLoading: isLocating, refresh } = useCurrentLocation();
   const { mutateAsync: clockIn, isPending: isClockingIn } = useClockIn();
   const { mutateAsync: clockOut, isPending: isClockingOut } = useClockOut();
@@ -21,13 +22,17 @@ export function ClockInModal({ visible, onClose, onPendingChange }: ClockInModal
   const isSubmitting = isClockingIn || isClockingOut;
   const _action = isClockedIn ? 'clock_out' : 'clock_in';
 
-  const blockedReason = !today
-    ? null
-    : !today.workingDay
-      ? "Today isn't a scheduled working day."
-      : isClockedIn
-        ? (!today.canClockOut ? 'Clock-out is not available right now.' : null)
-        : (!today.canClockIn ? 'Clock-in is not available right now.' : null);
+  const attendanceUnavailableMessage = isTodayError ? flattenApiError(todayError) : '';
+
+  const blockedReason = attendanceUnavailableMessage
+    ? attendanceUnavailableMessage
+    : !today
+      ? null
+      : !today.workingDay
+        ? "Today isn't a scheduled working day."
+        : isClockedIn
+          ? (!today.canClockOut ? 'Clock-out is not available right now.' : null)
+          : (!today.canClockIn ? 'Clock-in is not available right now.' : null);
 
   useEffect(() => {
     if (visible) refresh();
@@ -53,9 +58,7 @@ export function ClockInModal({ visible, onClose, onPendingChange }: ClockInModal
       toast.success(isClockedIn ? 'Clocked out' : 'Clocked in', 'Your location has been recorded.');
       onClose();
     } catch (err: unknown) {
-      const apiErr = err as { message?: string };
-      const message = apiErr?.message || 'Something went wrong. Please try again.';
-      toast.error(message);
+      toast.error(flattenApiError(err) || 'Something went wrong. Please try again.');
     }
   };
 

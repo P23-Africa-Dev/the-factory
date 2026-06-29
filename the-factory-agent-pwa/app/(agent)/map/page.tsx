@@ -8,6 +8,7 @@ import dynamic from 'next/dynamic';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import {
   useGeolocation,
+  useMapPresenceHeartbeat,
   useStartTask,
   useActiveTracking,
   useTaskRoute,
@@ -34,7 +35,16 @@ import { fetchDirectionsRoute } from '@/lib/map/directions';
 import { getDb } from '@/lib/db/client';
 import { syncEngine } from '@/lib/sync/syncEngine';
 import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
-import { flattenApiError, isTrackingAlreadyActiveError } from '@/lib/api/errors';
+import { showApiErrorToast } from '@/lib/api/errors';
+import { openGoogleMapsNavigation, resolveGoogleMapsTravelMode } from '@/lib/map/googleMapsNavigation';
+import { resolveTaskDestinationCoords } from '@/lib/map/resolveTaskDestinationCoords';
+import {
+  isDocumentHidden,
+  notifyTrackingArrived,
+  notifyTrackingNearDestination,
+  requestTrackingNotificationPermission,
+} from '@/lib/notifications/trackingAlerts';
+import { getApiErrorMessage, startMapTaskSession } from '@/features/tracking/lib/startMapTaskSession';
 import { toast } from '@/lib/toast';
 import {
   useSavedLocations,
@@ -45,6 +55,7 @@ import {
   type CreateSavedLocationInput,
 } from '@/features/locations';
 import { getSavedLocationType } from '@/lib/map/locationTypes';
+import { searchPlacesWithMapbox } from '@/lib/map/geocoding';
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
 import type { SavedLocationPin } from '@/features/tracking/components/MapboxMap';
 import { MapPin, Plus } from 'lucide-react';
@@ -415,6 +426,34 @@ function ActivityButton({
           className="w-[24px] h-[24px] object-contain"
         />
       </div>
+    </button>
+  );
+}
+
+function GoogleMapsActivityButton({
+  canStart,
+  isStarting,
+  onProceed,
+}: {
+  canStart: boolean;
+  isStarting: boolean;
+  onProceed: () => void;
+}) {
+  if (isStarting) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={canStart ? onProceed : undefined}
+      disabled={!canStart}
+      className={`mx-auto w-[344px] h-[52px] rounded-[60px] border-2 flex items-center justify-center gap-2 font-sans font-bold text-sm transition-all ${
+        canStart
+          ? 'border-[#1D7293] bg-white text-[#1D7293] active:scale-[0.98]'
+          : 'border-[#D1D5D8] bg-[#E8EAEB] text-[#8F9098] cursor-not-allowed'
+      }`}
+    >
+      <img src="/assets/navigation-03.png" alt="" className="w-5 h-5 object-contain" />
+      Proceed with Google Maps
     </button>
   );
 }
@@ -845,6 +884,7 @@ function MapContent() {
   );
   const [sheetSnapIndex, setSheetSnapIndex] = useState(MAP_SHEET_EXPANDED_SNAP_INDEX);
   const startRideInFlightRef = useRef(false);
+  const nearAlertShownRef = useRef(false);
   const [distanceRemainingM, setDistanceRemainingM] = useState<number | null>(null);
   // Permission gate overlay for the Start flow: null = hidden.
   const [permGate, setPermGate] = useState<'request' | 'denied' | null>(null);
@@ -858,12 +898,12 @@ function MapContent() {
   const [pendingPin, setPendingPin] = useState<{ lat: number; lng: number; address: string | null } | null>(null);
   const [selectedSavedId, setSelectedSavedId] = useState<number | null>(null);
 
-  const { lastPosition, getCurrentPosition, resolveCurrentPosition, checkPermission, requestPermission, startWatching, stopWatching } = useGeolocation();
+  const { lastPosition, getCurrentPosition, resolveCurrentPosition, checkPermission, requestPermission, ensureLocationPermission, retryLocationPermission, startWatching, stopWatching } = useGeolocation();
   const { startTracking, stopTracking, activeTaskId } = useActiveTracking();
   const { data: tasks = [] } = useTaskListItems();
   const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
   const { user } = useAuth();
-  const { displayName } = useAgentIdentity();
+  const { displayName, profile } = useAgentIdentity();
   const [isOnline, setIsOnline] = useState(true);
   const currentAgentId = user?.id != null ? Number(user.id) : null;
 
@@ -908,6 +948,14 @@ function MapContent() {
   const { data: activeTask } = useTask(resolvedTaskId ? String(resolvedTaskId) : '');
   const { data: trackingTask } = useTask(trackingTaskId ? String(trackingTaskId) : '');
   const companyId = trackingTask?.companyId ?? activeTask?.companyId ?? getActiveCompanyId() ?? 0;
+
+  useMapPresenceHeartbeat({
+    companyId: companyId > 0 ? companyId : null,
+    enabled: isOnline && trackingTaskId == null && activeTaskId == null,
+    latitude: lastPosition?.coords.latitude ?? null,
+    longitude: lastPosition?.coords.longitude ?? null,
+    accuracyMeters: lastPosition?.coords.accuracy ?? null,
+  });
 
   useEffect(() => {
     if (!taskIdParam || !trackingTask) return;
@@ -1007,10 +1055,7 @@ function MapContent() {
     if (!trackingTaskId) return;
     setResumePermBusy(true);
     try {
-      let status = await checkPermission();
-      if (status !== 'granted') {
-        status = await requestPermission();
-      }
+      let status = await retryLocationPermission();
       if (status === 'denied') {
         setPermGate('denied');
         return;
@@ -1031,7 +1076,7 @@ function MapContent() {
     } finally {
       setResumePermBusy(false);
     }
-  }, [trackingTaskId, companyId, checkPermission, requestPermission, resolveCurrentPosition]);
+  }, [trackingTaskId, companyId, retryLocationPermission, resolveCurrentPosition]);
 
   // Restore destination on resume (e.g. /map?taskId=…) before task detail fetch completes.
   useEffect(() => {
@@ -1086,35 +1131,29 @@ function MapContent() {
   }, []);
 
   const searchGeoDestPlaces = useCallback(async (query: string): Promise<void> => {
-    if (!query.trim()) { setGeoDestResults([]); return; }
-    const token = env.MAPBOX_TOKEN;
-    if (!token) return;
+    if (!query.trim()) {
+      setGeoDestResults([]);
+      return;
+    }
     try {
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=NG&limit=5`;
-      const resp = await fetch(url);
-      const data = await resp.json() as { features?: Array<{ text: string; place_name: string; center: [number, number] }> };
-      if (data.features) {
-        setGeoDestResults(
-          data.features.map((f) => ({ name: f.text, address: f.place_name, latitude: f.center[1], longitude: f.center[0] })),
-        );
-      }
-    } catch {}
+      const places = await searchPlacesWithMapbox(query, { limit: 5 });
+      setGeoDestResults(places);
+    } catch {
+      setGeoDestResults([]);
+    }
   }, []);
 
   const searchOriginPlaces = useCallback(async (query: string): Promise<void> => {
-    if (!query.trim()) { setOriginGeoResults([]); return; }
-    const token = env.MAPBOX_TOKEN;
-    if (!token) return;
+    if (!query.trim()) {
+      setOriginGeoResults([]);
+      return;
+    }
     try {
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=NG&limit=5`;
-      const resp = await fetch(url);
-      const data = await resp.json() as { features?: Array<{ text: string; place_name: string; center: [number, number] }> };
-      if (data.features) {
-        setOriginGeoResults(
-          data.features.map((f) => ({ name: f.text, address: f.place_name, latitude: f.center[1], longitude: f.center[0] })),
-        );
-      }
-    } catch {}
+      const places = await searchPlacesWithMapbox(query, { limit: 5 });
+      setOriginGeoResults(places);
+    } catch {
+      setOriginGeoResults([]);
+    }
   }, []);
 
   // Boot GPS for map preview. We deliberately do NOT force a permission prompt
@@ -1360,7 +1399,8 @@ function MapContent() {
     setIsOriginSearchOpen(false);
     setOriginQuery('');
     setOriginGeoResults([]);
-    void requestPermission().then(async (status) => {
+    void (async () => {
+      const status = await ensureLocationPermission();
       if (status !== 'granted') {
         toast.error('Location access needed', 'Enable location permission to use Your Location.');
         return;
@@ -1370,8 +1410,8 @@ function MapContent() {
       } catch {
         toast.error('Location unavailable', 'Could not get your current position. Try again.');
       }
-    });
-  }, [requestPermission, getCurrentPosition]);
+    })();
+  }, [ensureLocationPermission, getCurrentPosition]);
 
   const handleClearOrigin = useCallback(() => {
     setCustomOrigin(null);
@@ -1388,9 +1428,9 @@ function MapContent() {
     searchOriginPlaces(q);
   }, [searchOriginPlaces]);
 
-  const handleStartActivity = useCallback(async (): Promise<void> => {
-    if (!selectedDestination?.taskId) return;
-    if (startRideInFlightRef.current || isLaunchingRide) return;
+  const runStartSession = useCallback(async (permissionRetry = false) => {
+    if (!selectedDestination?.taskId) return null;
+    if (startRideInFlightRef.current || isLaunchingRide) return null;
 
     const taskId = selectedDestination.taskId;
     const existingTask = tasks.find((t) => t.id === String(taskId));
@@ -1398,19 +1438,25 @@ function MapContent() {
 
     if (!companyId) {
       toast.error('Session error', 'Company context is missing. Please reload and try again.');
-      return;
+      return null;
     }
 
     startRideInFlightRef.current = true;
     setIsLaunchingRide(true);
     setTrackingStatus('connecting');
+    nearAlertShownRef.current = false;
 
     const markTrackingLive = () => {
       setTrackingStatus('live');
       queryClient.invalidateQueries({ queryKey: taskKeys.all });
     };
 
-    const beginSession = (arrived?: boolean, trackingSessionId?: number, startPoint?: [number, number]) => {
+    const beginSession = (opts: {
+      arrived?: boolean;
+      trackingSessionId?: number;
+      startPoint: [number, number];
+    }) => {
+      const { arrived, trackingSessionId, startPoint } = opts;
       const avatarUrl = getSafeAvatarSrc(user?.avatar_url ?? null);
       const point =
         startPoint ??
@@ -1433,107 +1479,71 @@ function MapContent() {
       if (arrived) setHasArrived(true);
       startTracking(taskId, companyId, {
         onArrived: () => setHasArrived(true),
+        onNearDestination: () => {
+          if (!nearAlertShownRef.current) {
+            nearAlertShownRef.current = true;
+            void notifyTrackingNearDestination(taskId);
+          }
+        },
         onDistanceRemaining: (m) => setDistanceRemainingM(m),
       });
     };
 
     try {
-      // 1) Gate location permission. Trigger the browser prompt only if needed,
-      //    and surface a recovery gate (with platform guidance) on denial.
-      let permStatus = await checkPermission();
-      if (permStatus !== 'granted') {
-        permStatus = await requestPermission();
-      }
-      if (permStatus === 'denied') {
-        setIsLaunchingRide(false);
-        setTrackingStatus('idle');
-        startRideInFlightRef.current = false;
-        setPermGate('denied');
-        return;
-      }
-      // granted, prompt, or unknown — attempt GPS (iOS Permissions API is unreliable).
-      setPermGate(null);
-
-      // 2) Acquire a GPS fix for the start point.
-      let startPoint: [number, number];
-      if (lastPosition) {
-        startPoint = [lastPosition.coords.longitude, lastPosition.coords.latitude];
-      } else if (customOrigin) {
-        startPoint = [customOrigin.longitude, customOrigin.latitude];
-      } else if (effectiveOriginLng != null && effectiveOriginLat != null) {
-        startPoint = [effectiveOriginLng, effectiveOriginLat];
-      } else {
-        const pos = await resolveCurrentPosition();
-        startPoint = [pos.coords.longitude, pos.coords.latitude];
-      }
-
-      // Resume: the session already exists, so transition immediately and
-      // hydrate the existing route in the background.
-      if (isResume) {
-        beginSession(false, undefined, startPoint);
-        toast.success('Tracking resumed', 'You are live again.');
-        void trackingApi
-          .getTaskRoute(taskId, companyId)
-          .then((route) => {
-            hydrateLiveTaskFromRoute(taskId, route);
-            if (route.arrival) setHasArrived(true);
-            markTrackingLive();
-          })
-          .catch(() => {
-            // ride UI already active; route hydrate is best-effort
-          });
-        return;
-      }
-
-      // 3) Fresh start: call the API FIRST, only transition to the tracking
-      //    experience once the server confirms the session started.
-      try {
-        const data = await startTaskAsync({
-          taskId,
-          payload: {
-            companyId,
-            latitude: startPoint[1],
-            longitude: startPoint[0],
-            accuracyMeters: lastPosition?.coords.accuracy ?? 0,
-            recordedAt: new Date(lastPosition?.timestamp ?? Date.now()).toISOString(),
-          },
-        });
-        beginSession(data.arrived, data.tracking.id, startPoint);
-        if (data.arrived) setHasArrived(true);
-        markTrackingLive();
-        toast.success('Task started', 'Tracking is now active.');
-        } catch (err: unknown) {
-          if (isTrackingAlreadyActiveError(err)) {
-            try {
-              const route = await trackingApi.getTaskRoute(taskId, companyId);
-              beginSession(route.arrival != null, undefined, startPoint);
-              hydrateLiveTaskFromRoute(taskId, route);
-              if (route.arrival) setHasArrived(true);
-              markTrackingLive();
-              toast.success('Tracking active', 'Reconnected to your task.');
-              return;
-            } catch {
-              // fall through to generic error
-            }
-          }
-          // Clean rollback: no transition happened, stay on the planning screen.
-          void stopTracking();
+      const result = await startMapTaskSession({
+        taskId,
+        companyId,
+        isResume,
+        lastPosition,
+        customOrigin: customOrigin
+          ? { latitude: customOrigin.latitude, longitude: customOrigin.longitude }
+          : null,
+        effectiveOriginLng,
+        effectiveOriginLat,
+        resolveLocationPermission: permissionRetry
+          ? retryLocationPermission
+          : ensureLocationPermission,
+        resolveCurrentPosition,
+        startTaskAsync,
+        beginSession,
+        markTrackingLive,
+        stopTracking,
+        onRouteHydrated: (arrived) => {
+          if (arrived) setHasArrived(true);
+        },
+        onRollback: () => {
           setPhase('destination_selected');
           setIsLaunchingRide(false);
           setTrackingStatus('error');
-          toast.error(
-            'Could not start task',
-            flattenApiError(err) || 'Please try again.',
-          );
+        },
+      });
+
+      if (!result.ok) {
+        if (result.reason === 'permission_denied') {
+          setIsLaunchingRide(false);
+          setTrackingStatus('idle');
+          setPermGate('denied');
+        } else if (result.reason === 'location_error') {
+          setIsLaunchingRide(false);
+          setPhase('destination_selected');
+          setTrackingStatus('idle');
+          toast.error('Location error', 'Could not get your current position. Please try again.');
+        } else if (result.reason === 'api_error') {
+          toast.error('Could not start task', getApiErrorMessage(result.error));
         }
-    } catch {
-      setIsLaunchingRide(false);
-      setPhase('destination_selected');
-      setTrackingStatus('idle');
-      toast.error(
-        'Location error',
-        'Could not get your current position. Please try again.',
-      );
+        return null;
+      }
+
+      setPermGate(null);
+      if (result.kind === 'resume') {
+        toast.success('Tracking resumed', 'You are live again.');
+      } else if (result.kind === 'reconnect') {
+        toast.success('Tracking active', 'Reconnected to your task.');
+      } else {
+        toast.success('Task started', 'Tracking is now active.');
+      }
+
+      return result;
     } finally {
       startRideInFlightRef.current = false;
     }
@@ -1545,19 +1555,117 @@ function MapContent() {
     startTaskAsync,
     startTracking,
     stopTracking,
-    requestPermission,
-    checkPermission,
+    ensureLocationPermission,
+    retryLocationPermission,
     resolveCurrentPosition,
-    getCurrentPosition,
     lastPosition,
     customOrigin,
     effectiveOriginLng,
     effectiveOriginLat,
     displayName,
     user?.avatar_url,
-    plannedRoute.length,
     queryClient,
   ]);
+
+  const handleStartActivity = useCallback(async (permissionRetry = false): Promise<void> => {
+    await runStartSession(permissionRetry);
+  }, [runStartSession]);
+
+  useEffect(() => {
+    if (!permGate) return;
+
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void checkPermission().then((status) => {
+        if (status !== 'granted') return;
+        if (isFromTrackingScreen && phase === 'activity_started') {
+          void handleResumePermission();
+        } else if (permGate === 'denied') {
+          void handleStartActivity(true);
+        } else {
+          setPermGate(null);
+        }
+      });
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [permGate, checkPermission, isFromTrackingScreen, phase, handleResumePermission, handleStartActivity]);
+
+  const resolveOpenDestination = useCallback(() => {
+    const taskRecord =
+      trackingTask ??
+      (selectedDestination?.taskId
+        ? tasks.find((t) => t.id === String(selectedDestination.taskId))
+        : undefined);
+
+    return resolveTaskDestinationCoords({
+      liveDestination: liveTask?.destination ?? null,
+      routeDestination: taskRoute?.destination ?? null,
+      selectedDestination,
+      taskRecord: taskRecord
+        ? { latitude: taskRecord.latitude, longitude: taskRecord.longitude }
+        : null,
+    });
+  }, [
+    trackingTask,
+    selectedDestination,
+    tasks,
+    liveTask?.destination,
+    taskRoute?.destination,
+  ]);
+
+  const openTaskInGoogleMaps = useCallback(() => {
+    const destination = resolveOpenDestination();
+
+    if (!destination) {
+      toast.error(
+        'Destination unavailable',
+        'This task has no valid map coordinates. Update the task location before navigating.',
+      );
+      return;
+    }
+
+    try {
+      openGoogleMapsNavigation({
+        destination,
+        travelMode: resolveGoogleMapsTravelMode(transportMode),
+        useDeviceLocationAsOrigin: true,
+      });
+    } catch {
+      toast.error(
+        'Destination unavailable',
+        'Could not open Google Maps with a valid destination for this task.',
+      );
+    }
+  }, [resolveOpenDestination, transportMode]);
+
+  const handleProceedWithGoogleMaps = useCallback(async (): Promise<void> => {
+    if (!resolveOpenDestination()) {
+      toast.error(
+        'Destination unavailable',
+        'This task has no valid map coordinates. Update the task location before navigating.',
+      );
+      return;
+    }
+
+    const notifPerm = await requestTrackingNotificationPermission();
+    if (notifPerm === 'denied' || notifPerm === 'unsupported') {
+      toast.info(
+        'Notifications disabled',
+        'Alerts will only show inside the app while you use Google Maps.',
+      );
+    }
+
+    const result = await runStartSession();
+    if (!result?.ok) return;
+
+    openTaskInGoogleMaps();
+  }, [runStartSession, openTaskInGoogleMaps]);
+
+  const handleOpenGoogleMaps = useCallback((): void => {
+    openTaskInGoogleMaps();
+  }, [openTaskInGoogleMaps]);
 
   useEffect(() => {
     if (phase !== 'activity_started' || trackingStatus === 'live') return;
@@ -1581,9 +1689,14 @@ function MapContent() {
     }
     if (hasArrived && !arrivedToastShownRef.current) {
       arrivedToastShownRef.current = true;
-      toast.success('Destination reached', 'You can complete the task now.');
+      const taskId = trackingTaskId ?? selectedDestination?.taskId;
+      if (isDocumentHidden() && taskId) {
+        void notifyTrackingArrived(taskId);
+      } else {
+        toast.success('Destination reached', 'You can complete the task now.');
+      }
     }
-  }, [phase, hasArrived]);
+  }, [phase, hasArrived, trackingTaskId, selectedDestination?.taskId]);
 
   const handleEndActivity = useCallback((): void => {
     void stopTracking();
@@ -1666,7 +1779,8 @@ function MapContent() {
 
   const handleSaveCurrentLocation = useCallback(() => {
     setPinMode(false);
-    void requestPermission().then(async (status) => {
+    void (async () => {
+      const status = await ensureLocationPermission();
       if (status !== 'granted') {
         toast.error('Location access needed', 'Enable location permission to save your current spot.');
         return;
@@ -1682,16 +1796,16 @@ function MapContent() {
       } catch {
         toast.error('Location unavailable', 'Could not get your current position. Try again.');
       }
-    });
-  }, [requestPermission, getCurrentPosition]);
+    })();
+  }, [ensureLocationPermission, getCurrentPosition]);
 
   const handleSubmitSavedLocation = useCallback(
     async (input: CreateSavedLocationInput) => {
       try {
         await createSavedLocation(input);
         setPendingPin(null);
-      } catch {
-        // Errors surface via the API client toast.
+      } catch (err) {
+        showApiErrorToast(err, 'Could not save location');
       }
     },
     [createSavedLocation],
@@ -1945,6 +2059,7 @@ function MapContent() {
               lastUpdatedAt={liveTask?.lastUpdatedAt ?? null}
               hasArrived={hasArrived}
               onEnd={handleEndActivity}
+              onOpenGoogleMaps={handleOpenGoogleMaps}
             />
           ) : (
             <>
@@ -1958,13 +2073,22 @@ function MapContent() {
                 canCancel
                 isRouteLoading={isRouteLoading}
               />
-              <div className="bg-[#F2F4F5] px-4 pt-3 pb-4">
+              <div className="bg-[#F2F4F5] px-4 pt-3 pb-4 flex flex-col gap-3">
                 <ActivityButton
                   phase={phase}
                   hasDestination={(selectedDestination?.taskId ?? 0) > 0}
                   isStarting={isStarting || isLaunchingRide}
                   taskStatus={selectedDestination?.taskStatus ?? selectedDestTask?.status}
                   onStart={handleStartActivity}
+                />
+                <GoogleMapsActivityButton
+                  canStart={
+                    (selectedDestination?.taskId ?? 0) > 0 &&
+                    phase === 'destination_selected' &&
+                    canStartTaskActivity(selectedDestination?.taskStatus ?? selectedDestTask?.status)
+                  }
+                  isStarting={isStarting || isLaunchingRide}
+                  onProceed={() => void handleProceedWithGoogleMaps()}
                 />
               </div>
             </>
@@ -2023,7 +2147,7 @@ function MapContent() {
               if (isFromTrackingScreen && phase === 'activity_started') {
                 void handleResumePermission();
               } else {
-                void handleStartActivity();
+                void handleStartActivity(permGate === 'denied');
               }
             }}
             onDismiss={() => setPermGate(null)}

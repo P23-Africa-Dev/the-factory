@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\AI\Providers;
 
 use App\Services\AI\Admin\AiFailoverTracker;
+use App\Services\AI\Providers\ClaudeModelResolver;
+use App\Services\AI\Providers\ClaudeProvider;
 use Illuminate\Http\UploadedFile;
 
 class AiProviderRouter
@@ -52,6 +54,31 @@ class AiProviderRouter
     }
 
     /**
+     * @return array{provider: string, model: string, purpose: string}
+     */
+    public function routingMetadata(string $purpose): array
+    {
+        $purpose = strtolower(trim($purpose));
+        $providers = $this->orderedProvidersForPurpose($purpose);
+        $first = $providers[0] ?? null;
+        $provider = match (true) {
+            $first instanceof OpenAiProvider => 'openai',
+            $first instanceof ClaudeProvider => 'claude',
+            default => strtolower((string) config('services.ai.provider', 'openai')),
+        };
+        $model = $this->resolveModelForPurpose($purpose);
+        if ($provider === 'claude') {
+            $model = app(ClaudeModelResolver::class)->resolve($purpose, $model);
+        }
+
+        return [
+            'provider' => $provider,
+            'model' => $model,
+            'purpose' => $purpose,
+        ];
+    }
+
+    /**
      * @return array<int, AiProviderContract>
      */
     private function orderedProvidersForPurpose(string $purpose): array
@@ -91,6 +118,19 @@ class AiProviderRouter
             $this->orderedProviders(),
             fn (AiProviderContract $provider) => $provider->transcribeAudio($audio, $prompt, $options),
         );
+    }
+
+    public function analyzeDocumentFile(
+        UploadedFile $file,
+        string $systemPrompt,
+        string $userPrompt,
+        array $options = [],
+    ): ?string {
+        if (! $this->openAiProvider->isConfigured()) {
+            return null;
+        }
+
+        return $this->openAiProvider->analyzeDocumentFile($file, $systemPrompt, $userPrompt, $options);
     }
 
     /**

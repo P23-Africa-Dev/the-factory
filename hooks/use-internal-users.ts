@@ -38,7 +38,10 @@ export function useInternalUsers(params: ListInternalUsersParams = {}) {
   });
 }
 
-export function useInternalUsersPaginated(params: ListInternalUsersParams = {}) {
+export function useInternalUsersPaginated(
+  params: ListInternalUsersParams = {},
+  options?: { refetchInterval?: number | false },
+) {
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
   return useQuery({
@@ -49,6 +52,7 @@ export function useInternalUsersPaginated(params: ListInternalUsersParams = {}) 
     },
     enabled: !!token && !!params.company_id,
     staleTime: 1000 * 60 * 2,
+    refetchInterval: options?.refetchInterval,
   });
 }
 

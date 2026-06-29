@@ -94,7 +94,9 @@ export function SavedLocationInfoCard({
           <span>
             {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
             {location.created_by?.name ? ` · Added by ${location.created_by.name}` : ""}
-            {location.created_at ? ` · ${new Date(location.created_at).toLocaleDateString()}` : ""}
+            {location.created_at
+              ? ` · ${new Date(location.created_at).toLocaleDateString()}`
+              : ""}
           </span>
         </div>
 

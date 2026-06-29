@@ -30,5 +30,9 @@ final class AiProviderRouterPurposeTest extends TestCase
 
         $this->assertSame('gpt-test-exec', $method->invoke($router, 'operational'));
         $this->assertSame('auto', $method->invoke($router, 'report'));
+
+        $routing = $router->routingMetadata('report');
+        $this->assertSame('report', $routing['purpose']);
+        $this->assertContains($routing['provider'], ['openai', 'claude']);
     }
 }

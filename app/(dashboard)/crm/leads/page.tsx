@@ -21,6 +21,7 @@ import { ImportLeadsModal, LabelManagerModal, PipelineManagerModal } from "@/com
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { ApiLeadStatus } from "@/lib/api/crm";
+import { resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { toast } from "sonner";
 
 interface Lead {
@@ -151,7 +152,7 @@ export default function AllLeadsPage() {
     company: l.location ?? l.source ?? "—",
     status: (l.status ?? "newly_lead") as ApiLeadStatus,
     statusColor: getStatusColor(l.status, labels),
-    value: typeof l.meta?.value === "number" ? l.meta.value : 0,
+    value: resolveLeadBudgetAmount(l),
     assignedTo: l.assignee?.name ?? "Unassigned",
     source: l.source ?? "—",
   }));

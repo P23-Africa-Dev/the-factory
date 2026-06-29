@@ -7,6 +7,7 @@ import { useMeetingNavigation } from '@/features/meetings/navigation';
 import { MeetingForm } from '@/features/meetings/components/MeetingForm';
 import { CalendarStatusNotice } from '@/features/meetings/components/CalendarStatusNotice';
 import type { MeetingFormValues } from '@/features/meetings/types';
+import { showApiErrorToast } from '@/lib/api/errors';
 
 export default function NewMeetingPage() {
   const nav = useMeetingNavigation();
@@ -54,11 +55,13 @@ export default function NewMeetingPage() {
         'errors' in err
       ) {
         setServerErrors((err as { errors: Record<string, string[]> }).errors);
+      } else {
+        showApiErrorToast(err, 'Could not schedule meeting');
       }
     }
   };
 
-  const calendarBlocked = calendarStatus && (!calendarStatus.connected || calendarStatus.status !== 'active');
+  const calendarWarning = calendarStatus && (!calendarStatus.connected || calendarStatus.status !== 'active');
 
   return (
     <ScreenErrorBoundary screenName="NewMeeting">
@@ -77,18 +80,17 @@ export default function NewMeetingPage() {
 
         {/* Form area */}
         <div className="relative z-10 flex-1 px-5 overflow-y-auto">
-          {calendarBlocked ? (
-            <div className="py-6">
-              {calendarStatus && <CalendarStatusNotice calendarStatus={calendarStatus} />}
+          {calendarWarning && calendarStatus && (
+            <div className="mb-4">
+              <CalendarStatusNotice calendarStatus={calendarStatus} />
             </div>
-          ) : (
-            <MeetingForm
-              onSubmit={handleSubmit}
-              isSubmitting={isPending}
-              submitLabel="Create Meeting"
-              serverErrors={serverErrors}
-            />
           )}
+          <MeetingForm
+            onSubmit={handleSubmit}
+            isSubmitting={isPending}
+            submitLabel="Create Meeting"
+            serverErrors={serverErrors}
+          />
         </div>
       </div>
     </ScreenErrorBoundary>

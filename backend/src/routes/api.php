@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\V1\Calendar\MeetingController;
 use App\Http\Controllers\Api\V1\Company\CompanyLocationController;
 use App\Http\Controllers\Api\V1\CountryController;
 use App\Http\Controllers\Api\V1\CurrencyController;
+use App\Http\Controllers\Api\V1\Crm\CrmEmailController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
 use App\Http\Controllers\Api\V1\Enterprise\BookDemoController;
@@ -28,6 +29,9 @@ use App\Http\Controllers\Api\V1\Enterprise\EnterpriseLoginController;
 use App\Http\Controllers\Api\V1\Enterprise\SetupInfoController;
 use App\Http\Controllers\Api\V1\Enterprise\VerifyCompanyIdController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\Kpi\AdminKpiStatusController;
+use App\Http\Controllers\Api\V1\Kpi\KpiController;
+use App\Http\Controllers\Api\V1\Kpi\KpiStatusController;
 use App\Http\Controllers\Api\V1\Internal\InternalLoginController;
 use App\Http\Controllers\Api\V1\Internal\InternalOnboardingController;
 use App\Http\Controllers\Api\V1\Internal\InternalUserController;
@@ -39,6 +43,7 @@ use App\Http\Controllers\Api\V1\Onboarding\WorkspaceController;
 use App\Http\Controllers\Api\V1\Payroll\PayrollController;
 use App\Http\Controllers\Api\V1\Project\ProjectController;
 use App\Http\Controllers\Api\V1\Tracking\AgentLocationController;
+use App\Http\Controllers\Api\V1\Tracking\AgentPresenceController;
 use App\Http\Controllers\Api\V1\Task\AgentTaskController;
 use App\Http\Controllers\Api\V1\Task\AdminTaskStatusController;
 use App\Http\Controllers\Api\V1\Task\TaskAssignmentController;
@@ -164,6 +169,9 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
         Route::get('/assignees', [CopilotController::class, 'assignees'])
             ->middleware('throttle:30,1')
             ->name('assignees.index');
+        Route::get('/threads/search', [CopilotController::class, 'search'])
+            ->middleware('throttle:30,1')
+            ->name('threads.search');
         Route::get('/threads', [CopilotController::class, 'index'])->name('threads.index');
         Route::get('/threads/{thread}', [CopilotController::class, 'show'])->name('threads.show');
         Route::get('/threads/{thread}/messages', [CopilotController::class, 'messages'])->name('threads.messages.index');
@@ -294,6 +302,23 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                 Route::get('/{task}/proofs/{proof}', [TaskProofController::class, 'show'])->name('proofs.show');
             });
 
+            Route::prefix('kpis')->name('kpis.')->group(function (): void {
+                Route::get('/', [KpiController::class, 'index'])->name('index');
+                Route::post('/', [KpiController::class, 'store'])
+                    ->middleware('throttle:30,1')
+                    ->name('store');
+                Route::get('/{kpi}', [KpiController::class, 'show'])->name('show');
+                Route::patch('/{kpi}', [KpiController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('update');
+                Route::delete('/{kpi}', [KpiController::class, 'destroy'])
+                    ->middleware('throttle:20,1')
+                    ->name('destroy');
+                Route::patch('/{kpi}/status', [AdminKpiStatusController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('status.update');
+            });
+
             Route::prefix('projects')->name('projects.')->group(function (): void {
                 Route::get('/', [ProjectController::class, 'index'])->name('index');
                 Route::post('/', [ProjectController::class, 'store'])
@@ -332,6 +357,8 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                     ->name('settings.update');
                 Route::get('/metrics', [AttendanceManagementController::class, 'metrics'])->name('metrics');
                 Route::get('/records', [AttendanceManagementController::class, 'index'])->name('records.index');
+                Route::get('/agents/{agent}/history', [AttendanceManagementController::class, 'agentHistory'])
+                    ->name('agents.history');
                 Route::get('/payroll-summaries', [AttendanceManagementController::class, 'payrollSummaries'])
                     ->name('payroll-summaries.index');
                 Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
@@ -374,6 +401,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                     ->middleware('throttle:20,1')
                     ->name('leads.import');
                 Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+                Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
                 Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
                 Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
                 Route::post('/pipelines', [LeadController::class, 'storePipeline'])
@@ -408,6 +436,21 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                 Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
                     ->middleware('throttle:60,1')
                     ->name('leads.activities.store');
+                Route::get('/emails/activity', [CrmEmailController::class, 'activity'])->name('emails.activity');
+                Route::get('/emails/attachments/{attachment}', [CrmEmailController::class, 'downloadAttachment'])->name('emails.attachments.download');
+                Route::get('/leads/{lead}/emails', [CrmEmailController::class, 'index'])->name('leads.emails.index');
+                Route::get('/leads/{lead}/emails/threads/{thread}', [CrmEmailController::class, 'showThread'])->name('leads.emails.threads.show');
+                Route::post('/leads/{lead}/emails/send', [CrmEmailController::class, 'send'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.emails.send');
+                Route::post('/leads/{lead}/emails/threads/{thread}/reply', [CrmEmailController::class, 'reply'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.emails.reply');
+                Route::patch('/leads/{lead}/emails/messages/{message}/read', [CrmEmailController::class, 'markRead'])->name('leads.emails.messages.read');
+                Route::delete('/leads/{lead}/emails/messages/{message}', [CrmEmailController::class, 'destroy'])->name('leads.emails.messages.destroy');
+                Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.emails.attachments.upload');
             });
 
             Route::prefix('locations')->name('locations.')->group(function (): void {
@@ -462,6 +505,14 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                     ->name('proofs.store');
             });
 
+            Route::prefix('kpis')->name('kpis.')->group(function (): void {
+                Route::get('/', [KpiController::class, 'index'])->name('index');
+                Route::get('/{kpi}', [KpiController::class, 'show'])->name('show');
+                Route::patch('/{kpi}/status', [KpiStatusController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('status.update');
+            });
+
             Route::prefix('crm')->name('crm.')->group(function (): void {
                 Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
                 Route::post('/leads', [LeadController::class, 'store'])
@@ -471,6 +522,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                     ->middleware('throttle:20,1')
                     ->name('leads.import');
                 Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+                Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
                 Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
                 Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
                 Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
@@ -487,6 +539,21 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                 Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
                     ->middleware('throttle:60,1')
                     ->name('leads.activities.store');
+                Route::get('/emails/activity', [CrmEmailController::class, 'activity'])->name('emails.activity');
+                Route::get('/emails/attachments/{attachment}', [CrmEmailController::class, 'downloadAttachment'])->name('emails.attachments.download');
+                Route::get('/leads/{lead}/emails', [CrmEmailController::class, 'index'])->name('leads.emails.index');
+                Route::get('/leads/{lead}/emails/threads/{thread}', [CrmEmailController::class, 'showThread'])->name('leads.emails.threads.show');
+                Route::post('/leads/{lead}/emails/send', [CrmEmailController::class, 'send'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.emails.send');
+                Route::post('/leads/{lead}/emails/threads/{thread}/reply', [CrmEmailController::class, 'reply'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.emails.reply');
+                Route::patch('/leads/{lead}/emails/messages/{message}/read', [CrmEmailController::class, 'markRead'])->name('leads.emails.messages.read');
+                Route::delete('/leads/{lead}/emails/messages/{message}', [CrmEmailController::class, 'destroy'])->name('leads.emails.messages.destroy');
+                Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
+                    ->middleware('throttle:30,1')
+                    ->name('leads.emails.attachments.upload');
             });
 
             Route::prefix('locations')->name('locations.')->group(function (): void {
@@ -517,6 +584,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
             Route::get('/workforce/summary', WorkforceSummaryController::class)
                 ->name('workforce.summary');
 
+            Route::post('/presence/heartbeat', [AgentPresenceController::class, 'heartbeat'])
+                ->middleware('throttle:120,1')
+                ->name('presence.heartbeat');
+
             Route::prefix('agents')->name('agents.')->group(function (): void {
                 Route::get('/locations', [AgentLocationController::class, 'index'])->name('locations.index');
                 Route::get('/{user}/location', [AgentLocationController::class, 'show'])->name('locations.show');
@@ -545,6 +616,23 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
             ->name('proofs.store');
         Route::get('/{task}/proofs/{proof}', [TaskProofController::class, 'show'])
             ->name('proofs.show');
+    });
+
+    Route::prefix('kpis')->name('kpis.')->group(function (): void {
+        Route::get('/', [KpiController::class, 'index'])->name('index');
+        Route::post('/', [KpiController::class, 'store'])
+            ->middleware('throttle:30,1')
+            ->name('store');
+        Route::get('/{kpi}', [KpiController::class, 'show'])->name('show');
+        Route::patch('/{kpi}', [KpiController::class, 'update'])
+            ->middleware('throttle:30,1')
+            ->name('update');
+        Route::delete('/{kpi}', [KpiController::class, 'destroy'])
+            ->middleware('throttle:20,1')
+            ->name('destroy');
+        Route::patch('/{kpi}/status', [KpiStatusController::class, 'update'])
+            ->middleware('throttle:30,1')
+            ->name('status.update');
     });
 
     Route::prefix('agent/tasks')->name('agent.tasks.')->group(function (): void {
@@ -600,6 +688,9 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
         Route::get('/records', [AttendanceManagementController::class, 'index'])
             ->middleware('access.role:management')
             ->name('records.index');
+        Route::get('/agents/{agent}/history', [AttendanceManagementController::class, 'agentHistory'])
+            ->middleware('access.role:management')
+            ->name('agents.history');
         Route::get('/payroll-summaries', [AttendanceManagementController::class, 'payrollSummaries'])
             ->middleware('access.role:management')
             ->name('payroll-summaries.index');
@@ -662,6 +753,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
             ->middleware('throttle:20,1')
             ->name('leads.import');
         Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
+        Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
         Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
         Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
         Route::post('/pipelines', [LeadController::class, 'storePipeline'])
@@ -693,6 +785,21 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
         Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
             ->middleware('throttle:60,1')
             ->name('leads.activities.store');
+        Route::get('/emails/activity', [CrmEmailController::class, 'activity'])->name('emails.activity');
+        Route::get('/emails/attachments/{attachment}', [CrmEmailController::class, 'downloadAttachment'])->name('emails.attachments.download');
+        Route::get('/leads/{lead}/emails', [CrmEmailController::class, 'index'])->name('leads.emails.index');
+        Route::get('/leads/{lead}/emails/threads/{thread}', [CrmEmailController::class, 'showThread'])->name('leads.emails.threads.show');
+        Route::post('/leads/{lead}/emails/send', [CrmEmailController::class, 'send'])
+            ->middleware('throttle:30,1')
+            ->name('leads.emails.send');
+        Route::post('/leads/{lead}/emails/threads/{thread}/reply', [CrmEmailController::class, 'reply'])
+            ->middleware('throttle:30,1')
+            ->name('leads.emails.reply');
+        Route::patch('/leads/{lead}/emails/messages/{message}/read', [CrmEmailController::class, 'markRead'])->name('leads.emails.messages.read');
+        Route::delete('/leads/{lead}/emails/messages/{message}', [CrmEmailController::class, 'destroy'])->name('leads.emails.messages.destroy');
+        Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
+            ->middleware('throttle:30,1')
+            ->name('leads.emails.attachments.upload');
     });
 
     Route::get('/dashboard/overview', DashboardOverviewController::class)

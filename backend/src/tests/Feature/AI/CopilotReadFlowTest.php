@@ -8,6 +8,8 @@ use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
 use App\Enums\TaskType;
 use App\Models\Company;
+use App\Models\Lead;
+use App\Models\LeadPipeline;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\AI\Providers\AiProviderRouter;
@@ -72,9 +74,20 @@ final class CopilotReadFlowTest extends TestCase
         $capturedPrompts = [];
         $mockRouter = Mockery::mock(AiProviderRouter::class);
         $mockRouter
-            ->shouldReceive('generateText')
+            ->shouldReceive('routingMetadata')
+            ->with('operational')
+            ->andReturn([
+                'provider' => 'openai',
+                'model' => 'gpt-4.1-mini',
+                'purpose' => 'operational',
+            ]);
+        $mockRouter
+            ->shouldReceive('generateForPurpose')
             ->twice()
-            ->andReturnUsing(function (string $systemPrompt, string $userPrompt) use (&$capturedPrompts): string {
+            ->withArgs(function (string $purpose): bool {
+                return $purpose === 'operational';
+            })
+            ->andReturnUsing(function (string $purpose, string $systemPrompt, string $userPrompt) use (&$capturedPrompts): string {
                 $capturedPrompts[] = $userPrompt;
 
                 return 'Provider response';
@@ -117,9 +130,20 @@ final class CopilotReadFlowTest extends TestCase
         $capturedSystemPrompt = null;
         $mockRouter = Mockery::mock(AiProviderRouter::class);
         $mockRouter
-            ->shouldReceive('generateText')
+            ->shouldReceive('routingMetadata')
+            ->with('operational')
+            ->andReturn([
+                'provider' => 'openai',
+                'model' => 'gpt-4.1-mini',
+                'purpose' => 'operational',
+            ]);
+        $mockRouter
+            ->shouldReceive('generateForPurpose')
             ->once()
-            ->andReturnUsing(function (string $systemPrompt, string $userPrompt) use (&$capturedPrompt, &$capturedSystemPrompt): string {
+            ->withArgs(function (string $purpose): bool {
+                return $purpose === 'operational';
+            })
+            ->andReturnUsing(function (string $purpose, string $systemPrompt, string $userPrompt) use (&$capturedPrompt, &$capturedSystemPrompt): string {
                 $capturedPrompt = $userPrompt;
                 $capturedSystemPrompt = $systemPrompt;
 
@@ -143,10 +167,132 @@ final class CopilotReadFlowTest extends TestCase
         $this->assertStringContainsString('Tenant scope ID (internal, do not mention):', $capturedPrompt);
     }
 
+    public function test_owner_can_list_crm_leads_from_natural_language_prompt(): void
+    {
+        [$company, $owner] = $this->seedCompanyAdmin('owner');
+        $pipelineId = $this->seedLeadPipeline($company->id);
+
+        Lead::query()->create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $owner->id,
+            'name' => 'Acme Supplies Ltd',
+            'status' => 'new',
+            'priority' => 'high',
+            'source' => 'manual',
+        ]);
+
+        $response = $this
+            ->actingAs($owner)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'provide me the list of leads in my crm',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'crm.top_leads')
+            ->assertJsonPath('data.response.sources.0', 'crm.top_leads');
+
+        $content = (string) $response->json('data.response.content');
+        $this->assertStringContainsString('Acme Supplies Ltd', $content);
+        $this->assertStringNotContainsString('data connection', strtolower($content));
+    }
+
+    public function test_owner_can_list_organization_users(): void
+    {
+        [$company, $owner] = $this->seedCompanyAdmin('owner');
+        $agent = User::factory()->createOne([
+            'name' => 'John Wick',
+            'email' => 'john.wick@example.com',
+        ]);
+        $company->users()->attach($agent->id, [
+            'role' => 'agent',
+            'joined_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($owner)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'list users under this organisation',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'org.users')
+            ->assertJsonPath('data.response.sources.0', 'org.users');
+
+        $content = (string) $response->json('data.response.content');
+        $this->assertStringContainsString('John Wick', $content);
+        $this->assertStringNotContainsString('data connection', strtolower($content));
+    }
+
+    public function test_agent_cannot_list_organization_users(): void
+    {
+        [$company, $agent] = $this->seedCompanyAdmin('agent');
+
+        $response = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'list users under this organisation',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'org.users')
+            ->assertJsonPath('data.response.payload.denied', true);
+
+        $content = (string) $response->json('data.response.content');
+        $this->assertStringContainsString('not permitted', strtolower($content));
+    }
+
+    public function test_streaming_general_prompt_passes_chat_context_and_returns_sse_reply(): void
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+
+        $mockRouter = Mockery::mock(AiProviderRouter::class);
+        $mockRouter
+            ->shouldReceive('routingMetadata')
+            ->once()
+            ->with('operational')
+            ->andReturn([
+                'provider' => 'openai',
+                'model' => 'gpt-4.1-mini',
+                'purpose' => 'operational',
+            ]);
+        $mockRouter
+            ->shouldReceive('generateForPurpose')
+            ->once()
+            ->andReturn('Hello from ELY streaming.');
+        $this->app->instance(AiProviderRouter::class, $mockRouter);
+
+        $response = $this
+            ->actingAs($admin)
+            ->withHeaders(['Accept' => 'text/event-stream'])
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Hello',
+                'stream' => true,
+                'context' => [
+                    'latitude' => 6.5244,
+                    'longitude' => 3.3792,
+                ],
+            ]);
+
+        $response->assertOk();
+
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('event: done', $content);
+        $this->assertStringContainsString('Hello from ELY streaming.', $content);
+        $this->assertStringNotContainsString('unable to complete that request', strtolower($content));
+    }
+
     /**
      * @return array{0: Company, 1: User}
      */
-    private function seedCompanyAdmin(): array
+    private function seedCompanyAdmin(string $role = 'admin'): array
     {
         $company = Company::query()->create([
             'company_id' => strtoupper(Str::random(10)),
@@ -157,13 +303,24 @@ final class CopilotReadFlowTest extends TestCase
             'status' => 'active',
             'activated_at' => now(),
         ]);
-        $admin = User::factory()->createOne();
+        $admin = User::factory()->createOne([
+            'is_active' => true,
+        ]);
 
         $company->users()->attach($admin->id, [
-            'role' => 'admin',
+            'role' => $role,
             'joined_at' => now(),
         ]);
 
         return [$company, $admin];
+    }
+
+    private function seedLeadPipeline(int $companyId): int
+    {
+        return (int) LeadPipeline::query()->create([
+            'company_id' => $companyId,
+            'name' => 'Default Pipeline',
+            'is_default' => true,
+        ])->id;
     }
 }

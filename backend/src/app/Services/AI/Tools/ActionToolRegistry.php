@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\AI\Tools;
 
+use App\Enums\LeadPriority;
+use App\Enums\KpiCategory;
+use App\Enums\KpiPriority;
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
 use App\Enums\ProjectPriority;
@@ -11,11 +14,16 @@ use App\Enums\ProjectStatus;
 use App\Enums\ProjectType;
 use App\Enums\TaskPriority;
 use App\Enums\TaskType;
+use App\Models\Lead;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\AI\Crm\VisitAssistantService;
+use App\Services\Crm\CrmEmailService;
+use App\Services\Crm\LeadService;
 use App\Services\Calendar\MeetingService;
+use App\Services\Kpi\KpiService;
 use App\Services\Notification\NotificationService;
+use App\Services\Company\CompanyContextService;
 use App\Services\Project\ProjectService;
 use App\Services\Task\TaskReassignmentService;
 use App\Services\Task\TaskService;
@@ -33,6 +41,10 @@ class ActionToolRegistry
         private readonly NotificationService $notificationService,
         private readonly ProjectService $projectService,
         private readonly VisitAssistantService $visitAssistantService,
+        private readonly LeadService $leadService,
+        private readonly CrmEmailService $crmEmailService,
+        private readonly KpiService $kpiService,
+        private readonly CompanyContextService $companyContextService,
     ) {}
 
     public function execute(string $tool, User $user, int $companyId, array $args = []): array
@@ -44,6 +56,9 @@ class ActionToolRegistry
             'notifications.send' => $this->sendNotification($user, $companyId, $args),
             'projects.create' => $this->createProject($user, $companyId, $args),
             'crm.log_visit' => $this->visitAssistantService->logVisit($user, $companyId, $args),
+            'crm.create_lead' => $this->createLead($user, $companyId, $args),
+            'crm.send_email' => $this->sendLeadEmail($user, $companyId, $args),
+            'kpis.create' => $this->createKpi($user, $companyId, $args),
             default => [
                 'tool' => $tool,
                 'summary' => 'Unsupported action tool requested.',
@@ -55,12 +70,18 @@ class ActionToolRegistry
 
     private function createTask(User $user, int $companyId, array $args): array
     {
+        $role = (string) $this->companyContextService->resolve($user, $companyId)['role'];
+        $isAgent = $role === 'agent';
+
         $validated = Validator::make($args, [
             'title' => ['required', 'string', 'min:3', 'max:255'],
             'type' => ['required', 'string', Rule::in(TaskType::values())],
             'description' => ['required', 'string', 'min:10', 'max:5000'],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
-            'assigned_agent_id' => ['nullable', 'integer', 'exists:users,id'],
+            'assigned_agent_id' => $isAgent
+                ? ['prohibited']
+                : ['nullable', 'integer', 'exists:users,id'],
+            'assigned_agent_ids' => ['prohibited'],
             'location' => ['nullable', 'string', 'min:2', 'max:255'],
             'address' => ['nullable', 'string', 'min:5', 'max:1000'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
@@ -73,10 +94,16 @@ class ActionToolRegistry
             'visit_verification_required' => ['nullable', 'boolean'],
         ])->validate();
 
-        $task = $this->taskService->create($user, [
+        unset($validated['assigned_agent_id'], $validated['assigned_agent_ids']);
+
+        $payload = [
             ...$validated,
             'company_id' => $companyId,
-        ]);
+        ];
+
+        $task = $isAgent
+            ? $this->taskService->createSelf($user, $payload)
+            : $this->taskService->create($user, $payload);
 
         return [
             'tool' => 'tasks.create',
@@ -142,6 +169,8 @@ class ActionToolRegistry
             'attendees.*.display_name' => ['nullable', 'string', 'max:255'],
             'attendees.*.user_id' => ['nullable', 'integer', 'exists:users,id'],
             'attendees.*.is_optional' => ['nullable', 'boolean'],
+            'lead_ids' => ['nullable', 'array', 'max:50'],
+            'lead_ids.*' => ['integer', 'distinct', 'exists:leads,id'],
         ])->validate();
 
         $result = $this->meetingService->create($user, [
@@ -230,6 +259,132 @@ class ActionToolRegistry
                 'count' => $created->count(),
             ],
             'sources' => ['notifications.send'],
+        ];
+    }
+
+    private function createLead(User $user, int $companyId, array $args): array
+    {
+        $validated = Validator::make($args, [
+            'name' => ['required', 'string', 'min:2', 'max:255'],
+            'pipeline_id' => ['required', 'integer', 'exists:lead_pipelines,id'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:40'],
+            'location' => ['nullable', 'string', 'max:255'],
+            'source' => ['nullable', 'string', 'max:120'],
+            'status' => ['required', 'string', 'max:120'],
+            'priority' => ['required', 'string', Rule::in(LeadPriority::values())],
+            'next_action' => ['nullable', 'string', 'max:255'],
+            'assigned_to_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'meta' => ['nullable', 'array'],
+            'industry' => ['nullable', 'string', 'max:120'],
+            'contact_person' => ['nullable', 'string', 'max:120'],
+            'notes' => ['nullable', 'string', 'max:500'],
+        ])->validate();
+
+        $meta = is_array($validated['meta'] ?? null) ? $validated['meta'] : [];
+        $noteText = isset($validated['notes']) && is_string($validated['notes'])
+            ? trim($validated['notes'])
+            : '';
+        unset($validated['notes']);
+
+        foreach (['industry', 'contact_person'] as $metaField) {
+            if (isset($validated[$metaField]) && is_string($validated[$metaField]) && trim($validated[$metaField]) !== '') {
+                $meta[$metaField] = trim($validated[$metaField]);
+            }
+            unset($validated[$metaField]);
+        }
+        if ($meta !== []) {
+            $validated['meta'] = $meta;
+        }
+
+        $lead = $this->leadService->create($user, [
+            ...$validated,
+            'company_id' => $companyId,
+        ]);
+
+        if ($noteText !== '') {
+            $this->leadService->addNote($user, $lead, $noteText, $companyId);
+        }
+
+        return [
+            'tool' => 'crm.create_lead',
+            'summary' => "CRM lead '{$lead->name}' was created successfully.",
+            'payload' => [
+                'lead_id' => (int) $lead->id,
+                'name' => (string) $lead->name,
+                'phone' => $lead->phone,
+                'location' => $lead->location,
+                'status' => (string) $lead->status,
+                'priority' => $lead->priority?->value,
+            ],
+            'sources' => ['crm.create_lead'],
+        ];
+    }
+
+    private function sendLeadEmail(User $user, int $companyId, array $args): array
+    {
+        $validated = Validator::make($args, [
+            'lead_id' => ['required', 'integer', 'exists:leads,id'],
+            'to' => ['required', 'array', 'min:1'],
+            'to.*.email' => ['required', 'email', 'max:255'],
+            'cc' => ['sometimes', 'array'],
+            'bcc' => ['sometimes', 'array'],
+            'subject' => ['required', 'string', 'max:255'],
+            'body_text' => ['required', 'string', 'min:10', 'max:50000'],
+            'body_html' => ['nullable', 'string', 'max:50000'],
+            'attachment_ids' => ['sometimes', 'array'],
+        ])->validate();
+
+        $lead = Lead::query()->where('company_id', $companyId)->findOrFail((int) $validated['lead_id']);
+        $message = $this->crmEmailService->queueSend($user, $lead, [
+            ...$validated,
+            'company_id' => $companyId,
+        ]);
+
+        return [
+            'tool' => 'crm.send_email',
+            'summary' => "Email to lead '{$lead->name}' was queued for sending.",
+            'payload' => [
+                'message_id' => (int) $message->id,
+                'lead_id' => (int) $lead->id,
+                'subject' => (string) $message->subject,
+                'status' => $message->status?->value,
+            ],
+            'sources' => ['crm.send_email'],
+        ];
+    }
+
+    private function createKpi(User $user, int $companyId, array $args): array
+    {
+        $validated = Validator::make($args, [
+            'name' => ['required', 'string', 'min:3', 'max:255'],
+            'category' => ['required', 'string', Rule::in(KpiCategory::values())],
+            'objective' => ['required', 'string', 'min:10', 'max:5000'],
+            'target_value' => ['required', 'string', 'max:255'],
+            'expected_outcome' => ['required', 'string', 'min:10', 'max:5000'],
+            'start_date' => ['required', 'date'],
+            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+            'priority' => ['required', 'string', Rule::in(KpiPriority::values())],
+            'assigned_to_user_id' => ['nullable', 'integer', 'exists:users,id'],
+        ])->validate();
+
+        $kpi = $this->kpiService->create($user, [
+            ...$validated,
+            'company_id' => $companyId,
+        ]);
+
+        return [
+            'tool' => 'kpis.create',
+            'summary' => "KPI '{$kpi->name}' was created successfully.",
+            'payload' => [
+                'kpi_id' => (int) $kpi->id,
+                'name' => (string) $kpi->name,
+                'category' => $kpi->category?->value,
+                'priority' => $kpi->priority?->value,
+                'assigned_to_user_id' => $kpi->assigned_to_user_id,
+                'status' => $kpi->status?->value,
+            ],
+            'sources' => ['kpis.create'],
         ];
     }
 

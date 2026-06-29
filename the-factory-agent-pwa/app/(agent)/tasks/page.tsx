@@ -14,6 +14,12 @@ import {
   taskHasMapLocation,
   type Task,
 } from '@/features/tasks';
+import {
+  useKpis,
+  useUpdateKpiStatus,
+  type Kpi,
+  type KpiStatus,
+} from '@/features/kpis';
 import { toast } from '@/lib/toast';
 
 type FilterKey = 'all' | 'pending' | 'in_progress' | 'completed' | 'cancelled';
@@ -49,6 +55,46 @@ const PRIORITY_COLOR: Record<string, string> = {
   medium: '#F5A623',
   high: '#FD6046',
   urgent: '#E53935',
+};
+
+// KPI constants
+const KPI_FILTER_TABS: { key: KpiStatus | 'all'; label: string; color: string }[] = [
+  { key: 'all', label: 'All KPIs', color: '#75ADAF' },
+  { key: 'pending', label: 'Pending', color: '#F5A623' },
+  { key: 'in_progress', label: 'In Progress', color: '#75ADAF' },
+  { key: 'completed', label: 'Completed', color: '#4CAF50' },
+  { key: 'cancelled', label: 'Cancelled', color: '#FD6046' },
+];
+
+const KPI_STATUS_COLOR: Record<string, string> = {
+  pending: '#F5A623',
+  in_progress: '#75ADAF',
+  completed: '#4CAF50',
+  cancelled: '#FD6046',
+};
+
+const KPI_STATUS_LABEL: Record<string, string> = {
+  pending: 'Pending',
+  in_progress: 'In Progress',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
+
+const CATEGORY_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  sales: { bg: '#DBEAFE', text: '#1E3A8A', label: 'Sales' },
+  customer_visits: { bg: '#FEF3C7', text: '#92400E', label: 'Visits' },
+  lead_generation: { bg: '#FCE7F3', text: '#9D174D', label: 'Leads' },
+  collection: { bg: '#EDE9FE', text: '#5B21B6', label: 'Collection' },
+  survey: { bg: '#E2E8F0', text: '#334155', label: 'Survey' },
+  merchandising: { bg: '#CCFBF1', text: '#0D4E4E', label: 'Merchandising' },
+  others: { bg: '#F3F4F6', text: '#4B5563', label: 'Others' },
+};
+
+const PRIORITY_STYLES: Record<string, { dot: string; text: string; label: string }> = {
+  high: { dot: '#EF4444', text: '#991B1B', label: 'High' },
+  medium: { dot: '#F59E0B', text: '#92400E', label: 'Medium' },
+  low: { dot: '#10B981', text: '#166534', label: 'Low' },
+  critical: { dot: '#7C3AED', text: '#4C1D95', label: 'Critical' },
 };
 
 function formatRelativeTime(dateStr: string | null | undefined): string {
@@ -162,11 +208,122 @@ function TaskCard({
   );
 }
 
+function KpiCard({
+  kpi,
+  onStart,
+  onComplete,
+  onCancel,
+  isUpdating,
+}: {
+  kpi: Kpi;
+  onStart: () => void;
+  onComplete: () => void;
+  onCancel: () => void;
+  isUpdating: boolean;
+}) {
+  const statusColor = KPI_STATUS_COLOR[kpi.status] ?? '#8F9098';
+  const catStyle = CATEGORY_STYLES[kpi.category] ?? { bg: '#E2E8F0', text: '#334155', label: kpi.category };
+  const prioStyle = PRIORITY_STYLES[kpi.priority] ?? { dot: '#8F9098', text: '#8F9098', label: kpi.priority };
+
+  const isPending = kpi.status === 'pending';
+  const isInProgress = kpi.status === 'in_progress';
+
+  return (
+    <div className="bg-[#0B3343]/75 hover:bg-[#0B3343]/90 rounded-2xl border-[0.5px] border-white/8 overflow-hidden mb-3 p-4 flex flex-col gap-3 min-w-0 transition-colors select-none">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-col gap-1 min-w-0">
+          <h4 className="font-sans font-bold text-sm text-white leading-relaxed line-clamp-2">
+            {kpi.name}
+          </h4>
+          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+            <span
+              className="px-2 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase font-sans"
+              style={{ backgroundColor: catStyle.bg, color: catStyle.text }}
+            >
+              {catStyle.label}
+            </span>
+            <span className="flex items-center gap-1 text-[10px] text-white/60 font-sans">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: prioStyle.dot }} />
+              {prioStyle.label}
+            </span>
+          </div>
+        </div>
+        <span
+          className="px-2.5 py-1 rounded-full text-[10px] font-semibold flex-shrink-0 font-sans"
+          style={{ backgroundColor: `${statusColor}22`, color: statusColor }}
+        >
+          {KPI_STATUS_LABEL[kpi.status] ?? kpi.status}
+        </span>
+      </div>
+
+      {kpi.objective && (
+        <p className="font-sans text-xs text-[#8F9098] leading-relaxed">
+          <strong className="text-white/80 font-medium">Objective:</strong> {kpi.objective}
+        </p>
+      )}
+
+      {kpi.expectedOutcome && (
+        <p className="font-sans text-xs text-[#8F9098] leading-relaxed">
+          <strong className="text-white/80 font-medium">Expected Outcome:</strong> {kpi.expectedOutcome}
+        </p>
+      )}
+
+      <div className="flex items-center justify-between text-[11px] font-sans border-t border-white/5 pt-2.5 mt-0.5">
+        <span className="text-[#75ADAF]">
+          Target: <strong className="text-white font-semibold">{kpi.targetValue}</strong>
+        </span>
+        <span className="text-white/40">
+          Ends {new Date(kpi.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+        </span>
+      </div>
+
+      {(isPending || isInProgress) && (
+        <div className="flex gap-2.5 mt-1">
+          {isPending && (
+            <button
+              onClick={onStart}
+              disabled={isUpdating}
+              className="flex-1 h-9 rounded-xl bg-[#75ADAF] text-white font-semibold text-xs transition-opacity hover:opacity-95 active:scale-[0.98] disabled:opacity-50"
+            >
+              Start KPI
+            </button>
+          )}
+          {isInProgress && (
+            <>
+              <button
+                onClick={onComplete}
+                disabled={isUpdating}
+                className="flex-1 h-9 rounded-xl bg-[#4CAF50] text-white font-semibold text-xs transition-opacity hover:opacity-95 active:scale-[0.98] disabled:opacity-50"
+              >
+                Complete
+              </button>
+              <button
+                onClick={onCancel}
+                disabled={isUpdating}
+                className="flex-1 h-9 rounded-xl border border-[#FD6046] text-[#FD6046] font-semibold text-xs bg-transparent transition-colors hover:bg-[#FD6046]/10 active:scale-[0.98] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TasksPage() {
   const router = useRouter();
+  const [activeSubTab, setActiveSubTab] = useState<'tasks' | 'kpis'>('tasks');
+
+  // Tasks States
   const [activeFilter, setActiveFilter] = useState<FilterKey>('pending');
   const [taskToDecline, setTaskToDecline] = useState<Task | null>(null);
 
+  // KPIs States
+  const [activeKpiFilter, setActiveKpiFilter] = useState<KpiStatus | 'all'>('all');
+
+  // Tasks Queries
   const listFilters = useMemo(
     () => (activeFilter === 'all' ? undefined : { status: activeFilter }),
     [activeFilter],
@@ -174,20 +331,36 @@ export default function TasksPage() {
 
   const {
     data: listData,
-    isLoading,
-    isError,
-    refetch,
-    isFetching,
+    isLoading: isLoadingTasks,
+    isError: isTasksError,
+    refetch: refetchTasks,
+    isFetching: isFetchingTasks,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
   } = useTaskList(listFilters);
 
   const tasks = useMemo(() => flattenTaskPages(listData), [listData]);
-
   const { mutate: updateStatus, isPending: isDeclining } = useUpdateTaskStatus();
   const { goToTaskDetail, goToTracking, goToContinueTracking } = useTaskNavigation();
 
+  // KPIs Queries
+  const kpiFilters = useMemo(
+    () => (activeKpiFilter === 'all' ? undefined : { status: activeKpiFilter }),
+    [activeKpiFilter],
+  );
+
+  const {
+    data: kpis = [],
+    isLoading: isLoadingKpis,
+    isError: isKpisError,
+    refetch: refetchKpis,
+    isFetching: isFetchingKpis,
+  } = useKpis(kpiFilters);
+
+  const { mutate: updateKpiStatus, isPending: isUpdatingKpi } = useUpdateKpiStatus();
+
+  // Handlers
   const handleTaskAction = (task: Task, e: React.MouseEvent) => {
     e.stopPropagation();
     if (taskHasMapLocation(task) && isResumeTrackingStatus(task.status)) {
@@ -205,7 +378,7 @@ export default function TasksPage() {
         onSuccess: () => {
           toast.success('Task declined');
           setTaskToDecline(null);
-          refetch();
+          refetchTasks();
         },
         onError: (err: unknown) => {
           toast.error(err instanceof Error ? err.message : 'Failed to decline task');
@@ -215,7 +388,23 @@ export default function TasksPage() {
     );
   };
 
+  const handleKpiStatusTransition = (kpiId: number, status: KpiStatus) => {
+    updateKpiStatus(
+      { kpiId, status },
+      {
+        onSuccess: () => {
+          toast.success(`KPI marked as ${status.replace('_', ' ')}`);
+          refetchKpis();
+        },
+        onError: (err: unknown) => {
+          toast.error(err instanceof Error ? err.message : 'Failed to update KPI status');
+        },
+      },
+    );
+  };
+
   const activeTabConfig = FILTER_TABS.find((t) => t.key === activeFilter)!;
+  const activeKpiTabConfig = KPI_FILTER_TABS.find((t) => t.key === activeKpiFilter)!;
 
   return (
     <div className="flex flex-col flex-1 bg-[#0A1D25] min-h-screen">
@@ -227,118 +416,233 @@ export default function TasksPage() {
           <ArrowLeft size={24} />
         </button>
         <div className="flex-1 min-w-0">
-          <h2 className="font-sans font-semibold text-xl text-white">My Tasks</h2>
-          <p className="font-sans text-[11px] text-white/40 mt-0.5">Tasks assigned to you</p>
+          <h2 className="font-sans font-semibold text-xl text-white">Operations</h2>
+          <p className="font-sans text-[11px] text-white/40 mt-0.5">Tasks and targets assigned to you</p>
         </div>
         <div className="min-w-[28px] h-7 rounded-full bg-[#75ADAF]/20 flex items-center justify-center px-2.5">
           <span className="font-sans font-bold text-xs text-[#75ADAF]">
-            {tasks.length}
-            {hasNextPage ? '+' : ''}
+            {activeSubTab === 'tasks' ? tasks.length : kpis.length}
+            {activeSubTab === 'tasks' && hasNextPage ? '+' : ''}
           </span>
         </div>
       </header>
 
-      <div className="flex overflow-x-auto scrollbar-none gap-2 px-5 py-2">
-        {FILTER_TABS.map((tab) => {
-          const isActive = activeFilter === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveFilter(tab.key)}
-              className={`flex items-center gap-1.5 py-2 px-3.5 rounded-full border transition-all text-xs font-semibold whitespace-nowrap outline-none focus:outline-none ${
-                isActive
-                  ? 'border-transparent text-white'
-                  : 'border-white/12 text-[#8F9098] hover:text-white'
-              }`}
-              style={{ backgroundColor: isActive ? tab.color : 'transparent' }}
-            >
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+      {/* Segment Selector for Operations Tabs */}
+      <div className="flex bg-[#0B3343]/50 p-1 rounded-full mx-5 mb-4 border border-white/5">
+        <button
+          onClick={() => setActiveSubTab('tasks')}
+          className={`flex-1 py-2 text-center text-xs font-semibold rounded-full transition-all ${
+            activeSubTab === 'tasks'
+              ? 'bg-[#75ADAF] text-white shadow-md'
+              : 'text-[#8F9098] hover:text-white'
+          }`}
+        >
+          Tasks
+        </button>
+        <button
+          onClick={() => setActiveSubTab('kpis')}
+          className={`flex-1 py-2 text-center text-xs font-semibold rounded-full transition-all ${
+            activeSubTab === 'kpis'
+              ? 'bg-[#75ADAF] text-white shadow-md'
+              : 'text-[#8F9098] hover:text-white'
+          }`}
+        >
+          KPIs
+        </button>
       </div>
 
-      <div className="flex items-center gap-2 px-5 pt-4 pb-2">
-        <div className="w-1 h-4.5 rounded" style={{ backgroundColor: activeTabConfig.color }} />
-        <h3 className="font-sans font-semibold text-sm text-white">
-          {activeTabConfig.label}{' '}
-          <span className="font-bold ml-1.5" style={{ color: activeTabConfig.color }}>
-            {tasks.length}
-            {hasNextPage ? '+' : ''}
-          </span>
-        </h3>
-        {isFetching && !isLoading && (
-          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#75ADAF] border-t-transparent" />
-        )}
-      </div>
-
-      <div className="flex-1 px-5 pb-6 overflow-y-auto">
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-16">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#75ADAF] border-t-transparent" />
-          </div>
-        ) : isError ? (
-          <div className="flex flex-col items-center justify-center py-16 px-6 text-center gap-4 bg-white/[0.03] border border-white/5 rounded-2xl">
-            <AlertCircle className="text-[#FD6046]" size={28} />
-            <h4 className="font-sans font-semibold text-sm text-white">Failed to load tasks</h4>
-            <p className="font-sans text-xs text-[#8F9098]">Please check your connection and try again.</p>
-            <button
-              onClick={() => refetch()}
-              className="px-5 py-2 rounded-full bg-[#75ADAF]/20 text-[#75ADAF] text-xs font-semibold"
-            >
-              Retry
-            </button>
-          </div>
-        ) : tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 px-8 text-center">
-            <div
-              className="w-16 h-16 rounded-full flex items-center justify-center mb-4 text-2xl font-bold font-sans"
-              style={{ backgroundColor: `${activeTabConfig.color}33`, color: activeTabConfig.color }}
-            >
-              0
-            </div>
-            <h4 className="font-sans font-semibold text-lg text-white mb-1">
-              No {activeTabConfig.label}
-            </h4>
-            <p className="font-sans text-xs text-[#8F9098] leading-relaxed max-w-[220px]">
-              {activeFilter === 'all'
-                ? 'You have no assigned tasks yet.'
-                : `You have no ${activeTabConfig.label.toLowerCase()} right now.`}
-            </p>
-          </div>
-        ) : (
-          <div>
-            {tasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                onPress={() =>
-                  isResumeTrackingStatus(task.status) && taskHasMapLocation(task)
-                    ? goToContinueTracking(task.id)
-                    : goToTaskDetail(task.id)
-                }
-                onPrimaryAction={(e) => handleTaskAction(task, e)}
-                onDecline={(e) => {
-                  e.stopPropagation();
-                  setTaskToDecline(task);
-                }}
-              />
-            ))}
-
-            {hasNextPage && (
-              <div className="py-4 text-center">
+      {activeSubTab === 'tasks' ? (
+        <>
+          {/* Tasks Filters */}
+          <div className="flex overflow-x-auto scrollbar-none gap-2 px-5 py-2">
+            {FILTER_TABS.map((tab) => {
+              const isActive = activeFilter === tab.key;
+              return (
                 <button
-                  onClick={() => fetchNextPage()}
-                  disabled={isFetchingNextPage}
-                  className="w-full h-10 rounded-xl border border-white/12 text-[#75ADAF] font-semibold text-xs transition-colors hover:bg-[#75ADAF]/10 disabled:opacity-50 active:scale-[0.98]"
+                  key={tab.key}
+                  onClick={() => setActiveFilter(tab.key)}
+                  className={`flex items-center gap-1.5 py-2 px-3.5 rounded-full border transition-all text-xs font-semibold whitespace-nowrap outline-none focus:outline-none ${
+                    isActive
+                      ? 'border-transparent text-white'
+                      : 'border-white/12 text-[#8F9098] hover:text-white'
+                  }`}
+                  style={{ backgroundColor: isActive ? tab.color : 'transparent' }}
                 >
-                  {isFetchingNextPage ? 'Loading more...' : 'Load more tasks'}
+                  <span>{tab.label}</span>
                 </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-2 px-5 pt-4 pb-2">
+            <div className="w-1 h-4.5 rounded" style={{ backgroundColor: activeTabConfig.color }} />
+            <h3 className="font-sans font-semibold text-sm text-white">
+              {activeTabConfig.label}{' '}
+              <span className="font-bold ml-1.5" style={{ color: activeTabConfig.color }}>
+                {tasks.length}
+                {hasNextPage ? '+' : ''}
+              </span>
+            </h3>
+            {isFetchingTasks && !isLoadingTasks && (
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#75ADAF] border-t-transparent" />
+            )}
+          </div>
+
+          <div className="flex-1 px-5 pb-6 overflow-y-auto">
+            {isLoadingTasks ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#75ADAF] border-t-transparent" />
+              </div>
+            ) : isTasksError ? (
+              <div className="flex flex-col items-center justify-center py-16 px-6 text-center gap-4 bg-white/[0.03] border border-white/5 rounded-2xl">
+                <AlertCircle className="text-[#FD6046]" size={28} />
+                <h4 className="font-sans font-semibold text-sm text-white">Failed to load tasks</h4>
+                <p className="font-sans text-xs text-[#8F9098]">Please check your connection and try again.</p>
+                <button
+                  onClick={() => refetchTasks()}
+                  className="px-5 py-2 rounded-full bg-[#75ADAF]/20 text-[#75ADAF] text-xs font-semibold"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : tasks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 px-8 text-center">
+                <div
+                  className="w-16 h-16 rounded-full flex items-center justify-center mb-4 text-2xl font-bold font-sans"
+                  style={{ backgroundColor: `${activeTabConfig.color}33`, color: activeTabConfig.color }}
+                >
+                  0
+                </div>
+                <h4 className="font-sans font-semibold text-lg text-white mb-1">
+                  No {activeTabConfig.label}
+                </h4>
+                <p className="font-sans text-xs text-[#8F9098] leading-relaxed max-w-[220px]">
+                  {activeFilter === 'all'
+                    ? 'You have no assigned tasks yet.'
+                    : `You have no ${activeTabConfig.label.toLowerCase()} right now.`}
+                </p>
+              </div>
+            ) : (
+              <div>
+                {tasks.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onPress={() =>
+                      isResumeTrackingStatus(task.status) && taskHasMapLocation(task)
+                        ? goToContinueTracking(task.id)
+                        : goToTaskDetail(task.id)
+                    }
+                    onPrimaryAction={(e) => handleTaskAction(task, e)}
+                    onDecline={(e) => {
+                      e.stopPropagation();
+                      setTaskToDecline(task);
+                    }}
+                  />
+                ))}
+
+                {hasNextPage && (
+                  <div className="py-4 text-center">
+                    <button
+                      onClick={() => fetchNextPage()}
+                      disabled={isFetchingNextPage}
+                      className="w-full h-10 rounded-xl border border-white/12 text-[#75ADAF] font-semibold text-xs transition-colors hover:bg-[#75ADAF]/10 disabled:opacity-50 active:scale-[0.98]"
+                    >
+                      {isFetchingNextPage ? 'Loading more...' : 'Load more tasks'}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
-        )}
-      </div>
+        </>
+      ) : (
+        <>
+          {/* KPIs Filters */}
+          <div className="flex overflow-x-auto scrollbar-none gap-2 px-5 py-2">
+            {KPI_FILTER_TABS.map((tab) => {
+              const isActive = activeKpiFilter === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveKpiFilter(tab.key)}
+                  className={`flex items-center gap-1.5 py-2 px-3.5 rounded-full border transition-all text-xs font-semibold whitespace-nowrap outline-none focus:outline-none ${
+                    isActive
+                      ? 'border-transparent text-white'
+                      : 'border-white/12 text-[#8F9098] hover:text-white'
+                  }`}
+                  style={{ backgroundColor: isActive ? tab.color : 'transparent' }}
+                >
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-2 px-5 pt-4 pb-2">
+            <div className="w-1 h-4.5 rounded" style={{ backgroundColor: activeKpiTabConfig.color }} />
+            <h3 className="font-sans font-semibold text-sm text-white">
+              {activeKpiTabConfig.label}{' '}
+              <span className="font-bold ml-1.5" style={{ color: activeKpiTabConfig.color }}>
+                {kpis.length}
+              </span>
+            </h3>
+            {isFetchingKpis && !isLoadingKpis && (
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#75ADAF] border-t-transparent" />
+            )}
+          </div>
+
+          <div className="flex-1 px-5 pb-6 overflow-y-auto">
+            {isLoadingKpis ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#75ADAF] border-t-transparent" />
+              </div>
+            ) : isKpisError ? (
+              <div className="flex flex-col items-center justify-center py-16 px-6 text-center gap-4 bg-white/[0.03] border border-white/5 rounded-2xl">
+                <AlertCircle className="text-[#FD6046]" size={28} />
+                <h4 className="font-sans font-semibold text-sm text-white">Failed to load KPIs</h4>
+                <p className="font-sans text-xs text-[#8F9098]">Please check your connection and try again.</p>
+                <button
+                  onClick={() => refetchKpis()}
+                  className="px-5 py-2 rounded-full bg-[#75ADAF]/20 text-[#75ADAF] text-xs font-semibold"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : kpis.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 px-8 text-center">
+                <div
+                  className="w-16 h-16 rounded-full flex items-center justify-center mb-4 text-2xl font-bold font-sans"
+                  style={{ backgroundColor: `${activeKpiTabConfig.color}33`, color: activeKpiTabConfig.color }}
+                >
+                  0
+                </div>
+                <h4 className="font-sans font-semibold text-lg text-white mb-1">
+                  No {activeKpiTabConfig.label}
+                </h4>
+                <p className="font-sans text-xs text-[#8F9098] leading-relaxed max-w-[220px]">
+                  {activeKpiFilter === 'all'
+                    ? 'You have no assigned KPIs yet.'
+                    : `You have no ${activeKpiTabConfig.label.toLowerCase()} KPIs right now.`}
+                </p>
+              </div>
+            ) : (
+              <div>
+                {kpis.map((kpi) => (
+                  <KpiCard
+                    key={kpi.id}
+                    kpi={kpi}
+                    onStart={() => handleKpiStatusTransition(kpi.id, 'in_progress')}
+                    onComplete={() => handleKpiStatusTransition(kpi.id, 'completed')}
+                    onCancel={() => handleKpiStatusTransition(kpi.id, 'cancelled')}
+                    isUpdating={isUpdatingKpi}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       <AnimatePresence>
         {taskToDecline && (

@@ -15,13 +15,44 @@ import {
   storeOfflineConflict,
 } from '@/lib/offline/queue';
 import { getActiveCompanyId, appStore } from '@/lib/storage/stores';
-import { toast } from '@/lib/toast';
 import { buildCompleteFormData } from '@/features/tracking/completeTaskForm';
+import { leadSchema } from '@/features/crm/schema';
+import { putCachedLeadDetail, remapLeadId } from '@/features/crm/cache';
+import { queryClient } from '@/lib/queryClient';
+import { taskKeys } from '@/features/tasks/queryKeys';
+import { meetingKeys } from '@/features/meetings/queryKeys';
+import { crmKeys } from '@/features/crm/queryKeys';
+import { locationKeys } from '@/features/locations/queryKeys';
+import { setShowingCachedData } from '@/lib/offline/cacheIndicator';
 
 const MAX_BATCH_SIZE = 50;
 const RETRY_DELAYS_MS = [0, 30_000, 120_000, 300_000, 900_000] as const;
+const BACKGROUND_REQUEST = { suppressErrorToast: true };
 
 let syncInFlight = false;
+type SyncStatusListener = (syncing: boolean) => void;
+const syncStatusListeners = new Set<SyncStatusListener>();
+
+function setSyncInFlight(value: boolean): void {
+  syncInFlight = value;
+  syncStatusListeners.forEach((listener) => listener(value));
+}
+
+function unwrapCrmLead(raw: unknown): unknown {
+  const wrapped = raw as Record<string, unknown>;
+  const data = (wrapped?.data as Record<string, unknown>) ?? wrapped;
+  return data?.lead ?? data;
+}
+
+async function invalidateSyncedQueries(): Promise<void> {
+  setShowingCachedData(false);
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: taskKeys.all }),
+    queryClient.invalidateQueries({ queryKey: meetingKeys.all }),
+    queryClient.invalidateQueries({ queryKey: crmKeys.all }),
+    queryClient.invalidateQueries({ queryKey: locationKeys.lists() }),
+  ]);
+}
 
 function getCurrentUserId(): string | null {
   try {
@@ -79,17 +110,21 @@ async function syncLocationQueue(): Promise<void> {
     const taskId = Number(taskIdRaw);
     const batch = rows.slice(0, MAX_BATCH_SIZE);
     try {
-      await client.post(`/agent/tasks/${taskId}/location`, {
-        company_id: companyId,
-        points: batch.map((r) => ({
-          latitude: r.latitude,
-          longitude: r.longitude,
-          accuracy_meters: r.accuracyMeters ?? null,
-          speed_mps: r.speedMps ?? null,
-          heading_degrees: r.headingDegrees ?? null,
-          recorded_at: r.recordedAt,
-        })),
-      });
+      await client.post(
+        `/agent/tasks/${taskId}/location`,
+        {
+          company_id: companyId,
+          points: batch.map((r) => ({
+            latitude: r.latitude,
+            longitude: r.longitude,
+            accuracy_meters: r.accuracyMeters ?? null,
+            speed_mps: r.speedMps ?? null,
+            heading_degrees: r.headingDegrees ?? null,
+            recorded_at: r.recordedAt,
+          })),
+        },
+        BACKGROUND_REQUEST,
+      );
 
       const tx = db.transaction('locationQueue', 'readwrite');
       for (const row of batch) {
@@ -131,14 +166,6 @@ async function syncLocationQueue(): Promise<void> {
         }
       }
       await tx.done;
-
-      if (is422) {
-        const msg =
-          apiError.errors?.authorization?.[0] ??
-          apiError.message ??
-          'You can only track tasks currently assigned to you.';
-        toast.error('Tracking Stopped', msg);
-      }
     }
   }
 }
@@ -158,6 +185,7 @@ async function syncProofQueue(): Promise<void> {
       );
 
       await client.post(`/agent/tasks/${proof.taskId}/proofs`, formData, {
+        ...BACKGROUND_REQUEST,
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
@@ -188,10 +216,14 @@ async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<voi
   switch (entry.actionType) {
     case 'task.update_status': {
       const payload = parseOfflinePayload<{ id: string | number; status: string; company_id?: number }>(entry);
-      await client.patch(`/agent/tasks/${payload.id}/status`, {
-        status: payload.status,
-        company_id: payload.company_id ?? getActiveCompanyId() ?? undefined,
-      });
+      await client.patch(
+        `/agent/tasks/${payload.id}/status`,
+        {
+          status: payload.status,
+          company_id: payload.company_id ?? getActiveCompanyId() ?? undefined,
+        },
+        BACKGROUND_REQUEST,
+      );
       return;
     }
     case 'task.complete': {
@@ -225,6 +257,7 @@ async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<voi
         },
       });
       await client.post(`/agent/tasks/${payload.taskId}/complete`, formData, {
+        ...BACKGROUND_REQUEST,
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       for (const proof of taskProofs) {
@@ -242,52 +275,58 @@ async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<voi
     }
     case 'project.create': {
       const payload = parseOfflinePayload<Record<string, unknown>>(entry);
-      await client.post('/projects', payload);
+      await client.post('/projects', payload, BACKGROUND_REQUEST);
       return;
     }
     case 'project.update': {
       const payload = parseOfflinePayload<{ id: string | number; body: Record<string, unknown> }>(entry);
-      await client.patch(`/projects/${payload.id}`, payload.body);
+      await client.patch(`/projects/${payload.id}`, payload.body, BACKGROUND_REQUEST);
       return;
     }
     case 'project.update_status': {
       const payload = parseOfflinePayload<{ id: string | number; status: string }>(entry);
-      await client.patch(`/projects/${payload.id}`, { status: payload.status });
+      await client.patch(`/projects/${payload.id}`, { status: payload.status }, BACKGROUND_REQUEST);
       return;
     }
     case 'meeting.create': {
       const payload = parseOfflinePayload<Record<string, unknown>>(entry);
-      await client.post('/meetings', payload);
+      await client.post('/meetings', payload, BACKGROUND_REQUEST);
       return;
     }
     case 'meeting.update': {
       const payload = parseOfflinePayload<{ id: string | number; body: Record<string, unknown> }>(entry);
-      await client.patch(`/meetings/${payload.id}`, payload.body);
+      await client.patch(`/meetings/${payload.id}`, payload.body, BACKGROUND_REQUEST);
       return;
     }
     case 'meeting.cancel': {
       const payload = parseOfflinePayload<{ id: string | number; company_id?: number }>(entry);
-      await client.post(`/meetings/${payload.id}/cancel`, {
-        company_id: payload.company_id,
-      });
+      await client.post(
+        `/meetings/${payload.id}/cancel`,
+        { company_id: payload.company_id },
+        BACKGROUND_REQUEST,
+      );
       return;
     }
     case 'attendance.clock_in': {
       const payload = parseOfflinePayload<Record<string, unknown>>(entry);
-      await client.post('/agent/attendance/clock-in', payload);
+      await client.post('/agent/attendance/clock-in', payload, BACKGROUND_REQUEST);
       return;
     }
     case 'attendance.clock_out': {
       const payload = parseOfflinePayload<Record<string, unknown>>(entry);
-      await client.post('/agent/attendance/clock-out', payload);
+      await client.post('/agent/attendance/clock-out', payload, BACKGROUND_REQUEST);
       return;
     }
     case 'location.create': {
       const payload = parseOfflinePayload<Record<string, unknown>>(entry);
-      await client.post('/agent/locations', {
-        ...payload,
-        company_id: payload.company_id ?? getActiveCompanyId() ?? undefined,
-      });
+      await client.post(
+        '/agent/locations',
+        {
+          ...payload,
+          company_id: payload.company_id ?? getActiveCompanyId() ?? undefined,
+        },
+        BACKGROUND_REQUEST,
+      );
       // Drop optimistic offline rows; the next list fetch repopulates from server.
       const companyId = entry.companyId ?? getActiveCompanyId();
       if (companyId != null) {
@@ -309,17 +348,42 @@ async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<voi
     }
     case 'location.update': {
       const payload = parseOfflinePayload<{ id: number; body: Record<string, unknown> }>(entry);
-      await client.put(`/admin/locations/${payload.id}`, {
-        ...payload.body,
-        company_id: payload.body.company_id ?? getActiveCompanyId() ?? undefined,
-      });
+      await client.put(
+        `/admin/locations/${payload.id}`,
+        {
+          ...payload.body,
+          company_id: payload.body.company_id ?? getActiveCompanyId() ?? undefined,
+        },
+        BACKGROUND_REQUEST,
+      );
       return;
     }
     case 'location.delete': {
       const payload = parseOfflinePayload<{ id: number; company_id?: number }>(entry);
       await client.delete(`/admin/locations/${payload.id}`, {
+        ...BACKGROUND_REQUEST,
         params: { company_id: payload.company_id ?? getActiveCompanyId() ?? undefined },
       });
+      return;
+    }
+    case 'crm.lead.create': {
+      const payload = parseOfflinePayload<{ tempId: number; body: Record<string, unknown> }>(entry);
+      const response = await client.post('/agent/crm/leads', payload.body, BACKGROUND_REQUEST);
+      const lead = leadSchema.parse(unwrapCrmLead(response.data));
+      if (payload.tempId < 0) {
+        await remapLeadId(entry.companyId, payload.tempId, lead);
+      }
+      return;
+    }
+    case 'crm.lead.update': {
+      const payload = parseOfflinePayload<{ id: number | string; body: Record<string, unknown> }>(entry);
+      const response = await client.patch(
+        `/agent/crm/leads/${payload.id}`,
+        payload.body,
+        BACKGROUND_REQUEST,
+      );
+      const lead = leadSchema.parse(unwrapCrmLead(response.data));
+      await putCachedLeadDetail(entry.companyId, lead, 0);
       return;
     }
   }
@@ -353,10 +417,6 @@ async function syncOfflineActionQueue(): Promise<void> {
           message: apiError.message ?? 'Conflict detected while syncing offline action.',
         });
         await markOfflineActionRetry(entry.id, entry.attempts, 'failed', apiError.message ?? 'Conflict');
-        toast.warning(
-          'Sync conflict detected',
-          'Choose Keep Local, Keep Server, or Merge from the conflict center.',
-        );
         continue;
       }
 
@@ -396,15 +456,28 @@ async function syncAll(): Promise<void> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
   if (isPoorConnection()) return;
 
-  syncInFlight = true;
+  setSyncInFlight(true);
   try {
     await syncProofQueue();
     await syncOfflineActionQueue();
     await syncLocationQueue();
+    await invalidateSyncedQueries();
   } finally {
-    syncInFlight = false;
+    setSyncInFlight(false);
     await scheduleNextSyncIfNeeded();
   }
+}
+
+export function subscribeSyncStatus(listener: SyncStatusListener): () => void {
+  syncStatusListeners.add(listener);
+  listener(syncInFlight);
+  return () => {
+    syncStatusListeners.delete(listener);
+  };
+}
+
+export function getIsSyncing(): boolean {
+  return syncInFlight;
 }
 
 export const syncEngine = {
@@ -417,4 +490,6 @@ export const syncEngine = {
     await requestBackgroundSync('proof-sync');
   },
   syncAll,
+  subscribeSyncStatus,
+  getIsSyncing,
 };

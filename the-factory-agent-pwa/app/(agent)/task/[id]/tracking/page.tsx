@@ -29,7 +29,7 @@ export default function TrackingPage() {
   const taskId = Number(id);
 
   const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
-  const { resolveCurrentPosition, requestPermission, checkPermission } = useGeolocation();
+  const { resolveCurrentPosition, ensureLocationPermission, retryLocationPermission, checkPermission } = useGeolocation();
   const { goToMapActivity, goToTrackingComplete } = useTrackingNavigation();
   const { startTracking } = useActiveTracking();
   const [gateMode, setGateMode] = useState<'request' | 'denied'>('request');
@@ -139,22 +139,20 @@ export default function TrackingPage() {
     startTaskAsync,
   ]);
 
-  const runTrackingFlow = useCallback(async () => {
+  const runTrackingFlow = useCallback(async (userRetry = false) => {
     if (flowInFlightRef.current) return;
     flowInFlightRef.current = true;
     setIsRequesting(true);
     try {
-      let status = await checkPermission();
-      if (status !== 'granted') {
-        status = await requestPermission();
-      }
+      const status = userRetry
+        ? await retryLocationPermission()
+        : await ensureLocationPermission();
 
       if (status === 'denied') {
         setGateMode('denied');
         return;
       }
 
-      setGateMode('request');
       await proceedWithTracking();
     } catch (err) {
       const geoErr = err as GeolocationPositionError;
@@ -167,11 +165,11 @@ export default function TrackingPage() {
       flowInFlightRef.current = false;
       setIsRequesting(false);
     }
-  }, [checkPermission, requestPermission, proceedWithTracking]);
+  }, [ensureLocationPermission, retryLocationPermission, proceedWithTracking]);
 
   const handleRequest = useCallback(() => {
     autoStartAttemptedRef.current = true;
-    void runTrackingFlow();
+    void runTrackingFlow(true);
   }, [runTrackingFlow]);
 
   useEffect(() => {
@@ -186,6 +184,20 @@ export default function TrackingPage() {
       await runTrackingFlow();
     })();
   }, [isResume, isTaskLoading, task, isStarting, isRequesting, checkPermission, runTrackingFlow]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void checkPermission().then((status) => {
+        if (status === 'granted' && gateMode === 'denied') {
+          void runTrackingFlow(true);
+        }
+      });
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [gateMode, checkPermission, runTrackingFlow]);
 
   if (isResume || (isTaskLoading && !task)) {
     return (

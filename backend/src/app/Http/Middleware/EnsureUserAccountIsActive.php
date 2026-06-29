@@ -29,7 +29,10 @@ class EnsureUserAccountIsActive
             return $next($request);
         }
 
-        $user->currentAccessToken()?->delete();
+        $token = $user->currentAccessToken();
+        if ($token !== null && method_exists($token, 'delete')) {
+            $token->delete();
+        }
 
         return $this->blockedResponse(
             message: $block['message'],

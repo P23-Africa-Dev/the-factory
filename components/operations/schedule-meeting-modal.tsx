@@ -9,6 +9,8 @@ import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { canConnectGoogleCalendar } from "@/lib/calendar-permissions";
 import { useCreateMeeting } from "@/hooks/use-meetings";
+import { useLeads } from "@/hooks/use-crm";
+import type { LeadApiItem } from "@/lib/api/crm";
 import {
     useDisconnectCalendarIntegration,
     useCalendarIntegrationReconnect,
@@ -140,6 +142,8 @@ type FormState = {
     externalAttendees: Array<{ email: string; display_name?: string }>;
     selectedInternalAttendeeIds: number[];
     internalSearch: string;
+    selectedLeadIds: number[];
+    leadSearch: string;
     selectedReminderOffsets: number[];
     customReminderInput: string;
     errors: Record<string, string>;
@@ -164,6 +168,8 @@ function buildDefaultFormState(defaultDate?: Date): FormState {
         externalAttendees: [],
         selectedInternalAttendeeIds: [],
         internalSearch: "",
+        selectedLeadIds: [],
+        leadSearch: "",
         selectedReminderOffsets: [],
         customReminderInput: "",
         errors: {},
@@ -189,6 +195,7 @@ export function ScheduleMeetingModal({
     const switchMutation = useCalendarIntegrationSwitch();
     const reconnectMutation = useCalendarIntegrationReconnect();
     const attendeeCandidatesQuery = useMeetingAttendeeCandidates(companyId ?? undefined);
+    const leadsQuery = useLeads(companyId ? { company_id: companyId } : {});
 
     // Stable reference for attendee candidates so downstream memos don't re-run on every render
     const attendeeCandidates = useMemo(
@@ -218,6 +225,8 @@ export function ScheduleMeetingModal({
         externalAttendees,
         selectedInternalAttendeeIds,
         internalSearch,
+        selectedLeadIds,
+        leadSearch,
         selectedReminderOffsets,
         customReminderInput,
         errors,
@@ -319,6 +328,32 @@ export function ScheduleMeetingModal({
                 .some((value) => String(value).toLowerCase().includes(search))
         );
     }, [attendeeCandidates, internalSearch]);
+
+    const allLeads = leadsQuery.data?.leads ?? [];
+
+    const filteredLeads = useMemo(() => {
+        const q = leadSearch.trim().toLowerCase();
+        if (!q) return allLeads;
+        return allLeads.filter((lead) =>
+            [lead.name, lead.email, lead.phone, lead.location, lead.source]
+                .filter(Boolean)
+                .some((v) => String(v).toLowerCase().includes(q))
+        );
+    }, [allLeads, leadSearch]);
+
+    const selectedLeads = useMemo(
+        () => allLeads.filter((lead) => selectedLeadIds.includes(lead.id)),
+        [allLeads, selectedLeadIds]
+    );
+
+    const toggleLead = (lead: LeadApiItem) => {
+        setForm((prev) => ({
+            ...prev,
+            selectedLeadIds: prev.selectedLeadIds.includes(lead.id)
+                ? prev.selectedLeadIds.filter((id) => id !== lead.id)
+                : [...prev.selectedLeadIds, lead.id],
+        }));
+    };
 
     const toggleInternalAttendee = (candidate: MeetingAttendeeCandidate) => {
         setForm((prev) => ({
@@ -578,6 +613,7 @@ export function ScheduleMeetingModal({
                 end_at: endDate.toISOString(),
                 source_page: effectiveSourcePage,
                 attendees,
+                lead_ids: selectedLeadIds.length > 0 ? selectedLeadIds : undefined,
                 reminders,
             },
             {
@@ -1105,6 +1141,114 @@ export function ScheduleMeetingModal({
                                         className="inline-flex items-center gap-1.5 rounded-full bg-[#094B5C] px-3 py-1 text-[10px] font-semibold text-white"
                                     >
                                         {candidate.name}
+                                        <span className="text-white/75" aria-hidden="true">×</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Leads */}
+                    <div className="rounded-2xl border border-gray-100 bg-gray-50 px-3 py-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                            <div>
+                                <p className="text-[11px] font-bold uppercase tracking-wide text-[#0B1215]">
+                                    Leads
+                                </p>
+                                <p className="text-[10px] text-gray-500">
+                                    Select CRM leads to associate with this meeting.
+                                </p>
+                            </div>
+                            {selectedLeads.length > 0 && (
+                                <span className="rounded-full bg-dash-dark px-2 py-1 text-[10px] font-semibold text-white">
+                                    {selectedLeads.length} selected
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="relative mb-2">
+                            <Search
+                                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                                size={14}
+                            />
+                            <input
+                                value={leadSearch}
+                                onChange={(e) => setField("leadSearch", e.target.value)}
+                                className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-[12px] outline-none transition-colors focus:border-[#094B5C]"
+                                placeholder="Search leads…"
+                            />
+                        </div>
+
+                        <div className="max-h-44 space-y-1.5 overflow-y-auto overscroll-contain pr-1 custom-scrollbar">
+                            {leadsQuery.isPending ? (
+                                <div className="rounded-xl bg-white px-3 py-3 text-[11px] text-gray-500">
+                                    Loading leads…
+                                </div>
+                            ) : filteredLeads.length === 0 ? (
+                                <div className="rounded-xl bg-white px-3 py-3 text-[11px] text-gray-500">
+                                    No leads match your search.
+                                </div>
+                            ) : (
+                                filteredLeads.map((lead) => {
+                                    const isSelected = selectedLeadIds.includes(lead.id);
+                                    return (
+                                        <button
+                                            key={lead.id}
+                                            type="button"
+                                            onClick={() => toggleLead(lead)}
+                                            className={[
+                                                "flex w-full items-center gap-3 rounded-xl border px-3 py-2 text-left transition-all",
+                                                isSelected
+                                                    ? "border-[#094B5C] bg-white shadow-sm"
+                                                    : "border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50",
+                                            ].join(" ")}
+                                        >
+                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EAF2F3] text-[11px] font-bold text-[#094B5C]">
+                                                {lead.name.slice(0, 2).toUpperCase()}
+                                            </div>
+
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <p className="truncate text-[12px] font-semibold text-[#0B1215]">
+                                                        {lead.name}
+                                                    </p>
+                                                    {lead.status && (
+                                                        <span className="rounded-full bg-[#EEF4F4] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#094B5C]">
+                                                            {lead.status.replace(/_/g, " ")}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="truncate text-[10px] text-gray-500">
+                                                    {lead.email ?? lead.phone ?? lead.location ?? "No contact info"}
+                                                </p>
+                                            </div>
+
+                                            <div
+                                                className={[
+                                                    "flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border text-[10px] font-bold",
+                                                    isSelected
+                                                        ? "border-[#094B5C] bg-[#094B5C] text-white"
+                                                        : "border-gray-300 bg-white text-transparent",
+                                                ].join(" ")}
+                                            >
+                                                ✓
+                                            </div>
+                                        </button>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        {selectedLeads.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {selectedLeads.map((lead) => (
+                                    <button
+                                        key={lead.id}
+                                        type="button"
+                                        onClick={() => toggleLead(lead)}
+                                        className="inline-flex items-center gap-1.5 rounded-full bg-[#094B5C] px-3 py-1 text-[10px] font-semibold text-white"
+                                    >
+                                        {lead.name}
                                         <span className="text-white/75" aria-hidden="true">×</span>
                                     </button>
                                 ))}

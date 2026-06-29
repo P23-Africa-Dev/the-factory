@@ -44,6 +44,22 @@ function resolveActionUrl(url: string): string | null {
     return `/meetings/${meetingMatch[1]}`;
   }
 
+  // /crm/leads/{id}
+  const leadMatch = url.match(/^\/crm\/leads\/(\d+)/);
+  if (leadMatch) {
+    return `/crm/leads/${leadMatch[1]}`;
+  }
+
+  // /user/profile
+  if (url === '/user/profile') {
+    return '/profile';
+  }
+
+  // /dashboard
+  if (url === '/dashboard') {
+    return '/';
+  }
+
   return null;
 }
 
@@ -53,6 +69,9 @@ function resolveReferenceType(type: string, id: number): string | null {
   }
   if (type.includes('Meeting')) {
     return `/meetings/${id}`;
+  }
+  if (type.includes('Lead') || type.includes('Crm')) {
+    return `/crm/leads/${id}`;
   }
   return null;
 }

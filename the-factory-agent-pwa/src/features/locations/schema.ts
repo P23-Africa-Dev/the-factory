@@ -23,6 +23,7 @@ const rawSavedLocationSchema = z
     email: z.string().nullable().optional(),
     crm_lead_id: z.union([z.string(), z.number(), z.null()]).optional(),
     linked_to_crm: z.union([z.boolean(), z.number(), z.string()]).optional(),
+    can_manage: z.union([z.boolean(), z.number(), z.string()]).optional(),
     is_active: z.union([z.boolean(), z.number(), z.string()]).optional(),
     created_by: z
       .object({ name: z.string().optional() })
@@ -57,6 +58,8 @@ const rawSavedLocationSchema = z
       data.linked_to_crm === 1 ||
       data.linked_to_crm === '1' ||
       (data.crm_lead_id != null && data.crm_lead_id !== ''),
+    canManage:
+      data.can_manage === true || data.can_manage === 1 || data.can_manage === '1',
     createdByName: data.created_by?.name ?? null,
     createdAt: data.created_at ?? null,
   }));

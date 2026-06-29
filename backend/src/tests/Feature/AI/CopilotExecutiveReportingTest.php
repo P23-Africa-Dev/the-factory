@@ -66,6 +66,64 @@ final class CopilotExecutiveReportingTest extends TestCase
             ->assertJsonPath('data.download_ready', false);
     }
 
+    public function test_weekly_summary_generation_completes_and_can_be_downloaded(): void
+    {
+        config(['queue.default' => 'sync']);
+
+        [$company, $admin] = $this->seedCompanyUser('admin');
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/reports/weekly-summary', [
+                'company_id' => $company->id,
+            ]);
+
+        $reportId = (string) $response->json('data.report_id');
+
+        $response
+            ->assertStatus(202)
+            ->assertJsonPath('data.report_id', $reportId);
+
+        $statusResponse = $this
+            ->actingAs($admin)
+            ->getJson('/api/v1/copilot/reports/weekly-summary/' . $reportId . '?company_id=' . $company->id);
+
+        $statusResponse
+            ->assertOk()
+            ->assertJsonPath('data.status', 'completed')
+            ->assertJsonPath('data.download_ready', true)
+            ->assertJsonStructure([
+                'data' => [
+                    'report' => [
+                        'title',
+                        'metrics',
+                    ],
+                ],
+            ]);
+
+        $downloadResponse = $this
+            ->actingAs($admin)
+            ->get('/api/v1/copilot/reports/weekly-summary/' . $reportId . '/download?company_id=' . $company->id . '&format=pdf');
+
+        $downloadResponse
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf')
+            ->assertDownload('Weekly-Executive-Summary-' . now()->toDateString() . '.pdf');
+
+        $this->assertStringStartsWith('%PDF', $downloadResponse->streamedContent());
+
+        $docxResponse = $this
+            ->actingAs($admin)
+            ->get('/api/v1/copilot/reports/weekly-summary/' . $reportId . '/download?company_id=' . $company->id . '&format=docx');
+
+        $docxResponse
+            ->assertOk()
+            ->assertHeader('content-type', 'application/msword')
+            ->assertDownload('Weekly-Executive-Summary-' . now()->toDateString() . '.doc');
+
+        $this->assertStringStartsWith('{\\rtf1', $docxResponse->streamedContent());
+    }
+
     /**
      * @return array{0: Company, 1: User}
      */

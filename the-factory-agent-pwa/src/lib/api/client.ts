@@ -11,7 +11,13 @@ import type { ApiError } from '@/types';
 import { env } from '@/constants/env';
 import { appStore } from '@/lib/storage/stores';
 import { sessionEvents } from '@/lib/auth/sessionEvents';
-import { toast } from '@/lib/toast';
+
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    /** When true, failed responses reject without a global toast (default for all requests). */
+    suppressErrorToast?: boolean;
+  }
+}
 
 const ACCOUNT_STATUS_CODES = new Set([
   'deactivated',
@@ -96,11 +102,6 @@ client.interceptors.response.use(
         sessionExpiredPending = false;
       }, 5_500);
       sessionEvents.emit();
-    } else if (apiError.status !== 401) {
-      const description = apiError.errors
-        ? Object.values(apiError.errors).flat().join('\n')
-        : undefined;
-      toast.error(apiError.message, description);
     }
 
     return Promise.reject(apiError);

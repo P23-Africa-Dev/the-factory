@@ -15,6 +15,7 @@ class MeetingAttendee extends Model
     protected $fillable = [
         'meeting_id',
         'user_id',
+        'lead_id',
         'email',
         'display_name',
         'response_status',
@@ -38,5 +39,10 @@ class MeetingAttendee extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function lead(): BelongsTo
+    {
+        return $this->belongsTo(Lead::class);
     }
 }

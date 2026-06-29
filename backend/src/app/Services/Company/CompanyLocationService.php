@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Crm\MapSavedLeadBridgeService;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class CompanyLocationService
@@ -18,15 +19,29 @@ class CompanyLocationService
         private readonly MapSavedLeadBridgeService $mapSavedLeadBridgeService,
     ) {}
 
+    /**
+     * @return array{company_id: int, role: string}
+     */
+    public function viewerContext(User $user, ?int $companyId = null): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+
+        return [
+            'company_id' => (int) $context['company']->id,
+            'role' => (string) $context['role'],
+        ];
+    }
+
     public function listForUser(User $user, array $filters): Paginator
     {
-        $context = $this->companyContextService->resolve($user, $filters['company_id'] ?? null);
-        $companyId = (int) $context['company']->id;
+        $this->companyContextService->resolve($user, $filters['company_id'] ?? null);
 
-        $query = $this->baseQuery($companyId);
+        $query = $this->globalQuery();
 
         if (array_key_exists('is_active', $filters) && $filters['is_active'] !== null) {
             $query->where('is_active', (bool) $filters['is_active']);
+        } else {
+            $query->where('is_active', true);
         }
 
         if (! empty($filters['type'])) {
@@ -53,41 +68,56 @@ class CompanyLocationService
         $this->ensureCanCreate((string) $context['role']);
         $companyId = (int) $context['company']->id;
 
-        $location = CompanyLocation::create([
-            'company_id' => $companyId,
-            'crm_lead_id' => null,
-            'created_by_user_id' => (int) $user->id,
-            'updated_by_user_id' => null,
-            'name' => $data['name'],
-            'type' => $data['type'] ?? null,
-            'description' => $data['description'] ?? null,
-            'address' => $data['address'] ?? null,
-            'latitude' => $data['latitude'],
-            'longitude' => $data['longitude'],
-            'contact_number' => $data['contact_number'] ?? null,
-            'email' => $data['email'] ?? null,
-            'is_active' => array_key_exists('is_active', $data) ? (bool) $data['is_active'] : true,
-            'meta' => $data['meta'] ?? null,
-        ]);
+        $location = DB::transaction(function () use ($user, $data, $companyId): CompanyLocation {
+            $location = CompanyLocation::create([
+                'company_id' => $companyId,
+                'crm_lead_id' => null,
+                'created_by_user_id' => (int) $user->id,
+                'updated_by_user_id' => null,
+                'name' => $data['name'],
+                'type' => $data['type'] ?? null,
+                'description' => $data['description'] ?? null,
+                'address' => $data['address'] ?? null,
+                'latitude' => $data['latitude'],
+                'longitude' => $data['longitude'],
+                'contact_number' => $data['contact_number'] ?? null,
+                'email' => $data['email'] ?? null,
+                'is_active' => array_key_exists('is_active', $data) ? (bool) $data['is_active'] : true,
+                'meta' => $data['meta'] ?? null,
+            ]);
 
-        if (! empty($data['save_to_crm'])) {
-            $status = isset($data['crm_status']) ? (string) $data['crm_status'] : 'newly_lead';
-            $this->mapSavedLeadBridgeService->createLinkedLead($user, $location, $companyId, $status);
-            $location = $location->fresh();
-        }
+            if ($this->shouldSaveToCrm($data)) {
+                $status = isset($data['crm_status']) ? (string) $data['crm_status'] : 'newly_lead';
+                $this->mapSavedLeadBridgeService->createLinkedLead($user, $location, $companyId, $status);
+                $location = $location->fresh();
+            }
+
+            return $location;
+        });
 
         return $this->findForUser($user, $location, $companyId);
     }
 
     public function findForUser(User $user, CompanyLocation $location, ?int $companyId = null): CompanyLocation
     {
-        $context = $this->companyContextService->resolve($user, $companyId);
-        $resolvedCompanyId = (int) $context['company']->id;
-        $this->assertLocationInCompany($location, $resolvedCompanyId);
+        $this->companyContextService->resolve($user, $companyId);
 
-        return $this->baseQuery($resolvedCompanyId)
+        return $this->globalQuery()
             ->whereKey($location->id)
             ->firstOrFail();
+    }
+
+    public function canManageLocation(User $user, CompanyLocation $location, ?int $companyId = null): bool
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
+
+        if ((int) $location->company_id !== $resolvedCompanyId) {
+            return false;
+        }
+
+        return in_array($role, ['owner', 'admin', 'supervisor'], true);
     }
 
     public function update(User $user, CompanyLocation $location, array $data): CompanyLocation
@@ -133,10 +163,9 @@ class CompanyLocationService
         $location->delete();
     }
 
-    private function baseQuery(int $companyId): Builder
+    private function globalQuery(): Builder
     {
         return CompanyLocation::query()
-            ->where('company_id', $companyId)
             ->with(['creator:id,name,email', 'updater:id,name,email']);
     }
 
@@ -174,5 +203,17 @@ class CompanyLocationService
                 'location' => ['The selected location is outside your company context.'],
             ]);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function shouldSaveToCrm(array $data): bool
+    {
+        if (! array_key_exists('save_to_crm', $data)) {
+            return false;
+        }
+
+        return filter_var($data['save_to_crm'], FILTER_VALIDATE_BOOLEAN);
     }
 }

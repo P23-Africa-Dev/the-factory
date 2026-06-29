@@ -9,6 +9,9 @@ import {
     CopilotChatContext,
     CopilotMessage,
     CopilotThread,
+    ForecastHorizonDays,
+    ForecastOverviewResponse,
+    WeeklySummaryDownloadFormat,
     WeeklySummaryStatusResponse,
     analyzeCopilotFile,
     deleteCopilotThread,
@@ -19,6 +22,7 @@ import {
     getWeeklySummaryStatus,
     lookupCopilotAssignees,
     listCopilotThreads,
+    normalizeWeeklySummaryStatus,
     queueWeeklySummaryReport,
     sendCopilotMessageStream,
     summarizeMeetingTranscript,
@@ -186,10 +190,9 @@ export function useCopilotChat() {
             const tick = async () => {
                 try {
                     const res = await getWeeklySummaryStatus(reportId, token, companyId);
-                    const status = res.data;
-                    setWeeklyReport(status);
+                    setWeeklyReport(res.data);
 
-                    if (status.status === "completed" || status.status === "failed") {
+                    if (res.data.status === "completed" || res.data.status === "failed") {
                         stopWeeklyReportPolling();
                     }
                 } catch (err) {
@@ -210,9 +213,11 @@ export function useCopilotChat() {
     );
 
     const queueWeeklyReport = useCallback(
-        async (companyId?: string | number) => {
+        async (companyId?: string | number): Promise<boolean> => {
             if (!token) {
-                return;
+                const message = "You must be signed in to generate a weekly summary.";
+                setError(message);
+                throw new Error(message);
             }
 
             setIsQueueingWeeklyReport(true);
@@ -221,16 +226,20 @@ export function useCopilotChat() {
             try {
                 const res = await queueWeeklySummaryReport(token, companyId);
                 const reportId = res.data.report_id;
-                setWeeklyReport({
-                    report_id: reportId,
-                    status: "queued",
-                    progress: 0,
-                    error: null,
-                    available: false,
-                });
+                setWeeklyReport(
+                    normalizeWeeklySummaryStatus({
+                        report_id: reportId,
+                        status: "queued",
+                        progress: 5,
+                        download_ready: false,
+                    })
+                );
                 pollWeeklyReportStatus(reportId, companyId);
+                return true;
             } catch (err) {
-                setError(err instanceof Error ? err.message : "Unable to queue weekly summary report.");
+                const message = err instanceof Error ? err.message : "Unable to queue weekly summary report.";
+                setError(message);
+                throw err instanceof Error ? err : new Error(message);
             } finally {
                 setIsQueueingWeeklyReport(false);
             }
@@ -239,27 +248,15 @@ export function useCopilotChat() {
     );
 
     const downloadWeeklyReport = useCallback(
-        async (companyId?: string | number) => {
+        async (companyId?: string | number, format: WeeklySummaryDownloadFormat = "pdf") => {
             if (!token || !weeklyReport?.report_id || weeklyReport.status !== "completed") {
                 return;
             }
 
             try {
-                const file = await downloadWeeklySummaryReport(weeklyReport.report_id, token, companyId);
+                const file = await downloadWeeklySummaryReport(weeklyReport.report_id, token, companyId, format);
                 if (typeof window !== "undefined") {
-                    // Determine MIME type based on file extension
-                    let mimeType = "application/json";
-                    if (file.filename.endsWith(".docx")) {
-                        mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-                    } else if (file.filename.endsWith(".doc")) {
-                        mimeType = "application/msword";
-                    } else if (file.filename.endsWith(".txt")) {
-                        mimeType = "text/plain";
-                    } else if (file.filename.endsWith(".pdf")) {
-                        mimeType = "application/pdf";
-                    }
-
-                    const blob = new Blob([file.content], { type: mimeType });
+                    const blob = new Blob([file.content], { type: file.mimeType });
                     const url = URL.createObjectURL(blob);
                     const anchor = document.createElement("a");
                     anchor.href = url;
@@ -309,9 +306,12 @@ export function useCopilotChat() {
     );
 
     const loadForecastOverview = useCallback(
-        async (companyId?: string | number) => {
-            if (!token) return null;
-            const res = await getForecastOverview(token, companyId);
+        async (companyId?: string | number, horizonDays: ForecastHorizonDays = 7): Promise<ForecastOverviewResponse> => {
+            if (!token) {
+                throw new Error("You must be signed in to load a forecast overview.");
+            }
+
+            const res = await getForecastOverview(token, companyId, horizonDays);
             return res.data;
         },
         [token]
@@ -461,6 +461,7 @@ export function useCopilotChat() {
         weeklyReport,
         isQueueingWeeklyReport,
         initialize,
+        loadThread,
         sendMessage,
         clearCurrentThread,
         loadOlderThreadMessages,

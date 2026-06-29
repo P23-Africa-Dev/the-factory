@@ -25,6 +25,13 @@ function nextAttemptAtFromAttempts(attempts: number): string {
   return new Date(Date.now() + delay).toISOString();
 }
 
+export class OfflineQueueError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OfflineQueueError';
+  }
+}
+
 export type QueueOfflineActionInput = {
   actionType: OfflineActionType;
   payload: unknown;
@@ -38,8 +45,11 @@ export async function queueOfflineAction({
 }: QueueOfflineActionInput): Promise<number | null> {
   const resolvedCompanyId = companyId ?? getActiveCompanyId();
   const userId = getCurrentUserId();
-  if (!resolvedCompanyId || !userId) {
-    return null;
+  if (!resolvedCompanyId) {
+    throw new OfflineQueueError('Cannot queue offline action: company not selected.');
+  }
+  if (!userId) {
+    throw new OfflineQueueError('Cannot queue offline action: user session missing.');
   }
 
   const now = new Date().toISOString();
@@ -300,6 +310,10 @@ export function describeOfflineAction(entry: OfflineActionQueueEntry): string {
       return 'Edit location';
     case 'location.delete':
       return 'Delete location';
+    case 'crm.lead.create':
+      return 'Create lead';
+    case 'crm.lead.update':
+      return 'Update lead';
     default:
       return entry.actionType;
   }

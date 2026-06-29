@@ -10,6 +10,7 @@ use App\Models\AttendanceSetting;
 use App\Models\Company;
 use App\Models\PayrollSetting;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -367,6 +368,72 @@ class AttendanceApiTest extends TestCase
             ->assertJsonCount(1, 'data.items')
             ->assertJsonPath('data.items.0.user_id', $agentA->id)
             ->assertJsonPath('data.items.0.status', 'late');
+    }
+
+    public function test_management_can_fetch_per_agent_attendance_history_with_summary(): void
+    {
+        Carbon::setTestNow('2026-06-26 12:00:00');
+
+        [$company, $owner,, $agentA] = $this->seedCompanyUsers();
+        $this->createAttendanceSetting($company);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentA->id,
+            'attendance_date' => '2026-06-24',
+            'clock_in_at' => '2026-06-24 08:55:00',
+            'clock_out_at' => '2026-06-24 17:00:00',
+            'status' => 'present',
+            'work_duration_minutes' => 485,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentA->id,
+            'attendance_date' => '2026-06-25',
+            'clock_in_at' => '2026-06-25 09:40:00',
+            'clock_out_at' => '2026-06-25 17:00:00',
+            'status' => 'late',
+            'work_duration_minutes' => 440,
+            'is_late' => true,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        $response = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/agents/' . $agentA->id . '/history?company_id=' . $company->id . '&from_date=2026-06-22&to_date=2026-06-26&per_page=30');
+
+        // Mon 22 + Tue 23 synthesized absent, Wed 24 present, Thu 25 late, Fri 26 (today) excluded.
+        $response->assertOk()
+            ->assertJsonPath('data.user_id', $agentA->id)
+            ->assertJsonPath('data.summary.present_days', 1)
+            ->assertJsonPath('data.summary.late_days', 1)
+            ->assertJsonPath('data.summary.absent_days', 2)
+            ->assertJsonPath('data.summary.total_days', 4)
+            ->assertJsonPath('data.summary.attendance_rate_percent', 50)
+            ->assertJsonCount(4, 'data.items')
+            ->assertJsonPath('data.items.0.attendance_date', '2026-06-25')
+            ->assertJsonPath('data.items.0.status', 'late')
+            ->assertJsonPath('data.items.0.is_late', true);
+
+        $statuses = collect($response->json('data.items'))->pluck('status')->all();
+        $this->assertContains('absent', $statuses);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_management_cannot_fetch_history_for_agent_outside_company(): void
+    {
+        [$company, $owner,,,, , $otherAgent] = $this->seedCompanyUsers();
+        $this->createAttendanceSetting($company);
+
+        $response = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/agents/' . $otherAgent->id . '/history?company_id=' . $company->id);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonStructure(['errors' => ['user_id']]);
     }
 
     private function seedCompanyUsers(): array

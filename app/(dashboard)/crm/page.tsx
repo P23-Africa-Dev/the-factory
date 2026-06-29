@@ -2,12 +2,14 @@
 
 import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
+import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { useAgentUploadsOverview, useCrmLabels, useCrmPipelines, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useAgentUploadsOverview, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { ImportLeadsModal, LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
 import { CRMPageSkeleton } from "@/components/crm/crm-page-skeleton";
+import { LeadsChart, TotalLeadsCard } from "@/components/crm/crm-summary-cards";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useDroppable } from "@dnd-kit/core";
 import {
@@ -44,27 +46,9 @@ import {
   Tag,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  Area,
-  AreaChart,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { formatDistanceToNowStrict, parseISO } from "date-fns";
-
-const chartData = [
-  { day: "Mon", value: 180 },
-  { day: "Tues", value: 250 },
-  { day: "Weds", value: 220 },
-  { day: "Thurs", value: 380 },
-  { day: "Fri", value: 300 },
-  { day: "Sat", value: 420 },
-];
 
 const DEFAULT_STAGES: Array<{ id: ApiLeadStatus; title: string; color: string }> = [
   { id: "newly_lead", title: "Newly Lead", color: "#2563EB" },
@@ -81,14 +65,17 @@ function toRelativeTime(value?: string | null): string {
 }
 
 function mapLeadToItem(lead: LeadApiItem): DndItem {
+  const rawValue = resolveLeadBudgetAmount(lead);
   return {
     id: String(lead.id),
     label: lead.name,
     description: lead.location || lead.source || lead.email || lead.phone || "No details",
-    location: "0",
+    location: lead.location ?? "",
     assignedBy: lead.assignee?.name ?? "Unassigned",
     time: toRelativeTime(lead.updated_at),
     priority: lead.priority ?? "medium",
+    rawValue,
+    value: formatLeadBudgetDisplay(lead),
   };
 }
 
@@ -133,7 +120,7 @@ function LeadCard({
     transition,
   };
 
-  const amount = item.location ? Number(item.location).toLocaleString() : "0";
+  const amount = item.value || "$ 0";
 
   return (
     <div
@@ -152,10 +139,10 @@ function LeadCard({
 
       <div className="flex items-center justify-between mt-3">
         <span className="text-[#0B1215] font-bold text-[13px]">
-          $ {amount}
+          {amount}
         </span>
-        <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-3 py-0.5 rounded-full">
-          Medium
+        <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-3 py-0.5 rounded-full capitalize">
+          {item.priority ?? "medium"}
         </span>
       </div>
 
@@ -238,7 +225,7 @@ function LeadColumn({
             {items.length < 10 ? `0${items.length}` : items.length}
           </div>
         </div>
-        <span className="text-white text-[12px] font-medium">$ 342,000</span>
+        <span className="text-white text-[12px] font-medium">$ {items.reduce((sum, item) => sum + (item.rawValue ?? 0), 0).toLocaleString()}</span>
       </div>
 
       {/* Cards */}
@@ -628,116 +615,6 @@ function LeadBoard({ basePath = "/crm", leadListUrl, initialContainers, onStatus
   );
 }
 
-/* ─── Summary Cards ──────────────────────────────────────── */
-
-function TotalLeadsCard({ totalLeads = 0 }: { totalLeads?: number }) {
-  return (
-    <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex flex-col justify-between min-w-0 sm:min-w-85">
-      <div className="flex justify-between items-start">
-        <h3 className="text-[#34373C] text-sm font-medium">Total Leads in Pipeline</h3>
-        <button className="text-gray-400 hover:text-gray-600">
-          <MoreHorizontal size={18} />
-        </button>
-      </div>
-
-      <div className="flex items-center gap-6 mt-4 justify-between">
-        <div>
-          <div className="flex gap-1.5 items-end">
-            <span className="text-[50px] font-medium text-[#0B1215] leading-none tracking-tight">
-              {totalLeads.toLocaleString()}
-            </span>
-            <span className="text-[#34373C] text-[15px] font-semibold mb-1">Leads</span>
-          </div>
-          <p className="text-[#34373C] text-[14px] mt-1.5">73% increase this week</p>
-        </div>
-
-        <div className="relative w-25 h-25 shrink-0">
-          <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-            <circle cx="50" cy="50" r="38" stroke="#F3F4F6" strokeWidth="9" fill="transparent" />
-            <circle
-              cx="50"
-              cy="50"
-              r="38"
-              stroke="#FD6046"
-              strokeWidth="9"
-              fill="transparent"
-              strokeDasharray={`${0.73 * 238.76} ${0.27 * 238.76}`}
-              strokeLinecap="round"
-            />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-[15px] font-bold text-[#0B1215]">73%</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LeadsChart() {
-  const isClient = useSyncExternalStore(
-    () => () => { },
-    () => true,
-    () => false,
-  );
-
-  if (!isClient) return <div className="h-full w-full min-h-45" />;
-
-  return (
-    <div className="rounded-3xl p-6 border-gray-100 flex-1 min-w-0 sm:min-w-75">
-      <div className="flex items-center justify-between mb-1 px-2">
-        {["Mon", "Tues", "Weds", "Thurs", "Fri", "Sat"].map((d) => (
-          <span key={d} className="text-[11px] text-gray-400 font-medium">
-            {d}
-          </span>
-        ))}
-      </div>
-
-      <div className="h-32.5 w-full relative">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-            <defs>
-              <linearGradient id="crmGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.2} />
-                <stop offset="100%" stopColor="#3B82F6" stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
-            <XAxis dataKey="day" hide />
-            <YAxis hide domain={[0, "dataMax + 50"]} />
-            <Tooltip
-              contentStyle={{
-                fontSize: 11,
-                borderRadius: 8,
-                border: "none",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                padding: "6px 10px",
-              }}
-              formatter={(value) => [`${value}`, "Leads"]}
-            />
-            <ReferenceLine x="Fri" stroke="#94A3B8" strokeDasharray="4 4" strokeWidth={1} />
-            <Area
-              type="monotone"
-              dataKey="value"
-              stroke="#3B82F6"
-              strokeWidth={2.5}
-              fillOpacity={1}
-              fill="url(#crmGradient)"
-              dot={false}
-              activeDot={{ r: 5, fill: "#3B82F6", strokeWidth: 2, stroke: "white" }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-
-        <div className="absolute top-2 right-[28%] flex flex-col items-center pointer-events-none">
-          <span className="text-[9px] text-gray-400 bg-white/90 px-1.5 py-0.5 rounded whitespace-nowrap">
-            300 New Leads in June
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function AgentUploadsCard({
   basePath = "/crm",
   leadListUrl,
@@ -857,8 +734,18 @@ export default function CRMPage() {
     apiBasePath
   );
 
+  const { data: leadsAnalytics, isLoading: isAnalyticsLoading } = useCrmLeadsAnalytics(
+    {
+      company_id: companyId ?? undefined,
+      search: debouncedSearch || undefined,
+      pipeline_id: selectedPipelineId ?? undefined,
+      status: selectedLabel === "all" ? undefined : selectedLabel,
+      source: agentUploadScope ? AGENT_UPLOAD_SOURCE_FILTER : undefined,
+    },
+    apiBasePath
+  );
+
   const initialContainers = useMemo(() => buildContainers(data?.leads ?? [], stages), [data?.leads, stages]);
-  const totalLeads = data?.leads?.length ?? 0;
 
   const updateMutation = useUpdateLead(undefined, apiBasePath);
 
@@ -951,8 +838,19 @@ export default function CRMPage() {
 
         {/* Summary cards */}
         <div className="flex flex-col lg:flex-row gap-4 items-stretch">
-          <TotalLeadsCard totalLeads={totalLeads} />
-          <LeadsChart />
+          <TotalLeadsCard
+            totalLeads={leadsAnalytics?.total_leads ?? 0}
+            weekGrowthPercent={leadsAnalytics?.week_growth_percent ?? 0}
+            weekGrowthDirection={leadsAnalytics?.week_growth_direction ?? "flat"}
+            isLoading={isAnalyticsLoading}
+          />
+          <LeadsChart
+            dailyTrend={leadsAnalytics?.daily_trend}
+            monthNewLeads={leadsAnalytics?.month_new_leads ?? 0}
+            monthLabel={leadsAnalytics?.month_label ?? ""}
+            highlightDay={leadsAnalytics?.highlight_day}
+            isLoading={isAnalyticsLoading}
+          />
           <AgentUploadsCard
             basePath={basePath}
             leadListUrl={leadListUrl}
