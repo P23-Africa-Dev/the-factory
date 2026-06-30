@@ -1,9 +1,9 @@
-const STATIC_CACHE = "factory-dashboard-static-v2";
-const API_CACHE = "factory-dashboard-api-v2";
-const PAGE_CACHE = "factory-dashboard-pages-v2";
+const STATIC_CACHE = "factory-dashboard-static-v3";
+const API_CACHE = "factory-dashboard-api-v3";
+const PAGE_CACHE = "factory-dashboard-pages-v3";
 
-const OFFLINE_FALLBACK = "/offline";
-const STATIC_ASSETS = ["/", "/offline", "/manifest.webmanifest"];
+const OFFLINE_FALLBACK = "/offline.html";
+const STATIC_ASSETS = ["/", "/offline.html", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

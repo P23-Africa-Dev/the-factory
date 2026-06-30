@@ -6,6 +6,17 @@ import { env } from '@/constants/env';
 import { queueOfflineAction } from '@/lib/offline/queue';
 import { appStore } from '@/lib/storage/stores';
 import { buildCompleteFormData } from '@/features/tracking/completeTaskForm';
+import { isOffline, shouldUseCache } from '@/lib/offline/connectivity';
+import { setShowingCachedData } from '@/lib/offline/cacheIndicator';
+import {
+  getCachedTaskDetail,
+  getCachedTaskList,
+  getCachedTaskListByPageKey,
+  putCachedTaskDetail,
+  putCachedTaskList,
+  putCachedTaskListByPageKey,
+} from './cache';
+import { urlPageKey } from '@/lib/offline/cacheKeys';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -80,33 +91,84 @@ export const taskApi = {
     if (isDev) {
       console.log('[taskApi.list] company_id:', companyId, 'filters:', filters);
     }
-    const response = await client.get('/agent/tasks', {
-      params: { company_id: companyId ?? undefined, ...filters },
-    });
-    if (isDev) {
-      console.log('[taskApi.list] raw response:', JSON.stringify(response.data, null, 2));
+
+    if (isOffline() && companyId) {
+      const cached = await getCachedTaskList(companyId, filters);
+      if (cached) {
+        setShowingCachedData(true);
+        return cached;
+      }
     }
+
     try {
+      const response = await client.get('/agent/tasks', {
+        params: { company_id: companyId ?? undefined, ...filters },
+      });
+      if (isDev) {
+        console.log('[taskApi.list] raw response:', JSON.stringify(response.data, null, 2));
+      }
       const { items, pagination } = unwrapListPayload(response.data);
-      return {
+      const result = {
         tasks: parseTaskList(items),
         pagination,
       };
-    } catch (parseErr) {
-      if (isDev) {
-        console.log('[taskApi.list] Zod parse error:', JSON.stringify(parseErr, null, 2));
+      const resolvedCompanyId = getActiveCompanyId();
+      if (resolvedCompanyId) {
+        void putCachedTaskList(resolvedCompanyId, filters, result).catch(() => {});
       }
-      throw parseErr;
+      setShowingCachedData(false);
+      return result;
+    } catch (err) {
+      const resolvedCompanyId = getActiveCompanyId();
+      if (resolvedCompanyId && shouldUseCache(err)) {
+        const cached = await getCachedTaskList(resolvedCompanyId, filters);
+        if (cached) {
+          setShowingCachedData(true);
+          return cached;
+        }
+      }
+      if (isDev) {
+        console.log('[taskApi.list] error:', err);
+      }
+      throw err;
     }
   },
 
   listByUrl: async (url: string): Promise<TaskListResult> => {
-    const response = await client.get(url);
-    const { items, pagination } = unwrapListPayload(response.data);
-    return {
-      tasks: parseTaskList(items),
-      pagination,
-    };
+    const companyId = getActiveCompanyId();
+    const pageKey = urlPageKey(url);
+
+    if (isOffline() && companyId) {
+      const cached = await getCachedTaskListByPageKey(companyId, pageKey);
+      if (cached) {
+        setShowingCachedData(true);
+        return cached;
+      }
+    }
+
+    try {
+      const response = await client.get(url);
+      const { items, pagination } = unwrapListPayload(response.data);
+      const result = {
+        tasks: parseTaskList(items),
+        pagination,
+      };
+      const resolvedCompanyId = getActiveCompanyId();
+      if (resolvedCompanyId) {
+        void putCachedTaskListByPageKey(resolvedCompanyId, pageKey, result).catch(() => {});
+      }
+      setShowingCachedData(false);
+      return result;
+    } catch (err) {
+      if (companyId && shouldUseCache(err)) {
+        const cached = await getCachedTaskListByPageKey(companyId, pageKey);
+        if (cached) {
+          setShowingCachedData(true);
+          return cached;
+        }
+      }
+      throw err;
+    }
   },
 
   get: async (id: string): Promise<Task> => {
@@ -114,19 +176,42 @@ export const taskApi = {
     if (isDev) {
       console.log('[taskApi.get] id:', id, '| company_id:', companyId);
     }
-    const response = await client.get(`/agent/tasks/${id}`, {
-      params: { company_id: companyId ?? undefined },
-    });
-    if (isDev) {
-      console.log('[taskApi.get] raw response:', JSON.stringify(response.data, null, 2));
+
+    if (isOffline() && companyId) {
+      const cached = await getCachedTaskDetail(companyId, id);
+      if (cached) {
+        setShowingCachedData(true);
+        return cached;
+      }
     }
+
     try {
+      const response = await client.get(`/agent/tasks/${id}`, {
+        params: { company_id: companyId ?? undefined },
+      });
+      if (isDev) {
+        console.log('[taskApi.get] raw response:', JSON.stringify(response.data, null, 2));
+      }
       const item = unwrapItem(response.data);
       seedCompanyId(item);
-      return taskSchema.parse(item);
+      const task = taskSchema.parse(item);
+      const resolvedCompanyId = getActiveCompanyId();
+      if (resolvedCompanyId) {
+        void putCachedTaskDetail(resolvedCompanyId, task).catch(() => {});
+      }
+      setShowingCachedData(false);
+      return task;
     } catch (parseErr) {
+      const resolvedCompanyId = getActiveCompanyId();
+      if (resolvedCompanyId && shouldUseCache(parseErr)) {
+        const cached = await getCachedTaskDetail(resolvedCompanyId, id);
+        if (cached) {
+          setShowingCachedData(true);
+          return cached;
+        }
+      }
       if (isDev) {
-        console.log('[taskApi.get] Zod parse error:', JSON.stringify(parseErr, null, 2));
+        console.log('[taskApi.get] error:', parseErr);
       }
       throw parseErr;
     }

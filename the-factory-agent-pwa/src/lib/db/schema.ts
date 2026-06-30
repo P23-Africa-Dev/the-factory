@@ -70,7 +70,66 @@ export type OfflineActionType =
   | 'attendance.clock_out'
   | 'location.create'
   | 'location.update'
-  | 'location.delete';
+  | 'location.delete'
+  | 'crm.lead.create'
+  | 'crm.lead.update';
+
+export interface TasksListCacheEntry {
+  id: string;
+  companyId: number;
+  filterKey: string;
+  payloadJson: string;
+  cachedAt: string;
+}
+
+export interface TaskDetailCacheEntry {
+  id: string;
+  companyId: number;
+  taskId: string;
+  payloadJson: string;
+  cachedAt: string;
+}
+
+export interface MeetingsListCacheEntry {
+  id: string;
+  companyId: number;
+  pageKey: string;
+  payloadJson: string;
+  cachedAt: string;
+}
+
+export interface MeetingDetailCacheEntry {
+  id: string;
+  companyId: number;
+  meetingId: number;
+  payloadJson: string;
+  cachedAt: string;
+}
+
+export interface LeadsListCacheEntry {
+  id: string;
+  companyId: number;
+  filterKey: string;
+  payloadJson: string;
+  cachedAt: string;
+}
+
+export interface LeadDetailCacheEntry {
+  id: string;
+  companyId: number;
+  leadId: number;
+  payloadJson: string;
+  pending?: 0 | 1;
+  cachedAt: string;
+}
+
+export interface CrmMetaCacheEntry {
+  id: string;
+  companyId: number;
+  metaType: 'labels' | 'pipelines';
+  payloadJson: string;
+  cachedAt: string;
+}
 
 export interface OfflineActionQueueEntry {
   id?: number;

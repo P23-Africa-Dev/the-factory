@@ -385,8 +385,8 @@ export default function AgentDashboardPage() {
               onClick={goToTasksList}
               className="flex-[1] h-[44px] bg-[#0B3343] border-[0.5px] border-white/15 rounded-full flex items-center justify-center gap-1.5 px-2 focus:outline-none transition-all active:scale-95 text-white relative"
             >
-              <img src="/assets/task-daily-01.png" alt="Task" className="w-[15px] h-[15px] flex-shrink-0" />
-              <span className="font-normal text-[10px] tracking-wide capitalize truncate">Task</span>
+              <img src="/assets/task-daily-01.png" alt="Operations" className="w-[15px] h-[15px] flex-shrink-0" />
+              <span className="font-normal text-[10px] tracking-wide capitalize truncate">Operations</span>
               {pendingTasks.length > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] bg-[#FD6046] text-white font-bold text-[9px] rounded-full flex items-center justify-center px-1 flex-shrink-0">
                   {pendingTasks.length}

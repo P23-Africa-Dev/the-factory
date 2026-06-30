@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { getOfflineQueueStats, type OfflineQueueStats } from './queue';
 import { useNetworkStatus } from '@/lib/network';
+import { subscribeSyncStatus, getIsSyncing } from '@/lib/sync/syncEngine';
+import { useShowingCachedData } from './cacheIndicator';
 
 const EMPTY_STATS: OfflineQueueStats = {
   pendingActions: 0,
@@ -15,6 +17,12 @@ export function useOfflineSyncStatus(pollEveryMs = 5_000) {
   const { isConnected } = useNetworkStatus();
   const [stats, setStats] = useState<OfflineQueueStats>(EMPTY_STATS);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(getIsSyncing);
+  const showingCachedData = useShowingCachedData();
+
+  useEffect(() => {
+    return subscribeSyncStatus(setIsSyncing);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -49,12 +57,15 @@ export function useOfflineSyncStatus(pollEveryMs = 5_000) {
     };
   }, [pollEveryMs, isConnected]);
 
+  const totalPending =
+    stats.pendingActions + stats.pendingUploads + stats.pendingLocations;
+
   return {
     isOffline: !isConnected,
     isRefreshing,
+    isSyncing,
+    showingCachedData,
     stats,
-    totalPending:
-      stats.pendingActions + stats.pendingUploads + stats.pendingLocations,
+    totalPending,
   };
 }
-

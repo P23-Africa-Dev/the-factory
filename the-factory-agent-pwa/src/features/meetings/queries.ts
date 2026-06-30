@@ -1,11 +1,12 @@
 import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
+import type { InfiniteData } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
 import { queueOfflineAction } from '@/lib/offline/queue';
 import { meetingsApi } from './api';
 import { meetingKeys } from './queryKeys';
-import type { Meeting, MeetingFilters, CreateMeetingPayload, UpdateMeetingPayload } from './types';
+import type { Meeting, MeetingFilters, CreateMeetingPayload, UpdateMeetingPayload, MeetingListResponse } from './types';
 
 // ── Queries ──────────────────────────────────────────────────────────────────
 
@@ -58,12 +59,65 @@ export function useCreateMeeting() {
           payload: fullPayload,
           companyId,
         });
-        return { meeting: null, warnings: ['Meeting queued for sync when connection is restored.'], queued: true };
+        return { meeting: null, warnings: ['Meeting queued for sync when connection is restored.'], queued: true as const, payload: fullPayload };
       }
       const created = await meetingsApi.create(fullPayload);
-      return { meeting: created.meeting, warnings: created.warnings, queued: false as const };
+      return { meeting: created.meeting, warnings: created.warnings, queued: false as const, payload: fullPayload };
     },
-    onSuccess: ({ warnings, queued }) => {
+    onSuccess: ({ warnings, queued, payload }) => {
+      if (queued) {
+        const tempMeeting: Meeting = {
+          id: -Date.now(),
+          companyId: payload.company_id,
+          createdByUserId: 0,
+          projectId: null,
+          taskId: null,
+          title: payload.title,
+          description: payload.description ?? null,
+          location: payload.location ?? null,
+          timezone: payload.timezone,
+          startAt: payload.start_at,
+          endAt: payload.end_at,
+          status: 'scheduled',
+          sourcePage: 'agent',
+          organizerEmail: null,
+          organizerName: null,
+          reminderConfig: [],
+          meetingSettings: null,
+          googleEventId: null,
+          googleCalendarId: null,
+          googleMeetUrl: null,
+          googleHtmlLink: null,
+          syncStatus: 'pending',
+          syncErrorMessage: null,
+          syncedAt: null,
+          externalUpdatedAt: null,
+          attendees: [],
+          creator: null,
+          reminders: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        queryClient.setQueriesData<InfiniteData<MeetingListResponse>>(
+          { queryKey: meetingKeys.lists() },
+          (old) => {
+            if (!old?.pages?.length) return old;
+            const [first, ...rest] = old.pages;
+            return {
+              ...old,
+              pages: [
+                {
+                  ...first,
+                  items: [tempMeeting, ...first.items],
+                },
+                ...rest,
+              ],
+            };
+          },
+        );
+      }
+
       queryClient.invalidateQueries({ queryKey: meetingKeys.lists() });
       warnings.forEach((w) => toast.info(w));
       if (queued) {

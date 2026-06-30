@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getActiveCompanyId } from '@/lib/storage/stores';
+import { toast } from '@/lib/toast';
+import { isOffline } from '@/lib/offline/connectivity';
 import { locationKeys } from '@/features/locations/queryKeys';
 import { crmApi } from './api';
 import { crmKeys } from './queryKeys';
@@ -67,7 +69,14 @@ export function useCreateLead(options?: { onSuccess?: (lead: Lead) => void }) {
     mutationFn: (payload: CreateLeadPayload) => crmApi.createLead(payload),
     onSuccess: (lead) => {
       queryClient.invalidateQueries({ queryKey: crmKeys.all });
+      if (isOffline()) {
+        toast.info('Offline queue', 'Lead saved locally and will sync when you reconnect.');
+      }
       options?.onSuccess?.(lead);
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'Could not save lead offline.';
+      toast.error('Lead not saved', message);
     },
   });
 }
@@ -105,12 +114,17 @@ export function useUpdateLead(options?: { onSuccess?: (lead: Lead) => void }) {
     },
 
     onSettled: (_data, _err, { id }) => {
-      queryClient.invalidateQueries({ queryKey: crmKeys.lead(id) });
-      queryClient.invalidateQueries({ queryKey: crmKeys.all });
-      queryClient.invalidateQueries({ queryKey: locationKeys.lists() });
+      if (!isOffline()) {
+        queryClient.invalidateQueries({ queryKey: crmKeys.lead(id) });
+        queryClient.invalidateQueries({ queryKey: crmKeys.all });
+        queryClient.invalidateQueries({ queryKey: locationKeys.lists() });
+      }
     },
 
     onSuccess: (lead) => {
+      if (isOffline()) {
+        toast.info('Offline queue', 'Lead update will sync automatically.');
+      }
       options?.onSuccess?.(lead);
     },
   });

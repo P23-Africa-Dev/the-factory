@@ -169,11 +169,23 @@ export default function LoginForm() {
           >
             By using Factory 23, you agree to our{" "}
             <Link
-              href="#"
+              href="/files/Factory23 Terms of Service.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-[#6FA8A6] font-bold underline decoration-[#6FA8A6] underline-offset-2 hover:text-[#5e9795] transition-colors"
             >
-              Terms, conditions and Privacy Policy.
+              Terms &amp; Conditions
+            </Link>{" "}
+            and{" "}
+            <Link
+              href="/files/Factory23 Privacy Policy.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#6FA8A6] font-bold underline decoration-[#6FA8A6] underline-offset-2 hover:text-[#5e9795] transition-colors"
+            >
+              Privacy Policy
             </Link>
+            .
           </label>
           {errors.terms && (
             <p className="mt-1 px-1 text-[11px] font-medium text-red-500">
