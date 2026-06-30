@@ -393,7 +393,7 @@ export default function ScheduleDemoPage() {
                 <button
                   type="button"
                   onClick={handleNextStep}
-                  className="h-14 px-8 lg:px-10 bg-[#0B252C] text-white text-[15px] font-medium rounded-xl flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg"
+                  className="h-14 px-8 lg:px-20 bg-[#0B252C] text-white text-[15px] font-medium rounded-xl flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg"
                 >
                   Next <ArrowRight size={18} />
                 </button>
@@ -402,7 +402,7 @@ export default function ScheduleDemoPage() {
                   type="button"
                   onClick={handleFinalSubmit}
                   disabled={requestMutation.isPending}
-                  className="h-14 px-8 lg:px-10 bg-[#0B252C] text-white text-[15px] font-medium rounded-xl flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg disabled:opacity-50"
+                  className="h-14 px-8 lg:px-20 bg-[#0B252C] text-white text-[15px] font-medium rounded-xl flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg disabled:opacity-50"
                 >
                   {requestMutation.isPending ? "Processing..." : "Submit"} <ArrowRight size={18} />
                 </button>
