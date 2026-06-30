@@ -381,31 +381,35 @@ export default function ScheduleDemoPage() {
               </p>
             </>
           )}
-        </main>
 
-        <div className="absolute bottom-0 left-0 flex items-center h-[120px] w-full z-20 pointer-events-none">
-          <div className="h-full w-24 lg:w-48 bg-[#9BDD7C] rounded-tr-[100px] pointer-events-auto" />
-          <div className="relative -ml-8 lg:-ml-12 pointer-events-auto">
-            {step === 1 ? (
-              <button
-                type="button"
-                onClick={handleNextStep}
-                className="h-[52px] px-8 bg-[#0B252C] text-white text-[13px] font-medium rounded-[10px] flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg"
-              >
-                Next <ArrowRight size={16} />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleFinalSubmit}
-                disabled={requestMutation.isPending}
-                className="h-[52px] px-8 bg-[#0B252C] text-white text-[13px] font-medium rounded-[10px] flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg disabled:opacity-50"
-              >
-                {requestMutation.isPending ? "Processing..." : "Submit"} <ArrowRight size={16} />
-              </button>
-            )}
+          {/* Action Area */}
+          <div className="mt-16 sm:mt-24 flex items-center">
+            {/* Green Shape */}
+            <div className="h-[100px] lg:h-[130px] w-32 lg:w-44 bg-[#9BDD7C] rounded-r-full -ml-6 sm:-ml-10 lg:-ml-16 shrink-0 shadow-sm" />
+            
+            {/* Action Button */}
+            <div className="ml-8 sm:ml-12 lg:ml-16">
+              {step === 1 ? (
+                <button
+                  type="button"
+                  onClick={handleNextStep}
+                  className="h-14 px-8 lg:px-10 bg-[#0B252C] text-white text-[15px] font-medium rounded-xl flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg"
+                >
+                  Next <ArrowRight size={18} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleFinalSubmit}
+                  disabled={requestMutation.isPending}
+                  className="h-14 px-8 lg:px-10 bg-[#0B252C] text-white text-[15px] font-medium rounded-xl flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg disabled:opacity-50"
+                >
+                  {requestMutation.isPending ? "Processing..." : "Submit"} <ArrowRight size={18} />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        </main>
       </div>
 
       {/* Right Pane */}
