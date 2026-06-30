@@ -474,33 +474,33 @@ export default function Home() {
                   >
                     {/* Background layer for hover state */}
                     <div 
-                      className={`absolute inset-y-0 left-[-8px] right-0 md:right-[-24px] lg:right-[-48px] rounded-[12px] transition-all duration-150 z-0 ${
-                        isHovered ? "bg-[#1E5A69] shadow-md" : "bg-transparent"
+                      className={`absolute inset-y-0 left-[-16px] lg:left-[-24px] right-[-16px] md:right-[-48px] lg:right-[-80px] rounded-[16px] transition-all duration-150 z-0 ${
+                        isHovered ? "bg-[#1E5A69] shadow-lg" : "bg-transparent"
                       }`} 
                     />
 
                     {/* Content layer */}
-                    <div className="grid grid-cols-12 gap-4 items-center py-3.5 px-2 relative z-10 transition-colors duration-150">
+                    <div className="grid grid-cols-12 gap-4 items-center py-4 px-2 relative z-10 transition-colors duration-150">
                       <div className="col-span-5 text-left">
-                        <span className={`text-[15px] font-medium ${isHovered ? "text-white" : "text-[#0B252C]"}`}>
+                        <span className={`text-[16px] font-medium ${isHovered ? "text-white" : "text-[#0B252C]"}`}>
                           {tier.name}
                         </span>
                       </div>
                       <div className="col-span-2 text-center">
-                        <span className={`text-[15px] font-bold ${isHovered ? "text-white" : "text-[#0B252C]/90"}`}>
+                        <span className={`text-[16px] font-medium tracking-wide ${isHovered ? "text-white" : "text-[#0B252C]/90"}`}>
                           ${tier.monthly}
                         </span>
                       </div>
                       <div className="col-span-2 text-center">
-                        <span className={`text-[15px] font-bold ${isHovered ? "text-white" : "text-[#0B252C]/90"}`}>
+                        <span className={`text-[16px] font-medium tracking-wide ${isHovered ? "text-white" : "text-[#0B252C]/90"}`}>
                           ${tier.annual}
                         </span>
                       </div>
                       <div className="col-span-3 text-right">
                         <button
-                          className={`px-5 py-2 text-[13px] font-bold rounded-[10px] transition-all cursor-pointer shadow-sm ${
+                          className={`px-6 py-2.5 text-[14px] font-medium rounded-lg transition-all cursor-pointer shadow-sm ${
                             isHovered
-                              ? "bg-[#9BDD7C] text-[#0B252C]"
+                              ? "bg-gradient-to-r from-[#A7E88A] to-[#92D774] text-[#0B252C]"
                               : "bg-[#F4F7F6] text-[#A0AAB0] hover:bg-gray-200"
                           }`}
                         >
