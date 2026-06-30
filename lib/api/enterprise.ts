@@ -12,6 +12,8 @@ export type DemoRequestPayload = {
   country: string;
   team_size: TeamSizeRange;
   use_case: string;
+  scheduled_date?: string;
+  scheduled_time?: string;
 };
 
 export type DemoRequestResponse = {
