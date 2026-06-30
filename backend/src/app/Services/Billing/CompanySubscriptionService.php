@@ -45,6 +45,7 @@ class CompanySubscriptionService
             'company_id' => $company->id,
             'company_name' => $company->name,
             'public_company_id' => $company->company_id,
+            'billing_enforced' => (bool) config('billing.enforce', true),
             'subscription_status' => $status->value,
             'has_active_subscription' => $company->hasActiveSubscription(),
             'plan_key' => $company->subscription_plan_key,

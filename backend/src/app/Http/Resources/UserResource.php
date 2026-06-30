@@ -51,11 +51,13 @@ class UserResource extends JsonResource
                 'role' => $activeCompany->pivot?->role,
                 'subscription_status' => $activeCompany->subscription_status,
                 'has_active_subscription' => $billingActive,
+                'billing_enforced' => (bool) config('billing.enforce', true),
             ] : null,
             'billing' => $activeCompany ? [
                 'subscription_status' => $activeCompany->subscription_status,
                 'has_active_subscription' => $billingActive,
                 'assigned_plan_key' => $activeCompany->assigned_plan_key,
+                'billing_enforced' => (bool) config('billing.enforce', true),
             ] : null,
             'created_at' => $this->created_at->toIso8601String(),
         ];

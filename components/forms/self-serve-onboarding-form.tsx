@@ -156,7 +156,16 @@ export default function SelfServeOnboardingForm() {
       });
 
       toast.success(workspaceResponse.message);
-      router.push("/subscribe");
+      const billingEnforced =
+        meResponse.data.billing?.billing_enforced ??
+        meResponse.data.active_company?.billing_enforced ??
+        true;
+      const hasActiveSubscription =
+        meResponse.data.billing?.has_active_subscription ??
+        meResponse.data.active_company?.has_active_subscription ??
+        false;
+
+      router.push(!billingEnforced || hasActiveSubscription ? "/dashboard" : "/subscribe");
     },
     onError: (error) => {
       const err = error as ApiRequestError;
@@ -168,8 +177,8 @@ export default function SelfServeOnboardingForm() {
       }
 
       if (err.status === 409) {
-        toast.success("Onboarding already completed. Redirecting to subscription.");
-        router.push("/subscribe");
+        toast.success("Onboarding already completed. Redirecting...");
+        router.push("/dashboard");
         return;
       }
 

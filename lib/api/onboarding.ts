@@ -297,12 +297,14 @@ export type ActiveCompany = {
   role: string;
   subscription_status?: string;
   has_active_subscription?: boolean;
+  billing_enforced?: boolean;
 };
 
 export type BillingSnapshot = {
   subscription_status: string;
   has_active_subscription: boolean;
   assigned_plan_key?: string | null;
+  billing_enforced?: boolean;
 };
 
 export type MeResponse = {

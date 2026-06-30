@@ -17,6 +17,7 @@ export type BillingStatus = {
   company_id: number;
   company_name: string;
   public_company_id: string;
+  billing_enforced: boolean;
   subscription_status: string;
   has_active_subscription: boolean;
   plan_key: string | null;

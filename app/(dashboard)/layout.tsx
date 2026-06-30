@@ -8,7 +8,10 @@ import { redirect } from "next/navigation";
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
 
-async function hasActiveSubscription(token: string): Promise<boolean> {
+async function getBillingAccess(token: string): Promise<{
+  hasActiveSubscription: boolean;
+  billingEnforced: boolean;
+}> {
   try {
     const response = await fetch(`${API_BASE_URL}/billing/status`, {
       headers: {
@@ -19,14 +22,17 @@ async function hasActiveSubscription(token: string): Promise<boolean> {
     });
 
     if (!response.ok) {
-      return false;
+      return { hasActiveSubscription: false, billingEnforced: true };
     }
 
     const payload = await response.json();
 
-    return Boolean(payload?.data?.has_active_subscription);
+    return {
+      hasActiveSubscription: Boolean(payload?.data?.has_active_subscription),
+      billingEnforced: Boolean(payload?.data?.billing_enforced ?? true),
+    };
   } catch {
-    return false;
+    return { hasActiveSubscription: false, billingEnforced: true };
   }
 }
 
@@ -47,9 +53,9 @@ export default async function DashboardLayout({
     redirect("/complete-onboarding");
   }
 
-  const subscribed = await hasActiveSubscription(token);
+  const { hasActiveSubscription, billingEnforced } = await getBillingAccess(token);
 
-  if (!subscribed) {
+  if (billingEnforced && !hasActiveSubscription) {
     redirect("/subscribe");
   }
 

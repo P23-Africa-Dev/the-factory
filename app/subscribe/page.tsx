@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -68,6 +68,12 @@ function SubscribePageInner() {
   const isLocked =
     !!data?.billing_status.assigned_plan_key && !data.billing_status.can_choose_plan;
 
+  useEffect(() => {
+    if (data && data.billing_status.billing_enforced === false) {
+      router.replace("/dashboard");
+    }
+  }, [data, router]);
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* ── Sticky header ─────────────────────────────────────── */}
@@ -99,7 +105,7 @@ function SubscribePageInner() {
               : "Choose the right plan for your team"}
           </h1>
           <p className="mt-2 text-sm text-white/70 max-w-2xl leading-6">
-            Every plan includes the full Factory 23 platform — GPS tracking, attendance,
+            Every plan includes the full Factory 23 platform: GPS tracking, attendance,
             tasks, AI reporting, payroll, offline mode and more.
           </p>
 
@@ -119,30 +125,27 @@ function SubscribePageInner() {
             <button
               type="button"
               onClick={() => setInterval("monthly")}
-              className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${
-                interval === "monthly"
-                  ? "bg-[#1F4F4E] text-white shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
+              className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${interval === "monthly"
+                ? "bg-[#1F4F4E] text-white shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+                }`}
             >
               Monthly
             </button>
             <button
               type="button"
               onClick={() => setInterval("annual")}
-              className={`px-5 py-2 rounded-full text-sm font-semibold transition-all flex items-center gap-2 ${
-                interval === "annual"
-                  ? "bg-[#1F4F4E] text-white shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
+              className={`px-5 py-2 rounded-full text-sm font-semibold transition-all flex items-center gap-2 ${interval === "annual"
+                ? "bg-[#1F4F4E] text-white shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+                }`}
             >
               Annual
               <span
-                className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                  interval === "annual"
-                    ? "bg-white/20 text-white"
-                    : "bg-emerald-100 text-emerald-700"
-                }`}
+                className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${interval === "annual"
+                  ? "bg-white/20 text-white"
+                  : "bg-emerald-100 text-emerald-700"
+                  }`}
               >
                 Save 17%
               </span>
@@ -186,9 +189,8 @@ function SubscribePageInner() {
               return (
                 <div
                   key={plan.key}
-                  className={`grid grid-cols-[1fr_auto_auto_auto] items-center px-5 py-3.5 gap-3 transition-colors ${
-                    i > 0 ? "border-t border-gray-100" : ""
-                  } ${isAnyPending && !isPending ? "opacity-50" : ""}`}
+                  className={`grid grid-cols-[1fr_auto_auto_auto] items-center px-5 py-3.5 gap-3 transition-colors ${i > 0 ? "border-t border-gray-100" : ""
+                    } ${isAnyPending && !isPending ? "opacity-50" : ""}`}
                 >
                   {/* Plan label */}
                   <div>
@@ -220,11 +222,10 @@ function SubscribePageInner() {
                       type="button"
                       disabled={isAnyPending}
                       onClick={() => checkoutMutation.mutate(plan)}
-                      className={`w-full text-sm font-semibold rounded-lg px-4 py-2 transition-all ${
-                        isPending
-                          ? "bg-[#1F4F4E] text-white opacity-80 cursor-wait"
-                          : "bg-[#1F4F4E] text-white hover:bg-[#163b3a] active:scale-[0.98]"
-                      } disabled:cursor-not-allowed`}
+                      className={`w-full text-sm font-semibold rounded-lg px-4 py-2 transition-all ${isPending
+                        ? "bg-[#1F4F4E] text-white opacity-80 cursor-wait"
+                        : "bg-[#1F4F4E] text-white hover:bg-[#163b3a] active:scale-[0.98]"
+                        } disabled:cursor-not-allowed`}
                     >
                       {isPending ? (
                         <span className="flex items-center justify-center gap-2">
