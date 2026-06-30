@@ -98,6 +98,16 @@ export default function Home() {
     setAgentModalOpen(true);
   }
 
+  const handleScroll = (e: React.MouseEvent<HTMLAnchorElement>, targetId: string) => {
+    e.preventDefault();
+    const target = document.getElementById(targetId);
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth" });
+      window.history.pushState(null, "", `#${targetId}`);
+    }
+  };
+
+
   const handleNext = () => {
     if (isDesktop) {
       setCurrentIndex((prev) => (prev === 0 ? 3 : 0));
@@ -148,23 +158,23 @@ export default function Home() {
             </Link>
 
             <nav className="hidden sm:flex items-center gap-8">
-              <Link href="#" className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
+              <a href="#about" onClick={(e) => handleScroll(e, "about")} className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
                 About
-              </Link>
-              <Link href="#" className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
+              </a>
+              <a href="#pricing" onClick={(e) => handleScroll(e, "pricing")} className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
                 Pricing
-              </Link>
-              <Link href="#" className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
+              </a>
+              <a href="#reviews" onClick={(e) => handleScroll(e, "reviews")} className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
                 Reviews
-              </Link>
-              <Link href="#" className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
+              </a>
+              <a href="#p23-africa" onClick={(e) => handleScroll(e, "p23-africa")} className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
                 P23 Africa
-              </Link>
+              </a>
             </nav>
           </header>
 
           {/* Hero Section */}
-          <main className="my-auto py-12 lg:py-0 flex flex-col justify-center max-w-xl">
+          <main id="about" className="my-auto py-12 lg:py-0 flex flex-col justify-center max-w-xl">
             {/* Feature Badge */}
             <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white p-1 pr-4 self-start mb-8 shadow-sm">
               <span className="rounded-full bg-[#82C341] px-3 py-1.5 text-[11px] font-semibold text-white tracking-wide uppercase">
@@ -290,7 +300,7 @@ export default function Home() {
       </section>
 
       {/* Testimonials Section */}
-      <section className="w-full bg-[#F8FAFC] py-20 lg:py-28 px-6 sm:px-12 lg:px-24 font-sans relative overflow-hidden">
+      <section id="reviews" className="w-full bg-[#F8FAFC] py-20 lg:py-28 px-6 sm:px-12 lg:px-24 font-sans relative overflow-hidden">
         <div className="max-w-7xl mx-auto flex flex-col items-center">
           
           {/* Header */}
@@ -390,7 +400,7 @@ export default function Home() {
       </section>
 
       {/* Pricing Section */}
-      <section className="w-full bg-[#0B252C] py-20 lg:py-28 px-6 sm:px-12 lg:px-24 font-sans relative overflow-hidden">
+      <section id="pricing" className="w-full bg-[#0B252C] py-20 lg:py-28 px-6 sm:px-12 lg:px-24 font-sans relative overflow-hidden">
         {/* Decorative background SVG patterns */}
         <div className="absolute inset-y-0 right-0 w-1/4 opacity-10 pointer-events-none hidden lg:block z-0">
           <svg className="w-full h-full text-[#9BDD7C] stroke-current fill-none" viewBox="0 0 300 800" strokeWidth="2">
@@ -567,7 +577,9 @@ export default function Home() {
       </section>
 
       {/* Full-width Footer */}
-      <Footer />
+      <div id="p23-africa">
+        <Footer />
+      </div>
 
       <DownloadAgentAppModal isOpen={agentModalOpen} onClose={() => setAgentModalOpen(false)} />
     </div>
