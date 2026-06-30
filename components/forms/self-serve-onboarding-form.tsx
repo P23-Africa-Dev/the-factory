@@ -165,6 +165,12 @@ export default function SelfServeOnboardingForm() {
         meResponse.data.active_company?.has_active_subscription ??
         false;
 
+      try {
+        window.sessionStorage.setItem("billing.enforced", billingEnforced ? "1" : "0");
+      } catch {
+        // sessionStorage may be unavailable; silently ignore.
+      }
+
       router.push(!billingEnforced || hasActiveSubscription ? "/dashboard" : "/subscribe");
     },
     onError: (error) => {

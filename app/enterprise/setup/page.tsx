@@ -236,6 +236,12 @@ function EnterpriseSetupContent() {
           meRes.data.active_company?.billing_enforced ??
           true;
 
+        try {
+          window.sessionStorage.setItem("billing.enforced", billingEnforced ? "1" : "0");
+        } catch {
+          // sessionStorage may be unavailable; silently ignore.
+        }
+
         router.push(!billingEnforced || hasActiveSubscription ? "/dashboard" : "/subscribe");
         return;
       } catch {

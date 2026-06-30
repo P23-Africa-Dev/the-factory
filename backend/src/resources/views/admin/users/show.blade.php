@@ -273,8 +273,6 @@
             </form>
         </div>
 
-        @endif
-
         @if (!$isInternal && $company && $billingSummary)
         <div class="metric-card p-4 mb-3">
             <div class="section-label"><i class="bi bi-credit-card"></i>Billing</div>

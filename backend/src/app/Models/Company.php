@@ -58,6 +58,10 @@ class Company extends Model
 
     public function hasActiveSubscription(): bool
     {
+        if (! (bool) config('billing.enforce', true)) {
+            return true;
+        }
+
         return $this->subscriptionStatusEnum()->allowsDashboardAccess();
     }
 

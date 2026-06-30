@@ -51,6 +51,17 @@ export function handleSubscriptionRequired(
     return;
   }
 
+  // Defensive guard: when billing enforcement is disabled at the API layer,
+  // we still occasionally see stale 402 responses from cached endpoints.
+  // Treat any sessionStorage hint as authoritative.
+  try {
+    if (typeof window !== "undefined" && window.sessionStorage.getItem("billing.enforced") === "0") {
+      return;
+    }
+  } catch {
+    // sessionStorage may be disabled (private mode); fall through to redirect.
+  }
+
   redirectPending = true;
   const params = new URLSearchParams();
   params.set("reason", code === "subscription_suspended" ? "expired" : "required");

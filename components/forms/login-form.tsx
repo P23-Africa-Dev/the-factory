@@ -84,6 +84,18 @@ export default function LoginForm() {
       if (me.data.active_company?.id) {
         setCompanyId(me.data.active_company.id);
       }
+
+      const billingEnforced =
+        me.data.billing?.billing_enforced ??
+        me.data.active_company?.billing_enforced ??
+        true;
+
+      try {
+        window.sessionStorage.setItem("billing.enforced", billingEnforced ? "1" : "0");
+      } catch {
+        // sessionStorage may be unavailable; silently ignore.
+      }
+
       setUser({
         id: me.data.id,
         name: me.data.name,

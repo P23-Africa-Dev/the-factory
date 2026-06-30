@@ -21,6 +21,12 @@ class SubscriptionLifecycleService
 
     public function process(): void
     {
+        if (! (bool) config('billing.enforce', true)) {
+            Log::info('billing.enforce is disabled — skipping subscription lifecycle processing.');
+
+            return;
+        }
+
         $this->sendExpiryReminders();
         $this->transitionExpiredToGrace();
         $this->sendGraceReminders();
