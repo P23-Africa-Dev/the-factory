@@ -18,7 +18,11 @@ import {
   CheckCircle2,
   ChevronRight,
   Headphones,
+  ChevronLeft,
+  ArrowRight,
+  ChevronDown,
 } from "lucide-react";
+import { format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameMonth, isSameDay, addDays, isBefore, startOfDay } from "date-fns";
 import Logo from "@/assets/images/logo.png";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
@@ -43,6 +47,8 @@ const scheduleDemoSchema = z.object({
   country: z.string().min(2, "Please select a country."),
   team_size: z.enum(["2-10", "11-50", "51-200", "201-500", "501+"]),
   use_case: z.string().min(10, "Use case should be at least 10 characters."),
+  scheduled_date: z.string().optional(),
+  scheduled_time: z.string().optional(),
 });
 
 const teamSizeOptions: { label: string; value: TeamSizeRange }[] = [
@@ -64,6 +70,14 @@ const selectTriggerClassName =
 
 export default function ScheduleDemoPage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [step, setStep] = useState<1 | 2>(1);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedHour, setSelectedHour] = useState("06");
+  const [selectedMinute, setSelectedMinute] = useState("27");
+  const [selectedSecond, setSelectedSecond] = useState("54");
+  const [timeZone, setTimeZone] = useState("GMT");
+  const [amPm, setAmPm] = useState("PM");
 
   const {
     data: countryOptions = [],
@@ -80,7 +94,9 @@ export default function ScheduleDemoPage() {
     register,
     control,
     handleSubmit,
+    trigger,
     reset,
+    getValues,
     formState: { errors },
   } = useForm<DemoRequestPayload>({
     resolver: zodResolver(scheduleDemoSchema),
@@ -112,6 +128,200 @@ export default function ScheduleDemoPage() {
     return mutationError?.errors ?? null;
   }, [requestMutation.error]);
 
+  const getPrev = (val: string, max: number, min: number = 0) => {
+    let v = parseInt(val, 10) - 1;
+    if (v < min) v = max;
+    return v.toString().padStart(2, "0");
+  };
+
+  const getNext = (val: string, max: number, min: number = 0) => {
+    let v = parseInt(val, 10) + 1;
+    if (v > max) v = min;
+    return v.toString().padStart(2, "0");
+  };
+
+  const handleNextStep = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    const isValid = await trigger();
+    if (isValid) {
+      setStep(2);
+    }
+  };
+
+  const handleFinalSubmit = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!selectedDate) {
+      toast.error("Please select a date for your demo.");
+      return;
+    }
+    const values = getValues();
+    const formattedDate = format(selectedDate, "EEE, dd MMMM yyyy");
+    const formattedTime = `${selectedHour}:${selectedMinute}:${selectedSecond} ${amPm} ${timeZone}`;
+    
+    requestMutation.mutate({
+      ...values,
+      scheduled_date: formattedDate,
+      scheduled_time: formattedTime,
+    });
+  };
+
+  const renderCalendar = () => {
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(monthStart);
+    const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
+    const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
+    const dateFormat = "d";
+    const rows = [];
+    let days = [];
+    let day = startDate;
+    let formattedDate = "";
+    const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    while (day <= endDate) {
+      for (let i = 0; i < 7; i++) {
+        formattedDate = format(day, dateFormat);
+        const cloneDay = day;
+        const isCurrentMonth = isSameMonth(day, monthStart);
+        const isSelected = selectedDate && isSameDay(day, selectedDate);
+        const isPast = isBefore(day, startOfDay(new Date()));
+
+        days.push(
+          <div
+            key={day.toString()}
+            onClick={() => {
+              if (isCurrentMonth && !isPast) {
+                setSelectedDate(cloneDay);
+              }
+            }}
+            className={`h-9 w-10 flex items-center justify-center rounded-[6px] text-[13px] font-medium transition-all ${
+              !isCurrentMonth
+                ? "text-transparent pointer-events-none"
+                : isSelected
+                ? "bg-[#9BDD7C] text-[#0B252C] shadow-sm cursor-pointer"
+                : isPast
+                ? "bg-white/5 text-white/30 cursor-not-allowed"
+                : "bg-[#163B45] text-white hover:bg-white/20 cursor-pointer"
+            }`}
+          >
+            {formattedDate}
+          </div>
+        );
+        day = addDays(day, 1);
+      }
+      rows.push(
+        <div className="grid grid-cols-7 gap-2 sm:gap-4 justify-items-center w-full" key={day.toString()}>
+          {days}
+        </div>
+      );
+      days = [];
+    }
+
+    return (
+      <div className="flex flex-col items-center w-full max-w-[420px] mx-auto">
+        <div className="flex justify-between items-center w-full mb-6 text-white">
+          <span className="text-sm font-medium text-white/90">Select Day</span>
+        </div>
+        <div className="flex justify-between items-center w-full mb-8">
+          <button type="button" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="text-white/60 hover:text-white transition-colors cursor-pointer p-2 -ml-2">
+            <ChevronLeft size={20} />
+          </button>
+          <span className="text-xl font-medium text-white">
+            {format(currentMonth, "MMMM yyyy")}
+          </span>
+          <button type="button" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="text-white/60 hover:text-white transition-colors cursor-pointer p-2 -mr-2">
+            <ChevronRight size={20} />
+          </button>
+        </div>
+        
+        <div className="grid grid-cols-7 gap-2 sm:gap-4 justify-items-center w-full mb-4">
+          {weekDays.map((d) => (
+            <div key={d} className="text-[11px] font-medium text-white/50 tracking-wider h-8 flex items-center">
+              {d}
+            </div>
+          ))}
+        </div>
+        
+        <div className="flex flex-col gap-2 sm:gap-3 w-full">
+          {rows}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTimePicker = () => {
+    return (
+      <div className="flex flex-col lg:flex-row gap-8 lg:gap-16 items-start w-full max-w-[650px] mx-auto mt-12">
+        <div className="bg-black/20 border border-white/5 rounded-[16px] p-6 w-full max-w-[340px] backdrop-blur-md">
+          <div className="flex justify-between items-center mb-6">
+            <span className="text-sm font-bold text-white">Set time</span>
+            <div className="relative">
+              <select 
+                value={timeZone}
+                onChange={(e) => setTimeZone(e.target.value)}
+                className="appearance-none bg-transparent border border-white/20 rounded-md text-white text-[13px] font-bold px-3 py-1.5 pr-8 outline-none cursor-pointer hover:border-white/40 transition-colors"
+              >
+                <option value="GMT">GMT</option>
+                <option value="EST">EST</option>
+                <option value="PST">PST</option>
+              </select>
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-white/70">
+                <ChevronDown size={14} />
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex flex-col gap-0 w-full text-white relative mt-4 px-2">
+            <div className="flex items-center gap-6 px-4 text-white/40 text-[13px] font-medium pb-3 select-none">
+              <div onClick={() => setSelectedHour(getPrev(selectedHour, 12, 1))} className="w-8 text-center cursor-pointer hover:text-white/60">{getPrev(selectedHour, 12, 1)}</div>
+              <div className="w-1 text-transparent text-lg">:</div>
+              <div onClick={() => setSelectedMinute(getPrev(selectedMinute, 59))} className="w-8 text-center cursor-pointer hover:text-white/60">{getPrev(selectedMinute, 59)}</div>
+              <div className="w-1 text-transparent text-lg">:</div>
+              <div onClick={() => setSelectedSecond(getPrev(selectedSecond, 59))} className="w-8 text-center cursor-pointer hover:text-white/60">{getPrev(selectedSecond, 59)}</div>
+              <div className="w-8 ml-auto"></div>
+            </div>
+            
+            <div className="w-full h-px bg-white/10" />
+
+            <div className="flex items-center gap-6 px-4 text-white text-[16px] font-bold py-4 select-none">
+              <div className="w-8 text-center">{selectedHour}</div>
+              <div className="w-1 text-center text-white/50 text-lg -mt-1">:</div>
+              <div className="w-8 text-center">{selectedMinute}</div>
+              <div className="w-1 text-center text-white/50 text-lg -mt-1">:</div>
+              <div className="w-8 text-center">{selectedSecond}</div>
+              <div className="w-8 ml-auto text-center text-[15px]">{amPm}</div>
+            </div>
+
+            <div className="w-full h-px bg-white/10" />
+
+            <div className="flex items-center gap-6 px-4 text-white/40 text-[13px] font-medium pt-3 select-none">
+              <div onClick={() => setSelectedHour(getNext(selectedHour, 12, 1))} className="w-8 text-center cursor-pointer hover:text-white/60">{getNext(selectedHour, 12, 1)}</div>
+              <div className="w-1 text-transparent text-lg">:</div>
+              <div onClick={() => setSelectedMinute(getNext(selectedMinute, 59))} className="w-8 text-center cursor-pointer hover:text-white/60">{getNext(selectedMinute, 59)}</div>
+              <div className="w-1 text-transparent text-lg">:</div>
+              <div onClick={() => setSelectedSecond(getNext(selectedSecond, 59))} className="w-8 text-center cursor-pointer hover:text-white/60">{getNext(selectedSecond, 59)}</div>
+              <div onClick={() => setAmPm(amPm === "AM" ? "PM" : "AM")} className="w-8 ml-auto text-center cursor-pointer hover:text-white/60">{amPm === "AM" ? "PM" : "AM"}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col justify-center h-full">
+           <div className="mb-6">
+             <div className="text-white font-bold text-[13px] mb-1.5">Selected Date:</div>
+             <div className="text-white/60 text-[13px]">
+               {selectedDate ? format(selectedDate, "EEE, dd MMMM yyyy") : "No date selected"}
+             </div>
+           </div>
+           <div>
+             <div className="text-white font-bold text-[13px] mb-1.5">Selected Time:</div>
+             <div className="text-white/60 text-[13px] uppercase">
+               {selectedHour}:{selectedMinute}:{selectedSecond} {amPm} {timeZone}
+             </div>
+           </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen w-full flex flex-col lg:flex-row bg-white font-sans overflow-x-hidden relative">
       <div className="w-full lg:w-[46%] bg-white flex flex-col justify-between p-6 sm:p-10 lg:p-16 lg:min-h-screen relative bg-[radial-gradient(#e5e7eb_1.5px,transparent_1.5px)] [background-size:24px_24px]">
@@ -141,7 +351,7 @@ export default function ScheduleDemoPage() {
           </nav>
         </header>
 
-        <main className="my-auto py-16 lg:py-0 flex flex-col justify-center max-w-md">
+        <main className="my-auto py-16 lg:py-0 flex flex-col justify-center max-w-md relative z-10">
           <Link
             href="/"
             className="group inline-flex items-center gap-2 text-sm font-bold text-[#0B252C]/60 hover:text-[#0B252C] transition-colors mb-8"
@@ -150,16 +360,52 @@ export default function ScheduleDemoPage() {
             Back to Home
           </Link>
 
-          <h1 className="text-5xl lg:text-[64px] font-extrabold text-[#0B252C] leading-[1.1] tracking-[-0.02em] mb-6">
-            Schedule <br />
-            Your Demo
-          </h1>
-          <p className="text-sm sm:text-base text-[#4A5F64] leading-relaxed max-w-sm">
-            Pick a convenient date and time for your demo. You&apos;ll receive a confirmation email once it&apos;s booked.
-          </p>
+          {step === 1 ? (
+            <>
+              <h1 className="text-5xl lg:text-[64px] font-extrabold text-[#0B252C] leading-[1.1] tracking-[-0.02em] mb-6">
+                Request <br />
+                Your Demo
+              </h1>
+              <p className="text-sm sm:text-base text-[#4A5F64] leading-relaxed max-w-sm">
+                Request a Demo for Factory 23 and one of our representatives will <span className="font-bold uppercase">GET IN TOUCH</span> with You
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-5xl lg:text-[64px] font-extrabold text-[#0B252C] leading-[1.1] tracking-[-0.02em] mb-6">
+                Schedule <br />
+                Your Demo
+              </h1>
+              <p className="text-sm sm:text-base text-[#4A5F64] leading-relaxed max-w-sm">
+                Pick a convenient date and time for your demo. You&apos;ll receive a confirmation email once it&apos;s booked.
+              </p>
+            </>
+          )}
         </main>
 
-        <div className="absolute bottom-4 lg:bottom-16 left-0 w-24 h-16 lg:w-32 lg:h-20 bg-[#9BDD7C] rounded-r-full" />
+        <div className="absolute bottom-0 left-0 flex items-center h-[120px] w-full z-20 pointer-events-none">
+          <div className="h-full w-24 lg:w-48 bg-[#9BDD7C] rounded-tr-[100px] pointer-events-auto" />
+          <div className="relative -ml-8 lg:-ml-12 pointer-events-auto">
+            {step === 1 ? (
+              <button
+                type="button"
+                onClick={handleNextStep}
+                className="h-[52px] px-8 bg-[#0B252C] text-white text-[13px] font-medium rounded-[10px] flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg"
+              >
+                Next <ArrowRight size={16} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleFinalSubmit}
+                disabled={requestMutation.isPending}
+                className="h-[52px] px-8 bg-[#0B252C] text-white text-[13px] font-medium rounded-[10px] flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg disabled:opacity-50"
+              >
+                {requestMutation.isPending ? "Processing..." : "Submit"} <ArrowRight size={16} />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Right Pane */}
@@ -186,11 +432,11 @@ export default function ScheduleDemoPage() {
           </div>
         </div>
 
-        {/* Form Card */}
-        <div className="flex-1 flex items-center justify-center z-10 py-12 lg:py-0">
-          <div className="w-full max-w-[500px] bg-black/15 border border-white/10 rounded-[32px] p-6 sm:p-8 flex flex-col gap-6 shadow-[0px_8px_32px_rgba(0,0,0,0.2)] backdrop-blur-md">
-
-            <form className="flex flex-col gap-5" onSubmit={handleSubmit((values) => requestMutation.mutate(values))}>
+        {/* Form or Calendar */}
+        <div className="flex-1 flex flex-col items-center justify-center z-10 py-12 lg:py-0 w-full relative">
+          {step === 1 ? (
+            <div className="w-full max-w-[500px] bg-black/15 border border-white/10 rounded-[32px] p-6 sm:p-8 flex flex-col gap-6 shadow-[0px_8px_32px_rgba(0,0,0,0.2)] backdrop-blur-md">
+              <form className="flex flex-col gap-5">
               {/* Full name */}
               <div className="flex flex-col gap-1.5">
                 <div className="group relative">
@@ -335,25 +581,14 @@ export default function ScheduleDemoPage() {
                 {apiErrors?.use_case && <p className="px-4 text-[10px] font-medium text-red-400">{apiErrors.use_case[0]}</p>}
               </div>
 
-              {/* Submit */}
-              <Button
-                type="submit"
-                className="w-full h-14 mt-2 rounded-full bg-[#6FA8A6] text-white text-xs font-bold tracking-widest uppercase hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0px_4px_12px_rgba(111,168,166,0.25)]"
-                disabled={requestMutation.isPending || isCountriesPending || isCountriesError}
-              >
-                {requestMutation.isPending ? (
-                  <div className="flex items-center gap-2">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                    Processing...
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center gap-2">
-                    SUBMIT REQUEST <ChevronRight size={18} />
-                  </div>
-                )}
-              </Button>
-            </form>
-          </div>
+              </form>
+            </div>
+          ) : (
+            <div className="w-full flex flex-col items-center pb-12 pt-8">
+               {renderCalendar()}
+               {renderTimePicker()}
+            </div>
+          )}
         </div>
 
         {/* Call For Help */}
