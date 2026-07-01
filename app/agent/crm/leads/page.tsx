@@ -42,7 +42,7 @@ function getStatusColor(status: string | null | undefined, labels: Array<{ slug:
 
 function getStatusLabel(status: string | null | undefined, labels: Array<{ slug: string; name: string }>): string {
   const match = labels.find((label) => label.slug === status);
-  return match ? match.name : "Newly Lead";
+  return match ? match.name : "New Lead";
 }
 
 function StatusDropdown({
@@ -57,7 +57,7 @@ function StatusDropdown({
   onChange: (value: ApiLeadStatus, color: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const label = options.find((option) => option.value === value)?.label ?? "Newly Lead";
+  const label = options.find((option) => option.value === value)?.label ?? "New Lead";
 
   return (
     <div className="relative">

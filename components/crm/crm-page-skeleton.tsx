@@ -116,7 +116,7 @@ function LeadCardSkeleton() {
 }
 
 const SKELETON_COLUMNS = [
-  { title: "Newly Lead", color: "#6366F1" },
+  { title: "New Lead", color: "#6366F1" },
   { title: "Contacted", color: "#F59E0B" },
   { title: "Follow Up", color: "#3B82F6" },
   { title: "Negotiation", color: "#10B981" },

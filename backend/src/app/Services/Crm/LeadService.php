@@ -1097,7 +1097,7 @@ class LeadService
             LeadLabel::query()->insert([
                 [
                     'company_id' => $companyId,
-                    'name' => 'Newly Lead',
+                    'name' => 'New Lead',
                     'slug' => 'newly_lead',
                     'color' => '#2563EB',
                     'sort_order' => 0,

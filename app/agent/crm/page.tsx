@@ -51,7 +51,7 @@ import { toast } from "sonner";
 import { formatDistanceToNowStrict, parseISO } from "date-fns";
 
 const DEFAULT_STAGES: Array<{ id: ApiLeadStatus; title: string; color: string }> = [
-  { id: "newly_lead", title: "Newly Lead", color: "#2563EB" },
+  { id: "newly_lead", title: "New Lead", color: "#2563EB" },
   { id: "proposal_sent", title: "Proposal Sent", color: "#F59E0B" },
   { id: "contacted", title: "Contacted", color: "#E879A0" },
   { id: "qualified", title: "Qualified", color: "#10B981" },
