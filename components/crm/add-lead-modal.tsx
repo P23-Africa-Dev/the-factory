@@ -421,7 +421,7 @@ export function AddLeadModal({
                     value={phone}
                     onChange={(val) => { setPhone(val); clearError("phone"); }}
                     placeholder="E.g 555-0199"
-                    defaultCountry="NG"
+                    defaultCountry="GB"
                     variant="compact"
                   />
                 </div>
