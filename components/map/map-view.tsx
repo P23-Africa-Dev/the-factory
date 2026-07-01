@@ -1035,11 +1035,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         // Skip if same point
         if (areSamePoint(origin, dest)) continue;
 
-        const routeCoords = await fetchDirectionsRoute(origin, dest, token);
+        const routeResult = await fetchDirectionsRoute(origin, dest, token);
         if (cancelled) return;
 
-        if (routeCoords && routeCoords.length >= 2) {
-          directionRoutesRef.current.set(task.taskId, routeCoords);
+        if (routeResult && routeResult.coords.length >= 2) {
+          directionRoutesRef.current.set(task.taskId, routeResult.coords);
           didChange = true;
         }
       }

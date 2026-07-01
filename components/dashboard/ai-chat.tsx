@@ -149,7 +149,7 @@ const KPI_PRIORITY_OPTIONS: EditFieldOption[] = [
 ];
 
 const LEAD_STATUS_OPTIONS: EditFieldOption[] = [
-  { value: "newly_lead", label: "Newly Lead" },
+  { value: "newly_lead", label: "New Lead" },
   { value: "contacted", label: "Contacted" },
   { value: "qualified", label: "Qualified" },
   { value: "proposal_sent", label: "Proposal Sent" },
