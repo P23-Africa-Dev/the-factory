@@ -161,6 +161,59 @@ class CompanyLocationTest extends TestCase
             ->assertJsonPath('data.location.can_manage', true);
     }
 
+    public function test_agent_creator_can_delete_own_location_with_agent_endpoint(): void
+    {
+        [$company,, $agent] = $this->seedCompany('FAC-LOC013', 'Agent Delete Own Ltd');
+
+        $createResponse = $this->withToken($agent->createToken('agent-create-own-delete', ['*'])->plainTextToken)
+            ->postJson('/api/v1/agent/locations', [
+                'company_id' => $company->id,
+                'name' => 'Agent Delete Site',
+                'latitude' => 6.5600000,
+                'longitude' => 3.3300000,
+            ]);
+
+        $createResponse->assertCreated();
+        $locationId = (int) $createResponse->json('data.location.id');
+
+        $deleteResponse = $this->withToken($agent->createToken('agent-delete-own', ['*'])->plainTextToken)
+            ->deleteJson('/api/v1/agent/locations/' . $locationId, [
+                'company_id' => $company->id,
+            ]);
+
+        $deleteResponse->assertOk()
+            ->assertJsonPath('data.deleted_location_id', $locationId);
+
+        $this->assertDatabaseMissing('company_locations', [
+            'id' => $locationId,
+        ]);
+    }
+
+    public function test_agent_cannot_delete_location_created_by_someone_else(): void
+    {
+        [$company, $admin,, $agent] = $this->seedCompany('FAC-LOC014', 'Agent Delete Foreign Ltd');
+
+        $location = CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Admin Site',
+            'latitude' => 6.5700000,
+            'longitude' => 3.3400000,
+        ]);
+
+        $deleteResponse = $this->withToken($agent->createToken('agent-delete-foreign', ['*'])->plainTextToken)
+            ->deleteJson('/api/v1/agent/locations/' . $location->id, [
+                'company_id' => $company->id,
+            ]);
+
+        $deleteResponse->assertUnprocessable()
+            ->assertJsonValidationErrors(['authorization']);
+
+        $this->assertDatabaseHas('company_locations', [
+            'id' => $location->id,
+        ]);
+    }
+
     public function test_address_update_without_coordinates_geocodes_and_moves_pin(): void
     {
         [$company, $admin] = $this->seedCompany('FAC-LOC011', 'Geocode Success Ltd');
