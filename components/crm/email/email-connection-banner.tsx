@@ -252,13 +252,13 @@ export function EmailConnectionBanner({ companyId }: EmailConnectionBannerProps)
                         {status?.requires_gmail_reconnect
                             ? "Gmail permissions required"
                             : status?.requires_reauthentication
-                              ? "Google sign-in expired"
-                              : "Connect Google Workspace"}
+                                ? "Google sign-in expired"
+                                : "Connect Google Account"}
                     </p>
                     <p className="text-[11px] text-amber-800/80">
                         {status?.requires_gmail_reconnect
                             ? "Reconnect and approve Gmail permissions to send and receive CRM emails."
-                            : "Connect or reconnect your Google account to send and receive CRM emails."}
+                            : "Connect Google to sync calendar and CRM email."}
                     </p>
                     {status?.last_error_message && (
                         <p className="mt-1 text-[10px] text-amber-700 font-medium">

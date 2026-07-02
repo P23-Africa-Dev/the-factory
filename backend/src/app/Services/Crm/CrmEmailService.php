@@ -15,6 +15,7 @@ use App\Models\CrmEmailAttachment;
 use App\Models\CrmEmailMessage;
 use App\Models\CrmEmailThread;
 use App\Models\Lead;
+use App\Models\UserCalendarConnection;
 use App\Models\User;
 use App\Services\Analytics\AggregateCacheService;
 use App\Services\Company\CompanyContextService;
@@ -49,7 +50,7 @@ class CrmEmailService
         $companyId = (int) $context['company']->id;
 
         if (! empty($filters['sync'])) {
-            SyncLeadEmailsJob::dispatch($companyId, (int) $lead->id);
+            SyncLeadEmailsJob::dispatch($companyId, (int) $lead->id, (int) $user->id);
         }
 
         $perPage = max(1, min(50, (int) ($filters['per_page'] ?? 20)));
@@ -57,7 +58,7 @@ class CrmEmailService
         return CrmEmailThread::query()
             ->where('company_id', $companyId)
             ->where('lead_id', $lead->id)
-            ->with(['messages' => fn ($q) => $this->applyMessageTimelineOrder($q)])
+            ->with(['messages' => fn($q) => $this->applyMessageTimelineOrder($q)])
             ->orderByDesc('last_message_at')
             ->paginate($perPage)
             ->withQueryString();
@@ -70,7 +71,7 @@ class CrmEmailService
         $this->assertThreadBelongsToLead($thread, $resolvedCompanyId, (int) $lead->id);
 
         return $thread->load([
-            'messages' => fn ($q) => $this->applyMessageTimelineOrder(
+            'messages' => fn($q) => $this->applyMessageTimelineOrder(
                 $q->with(['attachments', 'sentBy:id,name,email']),
             ),
         ]);
@@ -83,7 +84,7 @@ class CrmEmailService
     {
         $context = $this->authorizeLeadAccess($user, $lead, $data['company_id'] ?? null);
         $companyId = (int) $context['company']->id;
-        $connection = $this->requireGmailConnection($companyId);
+        $connection = $this->requireGmailConnection($companyId, (int) $user->id);
 
         $to = $this->normalizeRecipients($data['to'] ?? []);
         $cc = $this->normalizeRecipients($data['cc'] ?? []);
@@ -188,7 +189,7 @@ class CrmEmailService
     public function sendMessageById(int $messageId, ?string $inReplyToGmailMessageId = null): void
     {
         $message = CrmEmailMessage::query()->with(['thread', 'attachments'])->findOrFail($messageId);
-        $connection = $this->requireGmailConnection((int) $message->company_id);
+        $connection = $this->requireGmailConnection((int) $message->company_id, (int) $message->sent_by_user_id);
 
         $extraHeaders = [];
         $replyToGmailMessageId = trim((string) ($inReplyToGmailMessageId ?? ''));
@@ -199,7 +200,7 @@ class CrmEmailService
         }
 
         $attachments = $message->attachments
-            ->filter(fn (CrmEmailAttachment $attachment): bool => $attachment->storage_path !== null)
+            ->filter(fn(CrmEmailAttachment $attachment): bool => $attachment->storage_path !== null)
             ->map(function (CrmEmailAttachment $attachment): array {
                 $content = Storage::disk($attachment->storage_disk)->get((string) $attachment->storage_path);
 
@@ -273,7 +274,7 @@ class CrmEmailService
         }
     }
 
-    public function syncLead(int $companyId, int $leadId): void
+    public function syncLead(int $companyId, int $leadId, ?int $userId = null): void
     {
         $lead = Lead::query()->where('company_id', $companyId)->findOrFail($leadId);
         $email = strtolower(trim((string) ($lead->email ?? '')));
@@ -282,7 +283,7 @@ class CrmEmailService
             return;
         }
 
-        $connection = $this->requireGmailConnection($companyId);
+        $connection = $this->requireGmailConnection($companyId, $userId);
         $query = sprintf('from:%s OR to:%s', $email, $email);
         $pageToken = null;
 
@@ -359,7 +360,7 @@ class CrmEmailService
         $this->assertMessageBelongsToLead($message, $resolvedCompanyId, (int) $lead->id);
 
         if (! $message->is_read && ! str_starts_with((string) $message->gmail_message_id, 'pending-')) {
-            $connection = $this->requireGmailConnection($resolvedCompanyId);
+            $connection = $this->requireGmailConnection($resolvedCompanyId, (int) $user->id);
             $this->gmailApiService->markAsRead($connection, (string) $message->gmail_message_id);
         }
 
@@ -376,7 +377,7 @@ class CrmEmailService
         $this->assertMessageBelongsToLead($message, $resolvedCompanyId, (int) $lead->id);
 
         if (! str_starts_with((string) $message->gmail_message_id, 'pending-')) {
-            $connection = $this->requireGmailConnection($resolvedCompanyId);
+            $connection = $this->requireGmailConnection($resolvedCompanyId, (int) $user->id);
             $this->gmailApiService->trashMessage($connection, (string) $message->gmail_message_id);
         }
 
@@ -449,7 +450,7 @@ class CrmEmailService
             });
         }
 
-        return $query->get()->map(fn (CrmEmailActivityLog $log): array => [
+        return $query->get()->map(fn(CrmEmailActivityLog $log): array => [
             'id' => $log->id,
             'action' => $log->action,
             'metadata' => $log->metadata,
@@ -526,7 +527,8 @@ class CrmEmailService
         if (CrmEmailMessage::query()
             ->where('company_id', $companyId)
             ->where('gmail_message_id', $gmailMessageId)
-            ->exists()) {
+            ->exists()
+        ) {
             return;
         }
 
@@ -731,8 +733,27 @@ class CrmEmailService
             ->update(['message_id' => $message->id]);
     }
 
-    private function requireGmailConnection(int $companyId): CompanyCalendarConnection
+    private function requireGmailConnection(int $companyId, ?int $userId = null): CompanyCalendarConnection|UserCalendarConnection
     {
+        if ($userId !== null && $userId > 0) {
+            $userConnection = UserCalendarConnection::query()
+                ->where('company_id', $companyId)
+                ->where('user_id', $userId)
+                ->where('status', 'active')
+                ->whereNull('disconnected_at')
+                ->first();
+
+            if ($userConnection !== null) {
+                if (! GoogleScopeHelper::connectionHasGmailScopes($userConnection)) {
+                    throw ValidationException::withMessages([
+                        'integration' => ['Gmail permissions are missing on your account. Reconnect your Google account to enable email.'],
+                    ]);
+                }
+
+                return $userConnection;
+            }
+        }
+
         $connection = CompanyCalendarConnection::query()
             ->where('company_id', $companyId)
             ->where('status', 'active')

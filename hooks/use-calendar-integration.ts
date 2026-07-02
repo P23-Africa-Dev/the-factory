@@ -2,11 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-    createCalendarConnectUrl,
-    disconnectCalendarIntegration,
-    createCalendarReconnectUrl,
-    createCalendarSwitchUrl,
-    getCalendarIntegrationStatus,
+    createUserCalendarConnectUrl,
+    disconnectUserCalendarIntegration,
+    createUserCalendarReconnectUrl,
+    createUserCalendarSwitchUrl,
+    getUserCalendarIntegrationStatus,
     type CalendarIntegrationStatus,
 } from "@/lib/api/calendar-integration";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
@@ -22,7 +22,7 @@ export function useCalendarIntegrationStatus(companyId?: number | string) {
     return useQuery({
         queryKey: CALENDAR_INTEGRATION_KEYS.status(companyId),
         queryFn: async (): Promise<CalendarIntegrationStatus> => {
-            const response = await getCalendarIntegrationStatus({ company_id: companyId }, token);
+            const response = await getUserCalendarIntegrationStatus({ company_id: companyId }, token);
             return response.data;
         },
         enabled: !!token && !!companyId,
@@ -34,7 +34,7 @@ export function useCreateCalendarConnectUrl() {
     const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
     return useMutation({
-        mutationFn: (payload: { company_id: number | string }) => createCalendarConnectUrl(payload, token),
+        mutationFn: (payload: { company_id: number | string }) => createUserCalendarConnectUrl(payload, token),
     });
 }
 
@@ -45,7 +45,7 @@ export function useDisconnectCalendarIntegration(options?: {
     const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
     return useMutation({
-        mutationFn: (payload: { company_id: number | string }) => disconnectCalendarIntegration(payload, token),
+        mutationFn: (payload: { company_id: number | string }) => disconnectUserCalendarIntegration(payload, token),
         onSuccess: (res) => {
             queryClient.invalidateQueries({ queryKey: CALENDAR_INTEGRATION_KEYS.all });
             options?.onSuccess?.(res.data.disconnected);
@@ -63,7 +63,7 @@ export function useCalendarIntegrationSwitch() {
                 throw new Error("Authentication and company context are required.");
             }
 
-            return createCalendarSwitchUrl(payload, token);
+            return createUserCalendarSwitchUrl(payload, token);
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CALENDAR_INTEGRATION_KEYS.all });
@@ -81,7 +81,7 @@ export function useCalendarIntegrationReconnect() {
                 throw new Error("Authentication and company context are required.");
             }
 
-            return createCalendarReconnectUrl(payload, token);
+            return createUserCalendarReconnectUrl(payload, token);
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CALENDAR_INTEGRATION_KEYS.all });

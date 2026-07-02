@@ -19,6 +19,7 @@ class Meeting extends Model
     protected $fillable = [
         'company_id',
         'created_by_user_id',
+        'organizer_user_id',
         'project_id',
         'task_id',
         'title',
@@ -63,6 +64,11 @@ class Meeting extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    public function organizer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'organizer_user_id');
     }
 
     public function project(): BelongsTo

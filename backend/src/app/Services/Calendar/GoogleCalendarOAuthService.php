@@ -14,7 +14,7 @@ use Illuminate\Validation\ValidationException;
 
 class GoogleCalendarOAuthService
 {
-    public function buildAuthorizationUrl(int $companyId, int $userId): array
+    public function buildAuthorizationUrl(int $companyId, int $userId, string $connectionType = 'company'): array
     {
         $clientId = trim((string) config('services.google_calendar.client_id'));
         $redirectUri = trim((string) config('services.google_calendar.redirect_uri'));
@@ -31,6 +31,7 @@ class GoogleCalendarOAuthService
         $state = encrypt([
             'company_id' => $companyId,
             'user_id' => $userId,
+            'connection_type' => $connectionType,
             'nonce' => $nonce,
             'expires_at' => $expiresAt->toIso8601String(),
         ]);
@@ -38,6 +39,7 @@ class GoogleCalendarOAuthService
         Cache::put($this->nonceCacheKey($nonce), [
             'company_id' => $companyId,
             'user_id' => $userId,
+            'connection_type' => $connectionType,
         ], $expiresAt);
 
         $query = http_build_query([
@@ -58,7 +60,7 @@ class GoogleCalendarOAuthService
     }
 
     /**
-     * @return array{company_id:int,user_id:int,nonce:string,expires_at:string}
+     * @return array{company_id:int,user_id:int,connection_type:string,nonce:string,expires_at:string}
      */
     public function consumeState(string $state): array
     {
@@ -73,10 +75,11 @@ class GoogleCalendarOAuthService
 
         $companyId = isset($payload['company_id']) ? (int) $payload['company_id'] : 0;
         $userId = isset($payload['user_id']) ? (int) $payload['user_id'] : 0;
+        $connectionType = trim((string) ($payload['connection_type'] ?? 'company'));
         $nonce = trim((string) ($payload['nonce'] ?? ''));
         $expiresAtRaw = trim((string) ($payload['expires_at'] ?? ''));
 
-        if ($companyId <= 0 || $userId <= 0 || $nonce === '' || $expiresAtRaw === '') {
+        if ($companyId <= 0 || $userId <= 0 || $connectionType === '' || $nonce === '' || $expiresAtRaw === '') {
             throw ValidationException::withMessages([
                 'integration' => ['OAuth state payload is malformed. Please retry connection.'],
             ]);
@@ -106,8 +109,9 @@ class GoogleCalendarOAuthService
 
         $cachedCompanyId = isset($cachePayload['company_id']) ? (int) $cachePayload['company_id'] : 0;
         $cachedUserId = isset($cachePayload['user_id']) ? (int) $cachePayload['user_id'] : 0;
+        $cachedConnectionType = trim((string) ($cachePayload['connection_type'] ?? 'company'));
 
-        if ($cachedCompanyId !== $companyId || $cachedUserId !== $userId) {
+        if ($cachedCompanyId !== $companyId || $cachedUserId !== $userId || $cachedConnectionType !== $connectionType) {
             throw ValidationException::withMessages([
                 'integration' => ['OAuth state does not match the original request context.'],
             ]);
@@ -116,6 +120,7 @@ class GoogleCalendarOAuthService
         return [
             'company_id' => $companyId,
             'user_id' => $userId,
+            'connection_type' => $connectionType,
             'nonce' => $nonce,
             'expires_at' => $expiresAt->toIso8601String(),
         ];

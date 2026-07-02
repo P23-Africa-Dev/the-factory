@@ -553,7 +553,7 @@ export function ScheduleMeetingModal({
         // Defensive guard: block if calendar disconnected while modal was open
         if (integration && !integration.connected) {
             toast.error(
-                "Meeting creation requires Google Calendar to be connected. Please contact your Account Administrator (Owner or Admin) to complete the Google Calendar setup."
+                "Meeting creation requires Google Calendar to be connected. Connect your Google account to continue."
             );
             return;
         }
@@ -695,19 +695,19 @@ export function ScheduleMeetingModal({
                 {/* ── Scrollable body ── */}
                 <div className="flex-1 overflow-y-auto overscroll-contain custom-scrollbar px-5 py-4 space-y-4">
                     {/* Google Calendar status banner */}
-                    {integration && !integration.connected && (
+                    {!integration?.connected && (
                         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
                             <p className="text-[12px] font-bold text-amber-900 mb-1">
                                 Google Calendar Not Connected
                             </p>
                             <p className="text-[11px] text-amber-800 leading-relaxed">
                                 {canConnectIntegration
-                                    ? "Google Calendar has not been connected for your organization. Connect it below to enable meeting scheduling and automatic invites."
-                                    : "Meeting creation is currently unavailable because your organization\u2019s Google Calendar account has not been connected yet. Please contact your Account Administrator (Owner or Admin) to complete the Google Calendar setup before creating meetings."}
+                                    ? "Google Calendar has not been connected for your account. Connect it below to enable meeting scheduling and automatic invites."
+                                    : "Meeting creation is currently unavailable because your Google Calendar account has not been connected yet."}
                             </p>
-                            {integration.last_error_message && (
+                            {integration?.last_error_message && (
                                 <p className="mt-1.5 text-[10px] text-amber-700 font-medium">
-                                    Error: {integration.last_error_message}
+                                    Error: {integration?.last_error_message}
                                 </p>
                             )}
                             {canConnectIntegration && (
@@ -717,7 +717,7 @@ export function ScheduleMeetingModal({
                                         disabled={connectUrlMutation.isPending}
                                         className="rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
                                     >
-                                        {connectUrlMutation.isPending ? "Preparing..." : "Connect Google Calendar"}
+                                        {connectUrlMutation.isPending ? "Preparing..." : "Connect Google"}
                                     </button>
 
                                     <button

@@ -224,6 +224,11 @@ class User extends Authenticatable
         return $this->hasMany(CompanyCalendarConnection::class, 'owner_user_id');
     }
 
+    public function calendarConnections(): HasMany
+    {
+        return $this->hasMany(UserCalendarConnection::class, 'user_id');
+    }
+
     public function createdMeetings(): HasMany
     {
         return $this->hasMany(Meeting::class, 'created_by_user_id');

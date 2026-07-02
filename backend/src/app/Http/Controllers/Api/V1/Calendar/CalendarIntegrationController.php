@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\V1\Calendar;
 use App\Http\Controllers\Concerns\ResolvesCompanyContextId;
 use App\Http\Controllers\Controller;
 use App\Services\Calendar\CompanyCalendarConnectionService;
+use App\Services\Calendar\UserCalendarConnectionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -16,7 +17,10 @@ class CalendarIntegrationController extends Controller
 {
     use ResolvesCompanyContextId;
 
-    public function __construct(private readonly CompanyCalendarConnectionService $connectionService) {}
+    public function __construct(
+        private readonly CompanyCalendarConnectionService $connectionService,
+        private readonly UserCalendarConnectionService $userConnectionService,
+    ) {}
 
     public function status(Request $request): JsonResponse
     {
@@ -85,33 +89,16 @@ class CalendarIntegrationController extends Controller
 
     public function callback(Request $request): JsonResponse|Response
     {
-        // API clients (tests and SDK integrations) keep the existing JSON behavior.
-        if ($request->expectsJson() || $request->wantsJson()) {
-            $error = trim((string) $request->query('error', ''));
-            if ($error !== '') {
+        $authenticated = $request->expectsJson() || $request->wantsJson();
+        $error = trim((string) $request->query('error', ''));
+
+        if ($error !== '') {
+            if ($authenticated) {
                 throw ValidationException::withMessages([
                     'integration' => ['Google returned an OAuth error: ' . $error . '. Please retry connection.'],
                 ]);
             }
 
-            $validated = $request->validate([
-                'code' => ['required', 'string'],
-                'state' => ['required', 'string'],
-            ]);
-
-            $data = $this->connectionService->completeCallback(
-                code: (string) $validated['code'],
-                state: (string) $validated['state'],
-            );
-
-            return $this->success(
-                message: 'Google Calendar integration connected successfully.',
-                data: $data,
-            );
-        }
-
-        $error = trim((string) $request->query('error', ''));
-        if ($error !== '') {
             return $this->browserCallbackResponse(
                 success: false,
                 message: 'Google returned an OAuth error: ' . $error . '. Please retry connection.',
@@ -119,17 +106,37 @@ class CalendarIntegrationController extends Controller
             );
         }
 
-        try {
-            $validated = $request->validate([
-                'code' => ['required', 'string'],
-                'state' => ['required', 'string'],
-            ]);
+        $validated = $request->validate([
+            'code' => ['required', 'string'],
+            'state' => ['required', 'string'],
+        ]);
 
-            $result = $this->connectionService->completeCallback(
-                code: (string) $validated['code'],
-                state: (string) $validated['state'],
-            );
+        $connectionType = 'company';
+        try {
+            /** @var array<string,mixed> $payload */
+            $payload = decrypt((string) $validated['state']);
+            $connectionType = trim((string) ($payload['connection_type'] ?? 'company'));
+        } catch (\Throwable) {
+            // ignore; completion service will handle invalid state.
+        }
+
+        try {
+            if ($connectionType === 'user') {
+                $data = $this->userConnectionService->completeCallback(
+                    code: (string) $validated['code'],
+                    state: (string) $validated['state'],
+                );
+            } else {
+                $data = $this->connectionService->completeCallback(
+                    code: (string) $validated['code'],
+                    state: (string) $validated['state'],
+                );
+            }
         } catch (ValidationException $exception) {
+            if ($authenticated) {
+                throw $exception;
+            }
+
             $errors = $exception->errors();
             $message = trim((string) ($errors['integration'][0] ?? $exception->getMessage()));
 
@@ -140,7 +147,14 @@ class CalendarIntegrationController extends Controller
             return $this->browserCallbackResponse(success: false, message: $message, status: 422);
         }
 
-        $gmailEnabled = (bool) ($result['gmail_enabled'] ?? false);
+        $gmailEnabled = (bool) ($data['gmail_enabled'] ?? false);
+
+        if ($authenticated) {
+            return $this->success(
+                message: 'Google Calendar integration connected successfully.',
+                data: $data,
+            );
+        }
 
         if ($gmailEnabled) {
             return $this->browserCallbackResponse(
@@ -153,7 +167,7 @@ class CalendarIntegrationController extends Controller
 
         return $this->browserCallbackResponse(
             success: false,
-            message: 'Google connected for calendar only. Gmail permissions were not granted — reconnect after your admin updates Google scopes, then approve all Gmail permissions.',
+            message: 'Google connected for calendar only. Gmail permissions were not granted. Reconnect and approve all Gmail permissions to enable email.',
             status: 200,
             extra: ['gmail_enabled' => false, 'requires_gmail_reconnect' => true],
         );

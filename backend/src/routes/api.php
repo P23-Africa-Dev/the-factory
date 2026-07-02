@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\V1\Billing\BillingWebhookController;
 use App\Http\Controllers\Api\V1\Billing\PaymentLinkController;
 use App\Http\Controllers\Api\V1\Calendar\CalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Calendar\MeetingController;
+use App\Http\Controllers\Api\V1\Calendar\UserCalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Company\CompanyLocationController;
 use App\Http\Controllers\Api\V1\CountryController;
 use App\Http\Controllers\Api\V1\CurrencyController;
@@ -278,6 +279,22 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
             ->middleware('throttle:20,1')
             ->name('reconnect-url');
         Route::delete('/disconnect', [CalendarIntegrationController::class, 'disconnect'])
+            ->middleware('throttle:20,1')
+            ->name('disconnect');
+    });
+
+    Route::prefix('calendar/user-integration')->name('calendar.user_integration.')->group(function (): void {
+        Route::get('/status', [UserCalendarIntegrationController::class, 'status'])->name('status');
+        Route::post('/connect-url', [UserCalendarIntegrationController::class, 'connectUrl'])
+            ->middleware('throttle:20,1')
+            ->name('connect-url');
+        Route::post('/switch-url', [UserCalendarIntegrationController::class, 'switchUrl'])
+            ->middleware('throttle:20,1')
+            ->name('switch-url');
+        Route::post('/reconnect-url', [UserCalendarIntegrationController::class, 'reconnectUrl'])
+            ->middleware('throttle:20,1')
+            ->name('reconnect-url');
+        Route::delete('/disconnect', [UserCalendarIntegrationController::class, 'disconnect'])
             ->middleware('throttle:20,1')
             ->name('disconnect');
     });

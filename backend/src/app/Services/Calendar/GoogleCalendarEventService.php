@@ -6,6 +6,7 @@ namespace App\Services\Calendar;
 
 use App\Models\CompanyCalendarConnection;
 use App\Models\Meeting;
+use App\Models\UserCalendarConnection;
 use App\Services\Google\GoogleTokenService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
@@ -21,7 +22,7 @@ class GoogleCalendarEventService
     /**
      * @return array{event_id:string,calendar_id:?string,meet_url:?string,html_link:?string,external_updated_at:?string}
      */
-    public function upsertMeeting(Meeting $meeting, CompanyCalendarConnection $connection): array
+    public function upsertMeeting(Meeting $meeting, CompanyCalendarConnection|UserCalendarConnection $connection): array
     {
         $accessToken = $this->tokenService->resolveAccessToken($connection);
         $eventId = trim((string) ($meeting->google_event_id ?? ''));
@@ -98,7 +99,7 @@ class GoogleCalendarEventService
         ];
     }
 
-    public function cancelMeeting(Meeting $meeting, CompanyCalendarConnection $connection): void
+    public function cancelMeeting(Meeting $meeting, CompanyCalendarConnection|UserCalendarConnection $connection): void
     {
         $eventId = trim((string) ($meeting->google_event_id ?? ''));
 
