@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Calendar;
 
+use App\Jobs\SendMeetingLifecycleEmailJob;
 use App\Models\Company;
 use App\Models\CompanyCalendarConnection;
 use App\Models\Lead;
@@ -13,11 +14,20 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class MeetingManagementTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Lifecycle emails are validated in dedicated email tests; keep meeting tests network-isolated.
+        Queue::fake([SendMeetingLifecycleEmailJob::class]);
+    }
 
     public function test_owner_cannot_create_meeting_when_calendar_not_connected(): void
     {
@@ -41,7 +51,7 @@ class MeetingManagementTest extends TestCase
             ->assertJsonPath('success', false)
             ->assertJsonPath(
                 'errors.google_calendar.0',
-                'Google Calendar has not been configured for this organization. Please contact your Account Administrator (Owner or Admin) to complete the Google Calendar setup before creating meetings.',
+                'Google Calendar has not been configured for your account. Please connect your Google Calendar before creating meetings.',
             );
     }
 
@@ -455,7 +465,7 @@ class MeetingManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($owner->createToken('owner-token', ['*'])->plainTextToken)
-            ->deleteJson('/api/v1/meetings/' . $meeting->id, [
+            ->postJson('/api/v1/meetings/' . $meeting->id . '/cancel', [
                 'company_id' => $company->company_id,
             ]);
 
@@ -482,7 +492,7 @@ class MeetingManagementTest extends TestCase
         $response->assertUnprocessable()
             ->assertJsonPath(
                 'errors.google_calendar.0',
-                'Google Calendar has not been configured for this organization. Please contact your Account Administrator (Owner or Admin) to complete the Google Calendar setup before creating meetings.',
+                'Google Calendar has not been configured for your account. Please connect your Google Calendar before creating meetings.',
             );
     }
 
@@ -517,7 +527,7 @@ class MeetingManagementTest extends TestCase
 
         Meeting::create([
             'company_id' => $company->id,
-            'created_by_user_id' => $owner->id,
+            'created_by_user_id' => $agent->id,
             'title' => 'Visible Agent Meeting',
             'timezone' => 'Africa/Lagos',
             'start_at' => now()->addDay(),

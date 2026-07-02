@@ -226,8 +226,26 @@ function EnterpriseSetupContent() {
           avatar: meRes.data.avatar,
           active_company: meRes.data.active_company,
         });
+
+        const hasActiveSubscription =
+          meRes.data.billing?.has_active_subscription ??
+          meRes.data.active_company?.has_active_subscription ??
+          false;
+        const billingEnforced =
+          meRes.data.billing?.billing_enforced ??
+          meRes.data.active_company?.billing_enforced ??
+          true;
+
+        try {
+          window.sessionStorage.setItem("billing.enforced", billingEnforced ? "1" : "0");
+        } catch {
+          // sessionStorage may be unavailable; silently ignore.
+        }
+
+        router.push(!billingEnforced || hasActiveSubscription ? "/dashboard" : "/subscribe");
+        return;
       } catch {
-        // /me failure is non-fatal — session is saved, dashboard will re-fetch
+        // /me failure is non-fatal — session is saved, continue to dashboard
       }
 
       router.push("/dashboard");

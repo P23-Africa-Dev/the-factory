@@ -5,6 +5,7 @@ namespace App\Services\Onboarding;
 use App\Enums\CompanyUserRole;
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
+use App\Enums\SubscriptionStatus;
 use App\Enums\WorkspaceMemberRole;
 use App\Models\Company;
 use App\Models\User;
@@ -55,6 +56,7 @@ class WorkspaceService
                 'use_case' => (string) $data['purpose'],
                 'status' => 'active',
                 'activated_at' => now(),
+                'subscription_status' => SubscriptionStatus::PENDING_PAYMENT->value,
             ]);
 
             $createdCompanyId = (int) $company->id;
@@ -79,7 +81,7 @@ class WorkspaceService
             'message' => 'Your workspace onboarding has been completed successfully.',
             'reference_type' => Workspace::class,
             'reference_id' => (int) $workspace->id,
-            'action_url' => '/dashboard',
+            'action_url' => '/subscribe',
             'action_route' => 'dashboard.overview',
             'priority' => NotificationPriority::HIGH->value,
             'created_by_user_id' => (int) $user->id,

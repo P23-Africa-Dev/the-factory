@@ -18,6 +18,7 @@ import { useCrmLabels } from "@/hooks/use-crm";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import type { SavedLocation } from "@/lib/api/saved-locations";
+import { ApiRequestError } from "@/lib/api/onboarding";
 import {
   createSavedLocationMarkerElement,
   createSavedLocationMarkerGoogleIcon,
@@ -70,10 +71,16 @@ export type SavedLocationsLayerProps = {
 };
 
 type PendingPin = {
+  sessionId: string;
   lng: number;
   lat: number;
   address: string;
   addressLoading: boolean;
+};
+
+type ManualMoveRequirement = {
+  locationId: number;
+  address: string;
 };
 
 export function SavedLocationsLayer({
@@ -93,7 +100,12 @@ export function SavedLocationsLayer({
   const { data: locations = [] } = useSavedLocations();
   const permissions = useSavedLocationPermissions();
   const createMutation = useCreateSavedLocation();
-  const updateMutation = useUpdateSavedLocation();
+  const [manualMoveRequirement, setManualMoveRequirement] = useState<ManualMoveRequirement | null>(null);
+  const updateMutation = useUpdateSavedLocation({
+    onError: () => {
+      // Error handling is contextual in this component (edit fallback vs move errors).
+    },
+  });
   const deleteMutation = useDeleteSavedLocation();
 
   const [selected, setSelected] = useState<SavedLocation | null>(null);
@@ -120,6 +132,11 @@ export function SavedLocationsLayer({
 
   const commitMove = useCallback(
     async (location: SavedLocation, lng: number, lat: number) => {
+      const forcedManualAddress =
+        manualMoveRequirement && manualMoveRequirement.locationId === location.id
+          ? manualMoveRequirement.address
+          : null;
+
       const address = await reverseGeocodeWithMapbox(lng, lat);
       updateMutation.mutate(
         {
@@ -127,19 +144,33 @@ export function SavedLocationsLayer({
           payload: {
             latitude: lat,
             longitude: lng,
-            ...(address ? { address } : {}),
+            ...(forcedManualAddress
+              ? { address: forcedManualAddress }
+              : (address ? { address } : {})),
           },
         },
         {
           onSuccess: (res) => {
-            toast.success("Location moved.");
+            if (forcedManualAddress) {
+              toast.success(
+                res.data.location.linked_to_crm
+                  ? "Location updated with manual pin placement and synced to CRM."
+                  : "Location updated with manual pin placement."
+              );
+              setManualMoveRequirement(null);
+            } else {
+              toast.success("Location moved.");
+            }
             setSelected(res.data.location);
             setMoveMode(false);
+          },
+          onError: (err) => {
+            toast.error(err instanceof Error ? err.message : "Failed to move location.");
           },
         }
       );
     },
-    [updateMutation]
+    [manualMoveRequirement, updateMutation]
   );
 
   const clearMapboxMarkers = useCallback(() => {
@@ -156,7 +187,13 @@ export function SavedLocationsLayer({
   const openPinAt = useCallback(async (lng: number, lat: number) => {
     if (!permissions.canCreate) return;
     setSelected(null);
-    setPendingPin({ lng, lat, address: "", addressLoading: true });
+    setPendingPin({
+      sessionId: crypto.randomUUID(),
+      lng,
+      lat,
+      address: "",
+      addressLoading: true,
+    });
     const address = await reverseGeocodeWithMapbox(lng, lat);
     setPendingPin((prev) =>
       prev && prev.lng === lng && prev.lat === lat
@@ -164,6 +201,25 @@ export function SavedLocationsLayer({
         : prev
     );
   }, [permissions.canCreate]);
+
+  const handlePendingCoordinatesChange = useCallback((lat: number, lng: number) => {
+    setPendingPin((prev) => (prev ? { ...prev, lat, lng, addressLoading: false } : prev));
+
+    if (provider === "mapbox") {
+      const map = getMapboxMap?.();
+      map?.flyTo({
+        center: [lng, lat],
+        zoom: Math.max(map.getZoom(), 14),
+        speed: 1.2,
+      });
+      mbPendingMarkerRef.current?.setLngLat([lng, lat]);
+    } else {
+      const ctx = getGoogleMap?.();
+      ctx?.map.panTo({ lat, lng });
+      ctx?.map.setZoom(Math.max(ctx.map.getZoom(), 14));
+      googlePendingMarkerRef.current?.setPosition({ lat, lng });
+    }
+  }, [provider, getMapboxMap, getGoogleMap]);
 
   // ── Mapbox: render saved-location markers with supercluster ───────────────────
   const renderMapboxClusters = useCallback(() => {
@@ -566,6 +622,8 @@ export function SavedLocationsLayer({
           address: payload.address || null,
           contact_number: payload.contact_number || null,
           email: payload.email || null,
+          latitude: payload.latitude,
+          longitude: payload.longitude,
         },
       },
       {
@@ -575,8 +633,34 @@ export function SavedLocationsLayer({
               ? "Location and linked CRM lead updated."
               : "Location updated."
           );
+          setManualMoveRequirement(null);
           setEditing(null);
           setSelected(res.data.location);
+        },
+        onError: (err) => {
+          const apiErr = err instanceof ApiRequestError ? err : null;
+          const geocodeMessage = apiErr?.errors?.address?.[0] ?? "";
+          const requiresManualMove = geocodeMessage.toLowerCase().includes("unable to geocode this address");
+
+          if (requiresManualMove && editing) {
+            const editedAddress = payload.address.trim();
+            if (!editedAddress) {
+              toast.error("Address cannot be empty.");
+              return;
+            }
+
+            setManualMoveRequirement({
+              locationId: editing.id,
+              address: editedAddress,
+            });
+            setEditing(null);
+            setSelected({ ...editing, address: editedAddress });
+            setMoveMode(true);
+            toast.warning("Address could not be pinned automatically. Drag the pin to the correct spot to finish saving.");
+            return;
+          }
+
+          toast.error(err instanceof Error ? err.message : "Failed to update location.");
         },
       }
     );
@@ -617,11 +701,10 @@ export function SavedLocationsLayer({
           </button>
           <button
             onClick={() => onPinModeChange(!pinMode)}
-            className={`px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2 text-white ${
-              pinMode
-                ? "bg-gradient-to-r from-[#0A7E8C] to-[#094B5C]"
-                : "bg-gradient-to-r from-[#D946EF] to-[#9333EA] hover:from-[#C026D3] hover:to-[#7E22CE]"
-            }`}
+            className={`px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2 text-white ${pinMode
+              ? "bg-gradient-to-r from-[#0A7E8C] to-[#094B5C]"
+              : "bg-gradient-to-r from-[#D946EF] to-[#9333EA] hover:from-[#C026D3] hover:to-[#7E22CE]"
+              }`}
           >
             {pinMode ? "Cancel Pin" : "Location Pinning"}
           </button>
@@ -640,28 +723,36 @@ export function SavedLocationsLayer({
           onClose={() => {
             setSelected(null);
             setMoveMode(false);
+            setManualMoveRequirement(null);
           }}
           moveMode={moveMode}
+          moveHint={manualMoveRequirement
+            ? "Address could not be pinned automatically. Drag this pin to the exact location, then release to finish saving."
+            : null}
           footer={
-            (permissions.canEdit || permissions.canDelete) && selected.can_manage && !readOnly ? (
+            (((permissions.canEdit && selected.can_manage) ||
+              (permissions.canDelete && selected.company_id != null)) &&
+              !readOnly) ? (
               <div className="flex items-center gap-2 px-5 py-3">
-                {permissions.canEdit && (
+                {permissions.canEdit && selected.can_manage && (
                   <>
                     <button
+                      disabled={!!manualMoveRequirement}
                       onClick={() => setEditing(selected)}
-                      className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-slate-200"
+                      className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Pencil size={13} /> Edit
                     </button>
                     <button
+                      disabled={!!manualMoveRequirement && moveMode}
                       onClick={() => setMoveMode((v) => !v)}
-                      className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold ${moveMode ? "bg-cyan-500 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                      className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold ${moveMode ? "bg-cyan-500 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"} disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
                       <Move size={13} /> {moveMode ? "Moving…" : "Move"}
                     </button>
                   </>
                 )}
-                {permissions.canDelete && (
+                {permissions.canDelete && selected.company_id != null && (
                   <button
                     onClick={() => setConfirmDelete(selected)}
                     className="ml-auto flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-600 hover:bg-red-100"
@@ -678,7 +769,7 @@ export function SavedLocationsLayer({
       {/* Create modal */}
       {pendingPin && (
         <SaveLocationModal
-          key={`create-${pendingPin.lng.toFixed(6)}-${pendingPin.lat.toFixed(6)}`}
+          key={`create-${pendingPin.sessionId}`}
           open
           mode="create"
           latitude={pendingPin.lat}
@@ -688,6 +779,7 @@ export function SavedLocationsLayer({
           busy={createMutation.isPending}
           crmLabels={crmLabels}
           onSubmit={handleCreateSubmit}
+          onCoordinatesChange={handlePendingCoordinatesChange}
           onClose={() => setPendingPin(null)}
         />
       )}

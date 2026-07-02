@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Google;
 
 use App\Models\CompanyCalendarConnection;
+use App\Models\UserCalendarConnection;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
@@ -27,7 +28,7 @@ class GmailApiService
      * @return array{id:string,threadId:string}
      */
     public function sendMessage(
-        CompanyCalendarConnection $connection,
+        CompanyCalendarConnection|UserCalendarConnection $connection,
         array $to,
         array $cc,
         array $bcc,
@@ -77,7 +78,7 @@ class GmailApiService
      * @return array{messages:array<int,array<string,mixed>>,nextPageToken:?string}
      */
     public function listMessagesForQuery(
-        CompanyCalendarConnection $connection,
+        CompanyCalendarConnection|UserCalendarConnection $connection,
         string $query,
         ?string $pageToken = null,
         int $maxResults = 25,
@@ -109,7 +110,7 @@ class GmailApiService
     /**
      * @return array<string,mixed>
      */
-    public function getMessage(CompanyCalendarConnection $connection, string $messageId, string $format = 'full'): array
+    public function getMessage(CompanyCalendarConnection|UserCalendarConnection $connection, string $messageId, string $format = 'full'): array
     {
         $response = $this->request(
             $connection,
@@ -124,7 +125,7 @@ class GmailApiService
     /**
      * @return array<string,mixed>
      */
-    public function getThread(CompanyCalendarConnection $connection, string $threadId): array
+    public function getThread(CompanyCalendarConnection|UserCalendarConnection $connection, string $threadId): array
     {
         $response = $this->request(
             $connection,
@@ -136,7 +137,7 @@ class GmailApiService
         return $response->json();
     }
 
-    public function getAttachment(CompanyCalendarConnection $connection, string $messageId, string $attachmentId): string
+    public function getAttachment(CompanyCalendarConnection|UserCalendarConnection $connection, string $messageId, string $attachmentId): string
     {
         $response = $this->request(
             $connection,
@@ -151,7 +152,7 @@ class GmailApiService
         return base64_decode(strtr($encoded, '-_', '+/')) ?: '';
     }
 
-    public function markAsRead(CompanyCalendarConnection $connection, string $messageId): void
+    public function markAsRead(CompanyCalendarConnection|UserCalendarConnection $connection, string $messageId): void
     {
         $this->request(
             $connection,
@@ -163,7 +164,7 @@ class GmailApiService
         );
     }
 
-    public function trashMessage(CompanyCalendarConnection $connection, string $messageId): void
+    public function trashMessage(CompanyCalendarConnection|UserCalendarConnection $connection, string $messageId): void
     {
         $this->request(
             $connection,
@@ -175,7 +176,7 @@ class GmailApiService
     /**
      * @return array{history:array<int,array<string,mixed>>,historyId:?string}
      */
-    public function listHistory(CompanyCalendarConnection $connection, string $startHistoryId): array
+    public function listHistory(CompanyCalendarConnection|UserCalendarConnection $connection, string $startHistoryId): array
     {
         $response = $this->request(
             $connection,
@@ -195,7 +196,7 @@ class GmailApiService
         ];
     }
 
-    public function getProfile(CompanyCalendarConnection $connection): array
+    public function getProfile(CompanyCalendarConnection|UserCalendarConnection $connection): array
     {
         $response = $this->request($connection, 'GET', 'https://www.googleapis.com/gmail/v1/users/me/profile');
 
@@ -207,7 +208,7 @@ class GmailApiService
      * @param  array<string,mixed>|null  $json
      */
     private function request(
-        CompanyCalendarConnection $connection,
+        CompanyCalendarConnection|UserCalendarConnection $connection,
         string $method,
         string $url,
         ?array $json = null,

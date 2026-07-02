@@ -10,6 +10,7 @@ export type SavedLocationInfoCardProps = {
   location: SavedLocation;
   onClose: () => void;
   moveMode?: boolean;
+  moveHint?: string | null;
   footer?: ReactNode;
 };
 
@@ -17,6 +18,7 @@ export function SavedLocationInfoCard({
   location,
   onClose,
   moveMode = false,
+  moveHint = null,
   footer,
 }: SavedLocationInfoCardProps) {
   const typeOption = getSavedLocationType(location.type);
@@ -102,7 +104,7 @@ export function SavedLocationInfoCard({
 
         {moveMode && (
           <p className="text-[11px] font-semibold text-cyan-600">
-            Drag the highlighted pin to move, then release to save.
+            {moveHint ?? "Drag the highlighted pin to move, then release to save."}
           </p>
         )}
       </div>

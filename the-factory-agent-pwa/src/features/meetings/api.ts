@@ -56,7 +56,7 @@ export const meetingsApi = {
       const data = unwrapData(response.data) as Record<string, unknown>;
       const result = meetingListResponseSchema.parse(data);
       if (companyId) {
-        void putCachedMeetingList(companyId, pageKey, result).catch(() => {});
+        void putCachedMeetingList(companyId, pageKey, result).catch(() => { });
       }
       setShowingCachedData(false);
       return result;
@@ -89,7 +89,7 @@ export const meetingsApi = {
       const data = unwrapData(response.data) as Record<string, unknown>;
       const result = meetingListResponseSchema.parse(data);
       if (companyId) {
-        void putCachedMeetingList(companyId, pageKey, result).catch(() => {});
+        void putCachedMeetingList(companyId, pageKey, result).catch(() => { });
       }
       setShowingCachedData(false);
       return result;
@@ -123,7 +123,7 @@ export const meetingsApi = {
       });
       const meeting = meetingItemSchema.parse(unwrapMeeting(response.data));
       if (companyId) {
-        void putCachedMeetingDetail(companyId, meeting).catch(() => {});
+        void putCachedMeetingDetail(companyId, meeting).catch(() => { });
       }
       setShowingCachedData(false);
       return meeting;
@@ -192,7 +192,7 @@ export const meetingsApi = {
 
   calendarStatus: async (): Promise<CalendarStatus> => {
     const companyId = getActiveCompanyId();
-    const response = await client.get('/calendar/integration/status', {
+    const response = await client.get('/calendar/user-integration/status', {
       params: { company_id: companyId ?? undefined },
     });
     const data = unwrapData(response.data) as Record<string, unknown>;

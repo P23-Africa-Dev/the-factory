@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Admin\Billing\AdminPaymentLinkController;
+use App\Support\Billing\BillingPlanCatalog;
 use App\Http\Requests\Admin\SuspendUserRequest;
 use App\Http\Requests\Admin\UpdateUserRoleRequest;
 use App\Http\Requests\Admin\UpdateUserStatusRequest;
@@ -89,6 +91,8 @@ class UserManagementController extends Controller
             'company'      => $company,
             'workspace'    => $workspace,
             'accountOwner' => $accountOwner,
+            'billingPlans' => BillingPlanCatalog::all(),
+            'billingSummary' => $company ? AdminPaymentLinkController::billingSummary($company) : null,
         ]);
     }
 

@@ -15,8 +15,15 @@ use App\Http\Controllers\Api\V1\Auth\ResendOtpController;
 use App\Http\Controllers\Api\V1\Auth\ResetPasswordController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
+use App\Http\Controllers\Api\V1\Billing\BillingCheckoutController;
+use App\Http\Controllers\Api\V1\Billing\BillingPlansController;
+use App\Http\Controllers\Api\V1\Billing\BillingPortalController;
+use App\Http\Controllers\Api\V1\Billing\BillingStatusController;
+use App\Http\Controllers\Api\V1\Billing\BillingWebhookController;
+use App\Http\Controllers\Api\V1\Billing\PaymentLinkController;
 use App\Http\Controllers\Api\V1\Calendar\CalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Calendar\MeetingController;
+use App\Http\Controllers\Api\V1\Calendar\UserCalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Company\CompanyLocationController;
 use App\Http\Controllers\Api\V1\CountryController;
 use App\Http\Controllers\Api\V1\CurrencyController;
@@ -73,6 +80,18 @@ Route::get('/map/provider', MapProviderController::class)
 Route::get('/calendar/integration/callback', [CalendarIntegrationController::class, 'callback'])
     ->middleware('throttle:30,1')
     ->name('calendar.integration.callback');
+
+Route::post('/billing/webhook', [BillingWebhookController::class, 'handleWebhook'])
+    ->name('billing.webhook');
+
+Route::prefix('billing/payment-link')->name('billing.payment-link.')->group(function (): void {
+    Route::get('/{token}', [PaymentLinkController::class, 'show'])
+        ->middleware('throttle:30,1')
+        ->name('show');
+    Route::post('/{token}/checkout', [PaymentLinkController::class, 'checkout'])
+        ->middleware('throttle:10,1')
+        ->name('checkout');
+});
 
 Route::prefix('auth')->name('auth.')->group(function (): void {
     Route::post('/register', RegisterController::class)
@@ -150,8 +169,15 @@ Route::prefix('internal')->name('internal.')->group(function (): void {
 });
 
 // Authenticated
-Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
+Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->group(function (): void {
     Route::post('/auth/logout', LogoutController::class)->name('auth.logout');
+
+    Route::prefix('billing')->name('billing.')->group(function (): void {
+        Route::get('/status', BillingStatusController::class)->name('status');
+        Route::get('/plans', BillingPlansController::class)->name('plans');
+        Route::post('/checkout', BillingCheckoutController::class)->name('checkout');
+        Route::post('/portal', BillingPortalController::class)->name('portal');
+    });
 
     Route::prefix('user')->name('user.')->group(function (): void {
         Route::get('/me', MeController::class)->name('me');
@@ -253,6 +279,22 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
             ->middleware('throttle:20,1')
             ->name('reconnect-url');
         Route::delete('/disconnect', [CalendarIntegrationController::class, 'disconnect'])
+            ->middleware('throttle:20,1')
+            ->name('disconnect');
+    });
+
+    Route::prefix('calendar/user-integration')->name('calendar.user_integration.')->group(function (): void {
+        Route::get('/status', [UserCalendarIntegrationController::class, 'status'])->name('status');
+        Route::post('/connect-url', [UserCalendarIntegrationController::class, 'connectUrl'])
+            ->middleware('throttle:20,1')
+            ->name('connect-url');
+        Route::post('/switch-url', [UserCalendarIntegrationController::class, 'switchUrl'])
+            ->middleware('throttle:20,1')
+            ->name('switch-url');
+        Route::post('/reconnect-url', [UserCalendarIntegrationController::class, 'reconnectUrl'])
+            ->middleware('throttle:20,1')
+            ->name('reconnect-url');
+        Route::delete('/disconnect', [UserCalendarIntegrationController::class, 'disconnect'])
             ->middleware('throttle:20,1')
             ->name('disconnect');
     });
@@ -562,6 +604,9 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function (): void {
                     ->middleware('throttle:30,1')
                     ->name('store');
                 Route::get('/{location}', [CompanyLocationController::class, 'show'])->name('show');
+                Route::patch('/{location}', [CompanyLocationController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('update');
             });
 
             Route::prefix('attendance')->name('attendance.')->group(function (): void {

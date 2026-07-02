@@ -2,9 +2,11 @@
 
 namespace App\Http\Requests\Enterprise;
 
+use App\Enums\BillingInterval;
 use App\Enums\TeamSizeEnum;
 use App\Enums\UserTypeEnum;
 use App\Enums\WorkspacePurposeEnum;
+use App\Support\Billing\BillingPlanCatalog;
 use App\Support\CountryCatalog;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -42,6 +44,8 @@ class ActivateDemoRequest extends FormRequest
             'purpose' => ['nullable', 'string', Rule::in(WorkspacePurposeEnum::values())],
             'user_type' => ['nullable', 'string', Rule::in(UserTypeEnum::values())],
             'admin_notes' => ['nullable', 'string', 'max:2000'],
+            'assigned_plan_key' => ['nullable', 'string', Rule::in(BillingPlanCatalog::keys())],
+            'assigned_billing_interval' => ['nullable', 'string', Rule::in(BillingInterval::values())],
         ];
     }
 }

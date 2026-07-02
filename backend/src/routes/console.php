@@ -51,3 +51,5 @@ Schedule::command('ai:health-check')->everyTenMinutes();
 
 // Incremental Gmail sync for CRM email conversations.
 Schedule::command('crm:sync-gmail')->everyTenMinutes();
+
+Schedule::command('billing:process-subscriptions')->dailyAt('01:00');

@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Google;
 
 use App\Models\CompanyCalendarConnection;
+use App\Models\UserCalendarConnection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 
 class GoogleTokenService
 {
-    public function resolveAccessToken(CompanyCalendarConnection $connection): string
+    public function resolveAccessToken(CompanyCalendarConnection|UserCalendarConnection $connection): string
     {
         $expiresAt = $connection->token_expires_at;
 
@@ -21,7 +22,7 @@ class GoogleTokenService
         return $this->refreshAccessToken($connection);
     }
 
-    public function refreshAccessToken(CompanyCalendarConnection $connection): string
+    public function refreshAccessToken(CompanyCalendarConnection|UserCalendarConnection $connection): string
     {
         $clientId = trim((string) config('services.google_calendar.client_id'));
         $clientSecret = trim((string) config('services.google_calendar.client_secret'));

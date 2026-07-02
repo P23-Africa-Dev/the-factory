@@ -7,7 +7,6 @@ namespace App\Services\Calendar;
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
 use App\Jobs\SendMeetingLifecycleEmailJob;
-use App\Models\CompanyCalendarConnection;
 use App\Models\Lead;
 use App\Models\Meeting;
 use App\Models\MeetingAttendee;
@@ -27,6 +26,7 @@ class MeetingService
 {
     public function __construct(
         private readonly CompanyContextService $companyContextService,
+        private readonly CalendarConnectionResolver $connectionResolver,
         private readonly MeetingSyncService $meetingSyncService,
         private readonly MeetingReminderService $meetingReminderService,
         private readonly NotificationService $notificationService,
@@ -76,14 +76,12 @@ class MeetingService
         $companyId = (int) $context['company']->id;
         $this->ensureMeetingAccessRole((string) $context['role']);
 
-        $connection = $this->activeConnection($companyId);
+        $connection = $this->connectionResolver->resolveForUser($user, $companyId);
 
-        // Block meeting creation until an admin has connected Google Calendar.
         if ($connection === null) {
             throw ValidationException::withMessages([
                 'google_calendar' => [
-                    'Google Calendar has not been configured for this organization. '
-                        . 'Please contact your Account Administrator (Owner or Admin) to complete the Google Calendar setup before creating meetings.',
+                    'Google Calendar has not been configured for your account. Please connect your Google Calendar before creating meetings.',
                 ],
             ]);
         }
@@ -94,6 +92,7 @@ class MeetingService
             $meeting = Meeting::create([
                 'company_id' => $companyId,
                 'created_by_user_id' => $user->id,
+                'organizer_user_id' => $user->id,
                 'project_id' => $data['project_id'] ?? null,
                 'task_id' => $data['task_id'] ?? null,
                 'title' => $data['title'],
@@ -170,7 +169,7 @@ class MeetingService
         $this->assertEditableByActor($user, $meeting, (string) $context['role']);
 
         $this->assertMeetingBelongsToCompany($meeting, $companyId);
-        $connection = $this->activeConnection($companyId);
+        $connection = $this->connectionResolver->resolveForMeeting($meeting);
         $hasActiveIntegration = $connection !== null;
 
         $role = (string) $context['role'];
@@ -254,7 +253,7 @@ class MeetingService
             ],
             'warnings' => $hasActiveIntegration
                 ? []
-                : ['Owner must connect Google Calendar to enable sync.'],
+                : ['Connect your Google Calendar to enable sync.'],
         ];
     }
 
@@ -265,7 +264,7 @@ class MeetingService
         $this->assertCanManageMeeting($user, $meeting, (string) $context['role']);
 
         $this->assertMeetingBelongsToCompany($meeting, $resolvedCompanyId);
-        $connection = $this->activeConnection($resolvedCompanyId);
+        $connection = $this->connectionResolver->resolveForMeeting($meeting);
         $hasActiveIntegration = $connection !== null;
 
         $meeting->update([
@@ -293,7 +292,7 @@ class MeetingService
             ],
             'warnings' => $hasActiveIntegration
                 ? []
-                : ['Owner must connect Google Calendar to enable sync.'],
+                : ['Connect your Google Calendar to enable sync.'],
         ];
     }
 
@@ -304,7 +303,7 @@ class MeetingService
         $this->assertCanManageMeeting($user, $meeting, (string) $context['role']);
 
         $this->assertMeetingBelongsToCompany($meeting, $resolvedCompanyId);
-        $connection = $this->activeConnection($resolvedCompanyId);
+        $connection = $this->connectionResolver->resolveForMeeting($meeting);
         $hasActiveIntegration = $connection !== null;
 
         $meeting->update([
@@ -325,7 +324,7 @@ class MeetingService
             ],
             'warnings' => $hasActiveIntegration
                 ? []
-                : ['Owner must connect Google Calendar to enable sync.'],
+                : ['Connect your Google Calendar to enable sync.'],
         ];
     }
 
@@ -338,7 +337,7 @@ class MeetingService
         $this->assertMeetingBelongsToCompany($meeting, $resolvedCompanyId);
         $this->assertCanManageMeeting($user, $meeting, $role);
 
-        $connection = $this->activeConnection($resolvedCompanyId);
+        $connection = $this->connectionResolver->resolveForMeeting($meeting);
         if ($connection !== null) {
             $this->meetingSyncService->cancelMeeting((int) $meeting->id);
         }
@@ -497,15 +496,6 @@ class MeetingService
         throw ValidationException::withMessages([
             'authorization' => ['Meeting creators can only edit meetings before the start time.'],
         ]);
-    }
-
-    private function activeConnection(int $companyId): ?CompanyCalendarConnection
-    {
-        return CompanyCalendarConnection::query()
-            ->where('company_id', $companyId)
-            ->where('status', 'active')
-            ->whereNull('disconnected_at')
-            ->first();
     }
 
     /**

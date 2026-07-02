@@ -38,7 +38,7 @@ class CompanyLocationController extends Controller
         return $this->success(
             message: 'Locations fetched successfully.',
             data: [
-                'items' => $this->locationCollection($locations->items(), $viewer),
+                'items' => $this->locationCollection($locations->items(), $viewer, (int) $request->user()->id),
                 'pagination' => [
                     'next_page_url' => $locations->nextPageUrl(),
                     'prev_page_url' => $locations->previousPageUrl(),
@@ -63,7 +63,7 @@ class CompanyLocationController extends Controller
 
         return $this->success(
             message: 'Location created successfully.',
-            data: ['location' => $this->locationResource($location, $viewer)],
+            data: ['location' => $this->locationResource($location, $viewer, (int) $request->user()->id)],
             status: 201,
         );
     }
@@ -83,7 +83,7 @@ class CompanyLocationController extends Controller
 
         return $this->success(
             message: 'Location fetched successfully.',
-            data: ['location' => $this->locationResource($location, $viewer)],
+            data: ['location' => $this->locationResource($location, $viewer, (int) $request->user()->id)],
         );
     }
 
@@ -99,7 +99,7 @@ class CompanyLocationController extends Controller
 
         return $this->success(
             message: 'Location updated successfully.',
-            data: ['location' => $this->locationResource($location, $viewer)],
+            data: ['location' => $this->locationResource($location, $viewer, (int) $request->user()->id)],
         );
     }
 
@@ -120,10 +120,10 @@ class CompanyLocationController extends Controller
     /**
      * @param  array{company_id: int, role: string}  $viewer
      */
-    private function locationResource(CompanyLocation $location, array $viewer): CompanyLocationResource
+    private function locationResource(CompanyLocation $location, array $viewer, int $viewerUserId): CompanyLocationResource
     {
         return (new CompanyLocationResource($location))
-            ->withViewerContext($viewer['company_id'], $viewer['role']);
+            ->withViewerContext($viewer['company_id'], $viewer['role'], $viewerUserId);
     }
 
     /**
@@ -131,10 +131,10 @@ class CompanyLocationController extends Controller
      * @param  array{company_id: int, role: string}  $viewer
      * @return array<int, CompanyLocationResource>
      */
-    private function locationCollection(array $locations, array $viewer): array
+    private function locationCollection(array $locations, array $viewer, int $viewerUserId): array
     {
         return array_map(
-            fn (CompanyLocation $location): CompanyLocationResource => $this->locationResource($location, $viewer),
+            fn(CompanyLocation $location): CompanyLocationResource => $this->locationResource($location, $viewer, $viewerUserId),
             $locations,
         );
     }

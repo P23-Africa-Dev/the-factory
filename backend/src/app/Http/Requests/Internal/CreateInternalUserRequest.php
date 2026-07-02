@@ -33,7 +33,7 @@ class CreateInternalUserRequest extends FormRequest
         return [
             'company_id' => ['nullable', 'integer', 'exists:companies,id'],
             'full_name' => ['required', 'string', 'min:2', 'max:255'],
-            'email' => ['required', 'string', 'email:rfc', 'max:255', 'unique:users,email'],
+            'email' => ['required', 'string', 'email:rfc', 'max:255', Rule::unique('users', 'email')->whereNull('deleted_at')],
             'role' => ['required', 'string', Rule::in(['admin', 'supervisor', 'agent'])],
             'phone_number' => ['nullable', 'string', 'regex:/^\+[1-9][0-9]{7,14}$/'],
             'gender' => ['nullable', 'string', Rule::in(['male', 'female'])],

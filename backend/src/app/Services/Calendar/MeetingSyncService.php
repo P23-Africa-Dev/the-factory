@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services\Calendar;
 
-use App\Models\CompanyCalendarConnection;
 use App\Models\Meeting;
 use Illuminate\Support\Facades\Log;
 
 class MeetingSyncService
 {
-    public function __construct(private readonly GoogleCalendarEventService $googleCalendarEventService) {}
+    public function __construct(
+        private readonly GoogleCalendarEventService $googleCalendarEventService,
+        private readonly CalendarConnectionResolver $connectionResolver,
+    ) {}
 
     public function syncMeeting(int $meetingId): void
     {
@@ -22,12 +24,12 @@ class MeetingSyncService
             return;
         }
 
-        $connection = $this->activeConnection((int) $meeting->company_id);
+        $connection = $this->connectionResolver->resolveForMeeting($meeting);
 
         if (! $connection) {
             $meeting->update([
                 'sync_status' => 'pending_setup',
-                'sync_error_message' => 'Owner must connect Google Calendar to enable sync.',
+                'sync_error_message' => 'Connect your Google Calendar to enable sync.',
             ]);
 
             Log::warning('Meeting sync skipped because Google Calendar is not connected.', [
@@ -92,12 +94,12 @@ class MeetingSyncService
             return;
         }
 
-        $connection = $this->activeConnection((int) $meeting->company_id);
+        $connection = $this->connectionResolver->resolveForMeeting($meeting);
 
         if (! $connection) {
             $meeting->update([
                 'sync_status' => 'pending_setup',
-                'sync_error_message' => 'Owner must connect Google Calendar to enable sync.',
+                'sync_error_message' => 'Connect your Google Calendar to enable sync.',
             ]);
 
             Log::warning('Meeting cancel skipped because Google Calendar is not connected.', [
@@ -146,14 +148,5 @@ class MeetingSyncService
 
             throw $exception;
         }
-    }
-
-    private function activeConnection(int $companyId): ?CompanyCalendarConnection
-    {
-        return CompanyCalendarConnection::query()
-            ->where('company_id', $companyId)
-            ->where('status', 'active')
-            ->whereNull('disconnected_at')
-            ->first();
     }
 }

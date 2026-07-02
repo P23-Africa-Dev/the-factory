@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Crm\MapSavedLeadBridgeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class MapSavedLocationCrmTest extends TestCase
@@ -96,6 +97,19 @@ class MapSavedLocationCrmTest extends TestCase
     public function test_location_update_syncs_linked_crm_lead_and_delete_unlinks_only(): void
     {
         [$company, $admin] = $this->seedCompany();
+
+        config()->set('services.mapbox.access_token', 'test-mapbox-token');
+
+        Http::fake([
+            'https://api.mapbox.com/geocoding/v5/mapbox.places/*' => Http::response([
+                'features' => [
+                    [
+                        'center' => [3.4200000, 6.4600000],
+                        'place_name' => 'New address, Lagos',
+                    ],
+                ],
+            ], 200),
+        ]);
 
         $create = $this->withToken($admin->createToken('admin-create-linked', ['*'])->plainTextToken)
             ->postJson('/api/v1/admin/locations', [
