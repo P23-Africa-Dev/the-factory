@@ -101,7 +101,10 @@ export function useCreateSavedLocation(options?: { onSuccess?: (location: SavedL
   });
 }
 
-export function useUpdateSavedLocation(options?: { onSuccess?: (location: SavedLocation) => void }) {
+export function useUpdateSavedLocation(options?: {
+  onSuccess?: (location: SavedLocation) => void;
+  onError?: (error: unknown) => void;
+}) {
   const queryClient = useQueryClient();
   const { token, companyId, basePath } = useCompanyContextValues();
 
@@ -127,6 +130,10 @@ export function useUpdateSavedLocation(options?: { onSuccess?: (location: SavedL
       options?.onSuccess?.(res.data.location);
     },
     onError: (err: unknown) => {
+      if (options?.onError) {
+        options.onError(err);
+        return;
+      }
       toast.error(err instanceof Error ? err.message : "Failed to update location.");
     },
   });
