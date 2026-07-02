@@ -56,10 +56,11 @@ function resolveActionUrl(url: string): string | null {
   }
 
   // /dashboard
-  if (url === '/dashboard') {
+  if (url === '/dashboard' || url === '/') {
     return '/';
   }
 
+  // /internal-users — no dedicated page in the PWA, stay put
   return null;
 }
 

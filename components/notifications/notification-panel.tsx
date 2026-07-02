@@ -327,11 +327,13 @@ function resolveWebNotificationUrl(notification: AppNotification, isAgent: boole
       return isAgent ? '/agent/profile' : '/profile';
     }
 
-    // Default fallback for action_url - make sure it starts with /agent if they are an agent
-    if (isAgent && !target.startsWith('/agent')) {
-      return `/agent${target}`;
+    // 10. Internal users / workforce onboarding status
+    if (target.includes('/internal-users')) {
+      return isAgent ? '/agent/operations/agents' : '/operations/agents';
     }
-    return target;
+
+    // Unknown action_url — don't navigate (avoids 404)
+    return null;
   }
 
   // Fallback to reference_type and reference_id if no action_url is present
