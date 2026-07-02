@@ -135,11 +135,12 @@ export function createSavedLocation(
 export function updateSavedLocation(
   locationId: number | string,
   payload: UpdateSavedLocationPayload,
-  token: string
+  token: string,
+  basePath: ApiRoleBasePath = "/admin"
 ): Promise<ApiEnvelope<SavedLocationDetailData>> {
   return apiRequest<SavedLocationDetailData>({
     method: "PATCH",
-    path: `/admin/locations/${locationId}`,
+    path: withBase(basePath, `/locations/${locationId}`),
     body: payload,
     token,
   });

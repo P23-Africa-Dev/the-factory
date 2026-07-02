@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Admin\Enterprise;
 
 use App\Http\Controllers\Controller;
 use App\Exceptions\EnterpriseNotificationDeliveryException;
+use App\Http\Controllers\Admin\Billing\AdminPaymentLinkController;
 use App\Http\Requests\Enterprise\ActivateDemoRequest;
+use App\Support\Billing\BillingPlanCatalog;
 use App\Models\Admin;
 use App\Models\CompanyDemoRequest;
 use App\Services\Enterprise\DemoRequestService;
@@ -33,6 +35,10 @@ class DemoRequestController extends Controller
     {
         return view('admin.enterprise.demo-requests.show', [
             'demoRequest' => $demoRequest->load(['company', 'user', 'reviewedByAdmin']),
+            'billingPlans' => BillingPlanCatalog::all(),
+            'billingSummary' => $demoRequest->company
+                ? AdminPaymentLinkController::billingSummary($demoRequest->company)
+                : null,
         ]);
     }
 

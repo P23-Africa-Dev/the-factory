@@ -273,6 +273,61 @@
             </form>
         </div>
 
+        @if (!$isInternal && $company && $billingSummary)
+        <div class="metric-card p-4 mb-3">
+            <div class="section-label"><i class="bi bi-credit-card"></i>Billing</div>
+            <div class="detail-row">
+                <div class="detail-label">Status</div>
+                <div class="detail-value">{{ ucfirst(str_replace('_', ' ', $billingSummary['status']['subscription_status'])) }}</div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-label">Plan</div>
+                <div class="detail-value">{{ $billingSummary['status']['plan_key'] ?? '—' }}</div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-label">Seats</div>
+                <div class="detail-value">
+                    {{ $billingSummary['seat_usage']['used'] }}
+                    @if ($billingSummary['seat_usage']['limit'])
+                        / {{ $billingSummary['seat_usage']['limit'] }}
+                    @endif
+                </div>
+            </div>
+
+            @if (session('payment_link_url'))
+                <div class="alert alert-success mt-3 mb-0" style="font-size:.82rem">
+                    Payment link generated:
+                    <input type="text" class="form-control form-control-sm mt-2" readonly value="{{ session('payment_link_url') }}">
+                </div>
+            @endif
+
+            <form method="POST" action="{{ route('admin.users.payment-link', $user) }}" class="mt-3 d-grid gap-2">
+                @csrf
+                <select name="plan_key" class="form-select form-select-sm" required>
+                    @foreach ($billingPlans as $planKey => $plan)
+                        <option value="{{ $planKey }}" @selected(old('plan_key', $company->assigned_plan_key) === $planKey)>
+                            {{ $plan['label'] }}
+                        </option>
+                    @endforeach
+                </select>
+                <select name="interval" class="form-select form-select-sm" required>
+                    @foreach (App\Enums\BillingInterval::cases() as $interval)
+                        <option value="{{ $interval->value }}" @selected(old('interval', $company->assigned_billing_interval ?? 'monthly') === $interval->value)>
+                            {{ ucfirst($interval->value) }}
+                        </option>
+                    @endforeach
+                </select>
+                <label class="form-check-label small">
+                    <input type="checkbox" name="send_email" value="1" class="form-check-input me-1">
+                    Email payment link to user
+                </label>
+                <button type="submit" class="btn btn-sm" style="background:rgba(16,185,129,.1);color:#059669;border:1px solid rgba(16,185,129,.2)">
+                    <i class="bi bi-link-45deg me-1"></i>Generate Payment Link
+                </button>
+            </form>
+        </div>
+        @endif
+
         {{-- Danger Zone ──────────────────────────────── --}}
         <div class="metric-card p-4" style="border-color:rgba(239,68,68,.2)">
             <div class="section-label" style="color:var(--danger)"><i class="bi bi-exclamation-triangle"></i>Danger Zone</div>

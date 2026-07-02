@@ -3,7 +3,9 @@
 import {
   extractAccountStatusCode,
   handleAccountAccessDenied,
+  handleSubscriptionRequired,
   isAccountStatusCode,
+  isSubscriptionStatusCode,
 } from "@/lib/auth/account-status";
 import {
   enqueueOfflineHttpMutation,
@@ -147,6 +149,12 @@ export async function apiRequest<TData>({
           : null,
     });
 
+    const statusCode = (payload as { code?: string }).code ?? accountStatus;
+
+    if (response.status === 402 && isSubscriptionStatusCode(statusCode)) {
+      handleSubscriptionRequired(statusCode, payload.message || undefined);
+    }
+
     if (response.status === 403 && isAccountStatusCode(accountStatus) && token) {
       handleAccountAccessDenied(payload.message || "Your account access has been restricted.", {
         accountStatus,
@@ -287,6 +295,16 @@ export type ActiveCompany = {
   name: string;
   status: string;
   role: string;
+  subscription_status?: string;
+  has_active_subscription?: boolean;
+  billing_enforced?: boolean;
+};
+
+export type BillingSnapshot = {
+  subscription_status: string;
+  has_active_subscription: boolean;
+  assigned_plan_key?: string | null;
+  billing_enforced?: boolean;
 };
 
 export type MeResponse = {
@@ -298,6 +316,7 @@ export type MeResponse = {
   onboarding_completed: boolean;
   onboarding_completed_at: string | null;
   active_company: ActiveCompany | null;
+  billing?: BillingSnapshot | null;
   created_at: string;
 };
 

@@ -6,6 +6,7 @@ namespace Tests\Feature\Calendar;
 
 use App\Models\Company;
 use App\Models\CompanyCalendarConnection;
+use App\Models\UserCalendarConnection;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -103,6 +104,69 @@ class CalendarIntegrationTest extends TestCase
                 'errors.authorization.0',
                 'Only company owners or admins can connect or disconnect Google Calendar integration.',
             );
+    }
+
+    public function test_agent_can_request_user_google_calendar_connect_url(): void
+    {
+        [$company,,, $agent] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/calendar/user-integration/connect-url', [
+                'company_id' => $company->company_id,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.expires_in_seconds', 300)
+            ->assertJsonStructure([
+                'data' => ['authorization_url', 'expires_in_seconds'],
+            ]);
+    }
+
+    public function test_user_calendar_status_prefers_personal_connection(): void
+    {
+        [$company, $owner,, $agent] = $this->seedCompanyUsers();
+
+        CompanyCalendarConnection::create([
+            'company_id' => $company->id,
+            'owner_user_id' => $owner->id,
+            'organizer_email' => 'owner@factory23.test',
+            'organizer_google_user_id' => 'google-owner-123',
+            'access_token_encrypted' => 'access-token',
+            'refresh_token_encrypted' => 'refresh-token',
+            'token_expires_at' => now()->addHour(),
+            'scopes' => ['https://www.googleapis.com/auth/calendar'],
+            'status' => 'active',
+            'connected_at' => now(),
+        ]);
+
+        UserCalendarConnection::create([
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'organizer_email' => 'agent@factory23.test',
+            'organizer_google_user_id' => 'google-agent-123',
+            'access_token_encrypted' => 'agent-access-token',
+            'refresh_token_encrypted' => 'agent-refresh-token',
+            'token_expires_at' => now()->addHour(),
+            'scopes' => [
+                'https://www.googleapis.com/auth/gmail.readonly',
+                'https://www.googleapis.com/auth/gmail.send',
+                'https://www.googleapis.com/auth/gmail.modify',
+            ],
+            'status' => 'active',
+            'connected_at' => now(),
+        ]);
+
+        $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
+            ->getJson('/api/v1/calendar/user-integration/status?company_id=' . $company->company_id);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.connected', true)
+            ->assertJsonPath('data.organizer_email', 'agent@factory23.test')
+            ->assertJsonPath('data.connected_google_email', 'agent@factory23.test')
+            ->assertJsonPath('data.gmail_enabled', true)
+            ->assertJsonPath('data.can_manage_connection', true);
     }
 
     public function test_agent_can_view_calendar_integration_status(): void

@@ -84,3 +84,68 @@ export function createCalendarReconnectUrl(
         token,
     });
 }
+
+export type UserCalendarIntegrationStatus = CalendarIntegrationStatus;
+
+export function getUserCalendarIntegrationStatus(
+    params: { company_id?: number | string },
+    token: string
+): Promise<ApiEnvelope<UserCalendarIntegrationStatus>> {
+    const qs = new URLSearchParams();
+    if (params.company_id != null) qs.set("company_id", String(params.company_id));
+    const query = qs.toString() ? `?${qs.toString()}` : "";
+
+    return apiRequest<UserCalendarIntegrationStatus>({
+        method: "GET",
+        path: `/calendar/user-integration/status${query}`,
+        token,
+    });
+}
+
+export function createUserCalendarConnectUrl(
+    payload: { company_id: number | string },
+    token: string
+): Promise<ApiEnvelope<{ authorization_url: string; expires_in_seconds: number }>> {
+    return apiRequest<{ authorization_url: string; expires_in_seconds: number }>({
+        method: "POST",
+        path: "/calendar/user-integration/connect-url",
+        body: payload,
+        token,
+    });
+}
+
+export function disconnectUserCalendarIntegration(
+    payload: { company_id: number | string },
+    token: string
+): Promise<ApiEnvelope<{ disconnected: boolean; access_token_revoked?: boolean; refresh_token_revoked?: boolean }>> {
+    return apiRequest<{ disconnected: boolean; access_token_revoked?: boolean; refresh_token_revoked?: boolean }>({
+        method: "DELETE",
+        path: "/calendar/user-integration/disconnect",
+        body: payload,
+        token,
+    });
+}
+
+export function createUserCalendarSwitchUrl(
+    payload: { company_id: number | string },
+    token: string
+): Promise<ApiEnvelope<{ authorization_url: string; expires_in_seconds: number }>> {
+    return apiRequest<{ authorization_url: string; expires_in_seconds: number }>({
+        method: "POST",
+        path: "/calendar/user-integration/switch-url",
+        body: payload,
+        token,
+    });
+}
+
+export function createUserCalendarReconnectUrl(
+    payload: { company_id: number | string },
+    token: string
+): Promise<ApiEnvelope<{ authorization_url: string; expires_in_seconds: number }>> {
+    return apiRequest<{ authorization_url: string; expires_in_seconds: number }>({
+        method: "POST",
+        path: "/calendar/user-integration/reconnect-url",
+        body: payload,
+        token,
+    });
+}

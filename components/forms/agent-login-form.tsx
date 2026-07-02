@@ -80,9 +80,12 @@ export default function AgentLoginForm() {
     try {
       const res = await loginAgent({ email: values.email, password: values.password });
       const token = res.data.token;
-      setAuthSession(token, values.remember ?? true);
 
       const me = await getMe(token);
+      // Persist the session using the user's actual onboarding state, not the
+      // remember-me checkbox (which previously caused a false "/complete-onboarding" redirect).
+      setAuthSession(token, Boolean(me.data.onboarding_completed));
+
       if (me.data.active_company?.id) {
         setCompanyId(me.data.active_company.id);
       }

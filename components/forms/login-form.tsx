@@ -68,7 +68,13 @@ export default function LoginForm() {
       return;
     }
 
-    router.replace(user.active_company?.role === "agent" ? "/agent/dashboard" : "/dashboard");
+    if (user.active_company?.role === "agent") {
+      router.replace("/agent/dashboard");
+      return;
+    }
+
+    // If company context is still missing, user has not completed onboarding yet.
+    router.replace(user.active_company ? "/dashboard" : "/complete-onboarding");
   }, [hasHydrated, router, user, clearUser]);
 
   async function onSubmit(values: LoginFormValues) {
@@ -78,12 +84,27 @@ export default function LoginForm() {
     try {
       const res = await loginUser({ email: values.email, password: values.password });
       const token = res.data.token;
-      setAuthSession(token, values.remember ?? true);
 
       const me = await getMe(token);
+      // Persist the session using the user's actual onboarding state, not the
+      // remember-me checkbox (which previously caused a false "/complete-onboarding" redirect).
+      setAuthSession(token, Boolean(me.data.onboarding_completed));
+
       if (me.data.active_company?.id) {
         setCompanyId(me.data.active_company.id);
       }
+
+      const billingEnforced =
+        me.data.billing?.billing_enforced ??
+        me.data.active_company?.billing_enforced ??
+        true;
+
+      try {
+        window.sessionStorage.setItem("billing.enforced", billingEnforced ? "1" : "0");
+      } catch {
+        // sessionStorage may be unavailable; silently ignore.
+      }
+
       setUser({
         id: me.data.id,
         name: me.data.name,
@@ -95,7 +116,12 @@ export default function LoginForm() {
       });
 
       toast.success(res.message);
-      const dashboardPath = res.data.user_type === "agent" ? "/agent/dashboard" : "/dashboard";
+      const dashboardPath =
+        res.data.user_type === "agent"
+          ? "/agent/dashboard"
+          : me.data.onboarding_completed
+            ? "/dashboard"
+            : "/complete-onboarding";
       router.push(dashboardPath);
     } catch (err) {
       if (err instanceof ApiRequestError) {

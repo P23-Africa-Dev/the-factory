@@ -26,6 +26,18 @@ export default function AuthInitializer({
             if (res.data.active_company?.id) {
               setCompanyId(res.data.active_company.id);
             }
+
+            const billingEnforced =
+              res.data.billing?.billing_enforced ??
+              res.data.active_company?.billing_enforced ??
+              true;
+
+            try {
+              window.sessionStorage.setItem("billing.enforced", billingEnforced ? "1" : "0");
+            } catch {
+              // sessionStorage may be unavailable; silently ignore.
+            }
+
             setUser({
               ...user, // Merge with existing state (preserved from persistence)
               id: res.data.id,

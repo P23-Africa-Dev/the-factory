@@ -7,6 +7,7 @@ namespace Tests\Feature\Enterprise;
 use App\Exceptions\EnterpriseNotificationDeliveryException;
 use App\Models\Admin;
 use App\Models\CompanyDemoRequest;
+use App\Models\User;
 use App\Notifications\EnterpriseActivationNotification;
 use App\Services\Enterprise\DemoRequestService;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -360,6 +361,54 @@ class AdminActivationTest extends TestCase
             ->assertSessionHasErrors([
                 'email' => 'Enterprise onboarding setup URL is not configured correctly. Please contact support.',
             ]);
+    }
+
+    public function test_admin_activation_can_reuse_email_from_soft_deleted_user(): void
+    {
+        Notification::fake();
+
+        $deletedUser = User::factory()->create([
+            'name' => 'Old Deleted Owner',
+            'email' => 'reused-owner@analytical.co',
+            'internal_role' => 'agent',
+        ]);
+        $deletedUser->delete();
+
+        $admin = Admin::create([
+            'name' => 'Platform Admin',
+            'email' => 'admin@example.com',
+            'password' => 'StrongPass123!',
+            'role' => 'super_admin',
+            'is_active' => true,
+        ]);
+
+        $demoRequest = CompanyDemoRequest::create([
+            'full_name' => 'New Owner',
+            'email' => 'reused-owner@analytical.co',
+            'company_name' => 'Reused Owner Company',
+            'country' => 'GB',
+            'team_size' => '11-50',
+            'use_case' => 'Enterprise workflows',
+            'status' => 'pending',
+            'requested_at' => now(),
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->patch(route('admin.enterprise.demo-requests.activate', $demoRequest), [
+                'admin_notes' => 'Approved for activation.',
+            ])
+            ->assertRedirect(route('admin.enterprise.demo-requests.show', $demoRequest));
+
+        $demoRequest->refresh();
+
+        $this->assertNotNull($demoRequest->user_id);
+        $this->assertNotSame($deletedUser->id, $demoRequest->user_id);
+        $this->assertSoftDeleted('users', ['id' => $deletedUser->id]);
+        $this->assertDatabaseHas('users', [
+            'id' => $demoRequest->user_id,
+            'email' => 'reused-owner@analytical.co',
+            'deleted_at' => null,
+        ]);
     }
 
     private function extractActivationLink(EnterpriseActivationNotification $notification): string

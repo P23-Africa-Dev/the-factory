@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Google;
 
 use App\Models\CompanyCalendarConnection;
+use App\Models\UserCalendarConnection;
 
 class GoogleScopeHelper
 {
@@ -23,14 +24,14 @@ class GoogleScopeHelper
         return self::GMAIL_SCOPES;
     }
 
-    public static function connectionHasGmailScopes(?CompanyCalendarConnection $connection): bool
+    public static function connectionHasGmailScopes(CompanyCalendarConnection|UserCalendarConnection|null $connection): bool
     {
         if ($connection === null) {
             return false;
         }
 
         $granted = array_map(
-            static fn (mixed $scope): string => trim((string) $scope),
+            static fn(mixed $scope): string => trim((string) $scope),
             is_array($connection->scopes) ? $connection->scopes : [],
         );
 
