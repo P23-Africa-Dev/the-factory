@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import Supercluster from "supercluster";
 import { MarkerClusterer } from "@googlemaps/markerclusterer";
-import { Crosshair, Move, Pencil, Trash2, X } from "lucide-react";
+import { Crosshair, Move, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -68,6 +68,8 @@ export type SavedLocationsLayerProps = {
   readOnly?: boolean;
   /** When provided, only markers whose id is in this set are rendered. */
   visibleIds?: Set<number> | null;
+  /** Override pin toolbar position (e.g. above a bottom sheet on agent map). */
+  pinToolbarClassName?: string;
 };
 
 type PendingPin = {
@@ -93,10 +95,12 @@ export function SavedLocationsLayer({
   focusLocation,
   readOnly = false,
   visibleIds = null,
+  pinToolbarClassName = "bottom-32 right-4 md:right-10 z-20",
 }: SavedLocationsLayerProps) {
   const user = useAuthStore((s) => s.user);
-  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
-  const { data: crmLabels = [] } = useCrmLabels(companyId ?? undefined);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const crmApiBasePath = (role ?? "").toLowerCase() === "agent" ? "/agent" : "/admin";
+  const { data: crmLabels = [] } = useCrmLabels(companyId ?? undefined, crmApiBasePath);
   const { data: locations = [] } = useSavedLocations();
   const permissions = useSavedLocationPermissions();
   const createMutation = useCreateSavedLocation();
@@ -129,6 +133,13 @@ export function SavedLocationsLayer({
   useEffect(() => {
     locationsRef.current = locations;
   }, [locations]);
+
+  const canManageSelected = Boolean(selected?.can_manage && permissions.canEdit);
+  const canDeleteSelected = Boolean(
+    selected &&
+      selected.company_id != null &&
+      (permissions.canDelete || (permissions.canEdit && selected.can_manage)),
+  );
 
   const commitMove = useCallback(
     async (location: SavedLocation, lng: number, lat: number) => {
@@ -691,7 +702,7 @@ export function SavedLocationsLayer({
   return (
     <>
       {permissions.canCreate && !readOnly && (
-        <div className="absolute bottom-32 right-4 md:right-10 z-20 flex flex-col items-end gap-3">
+        <div className={`absolute flex flex-col items-end gap-3 ${pinToolbarClassName}`}>
           <button
             onClick={handleSaveCurrentLocation}
             className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-[13px] font-semibold text-[#0B1215] shadow-xl hover:bg-gray-50"
@@ -730,11 +741,9 @@ export function SavedLocationsLayer({
             ? "Address could not be pinned automatically. Drag this pin to the exact location, then release to finish saving."
             : null}
           footer={
-            (((permissions.canEdit && selected.can_manage) ||
-              (permissions.canDelete && selected.company_id != null)) &&
-              !readOnly) ? (
+            ((canManageSelected || canDeleteSelected) && !readOnly) ? (
               <div className="flex items-center gap-2 px-5 py-3">
-                {permissions.canEdit && selected.can_manage && (
+                {canManageSelected && (
                   <>
                     <button
                       disabled={!!manualMoveRequirement}
@@ -752,7 +761,7 @@ export function SavedLocationsLayer({
                     </button>
                   </>
                 )}
-                {permissions.canDelete && selected.company_id != null && (
+                {canDeleteSelected && (
                   <button
                     onClick={() => setConfirmDelete(selected)}
                     className="ml-auto flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-600 hover:bg-red-100"

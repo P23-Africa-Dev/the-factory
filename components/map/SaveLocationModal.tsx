@@ -85,7 +85,8 @@ export function SaveLocationModal({
   }));
   const [addressDirty, setAddressDirty] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [resolvedCoords, setResolvedCoords] = useState({ latitude, longitude });
+  const [pickedCoords, setPickedCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const resolvedCoords = pickedCoords ?? { latitude, longitude };
   const [placeSuggestions, setPlaceSuggestions] = useState<GeocodedPlaceSuggestion[]>([]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [searchingPlaces, setSearchingPlaces] = useState(false);
@@ -94,26 +95,12 @@ export function SaveLocationModal({
   const [crmStatus, setCrmStatus] = useState(defaultCrmStatus);
 
   useEffect(() => {
-    setResolvedCoords({ latitude, longitude });
-  }, [latitude, longitude]);
-
-  useEffect(() => {
     return () => {
       if (placeSearchTimerRef.current) clearTimeout(placeSearchTimerRef.current);
     };
   }, []);
 
   const title = mode === "create" ? "Save Location" : "Edit Location";
-
-  // In create mode the address resolves asynchronously; show the resolved value
-  // until the user edits it, without an effect.
-  const addressValue = addressDirty ? values.address : values.address || address;
-
-  if (!open || typeof document === "undefined") return null;
-
-  const handleChange = (field: keyof SaveLocationFormValues, value: string) => {
-    setValues((prev) => ({ ...prev, [field]: value }));
-  };
 
   const searchPlaces = useCallback((query: string) => {
     if (placeSearchTimerRef.current) clearTimeout(placeSearchTimerRef.current);
@@ -136,10 +123,20 @@ export function SaveLocationModal({
     }, PLACE_SEARCH_DEBOUNCE_MS);
   }, []);
 
+  // In create mode the address resolves asynchronously; show the resolved value
+  // until the user edits it, without an effect.
+  const addressValue = addressDirty ? values.address : values.address || address;
+
+  if (!open || typeof document === "undefined") return null;
+
+  const handleChange = (field: keyof SaveLocationFormValues, value: string) => {
+    setValues((prev) => ({ ...prev, [field]: value }));
+  };
+
   const applyPlaceSuggestion = (place: GeocodedPlaceSuggestion) => {
     setAddressDirty(true);
     handleChange("address", place.address);
-    setResolvedCoords({ latitude: place.lat, longitude: place.lng });
+    setPickedCoords({ latitude: place.lat, longitude: place.lng });
     setPlaceSuggestions([]);
     setSuggestionsOpen(false);
     onCoordinatesChange?.(place.lat, place.lng);

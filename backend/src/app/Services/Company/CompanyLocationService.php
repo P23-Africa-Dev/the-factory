@@ -175,7 +175,7 @@ class CompanyLocationService
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
         $this->assertLocationInCompany($location, $resolvedCompanyId);
-        $this->ensureCanDelete((string) $context['role']);
+        $this->ensureCanDelete($user, $location, (string) $context['role']);
 
         $this->mapSavedLeadBridgeService->unlinkLocationFromLead($location);
         $location->update(['crm_lead_id' => null]);
@@ -212,13 +212,21 @@ class CompanyLocationService
         return trim((string) ($address ?? ''));
     }
 
-    private function ensureCanDelete(string $role): void
+    private function ensureCanDelete(User $user, CompanyLocation $location, string $role): void
     {
-        if (! in_array($role, ['owner', 'admin'], true)) {
-            throw ValidationException::withMessages([
-                'authorization' => ['Only owners and admins can delete locations.'],
-            ]);
+        if (in_array($role, ['owner', 'admin'], true)) {
+            return;
         }
+
+        if (in_array($role, ['agent', 'supervisor'], true)) {
+            $this->ensureCanEdit($user, $location);
+
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'authorization' => ['You are not allowed to delete this location.'],
+        ]);
     }
 
     private function assertLocationInCompany(CompanyLocation $location, int $companyId): void

@@ -16,7 +16,7 @@ import { useAuthStore } from "@/store/auth";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ScheduleMeetingModal } from "@/components/operations/schedule-meeting-modal";
 import { MeetingDetailsModal } from "@/components/dashboard/meeting-details-modal";
 import { AIChat } from "@/components/dashboard/ai-chat";
@@ -379,15 +379,12 @@ export function WeeklyTasksAgents() {
   const [selectedMeetingId, setSelectedMeetingId] = useState<number | null>(null);
   const searchParams = useSearchParams();
   const meetingIdParam = searchParams.get('meetingId');
-
-  useEffect(() => {
-    if (meetingIdParam) {
-      const parsed = parseInt(meetingIdParam, 10);
-      if (!isNaN(parsed)) {
-        setSelectedMeetingId(parsed);
-      }
-    }
+  const meetingIdFromUrl = useMemo(() => {
+    if (!meetingIdParam) return null;
+    const parsed = parseInt(meetingIdParam, 10);
+    return Number.isNaN(parsed) ? null : parsed;
   }, [meetingIdParam]);
+  const activeMeetingId = selectedMeetingId ?? meetingIdFromUrl;
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const basePath = role === "agent" ? "/agent" : "/admin";
@@ -414,15 +411,15 @@ export function WeeklyTasksAgents() {
   });
 
   const selectedMeetingSummary = useMemo(() => {
-    if (selectedMeetingId === null) {
+    if (activeMeetingId === null) {
       return null;
     }
 
-    return (meetingsData?.meetings ?? []).find((meeting) => meeting.id === selectedMeetingId) ?? null;
-  }, [meetingsData?.meetings, selectedMeetingId]);
+    return (meetingsData?.meetings ?? []).find((meeting) => meeting.id === activeMeetingId) ?? null;
+  }, [meetingsData?.meetings, activeMeetingId]);
 
-  const meetingDetailQuery = useMeetingDetail(selectedMeetingId ?? 0, companyId ?? undefined);
-  const selectedMeeting = selectedMeetingId !== null
+  const meetingDetailQuery = useMeetingDetail(activeMeetingId ?? 0, companyId ?? undefined);
+  const selectedMeeting = activeMeetingId !== null
     ? meetingDetailQuery.data ?? selectedMeetingSummary
     : null;
 
@@ -683,7 +680,7 @@ export function WeeklyTasksAgents() {
       />
 
       <MeetingDetailsModal
-        isOpen={selectedMeetingId !== null}
+        isOpen={activeMeetingId !== null}
         onClose={() => setSelectedMeetingId(null)}
         meeting={selectedMeeting ?? null}
       />

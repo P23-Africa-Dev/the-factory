@@ -1,8 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { SavedLocationsLayer, type GoogleMapBridge } from '@/components/map/SavedLocationsLayer';
+import { MapExploreControls } from '@/components/map/map-explore-controls';
+import type { SavedLocation } from '@/lib/api/saved-locations';
+import { createUserLocationIndicatorElement } from '@/lib/map/user-location-marker';
 import {
     getGoogleMapsPublicApiKey,
     MAPBOX_PUBLIC_TOKEN_ENV,
@@ -43,6 +47,7 @@ type GoogleMapLike = {
     setZoom: (zoom: number) => void;
     panTo: (point: GoogleLatLng) => void;
     fitBounds: (bounds: GoogleLatLngBoundsLike, padding?: number) => void;
+    setTilt?: (tilt: number) => void;
 };
 
 type GooglePolylineLike = {
@@ -75,7 +80,20 @@ function getDestinationMarkerKind(status: 'in_progress' | 'near_destination' | '
     return 'destination' as const;
 }
 
-function MapboxAgentMapView({ providerState }: { providerState: EffectiveMapProviderState }) {
+export type AgentMapViewProps = {
+    showSavedLocations?: boolean;
+    focusLocation?: SavedLocation | null;
+    pinToolbarClassName?: string;
+    mapControlsClassName?: string;
+};
+
+function MapboxAgentMapView({
+    providerState,
+    showSavedLocations = true,
+    focusLocation = null,
+    pinToolbarClassName,
+    mapControlsClassName,
+}: AgentMapViewProps & { providerState: EffectiveMapProviderState }) {
     const mapContainer = useRef<HTMLDivElement>(null);
     const mapRef = useRef<mapboxgl.Map | null>(null);
     const mapLoadedRef = useRef(false);
@@ -87,13 +105,60 @@ function MapboxAgentMapView({ providerState }: { providerState: EffectiveMapProv
     const forwardRouteCoordsRef = useRef<[number, number][] | null>(null);
     const hasInitialFitRef = useRef(false);
     const lastFitTaskIdRef = useRef<number | null>(null);
+    const userLocationMarkerRef = useRef<mapboxgl.Marker | null>(null);
+    const locateMePinRef = useRef<mapboxgl.Marker | null>(null);
     const { activeTaskId } = useActiveTracking();
     const activeTask = useTrackingStore((s) =>
         activeTaskId ? s.liveTasks[activeTaskId] ?? null : null
     );
     const token = getMapboxPublicToken();
+    const [mapReady, setMapReady] = useState(false);
+    const [pinMode, setPinMode] = useState(false);
+    const [mapMode, setMapMode] = useState<'2d' | '3d'>('2d');
+    const [locating, setLocating] = useState(false);
 
     useTrackingWebSocket();
+
+    const clearUserLocationMarkers = useCallback(() => {
+        userLocationMarkerRef.current?.remove();
+        userLocationMarkerRef.current = null;
+        locateMePinRef.current?.remove();
+        locateMePinRef.current = null;
+    }, []);
+
+    const handleLocateMe = useCallback(() => {
+        if (!navigator.geolocation || locating) return;
+        setLocating(true);
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                setLocating(false);
+                const { latitude: lat, longitude: lng } = pos.coords;
+                mapRef.current?.flyTo({
+                    center: [lng, lat],
+                    zoom: 15,
+                    duration: 1400,
+                });
+                clearUserLocationMarkers();
+                if (mapRef.current) {
+                    locateMePinRef.current = new mapboxgl.Marker({ color: '#EF4444' })
+                        .setLngLat([lng, lat])
+                        .addTo(mapRef.current);
+                }
+            },
+            () => setLocating(false),
+            { timeout: 10000, enableHighAccuracy: true },
+        );
+    }, [clearUserLocationMarkers, locating]);
+
+    const handleMapModeChange = useCallback((mode: '2d' | '3d') => {
+        if (mode === mapMode) return;
+        setMapMode(mode);
+        if (mode === '2d') {
+            mapRef.current?.easeTo({ pitch: 0, bearing: 0, duration: 800 });
+            return;
+        }
+        mapRef.current?.easeTo({ pitch: 55, bearing: -20, duration: 800 });
+    }, [mapMode]);
 
     const animateAgentMarker = useCallback((marker: mapboxgl.Marker, target: [number, number]) => {
         const from = markerPositionRef.current ?? [marker.getLngLat().lng, marker.getLngLat().lat] as [number, number];
@@ -204,11 +269,13 @@ function MapboxAgentMapView({ providerState }: { providerState: EffectiveMapProv
             });
 
             mapLoadedRef.current = true;
+            setMapReady(true);
 
         });
 
         return () => {
             mapLoadedRef.current = false;
+            setMapReady(false);
             if (markerAnimationRef.current) {
                 cancelAnimationFrame(markerAnimationRef.current);
                 markerAnimationRef.current = null;
@@ -216,6 +283,7 @@ function MapboxAgentMapView({ providerState }: { providerState: EffectiveMapProv
             agentMarkerRef.current?.remove();
             originMarkerRef.current?.remove();
             destinationMarkerRef.current?.remove();
+            clearUserLocationMarkers();
             map.remove();
             mapRef.current = null;
             agentMarkerRef.current = null;
@@ -227,7 +295,7 @@ function MapboxAgentMapView({ providerState }: { providerState: EffectiveMapProv
             lastFitTaskIdRef.current = null;
             clearDirectionsCache();
         };
-    }, [token]);
+    }, [token, clearUserLocationMarkers]);
 
     useEffect(() => {
         const map = mapRef.current;
@@ -245,12 +313,34 @@ function MapboxAgentMapView({ providerState }: { providerState: EffectiveMapProv
                 zoom: viewport.zoom,
                 duration: 900,
             });
+
+            if (viewport.granularity === 'gps') {
+                if (!userLocationMarkerRef.current) {
+                    userLocationMarkerRef.current = new mapboxgl.Marker({
+                        element: createUserLocationIndicatorElement(),
+                        anchor: 'center',
+                    })
+                        .setLngLat(viewport.center)
+                        .addTo(mapRef.current);
+                } else {
+                    userLocationMarkerRef.current.setLngLat(viewport.center);
+                }
+            } else {
+                userLocationMarkerRef.current?.remove();
+                userLocationMarkerRef.current = null;
+            }
         });
 
         return () => {
             cancelled = true;
         };
-    }, [activeTask]);
+    }, [activeTask, mapReady]);
+
+    useEffect(() => {
+        if (activeTask) {
+            clearUserLocationMarkers();
+        }
+    }, [activeTask, clearUserLocationMarkers]);
 
     useEffect(() => {
         const map = mapRef.current;
@@ -456,6 +546,28 @@ function MapboxAgentMapView({ providerState }: { providerState: EffectiveMapProv
         <div className="relative w-full" style={{ height: 'calc(100vh - 64px)' }}>
             <div ref={mapContainer} className="w-full h-full" />
 
+            {showSavedLocations && (
+                <SavedLocationsLayer
+                    provider="mapbox"
+                    ready={mapReady}
+                    getMapboxMap={() => mapRef.current}
+                    pinMode={pinMode}
+                    onPinModeChange={setPinMode}
+                    focusLocation={focusLocation}
+                    pinToolbarClassName={pinToolbarClassName}
+                />
+            )}
+
+            {!activeTask && (
+                <MapExploreControls
+                    locating={locating}
+                    mapMode={mapMode}
+                    onLocateMe={handleLocateMe}
+                    onMapModeChange={handleMapModeChange}
+                    className={mapControlsClassName}
+                />
+            )}
+
             {providerState.fallbackReason === 'missing_google_api_key' && providerState.requestedProvider === 'google' && (
                 <div className="absolute bottom-3 left-3 right-3 rounded-md bg-black/75 px-2.5 py-1.5 text-[10px] font-medium text-white">
                     Google map is selected by admin, but NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is missing. Showing Mapbox fallback.
@@ -465,7 +577,13 @@ function MapboxAgentMapView({ providerState }: { providerState: EffectiveMapProv
     );
 }
 
-function GoogleAgentMapView({ providerState }: { providerState: EffectiveMapProviderState }) {
+function GoogleAgentMapView({
+    providerState,
+    showSavedLocations = true,
+    focusLocation = null,
+    pinToolbarClassName,
+    mapControlsClassName,
+}: AgentMapViewProps & { providerState: EffectiveMapProviderState }) {
     const mapContainer = useRef<HTMLDivElement>(null);
     const googleRef = useRef<GoogleMapsNamespaceLike | null>(null);
     const mapRef = useRef<GoogleMapLike | null>(null);
@@ -476,13 +594,57 @@ function GoogleAgentMapView({ providerState }: { providerState: EffectiveMapProv
     const destinationMarkerRef = useRef<GoogleMarkerLike | null>(null);
     const hasInitialFitRef = useRef(false);
     const lastFitTaskIdRef = useRef<number | null>(null);
+    const userLocationMarkerRef = useRef<GoogleMarkerLike | null>(null);
+    const locateMePinRef = useRef<GoogleMarkerLike | null>(null);
     const googleApiKey = useMemo(() => getGoogleMapsPublicApiKey(), []);
+    const [mapReady, setMapReady] = useState(false);
+    const [pinMode, setPinMode] = useState(false);
+    const [mapMode, setMapMode] = useState<'2d' | '3d'>('2d');
+    const [locating, setLocating] = useState(false);
     const { activeTaskId } = useActiveTracking();
     const activeTask = useTrackingStore((s) =>
         activeTaskId ? s.liveTasks[activeTaskId] ?? null : null
     );
 
     useTrackingWebSocket();
+
+    const clearUserLocationMarkers = useCallback(() => {
+        userLocationMarkerRef.current?.setMap(null);
+        userLocationMarkerRef.current = null;
+        locateMePinRef.current?.setMap(null);
+        locateMePinRef.current = null;
+    }, []);
+
+    const handleLocateMe = useCallback(() => {
+        if (!navigator.geolocation || locating) return;
+        setLocating(true);
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                setLocating(false);
+                const { latitude: lat, longitude: lng } = pos.coords;
+                if (mapRef.current) {
+                    mapRef.current.panTo({ lat, lng });
+                    mapRef.current.setZoom(15);
+                }
+                clearUserLocationMarkers();
+                if (mapRef.current && googleRef.current) {
+                    locateMePinRef.current = new googleRef.current.maps.Marker({
+                        map: mapRef.current,
+                        position: { lat, lng },
+                        title: 'Your current location',
+                    });
+                }
+            },
+            () => setLocating(false),
+            { timeout: 10000, enableHighAccuracy: true },
+        );
+    }, [clearUserLocationMarkers, locating]);
+
+    const handleMapModeChange = useCallback((mode: '2d' | '3d') => {
+        if (mode === mapMode) return;
+        setMapMode(mode);
+        mapRef.current?.setTilt?.(mode === '3d' ? 45 : 0);
+    }, [mapMode]);
 
     const clearOverlays = useCallback(() => {
         routeLineRef.current?.setMap(null);
@@ -521,6 +683,7 @@ function GoogleAgentMapView({ providerState }: { providerState: EffectiveMapProv
                     mapTypeControl: false,
                     streetViewControl: false,
                 });
+                setMapReady(true);
             })
             .catch(() => {
                 // Key/network failures surface through fallback UI.
@@ -529,12 +692,68 @@ function GoogleAgentMapView({ providerState }: { providerState: EffectiveMapProv
         return () => {
             cancelled = true;
             clearOverlays();
+            clearUserLocationMarkers();
             mapRef.current = null;
             googleRef.current = null;
+            setMapReady(false);
             hasInitialFitRef.current = false;
             lastFitTaskIdRef.current = null;
         };
-    }, [clearOverlays, googleApiKey]);
+    }, [clearOverlays, clearUserLocationMarkers, googleApiKey]);
+
+    useEffect(() => {
+        const map = mapRef.current;
+        const google = googleRef.current;
+
+        if (!map || !google || !mapReady || activeTask) return;
+
+        let cancelled = false;
+
+        resolvePrivacySafeViewport().then((viewport) => {
+            if (cancelled || !mapRef.current || useTrackingStore.getState().activeTrackingTaskId) {
+                return;
+            }
+
+            mapRef.current.setCenter({ lat: viewport.center[1], lng: viewport.center[0] });
+            mapRef.current.setZoom(viewport.zoom);
+
+            if (viewport.granularity === 'gps') {
+                if (!userLocationMarkerRef.current) {
+                    userLocationMarkerRef.current = new google.maps.Marker({
+                        map: mapRef.current,
+                        position: { lat: viewport.center[1], lng: viewport.center[0] },
+                        title: 'Your current location',
+                        icon: {
+                            path: google.maps.SymbolPath.CIRCLE,
+                            scale: 8,
+                            fillColor: '#2563EB',
+                            fillOpacity: 1,
+                            strokeColor: '#FFFFFF',
+                            strokeWeight: 3,
+                        },
+                    });
+                } else {
+                    userLocationMarkerRef.current.setPosition({
+                        lat: viewport.center[1],
+                        lng: viewport.center[0],
+                    });
+                }
+            } else {
+                userLocationMarkerRef.current?.setMap(null);
+                userLocationMarkerRef.current = null;
+            }
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeTask, mapReady]);
+
+    useEffect(() => {
+        if (activeTask) {
+            clearUserLocationMarkers();
+        }
+    }, [activeTask, clearUserLocationMarkers]);
 
     useEffect(() => {
         const map = mapRef.current;
@@ -546,20 +765,7 @@ function GoogleAgentMapView({ providerState }: { providerState: EffectiveMapProv
             clearOverlays();
             hasInitialFitRef.current = false;
             lastFitTaskIdRef.current = null;
-
-            let cancelled = false;
-            resolvePrivacySafeViewport().then((viewport) => {
-                if (cancelled || !mapRef.current || useTrackingStore.getState().activeTrackingTaskId) {
-                    return;
-                }
-
-                mapRef.current.setCenter({ lat: viewport.center[1], lng: viewport.center[0] });
-                mapRef.current.setZoom(viewport.zoom);
-            });
-
-            return () => {
-                cancelled = true;
-            };
+            return;
         }
 
         if (lastFitTaskIdRef.current !== null && lastFitTaskIdRef.current !== activeTask.taskId) {
@@ -719,6 +925,32 @@ function GoogleAgentMapView({ providerState }: { providerState: EffectiveMapProv
         <div className="relative w-full" style={{ height: 'calc(100vh - 64px)' }}>
             <div ref={mapContainer} className="w-full h-full" />
 
+            {showSavedLocations && (
+                <SavedLocationsLayer
+                    provider="google"
+                    ready={mapReady}
+                    getGoogleMap={() =>
+                        mapRef.current && googleRef.current
+                            ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)
+                            : null
+                    }
+                    pinMode={pinMode}
+                    onPinModeChange={setPinMode}
+                    focusLocation={focusLocation}
+                    pinToolbarClassName={pinToolbarClassName}
+                />
+            )}
+
+            {!activeTask && (
+                <MapExploreControls
+                    locating={locating}
+                    mapMode={mapMode}
+                    onLocateMe={handleLocateMe}
+                    onMapModeChange={handleMapModeChange}
+                    className={mapControlsClassName}
+                />
+            )}
+
             {providerState.fallbackReason === 'missing_mapbox_token' && providerState.requestedProvider === 'mapbox' && (
                 <div className="absolute bottom-3 left-3 right-3 rounded-md bg-black/75 px-3 py-2 text-[11px] font-medium text-white">
                     Mapbox is selected by admin, but NEXT_PUBLIC_MAPBOX_TOKEN is missing. Showing Google fallback.
@@ -728,12 +960,33 @@ function GoogleAgentMapView({ providerState }: { providerState: EffectiveMapProv
     );
 }
 
-export function AgentMapView() {
+export function AgentMapView({
+    showSavedLocations = true,
+    focusLocation = null,
+    pinToolbarClassName = "bottom-[45vh] right-4 md:right-10 z-30",
+    mapControlsClassName = "absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2",
+}: AgentMapViewProps = {}) {
     const providerState = useEffectiveMapProvider();
 
     if (providerState.effectiveProvider === 'google') {
-        return <GoogleAgentMapView providerState={providerState} />;
+        return (
+            <GoogleAgentMapView
+                providerState={providerState}
+                showSavedLocations={showSavedLocations}
+                focusLocation={focusLocation}
+                pinToolbarClassName={pinToolbarClassName}
+                mapControlsClassName={mapControlsClassName}
+            />
+        );
     }
 
-    return <MapboxAgentMapView providerState={providerState} />;
+    return (
+        <MapboxAgentMapView
+            providerState={providerState}
+            showSavedLocations={showSavedLocations}
+            focusLocation={focusLocation}
+            pinToolbarClassName={pinToolbarClassName}
+            mapControlsClassName={mapControlsClassName}
+        />
+    );
 }

@@ -262,14 +262,13 @@ export function AllTasksView() {
     agentScope: isAgent,
   });
 
-  useEffect(() => {
-    if (taskIdParam && kpisData?.kpis) {
-      const kpi = kpisData.kpis.find((k) => String(k.id) === taskIdParam);
-      if (kpi) {
-        setSelectedKpi(kpi);
-      }
-    }
-  }, [taskIdParam, kpisData?.kpis]);
+  const kpis = kpisData?.kpis;
+  const kpiFromUrl = useMemo(() => {
+    if (!taskIdParam || !kpis) return null;
+    return kpis.find((k) => String(k.id) === taskIdParam) ?? null;
+  }, [taskIdParam, kpis]);
+
+  const activeKpi = selectedKpi ?? kpiFromUrl;
 
   const kpiById = useMemo(() => {
     const map = new Map<string, KpiItem>();
@@ -530,10 +529,10 @@ export function AllTasksView() {
 
       {/* View KPI Details Modal */}
       <KpiDetailsModal
-        kpi={selectedKpi}
+        kpi={activeKpi}
         onClose={() => setSelectedKpi(null)}
         onEdit={() => {
-          setKpiToEdit(selectedKpi);
+          setKpiToEdit(activeKpi);
           setSelectedKpi(null);
         }}
       />

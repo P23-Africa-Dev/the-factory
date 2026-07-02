@@ -36,8 +36,10 @@ function BillingSuccessInner() {
     if (searchParams.get("session_id")) {
       poll();
     } else {
-      setMessage("Missing checkout session. Returning to plans...");
-      window.setTimeout(() => router.replace("/subscribe"), 1500);
+      window.setTimeout(() => {
+        setMessage("Missing checkout session. Returning to plans...");
+        window.setTimeout(() => router.replace("/subscribe"), 1500);
+      }, 0);
     }
   }, [router, searchParams]);
 

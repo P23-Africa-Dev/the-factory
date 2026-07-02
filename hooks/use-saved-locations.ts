@@ -141,11 +141,11 @@ export function useUpdateSavedLocation(options?: {
 
 export function useDeleteSavedLocation(options?: { onSuccess?: (deletedId: number) => void }) {
   const queryClient = useQueryClient();
-  const { token, companyId } = useCompanyContextValues();
+  const { token, companyId, basePath } = useCompanyContextValues();
 
   return useMutation({
     mutationFn: (locationId: number | string) =>
-      deleteSavedLocation(locationId, { company_id: companyId as number | string }, token),
+      deleteSavedLocation(locationId, { company_id: companyId as number | string }, token, basePath),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: SAVED_LOCATION_KEYS.all });
       queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });

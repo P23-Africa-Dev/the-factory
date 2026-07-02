@@ -339,7 +339,7 @@ export default function Home() {
                       className={`w-full rounded-2xl border p-8 flex flex-col justify-between transition-all duration-300 hover:shadow-md ${item.bgColor} ${item.borderColor} ${item.shadow || ""}`}
                     >
                       <p className="text-[15px] sm:text-base text-[#4A5F64] leading-relaxed italic mb-8">
-                        "{item.quote}"
+                        &ldquo;{item.quote}&rdquo;
                       </p>
                       
                       <div className="flex items-center gap-4">

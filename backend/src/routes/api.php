@@ -607,6 +607,9 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::patch('/{location}', [CompanyLocationController::class, 'update'])
                     ->middleware('throttle:30,1')
                     ->name('update');
+                Route::delete('/{location}', [CompanyLocationController::class, 'destroy'])
+                    ->middleware('throttle:30,1')
+                    ->name('destroy');
             });
 
             Route::prefix('attendance')->name('attendance.')->group(function (): void {
