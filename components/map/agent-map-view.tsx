@@ -419,16 +419,16 @@ function MapboxAgentMapView({ providerState }: { providerState: EffectiveMapProv
             return;
         }
 
-        fetchDirectionsRoute(origin, dest, token).then(coords => {
+        fetchDirectionsRoute(origin, dest, token).then(result => {
             if (cancelled) return;
-            if (coords && coords.length >= 2) {
-                forwardRouteCoordsRef.current = coords;
+            if (result && result.coords.length >= 2) {
+                forwardRouteCoordsRef.current = result.coords;
                 const src = mapRef.current?.getSource('forward-routes') as mapboxgl.GeoJSONSource | undefined;
                 src?.setData({
                     type: 'FeatureCollection',
                     features: [{
                         type: 'Feature',
-                        geometry: { type: 'LineString', coordinates: coords },
+                        geometry: { type: 'LineString', coordinates: result.coords },
                         properties: {}
                     }]
                 });

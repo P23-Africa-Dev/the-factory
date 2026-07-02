@@ -2,6 +2,10 @@
 @import "mapbox-gl/dist/mapbox-gl.css";
 @import "react-phone-number-input/style.css";
 
+html {
+  scroll-behavior: smooth;
+}
+
 .PhoneInput {
   display: flex;
   align-items: center;
