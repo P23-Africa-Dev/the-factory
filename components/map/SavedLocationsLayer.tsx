@@ -71,6 +71,7 @@ export type SavedLocationsLayerProps = {
 };
 
 type PendingPin = {
+  sessionId: string;
   lng: number;
   lat: number;
   address: string;
@@ -186,7 +187,13 @@ export function SavedLocationsLayer({
   const openPinAt = useCallback(async (lng: number, lat: number) => {
     if (!permissions.canCreate) return;
     setSelected(null);
-    setPendingPin({ lng, lat, address: "", addressLoading: true });
+    setPendingPin({
+      sessionId: crypto.randomUUID(),
+      lng,
+      lat,
+      address: "",
+      addressLoading: true,
+    });
     const address = await reverseGeocodeWithMapbox(lng, lat);
     setPendingPin((prev) =>
       prev && prev.lng === lng && prev.lat === lat
@@ -194,6 +201,25 @@ export function SavedLocationsLayer({
         : prev
     );
   }, [permissions.canCreate]);
+
+  const handlePendingCoordinatesChange = useCallback((lat: number, lng: number) => {
+    setPendingPin((prev) => (prev ? { ...prev, lat, lng, addressLoading: false } : prev));
+
+    if (provider === "mapbox") {
+      const map = getMapboxMap?.();
+      map?.flyTo({
+        center: [lng, lat],
+        zoom: Math.max(map.getZoom(), 14),
+        speed: 1.2,
+      });
+      mbPendingMarkerRef.current?.setLngLat([lng, lat]);
+    } else {
+      const ctx = getGoogleMap?.();
+      ctx?.map.panTo({ lat, lng });
+      ctx?.map.setZoom(Math.max(ctx.map.getZoom(), 14));
+      googlePendingMarkerRef.current?.setPosition({ lat, lng });
+    }
+  }, [provider, getMapboxMap, getGoogleMap]);
 
   // ── Mapbox: render saved-location markers with supercluster ───────────────────
   const renderMapboxClusters = useCallback(() => {
@@ -596,6 +622,8 @@ export function SavedLocationsLayer({
           address: payload.address || null,
           contact_number: payload.contact_number || null,
           email: payload.email || null,
+          latitude: payload.latitude,
+          longitude: payload.longitude,
         },
       },
       {
@@ -741,7 +769,7 @@ export function SavedLocationsLayer({
       {/* Create modal */}
       {pendingPin && (
         <SaveLocationModal
-          key={`create-${pendingPin.lng.toFixed(6)}-${pendingPin.lat.toFixed(6)}`}
+          key={`create-${pendingPin.sessionId}`}
           open
           mode="create"
           latitude={pendingPin.lat}
@@ -751,6 +779,7 @@ export function SavedLocationsLayer({
           busy={createMutation.isPending}
           crmLabels={crmLabels}
           onSubmit={handleCreateSubmit}
+          onCoordinatesChange={handlePendingCoordinatesChange}
           onClose={() => setPendingPin(null)}
         />
       )}

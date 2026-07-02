@@ -1,12 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Building2, Loader2, Mail, MapPin, Phone, X } from "lucide-react";
 
 import { SAVED_LOCATION_TYPES } from "@/lib/map/location-types";
 import type { SavedLocation } from "@/lib/api/saved-locations";
 import type { CrmLabel } from "@/lib/api/crm";
+import {
+  searchPlacesWithMapbox,
+  type GeocodedPlaceSuggestion,
+} from "@/lib/utils/geocoding";
 
 export type SaveLocationFormValues = {
   name: string;
@@ -37,6 +41,8 @@ interface SaveLocationModalProps {
   crmLabels?: CrmLabel[];
   onSubmit: (payload: SaveLocationSubmitPayload) => void;
   onClose: () => void;
+  /** Called when the user picks a new address from Mapbox suggestions (create flow). */
+  onCoordinatesChange?: (latitude: number, longitude: number) => void;
 }
 
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
@@ -51,6 +57,8 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 const BASE_INPUT =
   "w-full bg-gray-50 rounded-xl text-sm text-[#0B1215] outline-none border transition-colors placeholder:text-gray-300";
 
+const PLACE_SEARCH_DEBOUNCE_MS = 300;
+
 export function SaveLocationModal({
   open,
   mode,
@@ -63,6 +71,7 @@ export function SaveLocationModal({
   crmLabels = [],
   onSubmit,
   onClose,
+  onCoordinatesChange,
 }: SaveLocationModalProps) {
   // The parent remounts this modal (via `key`) when the target changes, so a
   // lazy initializer is sufficient for resetting the form on open.
@@ -76,8 +85,23 @@ export function SaveLocationModal({
   }));
   const [addressDirty, setAddressDirty] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [resolvedCoords, setResolvedCoords] = useState({ latitude, longitude });
+  const [placeSuggestions, setPlaceSuggestions] = useState<GeocodedPlaceSuggestion[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [searchingPlaces, setSearchingPlaces] = useState(false);
+  const placeSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const defaultCrmStatus = crmLabels.find((l) => l.is_default)?.slug ?? crmLabels[0]?.slug ?? "newly_lead";
   const [crmStatus, setCrmStatus] = useState(defaultCrmStatus);
+
+  useEffect(() => {
+    setResolvedCoords({ latitude, longitude });
+  }, [latitude, longitude]);
+
+  useEffect(() => {
+    return () => {
+      if (placeSearchTimerRef.current) clearTimeout(placeSearchTimerRef.current);
+    };
+  }, []);
 
   const title = mode === "create" ? "Save Location" : "Edit Location";
 
@@ -89,6 +113,36 @@ export function SaveLocationModal({
 
   const handleChange = (field: keyof SaveLocationFormValues, value: string) => {
     setValues((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const searchPlaces = useCallback((query: string) => {
+    if (placeSearchTimerRef.current) clearTimeout(placeSearchTimerRef.current);
+
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setPlaceSuggestions([]);
+      setSuggestionsOpen(false);
+      setSearchingPlaces(false);
+      return;
+    }
+
+    setSearchingPlaces(true);
+    placeSearchTimerRef.current = setTimeout(() => {
+      void searchPlacesWithMapbox(trimmed, { limit: 6 }).then((results) => {
+        setPlaceSuggestions(results);
+        setSuggestionsOpen(true);
+        setSearchingPlaces(false);
+      });
+    }, PLACE_SEARCH_DEBOUNCE_MS);
+  }, []);
+
+  const applyPlaceSuggestion = (place: GeocodedPlaceSuggestion) => {
+    setAddressDirty(true);
+    handleChange("address", place.address);
+    setResolvedCoords({ latitude: place.lat, longitude: place.lng });
+    setPlaceSuggestions([]);
+    setSuggestionsOpen(false);
+    onCoordinatesChange?.(place.lat, place.lng);
   };
 
   const validate = (): boolean => {
@@ -108,8 +162,8 @@ export function SaveLocationModal({
       ...values,
       name: values.name.trim(),
       address: addressValue,
-      latitude,
-      longitude,
+      latitude: resolvedCoords.latitude,
+      longitude: resolvedCoords.longitude,
       ...(mode === "create" ? { save_to_crm: saveToCrm, ...(saveToCrm ? { crm_status: crmStatus } : {}) } : {}),
     });
   };
@@ -117,8 +171,8 @@ export function SaveLocationModal({
   return createPortal(
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={busy ? undefined : onClose} />
-      <div className="relative w-full max-w-md rounded-3xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+      <div className="relative flex w-full max-w-md flex-col max-h-[90vh] rounded-3xl bg-white shadow-2xl overflow-hidden">
+        <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 py-5">
           <div className="flex items-center gap-2">
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#094B5C]/10 text-[#094B5C]">
               <MapPin size={18} />
@@ -134,7 +188,8 @@ export function SaveLocationModal({
           </button>
         </div>
 
-        <div className="px-6 py-5 space-y-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div className="space-y-4">
           <div>
             <FieldLabel required>Location Name</FieldLabel>
             <input
@@ -172,16 +227,50 @@ export function SaveLocationModal({
                 onChange={(e) => {
                   setAddressDirty(true);
                   handleChange("address", e.target.value);
+                  searchPlaces(e.target.value);
                 }}
-                placeholder={addressLoading ? "Resolving address…" : "Auto-filled from map"}
+                onFocus={() => {
+                  if (addressValue.trim().length >= 2) {
+                    searchPlaces(addressValue);
+                  }
+                }}
+                onBlur={() => {
+                  window.setTimeout(() => setSuggestionsOpen(false), 150);
+                }}
+                placeholder={addressLoading ? "Resolving address…" : "Search or edit address"}
                 className={`${BASE_INPUT} px-3 py-2.5 border-gray-200 focus:border-[#094B5C]`}
               />
-              {addressLoading && (
+              {(addressLoading || searchingPlaces) && (
                 <Loader2 size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />
+              )}
+              {suggestionsOpen && placeSuggestions.length > 0 && (
+                <ul className="absolute z-20 left-0 right-0 mt-1 max-h-44 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+                  {placeSuggestions.map((place) => (
+                    <li key={`${place.lat}-${place.lng}-${place.address}`}>
+                      <button
+                        type="button"
+                        className="w-full px-3 py-2 text-left hover:bg-gray-50"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          applyPlaceSuggestion(place);
+                        }}
+                      >
+                        <span className="block text-[13px] font-semibold text-[#0B1215] leading-tight">
+                          {place.name}
+                        </span>
+                        {place.address && place.address !== place.name && (
+                          <span className="block text-[11px] text-gray-500 leading-tight mt-0.5 truncate">
+                            {place.address}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
             <p className="mt-1 text-[10px] text-gray-400">
-              {latitude.toFixed(6)}, {longitude.toFixed(6)}
+              {resolvedCoords.latitude.toFixed(6)}, {resolvedCoords.longitude.toFixed(6)}
             </p>
           </div>
 
@@ -246,44 +335,61 @@ export function SaveLocationModal({
               Linked to CRM lead bank. Edits here update the matching lead record.
             </p>
           )}
+          </div>
         </div>
 
-        <div className="flex flex-col items-stretch gap-3 px-6 py-4 border-t border-gray-100">
-          <button
-            onClick={onClose}
-            disabled={busy}
-            className="px-4 py-2.5 rounded-full text-sm font-semibold text-gray-600 hover:bg-gray-100 self-end"
-          >
-            Cancel
-          </button>
+        <div className="shrink-0 border-t border-gray-100 bg-white px-6 py-4">
           {mode === "create" ? (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(false)}
+                  disabled={busy}
+                  className="px-4 py-2.5 rounded-full text-sm font-semibold text-[#094B5C] border border-[#094B5C]/30 bg-white hover:bg-[#094B5C]/5 flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {busy && <Loader2 size={15} className="animate-spin" />}
+                  Map Only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(true)}
+                  disabled={busy}
+                  className="px-4 py-2.5 rounded-full text-sm font-bold text-white bg-gradient-to-r from-[#094B5C] to-[#0A7E8C] hover:opacity-90 flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {busy && <Loader2 size={15} className="animate-spin" />}
+                  Map &amp; CRM
+                </button>
+              </div>
               <button
-                onClick={() => handleSubmit(false)}
+                type="button"
+                onClick={onClose}
                 disabled={busy}
-                className="w-full px-6 py-2.5 rounded-full text-sm font-bold text-[#094B5C] border border-[#094B5C]/30 bg-white hover:bg-[#094B5C]/5 flex items-center justify-center gap-2 disabled:opacity-60"
+                className="w-full py-2 rounded-full text-sm font-semibold text-gray-500 hover:text-gray-700 hover:bg-gray-50 disabled:opacity-60"
               >
-                {busy && <Loader2 size={15} className="animate-spin" />}
-                Save on Map Only
-              </button>
-              <button
-                onClick={() => handleSubmit(true)}
-                disabled={busy}
-                className="w-full px-6 py-2.5 rounded-full text-sm font-bold text-white bg-gradient-to-r from-[#094B5C] to-[#0A7E8C] hover:opacity-90 flex items-center justify-center gap-2 disabled:opacity-60"
-              >
-                {busy && <Loader2 size={15} className="animate-spin" />}
-                Save on Map &amp; CRM
+                Cancel
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => handleSubmit(false)}
-              disabled={busy}
-              className="w-full px-6 py-2.5 rounded-full text-sm font-bold text-white bg-gradient-to-r from-[#094B5C] to-[#0A7E8C] hover:opacity-90 flex items-center justify-center gap-2 disabled:opacity-60"
-            >
-              {busy && <Loader2 size={15} className="animate-spin" />}
-              Update Location
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={busy}
+                className="flex-1 px-4 py-2.5 rounded-full text-sm font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSubmit(false)}
+                disabled={busy}
+                className="flex-1 px-4 py-2.5 rounded-full text-sm font-bold text-white bg-gradient-to-r from-[#094B5C] to-[#0A7E8C] hover:opacity-90 flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {busy && <Loader2 size={15} className="animate-spin" />}
+                Update Location
+              </button>
+            </div>
           )}
         </div>
       </div>
