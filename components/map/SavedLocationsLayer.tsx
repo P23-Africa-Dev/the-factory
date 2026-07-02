@@ -617,11 +617,10 @@ export function SavedLocationsLayer({
           </button>
           <button
             onClick={() => onPinModeChange(!pinMode)}
-            className={`px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2 text-white ${
-              pinMode
+            className={`px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2 text-white ${pinMode
                 ? "bg-gradient-to-r from-[#0A7E8C] to-[#094B5C]"
                 : "bg-gradient-to-r from-[#D946EF] to-[#9333EA] hover:from-[#C026D3] hover:to-[#7E22CE]"
-            }`}
+              }`}
           >
             {pinMode ? "Cancel Pin" : "Location Pinning"}
           </button>
@@ -643,9 +642,11 @@ export function SavedLocationsLayer({
           }}
           moveMode={moveMode}
           footer={
-            (permissions.canEdit || permissions.canDelete) && selected.can_manage && !readOnly ? (
+            (((permissions.canEdit && selected.can_manage) ||
+              (permissions.canDelete && selected.company_id != null)) &&
+              !readOnly) ? (
               <div className="flex items-center gap-2 px-5 py-3">
-                {permissions.canEdit && (
+                {permissions.canEdit && selected.can_manage && (
                   <>
                     <button
                       onClick={() => setEditing(selected)}
@@ -661,7 +662,7 @@ export function SavedLocationsLayer({
                     </button>
                   </>
                 )}
-                {permissions.canDelete && (
+                {permissions.canDelete && selected.company_id != null && (
                   <button
                     onClick={() => setConfirmDelete(selected)}
                     className="ml-auto flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-600 hover:bg-red-100"

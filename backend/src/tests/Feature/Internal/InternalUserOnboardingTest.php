@@ -285,6 +285,66 @@ class InternalUserOnboardingTest extends TestCase
             ->assertJsonStructure(['errors' => ['supervisor_user_id']]);
     }
 
+    public function test_supervisor_cannot_create_internal_user_with_email_of_active_user(): void
+    {
+        [$company, $supervisor, $existingSupervisor] = $this->seedCompanyWithManagerAndSupervisor();
+        $token = $supervisor->createToken('supervisor-token', ['*'])->plainTextToken;
+
+        User::factory()->create([
+            'email' => 'active-duplicate@factory.local',
+            'deleted_at' => null,
+        ]);
+
+        $response = $this->withToken($token)->postJson('/api/v1/internal-users', [
+            'company_id' => $company->id,
+            'full_name' => 'Duplicate Active Email Agent',
+            'email' => 'active-duplicate@factory.local',
+            'role' => 'agent',
+            'assigned_zone' => 'North Zone',
+            'work_days' => ['monday', 'friday'],
+            'base_salary' => 100000,
+            'currency_code' => 'NGN',
+            'supervisor_user_id' => $existingSupervisor->id,
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonStructure(['errors' => ['email']]);
+    }
+
+    public function test_supervisor_can_create_internal_user_with_email_of_soft_deleted_user(): void
+    {
+        Notification::fake();
+
+        [$company, $supervisor, $existingSupervisor] = $this->seedCompanyWithManagerAndSupervisor();
+        $token = $supervisor->createToken('supervisor-token', ['*'])->plainTextToken;
+
+        $deletedUser = User::factory()->create([
+            'email' => 'deleted-reuse@factory.local',
+        ]);
+        $deletedUser->delete();
+
+        $response = $this->withToken($token)->postJson('/api/v1/internal-users', [
+            'company_id' => $company->id,
+            'full_name' => 'Reused Email Agent',
+            'email' => 'deleted-reuse@factory.local',
+            'role' => 'agent',
+            'assigned_zone' => 'North Zone',
+            'work_days' => ['monday', 'friday'],
+            'base_salary' => 100000,
+            'currency_code' => 'NGN',
+            'supervisor_user_id' => $existingSupervisor->id,
+        ]);
+
+        $response->assertCreated();
+
+        $this->assertSoftDeleted('users', ['id' => $deletedUser->id]);
+        $this->assertDatabaseHas('users', [
+            'email' => 'deleted-reuse@factory.local',
+            'deleted_at' => null,
+            'internal_role' => 'agent',
+        ]);
+    }
+
     public function test_agent_cannot_create_internal_users(): void
     {
         $company = Company::create([

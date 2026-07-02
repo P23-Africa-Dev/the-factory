@@ -135,6 +135,35 @@ class RegistrationTest extends TestCase
         $this->assertSame(1, User::where('email', 'jane@example.com')->count());
     }
 
+    public function test_registration_can_reuse_email_from_soft_deleted_user(): void
+    {
+        Notification::fake();
+
+        $deletedUser = User::factory()->create([
+            'name' => 'Deleted Jane',
+            'email' => 'reused-self-serve@example.com',
+        ]);
+        $deletedUser->delete();
+
+        $response = $this->postJson('/api/v1/auth/register', [
+            'name' => 'New Jane',
+            'email' => 'reused-self-serve@example.com',
+            'password' => 'Secret123',
+            'password_confirmation' => 'Secret123',
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJson(['success' => true]);
+
+        $this->assertSoftDeleted('users', ['id' => $deletedUser->id]);
+        $this->assertDatabaseHas('users', [
+            'email' => 'reused-self-serve@example.com',
+            'name' => 'New Jane',
+            'deleted_at' => null,
+        ]);
+        $this->assertSame(2, User::withTrashed()->where('email', 'reused-self-serve@example.com')->count());
+    }
+
     // -----------------------------------------------------------------------
     // Password validation
     // -----------------------------------------------------------------------

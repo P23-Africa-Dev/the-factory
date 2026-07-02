@@ -50,6 +50,11 @@ return [
         ))))),
     ],
 
+    'mapbox' => [
+        // Use a server-side token when available, fallback keeps local/dev parity.
+        'access_token' => env('MAPBOX_ACCESS_TOKEN', env('NEXT_PUBLIC_MAPBOX_TOKEN')),
+    ],
+
     'ai' => [
         'provider' => env('AI_PROVIDER', 'openai'),
         'fallback_provider' => env('AI_FALLBACK_PROVIDER', 'claude'),

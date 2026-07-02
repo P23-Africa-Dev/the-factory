@@ -604,6 +604,9 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                     ->middleware('throttle:30,1')
                     ->name('store');
                 Route::get('/{location}', [CompanyLocationController::class, 'show'])->name('show');
+                Route::patch('/{location}', [CompanyLocationController::class, 'update'])
+                    ->middleware('throttle:30,1')
+                    ->name('update');
             });
 
             Route::prefix('attendance')->name('attendance.')->group(function (): void {
