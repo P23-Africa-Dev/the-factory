@@ -714,6 +714,12 @@
                 class="nav-link {{ request()->routeIs('admin.enterprise.*') ? 'active' : '' }}">
                 <i class="bi bi-building"></i><span class="nav-link-text">Enterprise</span>
             </a>
+            @if (auth('admin')->user()?->canAccessAbility('manage_billing'))
+                <a href="{{ route('admin.billing.index') }}"
+                    class="nav-link {{ request()->routeIs('admin.billing.*') ? 'active' : '' }}">
+                    <i class="bi bi-credit-card-2-front"></i><span class="nav-link-text">Billing</span>
+                </a>
+            @endif
             <a href="{{ route('admin.ai.index') }}"
                 class="nav-link {{ request()->routeIs('admin.ai.*') ? 'active' : '' }}">
                 <i class="bi bi-cpu"></i><span class="nav-link-text">AI Management</span>

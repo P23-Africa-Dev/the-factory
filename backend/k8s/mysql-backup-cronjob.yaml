@@ -1,0 +1,191 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MySQL Automated Backup CronJob
+#
+# Schedule: Daily at 02:00 UTC
+# Target:   mysql-0 (factory_api database)
+# Storage:  DO Spaces → factory23-storage/backups/YYYY-MM-DD-HHmm.sql.gz
+# Retention: 30 days (files older than 30 days are deleted automatically)
+#
+# Apply:
+#   kubectl apply -f k8s/mysql-backup-cronjob.yaml
+#
+# Manual run:
+#   kubectl create job mysql-backup-manual --from=cronjob/mysql-backup -n factory23
+#   kubectl logs -n factory23 -l job-name=mysql-backup-manual
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mysql-backup
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: mysql-backup
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: factory23
+spec:
+  schedule: "0 2 * * *"          # 02:00 UTC daily
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid       # Never run two backup jobs simultaneously
+  successfulJobsHistoryLimit: 7   # Keep last 7 successful job records
+  failedJobsHistoryLimit: 3       # Keep last 3 failed job records
+  startingDeadlineSeconds: 3600   # If missed, allow up to 1h late start
+
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800   # Fail if backup takes > 30 minutes
+      backoffLimit: 2               # Retry up to 2 times on failure
+      template:
+        metadata:
+          labels:
+            app: mysql-backup
+            app.kubernetes.io/name: mysql-backup
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          priorityClassName: factory23-low-priority
+
+          # Use the same pull secret as other pods
+          imagePullSecrets:
+            - name: do-registry
+
+          volumes:
+            - name: backup-dir
+              emptyDir: {}
+
+          initContainers:
+            # Step 1: dump the database to /backup/dump.sql.gz using mysqldump
+            - name: mysqldump
+              image: mysql:8.4
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: DB_HOST
+                  valueFrom:
+                    configMapKeyRef:
+                      name: factory23-config
+                      key: DB_HOST
+                - name: DB_DATABASE
+                  valueFrom:
+                    configMapKeyRef:
+                      name: factory23-config
+                      key: DB_DATABASE
+                - name: DB_USERNAME
+                  valueFrom:
+                    configMapKeyRef:
+                      name: factory23-config
+                      key: DB_USERNAME
+                - name: MYSQL_PWD
+                  valueFrom:
+                    secretKeyRef:
+                      name: factory23-secret
+                      key: DB_PASSWORD
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  echo "[dump] Starting mysqldump..."
+                  mysqldump \
+                    --host="${DB_HOST}" \
+                    --user="${DB_USERNAME}" \
+                    --single-transaction \
+                    --quick \
+                    --routines \
+                    --triggers \
+                    --events \
+                    --no-tablespaces \
+                    "${DB_DATABASE}" | gzip -9 > /backup/dump.sql.gz
+                  echo "[dump] Done. Size: $(du -sh /backup/dump.sql.gz | cut -f1)"
+              volumeMounts:
+                - name: backup-dir
+                  mountPath: /backup
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "256Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
+
+          containers:
+            # Step 2: upload dump to DO Spaces and prune old backups
+            - name: upload
+              image: amazon/aws-cli:latest
+              imagePullPolicy: IfNotPresent
+
+              env:
+                # DO Spaces credentials
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: factory23-secret
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: factory23-secret
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: AWS_DEFAULT_REGION
+                  valueFrom:
+                    configMapKeyRef:
+                      name: factory23-config
+                      key: AWS_DEFAULT_REGION
+                - name: S3_BUCKET
+                  valueFrom:
+                    configMapKeyRef:
+                      name: factory23-config
+                      key: AWS_BUCKET
+                - name: S3_ENDPOINT
+                  valueFrom:
+                    configMapKeyRef:
+                      name: factory23-config
+                      key: AWS_ENDPOINT
+
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+
+                  TIMESTAMP=$(date -u +"%Y-%m-%d-%H%M")
+                  S3_PATH="s3://${S3_BUCKET}/backups/${TIMESTAMP}.sql.gz"
+
+                  echo "[upload] Uploading backup to ${S3_PATH}..."
+                  aws s3 cp /backup/dump.sql.gz "${S3_PATH}" \
+                    --endpoint-url "${S3_ENDPOINT}" \
+                    --storage-class STANDARD \
+                    --no-progress
+                  echo "[upload] Upload complete."
+
+                  # Delete backups older than 30 days
+                  echo "[upload] Pruning backups older than 30 days..."
+                  CUTOFF_DATE=$(date -u -d "30 days ago" +"%Y-%m-%d" 2>/dev/null || date -u -v-30d +"%Y-%m-%d")
+                  aws s3 ls "s3://${S3_BUCKET}/backups/" \
+                    --endpoint-url "${S3_ENDPOINT}" \
+                    | awk '{print $4}' \
+                    | while read -r FNAME; do
+                        FILE_DATE=$(echo "$FNAME" | cut -c1-10)
+                        if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF_DATE" ]; then
+                          echo "[upload] Deleting old backup: ${FNAME}"
+                          aws s3 rm "s3://${S3_BUCKET}/backups/${FNAME}" \
+                            --endpoint-url "${S3_ENDPOINT}"
+                        fi
+                      done
+
+                  echo "[upload] Done."
+
+              volumeMounts:
+                - name: backup-dir
+                  mountPath: /backup
+
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  cpu: "200m"
+                  memory: "256Mi"
+
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 1000
+                capabilities:
+                  drop: ["ALL"]

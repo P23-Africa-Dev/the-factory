@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\BillingInterval;
 use App\Enums\CompanyUserRole;
 use App\Enums\SubscriptionStatus;
+use App\Services\Billing\BillingEnforcementSettingService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -58,7 +59,9 @@ class Company extends Model
 
     public function hasActiveSubscription(): bool
     {
-        if (! (bool) config('billing.enforce', true)) {
+        $billingEnforced = app(BillingEnforcementSettingService::class)->isEnabled();
+
+        if (! $billingEnforced) {
             return true;
         }
 

@@ -358,6 +358,20 @@ export function updateLead(
     });
 }
 
+export function deleteLead(
+    leadId: number | string,
+    companyId: number | string | undefined,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ deleted_lead_id: number }>> {
+    return apiRequest<{ deleted_lead_id: number }>({
+        method: "DELETE",
+        path: withBase(basePath, `/crm/leads/${leadId}`),
+        body: companyId != null ? { company_id: companyId } : undefined,
+        token,
+    });
+}
+
 export function getLeadPipeline(
     params: Pick<ListLeadsParams, "company_id">,
     token: string,

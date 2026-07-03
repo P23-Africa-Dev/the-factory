@@ -1,0 +1,152 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Realtime WebSocket Relay Deployment
+# Image: registry.digitalocean.com/con-reg/realtime:v1
+# This is a SEPARATE Node.js image — cannot reuse backend:v1 (PHP-FPM).
+# Build: cd backend/realtime-server && docker build -t ...con-reg/realtime:v1 .
+#        docker push registry.digitalocean.com/con-reg/realtime:v1
+#
+# Health: GET /healthz (port 8081) — natively implemented in server.js
+# Auth:   calls backend-service.factory23.svc.cluster.local /api/v1/user/me
+# Redis:  subscribes to factory23.tracking.company.* channels
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: realtime
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: realtime
+    app.kubernetes.io/component: websocket
+    app.kubernetes.io/part-of: factory23
+    app.kubernetes.io/version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: realtime
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: realtime
+        app.kubernetes.io/name: realtime
+        app.kubernetes.io/component: websocket
+    spec:
+      priorityClassName: factory23-high-priority
+      terminationGracePeriodSeconds: 30
+
+      imagePullSecrets:
+        - name: do-registry
+
+      containers:
+        - name: realtime
+          image: registry.digitalocean.com/con-reg/realtime:v1
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: ws
+              containerPort: 8081
+              protocol: TCP
+
+          env:
+            - name: TRACKING_WS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: factory23-config
+                  key: TRACKING_WS_HOST
+            - name: TRACKING_WS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: factory23-config
+                  key: TRACKING_WS_PORT
+            - name: TRACKING_WS_REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: factory23-config
+                  key: TRACKING_WS_REDIS_HOST
+            - name: TRACKING_WS_REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: factory23-config
+                  key: TRACKING_WS_REDIS_PORT
+            - name: TRACKING_WS_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: factory23-secret
+                  key: TRACKING_WS_REDIS_PASSWORD
+            - name: TRACKING_WS_REDIS_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: factory23-config
+                  key: TRACKING_WS_REDIS_DB
+            - name: TASK_TRACKING_REDIS_CHANNEL_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: factory23-config
+                  key: TASK_TRACKING_REDIS_CHANNEL_PREFIX
+            - name: TRACKING_WS_AUTH_API_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: factory23-config
+                  key: TRACKING_WS_AUTH_API_BASE_URL
+            - name: TRACKING_WS_AUTH_ME_PATH
+              valueFrom:
+                configMapKeyRef:
+                  name: factory23-config
+                  key: TRACKING_WS_AUTH_ME_PATH
+            - name: TRACKING_WS_HEARTBEAT_MS
+              valueFrom:
+                configMapKeyRef:
+                  name: factory23-config
+                  key: TRACKING_WS_HEARTBEAT_MS
+            - name: TRACKING_WS_AUTH_TIMEOUT_MS
+              valueFrom:
+                configMapKeyRef:
+                  name: factory23-config
+                  key: TRACKING_WS_AUTH_TIMEOUT_MS
+            - name: TRACKING_WS_MAX_MESSAGE_BYTES
+              valueFrom:
+                configMapKeyRef:
+                  name: factory23-config
+                  key: TRACKING_WS_MAX_MESSAGE_BYTES
+            - name: TRACKING_WS_LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: factory23-config
+                  key: TRACKING_WS_LOG_LEVEL
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 5
+
+          securityContext:
+            runAsUser: 1000  # node user in node:20-alpine
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false

@@ -1,0 +1,55 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Kustomization — factory23 k8s/
+# Apply everything in the correct order with:
+#   kubectl apply -k k8s/
+# OR apply phase-by-phase using the deploy order below.
+#
+# IMPORTANT: Fill in k8s/secret.yaml with real values before applying.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: factory23
+
+resources:
+  # ── Phase 1: Foundation ──────────────────────────────────────────────────
+  - namespace.yaml
+  - priority-class.yaml      # Must exist before any Deployment/StatefulSet
+  - configmap.yaml
+  - nginx-configmap.yaml
+  - secret.yaml              # Fill in real values BEFORE applying
+
+  # ── Phase 2: Storage ─────────────────────────────────────────────────────
+  - redis-pvc.yaml           # mysql PVC created automatically by StatefulSet
+
+  # ── Phase 3: Data Layer ───────────────────────────────────────────────────
+  - mysql-statefulset.yaml
+  - mysql-service.yaml
+  - redis-deployment.yaml
+  - redis-service.yaml
+
+  # ── Phase 4: Migration (run manually before each version deploy) ──────────
+  # - migrate-job.yaml       # Uncomment to include in kustomize apply
+
+  # ── Phase 5: Application Layer ────────────────────────────────────────────
+  - backend-deployment.yaml
+  - backend-service.yaml
+  - nginx-service.yaml
+  - queue-worker-deployment.yaml
+  - scheduler-deployment.yaml
+  - realtime-deployment.yaml
+  - realtime-service.yaml
+
+  # ── Phase 6: Ingress & TLS ────────────────────────────────────────────────
+  - issuer.yaml
+  - certificate.yaml
+  - ingress.yaml
+
+  # ── Phase 7: Policies & Autoscaling ──────────────────────────────────────
+  - network-policy.yaml
+  - hpa.yaml
+  - pdb.yaml
+
+  # ── Phase 8: Backup & Observability ──────────────────────────────────────
+  - mysql-backup-cronjob.yaml
+  - prometheus-rules.yaml

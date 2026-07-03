@@ -1,0 +1,86 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Laravel Migration Job
+# Run BEFORE deploying a new backend image version to apply pending migrations.
+#
+# Usage (first deploy or each new version):
+#   kubectl delete job laravel-migrate -n factory23 --ignore-not-found
+#   kubectl apply -f k8s/migrate-job.yaml
+#   kubectl wait --for=condition=complete job/laravel-migrate -n factory23 --timeout=300s
+#   kubectl logs -n factory23 -l app=laravel-migrate
+#   # Then deploy backend:
+#   kubectl apply -f k8s/backend-deployment.yaml
+#
+# ttlSecondsAfterFinished: auto-deletes the Job 24h after completion.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: laravel-migrate
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: laravel-migrate
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: factory23
+spec:
+  ttlSecondsAfterFinished: 86400   # Auto-delete 24h after completion
+  backoffLimit: 3                  # Retry up to 3 times on failure
+  activeDeadlineSeconds: 600       # Fail if migration takes > 10 minutes
+  template:
+    metadata:
+      labels:
+        app: laravel-migrate
+        app.kubernetes.io/name: laravel-migrate
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never  # Never restart; Job handles retries via backoffLimit
+
+      imagePullSecrets:
+        - name: do-registry
+
+      containers:
+        - name: migrate
+          image: registry.digitalocean.com/con-reg/backend:v2
+          imagePullPolicy: Always
+
+          # The image bakes config:cache at build time without production env.
+          # Clear and rebuild from K8s env (same pattern as backend init-app).
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              mkdir -p storage/framework/cache/data \
+                       storage/framework/sessions \
+                       storage/framework/views \
+                       storage/logs
+              php artisan config:clear
+              php artisan config:cache
+              php artisan migrate --force --no-interaction
+
+          env:
+            # Migrations only need MySQL; avoid Redis dependency in this Job.
+            - name: CACHE_STORE
+              value: array
+            - name: SESSION_DRIVER
+              value: array
+            - name: QUEUE_CONNECTION
+              value: sync
+            - name: LOG_CHANNEL
+              value: stderr
+
+          envFrom:
+            - configMapRef:
+                name: factory23-config
+            - secretRef:
+                name: factory23-secret
+
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+          securityContext:
+            allowPrivilegeEscalation: false

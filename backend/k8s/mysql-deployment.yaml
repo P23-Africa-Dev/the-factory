@@ -1,0 +1,12 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# mysql-deployment.yaml  —  REPLACED BY StatefulSet
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# MySQL uses a StatefulSet (not a Deployment) for production stability:
+#   - Stable pod identity: mysql-0
+#   - PVC bound to specific pod (no data loss on pod reschedule)
+#   - Ordered pod management and graceful termination
+#   - Headless service for stable DNS: mysql-0.mysql.factory23.svc.cluster.local
+#
+# The actual manifest is in: k8s/mysql-statefulset.yaml
+# ─────────────────────────────────────────────────────────────────────────────

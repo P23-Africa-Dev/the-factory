@@ -6,6 +6,7 @@ namespace App\Http\Middleware;
 
 use App\Enums\SubscriptionStatus;
 use App\Models\User;
+use App\Services\Billing\BillingEnforcementSettingService;
 use App\Services\Company\CompanyContextService;
 use Closure;
 use Illuminate\Http\JsonResponse;
@@ -16,11 +17,12 @@ class EnsureCompanyHasActiveSubscription
 {
     public function __construct(
         private readonly CompanyContextService $companyContext,
+        private readonly BillingEnforcementSettingService $billingEnforcement,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
     {
-        if (! config('billing.enforce', true)) {
+        if (! $this->billingEnforcement->isEnabled()) {
             return $next($request);
         }
 

@@ -163,4 +163,41 @@ class BillingSystemTest extends TestCase
         $this->assertSame('up_to_10', $plans[0]['key']);
         $this->assertFalse($response->json('data.billing_status.can_choose_plan'));
     }
+
+    public function test_checkout_returns_validation_error_when_stripe_is_not_configured(): void
+    {
+        ['user' => $user] = $this->createCompanyWithOwner();
+
+        config()->set('cashier.key', '');
+        config()->set('cashier.secret', '');
+
+        $response = $this->withToken($this->ownerToken($user))
+            ->postJson('/api/v1/billing/checkout', [
+                'plan_key' => 'up_to_5',
+                'interval' => 'monthly',
+                'context' => 'onboarding',
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('errors.billing.0', 'Billing is temporarily unavailable. Please contact support to complete your subscription.');
+    }
+
+    public function test_payment_link_checkout_returns_validation_error_when_stripe_is_not_configured(): void
+    {
+        ['company' => $company] = $this->createCompanyWithOwner();
+
+        config()->set('cashier.key', '');
+        config()->set('cashier.secret', '');
+
+        $token = app(PaymentLinkService::class)->generate(
+            company: $company,
+            planKey: 'up_to_10',
+            interval: \App\Enums\BillingInterval::MONTHLY,
+        )['token'];
+
+        $response = $this->postJson('/api/v1/billing/payment-link/' . $token . '/checkout');
+
+        $response->assertStatus(422)
+            ->assertJsonPath('errors.billing.0', 'Billing is temporarily unavailable. Please contact support to complete your subscription.');
+    }
 }

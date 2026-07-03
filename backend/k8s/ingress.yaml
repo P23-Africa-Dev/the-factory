@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Ingress — api.thefactory23.com  (SINGLE merged object)
+#
+# DESIGN DECISIONS vs the old two-ingress layout:
+#
+#  1. Merged into ONE Ingress object.
+#     ingress-nginx's annotation precedence for a given host is undefined when
+#     multiple Ingress objects exist. In particular `proxy-read-timeout` is a
+#     server-level annotation — whichever Ingress "wins" sets it for ALL paths.
+#     The old setup had 120 s on factory23-api-ingress and 3600 s on
+#     factory23-ws-ingress for the same host. In practice ingress-nginx was
+#     using 120 s, silently killing WebSocket connections after 2 minutes.
+#     A single Ingress with 3600 s (max needed) fixes this permanently.
+#
+#  2. cert-manager.io/cluster-issuer annotation REMOVED from Ingress.
+#     certificate.yaml already creates and manages the TLS secret explicitly.
+#     Having the annotation as well caused cert-manager to manage the same
+#     Secret from two code paths simultaneously.
+#
+#  3. /tracking-ws path placed BEFORE / (catch-all).
+#     ingress-nginx processes paths from most-specific to least-specific, but
+#     explicit ordering avoids any edge-case ambiguity.
+#
+#  4. WebSocket upgrade is automatic in ingress-nginx — no configuration-snippet
+#     needed. nginx passes the Upgrade/Connection headers when the downstream
+#     client initiates a WS upgrade. (Snippets are disabled on DOKS anyway.)
+#
+# Prerequisites:
+#   1. ingress-nginx installed
+#   2. cert-manager installed + issuer.yaml applied
+#   3. certificate.yaml applied (manages api-thefactory23-com-tls secret)
+#   4. DNS A record: api.thefactory23.com → 157.245.28.86 (LB IP)
+#   5. coredns-custom.yaml applied (split-horizon DNS for in-cluster cert check)
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: factory23-ingress
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: factory23
+    app.kubernetes.io/component: ingress
+  annotations:
+    # HTTP → HTTPS redirect (all paths including /tracking-ws)
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # Timeouts — 3600 s covers both:
+    #   • WebSocket connections (long-lived, must not be dropped)
+    #   • Laravel API (PHP-FPM enforces its own execution limits)
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+
+    # Max upload size (matches nginx-configmap.yaml client_max_body_size)
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.thefactory23.com
+      secretName: api-thefactory23-com-tls
+  rules:
+    - host: api.thefactory23.com
+      http:
+        paths:
+          # WebSocket relay — more specific path must come first
+          - path: /tracking-ws
+            pathType: Prefix
+            backend:
+              service:
+                name: realtime-service
+                port:
+                  number: 8081
+
+          # Laravel API — catch-all
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 80
+

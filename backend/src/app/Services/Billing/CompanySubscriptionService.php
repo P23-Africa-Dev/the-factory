@@ -10,17 +10,20 @@ use App\Enums\SubscriptionStatus;
 use App\Models\Company;
 use App\Models\User;
 use App\Support\Billing\BillingPlanCatalog;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Laravel\Cashier\Checkout;
 use Stripe\Checkout\Session;
 use Stripe\Subscription as StripeSubscription;
+use Throwable;
 
 class CompanySubscriptionService
 {
     public function __construct(
         private readonly CompanySeatLimitService $seatLimitService,
+        private readonly BillingEnforcementSettingService $billingEnforcement,
     ) {}
 
     /**
@@ -45,7 +48,7 @@ class CompanySubscriptionService
             'company_id' => $company->id,
             'company_name' => $company->name,
             'public_company_id' => $company->company_id,
-            'billing_enforced' => (bool) config('billing.enforce', true),
+            'billing_enforced' => $this->billingEnforcement->isEnabled(),
             'subscription_status' => $status->value,
             'has_active_subscription' => $company->hasActiveSubscription(),
             'plan_key' => $company->subscription_plan_key,
@@ -69,9 +72,12 @@ class CompanySubscriptionService
     ): Checkout {
         $company = $this->resolveBillableCompany($user, $companyId);
         $this->assertCanCheckout($company, $planKey, $interval);
+        $this->ensureStripeConfigured();
 
         if (! $company->hasStripeId()) {
-            $company->createAsStripeCustomer();
+            $this->performStripeOperation($company, 'create_customer', function () use ($company): void {
+                $company->createAsStripeCustomer();
+            });
         }
 
         $priceId = BillingPlanCatalog::stripePriceId($planKey, $interval);
@@ -88,19 +94,24 @@ class CompanySubscriptionService
             ? $frontendUrl . '/subscribe?reason=expired'
             : $frontendUrl . '/subscribe';
 
-        return $company
-            ->newSubscription('default', $priceId)
-            ->checkout([
-                'success_url' => $successUrl,
-                'cancel_url' => $cancelUrl,
-                'metadata' => [
-                    'company_id' => (string) $company->id,
-                    'plan_key' => $planKey,
-                    'billing_interval' => $interval->value,
-                    'context' => $context,
-                    'user_id' => (string) $user->id,
-                ],
-            ]);
+        /** @var Checkout $checkout */
+        $checkout = $this->performStripeOperation($company, 'create_checkout_session', function () use ($company, $priceId, $successUrl, $cancelUrl, $planKey, $interval, $context, $user): Checkout {
+            return $company
+                ->newSubscription('default', $priceId)
+                ->checkout([
+                    'success_url' => $successUrl,
+                    'cancel_url' => $cancelUrl,
+                    'metadata' => [
+                        'company_id' => (string) $company->id,
+                        'plan_key' => $planKey,
+                        'billing_interval' => $interval->value,
+                        'context' => $context,
+                        'user_id' => (string) $user->id,
+                    ],
+                ]);
+        });
+
+        return $checkout;
     }
 
     public function createCheckoutSessionForPaymentLink(
@@ -109,9 +120,12 @@ class CompanySubscriptionService
         BillingInterval $interval,
     ): Checkout {
         $this->assertCanCheckout($company, $planKey, $interval, allowLockedPlan: true);
+        $this->ensureStripeConfigured();
 
         if (! $company->hasStripeId()) {
-            $company->createAsStripeCustomer();
+            $this->performStripeOperation($company, 'create_customer', function () use ($company): void {
+                $company->createAsStripeCustomer();
+            });
         }
 
         $priceId = BillingPlanCatalog::stripePriceId($planKey, $interval);
@@ -124,18 +138,23 @@ class CompanySubscriptionService
 
         $frontendUrl = rtrim((string) config('billing.frontend_url'), '/');
 
-        return $company
-            ->newSubscription('default', $priceId)
-            ->checkout([
-                'success_url' => $frontendUrl . '/billing/success?session_id={CHECKOUT_SESSION_ID}',
-                'cancel_url' => $frontendUrl . '/pay/cancelled',
-                'metadata' => [
-                    'company_id' => (string) $company->id,
-                    'plan_key' => $planKey,
-                    'billing_interval' => $interval->value,
-                    'context' => 'payment_link',
-                ],
-            ]);
+        /** @var Checkout $checkout */
+        $checkout = $this->performStripeOperation($company, 'create_checkout_session', function () use ($company, $priceId, $frontendUrl, $planKey, $interval): Checkout {
+            return $company
+                ->newSubscription('default', $priceId)
+                ->checkout([
+                    'success_url' => $frontendUrl . '/billing/success?session_id={CHECKOUT_SESSION_ID}',
+                    'cancel_url' => $frontendUrl . '/pay/cancelled',
+                    'metadata' => [
+                        'company_id' => (string) $company->id,
+                        'plan_key' => $planKey,
+                        'billing_interval' => $interval->value,
+                        'context' => 'payment_link',
+                    ],
+                ]);
+        });
+
+        return $checkout;
     }
 
     public function createPortalSession(User $user, ?int $companyId = null): string
@@ -284,6 +303,13 @@ class CompanySubscriptionService
         }
 
         $lockedPlan = $company->lockedPlanKey();
+        $isLockedPlan = $lockedPlan !== null && $lockedPlan === $planKey;
+
+        if (! BillingPlanCatalog::isActive($planKey) && ! $isLockedPlan) {
+            throw ValidationException::withMessages([
+                'plan_key' => ['The selected plan is not currently available.'],
+            ]);
+        }
 
         if ($lockedPlan !== null && $lockedPlan !== $planKey && ! $allowLockedPlan) {
             throw ValidationException::withMessages([
@@ -296,6 +322,45 @@ class CompanySubscriptionService
         if ($lockedInterval !== null && $lockedInterval !== $interval && ! $allowLockedPlan) {
             throw ValidationException::withMessages([
                 'interval' => ['Your account is assigned to a specific billing interval.'],
+            ]);
+        }
+    }
+
+    private function ensureStripeConfigured(): void
+    {
+        $publishableKey = trim((string) config('cashier.key'));
+        $secretKey = trim((string) config('cashier.secret'));
+
+        if ($publishableKey === '' || $secretKey === '') {
+            throw ValidationException::withMessages([
+                'billing' => ['Billing is temporarily unavailable. Please contact support to complete your subscription.'],
+            ]);
+        }
+    }
+
+    /**
+     * @template T
+     *
+     * @param  callable():T  $callback
+     * @return T
+     */
+    private function performStripeOperation(Company $company, string $operation, callable $callback): mixed
+    {
+        try {
+            return $callback();
+        } catch (ValidationException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            Log::error('Stripe billing operation failed.', [
+                'operation' => $operation,
+                'company_id' => $company->id,
+                'stripe_id' => $company->stripe_id,
+                'exception' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
+
+            throw ValidationException::withMessages([
+                'billing' => ['Unable to start secure checkout right now. Please try again shortly.'],
             ]);
         }
     }

@@ -4,7 +4,10 @@ use App\Http\Controllers\Admin\AI\AiHealthController;
 use App\Http\Controllers\Admin\AI\AiLogController;
 use App\Http\Controllers\Admin\AI\AiManagementController;
 use App\Http\Controllers\Admin\Auth\LoginController;
+use App\Http\Controllers\Admin\Billing\BillingEnforcementController;
+use App\Http\Controllers\Admin\Billing\BillingOverviewController;
 use App\Http\Controllers\Admin\Billing\AdminPaymentLinkController;
+use App\Http\Controllers\Admin\Billing\BillingPlanController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\Enterprise\DemoRequestController;
 use App\Http\Controllers\Admin\MapProviderSettingController;
@@ -63,6 +66,21 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
                 Route::get('/{demoRequest}', [DemoRequestController::class, 'show'])->name('show');
                 Route::patch('/{demoRequest}/activate', [DemoRequestController::class, 'activate'])->name('activate');
                 Route::post('/{demoRequest}/payment-link', [AdminPaymentLinkController::class, 'forDemoRequest'])->name('payment-link');
+            });
+        });
+
+        // ── Billing ────────────────────────────────────────────
+        Route::prefix('billing')->name('billing.')->middleware('admin.permission:manage_billing')->group(function (): void {
+            Route::get('/', BillingOverviewController::class)->name('index');
+            Route::post('/enforcement', [BillingEnforcementController::class, 'update'])->name('enforcement.update');
+
+            Route::prefix('plans')->name('plans.')->group(function (): void {
+                Route::get('/', [BillingPlanController::class, 'index'])->name('index');
+                Route::get('/create', [BillingPlanController::class, 'create'])->name('create');
+                Route::post('/', [BillingPlanController::class, 'store'])->name('store');
+                Route::get('/{plan}/edit', [BillingPlanController::class, 'edit'])->name('edit');
+                Route::patch('/{plan}', [BillingPlanController::class, 'update'])->name('update');
+                Route::delete('/{plan}', [BillingPlanController::class, 'destroy'])->name('destroy');
             });
         });
     });

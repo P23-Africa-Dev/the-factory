@@ -9,6 +9,7 @@ import {
     deleteCrmLabel,
     createCrmPipeline,
     createLead,
+    deleteLead,
     getAgentUploadsOverview,
     getCrmLeadsAnalytics,
     getLead,
@@ -227,6 +228,30 @@ export function useUpdateLead(
                 queryClient.invalidateQueries({ queryKey: SAVED_LOCATION_KEYS.all });
             }
             options?.onSuccess?.(res.data.lead);
+        },
+    });
+}
+
+export function useDeleteLead(
+    options?: { onSuccess?: (deletedLeadId: number) => void },
+    basePath: ApiRoleBasePath = "/admin"
+) {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({
+            leadId,
+            companyId,
+        }: {
+            leadId: number | string;
+            companyId: number | string | undefined;
+        }) => deleteLead(leadId, companyId, token, basePath),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            // Deleting a lead unlinks any saved map location tied to it.
+            queryClient.invalidateQueries({ queryKey: SAVED_LOCATION_KEYS.all });
+            options?.onSuccess?.(res.data.deleted_lead_id);
         },
     });
 }
