@@ -49,6 +49,7 @@ data:
   # ── Frontend / CORS ───────────────────────────────────────────────────────────
   FRONTEND_URL: "https://thefactory23.com"
   SANCTUM_STATEFUL_DOMAINS: "thefactory23.com,api.thefactory23.com"
+  BILLING_ENFORCE: "true"
   ENTERPRISE_ONBOARDING_SETUP_PATH: "/enterprise/setup"
   ENTERPRISE_ONBOARDING_SETUP_URL: ""
   # Explicit view compiled path avoids realpath() returning false on fresh containers

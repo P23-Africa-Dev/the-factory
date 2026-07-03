@@ -23,6 +23,7 @@ class CompanySubscriptionService
 {
     public function __construct(
         private readonly CompanySeatLimitService $seatLimitService,
+        private readonly BillingEnforcementSettingService $billingEnforcement,
     ) {}
 
     /**
@@ -47,7 +48,7 @@ class CompanySubscriptionService
             'company_id' => $company->id,
             'company_name' => $company->name,
             'public_company_id' => $company->company_id,
-            'billing_enforced' => (bool) config('billing.enforce', true),
+            'billing_enforced' => $this->billingEnforcement->isEnabled(),
             'subscription_status' => $status->value,
             'has_active_subscription' => $company->hasActiveSubscription(),
             'plan_key' => $company->subscription_plan_key,
@@ -302,6 +303,13 @@ class CompanySubscriptionService
         }
 
         $lockedPlan = $company->lockedPlanKey();
+        $isLockedPlan = $lockedPlan !== null && $lockedPlan === $planKey;
+
+        if (! BillingPlanCatalog::isActive($planKey) && ! $isLockedPlan) {
+            throw ValidationException::withMessages([
+                'plan_key' => ['The selected plan is not currently available.'],
+            ]);
+        }
 
         if ($lockedPlan !== null && $lockedPlan !== $planKey && ! $allowLockedPlan) {
             throw ValidationException::withMessages([
