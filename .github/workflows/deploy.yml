@@ -80,7 +80,7 @@ jobs:
           restore-keys: composer-
 
       - name: Install dependencies
-          run: composer install --optimize-autoloader --prefer-dist --no-interaction
+        run: composer install --optimize-autoloader --prefer-dist --no-interaction
 
       - name: Copy .env for testing
         run: cp .env.example .env
