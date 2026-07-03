@@ -198,8 +198,14 @@ jobs:
           sed -i "s|${{ env.IMAGE_NAME }}:[^ ]*|${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.SHA_TAG }}|g" \
             backend/k8s/migrate-job.yaml
           kubectl apply -f backend/k8s/migrate-job.yaml -n ${{ env.K8S_NAMESPACE }}
-          kubectl wait --for=condition=complete job/laravel-migrate \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+          if ! kubectl wait --for=condition=complete job/laravel-migrate \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=300s; then
+            echo "=== Migration job failed or timed out ==="
+            kubectl describe job/laravel-migrate -n ${{ env.K8S_NAMESPACE }} || true
+            kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=laravel-migrate -o wide || true
+            kubectl logs -n ${{ env.K8S_NAMESPACE }} -l app=laravel-migrate --all-containers=true --tail=200 || true
+            exit 1
+          fi
           echo "Migrations complete"
 
       - name: Deploy backend (zero-downtime rolling)

@@ -129,6 +129,9 @@ spec:
         - podSelector:
             matchLabels:
               app: realtime
+        - podSelector:
+            matchLabels:
+              app: laravel-migrate
       ports:
         - port: 6379
 

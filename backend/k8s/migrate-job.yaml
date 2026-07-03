@@ -40,14 +40,33 @@ spec:
       containers:
         - name: migrate
           image: registry.digitalocean.com/con-reg/backend:v2
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
 
+          # The image bakes config:cache at build time without production env.
+          # Clear and rebuild from K8s env (same pattern as backend init-app).
           command:
-            - php
-            - artisan
-            - migrate
-            - --force
-            - --no-interaction
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              mkdir -p storage/framework/cache/data \
+                       storage/framework/sessions \
+                       storage/framework/views \
+                       storage/logs
+              php artisan config:clear
+              php artisan config:cache
+              php artisan migrate --force --no-interaction
+
+          env:
+            # Migrations only need MySQL; avoid Redis dependency in this Job.
+            - name: CACHE_STORE
+              value: array
+            - name: SESSION_DRIVER
+              value: array
+            - name: QUEUE_CONNECTION
+              value: sync
+            - name: LOG_CHANNEL
+              value: stderr
 
           envFrom:
             - configMapRef:
