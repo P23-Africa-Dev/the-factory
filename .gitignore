@@ -39,6 +39,7 @@ yarn-error.log*
 backend/.env*
 frontend/.env*
 backend/src/.env*
+!backend/src/.env.example
 backend/src/config/.env*
 backend/src/vendor
 api-docs/.env*
