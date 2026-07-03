@@ -174,7 +174,7 @@ jobs:
 
       - name: Set image tag variable
         id: tag
-        run: echo "SHA_TAG=sha-$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+        run: echo "SHA_TAG=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
 
       - name: Update K8s manifests with new image tag
         run: |
