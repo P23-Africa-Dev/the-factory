@@ -841,6 +841,9 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::patch('/leads/{lead}', [LeadController::class, 'update'])
             ->middleware('throttle:30,1')
             ->name('leads.update');
+        Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
+            ->middleware('throttle:20,1')
+            ->name('leads.destroy');
         Route::post('/leads/{lead}/notes', [LeadController::class, 'storeNote'])
             ->middleware('throttle:60,1')
             ->name('leads.notes.store');

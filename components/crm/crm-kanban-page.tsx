@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useDeleteLead, useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { useInternalUsers } from "@/hooks/use-internal-users";
 import type { ApiLeadStatus, ApiRoleBasePath, LeadApiItem } from "@/lib/api/crm";
 import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm";
@@ -29,10 +29,11 @@ import {
     verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Search, Plus, Edit2 } from "lucide-react";
+import { Search, Plus, Edit2, Trash2 } from "lucide-react";
 import { formatDistanceToNowStrict, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 
 const STAGES: Array<{ id: ApiLeadStatus; title: string; color: string }> = [
     { id: "new", title: "New Leads", color: "#2563EB" },
@@ -104,12 +105,14 @@ function LeadCard({
     item,
     disabled,
     onEditClick,
+    onDeleteClick,
     companyUsers,
     onAssigneeChange,
 }: {
     item: DndItem;
     disabled: boolean;
     onEditClick?: () => void;
+    onDeleteClick?: () => void;
     companyUsers?: { id: number; name: string }[];
     onAssigneeChange?: (leadId: string, assigneeId: string) => void;
 }) {
@@ -143,18 +146,34 @@ function LeadCard({
                     <p className="text-[#8C93A1] text-[13px] mt-1 truncate">{item.description}</p>
                 </div>
                 {!disabled && (
-                    <button
-                        type="button"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onEditClick?.();
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className="text-gray-400 hover:text-[#0B1215] p-1.5 rounded-full hover:bg-gray-50 transition-colors shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100"
-                        title="Edit Lead"
-                    >
-                        <Edit2 size={15} />
-                    </button>
+                    <div className="flex items-center shrink-0">
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onEditClick?.();
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className="text-gray-400 hover:text-[#0B1215] p-1.5 rounded-full hover:bg-gray-50 transition-colors cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100"
+                            title="Edit Lead"
+                        >
+                            <Edit2 size={15} />
+                        </button>
+                        {onDeleteClick && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeleteClick();
+                                }}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                className="text-gray-400 hover:text-red-500 p-1.5 rounded-full hover:bg-red-50 transition-colors cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                title="Delete Lead"
+                            >
+                                <Trash2 size={15} />
+                            </button>
+                        )}
+                    </div>
                 )}
             </div>
 
@@ -189,6 +208,7 @@ function LeadColumn({
     disabled,
     onAddClick,
     onEditLeadClick,
+    onDeleteLeadClick,
     companyUsers,
     onAssigneeChange,
 }: {
@@ -196,6 +216,7 @@ function LeadColumn({
     disabled: boolean;
     onAddClick?: () => void;
     onEditLeadClick?: (leadId: string) => void;
+    onDeleteLeadClick?: (leadId: string) => void;
     companyUsers?: { id: number; name: string }[];
     onAssigneeChange?: (leadId: string, assigneeId: string) => void;
 }) {
@@ -239,6 +260,9 @@ function LeadColumn({
                                 item={item}
                                 disabled={disabled}
                                 onEditClick={() => onEditLeadClick?.(item.id)}
+                                onDeleteClick={
+                                    onDeleteLeadClick ? () => onDeleteLeadClick(item.id) : undefined
+                                }
                                 companyUsers={companyUsers}
                                 onAssigneeChange={onAssigneeChange}
                             />
@@ -266,6 +290,7 @@ function KanbanBoard({
     onStatusChange,
     onAddLeadClick,
     onEditLeadClick,
+    onDeleteLeadClick,
     companyUsers,
     onAssigneeChange,
 }: {
@@ -274,6 +299,7 @@ function KanbanBoard({
     onStatusChange: (leadId: string, status: ApiLeadStatus) => Promise<void>;
     onAddLeadClick?: (status: ApiLeadStatus) => void;
     onEditLeadClick?: (leadId: string) => void;
+    onDeleteLeadClick?: (leadId: string) => void;
     companyUsers?: { id: number; name: string }[];
     onAssigneeChange?: (leadId: string, assigneeId: string) => void;
 }) {
@@ -416,6 +442,7 @@ function KanbanBoard({
                             disabled={readOnly}
                             onAddClick={() => onAddLeadClick?.(container.id as ApiLeadStatus)}
                             onEditLeadClick={onEditLeadClick}
+                            onDeleteLeadClick={onDeleteLeadClick}
                             companyUsers={companyUsers}
                             onAssigneeChange={onAssigneeChange}
                         />
@@ -438,13 +465,16 @@ export function CrmKanbanPage({
     readOnly: boolean;
 }) {
     const user = useAuthStore((s) => s.user);
-    const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+    const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+    const canDeleteLeads =
+        !readOnly && ["owner", "admin", "supervisor"].includes((role ?? "").toLowerCase());
 
     const [search, setSearch] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [defaultStatus, setDefaultStatus] = useState<ApiLeadStatus>("new");
     const [editingLead, setEditingLead] = useState<LeadApiItem | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<LeadApiItem | null>(null);
 
     useEffect(() => {
         const timeout = setTimeout(() => {
@@ -473,6 +503,25 @@ export function CrmKanbanPage({
     );
 
     const updateLeadMutation = useUpdateLead(undefined, apiBasePath);
+    const deleteLeadMutation = useDeleteLead(
+        {
+            onSuccess: () => {
+                toast.success("Lead deleted successfully");
+            },
+        },
+        apiBasePath
+    );
+
+    const confirmDeleteLead = () => {
+        if (!deleteTarget) return;
+        deleteLeadMutation.mutate(
+            { leadId: deleteTarget.id, companyId: companyId ?? undefined },
+            {
+                onError: () => toast.error("Could not delete the lead. Please try again."),
+            }
+        );
+        setDeleteTarget(null);
+    };
 
     const { data: companyUsers = [] } = useInternalUsers({
         company_id: companyId ?? undefined,
@@ -564,6 +613,16 @@ export function CrmKanbanPage({
                                 setEditingLead(lead);
                             }
                         }}
+                        onDeleteLeadClick={
+                            canDeleteLeads
+                                ? (leadId) => {
+                                    const lead = data?.leads.find((l) => String(l.id) === leadId);
+                                    if (lead) {
+                                        setDeleteTarget(lead);
+                                    }
+                                }
+                                : undefined
+                        }
                         companyUsers={companyUsers}
                         onAssigneeChange={handleAssigneeChange}
                     />
@@ -585,6 +644,14 @@ export function CrmKanbanPage({
                     apiBasePath={apiBasePath}
                 />
             )}
+
+            <ConfirmDeleteModal
+                isOpen={deleteTarget !== null}
+                onClose={() => setDeleteTarget(null)}
+                onConfirm={confirmDeleteLead}
+                title="Delete Lead"
+                description={`Are you sure you want to delete "${deleteTarget?.name ?? "this lead"}"? This action cannot be undone.`}
+            />
         </div>
     );
 }

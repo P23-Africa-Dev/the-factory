@@ -15,13 +15,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { useCrmLabels, useCrmPipelines, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useCrmLabels, useCrmPipelines, useDeleteLead, useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { ImportLeadsModal, LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { CrmFilterBar } from "@/components/crm/crm-filter-bar";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
-import type { ApiLeadStatus } from "@/lib/api/crm";
+import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
 import { resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { toast } from "sonner";
 
@@ -110,6 +110,7 @@ export default function AllLeadsPage() {
   const [showLabelModal, setShowLabelModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingLead, setEditingLead] = useState<LeadApiItem | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
@@ -140,6 +141,9 @@ export default function AllLeadsPage() {
     source: agentUploadScope ? "agent_upload" : undefined,
   }, "/admin");
   const updateLeadMutation = useUpdateLead(undefined, "/admin");
+  const deleteLeadMutation = useDeleteLead(undefined, "/admin");
+
+  const apiLeads = data?.leads ?? [];
 
   const statusOptions = labels.map((label) => ({
     label: label.name,
@@ -190,12 +194,55 @@ export default function AllLeadsPage() {
     }
   };
 
-  const deleteLead = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
+  const deleteLead = async (id: string) => {
+    try {
+      await deleteLeadMutation.mutateAsync({
+        leadId: id,
+        companyId: companyId ?? undefined,
+      });
+      toast.success("Lead deleted successfully");
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setDeleteTargetId(null);
+      refetch();
+    } catch {
+      toast.error("Could not delete the lead. Please try again.");
+    }
+  };
+
+  const deleteSelectedLeads = async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+
+    try {
+      await Promise.all(
+        ids.map((id) =>
+          deleteLeadMutation.mutateAsync({
+            leadId: id,
+            companyId: companyId ?? undefined,
+          })
+        )
+      );
+      toast.success(
+        ids.length === 1 ? "Lead deleted successfully" : `${ids.length} leads deleted successfully`
+      );
+      setSelected(new Set());
+      setShowBulkDeleteConfirm(false);
+      refetch();
+    } catch {
+      toast.error("Could not delete one or more leads. Please try again.");
+      refetch();
+    }
+  };
+
+  const openEditLead = (id: string) => {
+    const lead = apiLeads.find((entry) => String(entry.id) === id);
+    if (lead) {
+      setEditingLead(lead);
+    }
   };
 
   return (
@@ -450,7 +497,7 @@ export default function AllLeadsPage() {
                       />
                     </button>
                     <button
-                      onClick={() => router.push(`${basePath}/leads/${lead.id}`)}
+                      onClick={() => openEditLead(lead.id)}
                       className={`p-1 rounded-md transition-colors ${isSelected ? "hover:bg-white/10" : "hover:bg-gray-100"
                         }`}
                     >
@@ -536,10 +583,18 @@ export default function AllLeadsPage() {
         />
       )}
 
+      {editingLead && (
+        <AddLeadModal
+          lead={editingLead}
+          onClose={() => setEditingLead(null)}
+          apiBasePath="/admin"
+        />
+      )}
+
       <ConfirmDeleteModal
         isOpen={deleteTargetId !== null}
         onClose={() => setDeleteTargetId(null)}
-        onConfirm={() => { if (deleteTargetId) deleteLead(deleteTargetId); }}
+        onConfirm={() => { if (deleteTargetId) void deleteLead(deleteTargetId); }}
         title="Delete Lead"
         description="Are you sure you want to delete this lead? This action cannot be undone."
       />
@@ -547,10 +602,7 @@ export default function AllLeadsPage() {
       <ConfirmDeleteModal
         isOpen={showBulkDeleteConfirm}
         onClose={() => setShowBulkDeleteConfirm(false)}
-        onConfirm={() => {
-          selected.forEach((id) => deleteLead(id));
-          setSelected(new Set());
-        }}
+        onConfirm={() => { void deleteSelectedLeads(); }}
         title={`Delete ${selected.size} Lead${selected.size === 1 ? "" : "s"}`}
         description={`Are you sure you want to delete ${selected.size} selected lead${selected.size === 1 ? "" : "s"}? This action cannot be undone.`}
       />
