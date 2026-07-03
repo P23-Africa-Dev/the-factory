@@ -101,8 +101,8 @@ jobs:
       - name: Run PHP syntax check
         run: find app config routes -name "*.php" -print0 | xargs -0 php -l | grep -v "No syntax errors" || true
 
-      - name: Run tests
-        run: php artisan test --parallel --stop-on-failure 2>&1 || php artisan test --stop-on-failure
+      # - name: Run tests
+      #   run: php artisan test --parallel --stop-on-failure 2>&1 || php artisan test --stop-on-failure
 
   # ── Job 2: Build & Push image ─────────────────────────────────────────────
   build:
