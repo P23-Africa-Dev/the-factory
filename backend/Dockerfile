@@ -21,10 +21,8 @@ WORKDIR /var/www/html
 
 COPY src/ .
 
-# Install all PHP dependencies.
-# Use `composer update league/flysystem-aws-s3-v3` to resolve the newly-added
-# DO Spaces driver while keeping every other package at its locked version.
-RUN composer update league/flysystem-aws-s3-v3 \
+# Install locked production dependencies.
+RUN composer install \
     --no-dev \
     --optimize-autoloader \
     --prefer-dist \
