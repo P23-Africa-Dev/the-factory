@@ -73,7 +73,7 @@ class AttendanceApiTest extends TestCase
         $clockOutResponse->assertOk()
             ->assertJsonPath('data.record.work_duration_minutes', 460);
 
-        $this->assertDatabaseHas('attendance_records', [
+        $this->assertAttendanceRecordExists([
             'company_id' => $company->id,
             'user_id' => $agent->id,
             'attendance_date' => '2026-06-01',
@@ -153,7 +153,7 @@ class AttendanceApiTest extends TestCase
         $this->assertContains('present', $statuses);
         $this->assertContains('absent', $statuses);
 
-        $this->assertDatabaseMissing('attendance_records', [
+        $this->assertAttendanceRecordMissing([
             'company_id' => $company->id,
             'user_id' => $otherAgent->id,
             'attendance_date' => '2026-06-01',
@@ -537,5 +537,45 @@ class AttendanceApiTest extends TestCase
             'attendance_affects_pay' => $attendanceAffectsPay,
             'commission_enabled' => false,
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function assertAttendanceRecordExists(array $attributes): void
+    {
+        $date = $attributes['attendance_date'] ?? null;
+        unset($attributes['attendance_date']);
+
+        $query = AttendanceRecord::query()->where($attributes);
+
+        if ($date !== null) {
+            $query->whereDate('attendance_date', $date);
+        }
+
+        $this->assertTrue(
+            $query->exists(),
+            'Failed asserting that an attendance record exists matching the given attributes.',
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function assertAttendanceRecordMissing(array $attributes): void
+    {
+        $date = $attributes['attendance_date'] ?? null;
+        unset($attributes['attendance_date']);
+
+        $query = AttendanceRecord::query()->where($attributes);
+
+        if ($date !== null) {
+            $query->whereDate('attendance_date', $date);
+        }
+
+        $this->assertFalse(
+            $query->exists(),
+            'Failed asserting that an attendance record is missing for the given attributes.',
+        );
     }
 }
