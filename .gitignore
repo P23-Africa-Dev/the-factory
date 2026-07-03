@@ -58,6 +58,13 @@ debug-*.log
 *.log
 !**/*.log.example
 
+# accidental Windows/Git Bash output artifacts
+/nul
+/backend/k8s/nul
+
+# local database dumps
+/backend/backup.sql
+
 
 # vercel
 .vercel

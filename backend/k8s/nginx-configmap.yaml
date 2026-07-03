@@ -1,0 +1,115 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nginx site configuration — adapted from docker/nginx/default.conf
+# Key changes for Kubernetes sidecar pattern:
+#   fastcgi_pass 127.0.0.1:9000  (PHP-FPM on same pod, loopback)
+#   upstream realtime_upstream   (K8s DNS, stable ClusterIP)
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: factory23
+    app.kubernetes.io/component: nginx-config
+data:
+  default.conf: |
+    upstream realtime_upstream {
+        server realtime-service.factory23.svc.cluster.local:8081;
+        keepalive 32;
+    }
+
+    server {
+        listen 80;
+        server_name _;
+        root /var/www/html/public;
+        index index.php index.html;
+
+        # Log to stdout/stderr — K8s collects via kubectl logs
+        access_log /dev/stdout;
+        error_log  /dev/stderr warn;
+
+        client_max_body_size 64M;
+
+        # Security headers
+        add_header X-Frame-Options      "SAMEORIGIN"                    always;
+        add_header X-Content-Type-Options "nosniff"                     always;
+        add_header X-XSS-Protection     "1; mode=block"                 always;
+        add_header Referrer-Policy      "strict-origin-when-cross-origin" always;
+
+        # WebSocket proxy ── realtime tracking relay
+        location /tracking-ws {
+            proxy_pass         http://realtime_upstream;
+            proxy_http_version 1.1;
+            proxy_set_header   Upgrade    $http_upgrade;
+            proxy_set_header   Connection "upgrade";
+            proxy_set_header   Host       $host;
+            proxy_set_header   X-Real-IP  $remote_addr;
+            proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header   X-Forwarded-Proto $scheme;
+            proxy_read_timeout  3600s;
+            proxy_send_timeout  3600s;
+            proxy_connect_timeout 10s;
+        }
+
+        # Laravel routing
+        location / {
+            try_files $uri $uri/ /index.php?$query_string;
+        }
+
+        # Hide PHP version from responses
+        fastcgi_hide_header X-Powered-By;
+
+        # PHP-FPM via FastCGI ── sidecar on loopback
+        location ~ \.php$ {
+            include             fastcgi_params;
+            fastcgi_index       index.php;
+            fastcgi_pass        127.0.0.1:9000;
+            fastcgi_hide_header X-Powered-By;
+            fastcgi_param       SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            fastcgi_param       PATH_INFO       $fastcgi_path_info;
+            fastcgi_connect_timeout 60s;
+            fastcgi_send_timeout    120s;
+            fastcgi_read_timeout    120s;
+            fastcgi_buffer_size     128k;
+            fastcgi_buffers         4 256k;
+            fastcgi_busy_buffers_size 256k;
+        }
+
+        # Block .htaccess access
+        location ~ /\.ht {
+            deny all;
+        }
+    }
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# PHP runtime configuration — mirrors docker/php/conf.d/custom.ini
+# opcache.validate_timestamps=0 is correct for production K8s with immutable
+# container images (no file changes at runtime).
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: php-custom-ini
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: factory23
+    app.kubernetes.io/component: php-config
+data:
+  99-custom.ini: |
+    expose_php               = Off
+    memory_limit             = 512M
+    upload_max_filesize      = 64M
+    post_max_size            = 64M
+    max_execution_time       = 120
+    max_input_vars           = 3000
+    date.timezone            = UTC
+    opcache.enable           = 1
+    opcache.validate_timestamps = 0
+    opcache.revalidate_freq  = 0
+    opcache.memory_consumption = 256
+    opcache.interned_strings_buffer = 16
+    opcache.max_accelerated_files = 20000
+    realpath_cache_size      = 4096K
+    realpath_cache_ttl       = 600

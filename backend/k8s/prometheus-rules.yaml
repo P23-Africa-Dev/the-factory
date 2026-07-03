@@ -1,0 +1,192 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ServiceMonitors — tell Prometheus which factory23 services to scrape
+# Applied to: monitoring namespace (Prometheus discovers across namespaces)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 1. Scrape nginx-ingress-nginx controller metrics ───────────────────────────
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ingress-nginx
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames: [ingress-nginx]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingress-nginx
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+
+---
+# 2. PrometheusRules — critical alerts for factory23 production ───────────────
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: factory23-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    # ── Pod health ──────────────────────────────────────────────────────────
+    - name: factory23.pods
+      interval: 60s
+      rules:
+        - alert: PodCrashLooping
+          expr: |
+            rate(kube_pod_container_status_restarts_total{namespace="factory23"}[15m]) * 60 > 1
+          for: 5m
+          labels:
+            severity: critical
+            namespace: factory23
+          annotations:
+            summary: "Pod {{ $labels.pod }} is crash-looping"
+            description: "Pod {{ $labels.pod }} in namespace factory23 restarted more than once per minute over the last 15 minutes."
+
+        - alert: PodNotReady
+          expr: |
+            kube_pod_status_ready{namespace="factory23", condition="true"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            namespace: factory23
+          annotations:
+            summary: "Pod {{ $labels.pod }} is not ready"
+            description: "Pod {{ $labels.pod }} in namespace factory23 has been unready for > 5 minutes."
+
+        - alert: BackendReplicasMissing
+          expr: |
+            kube_deployment_status_replicas_available{namespace="factory23", deployment="backend"} < 2
+          for: 3m
+          labels:
+            severity: critical
+            namespace: factory23
+          annotations:
+            summary: "Backend has fewer than 2 available replicas"
+            description: "Backend deployment has only {{ $value }} replicas available. Minimum threshold is 2."
+
+    # ── Node resources ──────────────────────────────────────────────────────
+    - name: factory23.nodes
+      interval: 60s
+      rules:
+        - alert: NodeMemoryPressure
+          expr: |
+            (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.10
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node {{ $labels.node }} memory critically low"
+            description: "Node has less than 10% memory available ({{ printf \"%.1f\" (mul $value 100) }}% free)."
+
+        - alert: NodeDiskPressure
+          expr: |
+            (node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"} / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}) < 0.15
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.instance }} disk space low"
+            description: "Node {{ $labels.instance }} root disk is {{ printf \"%.1f\" (mul $value 100) }}% full."
+
+        - alert: NodeHighCPU
+          expr: |
+            100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.instance }} CPU above 85%"
+            description: "Node CPU usage has been above 85% for 10+ minutes."
+
+    # ── MySQL ───────────────────────────────────────────────────────────────
+    - name: factory23.mysql
+      interval: 60s
+      rules:
+        - alert: MySQLPodDown
+          expr: |
+            kube_pod_status_ready{namespace="factory23", pod=~"mysql-.*", condition="true"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            namespace: factory23
+          annotations:
+            summary: "MySQL pod is down"
+            description: "MySQL pod {{ $labels.pod }} has been unready for > 2 minutes."
+
+        - alert: MySQLDiskNearFull
+          expr: |
+            (kubelet_volume_stats_used_bytes{namespace="factory23", persistentvolumeclaim="mysql-data-mysql-0"}
+            / kubelet_volume_stats_capacity_bytes{namespace="factory23", persistentvolumeclaim="mysql-data-mysql-0"}) > 0.80
+          for: 10m
+          labels:
+            severity: warning
+            namespace: factory23
+          annotations:
+            summary: "MySQL PVC disk usage above 80%"
+            description: "MySQL data volume is {{ printf \"%.1f\" (mul $value 100) }}% full (20Gi total). Consider expanding."
+
+    # ── Redis ───────────────────────────────────────────────────────────────
+    - name: factory23.redis
+      interval: 60s
+      rules:
+        - alert: RedisPodDown
+          expr: |
+            kube_pod_status_ready{namespace="factory23", pod=~"redis-.*", condition="true"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            namespace: factory23
+          annotations:
+            summary: "Redis pod is down"
+            description: "Redis pod {{ $labels.pod }} has been unready for > 2 minutes."
+
+    # ── TLS Certificate ─────────────────────────────────────────────────────
+    - name: factory23.tls
+      interval: 3600s
+      rules:
+        - alert: CertificateExpiringSoon
+          expr: |
+            certmanager_certificate_expiration_timestamp_seconds{namespace="factory23"}
+            - time() < 86400 * 14
+          for: 1h
+          labels:
+            severity: warning
+            namespace: factory23
+          annotations:
+            summary: "TLS certificate expiring in < 14 days"
+            description: "Certificate {{ $labels.name }} in namespace {{ $labels.namespace }} expires in less than 14 days."
+
+    # ── ingress-nginx ───────────────────────────────────────────────────────
+    - name: factory23.ingress
+      interval: 60s
+      rules:
+        - alert: HighHTTP5xxRate
+          expr: |
+            sum(rate(nginx_ingress_controller_requests{status=~"5..",namespace="factory23"}[5m]))
+            / sum(rate(nginx_ingress_controller_requests{namespace="factory23"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+            namespace: factory23
+          annotations:
+            summary: "HTTP 5xx error rate above 5%"
+            description: "More than 5% of requests to factory23 are returning 5xx errors."
+
+        - alert: SlowAPIResponseTime
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(nginx_ingress_controller_request_duration_seconds_bucket{namespace="factory23"}[5m])) by (le)
+            ) > 3
+          for: 5m
+          labels:
+            severity: warning
+            namespace: factory23
+          annotations:
+            summary: "API p95 response time above 3 seconds"
+            description: "95th percentile response time is {{ printf \"%.2f\" $value }}s."

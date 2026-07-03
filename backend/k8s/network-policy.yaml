@@ -1,0 +1,214 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Network Policies — factory23 namespace
+# Strategy: deny all ingress by default; allow only required paths.
+# Egress is open (required for external API calls: OpenAI, Stripe, Resend, etc.)
+# DNS (port 53) is explicitly allowed for all pods.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 1. Default deny all ingress traffic in this namespace ─────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: factory23
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+
+---
+# 2. Backend: allow ingress from ingress-nginx (port 80) ────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-backend
+  namespace: factory23
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    # From ingress-nginx controller (in ingress-nginx namespace)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 80
+    # From realtime server (token auth: GET /api/v1/user/me)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: realtime
+      ports:
+        - port: 80
+
+---
+# 9. ACME HTTP-01 solver: allow ingress-nginx → cert-manager solver pods ────
+# cert-manager creates temporary pods with this label when issuing/renewing
+# certificates. Without this rule, default-deny-ingress blocks the solver
+# and the challenge upstream times out (504) even though routing is correct.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-acme-solver
+  namespace: factory23
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8089
+
+---
+# 3. MySQL: allow ingress from backend, queue-worker, scheduler, migrate ────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-mysql
+  namespace: factory23
+spec:
+  podSelector:
+    matchLabels:
+      app: mysql
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+        - podSelector:
+            matchLabels:
+              app: queue-worker
+        - podSelector:
+            matchLabels:
+              app: scheduler
+        - podSelector:
+            matchLabels:
+              app: laravel-migrate
+        - podSelector:
+            matchLabels:
+              app: mysql-backup
+      ports:
+        - port: 3306
+
+---
+# 4. Redis: allow ingress from backend, queue-worker, scheduler, realtime ───
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-redis
+  namespace: factory23
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+        - podSelector:
+            matchLabels:
+              app: queue-worker
+        - podSelector:
+            matchLabels:
+              app: scheduler
+        - podSelector:
+            matchLabels:
+              app: realtime
+      ports:
+        - port: 6379
+
+---
+# 5. Realtime: allow ingress from ingress-nginx (WebSocket port 8081) ───────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-realtime
+  namespace: factory23
+spec:
+  podSelector:
+    matchLabels:
+      app: realtime
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8081
+
+---
+# 6. Allow DNS resolution for all pods (CoreDNS in kube-system) ─────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-dns
+  namespace: factory23
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+
+---
+# 7. Allow egress to external internet for all pods ──────────────────────────
+# Required for: OpenAI, Anthropic, Stripe, Resend, Mapbox, Google APIs, etc.
+# Private RFC-1918 ranges are excluded (internal traffic uses K8s services).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-internet
+  namespace: factory23
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+
+---
+# 8. Allow intra-namespace egress (pod → pod within factory23) ───────────────
+# Backend → MySQL/Redis, Realtime → Backend/Redis, Workers → MySQL/Redis
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-intra-namespace
+  namespace: factory23
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector: {}

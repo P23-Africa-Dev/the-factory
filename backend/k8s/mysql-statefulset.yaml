@@ -1,0 +1,124 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MySQL 8.4 StatefulSet
+# Uses volumeClaimTemplates to bind a 20Gi DigitalOcean block storage PVC
+# to pod mysql-0 (stable identity). Single replica — not clustered.
+# Apply AFTER: namespace, configmap, secret, priority-class
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: factory23
+spec:
+  serviceName: "mysql"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+        app.kubernetes.io/name: mysql
+        app.kubernetes.io/component: database
+    spec:
+      priorityClassName: factory23-high-priority
+      terminationGracePeriodSeconds: 60
+
+      containers:
+        - name: mysql
+          image: mysql:8.4
+          imagePullPolicy: IfNotPresent
+
+          args:
+            - --character-set-server=utf8mb4
+            - --collation-server=utf8mb4_unicode_ci
+            - --max_connections=300
+            - --innodb_buffer_pool_size=256M
+            # Performance diagnostics — log queries > 2s to /var/lib/mysql/slow-queries.log
+            - --slow_query_log=ON
+            - --slow_query_log_file=/var/lib/mysql/slow-queries.log
+            - --long_query_time=2
+
+          ports:
+            - name: mysql
+              containerPort: 3306
+              protocol: TCP
+
+          env:
+            - name: MYSQL_DATABASE
+              value: "factory_api"
+            - name: MYSQL_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: factory23-config
+                  key: DB_USERNAME
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: factory23-secret
+                  key: DB_PASSWORD
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: factory23-secret
+                  key: DB_ROOT_PASSWORD
+            - name: TZ
+              value: "UTC"
+
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "mysqladmin ping -uroot -p${MYSQL_ROOT_PASSWORD} -h 127.0.0.1 --silent"
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "mysqladmin ping -uroot -p${MYSQL_ROOT_PASSWORD} -h 127.0.0.1 --silent"
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+            successThreshold: 1
+
+          securityContext:
+            allowPrivilegeEscalation: false
+
+  # StatefulSet auto-creates PVC: mysql-data-mysql-0 (20Gi, do-block-storage)
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-data
+        labels:
+          app.kubernetes.io/name: mysql
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: do-block-storage
+        resources:
+          requests:
+            storage: 20Gi
