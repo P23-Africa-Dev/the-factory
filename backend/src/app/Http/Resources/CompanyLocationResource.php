@@ -11,12 +11,15 @@ class CompanyLocationResource extends JsonResource
 {
     private ?int $viewerCompanyId = null;
 
+    private ?int $viewerUserId = null;
+
     private ?string $viewerRole = null;
 
-    public function withViewerContext(int $companyId, string $role): self
+    public function withViewerContext(int $companyId, string $role, ?int $userId = null): self
     {
         $this->viewerCompanyId = $companyId;
         $this->viewerRole = $role;
+        $this->viewerUserId = $userId;
 
         return $this;
     }
@@ -25,8 +28,11 @@ class CompanyLocationResource extends JsonResource
     {
         $viewerCompanyId = $this->viewerCompanyId ?? $request->attributes->get('viewer_company_id');
         $viewerRole = $this->viewerRole ?? (string) ($request->attributes->get('viewer_role') ?? '');
+        $viewerUserId = $this->viewerUserId ?? $request->attributes->get('viewer_user_id');
         $isOwnerOrg = $viewerCompanyId !== null && (int) $this->company_id === (int) $viewerCompanyId;
-        $canManage = $isOwnerOrg && in_array($viewerRole, ['owner', 'admin', 'supervisor'], true);
+        $canManage = $isOwnerOrg
+            && $viewerUserId !== null
+            && (int) $this->created_by_user_id === (int) $viewerUserId;
 
         $publicFields = [
             'id' => $this->id,
@@ -54,12 +60,12 @@ class CompanyLocationResource extends JsonResource
             'crm_lead_id' => $this->crm_lead_id,
             'linked_to_crm' => $this->crm_lead_id !== null,
             'meta' => $this->meta,
-            'created_by' => $this->whenLoaded('creator', fn (): ?array => $this->creator ? [
+            'created_by' => $this->whenLoaded('creator', fn(): ?array => $this->creator ? [
                 'id' => $this->creator->id,
                 'name' => $this->creator->name,
                 'email' => $this->creator->email,
             ] : null),
-            'updated_by' => $this->whenLoaded('updater', fn (): ?array => $this->updater ? [
+            'updated_by' => $this->whenLoaded('updater', fn(): ?array => $this->updater ? [
                 'id' => $this->updater->id,
                 'name' => $this->updater->name,
                 'email' => $this->updater->email,

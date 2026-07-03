@@ -80,9 +80,12 @@ export default function AgentLoginForm() {
     try {
       const res = await loginAgent({ email: values.email, password: values.password });
       const token = res.data.token;
-      setAuthSession(token, values.remember ?? true);
 
       const me = await getMe(token);
+      // Persist the session using the user's actual onboarding state, not the
+      // remember-me checkbox (which previously caused a false "/complete-onboarding" redirect).
+      setAuthSession(token, Boolean(me.data.onboarding_completed));
+
       if (me.data.active_company?.id) {
         setCompanyId(me.data.active_company.id);
       }
@@ -170,11 +173,23 @@ export default function AgentLoginForm() {
           >
             By using Factory 23, you agree to our{" "}
             <Link
-              href="#"
+              href="/files/Factory23 Terms of Service.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-[#6FA8A6] font-bold underline decoration-[#6FA8A6] underline-offset-2 hover:text-[#5e9795] transition-colors"
             >
-              Terms, conditions and Privacy Policy.
+              Terms &amp; Conditions
+            </Link>{" "}
+            and{" "}
+            <Link
+              href="/files/Factory23 Privacy Policy.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#6FA8A6] font-bold underline decoration-[#6FA8A6] underline-offset-2 hover:text-[#5e9795] transition-colors"
+            >
+              Privacy Policy
             </Link>
+            .
           </label>
           {errors.terms && (
             <p className="mt-1 px-1 text-[11px] font-medium text-red-500">

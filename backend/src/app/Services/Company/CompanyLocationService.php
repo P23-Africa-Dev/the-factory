@@ -7,6 +7,7 @@ namespace App\Services\Company;
 use App\Models\CompanyLocation;
 use App\Models\User;
 use App\Services\Crm\MapSavedLeadBridgeService;
+use App\Services\Location\MapboxGeocodingService;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,7 @@ class CompanyLocationService
     public function __construct(
         private readonly CompanyContextService $companyContextService,
         private readonly MapSavedLeadBridgeService $mapSavedLeadBridgeService,
+        private readonly MapboxGeocodingService $mapboxGeocodingService,
     ) {}
 
     /**
@@ -111,13 +113,12 @@ class CompanyLocationService
     {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
-        $role = (string) $context['role'];
 
         if ((int) $location->company_id !== $resolvedCompanyId) {
             return false;
         }
 
-        return in_array($role, ['owner', 'admin', 'supervisor'], true);
+        return (int) $location->created_by_user_id === (int) $user->id;
     }
 
     public function update(User $user, CompanyLocation $location, array $data): CompanyLocation
@@ -125,7 +126,26 @@ class CompanyLocationService
         $context = $this->companyContextService->resolve($user, $data['company_id'] ?? null);
         $companyId = (int) $context['company']->id;
         $this->assertLocationInCompany($location, $companyId);
-        $this->ensureCanEdit((string) $context['role']);
+        $this->ensureCanEdit($user, $location);
+
+        $hasAddressChange = array_key_exists('address', $data)
+            && $this->normalizeAddress($data['address']) !== $this->normalizeAddress($location->address);
+
+        $hasExplicitCoordinates = array_key_exists('latitude', $data) || array_key_exists('longitude', $data);
+
+        if ($hasAddressChange && ! $hasExplicitCoordinates) {
+            $addressToGeocode = trim((string) ($data['address'] ?? ''));
+
+            $geocoded = $this->mapboxGeocodingService->geocodeAddress($addressToGeocode);
+            if ($geocoded === null) {
+                throw ValidationException::withMessages([
+                    'address' => ['Unable to geocode this address. Please use a more specific address.'],
+                ]);
+            }
+
+            $data['latitude'] = $geocoded['latitude'];
+            $data['longitude'] = $geocoded['longitude'];
+        }
 
         $location->update([
             'name' => $data['name'] ?? $location->name,
@@ -155,7 +175,7 @@ class CompanyLocationService
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
         $this->assertLocationInCompany($location, $resolvedCompanyId);
-        $this->ensureCanDelete((string) $context['role']);
+        $this->ensureCanDelete($user, $location, (string) $context['role']);
 
         $this->mapSavedLeadBridgeService->unlinkLocationFromLead($location);
         $location->update(['crm_lead_id' => null]);
@@ -178,22 +198,35 @@ class CompanyLocationService
         }
     }
 
-    private function ensureCanEdit(string $role): void
+    private function ensureCanEdit(User $user, CompanyLocation $location): void
     {
-        if (! in_array($role, ['owner', 'admin', 'supervisor'], true)) {
+        if ((int) $location->created_by_user_id !== (int) $user->id) {
             throw ValidationException::withMessages([
-                'authorization' => ['Only owners, admins, and supervisors can edit locations.'],
+                'authorization' => ['Only the location creator can edit this location.'],
             ]);
         }
     }
 
-    private function ensureCanDelete(string $role): void
+    private function normalizeAddress(mixed $address): string
     {
-        if (! in_array($role, ['owner', 'admin'], true)) {
-            throw ValidationException::withMessages([
-                'authorization' => ['Only owners and admins can delete locations.'],
-            ]);
+        return trim((string) ($address ?? ''));
+    }
+
+    private function ensureCanDelete(User $user, CompanyLocation $location, string $role): void
+    {
+        if (in_array($role, ['owner', 'admin'], true)) {
+            return;
         }
+
+        if (in_array($role, ['agent', 'supervisor'], true)) {
+            $this->ensureCanEdit($user, $location);
+
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'authorization' => ['You are not allowed to delete this location.'],
+        ]);
     }
 
     private function assertLocationInCompany(CompanyLocation $location, int $companyId): void

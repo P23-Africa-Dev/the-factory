@@ -24,6 +24,7 @@ class SyncLeadEmailsJob implements ShouldQueue
     public function __construct(
         public readonly int $companyId,
         public readonly int $leadId,
+        public readonly ?int $userId = null,
     ) {
         $this->onQueue('email-sync');
     }
@@ -31,11 +32,12 @@ class SyncLeadEmailsJob implements ShouldQueue
     public function handle(CrmEmailService $crmEmailService): void
     {
         try {
-            $crmEmailService->syncLead($this->companyId, $this->leadId);
+            $crmEmailService->syncLead($this->companyId, $this->leadId, $this->userId);
         } catch (\Throwable $exception) {
             Log::warning('Lead email sync failed.', [
                 'company_id' => $this->companyId,
                 'lead_id' => $this->leadId,
+                'user_id' => $this->userId,
                 'error' => $exception->getMessage(),
             ]);
         }

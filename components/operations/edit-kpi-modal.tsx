@@ -88,7 +88,9 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
   });
 
   useEffect(() => {
-    if (kpi) {
+    if (!kpi) return;
+
+    const timer = window.setTimeout(() => {
       setForm({
         name: kpi.name,
         category: kpi.category,
@@ -101,7 +103,9 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
         expectedOutcome: kpi.expected_outcome,
       });
       setErrors({});
-    }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [kpi]);
 
   const set = <K extends keyof FormState>(key: K, val: FormState[K]) => {

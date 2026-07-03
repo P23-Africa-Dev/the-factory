@@ -19,7 +19,8 @@ import { useCrmLabels, useCrmPipelines, useLeads, useUpdateLead } from "@/hooks/
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { ImportLeadsModal } from "@/components/crm/crm-toolbar-modals";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { CrmFilterBar } from "@/components/crm/crm-filter-bar";
+import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
 import type { ApiLeadStatus } from "@/lib/api/crm";
 import { resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { toast } from "sonner";
@@ -42,7 +43,7 @@ function getStatusColor(status: string | null | undefined, labels: Array<{ slug:
 
 function getStatusLabel(status: string | null | undefined, labels: Array<{ slug: string; name: string }>): string {
   const match = labels.find((label) => label.slug === status);
-  return match ? match.name : "Newly Lead";
+  return match ? match.name : "New Lead";
 }
 
 function StatusDropdown({
@@ -57,7 +58,7 @@ function StatusDropdown({
   onChange: (value: ApiLeadStatus, color: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const label = options.find((option) => option.value === value)?.label ?? "Newly Lead";
+  const label = options.find((option) => option.value === value)?.label ?? "New Lead";
 
   return (
     <div className="relative">
@@ -221,6 +222,11 @@ export default function AllLeadsPage() {
                 : "All Pipeline"}
               <ChevronDown size={13} />
             </button>
+            <MapLeadsToolbarButton
+              pipelines={pipelines}
+              selectedPipelineId={selectedPipelineId}
+              onPipelineChange={setSelectedPipelineId}
+            />
             <button onClick={() => setShowFilter((prev) => !prev)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <Tag size={13} />
               Label
@@ -241,29 +247,18 @@ export default function AllLeadsPage() {
         </div>
 
         {showFilter && (
-          <div className="bg-white rounded-[14px] border border-gray-100 p-3 flex flex-wrap items-center gap-2">
-            <SearchableSelect
-              value={String(selectedPipelineId ?? "")}
-              onChange={(v) => setSelectedPipelineId(v ? Number(v) : null)}
-              options={[{ value: "", label: "All Pipelines" }, ...pipelines.map((p) => ({ value: String(p.id), label: p.name }))]}
-              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px] bg-white min-w-32"
-            />
-            <SearchableSelect
-              value={selectedLabel}
-              onChange={setSelectedLabel}
-              options={[{ value: "all", label: "All Labels" }, ...labels.map((l) => ({ value: l.slug, label: l.name }))]}
-              className="border border-gray-200 rounded-[10px] px-3 py-2 text-[12px] bg-white min-w-28"
-            />
-            <button
-              onClick={() => {
-                setSelectedPipelineId(null);
-                setSelectedLabel("all");
-              }}
-              className="px-3 py-2 border border-red-200 text-red-500 rounded-[10px] text-[12px]"
-            >
-              Clear
-            </button>
-          </div>
+          <CrmFilterBar
+            pipelines={pipelines}
+            labels={labels}
+            selectedPipelineId={selectedPipelineId}
+            onPipelineChange={setSelectedPipelineId}
+            selectedLabel={selectedLabel}
+            onLabelChange={setSelectedLabel}
+            onClear={() => {
+              setSelectedPipelineId(null);
+              setSelectedLabel("all");
+            }}
+          />
         )}
 
         {/* Table card */}

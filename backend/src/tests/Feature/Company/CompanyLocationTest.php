@@ -9,6 +9,7 @@ use App\Models\CompanyLocation;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class CompanyLocationTest extends TestCase
@@ -81,7 +82,7 @@ class CompanyLocationTest extends TestCase
 
     public function test_agent_can_create_and_list_locations(): void
     {
-        [$company, , $agent] = $this->seedCompany('FAC-LOC002', 'Agent Location Ltd');
+        [$company,, $agent] = $this->seedCompany('FAC-LOC002', 'Agent Location Ltd');
 
         $createResponse = $this->withToken($agent->createToken('agent-create-location', ['*'])->plainTextToken)
             ->postJson('/api/v1/agent/locations', [
@@ -103,9 +104,9 @@ class CompanyLocationTest extends TestCase
             ->assertJsonPath('data.pagination.total', 1);
     }
 
-    public function test_supervisor_can_edit_but_cannot_delete_location(): void
+    public function test_only_creator_can_edit_location(): void
     {
-        [$company, $admin, , $supervisor] = $this->seedCompany('FAC-LOC003', 'Supervisor Location Ltd');
+        [$company, $admin,, $supervisor] = $this->seedCompany('FAC-LOC003', 'Supervisor Location Ltd');
 
         $location = CompanyLocation::create([
             'company_id' => $company->id,
@@ -122,8 +123,8 @@ class CompanyLocationTest extends TestCase
                 'name' => 'Warehouse North',
             ]);
 
-        $editResponse->assertOk()
-            ->assertJsonPath('data.location.name', 'Warehouse North');
+        $editResponse->assertUnprocessable()
+            ->assertJsonValidationErrors(['authorization']);
 
         $deleteResponse = $this->withToken($supervisor->createToken('supervisor-delete-location', ['*'])->plainTextToken)
             ->deleteJson('/api/v1/admin/locations/' . $location->id, [
@@ -132,6 +133,168 @@ class CompanyLocationTest extends TestCase
 
         $deleteResponse->assertUnprocessable()
             ->assertJsonValidationErrors(['authorization']);
+    }
+
+    public function test_agent_creator_can_edit_own_location_with_agent_endpoint(): void
+    {
+        [$company,, $agent] = $this->seedCompany('FAC-LOC010', 'Agent Editor Ltd');
+
+        $createResponse = $this->withToken($agent->createToken('agent-create-own-edit', ['*'])->plainTextToken)
+            ->postJson('/api/v1/agent/locations', [
+                'company_id' => $company->id,
+                'name' => 'Agent Site',
+                'latitude' => 6.5500000,
+                'longitude' => 3.3200000,
+            ]);
+
+        $createResponse->assertCreated();
+        $locationId = (int) $createResponse->json('data.location.id');
+
+        $updateResponse = $this->withToken($agent->createToken('agent-edit-own', ['*'])->plainTextToken)
+            ->patchJson('/api/v1/agent/locations/' . $locationId, [
+                'company_id' => $company->id,
+                'name' => 'Agent Site Updated',
+            ]);
+
+        $updateResponse->assertOk()
+            ->assertJsonPath('data.location.name', 'Agent Site Updated')
+            ->assertJsonPath('data.location.can_manage', true);
+    }
+
+    public function test_agent_creator_can_delete_own_location_with_agent_endpoint(): void
+    {
+        [$company,, $agent] = $this->seedCompany('FAC-LOC013', 'Agent Delete Own Ltd');
+
+        $createResponse = $this->withToken($agent->createToken('agent-create-own-delete', ['*'])->plainTextToken)
+            ->postJson('/api/v1/agent/locations', [
+                'company_id' => $company->id,
+                'name' => 'Agent Delete Site',
+                'latitude' => 6.5600000,
+                'longitude' => 3.3300000,
+            ]);
+
+        $createResponse->assertCreated();
+        $locationId = (int) $createResponse->json('data.location.id');
+
+        $deleteResponse = $this->withToken($agent->createToken('agent-delete-own', ['*'])->plainTextToken)
+            ->deleteJson('/api/v1/agent/locations/' . $locationId, [
+                'company_id' => $company->id,
+            ]);
+
+        $deleteResponse->assertOk()
+            ->assertJsonPath('data.deleted_location_id', $locationId);
+
+        $this->assertDatabaseMissing('company_locations', [
+            'id' => $locationId,
+        ]);
+    }
+
+    public function test_agent_cannot_delete_location_created_by_someone_else(): void
+    {
+        [$company, $admin,, $agent] = $this->seedCompany('FAC-LOC014', 'Agent Delete Foreign Ltd');
+
+        $location = CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Admin Site',
+            'latitude' => 6.5700000,
+            'longitude' => 3.3400000,
+        ]);
+
+        $deleteResponse = $this->withToken($agent->createToken('agent-delete-foreign', ['*'])->plainTextToken)
+            ->deleteJson('/api/v1/agent/locations/' . $location->id, [
+                'company_id' => $company->id,
+            ]);
+
+        $deleteResponse->assertUnprocessable()
+            ->assertJsonValidationErrors(['authorization']);
+
+        $this->assertDatabaseHas('company_locations', [
+            'id' => $location->id,
+        ]);
+    }
+
+    public function test_address_update_without_coordinates_geocodes_and_moves_pin(): void
+    {
+        [$company, $admin] = $this->seedCompany('FAC-LOC011', 'Geocode Success Ltd');
+
+        config()->set('services.mapbox.access_token', 'test-mapbox-token');
+
+        Http::fake([
+            'https://api.mapbox.com/geocoding/v5/mapbox.places/*' => Http::response([
+                'features' => [
+                    [
+                        'center' => [0.1276000, 51.5072000],
+                        'place_name' => 'London, United Kingdom',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $location = CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Old Pin',
+            'address' => 'Old Address',
+            'latitude' => 6.4500000,
+            'longitude' => 3.3900000,
+        ]);
+
+        $response = $this->withToken($admin->createToken('admin-geocode-success', ['*'])->plainTextToken)
+            ->patchJson('/api/v1/admin/locations/' . $location->id, [
+                'company_id' => $company->id,
+                'address' => '10 Downing Street, London',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.location.address', '10 Downing Street, London')
+            ->assertJsonPath('data.location.latitude', 51.5072)
+            ->assertJsonPath('data.location.longitude', 0.1276);
+
+        $this->assertDatabaseHas('company_locations', [
+            'id' => $location->id,
+            'address' => '10 Downing Street, London',
+            'latitude' => 51.5072,
+            'longitude' => 0.1276,
+        ]);
+    }
+
+    public function test_address_update_without_coordinates_is_blocked_when_geocoding_fails(): void
+    {
+        [$company, $admin] = $this->seedCompany('FAC-LOC012', 'Geocode Failure Ltd');
+
+        config()->set('services.mapbox.access_token', 'test-mapbox-token');
+
+        Http::fake([
+            'https://api.mapbox.com/geocoding/v5/mapbox.places/*' => Http::response([
+                'features' => [],
+            ], 200),
+        ]);
+
+        $location = CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Unchanged Pin',
+            'address' => 'Current Address',
+            'latitude' => 6.4500000,
+            'longitude' => 3.3900000,
+        ]);
+
+        $response = $this->withToken($admin->createToken('admin-geocode-fail', ['*'])->plainTextToken)
+            ->patchJson('/api/v1/admin/locations/' . $location->id, [
+                'company_id' => $company->id,
+                'address' => 'asdfghjkl qwerty unknown',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['address']);
+
+        $this->assertDatabaseHas('company_locations', [
+            'id' => $location->id,
+            'address' => 'Current Address',
+            'latitude' => 6.45,
+            'longitude' => 3.39,
+        ]);
     }
 
     public function test_cross_company_user_can_view_location_with_stripped_fields(): void

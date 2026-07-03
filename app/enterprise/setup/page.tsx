@@ -226,8 +226,26 @@ function EnterpriseSetupContent() {
           avatar: meRes.data.avatar,
           active_company: meRes.data.active_company,
         });
+
+        const hasActiveSubscription =
+          meRes.data.billing?.has_active_subscription ??
+          meRes.data.active_company?.has_active_subscription ??
+          false;
+        const billingEnforced =
+          meRes.data.billing?.billing_enforced ??
+          meRes.data.active_company?.billing_enforced ??
+          true;
+
+        try {
+          window.sessionStorage.setItem("billing.enforced", billingEnforced ? "1" : "0");
+        } catch {
+          // sessionStorage may be unavailable; silently ignore.
+        }
+
+        router.push(!billingEnforced || hasActiveSubscription ? "/dashboard" : "/subscribe");
+        return;
       } catch {
-        // /me failure is non-fatal — session is saved, dashboard will re-fetch
+        // /me failure is non-fatal — session is saved, continue to dashboard
       }
 
       router.push("/dashboard");
@@ -377,11 +395,23 @@ function EnterpriseSetupContent() {
               >
                 By using Factory 23, you agree to our{" "}
                 <Link
-                  href="#"
+                  href="/files/Factory23 Terms of Service.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="text-[#6FA8A6] font-bold underline decoration-[#6FA8A6] underline-offset-2 hover:text-[#5e9795] transition-colors"
                 >
-                  Terms, conditions and Privacy Policy.
+                  Terms &amp; Conditions
+                </Link>{" "}
+                and{" "}
+                <Link
+                  href="/files/Factory23 Privacy Policy.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[#6FA8A6] font-bold underline decoration-[#6FA8A6] underline-offset-2 hover:text-[#5e9795] transition-colors"
+                >
+                  Privacy Policy
                 </Link>
+                .
               </label>
               {errors.terms && (
                 <p className="mt-1 px-1 text-xs text-red-500">

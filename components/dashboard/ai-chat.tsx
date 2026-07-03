@@ -40,7 +40,7 @@ import {
   ThumbsUp,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 type MessageAction = "liked" | "disliked" | null;
@@ -149,7 +149,7 @@ const KPI_PRIORITY_OPTIONS: EditFieldOption[] = [
 ];
 
 const LEAD_STATUS_OPTIONS: EditFieldOption[] = [
-  { value: "newly_lead", label: "Newly Lead" },
+  { value: "newly_lead", label: "New Lead" },
   { value: "contacted", label: "Contacted" },
   { value: "qualified", label: "Qualified" },
   { value: "proposal_sent", label: "Proposal Sent" },
@@ -270,6 +270,25 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [meetingActionDrafts, setMeetingActionDrafts] = useState<Record<string, ElyMeetingDraft>>({});
   const [assigneeOptions, setAssigneeOptions] = useState<Record<string, AssigneeOptionsState>>({});
   const [meetingAttendeeOptions, setMeetingAttendeeOptions] = useState<Record<string, MeetingAttendeeOptionsState>>({});
+  const closeSearchPanel = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchLoading(false);
+  }, []);
+  const openSearchPanel = useCallback(() => {
+    setSearchOpen(true);
+    window.setTimeout(() => {
+      if (window.innerWidth < 640) {
+        mobileSearchInputRef.current?.focus();
+      } else {
+        searchInputRef.current?.focus();
+      }
+    }, 150);
+  }, []);
+  const trimmedSearchQuery = searchQuery.trim();
+  const visibleSearchResults = trimmedSearchQuery.length < 1 ? [] : searchResults;
+  const visibleSearchLoading = trimmedSearchQuery.length < 1 ? false : searchLoading;
   const [isRunningQuickAction, setIsRunningQuickAction] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAiToolsOpen, setIsAiToolsOpen] = useState(false);
@@ -364,31 +383,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }, [messages, isStreaming]);
 
   useEffect(() => {
-    if (!searchOpen) {
-      setSearchQuery("");
-      setSearchResults([]);
-      setSearchLoading(false);
-      return;
-    }
-
-    setTimeout(() => {
-      if (window.innerWidth < 640) {
-        mobileSearchInputRef.current?.focus();
-      } else {
-        searchInputRef.current?.focus();
-      }
-    }, 150);
-  }, [searchOpen]);
-
-  useEffect(() => {
-    if (!searchOpen || !companyId) {
-      return;
-    }
-
-    const query = searchQuery.trim();
-    if (query.length < 1) {
-      setSearchResults([]);
-      setSearchLoading(false);
+    if (!searchOpen || !companyId || trimmedSearchQuery.length < 1) {
       return;
     }
 
@@ -402,7 +397,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
             return;
           }
 
-          const response = await searchCopilotThreads(token, query, companyId);
+          const response = await searchCopilotThreads(token, trimmedSearchQuery, companyId);
           setSearchResults(response.data.items ?? []);
         } catch {
           setSearchResults([]);
@@ -413,7 +408,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }, 300);
 
     return () => window.clearTimeout(timer);
-  }, [companyId, searchOpen, searchQuery]);
+  }, [companyId, searchOpen, trimmedSearchQuery]);
 
   useEffect(() => {
     if (!highlightMessageId) {
@@ -462,54 +457,6 @@ export function AIChat({ open, onClose }: AIChatProps) {
         void loadAssigneeOptions(msg.id);
       }
     }
-  }, [messages]);
-
-  useEffect(() => {
-    setActionDrafts((prev) => {
-      let next = prev;
-      for (const msg of messages) {
-        const payload = messagePayload(msg);
-        if (msg.role !== "assistant" || payload?.confirmation_required !== true) {
-          continue;
-        }
-        if (prev[msg.id]) {
-          continue;
-        }
-
-        const rawArgs = parseRecord(payload.action_args);
-        if (!rawArgs) {
-          continue;
-        }
-
-        const seed: Record<string, string> = {};
-        for (const [key, value] of Object.entries(rawArgs)) {
-          if (key.startsWith("__") || key === "company_id" || key === "meta" || key === "pipeline_id") {
-            continue;
-          }
-          if (value === null || value === undefined) {
-            continue;
-          }
-          seed[key] = String(value);
-        }
-
-        const meta = parseRecord(rawArgs.meta);
-        if (meta) {
-          for (const [key, value] of Object.entries(meta)) {
-            if (value !== null && value !== undefined && seed[key] === undefined) {
-              seed[key] = String(value);
-            }
-          }
-        }
-
-        if (Object.keys(seed).length === 0) {
-          continue;
-        }
-
-        next = { ...next, [msg.id]: seed };
-      }
-
-      return next;
-    });
   }, [messages]);
 
   function toTitleCase(value: string): string {
@@ -617,6 +564,52 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
   function parseRecord(value: unknown): Record<string, unknown> | null {
     return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+  }
+
+  const seededActionDrafts = useMemo(() => {
+    const seeds: ActionDraftMap = {};
+
+    for (const msg of messages) {
+      const payload = messagePayload(msg);
+      if (msg.role !== "assistant" || payload?.confirmation_required !== true) {
+        continue;
+      }
+
+      const rawArgs = parseRecord(payload.action_args);
+      if (!rawArgs) {
+        continue;
+      }
+
+      const seed: Record<string, string> = {};
+      for (const [key, value] of Object.entries(rawArgs)) {
+        if (key.startsWith("__") || key === "company_id" || key === "meta" || key === "pipeline_id") {
+          continue;
+        }
+        if (value === null || value === undefined) {
+          continue;
+        }
+        seed[key] = String(value);
+      }
+
+      const meta = parseRecord(rawArgs.meta);
+      if (meta) {
+        for (const [key, value] of Object.entries(meta)) {
+          if (value !== null && value !== undefined && seed[key] === undefined) {
+            seed[key] = String(value);
+          }
+        }
+      }
+
+      if (Object.keys(seed).length > 0) {
+        seeds[msg.id] = seed;
+      }
+    }
+
+    return seeds;
+  }, [messages]);
+
+  function resolveActionDraft(msgId: string): Record<string, string> {
+    return { ...seededActionDrafts[msgId], ...actionDrafts[msgId] };
   }
 
   function sanitizeActionArgs(args: Record<string, unknown>): Record<string, unknown> {
@@ -751,7 +744,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }
 
     const baseArgs = sanitizeActionArgs(actionArgsRaw);
-    const draft = actionDrafts[msg.id] ?? {};
+    const draft = resolveActionDraft(msg.id);
     const tool = actionToolForMessage(msg);
 
     if (tool === "tasks.create") {
@@ -839,7 +832,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function assigneeDraftValue(msg: Message): string {
-    const draft = actionDrafts[msg.id] ?? {};
+    const draft = resolveActionDraft(msg.id);
     return String(draft.assignee ?? "").trim();
   }
 
@@ -1054,7 +1047,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function editFieldValue(msg: Message, args: Record<string, unknown>, field: EditFieldConfig): string {
-    const draft = actionDrafts[msg.id] ?? {};
+    const draft = resolveActionDraft(msg.id);
     if (Object.prototype.hasOwnProperty.call(draft, field.key)) {
       return String(draft[field.key] ?? "");
     }
@@ -1088,7 +1081,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     const args = actionArgsForMessage(msg);
     const argsForChecks: Record<string, unknown> = args ?? {};
-    const draft = actionDrafts[msg.id] ?? {};
+    const draft = resolveActionDraft(msg.id);
     const tool = actionToolForMessage(msg);
     const remaining: string[] = [];
 
@@ -1430,7 +1423,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }
 
     const query = searchQuery.trim();
-    setSearchOpen(false);
+    closeSearchPanel();
     setHighlightQuery(query);
     setHighlightMessageId(result.match_message_id || null);
 
@@ -1739,12 +1732,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     </div>
                     {searchQuery.trim() !== "" && (
                       <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-72 overflow-y-auto rounded-2xl border border-white/10 bg-[#0F2228] shadow-2xl">
-                        {searchLoading ? (
+                        {visibleSearchLoading ? (
                           <p className="px-4 py-3 text-[12px] text-[#88B3B5]">Searching…</p>
-                        ) : searchResults.length === 0 ? (
+                        ) : visibleSearchResults.length === 0 ? (
                           <p className="px-4 py-3 text-[12px] text-[#88B3B5]">No conversations found.</p>
                         ) : (
-                          searchResults.map((result) => (
+                          visibleSearchResults.map((result) => (
                             <button
                               key={`${result.thread_id}-${result.match_message_id}`}
                               type="button"
@@ -1774,7 +1767,11 @@ export function AIChat({ open, onClose }: AIChatProps) {
                   </div>
                   <button
                     onClick={() => {
-                      setSearchOpen((value) => !value);
+                      if (searchOpen) {
+                        closeSearchPanel();
+                      } else {
+                        openSearchPanel();
+                      }
                     }}
                     className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${searchOpen ? "bg-[#7BB6B8]/20" : "bg-[#132A33] hover:bg-[#1A3844]"}`}
                   >
@@ -1916,12 +1913,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
                 </div>
                 {searchQuery.trim() !== "" && (
                   <div className="mx-6 mt-2 max-h-64 overflow-y-auto rounded-2xl border border-white/10 bg-[#0F2228]">
-                    {searchLoading ? (
+                    {visibleSearchLoading ? (
                       <p className="px-4 py-3 text-[12px] text-[#88B3B5]">Searching…</p>
-                    ) : searchResults.length === 0 ? (
+                    ) : visibleSearchResults.length === 0 ? (
                       <p className="px-4 py-3 text-[12px] text-[#88B3B5]">No conversations found.</p>
                     ) : (
-                      searchResults.map((result) => (
+                      visibleSearchResults.map((result) => (
                         <button
                           key={`mobile-${result.thread_id}-${result.match_message_id}`}
                           type="button"

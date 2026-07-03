@@ -156,7 +156,22 @@ export default function SelfServeOnboardingForm() {
       });
 
       toast.success(workspaceResponse.message);
-      router.push("/dashboard");
+      const billingEnforced =
+        meResponse.data.billing?.billing_enforced ??
+        meResponse.data.active_company?.billing_enforced ??
+        true;
+      const hasActiveSubscription =
+        meResponse.data.billing?.has_active_subscription ??
+        meResponse.data.active_company?.has_active_subscription ??
+        false;
+
+      try {
+        window.sessionStorage.setItem("billing.enforced", billingEnforced ? "1" : "0");
+      } catch {
+        // sessionStorage may be unavailable; silently ignore.
+      }
+
+      router.push(!billingEnforced || hasActiveSubscription ? "/dashboard" : "/subscribe");
     },
     onError: (error) => {
       const err = error as ApiRequestError;
@@ -168,7 +183,7 @@ export default function SelfServeOnboardingForm() {
       }
 
       if (err.status === 409) {
-        toast.success("Onboarding already completed. Redirecting to dashboard.");
+        toast.success("Onboarding already completed. Redirecting...");
         router.push("/dashboard");
         return;
       }

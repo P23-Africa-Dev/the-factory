@@ -135,11 +135,12 @@ export function createSavedLocation(
 export function updateSavedLocation(
   locationId: number | string,
   payload: UpdateSavedLocationPayload,
-  token: string
+  token: string,
+  basePath: ApiRoleBasePath = "/admin"
 ): Promise<ApiEnvelope<SavedLocationDetailData>> {
   return apiRequest<SavedLocationDetailData>({
     method: "PATCH",
-    path: `/admin/locations/${locationId}`,
+    path: withBase(basePath, `/locations/${locationId}`),
     body: payload,
     token,
   });
@@ -148,11 +149,12 @@ export function updateSavedLocation(
 export function deleteSavedLocation(
   locationId: number | string,
   payload: { company_id?: number | string },
-  token: string
+  token: string,
+  basePath: ApiRoleBasePath = "/admin"
 ): Promise<ApiEnvelope<{ deleted_location_id: number }>> {
   return apiRequest<{ deleted_location_id: number }>({
     method: "DELETE",
-    path: `/admin/locations/${locationId}`,
+    path: withBase(basePath, `/locations/${locationId}`),
     body: payload,
     token,
   });
