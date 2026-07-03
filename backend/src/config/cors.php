@@ -21,6 +21,9 @@ $allowedOrigins = $envOrigins
     : [
         'https://thefactory23.com',
         'https://www.thefactory23.com',
+        'https://the-factory-frontend-git-space-p23-africa.vercel.app',
+        'https://the-factory-frontend-git-dev-work-p23-africa.vercel.app',
+        'http://localhost:3000'
     ];
 
 return [
