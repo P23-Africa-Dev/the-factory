@@ -84,6 +84,49 @@ class EmailVerificationTest extends TestCase
         $this->assertFalse($response->json('data.onboarding_completed'));
     }
 
+    public function test_onboarding_completed_is_true_for_enterprise_user(): void
+    {
+        User::factory()->create([
+            'email' => 'enterprise@example.com',
+            'email_verified_at' => null,
+            'onboarding_completed_at' => null,
+            'enterprise_onboarding_completed_at' => now(),
+            'internal_onboarding_completed_at' => null,
+        ]);
+        $otp = $this->otpService->generate('enterprise@example.com', 'registration');
+
+        $response = $this->postJson('/api/v1/auth/verify-email', [
+            'email' => 'enterprise@example.com',
+            'otp_code' => $otp,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.onboarding_completed', true)
+            ->assertJsonPath('data.user.onboarding_completed', true)
+            ->assertJsonPath('data.user.enterprise_onboarding_completed', true);
+    }
+
+    public function test_onboarding_completed_is_true_for_internal_user(): void
+    {
+        User::factory()->create([
+            'email' => 'internal@example.com',
+            'email_verified_at' => null,
+            'onboarding_completed_at' => null,
+            'enterprise_onboarding_completed_at' => null,
+            'internal_onboarding_completed_at' => now(),
+        ]);
+        $otp = $this->otpService->generate('internal@example.com', 'registration');
+
+        $response = $this->postJson('/api/v1/auth/verify-email', [
+            'email' => 'internal@example.com',
+            'otp_code' => $otp,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.onboarding_completed', true)
+            ->assertJsonPath('data.user.onboarding_completed', true);
+    }
+
     // -----------------------------------------------------------------------
     // Failure cases
     // -----------------------------------------------------------------------

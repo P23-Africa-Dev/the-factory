@@ -50,19 +50,25 @@ class EnsureCompanyHasActiveSubscription
             return $next($request);
         }
 
-        $status = $company->subscriptionStatusEnum();
-
-        if ($status->allowsDashboardAccess()) {
+        if ($company->hasEffectiveSubscriptionAccess()) {
             return $next($request);
         }
 
-        $code = $status === SubscriptionStatus::SUSPENDED
-            ? 'subscription_suspended'
-            : 'subscription_required';
+        $status = $company->subscriptionStatusEnum();
 
-        $message = $status === SubscriptionStatus::SUSPENDED
-            ? 'Your subscription has expired. Please renew to restore access to your dashboard.'
-            : 'A subscription is required before you can access the dashboard.';
+        $code = match ($status) {
+            SubscriptionStatus::SUSPENDED => 'subscription_suspended',
+            SubscriptionStatus::GRACE => 'subscription_grace_expired',
+            SubscriptionStatus::PAST_DUE => 'subscription_past_due',
+            default => 'subscription_required',
+        };
+
+        $message = match ($status) {
+            SubscriptionStatus::SUSPENDED => 'Your subscription has expired. Please renew to restore access to your dashboard.',
+            SubscriptionStatus::GRACE => 'Your subscription requires renewal to keep dashboard access.',
+            SubscriptionStatus::PAST_DUE => 'Your last payment failed. Please update your billing to restore dashboard access.',
+            default => 'A subscription is required before you can access the dashboard.',
+        };
 
         return self::blockedResponse(
             message: $message,

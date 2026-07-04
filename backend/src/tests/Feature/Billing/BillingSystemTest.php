@@ -7,9 +7,11 @@ namespace Tests\Feature\Billing;
 use App\Enums\SubscriptionStatus;
 use App\Models\Company;
 use App\Models\User;
+use App\Services\Billing\BillingEnforcementSettingService;
 use App\Services\Billing\CompanySeatLimitService;
 use App\Services\Billing\PaymentLinkService;
 use App\Services\Billing\SubscriptionLifecycleService;
+use App\Models\PlatformSetting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Tests\Support\ActivatesCompanySubscription;
@@ -84,7 +86,124 @@ class BillingSystemTest extends TestCase
             ->getJson('/api/v1/user/me');
 
         $response->assertOk()
-            ->assertJsonPath('data.billing.has_active_subscription', true);
+            ->assertJsonPath('data.billing.has_active_subscription', true)
+            ->assertJsonPath('data.billing.has_paid_subscription', true);
+
+        $dashboard = $this->withToken($this->ownerToken($user))
+            ->getJson('/api/v1/dashboard/overview');
+        $dashboard->assertStatus(200);
+    }
+
+    public function test_grace_status_allows_dashboard_access_even_when_enforcement_is_enabled(): void
+    {
+        ['user' => $user] = $this->createCompanyWithOwner([
+            'subscription_status' => SubscriptionStatus::GRACE->value,
+            'subscription_grace_ends_at' => now()->addDays(3),
+        ]);
+
+        $me = $this->withToken($this->ownerToken($user))
+            ->getJson('/api/v1/user/me');
+
+        $me->assertOk()
+            ->assertJsonPath('data.billing.subscription_status', SubscriptionStatus::GRACE->value)
+            ->assertJsonPath('data.billing.has_active_subscription', true)
+            ->assertJsonPath('data.billing.has_paid_subscription', false)
+            ->assertJsonPath('data.billing.billing_enforced', true);
+
+        $dashboard = $this->withToken($this->ownerToken($user))
+            ->getJson('/api/v1/dashboard/overview');
+
+        $dashboard->assertOk();
+    }
+
+    public function test_past_due_status_is_blocked_when_enforcement_is_enabled(): void
+    {
+        ['user' => $user] = $this->createCompanyWithOwner([
+            'subscription_status' => SubscriptionStatus::PAST_DUE->value,
+        ]);
+
+        $response = $this->withToken($this->ownerToken($user))
+            ->getJson('/api/v1/dashboard/overview');
+
+        $response->assertStatus(402)
+            ->assertJsonPath('code', 'subscription_past_due');
+    }
+
+    public function test_suspended_status_is_blocked_when_enforcement_is_enabled(): void
+    {
+        ['user' => $user] = $this->createCompanyWithOwner([
+            'subscription_status' => SubscriptionStatus::SUSPENDED->value,
+        ]);
+
+        $response = $this->withToken($this->ownerToken($user))
+            ->getJson('/api/v1/dashboard/overview');
+
+        $response->assertStatus(402)
+            ->assertJsonPath('code', 'subscription_suspended');
+    }
+
+    public function test_pending_payment_is_blocked_when_enforcement_is_enabled(): void
+    {
+        ['user' => $user] = $this->createCompanyWithOwner();
+
+        $response = $this->withToken($this->ownerToken($user))
+            ->getJson('/api/v1/dashboard/overview');
+
+        $response->assertStatus(402)
+            ->assertJsonPath('code', 'subscription_required');
+    }
+
+    public function test_dashboard_access_allowed_when_enforcement_is_disabled_regardless_of_status(): void
+    {
+        PlatformSetting::setValue(BillingEnforcementSettingService::KEY, 'false');
+
+        ['user' => $user] = $this->createCompanyWithOwner([
+            'subscription_status' => SubscriptionStatus::PENDING_PAYMENT->value,
+        ]);
+
+        $response = $this->withToken($this->ownerToken($user))
+            ->getJson('/api/v1/user/me');
+
+        $response->assertOk()
+            ->assertJsonPath('data.billing.has_active_subscription', true)
+            ->assertJsonPath('data.billing.has_paid_subscription', false)
+            ->assertJsonPath('data.billing.billing_enforced', false);
+
+        $dashboard = $this->withToken($this->ownerToken($user))
+            ->getJson('/api/v1/dashboard/overview');
+        $dashboard->assertStatus(200);
+    }
+
+    public function test_billing_status_reports_can_manage_billing_for_owner(): void
+    {
+        ['user' => $owner] = $this->createCompanyWithOwner();
+
+        $response = $this->withToken($this->ownerToken($owner))
+            ->getJson('/api/v1/billing/status');
+
+        $response->assertOk()
+            ->assertJsonPath('data.can_manage_billing', true)
+            ->assertJsonPath('data.viewer_role', 'owner');
+    }
+
+    public function test_billing_status_reports_cannot_manage_billing_for_agent(): void
+    {
+        ['company' => $company] = $this->createCompanyWithOwner();
+
+        $agent = User::factory()->create([
+            'onboarding_completed_at' => now(),
+        ]);
+        $company->users()->attach($agent->id, [
+            'role' => 'agent',
+            'joined_at' => now(),
+        ]);
+
+        $response = $this->withToken($this->ownerToken($agent))
+            ->getJson('/api/v1/billing/status');
+
+        $response->assertOk()
+            ->assertJsonPath('data.can_manage_billing', false)
+            ->assertJsonPath('data.viewer_role', 'agent');
     }
 
     public function test_seat_limit_blocks_internal_user_creation_at_cap(): void

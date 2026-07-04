@@ -111,7 +111,7 @@ class PaymentLinkService
             'billing_interval' => $interval->value,
             'amount_cents' => BillingPlanCatalog::amountCents($planKey, $interval),
             'amount_display' => BillingPlanCatalog::formatUsd(BillingPlanCatalog::amountCents($planKey, $interval)),
-            'already_paid' => $company->hasActiveSubscription(),
+            'already_paid' => $company->hasPaidSubscription(),
             'expires_at' => $company->payment_link_expires_at?->toIso8601String(),
         ];
     }
@@ -120,7 +120,7 @@ class PaymentLinkService
     {
         $company = $this->resolveCompanyByToken($token);
 
-        if ($company->hasActiveSubscription()) {
+        if ($company->hasPaidSubscription()) {
             throw ValidationException::withMessages([
                 'token' => ['This company already has an active subscription.'],
             ]);

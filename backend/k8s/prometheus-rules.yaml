@@ -104,33 +104,6 @@ spec:
             summary: "Node {{ $labels.instance }} CPU above 85%"
             description: "Node CPU usage has been above 85% for 10+ minutes."
 
-    # ── MySQL ───────────────────────────────────────────────────────────────
-    - name: factory23.mysql
-      interval: 60s
-      rules:
-        - alert: MySQLPodDown
-          expr: |
-            kube_pod_status_ready{namespace="factory23", pod=~"mysql-.*", condition="true"} == 0
-          for: 2m
-          labels:
-            severity: critical
-            namespace: factory23
-          annotations:
-            summary: "MySQL pod is down"
-            description: "MySQL pod {{ $labels.pod }} has been unready for > 2 minutes."
-
-        - alert: MySQLDiskNearFull
-          expr: |
-            (kubelet_volume_stats_used_bytes{namespace="factory23", persistentvolumeclaim="mysql-data-mysql-0"}
-            / kubelet_volume_stats_capacity_bytes{namespace="factory23", persistentvolumeclaim="mysql-data-mysql-0"}) > 0.80
-          for: 10m
-          labels:
-            severity: warning
-            namespace: factory23
-          annotations:
-            summary: "MySQL PVC disk usage above 80%"
-            description: "MySQL data volume is {{ printf \"%.1f\" (mul $value 100) }}% full (20Gi total). Consider expanding."
-
     # ── Redis ───────────────────────────────────────────────────────────────
     - name: factory23.redis
       interval: 60s

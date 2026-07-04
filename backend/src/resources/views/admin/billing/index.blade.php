@@ -33,7 +33,7 @@
             <div class="stat-card p-3">
                 <div class="stat-label mb-1">Subscribed Companies</div>
                 <div class="stat-value">{{ $stats['active_subscription_companies'] }}</div>
-                <div style="font-size:.75rem;color:var(--text-muted)">Active, grace, past-due</div>
+                <div style="font-size:.75rem;color:var(--text-muted)">Active only</div>
             </div>
         </div>
         <div class="col-6 col-lg-3">
@@ -70,7 +70,8 @@
                 </div>
 
                 <p style="font-size:.82rem;color:var(--text-secondary)">
-                    When enabled, companies without active subscriptions are blocked from dashboard endpoints.
+                    When enabled, only companies with an <strong>active</strong> subscription can access the dashboard.
+                    Grace, past-due, and suspended orgs are blocked until they renew. When disabled, all accounts under every org work freely regardless of subscription state.
                 </p>
 
                 @if (!empty($enforcementSnapshot['updated_at']))

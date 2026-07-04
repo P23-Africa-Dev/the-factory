@@ -45,7 +45,7 @@ class CompanySeatLimitService
 
     public function assertCanAddMember(Company $company): void
     {
-        if (! $company->hasActiveSubscription()) {
+        if (! $company->hasEffectiveSubscriptionAccess()) {
             throw ValidationException::withMessages([
                 'company_id' => ['An active subscription is required before adding team members.'],
             ]);

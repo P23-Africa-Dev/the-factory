@@ -443,6 +443,12 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::post('/leads/import', [LeadController::class, 'import'])
                     ->middleware('throttle:20,1')
                     ->name('leads.import');
+                Route::post('/leads/import/preview', [LeadController::class, 'importPreview'])
+                    ->middleware('throttle:20,1')
+                    ->name('leads.import.preview');
+                Route::get('/leads/export', [LeadController::class, 'export'])
+                    ->middleware('throttle:10,1')
+                    ->name('leads.export');
                 Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
                 Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
                 Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
@@ -575,6 +581,12 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::post('/leads/import', [LeadController::class, 'import'])
                     ->middleware('throttle:20,1')
                     ->name('leads.import');
+                Route::post('/leads/import/preview', [LeadController::class, 'importPreview'])
+                    ->middleware('throttle:20,1')
+                    ->name('leads.import.preview');
+                Route::get('/leads/export', [LeadController::class, 'export'])
+                    ->middleware('throttle:10,1')
+                    ->name('leads.export');
                 Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
                 Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
                 Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
@@ -814,6 +826,12 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::post('/leads/import', [LeadController::class, 'import'])
             ->middleware('throttle:20,1')
             ->name('leads.import');
+        Route::post('/leads/import/preview', [LeadController::class, 'importPreview'])
+            ->middleware('throttle:20,1')
+            ->name('leads.import.preview');
+        Route::get('/leads/export', [LeadController::class, 'export'])
+            ->middleware('throttle:10,1')
+            ->name('leads.export');
         Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
         Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
         Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');

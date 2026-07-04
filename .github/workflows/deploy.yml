@@ -190,19 +190,54 @@ jobs:
           kubectl apply -f backend/k8s/configmap.yaml -n ${{ env.K8S_NAMESPACE }}
           kubectl apply -f backend/k8s/network-policy.yaml -n ${{ env.K8S_NAMESPACE }}
 
+      - name: Fix ingress load balancer traffic policy
+        run: |
+          # With externalTrafficPolicy=Local, DO LB health checks fail when ingress
+          # runs on only one node in a multi-node pool — public traffic times out.
+          kubectl patch svc ingress-nginx-controller -n ingress-nginx \
+            --type merge \
+            -p '{"spec":{"externalTrafficPolicy":"Cluster"}}' || true
+
+      - name: Fix ingress load balancer health check
+        run: |
+          # DO may health-check port 10256 while ingress only answers on :80/:443.
+          # Use TCP :80 so backends are marked healthy and the LB forwards traffic.
+          kubectl annotate svc ingress-nginx-controller -n ingress-nginx \
+            service.beta.kubernetes.io/do-loadbalancer-healthcheck-protocol=tcp \
+            service.beta.kubernetes.io/do-loadbalancer-healthcheck-port="80" \
+            --overwrite || true
+          sleep 20
+
+      - name: Remove in-cluster MySQL (managed DB only)
+        run: |
+          kubectl delete statefulset mysql -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true --wait=true
+          kubectl delete cronjob mysql-backup -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
+          kubectl delete svc mysql mysql-service -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
+          kubectl delete pvc mysql-data-mysql-0 -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
+          kubectl delete networkpolicy allow-to-mysql -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
+
       - name: Run database migrations (if any)
         run: |
           # Delete old migration job if exists
           kubectl delete job laravel-migrate -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
+
+          # Free CPU on small single-node clusters so the migrate pod can schedule.
+          # Pending pods do not consume node CPU, but their requests still block scheduling.
+          echo "Scaling backend to 1 replica to free cluster CPU for migration..."
+          kubectl scale deployment/backend -n ${{ env.K8S_NAMESPACE }} --replicas=1
+          kubectl rollout status deployment/backend -n ${{ env.K8S_NAMESPACE }} --timeout=180s || true
+
           # Update migrate job to use new image
           sed -i "s|${{ env.IMAGE_NAME }}:[^ ]*|${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.SHA_TAG }}|g" \
             backend/k8s/migrate-job.yaml
           kubectl apply -f backend/k8s/migrate-job.yaml -n ${{ env.K8S_NAMESPACE }}
+
           if ! kubectl wait --for=condition=complete job/laravel-migrate \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=300s; then
+            -n ${{ env.K8S_NAMESPACE }} --timeout=600s; then
             echo "=== Migration job failed or timed out ==="
             kubectl describe job/laravel-migrate -n ${{ env.K8S_NAMESPACE }} || true
             kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=laravel-migrate -o wide || true
+            kubectl describe pods -n ${{ env.K8S_NAMESPACE }} -l app=laravel-migrate || true
             kubectl logs -n ${{ env.K8S_NAMESPACE }} -l app=laravel-migrate --all-containers=true --tail=200 || true
             exit 1
           fi
@@ -225,12 +260,16 @@ jobs:
 
       - name: Smoke test — health endpoint
         run: |
-          echo "Waiting 10s for pods to warm up..."
-          sleep 10
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            https://api.thefactory23.com/api/v1/health)
-          echo "Health check status: $HTTP_STATUS"
-          if [ "$HTTP_STATUS" != "200" ]; then
+          echo "Waiting for backend pods to be ready..."
+          kubectl wait --for=condition=ready pod -l app=backend \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=120s
+
+          # In-cluster check — validates the deployed app without depending on
+          # public LB/DNS (which can lag or be down during node recovery).
+          HEALTH=$(kubectl exec -n ${{ env.K8S_NAMESPACE }} deployment/backend -c nginx -- \
+            wget -qO- http://127.0.0.1/api/v1/health 2>/dev/null || echo "FAIL")
+          echo "Health response: $HEALTH"
+          if ! echo "$HEALTH" | grep -q '"success":true'; then
             echo "SMOKE TEST FAILED — rolling back"
             kubectl rollout undo deployment/backend -n ${{ env.K8S_NAMESPACE }}
             exit 1
@@ -239,11 +278,12 @@ jobs:
 
       - name: Smoke test — auth returns 401 (not 500)
         run: |
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            https://api.thefactory23.com/api/v1/user/me)
-          echo "Auth check status: $HTTP_STATUS"
-          if [ "$HTTP_STATUS" != "401" ]; then
-            echo "AUTH CHECK FAILED (expected 401, got $HTTP_STATUS)"
+          AUTH_STATUS=$(kubectl exec -n ${{ env.K8S_NAMESPACE }} deployment/backend -c nginx -- \
+            wget -qO /dev/null --server-response http://127.0.0.1/api/v1/user/me 2>&1 \
+            | grep -E '^  HTTP/' | awk '{print $2}' | tail -1)
+          echo "Auth check status: $AUTH_STATUS"
+          if [ "$AUTH_STATUS" != "401" ]; then
+            echo "AUTH CHECK FAILED (expected 401, got $AUTH_STATUS)"
             kubectl rollout undo deployment/backend -n ${{ env.K8S_NAMESPACE }}
             exit 1
           fi

@@ -27,11 +27,17 @@ class UserManagementController extends Controller
             $tab = 'owners';
         }
 
+        $trash = strtolower($request->string('trash')->toString());
+        if (! in_array($trash, ['', 'active', 'trashed', 'all'], true)) {
+            $trash = '';
+        }
+
         $filters = [
             'search'       => $request->string('search')->toString(),
             'status'       => $request->string('status')->toString(),
             'account_type' => $request->string('account_type')->toString(),
             'role'         => $request->string('role')->toString(),
+            'trash'        => $trash,
         ];
 
         $users = $tab === 'internal'
@@ -50,18 +56,22 @@ class UserManagementController extends Controller
 
         $ownerCount    = \App\Models\User::whereNull('internal_role')->count();
         $internalCount = \App\Models\User::whereNotNull('internal_role')->count();
+        $trashedCount  = \App\Models\User::onlyTrashed()->count();
 
         return view('admin.users.index', [
             'users'         => $users,
             'filters'       => $filters,
             'tab'           => $tab,
+            'trash'         => $trash,
             'ownerCount'    => $ownerCount,
             'internalCount' => $internalCount,
+            'trashedCount'  => $trashedCount,
         ]);
     }
 
-    public function show(User $user): View
+    public function show(string $user): View
     {
+        $user = User::withTrashed()->findOrFail($user);
         $isInternal = $user->internal_role !== null;
 
         $user->load([
@@ -135,7 +145,25 @@ class UserManagementController extends Controller
         $this->userAdminService->delete($user);
 
         return redirect()->route('admin.users.index')
-            ->with('status', 'User has been deleted.');
+            ->with('status', 'User has been moved to trash.');
+    }
+
+    public function restore(string $user): RedirectResponse
+    {
+        $model = User::onlyTrashed()->findOrFail($user);
+        $this->userAdminService->restore($model);
+
+        return redirect()->route('admin.users.show', $model->id)
+            ->with('status', 'User has been restored from trash.');
+    }
+
+    public function forceDestroy(string $user): RedirectResponse
+    {
+        $model = User::withTrashed()->findOrFail($user);
+        $this->userAdminService->forceDelete($model);
+
+        return redirect()->route('admin.users.index', ['trash' => 'trashed'])
+            ->with('status', 'User has been permanently deleted.');
     }
 
     public function updateRole(UpdateUserRoleRequest $request, User $user): RedirectResponse

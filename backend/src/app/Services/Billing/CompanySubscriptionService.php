@@ -31,15 +31,20 @@ class CompanySubscriptionService
      */
     public function statusForUser(User $user, ?int $companyId = null): array
     {
-        $company = $this->resolveBillableCompany($user, $companyId);
+        $company = $this->resolveBillableCompany($user, $companyId, requireBillingRole: false);
+        $role = (string) $company->pivot?->role;
+        $canManageBilling = in_array($role, [
+            CompanyUserRole::OWNER->value,
+            CompanyUserRole::ADMIN->value,
+        ], true);
 
-        return $this->statusPayload($company);
+        return $this->statusPayload($company, $canManageBilling, $role !== '' ? $role : null);
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function statusPayload(Company $company): array
+    public function statusPayload(Company $company, bool $canManageBilling = true, ?string $viewerRole = null): array
     {
         $usage = $this->seatLimitService->usage($company);
         $status = $company->subscriptionStatusEnum();
@@ -50,12 +55,15 @@ class CompanySubscriptionService
             'public_company_id' => $company->company_id,
             'billing_enforced' => $this->billingEnforcement->isEnabled(),
             'subscription_status' => $status->value,
-            'has_active_subscription' => $company->hasActiveSubscription(),
+            'has_active_subscription' => $company->hasEffectiveSubscriptionAccess(),
+            'has_paid_subscription' => $company->hasPaidSubscription(),
             'plan_key' => $company->subscription_plan_key,
             'billing_interval' => $company->subscription_billing_interval,
             'assigned_plan_key' => $company->assigned_plan_key,
             'assigned_billing_interval' => $company->assigned_billing_interval,
             'can_choose_plan' => $company->canChoosePlan(),
+            'can_manage_billing' => $canManageBilling,
+            'viewer_role' => $viewerRole,
             'current_period_start' => $company->subscription_current_period_start?->toIso8601String(),
             'current_period_end' => $company->subscription_current_period_end?->toIso8601String(),
             'grace_ends_at' => $company->subscription_grace_ends_at?->toIso8601String(),
@@ -251,7 +259,7 @@ class CompanySubscriptionService
 
     public function markPendingPayment(Company $company): void
     {
-        if ($company->hasActiveSubscription()) {
+        if ($company->hasPaidSubscription()) {
             return;
         }
 
@@ -260,7 +268,7 @@ class CompanySubscriptionService
         ])->save();
     }
 
-    private function resolveBillableCompany(User $user, ?int $companyId = null): Company
+    private function resolveBillableCompany(User $user, ?int $companyId = null, bool $requireBillingRole = true): Company
     {
         $query = $user->companies()->where('companies.status', 'active');
 
@@ -279,12 +287,14 @@ class CompanySubscriptionService
             ]);
         }
 
-        $role = (string) $company->pivot?->role;
+        if ($requireBillingRole) {
+            $role = (string) $company->pivot?->role;
 
-        if (! in_array($role, [CompanyUserRole::OWNER->value, CompanyUserRole::ADMIN->value], true)) {
-            throw ValidationException::withMessages([
-                'company_id' => ['Only company owners or admins can manage billing.'],
-            ]);
+            if (! in_array($role, [CompanyUserRole::OWNER->value, CompanyUserRole::ADMIN->value], true)) {
+                throw ValidationException::withMessages([
+                    'company_id' => ['Only company owners or admins can manage billing.'],
+                ]);
+            }
         }
 
         return $company;

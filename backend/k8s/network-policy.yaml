@@ -70,40 +70,7 @@ spec:
         - port: 8089
 
 ---
-# 3. MySQL: allow ingress from backend, queue-worker, scheduler, migrate ────
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-to-mysql
-  namespace: factory23
-spec:
-  podSelector:
-    matchLabels:
-      app: mysql
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: backend
-        - podSelector:
-            matchLabels:
-              app: queue-worker
-        - podSelector:
-            matchLabels:
-              app: scheduler
-        - podSelector:
-            matchLabels:
-              app: laravel-migrate
-        - podSelector:
-            matchLabels:
-              app: mysql-backup
-      ports:
-        - port: 3306
-
----
-# 4. Redis: allow ingress from backend, queue-worker, scheduler, realtime ───
+# 3. Redis: allow ingress from backend, queue-worker, scheduler, realtime ───
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -202,7 +169,7 @@ spec:
 
 ---
 # 8. Allow intra-namespace egress (pod → pod within factory23) ───────────────
-# Backend → MySQL/Redis, Realtime → Backend/Redis, Workers → MySQL/Redis
+# Backend → Redis, Realtime → Backend/Redis, Workers → Redis
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

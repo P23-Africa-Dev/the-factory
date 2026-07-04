@@ -59,23 +59,17 @@ export default function LoginForm() {
   const accountStatusMessage = getAccountStatusMessage(searchParams);
 
   useEffect(() => {
-    if (!hasHydrated || !user) return;
+    if (!hasHydrated) return;
 
     const token = getAuthTokenFromDocument();
     if (!token) {
       clearAuthSession();
-      clearUser();
+      if (user) {
+        clearUser();
+      }
       return;
     }
-
-    if (user.active_company?.role === "agent") {
-      router.replace("/agent/dashboard");
-      return;
-    }
-
-    // If company context is still missing, user has not completed onboarding yet.
-    router.replace(user.active_company ? "/dashboard" : "/complete-onboarding");
-  }, [hasHydrated, router, user, clearUser]);
+  }, [hasHydrated, user, clearUser]);
 
   async function onSubmit(values: LoginFormValues) {
     setGlobalError("");
