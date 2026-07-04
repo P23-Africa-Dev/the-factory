@@ -1,0 +1,20 @@
+# Alias service for nginx running as sidecar in the backend pods.
+# Both nginx-service and backend-service select the same pods (app: backend)
+# and expose port 80. Route Ingress traffic to backend-service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: nginx
+    app.kubernetes.io/component: web
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP

@@ -17,11 +17,12 @@ class SubscriptionLifecycleService
 {
     public function __construct(
         private readonly CompanySubscriptionService $subscriptionService,
+        private readonly BillingEnforcementSettingService $billingEnforcement,
     ) {}
 
     public function process(): void
     {
-        if (! (bool) config('billing.enforce', true)) {
+        if (! $this->billingEnforcement->isEnabled()) {
             Log::info('billing.enforce is disabled — skipping subscription lifecycle processing.');
 
             return;

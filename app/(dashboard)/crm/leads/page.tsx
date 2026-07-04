@@ -4,7 +4,6 @@ import {
   BookmarkPlus,
   ChevronDown,
   Eye,
-  Import,
   Pencil,
   Search,
   SlidersHorizontal,
@@ -15,13 +14,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { useCrmLabels, useCrmPipelines, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useCrmLabels, useCrmPipelines, useDeleteLead, useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
-import { ImportLeadsModal, LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
+import { LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
+import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { CrmFilterBar } from "@/components/crm/crm-filter-bar";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
-import type { ApiLeadStatus } from "@/lib/api/crm";
+import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
 import { resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { toast } from "sonner";
 
@@ -108,8 +108,8 @@ export default function AllLeadsPage() {
   const [showFilter, setShowFilter] = useState(false);
   const [showPipelineModal, setShowPipelineModal] = useState(false);
   const [showLabelModal, setShowLabelModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingLead, setEditingLead] = useState<LeadApiItem | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
@@ -140,6 +140,9 @@ export default function AllLeadsPage() {
     source: agentUploadScope ? "agent_upload" : undefined,
   }, "/admin");
   const updateLeadMutation = useUpdateLead(undefined, "/admin");
+  const deleteLeadMutation = useDeleteLead(undefined, "/admin");
+
+  const apiLeads = data?.leads ?? [];
 
   const statusOptions = labels.map((label) => ({
     label: label.name,
@@ -190,12 +193,55 @@ export default function AllLeadsPage() {
     }
   };
 
-  const deleteLead = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
+  const deleteLead = async (id: string) => {
+    try {
+      await deleteLeadMutation.mutateAsync({
+        leadId: id,
+        companyId: companyId ?? undefined,
+      });
+      toast.success("Lead deleted successfully");
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setDeleteTargetId(null);
+      refetch();
+    } catch {
+      toast.error("Could not delete the lead. Please try again.");
+    }
+  };
+
+  const deleteSelectedLeads = async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+
+    try {
+      await Promise.all(
+        ids.map((id) =>
+          deleteLeadMutation.mutateAsync({
+            leadId: id,
+            companyId: companyId ?? undefined,
+          })
+        )
+      );
+      toast.success(
+        ids.length === 1 ? "Lead deleted successfully" : `${ids.length} leads deleted successfully`
+      );
+      setSelected(new Set());
+      setShowBulkDeleteConfirm(false);
+      refetch();
+    } catch {
+      toast.error("Could not delete one or more leads. Please try again.");
+      refetch();
+    }
+  };
+
+  const openEditLead = (id: string) => {
+    const lead = apiLeads.find((entry) => String(entry.id) === id);
+    if (lead) {
+      setEditingLead(lead);
+    }
   };
 
   return (
@@ -237,10 +283,20 @@ export default function AllLeadsPage() {
               <SlidersHorizontal size={13} />
               Filter
             </button>
-            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
-              <Import size={13} />
-              Import
-            </button>
+            <CrmImportExportButton
+              companyId={companyId}
+              apiBasePath="/admin"
+              pipelines={pipelines}
+              labels={labels}
+              defaultPipelineId={selectedPipelineId}
+              activeFilters={{
+                search: search.trim() || undefined,
+                pipeline_id: selectedPipelineId ?? undefined,
+                status: selectedLabel === "all" ? undefined : selectedLabel,
+                source: agentUploadScope ? "agent_upload" : undefined,
+              }}
+              selectedLeadIds={Array.from(selected)}
+            />
             <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all">
               Add New Leads
               <BookmarkPlus size={15} />
@@ -450,7 +506,7 @@ export default function AllLeadsPage() {
                       />
                     </button>
                     <button
-                      onClick={() => router.push(`${basePath}/leads/${lead.id}`)}
+                      onClick={() => openEditLead(lead.id)}
                       className={`p-1 rounded-md transition-colors ${isSelected ? "hover:bg-white/10" : "hover:bg-gray-100"
                         }`}
                     >
@@ -518,17 +574,6 @@ export default function AllLeadsPage() {
         />
       )}
 
-      {showImportModal && companyId && (
-        <ImportLeadsModal
-          companyId={companyId}
-          apiBasePath="/admin"
-          pipelines={pipelines}
-          labels={labels}
-          defaultPipelineId={selectedPipelineId}
-          onClose={() => setShowImportModal(false)}
-        />
-      )}
-
       {showAddModal && (
         <AddLeadModal
           onClose={() => setShowAddModal(false)}
@@ -536,10 +581,18 @@ export default function AllLeadsPage() {
         />
       )}
 
+      {editingLead && (
+        <AddLeadModal
+          lead={editingLead}
+          onClose={() => setEditingLead(null)}
+          apiBasePath="/admin"
+        />
+      )}
+
       <ConfirmDeleteModal
         isOpen={deleteTargetId !== null}
         onClose={() => setDeleteTargetId(null)}
-        onConfirm={() => { if (deleteTargetId) deleteLead(deleteTargetId); }}
+        onConfirm={() => { if (deleteTargetId) void deleteLead(deleteTargetId); }}
         title="Delete Lead"
         description="Are you sure you want to delete this lead? This action cannot be undone."
       />
@@ -547,10 +600,7 @@ export default function AllLeadsPage() {
       <ConfirmDeleteModal
         isOpen={showBulkDeleteConfirm}
         onClose={() => setShowBulkDeleteConfirm(false)}
-        onConfirm={() => {
-          selected.forEach((id) => deleteLead(id));
-          setSelected(new Set());
-        }}
+        onConfirm={() => { void deleteSelectedLeads(); }}
         title={`Delete ${selected.size} Lead${selected.size === 1 ? "" : "s"}`}
         description={`Are you sure you want to delete ${selected.size} selected lead${selected.size === 1 ? "" : "s"}? This action cannot be undone.`}
       />

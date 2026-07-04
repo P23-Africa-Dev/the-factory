@@ -14,10 +14,19 @@ class UserAdminService
      */
     public function paginateAccountOwners(array $filters): LengthAwarePaginator
     {
+        $trashScope = strtolower(trim((string) ($filters['trash'] ?? '')));
+
         $query = User::query()
-            ->select(['id', 'name', 'email', 'is_active', 'suspended_until',
-                'onboarding_completed_at', 'enterprise_onboarding_completed_at', 'created_at'])
-            ->whereNull('internal_role')
+            ->select(['id', 'name', 'email', 'is_active', 'suspended_until', 'deleted_at',
+                'onboarding_completed_at', 'enterprise_onboarding_completed_at', 'created_at']);
+
+        if ($trashScope === 'trashed') {
+            $query->onlyTrashed();
+        } elseif ($trashScope === 'all') {
+            $query->withTrashed();
+        }
+
+        $query->whereNull('internal_role')
             ->with([
                 'companies'      => fn ($q) => $q->select('companies.id', 'companies.name', 'companies.company_id'),
                 'ownedWorkspaces' => fn ($q) => $q->select('id', 'name', 'owner_id'),
@@ -42,10 +51,19 @@ class UserAdminService
      */
     public function paginateInternalUsers(array $filters): LengthAwarePaginator
     {
+        $trashScope = strtolower(trim((string) ($filters['trash'] ?? '')));
+
         $query = User::query()
-            ->select(['id', 'name', 'email', 'is_active', 'suspended_until',
-                'internal_role', 'supervisor_user_id', 'created_at'])
-            ->whereNotNull('internal_role')
+            ->select(['id', 'name', 'email', 'is_active', 'suspended_until', 'deleted_at',
+                'internal_role', 'supervisor_user_id', 'created_at']);
+
+        if ($trashScope === 'trashed') {
+            $query->onlyTrashed();
+        } elseif ($trashScope === 'all') {
+            $query->withTrashed();
+        }
+
+        $query->whereNotNull('internal_role')
             ->with([
                 'supervisor' => fn ($q) => $q->select('id', 'name', 'email'),
                 'companies'  => fn ($q) => $q->select('companies.id', 'companies.name', 'companies.company_id'),
@@ -146,6 +164,19 @@ class UserAdminService
     public function delete(User $user): void
     {
         $user->delete();
+    }
+
+    public function restore(User $user): User
+    {
+        if (method_exists($user, 'trashed') && $user->trashed()) {
+            $user->restore();
+        }
+        return $user->fresh() ?? $user;
+    }
+
+    public function forceDelete(User $user): void
+    {
+        $user->forceDelete();
     }
 
     /**

@@ -159,7 +159,7 @@ class DemoRequestService
                     'activated_at' => $company->activated_at ?? now(),
                     'assigned_plan_key' => $registration['assigned_plan_key'],
                     'assigned_billing_interval' => $registration['assigned_billing_interval'],
-                    'subscription_status' => $company->hasActiveSubscription()
+                    'subscription_status' => $company->hasPaidSubscription()
                         ? $company->subscription_status
                         : SubscriptionStatus::PENDING_PAYMENT->value,
                 ]);

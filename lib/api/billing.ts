@@ -20,11 +20,14 @@ export type BillingStatus = {
   billing_enforced: boolean;
   subscription_status: string;
   has_active_subscription: boolean;
+  has_paid_subscription: boolean;
   plan_key: string | null;
   billing_interval: string | null;
   assigned_plan_key: string | null;
   assigned_billing_interval: string | null;
   can_choose_plan: boolean;
+  can_manage_billing: boolean;
+  viewer_role: string | null;
   current_period_start: string | null;
   current_period_end: string | null;
   grace_ends_at: string | null;

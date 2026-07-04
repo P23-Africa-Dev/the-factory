@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\Billing\BillingEnforcementSettingService;
 use App\Support\AvatarUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -16,7 +17,8 @@ class UserResource extends JsonResource
             ->orderBy('company_users.created_at', 'desc')
             ->first(['companies.id', 'companies.company_id', 'companies.name', 'companies.status', 'companies.subscription_status', 'companies.subscription_plan_key', 'companies.assigned_plan_key']);
 
-        $billingActive = $activeCompany?->subscriptionStatusEnum()->allowsDashboardAccess() ?? false;
+        $billingActive = $activeCompany?->hasEffectiveSubscriptionAccess() ?? false;
+        $paidSubscription = $activeCompany?->hasPaidSubscription() ?? false;
 
         $selfServeCompleted = $this->hasCompletedOnboarding();
         $enterpriseCompleted = $this->hasCompletedEnterpriseOnboarding();
@@ -30,6 +32,7 @@ class UserResource extends JsonResource
         };
 
         $avatarUrl = $this->resolveAvatarUrl();
+        $billingEnforced = app(BillingEnforcementSettingService::class)->isEnabled();
 
         return [
             'id' => $this->id,
@@ -51,13 +54,15 @@ class UserResource extends JsonResource
                 'role' => $activeCompany->pivot?->role,
                 'subscription_status' => $activeCompany->subscription_status,
                 'has_active_subscription' => $billingActive,
-                'billing_enforced' => (bool) config('billing.enforce', true),
+                'has_paid_subscription' => $paidSubscription,
+                'billing_enforced' => $billingEnforced,
             ] : null,
             'billing' => $activeCompany ? [
                 'subscription_status' => $activeCompany->subscription_status,
                 'has_active_subscription' => $billingActive,
+                'has_paid_subscription' => $paidSubscription,
                 'assigned_plan_key' => $activeCompany->assigned_plan_key,
-                'billing_enforced' => (bool) config('billing.enforce', true),
+                'billing_enforced' => $billingEnforced,
             ] : null,
             'created_at' => $this->created_at->toIso8601String(),
         ];

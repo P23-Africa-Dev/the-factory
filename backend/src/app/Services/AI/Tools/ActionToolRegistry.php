@@ -94,7 +94,12 @@ class ActionToolRegistry
             'visit_verification_required' => ['nullable', 'boolean'],
         ])->validate();
 
-        unset($validated['assigned_agent_id'], $validated['assigned_agent_ids']);
+        // Agents cannot assign tasks to others; managers/admins may assign,
+        // and TaskService will enforce tenant membership for assigned_agent_id.
+        if ($isAgent) {
+            unset($validated['assigned_agent_id']);
+        }
+        unset($validated['assigned_agent_ids']);
 
         $payload = [
             ...$validated,

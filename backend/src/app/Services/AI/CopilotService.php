@@ -230,23 +230,16 @@ class CopilotService
                                 idempotencyKey: $idempotencyKey,
                             );
                         } catch (ValidationException $e) {
-                            $assistantText = $this->mapActionFailureMessage($e, $candidateTool);
-                            $toolResult = [
-                                'summary' => $assistantText,
-                                'sources' => [$candidateTool],
-                                'payload' => [
-                                    'error' => true,
-                                    'tool' => $candidateTool,
-                                    'action_args' => $this->redactValue($resolvedActionArgs),
-                                ],
-                            ];
-
                             $this->aiLoggingService->fail(
                                 $aiLog,
                                 'action_validation_failed',
                                 $e->getMessage(),
                                 $e,
                             );
+
+                            // Bubble validation issues so HTTP API returns 422 and
+                            // clients can render field-level validation errors.
+                            throw $e;
                         } catch (Throwable $e) {
                             $assistantText = $this->mapActionFailureMessage($e, $candidateTool);
                             $toolResult = [
@@ -456,7 +449,7 @@ class CopilotService
                 return 'I can create that KPI. Share the KPI name, objective, target value, expected outcome, dates, and assignee (for example: KPI name: Retail Visits, Objective: Increase field visits, Target value: 50 visits, Expected outcome: Reach 50 qualified visits this month, Assign to: John Wick), then I will prepare a confirmation form for you.';
             }
 
-            return 'I can help schedule that. Try phrasing it like "Create a meeting with [name] tomorrow at 2 PM" so I can prepare the confirmation form for you.';
+            return 'This looks like a write action request, but I could not confidently map it to a supported tool. Try phrasing it like "Create a meeting with [name] tomorrow at 2 PM" so I can prepare the confirmation form for you.';
         }
 
         if ((str_contains($normalized, 'same agent') || str_contains($normalized, 'that agent')) && is_string($contextEntities['agent'] ?? null)) {
@@ -528,10 +521,12 @@ class CopilotService
     {
         $normalized = strtolower($text);
 
-        if (str_contains($normalized, 'executing task creation')
+        if (
+            str_contains($normalized, 'executing task creation')
             || str_contains($normalized, 'task created successfully')
             || str_contains($normalized, 'meeting scheduled successfully')
-            || str_contains($normalized, 'kpi') && str_contains($normalized, 'was created successfully')) {
+            || str_contains($normalized, 'kpi') && str_contains($normalized, 'was created successfully')
+        ) {
             return true;
         }
 
@@ -647,8 +642,10 @@ class CopilotService
             return 'kpis.create';
         }
 
-        if (preg_match('/\b(name|objective|target\s*value|expected\s*outcome|kpi\s*name)\s*:/i', $normalized) === 1
-            && preg_match('/\bkpi\b/i', $normalized) === 1) {
+        if (
+            preg_match('/\b(name|objective|target\s*value|expected\s*outcome|kpi\s*name)\s*:/i', $normalized) === 1
+            && preg_match('/\bkpi\b/i', $normalized) === 1
+        ) {
             return 'kpis.create';
         }
 
@@ -687,8 +684,10 @@ class CopilotService
 
         $blob = strtolower(implode(' ', $lines));
 
-        if (preg_match('/\b(task|assign)\b/i', $blob) === 1
-            && preg_match('/\b(set|create|assign|visit|due|tomorrow|priority|description|title)\b/i', $blob) === 1) {
+        if (
+            preg_match('/\b(task|assign)\b/i', $blob) === 1
+            && preg_match('/\b(set|create|assign|visit|due|tomorrow|priority|description|title)\b/i', $blob) === 1
+        ) {
             return 'tasks.create';
         }
 
@@ -1191,9 +1190,11 @@ class CopilotService
             return trim((string) $m[1]);
         }
 
-        if (preg_match('/\bcreate\s+(a\s+)?task\b[:\-\s]*(.+?)(?=\.|\n|task\s+type\s*:|description\s*:|assign\s*to\s*:|due\s+date\s*:|$)/i', $message, $m) === 1) {
+        if (preg_match('/\bcreate\s+(a\s+)?task\b[:\-\s]*(.+?)(?=\.|\n|task\s+type\s*:|description\s*:|assign\s+to\b|due\s+date\s*:|$)/i', $message, $m) === 1) {
             $candidate = trim((string) $m[2]);
-            return $candidate !== '' ? $candidate : null;
+            if ($candidate !== '' && preg_match('/^assign\s+to\b/i', $candidate) !== 1) {
+                return $candidate;
+            }
         }
 
         if (preg_match('/\bto\s+(visit|deliver|inspect|collect)\s+(.+?)(?=[\.,;]|$|\n|due|priority)/i', $message, $m) === 1) {
@@ -1221,7 +1222,7 @@ class CopilotService
             $escaped = preg_quote($label, '/');
             $pattern = '/\b' . $escaped . '\b\s*:\s*(.+?)(?=\s*(?:[a-z][a-z\s&\/]{1,30}\s*:|\.|;|\n|$))/i';
             if (preg_match($pattern, $message, $m) === 1) {
-                $value = trim((string) $m[1]);
+                $value = $this->stripWrappingQuotes(trim((string) $m[1]));
                 if ($value !== '') {
                     return $value;
                 }
@@ -1229,6 +1230,19 @@ class CopilotService
         }
 
         return null;
+    }
+
+    private function stripWrappingQuotes(string $value): string
+    {
+        $trimmed = trim($value);
+        if (
+            (str_starts_with($trimmed, '"') && str_ends_with($trimmed, '"'))
+            || (str_starts_with($trimmed, "'") && str_ends_with($trimmed, "'"))
+        ) {
+            return trim(substr($trimmed, 1, -1));
+        }
+
+        return $trimmed;
     }
 
     /**
@@ -1350,10 +1364,7 @@ class CopilotService
         }
 
         if (preg_match('/\bassign\s*to\s*:\s*([^\.\n]+)/i', $message, $m) === 1) {
-            $candidate = trim((string) $m[1]);
-            $candidate = preg_replace('/\((.*?)\)/', '', $candidate) ?: $candidate;
-            $candidate = preg_replace('/\bagent\s+/i', '', $candidate) ?: $candidate;
-            $candidate = trim($candidate);
+            $candidate = $this->normalizeAssigneeCandidate((string) $m[1]);
 
             if ($candidate !== '') {
                 $byName = $this->resolveAgentIdFromAssigneeToken($candidate, $companyId);
@@ -1364,10 +1375,7 @@ class CopilotService
         }
 
         if (preg_match('/\bassign\s+to\s+([^\.\n,;]+)/i', $message, $m) === 1) {
-            $candidate = trim((string) $m[1]);
-            $candidate = preg_replace('/\((.*?)\)/', '', $candidate) ?: $candidate;
-            $candidate = preg_replace('/\bagent\s+/i', '', $candidate) ?: $candidate;
-            $candidate = trim($candidate);
+            $candidate = $this->normalizeAssigneeCandidate((string) $m[1]);
 
             if ($candidate !== '') {
                 $byName = $this->resolveAgentIdFromAssigneeToken($candidate, $companyId);
@@ -1398,6 +1406,21 @@ class CopilotService
         }
 
         return $this->resolveAgentIdFromMessage($message, $companyId, $entities);
+    }
+
+    private function normalizeAssigneeCandidate(string $raw): string
+    {
+        $candidate = trim($raw);
+        if ($candidate === '') {
+            return '';
+        }
+
+        // "assign to Jane Doe due tomorrow" — stop before task metadata when no delimiter.
+        $candidate = preg_replace('/\s+(?:due|by|on|location|address|priority|description|title|type)\b.*/i', '', $candidate) ?? $candidate;
+        $candidate = preg_replace('/\((.*?)\)/', '', $candidate) ?? $candidate;
+        $candidate = preg_replace('/\bagent\s+/i', '', $candidate) ?? $candidate;
+
+        return trim($candidate);
     }
 
     private function resolveAgentIdFromAssigneeToken(string $token, int $companyId): ?int

@@ -1,0 +1,5 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# NEVER commit secret.yaml — it contains production credentials.
+# Use secret.example.yaml as a template.
+# ─────────────────────────────────────────────────────────────────────────────
+secret.yaml

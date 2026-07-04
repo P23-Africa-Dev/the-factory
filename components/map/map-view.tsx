@@ -43,6 +43,7 @@ import {
   resolvePrivacySafeViewport,
 } from '@/lib/map/default-viewport';
 import { SavedLocationsLayer, type GoogleMapBridge } from '@/components/map/SavedLocationsLayer';
+import { TerritoryLayer } from '@/components/map/TerritoryLayer';
 import { useSavedLocations, useSavedLocationPermissions } from '@/hooks/use-saved-locations';
 import { getSavedLocationLabel } from '@/lib/map/location-types';
 import type { SavedLocation } from '@/lib/api/saved-locations';
@@ -1415,6 +1416,14 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         visibleIds={filteredBusinessIds}
       />
 
+      <TerritoryLayer
+        variant="admin"
+        provider="mapbox"
+        ready={mapVersion > 0}
+        getMapboxMap={() => mapRef.current}
+        toggleClassName="absolute bottom-6 left-4 z-30 flex flex-col-reverse items-start gap-2"
+      />
+
       {selectedTask && (() => {
         const operationalStatus = resolveOperationalStatusFromTask(selectedTask, nowMs, STALE_MS);
         const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
@@ -2246,6 +2255,14 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         onPinModeChange={setPinMode}
         focusLocation={focusLocation}
         visibleIds={filteredBusinessIds}
+      />
+
+      <TerritoryLayer
+        variant="admin"
+        provider="google"
+        ready={googleReady}
+        getGoogleMap={() => (mapRef.current ? { map: mapRef.current } : null)}
+        toggleClassName="absolute bottom-6 left-4 z-30 flex flex-col-reverse items-start gap-2"
       />
 
       {historyTask && (

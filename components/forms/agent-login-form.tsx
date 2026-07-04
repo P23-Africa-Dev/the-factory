@@ -59,19 +59,17 @@ export default function AgentLoginForm() {
   const accountStatusMessage = getAccountStatusMessage(searchParams);
 
   useEffect(() => {
-    if (!hasHydrated || !user) return;
+    if (!hasHydrated) return;
 
-    // If zustand has a user but the cookie is gone, the state is stale — clear it
-    // to avoid bouncing between login and dashboard forever.
     const token = getAuthTokenFromDocument();
     if (!token) {
       clearAuthSession();
-      clearUser();
+      if (user) {
+        clearUser();
+      }
       return;
     }
-
-    router.replace(user.active_company?.role === "agent" ? "/agent/dashboard" : "/dashboard");
-  }, [hasHydrated, router, user, clearUser]);
+  }, [hasHydrated, user, clearUser]);
 
   async function onSubmit(values: LoginFormValues) {
     setGlobalError("");

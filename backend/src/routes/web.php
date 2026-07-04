@@ -4,8 +4,13 @@ use App\Http\Controllers\Admin\AI\AiHealthController;
 use App\Http\Controllers\Admin\AI\AiLogController;
 use App\Http\Controllers\Admin\AI\AiManagementController;
 use App\Http\Controllers\Admin\Auth\LoginController;
+use App\Http\Controllers\Admin\Billing\BillingEnforcementController;
+use App\Http\Controllers\Admin\Billing\BillingOverviewController;
 use App\Http\Controllers\Admin\Billing\AdminPaymentLinkController;
+use App\Http\Controllers\Admin\Billing\BillingPlanController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\Database\DatabaseLockController;
+use App\Http\Controllers\Admin\Database\DatabaseManagerController;
 use App\Http\Controllers\Admin\Enterprise\DemoRequestController;
 use App\Http\Controllers\Admin\MapProviderSettingController;
 use App\Http\Controllers\Admin\UserManagementController;
@@ -53,6 +58,8 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
             Route::post('/{user}/reactivate', [UserManagementController::class, 'reactivate'])->name('reactivate');
             Route::patch('/{user}/role', [UserManagementController::class, 'updateRole'])->name('role.update');
             Route::delete('/{user}', [UserManagementController::class, 'destroy'])->name('destroy');
+            Route::post('/{user}/restore', [UserManagementController::class, 'restore'])->name('restore');
+            Route::delete('/{user}/force', [UserManagementController::class, 'forceDestroy'])->name('force-destroy');
             Route::post('/{user}/payment-link', [AdminPaymentLinkController::class, 'forUser'])->name('payment-link');
         });
 
@@ -63,6 +70,58 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
                 Route::get('/{demoRequest}', [DemoRequestController::class, 'show'])->name('show');
                 Route::patch('/{demoRequest}/activate', [DemoRequestController::class, 'activate'])->name('activate');
                 Route::post('/{demoRequest}/payment-link', [AdminPaymentLinkController::class, 'forDemoRequest'])->name('payment-link');
+            });
+        });
+
+        // ── Manage Database (super_admin only, passcode-gated) ─
+        Route::prefix('database')->name('database.')->middleware('admin.permission:manage_database')->group(function (): void {
+            Route::get('/lock', [DatabaseLockController::class, 'show'])->name('lock.show');
+            Route::post('/unlock', [DatabaseLockController::class, 'unlock'])->name('unlock');
+            Route::post('/lock', [DatabaseLockController::class, 'lock'])->name('lock');
+            Route::post('/passcode/reset', [DatabaseLockController::class, 'resetWithMasterToken'])->name('passcode.reset');
+
+            Route::middleware('admin.db.unlocked')->group(function (): void {
+                Route::post('/passcode/change', [DatabaseLockController::class, 'changePasscode'])->name('passcode.change');
+
+                Route::get('/', [DatabaseManagerController::class, 'index'])->name('index');
+
+                Route::get('/tables/create', [DatabaseManagerController::class, 'createTableForm'])->name('tables.create');
+                Route::post('/tables', [DatabaseManagerController::class, 'storeTable'])->name('tables.store');
+                Route::delete('/tables/{table}', [DatabaseManagerController::class, 'dropTable'])
+                    ->where('table', '[A-Za-z0-9_]+')->name('tables.destroy');
+                Route::get('/tables/{table}', [DatabaseManagerController::class, 'showTable'])
+                    ->where('table', '[A-Za-z0-9_]+')->name('tables.show');
+
+                Route::post('/tables/{table}/columns', [DatabaseManagerController::class, 'addColumn'])
+                    ->where('table', '[A-Za-z0-9_]+')->name('columns.store');
+                Route::delete('/tables/{table}/columns/{column}', [DatabaseManagerController::class, 'dropColumn'])
+                    ->where(['table' => '[A-Za-z0-9_]+', 'column' => '[A-Za-z0-9_]+'])->name('columns.destroy');
+
+                Route::get('/tables/{table}/rows/create', [DatabaseManagerController::class, 'createRow'])
+                    ->where('table', '[A-Za-z0-9_]+')->name('rows.create');
+                Route::post('/tables/{table}/rows', [DatabaseManagerController::class, 'storeRow'])
+                    ->where('table', '[A-Za-z0-9_]+')->name('rows.store');
+                Route::get('/tables/{table}/rows/{id}/edit', [DatabaseManagerController::class, 'editRow'])
+                    ->where('table', '[A-Za-z0-9_]+')->name('rows.edit');
+                Route::patch('/tables/{table}/rows/{id}', [DatabaseManagerController::class, 'updateRow'])
+                    ->where('table', '[A-Za-z0-9_]+')->name('rows.update');
+                Route::delete('/tables/{table}/rows/{id}', [DatabaseManagerController::class, 'destroyRow'])
+                    ->where('table', '[A-Za-z0-9_]+')->name('rows.destroy');
+            });
+        });
+
+        // ── Billing ────────────────────────────────────────────
+        Route::prefix('billing')->name('billing.')->middleware('admin.permission:manage_billing')->group(function (): void {
+            Route::get('/', BillingOverviewController::class)->name('index');
+            Route::post('/enforcement', [BillingEnforcementController::class, 'update'])->name('enforcement.update');
+
+            Route::prefix('plans')->name('plans.')->group(function (): void {
+                Route::get('/', [BillingPlanController::class, 'index'])->name('index');
+                Route::get('/create', [BillingPlanController::class, 'create'])->name('create');
+                Route::post('/', [BillingPlanController::class, 'store'])->name('store');
+                Route::get('/{plan}/edit', [BillingPlanController::class, 'edit'])->name('edit');
+                Route::patch('/{plan}', [BillingPlanController::class, 'update'])->name('update');
+                Route::delete('/{plan}', [BillingPlanController::class, 'destroy'])->name('destroy');
             });
         });
     });

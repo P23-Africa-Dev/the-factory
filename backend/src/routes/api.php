@@ -1,12 +1,12 @@
 <?php
 
 use App\Http\Controllers\Api\V1\Agent\AgentLoginController;
-use App\Http\Controllers\Api\V1\Attendance\AttendanceAgentController;
-use App\Http\Controllers\Api\V1\Attendance\AttendanceManagementController;
-use App\Http\Controllers\Api\V1\Attendance\AttendanceSettingsController;
 use App\Http\Controllers\Api\V1\AI\CopilotAutomationController;
 use App\Http\Controllers\Api\V1\AI\CopilotController;
 use App\Http\Controllers\Api\V1\AI\CopilotReportingController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceAgentController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceManagementController;
+use App\Http\Controllers\Api\V1\Attendance\AttendanceSettingsController;
 use App\Http\Controllers\Api\V1\Auth\AdminLoginController;
 use App\Http\Controllers\Api\V1\Auth\ForgotPasswordController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
@@ -26,9 +26,9 @@ use App\Http\Controllers\Api\V1\Calendar\MeetingController;
 use App\Http\Controllers\Api\V1\Calendar\UserCalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Company\CompanyLocationController;
 use App\Http\Controllers\Api\V1\CountryController;
-use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Crm\CrmEmailController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
+use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
 use App\Http\Controllers\Api\V1\Enterprise\BookDemoController;
 use App\Http\Controllers\Api\V1\Enterprise\CompleteFirstTimeSetupController;
@@ -36,12 +36,12 @@ use App\Http\Controllers\Api\V1\Enterprise\EnterpriseLoginController;
 use App\Http\Controllers\Api\V1\Enterprise\SetupInfoController;
 use App\Http\Controllers\Api\V1\Enterprise\VerifyCompanyIdController;
 use App\Http\Controllers\Api\V1\HealthController;
-use App\Http\Controllers\Api\V1\Kpi\AdminKpiStatusController;
-use App\Http\Controllers\Api\V1\Kpi\KpiController;
-use App\Http\Controllers\Api\V1\Kpi\KpiStatusController;
 use App\Http\Controllers\Api\V1\Internal\InternalLoginController;
 use App\Http\Controllers\Api\V1\Internal\InternalOnboardingController;
 use App\Http\Controllers\Api\V1\Internal\InternalUserController;
+use App\Http\Controllers\Api\V1\Kpi\AdminKpiStatusController;
+use App\Http\Controllers\Api\V1\Kpi\KpiController;
+use App\Http\Controllers\Api\V1\Kpi\KpiStatusController;
 use App\Http\Controllers\Api\V1\Map\MapProviderController;
 use App\Http\Controllers\Api\V1\Notification\NotificationController;
 use App\Http\Controllers\Api\V1\Notification\NotificationPreferenceController;
@@ -49,15 +49,16 @@ use App\Http\Controllers\Api\V1\Notification\PushSubscriptionController;
 use App\Http\Controllers\Api\V1\Onboarding\WorkspaceController;
 use App\Http\Controllers\Api\V1\Payroll\PayrollController;
 use App\Http\Controllers\Api\V1\Project\ProjectController;
-use App\Http\Controllers\Api\V1\Tracking\AgentLocationController;
-use App\Http\Controllers\Api\V1\Tracking\AgentPresenceController;
-use App\Http\Controllers\Api\V1\Task\AgentTaskController;
 use App\Http\Controllers\Api\V1\Task\AdminTaskStatusController;
+use App\Http\Controllers\Api\V1\Task\AgentTaskController;
 use App\Http\Controllers\Api\V1\Task\TaskAssignmentController;
 use App\Http\Controllers\Api\V1\Task\TaskController;
 use App\Http\Controllers\Api\V1\Task\TaskProofController;
 use App\Http\Controllers\Api\V1\Task\TaskStatusController;
 use App\Http\Controllers\Api\V1\Task\TaskTrackingController;
+use App\Http\Controllers\Api\V1\Territory\TerritoryController;
+use App\Http\Controllers\Api\V1\Tracking\AgentLocationController;
+use App\Http\Controllers\Api\V1\Tracking\AgentPresenceController;
 use App\Http\Controllers\Api\V1\User\MeController;
 use App\Http\Controllers\Api\V1\User\ProfileController;
 use App\Http\Controllers\Api\V1\Workforce\WorkforceSummaryController;
@@ -442,6 +443,12 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::post('/leads/import', [LeadController::class, 'import'])
                     ->middleware('throttle:20,1')
                     ->name('leads.import');
+                Route::post('/leads/import/preview', [LeadController::class, 'importPreview'])
+                    ->middleware('throttle:20,1')
+                    ->name('leads.import.preview');
+                Route::get('/leads/export', [LeadController::class, 'export'])
+                    ->middleware('throttle:10,1')
+                    ->name('leads.export');
                 Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
                 Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
                 Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
@@ -519,6 +526,17 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::get('/locations', [AgentLocationController::class, 'index'])->name('locations.index');
                 Route::get('/{user}/location', [AgentLocationController::class, 'show'])->name('locations.show');
             });
+
+            Route::prefix('territories')->name('territories.')->group(function (): void {
+                Route::get('/', [TerritoryController::class, 'index'])->name('index');
+                Route::get('/coverage-points', [TerritoryController::class, 'coveragePoints'])->name('coverage-points');
+                Route::put('/{user}', [TerritoryController::class, 'upsert'])
+                    ->middleware('throttle:30,1')
+                    ->name('upsert');
+                Route::delete('/{user}', [TerritoryController::class, 'destroy'])
+                    ->middleware('throttle:30,1')
+                    ->name('destroy');
+            });
         });
 
     // Canonical agent endpoints.
@@ -563,6 +581,12 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::post('/leads/import', [LeadController::class, 'import'])
                     ->middleware('throttle:20,1')
                     ->name('leads.import');
+                Route::post('/leads/import/preview', [LeadController::class, 'importPreview'])
+                    ->middleware('throttle:20,1')
+                    ->name('leads.import.preview');
+                Route::get('/leads/export', [LeadController::class, 'export'])
+                    ->middleware('throttle:10,1')
+                    ->name('leads.export');
                 Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
                 Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
                 Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
@@ -640,6 +664,8 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::get('/locations', [AgentLocationController::class, 'index'])->name('locations.index');
                 Route::get('/{user}/location', [AgentLocationController::class, 'show'])->name('locations.show');
             });
+
+            Route::get('/territory', [TerritoryController::class, 'agentShow'])->name('territory.show');
         });
 
     Route::prefix('tasks')->name('tasks.')->group(function (): void {
@@ -800,6 +826,12 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::post('/leads/import', [LeadController::class, 'import'])
             ->middleware('throttle:20,1')
             ->name('leads.import');
+        Route::post('/leads/import/preview', [LeadController::class, 'importPreview'])
+            ->middleware('throttle:20,1')
+            ->name('leads.import.preview');
+        Route::get('/leads/export', [LeadController::class, 'export'])
+            ->middleware('throttle:10,1')
+            ->name('leads.export');
         Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
         Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
         Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
@@ -827,6 +859,9 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::patch('/leads/{lead}', [LeadController::class, 'update'])
             ->middleware('throttle:30,1')
             ->name('leads.update');
+        Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
+            ->middleware('throttle:20,1')
+            ->name('leads.destroy');
         Route::post('/leads/{lead}/notes', [LeadController::class, 'storeNote'])
             ->middleware('throttle:60,1')
             ->name('leads.notes.store');

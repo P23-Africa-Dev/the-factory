@@ -67,9 +67,11 @@ function SubscribePageInner() {
   const companyName = data?.billing_status.company_name;
   const isLocked =
     !!data?.billing_status.assigned_plan_key && !data.billing_status.can_choose_plan;
+  const canManageBilling = data?.billing_status.can_manage_billing ?? true;
+  const viewerRole = data?.billing_status.viewer_role ?? null;
 
   useEffect(() => {
-    if (data && data.billing_status.billing_enforced === false) {
+    if (data && data.billing_status.has_active_subscription) {
       router.replace("/dashboard");
     }
   }, [data, router]);
@@ -120,6 +122,7 @@ function SubscribePageInner() {
         </div>
 
         {/* ── Billing interval toggle ───────────────────────────── */}
+        {canManageBilling && (
         <div className="flex items-center justify-center">
           <div className="inline-flex items-center bg-gray-100 rounded-full p-1 gap-1">
             <button
@@ -152,8 +155,57 @@ function SubscribePageInner() {
             </button>
           </div>
         </div>
+        )}
+
+        {/* ── Contact-admin notice for non-billing roles ────────── */}
+        {!isLoading && data && !canManageBilling && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-6 py-6 shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="shrink-0 w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
+                <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 4h.01M4.93 19h14.14A2 2 0 0021 17.24V6.76A2 2 0 0019.07 5H4.93A2 2 0 003 6.76v10.48A2 2 0 004.93 19z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-amber-900">
+                  Your organization needs an active subscription
+                </h2>
+                <p className="mt-1 text-sm text-amber-800 leading-6">
+                  {companyName ? (
+                    <>
+                      <span className="font-semibold">{companyName}</span> doesn&rsquo;t have
+                      an active subscription right now, so dashboard access is paused for
+                      everyone in the workspace.
+                    </>
+                  ) : (
+                    <>
+                      Your workspace doesn&rsquo;t have an active subscription right now,
+                      so dashboard access is paused for everyone in the workspace.
+                    </>
+                  )}
+                </p>
+                <p className="mt-3 text-sm text-amber-800 leading-6">
+                  Only the workspace <span className="font-semibold">owner</span> or an{" "}
+                  <span className="font-semibold">admin</span> can start or renew the
+                  subscription
+                  {viewerRole ? (
+                    <>
+                      {" "}
+                      (you&rsquo;re currently signed in as{" "}
+                      <span className="font-semibold">{viewerRole}</span>).
+                    </>
+                  ) : (
+                    <>.</>
+                  )}{" "}
+                  Please contact them to restore access.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Plans table ───────────────────────────────────────── */}
+        {(isLoading || canManageBilling) && (
         <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
           {/* Table header */}
           <div className="grid grid-cols-[1fr_auto_auto_auto] items-center bg-gray-50 border-b border-gray-200 px-5 py-3">
@@ -245,9 +297,10 @@ function SubscribePageInner() {
             })
           )}
         </div>
+        )}
 
         {/* ── Selected interval callout ─────────────────────────── */}
-        {interval === "annual" && (
+        {canManageBilling && interval === "annual" && (
           <div className="flex items-start gap-3 rounded-xl bg-emerald-50 border border-emerald-100 px-5 py-4 text-sm text-emerald-800">
             <svg className="w-4 h-4 mt-0.5 shrink-0 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
