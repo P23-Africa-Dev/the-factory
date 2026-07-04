@@ -44,15 +44,22 @@ spec:
           imagePullPolicy: IfNotPresent
 
           command:
-            - php
-            - artisan
-            - queue:work
-            - redis
-            - --queue=email-sync,email-attachments,default
-            - --sleep=1
-            - --tries=3
-            - --max-time=3600
-            - --timeout=120
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              mkdir -p /var/www/html/storage/framework/cache/data \
+                       /var/www/html/storage/framework/sessions \
+                       /var/www/html/storage/framework/views \
+                       /var/www/html/storage/logs
+              php artisan config:clear
+              php artisan config:cache
+              exec php artisan queue:work redis \
+                --queue=email-sync,email-attachments,default \
+                --sleep=1 \
+                --tries=3 \
+                --max-time=3600 \
+                --timeout=120
 
           envFrom:
             - configMapRef:
