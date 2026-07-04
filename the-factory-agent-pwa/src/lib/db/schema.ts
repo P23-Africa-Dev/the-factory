@@ -60,6 +60,7 @@ export interface SavedLocationCacheEntry {
 export type OfflineActionType =
   | 'task.update_status'
   | 'task.complete'
+  | 'task.create_self'
   | 'project.create'
   | 'project.update'
   | 'project.update_status'

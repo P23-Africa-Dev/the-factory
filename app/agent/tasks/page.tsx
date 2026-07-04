@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ClipboardList, Clock, CheckCircle2, ChevronRight, AlertCircle } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle2, ChevronRight, AlertCircle, Plus } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { useAgentTasks } from '@/hooks/use-tracking';
 import type { ApiTaskStatus } from '@/lib/api/tasks';
 import { hasTrackableTaskLocation } from '@/lib/tasks/location';
+import { CreateTaskModal } from '@/components/operations/create-task-modal';
 
 type Tab = 'pending' | 'in_progress' | 'completed';
 
@@ -39,8 +40,9 @@ export default function AgentTasksPage() {
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const [activeTab, setActiveTab] = useState<Tab>('pending');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  const { data, isLoading, isError } = useAgentTasks({
+  const { data, isLoading, isError, refetch } = useAgentTasks({
     company_id: companyId ?? undefined,
     status: activeTab as ApiTaskStatus,
   });
@@ -50,9 +52,18 @@ export default function AgentTasksPage() {
   return (
     <div className="min-h-screen bg-[#f8f9fb]">
       {/* Header */}
-      <div className="bg-white border-b border-gray-100 px-5 pt-6 pb-4">
-        <h1 className="text-[20px] font-bold text-dash-dark">My Tasks</h1>
-        <p className="text-[13px] text-gray-400 mt-0.5">Tasks assigned to you</p>
+      <div className="bg-white border-b border-gray-100 px-5 pt-6 pb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-[20px] font-bold text-dash-dark">My Tasks</h1>
+          <p className="text-[13px] text-gray-400 mt-0.5">Tasks assigned to you</p>
+        </div>
+        <button
+          onClick={() => setIsCreateModalOpen(true)}
+          className="flex items-center gap-1.5 px-4 py-2 bg-[#094B5C] hover:bg-[#094B5C]/90 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+        >
+          <Plus size={14} />
+          Create Daily Task
+        </button>
       </div>
 
       {/* Tabs */}
@@ -173,6 +184,14 @@ export default function AgentTasksPage() {
           );
         })}
       </div>
+
+      <CreateTaskModal
+        isOpen={isCreateModalOpen}
+        onClose={() => {
+          setIsCreateModalOpen(false);
+          refetch();
+        }}
+      />
     </div>
   );
 }

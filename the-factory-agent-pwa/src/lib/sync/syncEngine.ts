@@ -214,6 +214,32 @@ async function syncProofQueue(): Promise<void> {
 
 async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<void> {
   switch (entry.actionType) {
+    case 'task.create_self': {
+      const payload = parseOfflinePayload<{
+        company_id?: number;
+        title: string;
+        type?: string;
+        description?: string;
+        location?: string;
+        address?: string;
+        latitude?: number;
+        longitude?: number;
+        due_date?: string;
+        required_actions?: string[];
+        priority?: string;
+        minimum_photos_required?: number;
+        visit_verification_required?: boolean;
+      }>(entry);
+      await client.post(
+        '/agent/tasks/self',
+        {
+          ...payload,
+          company_id: payload.company_id ?? getActiveCompanyId() ?? undefined,
+        },
+        BACKGROUND_REQUEST,
+      );
+      return;
+    }
     case 'task.update_status': {
       const payload = parseOfflinePayload<{ id: string | number; status: string; company_id?: number }>(entry);
       await client.patch(

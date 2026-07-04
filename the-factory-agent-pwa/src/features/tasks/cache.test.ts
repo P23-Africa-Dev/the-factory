@@ -19,7 +19,7 @@ const sampleResult: TaskListResult = {
     {
       id: '1',
       title: 'Visit site',
-      status: 'assigned',
+      status: 'pending',
     } as TaskListResult['tasks'][number],
   ],
   pagination: {
@@ -35,8 +35,8 @@ describe('tasks cache', () => {
   });
 
   it('round-trips list cache entries', async () => {
-    await putCachedTaskList(7, { status: 'assigned' }, sampleResult);
-    const cached = await getCachedTaskList(7, { status: 'assigned' });
+    await putCachedTaskList(7, { status: 'pending' }, sampleResult);
+    const cached = await getCachedTaskList(7, { status: 'pending' });
     expect(cached).toEqual(sampleResult);
   });
 

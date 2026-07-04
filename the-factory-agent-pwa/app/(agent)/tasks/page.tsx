@@ -3,7 +3,8 @@
 import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, MapPin, AlertCircle } from 'lucide-react';
+import { ArrowLeft, MapPin, AlertCircle, Plus } from 'lucide-react';
+import { CreateTaskModal } from '@/features/tasks/components/CreateTaskModal';
 
 import {
   useTaskList,
@@ -319,6 +320,7 @@ export default function TasksPage() {
   // Tasks States
   const [activeFilter, setActiveFilter] = useState<FilterKey>('pending');
   const [taskToDecline, setTaskToDecline] = useState<Task | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   // KPIs States
   const [activeKpiFilter, setActiveKpiFilter] = useState<KpiStatus | 'all'>('all');
@@ -688,6 +690,24 @@ export default function TasksPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Floating Action Button for Task Creation */}
+      {activeSubTab === 'tasks' && (
+        <button
+          onClick={() => setIsCreateOpen(true)}
+          className="fixed bottom-28 right-6 z-[100] flex h-14 w-14 items-center justify-center rounded-full bg-[#75ADAF] hover:bg-[#85bec0] text-white shadow-[0px_4px_10px_0px_rgba(117,173,175,0.4)] transition-transform active:scale-95 cursor-pointer focus:outline-none"
+        >
+          <Plus size={24} />
+        </button>
+      )}
+
+      <CreateTaskModal
+        isOpen={isCreateOpen}
+        onClose={() => {
+          setIsCreateOpen(false);
+          refetchTasks();
+        }}
+      />
     </div>
   );
 }
