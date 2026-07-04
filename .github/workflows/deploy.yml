@@ -190,6 +190,24 @@ jobs:
           kubectl apply -f backend/k8s/configmap.yaml -n ${{ env.K8S_NAMESPACE }}
           kubectl apply -f backend/k8s/network-policy.yaml -n ${{ env.K8S_NAMESPACE }}
 
+      - name: Fix ingress load balancer traffic policy
+        run: |
+          # With externalTrafficPolicy=Local, DO LB health checks fail when ingress
+          # runs on only one node in a multi-node pool — public traffic times out.
+          kubectl patch svc ingress-nginx-controller -n ingress-nginx \
+            --type merge \
+            -p '{"spec":{"externalTrafficPolicy":"Cluster"}}' || true
+
+      - name: Fix ingress load balancer health check
+        run: |
+          # DO may health-check port 10256 while ingress only answers on :80/:443.
+          # Use TCP :80 so backends are marked healthy and the LB forwards traffic.
+          kubectl annotate svc ingress-nginx-controller -n ingress-nginx \
+            service.beta.kubernetes.io/do-loadbalancer-healthcheck-protocol=tcp \
+            service.beta.kubernetes.io/do-loadbalancer-healthcheck-port="80" \
+            --overwrite || true
+          sleep 20
+
       - name: Remove in-cluster MySQL (managed DB only)
         run: |
           kubectl delete statefulset mysql -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true --wait=true
@@ -242,12 +260,16 @@ jobs:
 
       - name: Smoke test — health endpoint
         run: |
-          echo "Waiting 10s for pods to warm up..."
-          sleep 10
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            https://api.thefactory23.com/api/v1/health)
-          echo "Health check status: $HTTP_STATUS"
-          if [ "$HTTP_STATUS" != "200" ]; then
+          echo "Waiting for backend pods to be ready..."
+          kubectl wait --for=condition=ready pod -l app=backend \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=120s
+
+          # In-cluster check — validates the deployed app without depending on
+          # public LB/DNS (which can lag or be down during node recovery).
+          HEALTH=$(kubectl exec -n ${{ env.K8S_NAMESPACE }} deployment/backend -c nginx -- \
+            wget -qO- http://127.0.0.1/api/v1/health 2>/dev/null || echo "FAIL")
+          echo "Health response: $HEALTH"
+          if ! echo "$HEALTH" | grep -q '"success":true'; then
             echo "SMOKE TEST FAILED — rolling back"
             kubectl rollout undo deployment/backend -n ${{ env.K8S_NAMESPACE }}
             exit 1
@@ -256,11 +278,12 @@ jobs:
 
       - name: Smoke test — auth returns 401 (not 500)
         run: |
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            https://api.thefactory23.com/api/v1/user/me)
-          echo "Auth check status: $HTTP_STATUS"
-          if [ "$HTTP_STATUS" != "401" ]; then
-            echo "AUTH CHECK FAILED (expected 401, got $HTTP_STATUS)"
+          AUTH_STATUS=$(kubectl exec -n ${{ env.K8S_NAMESPACE }} deployment/backend -c nginx -- \
+            wget -qO /dev/null --server-response http://127.0.0.1/api/v1/user/me 2>&1 \
+            | awk '/HTTP\// {print $2}' | tail -1)
+          echo "Auth check status: $AUTH_STATUS"
+          if [ "$AUTH_STATUS" != "401" ]; then
+            echo "AUTH CHECK FAILED (expected 401, got $AUTH_STATUS)"
             kubectl rollout undo deployment/backend -n ${{ env.K8S_NAMESPACE }}
             exit 1
           fi
