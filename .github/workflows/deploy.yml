@@ -280,7 +280,7 @@ jobs:
         run: |
           AUTH_STATUS=$(kubectl exec -n ${{ env.K8S_NAMESPACE }} deployment/backend -c nginx -- \
             wget -qO /dev/null --server-response http://127.0.0.1/api/v1/user/me 2>&1 \
-            | awk '/HTTP\// {print $2}' | tail -1)
+            | grep -E '^  HTTP/' | awk '{print $2}' | tail -1)
           echo "Auth check status: $AUTH_STATUS"
           if [ "$AUTH_STATUS" != "401" ]; then
             echo "AUTH CHECK FAILED (expected 401, got $AUTH_STATUS)"
