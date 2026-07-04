@@ -4,7 +4,6 @@ import {
   BookmarkPlus,
   ChevronDown,
   Eye,
-  Import,
   Pencil,
   Search,
   SlidersHorizontal,
@@ -17,7 +16,8 @@ import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useCrmLabels, useCrmPipelines, useDeleteLead, useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
-import { ImportLeadsModal, LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
+import { LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
+import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { CrmFilterBar } from "@/components/crm/crm-filter-bar";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
@@ -108,7 +108,6 @@ export default function AllLeadsPage() {
   const [showFilter, setShowFilter] = useState(false);
   const [showPipelineModal, setShowPipelineModal] = useState(false);
   const [showLabelModal, setShowLabelModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingLead, setEditingLead] = useState<LeadApiItem | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -284,10 +283,20 @@ export default function AllLeadsPage() {
               <SlidersHorizontal size={13} />
               Filter
             </button>
-            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
-              <Import size={13} />
-              Import
-            </button>
+            <CrmImportExportButton
+              companyId={companyId}
+              apiBasePath="/admin"
+              pipelines={pipelines}
+              labels={labels}
+              defaultPipelineId={selectedPipelineId}
+              activeFilters={{
+                search: search.trim() || undefined,
+                pipeline_id: selectedPipelineId ?? undefined,
+                status: selectedLabel === "all" ? undefined : selectedLabel,
+                source: agentUploadScope ? "agent_upload" : undefined,
+              }}
+              selectedLeadIds={Array.from(selected)}
+            />
             <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all">
               Add New Leads
               <BookmarkPlus size={15} />
@@ -562,17 +571,6 @@ export default function AllLeadsPage() {
           apiBasePath="/admin"
           labels={labels}
           onClose={() => setShowLabelModal(false)}
-        />
-      )}
-
-      {showImportModal && companyId && (
-        <ImportLeadsModal
-          companyId={companyId}
-          apiBasePath="/admin"
-          pipelines={pipelines}
-          labels={labels}
-          defaultPipelineId={selectedPipelineId}
-          onClose={() => setShowImportModal(false)}
         />
       )}
 

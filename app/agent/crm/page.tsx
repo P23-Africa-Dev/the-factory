@@ -7,7 +7,7 @@ import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useAgentUploadsOverview, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
-import { ImportLeadsModal } from "@/components/crm/crm-toolbar-modals";
+import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
 import { CRMPageSkeleton } from "@/components/crm/crm-page-skeleton";
 import { LeadsChart, TotalLeadsCard } from "@/components/crm/crm-summary-cards";
 import { CrmFilterBar } from "@/components/crm/crm-filter-bar";
@@ -37,7 +37,6 @@ import {
   BookmarkPlus,
   ChevronDown,
   ChevronRight,
-  Import,
   LayoutGrid,
   List,
   MoreHorizontal,
@@ -706,7 +705,6 @@ export default function CRMPage() {
   const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>("all");
   const [showFilter, setShowFilter] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
 
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, apiBasePath);
@@ -801,10 +799,19 @@ export default function CRMPage() {
               <SlidersHorizontal size={13} />
               Filter
             </button>
-            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
-              <Import size={13} />
-              Import
-            </button>
+            <CrmImportExportButton
+              companyId={companyId}
+              apiBasePath={apiBasePath}
+              pipelines={pipelines}
+              labels={labels}
+              defaultPipelineId={selectedPipelineId}
+              activeFilters={{
+                search: debouncedSearch || undefined,
+                pipeline_id: selectedPipelineId ?? undefined,
+                status: selectedLabel === "all" ? undefined : selectedLabel,
+                source: agentUploadScope ? AGENT_UPLOAD_SOURCE_FILTER : undefined,
+              }}
+            />
             <button
               onClick={() => { setDefaultStatus("newly_lead"); setIsAddModalOpen(true); }}
               className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all"
@@ -873,16 +880,6 @@ export default function CRMPage() {
         />
       )}
 
-      {showImportModal && companyId && (
-        <ImportLeadsModal
-          companyId={companyId}
-          apiBasePath={apiBasePath}
-          pipelines={pipelines}
-          labels={labels}
-          defaultPipelineId={selectedPipelineId}
-          onClose={() => setShowImportModal(false)}
-        />
-      )}
     </div>
   );
 }

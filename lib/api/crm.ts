@@ -1,6 +1,6 @@
 "use client";
 
-import { apiRequest, ApiEnvelope } from "./onboarding";
+import { apiRequest, ApiEnvelope, ApiRequestError, API_BASE_URL } from "./onboarding";
 
 export type ApiRoleBasePath = "/admin" | "/agent";
 
@@ -229,9 +229,54 @@ export type FailedImportRow = {
     errors: string[];
 };
 
+export type SkippedImportRow = {
+    row_index: number;
+    data: ImportLeadRow;
+    reason: string;
+};
+
+export type DuplicatePolicy = "create" | "skip" | "update";
+
 export type ImportLeadsResult = {
     imported_count: number;
+    updated_count: number;
+    skipped_count: number;
     failed_rows: FailedImportRow[];
+    skipped_rows: SkippedImportRow[];
+};
+
+export type ImportPreviewDuplicateRow = {
+    row_index: number;
+    data: ImportLeadRow;
+    existing_lead_id: number;
+    existing_lead_name: string;
+};
+
+export type ImportPreviewResult = {
+    total_rows: number;
+    valid_count: number;
+    duplicate_count: number;
+    error_rows: FailedImportRow[];
+    duplicate_rows: ImportPreviewDuplicateRow[];
+};
+
+export type ImportLeadsPayload = {
+    company_id: number | string;
+    pipeline_id: number | string;
+    rows: ImportLeadRow[];
+    duplicate_policy?: DuplicatePolicy;
+};
+
+export type ExportLeadsParams = {
+    company_id: number | string;
+    format?: "csv" | "xlsx";
+    search?: string;
+    status?: ApiLeadStatus;
+    priority?: ApiLeadPriority;
+    pipeline_id?: number | string;
+    source?: string;
+    assigned_to_user_id?: number | string;
+    lead_ids?: Array<number | string>;
 };
 
 export type AgentUploadOverview = {
@@ -522,7 +567,7 @@ export function reorderCrmLabels(
 }
 
 export function importCrmLeads(
-    payload: { company_id: number | string; pipeline_id: number | string; rows: ImportLeadRow[] },
+    payload: ImportLeadsPayload,
     token: string,
     basePath: ApiRoleBasePath = "/admin"
 ): Promise<ApiEnvelope<ImportLeadsResult>> {
@@ -532,6 +577,68 @@ export function importCrmLeads(
         body: payload,
         token,
     });
+}
+
+export function previewImportCrmLeads(
+    payload: ImportLeadsPayload,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<ImportPreviewResult>> {
+    return apiRequest<ImportPreviewResult>({
+        method: "POST",
+        path: withBase(basePath, "/crm/leads/import/preview"),
+        body: payload,
+        token,
+    });
+}
+
+export async function downloadCrmLeadsExport(
+    params: ExportLeadsParams,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<{ blob: Blob; filename: string }> {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === "") return;
+        if (key === "lead_ids" && Array.isArray(value)) {
+            value.forEach((id) => query.append("lead_ids[]", String(id)));
+            return;
+        }
+        query.set(key, String(value));
+    });
+
+    const response = await fetch(`${API_BASE_URL}${withBase(basePath, "/crm/leads/export")}?${query.toString()}`, {
+        method: "GET",
+        headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;q=0.9, */*;q=0.8",
+        },
+    });
+
+    if (!response.ok) {
+        let message = `Leads export failed with status ${response.status}`;
+        try {
+            const payload = (await response.json()) as ApiEnvelope<unknown> & { errors?: Record<string, string[]> };
+            message = payload.message || message;
+            if (payload.errors) {
+                throw new ApiRequestError(message, response.status, payload.errors);
+            }
+        } catch (err) {
+            if (err instanceof ApiRequestError) throw err;
+            // Fall through to generic error when response is not JSON.
+        }
+
+        throw new Error(message);
+    }
+
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const utf8FilenameMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    const filenameMatch = disposition.match(/filename="?([^"]+)"?/i);
+    const filename = utf8FilenameMatch?.[1]
+        ? decodeURIComponent(utf8FilenameMatch[1])
+        : (filenameMatch?.[1] ?? `crm-leads-export.${params.format === "xlsx" ? "xlsx" : "csv"}`);
+
+    return { blob: await response.blob(), filename };
 }
 
 export function getAgentUploadsOverview(
