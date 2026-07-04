@@ -94,18 +94,26 @@ class BillingSystemTest extends TestCase
         $dashboard->assertStatus(200);
     }
 
-    public function test_grace_status_is_blocked_when_enforcement_is_enabled(): void
+    public function test_grace_status_allows_dashboard_access_even_when_enforcement_is_enabled(): void
     {
-        ['user' => $user, 'company' => $company] = $this->createCompanyWithOwner([
+        ['user' => $user] = $this->createCompanyWithOwner([
             'subscription_status' => SubscriptionStatus::GRACE->value,
             'subscription_grace_ends_at' => now()->addDays(3),
         ]);
 
-        $response = $this->withToken($this->ownerToken($user))
+        $me = $this->withToken($this->ownerToken($user))
+            ->getJson('/api/v1/user/me');
+
+        $me->assertOk()
+            ->assertJsonPath('data.billing.subscription_status', SubscriptionStatus::GRACE->value)
+            ->assertJsonPath('data.billing.has_active_subscription', true)
+            ->assertJsonPath('data.billing.has_paid_subscription', false)
+            ->assertJsonPath('data.billing.billing_enforced', true);
+
+        $dashboard = $this->withToken($this->ownerToken($user))
             ->getJson('/api/v1/dashboard/overview');
 
-        $response->assertStatus(402)
-            ->assertJsonPath('code', 'subscription_grace_expired');
+        $dashboard->assertOk();
     }
 
     public function test_past_due_status_is_blocked_when_enforcement_is_enabled(): void

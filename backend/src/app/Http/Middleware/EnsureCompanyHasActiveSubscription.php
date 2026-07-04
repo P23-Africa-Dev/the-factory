@@ -50,11 +50,11 @@ class EnsureCompanyHasActiveSubscription
             return $next($request);
         }
 
-        $status = $company->subscriptionStatusEnum();
-
-        if ($status === SubscriptionStatus::ACTIVE) {
+        if ($company->hasEffectiveSubscriptionAccess()) {
             return $next($request);
         }
+
+        $status = $company->subscriptionStatusEnum();
 
         $code = match ($status) {
             SubscriptionStatus::SUSPENDED => 'subscription_suspended',

@@ -72,6 +72,7 @@ class Company extends Model
     /**
      * Effective org-wide access, honoring the runtime Billing Enforcement toggle.
      *
+     * - GRACE status          => always true (manual or lifecycle grace bypasses billing)
      * - Enforcement disabled  => always true (all accounts work freely)
      * - Enforcement enabled   => true only when the company has a paid ACTIVE subscription
      *
@@ -79,6 +80,10 @@ class Company extends Model
      */
     public function hasEffectiveSubscriptionAccess(): bool
     {
+        if ($this->subscriptionStatusEnum() === SubscriptionStatus::GRACE) {
+            return true;
+        }
+
         if (! app(BillingEnforcementSettingService::class)->isEnabled()) {
             return true;
         }
