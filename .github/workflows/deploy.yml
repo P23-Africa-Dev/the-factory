@@ -194,15 +194,24 @@ jobs:
         run: |
           # Delete old migration job if exists
           kubectl delete job laravel-migrate -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
+
+          # Free CPU on small single-node clusters so the migrate pod can schedule.
+          # Pending pods do not consume node CPU, but their requests still block scheduling.
+          echo "Scaling backend to 1 replica to free cluster CPU for migration..."
+          kubectl scale deployment/backend -n ${{ env.K8S_NAMESPACE }} --replicas=1
+          kubectl rollout status deployment/backend -n ${{ env.K8S_NAMESPACE }} --timeout=180s || true
+
           # Update migrate job to use new image
           sed -i "s|${{ env.IMAGE_NAME }}:[^ ]*|${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.SHA_TAG }}|g" \
             backend/k8s/migrate-job.yaml
           kubectl apply -f backend/k8s/migrate-job.yaml -n ${{ env.K8S_NAMESPACE }}
+
           if ! kubectl wait --for=condition=complete job/laravel-migrate \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=300s; then
+            -n ${{ env.K8S_NAMESPACE }} --timeout=600s; then
             echo "=== Migration job failed or timed out ==="
             kubectl describe job/laravel-migrate -n ${{ env.K8S_NAMESPACE }} || true
             kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=laravel-migrate -o wide || true
+            kubectl describe pods -n ${{ env.K8S_NAMESPACE }} -l app=laravel-migrate || true
             kubectl logs -n ${{ env.K8S_NAMESPACE }} -l app=laravel-migrate --all-containers=true --tail=200 || true
             exit 1
           fi

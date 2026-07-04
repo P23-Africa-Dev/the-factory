@@ -15,7 +15,7 @@ metadata:
     app.kubernetes.io/part-of: factory23
     app.kubernetes.io/version: v2
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app: backend
