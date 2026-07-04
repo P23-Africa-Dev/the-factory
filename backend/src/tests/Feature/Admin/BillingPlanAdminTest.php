@@ -162,6 +162,43 @@ class BillingPlanAdminTest extends TestCase
             ->assertJsonPath('data.billing_enforced', false);
     }
 
+    public function test_toggling_enforcement_keeps_billing_status_and_user_me_consistent(): void
+    {
+        $admin = $this->makeAdmin('super_admin');
+        ['user' => $owner] = $this->createCompanyWithOwner();
+        $token = $this->ownerToken($owner);
+
+        // Enforcement ON (default) with pending subscription => not active anywhere.
+        $status = $this->withToken($token)->getJson('/api/v1/billing/status');
+        $me = $this->withToken($token)->getJson('/api/v1/user/me');
+
+        $status->assertOk()
+            ->assertJsonPath('data.billing_enforced', true)
+            ->assertJsonPath('data.has_active_subscription', false)
+            ->assertJsonPath('data.has_paid_subscription', false);
+        $me->assertOk()
+            ->assertJsonPath('data.billing.billing_enforced', true)
+            ->assertJsonPath('data.billing.has_active_subscription', false)
+            ->assertJsonPath('data.billing.has_paid_subscription', false);
+
+        // Turn enforcement OFF via admin toggle.
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.billing.enforcement.update'), ['enabled' => '0'])
+            ->assertRedirect(route('admin.billing.index'));
+
+        $status = $this->withToken($token)->getJson('/api/v1/billing/status');
+        $me = $this->withToken($token)->getJson('/api/v1/user/me');
+
+        $status->assertOk()
+            ->assertJsonPath('data.billing_enforced', false)
+            ->assertJsonPath('data.has_active_subscription', true)
+            ->assertJsonPath('data.has_paid_subscription', false);
+        $me->assertOk()
+            ->assertJsonPath('data.billing.billing_enforced', false)
+            ->assertJsonPath('data.billing.has_active_subscription', true)
+            ->assertJsonPath('data.billing.has_paid_subscription', false);
+    }
+
     private function makeAdmin(string $role): Admin
     {
         return Admin::query()->create([

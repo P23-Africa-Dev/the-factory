@@ -5,6 +5,7 @@ export type ServerSessionState = {
   isAuthenticated: boolean;
   onboardingCompleted: boolean;
   hasActiveSubscription: boolean;
+  hasPaidSubscription: boolean;
   billingEnforced: boolean;
   role: string | null;
 };
@@ -17,6 +18,7 @@ export async function getServerSessionState(
       isAuthenticated: false,
       onboardingCompleted: false,
       hasActiveSubscription: false,
+      hasPaidSubscription: false,
       billingEnforced: true,
       role: null,
     };
@@ -36,6 +38,7 @@ export async function getServerSessionState(
         isAuthenticated: false,
         onboardingCompleted: false,
         hasActiveSubscription: false,
+        hasPaidSubscription: false,
         billingEnforced: true,
         role: null,
       };
@@ -52,6 +55,9 @@ export async function getServerSessionState(
       hasActiveSubscription: Boolean(
         billing?.has_active_subscription ?? activeCompany?.has_active_subscription
       ),
+      hasPaidSubscription: Boolean(
+        billing?.has_paid_subscription ?? activeCompany?.has_paid_subscription
+      ),
       billingEnforced: Boolean(
         billing?.billing_enforced ?? activeCompany?.billing_enforced ?? true
       ),
@@ -62,6 +68,7 @@ export async function getServerSessionState(
       isAuthenticated: false,
       onboardingCompleted: false,
       hasActiveSubscription: false,
+      hasPaidSubscription: false,
       billingEnforced: true,
       role: null,
     };

@@ -17,7 +17,8 @@ class UserResource extends JsonResource
             ->orderBy('company_users.created_at', 'desc')
             ->first(['companies.id', 'companies.company_id', 'companies.name', 'companies.status', 'companies.subscription_status', 'companies.subscription_plan_key', 'companies.assigned_plan_key']);
 
-        $billingActive = $activeCompany?->subscriptionStatusEnum()->allowsDashboardAccess() ?? false;
+        $billingActive = $activeCompany?->hasEffectiveSubscriptionAccess() ?? false;
+        $paidSubscription = $activeCompany?->hasPaidSubscription() ?? false;
 
         $selfServeCompleted = $this->hasCompletedOnboarding();
         $enterpriseCompleted = $this->hasCompletedEnterpriseOnboarding();
@@ -53,11 +54,13 @@ class UserResource extends JsonResource
                 'role' => $activeCompany->pivot?->role,
                 'subscription_status' => $activeCompany->subscription_status,
                 'has_active_subscription' => $billingActive,
+                'has_paid_subscription' => $paidSubscription,
                 'billing_enforced' => $billingEnforced,
             ] : null,
             'billing' => $activeCompany ? [
                 'subscription_status' => $activeCompany->subscription_status,
                 'has_active_subscription' => $billingActive,
+                'has_paid_subscription' => $paidSubscription,
                 'assigned_plan_key' => $activeCompany->assigned_plan_key,
                 'billing_enforced' => $billingEnforced,
             ] : null,

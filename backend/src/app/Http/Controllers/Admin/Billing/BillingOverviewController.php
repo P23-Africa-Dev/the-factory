@@ -20,17 +20,11 @@ class BillingOverviewController extends Controller
     {
         $plans = $this->plans();
 
-        $activeSubscriptionStatuses = [
-            SubscriptionStatus::ACTIVE->value,
-            SubscriptionStatus::PAST_DUE->value,
-            SubscriptionStatus::GRACE->value,
-        ];
-
         $stats = [
             'active_plan_count' => $plans->where('is_active', true)->count(),
             'total_plan_count' => $plans->count(),
             'active_subscription_companies' => Company::query()
-                ->whereIn('subscription_status', $activeSubscriptionStatuses)
+                ->where('subscription_status', SubscriptionStatus::ACTIVE->value)
                 ->count(),
             'pending_payment_companies' => Company::query()
                 ->where('subscription_status', SubscriptionStatus::PENDING_PAYMENT->value)
