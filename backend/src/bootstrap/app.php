@@ -3,6 +3,7 @@
 use App\Exceptions\AccountAccessDeniedException;
 use App\Http\Middleware\EnsureAdminHasPermission;
 use App\Http\Middleware\EnsureAdminIsActive;
+use App\Http\Middleware\EnsureDatabaseManagerUnlocked;
 use App\Http\Middleware\EnsureApiAccessRole;
 use App\Http\Middleware\EnsureCompanyHasActiveSubscription;
 use App\Http\Middleware\EnsureUserAccountIsActive;
@@ -45,6 +46,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin.active' => EnsureAdminIsActive::class,
             'admin.permission' => EnsureAdminHasPermission::class,
+            'admin.db.unlocked' => EnsureDatabaseManagerUnlocked::class,
             'access.role' => EnsureApiAccessRole::class,
             'account.active' => EnsureUserAccountIsActive::class,
             'subscription.active' => EnsureCompanyHasActiveSubscription::class,
