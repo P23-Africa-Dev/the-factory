@@ -46,14 +46,19 @@ class VerifyEmailController extends Controller
             );
         }
 
+        $user = $result['user'];
+        $onboardingCompleted = $user->hasCompletedOnboarding()
+            || $user->hasCompletedEnterpriseOnboarding()
+            || $user->hasCompletedInternalOnboarding();
+
         return $this->success(
             message: 'Email verified successfully. Welcome to The Factory!',
             data: [
                 'token' => $result['token'],
                 'token_type' => 'Bearer',
                 'expires_in_days' => 30,
-                'user' => new UserResource($result['user']),
-                'onboarding_completed' => $result['user']->hasCompletedOnboarding(),
+                'user' => new UserResource($user),
+                'onboarding_completed' => $onboardingCompleted,
             ],
         );
     }
