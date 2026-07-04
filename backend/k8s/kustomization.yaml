@@ -20,11 +20,11 @@ resources:
   - secret.yaml              # Fill in real values BEFORE applying
 
   # ── Phase 2: Storage ─────────────────────────────────────────────────────
-  - redis-pvc.yaml           # mysql PVC created automatically by StatefulSet
+  - redis-pvc.yaml
 
   # ── Phase 3: Data Layer ───────────────────────────────────────────────────
-  - mysql-statefulset.yaml
-  - mysql-service.yaml
+  # In-cluster MySQL removed — production uses DigitalOcean Managed Database.
+  # DB_HOST is set in configmap.yaml (factory23-config).
   - redis-deployment.yaml
   - redis-service.yaml
 
@@ -50,6 +50,5 @@ resources:
   - hpa.yaml
   - pdb.yaml
 
-  # ── Phase 8: Backup & Observability ──────────────────────────────────────
-  - mysql-backup-cronjob.yaml
+  # ── Phase 8: Observability ───────────────────────────────────────────────
   - prometheus-rules.yaml

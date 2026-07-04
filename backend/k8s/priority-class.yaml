@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # PriorityClasses — ensures critical workloads survive resource pressure.
-# High priority: backend, MySQL, Redis, realtime (user-facing)
+# High priority: backend, Redis, realtime (user-facing)
 # Low priority:  queue-worker, scheduler (background, can be preempted)
 # ─────────────────────────────────────────────────────────────────────────────
 apiVersion: scheduling.k8s.io/v1
@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/name: factory23
 value: 100
 globalDefault: false
-description: "High priority for user-facing workloads: backend API, MySQL, Redis, realtime server"
+description: "High priority for user-facing workloads: backend API, Redis, realtime server"
 preemptionPolicy: PreemptLowerPriority
 
 ---
