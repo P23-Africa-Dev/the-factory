@@ -10,25 +10,52 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('companies', function (Blueprint $table): void {
-            $table->string('pm_type')->nullable()->after('stripe_id');
-            $table->string('pm_last_four', 4)->nullable()->after('pm_type');
-            $table->unsignedTinyInteger('pm_exp_month')->nullable()->after('pm_last_four');
-            $table->unsignedSmallInteger('pm_exp_year')->nullable()->after('pm_exp_month');
-            $table->json('settings')->nullable()->after('demo_config');
-        });
+        if (! Schema::hasColumn('companies', 'pm_type')) {
+            Schema::table('companies', function (Blueprint $table): void {
+                $table->string('pm_type')->nullable()->after('stripe_id');
+            });
+        }
+
+        if (! Schema::hasColumn('companies', 'pm_last_four')) {
+            Schema::table('companies', function (Blueprint $table): void {
+                $table->string('pm_last_four', 4)->nullable()->after('pm_type');
+            });
+        }
+
+        if (! Schema::hasColumn('companies', 'pm_exp_month')) {
+            Schema::table('companies', function (Blueprint $table): void {
+                $table->unsignedTinyInteger('pm_exp_month')->nullable()->after('pm_last_four');
+            });
+        }
+
+        if (! Schema::hasColumn('companies', 'pm_exp_year')) {
+            Schema::table('companies', function (Blueprint $table): void {
+                $table->unsignedSmallInteger('pm_exp_year')->nullable()->after('pm_exp_month');
+            });
+        }
+
+        if (! Schema::hasColumn('companies', 'settings')) {
+            Schema::table('companies', function (Blueprint $table): void {
+                $after = Schema::hasColumn('companies', 'demo_config') ? 'demo_config' : 'stripe_id';
+                $table->json('settings')->nullable()->after($after);
+            });
+        }
     }
 
     public function down(): void
     {
         Schema::table('companies', function (Blueprint $table): void {
-            $table->dropColumn([
+            foreach ([
                 'pm_type',
                 'pm_last_four',
                 'pm_exp_month',
                 'pm_exp_year',
                 'settings',
-            ]);
+            ] as $column) {
+                if (Schema::hasColumn('companies', $column)) {
+                    $table->dropColumn($column);
+                }
+            }
         });
     }
 };
