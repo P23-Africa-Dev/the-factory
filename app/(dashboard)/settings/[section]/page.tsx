@@ -1,7 +1,7 @@
 import { SettingsShell } from "@/components/settings/settings-shell";
 
 export const metadata = {
-  title: "Settings — The Factory",
+  title: "Settings | The Factory",
 };
 
 export default async function SettingsSectionPage({
