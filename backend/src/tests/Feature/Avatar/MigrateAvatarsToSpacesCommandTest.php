@@ -20,7 +20,7 @@ class MigrateAvatarsToSpacesCommandTest extends TestCase
 
         config([
             'filesystems.avatar_disk' => 'avatars',
-            'filesystems.disks.avatars.url' => 'https://factory23-storage.lon1.cdn.digitaloceanspaces.com',
+            'filesystems.disks.avatars.url' => 'https://factory23-storage.lon1.digitaloceanspaces.com',
         ]);
 
         $path = 'avatar/custom/user_1_test.png';
@@ -45,7 +45,7 @@ class MigrateAvatarsToSpacesCommandTest extends TestCase
 
         config([
             'filesystems.avatar_disk' => 'avatars',
-            'filesystems.disks.avatars.url' => 'https://factory23-storage.lon1.cdn.digitaloceanspaces.com',
+            'filesystems.disks.avatars.url' => 'https://factory23-storage.lon1.digitaloceanspaces.com',
         ]);
 
         $path = 'avatar/custom/user_2_test.png';

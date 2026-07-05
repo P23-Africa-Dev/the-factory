@@ -81,7 +81,7 @@ return [
             ? [
                 'driver' => 'local',
                 'root' => storage_path('framework/testing/disks/avatars'),
-                'url' => env('AWS_URL', 'https://factory23-storage.lon1.cdn.digitaloceanspaces.com'),
+                'url' => env('AWS_URL', 'https://factory23-storage.lon1.digitaloceanspaces.com'),
                 'visibility' => 'public',
                 'throw' => false,
                 'report' => false,

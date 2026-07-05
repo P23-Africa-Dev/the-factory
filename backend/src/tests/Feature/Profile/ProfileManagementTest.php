@@ -201,7 +201,7 @@ class ProfileManagementTest extends TestCase
 
         config([
             'filesystems.avatar_disk' => 'avatars',
-            'filesystems.disks.avatars.url' => 'https://factory23-storage.lon1.cdn.digitaloceanspaces.com',
+            'filesystems.disks.avatars.url' => 'https://factory23-storage.lon1.digitaloceanspaces.com',
             'internal_onboarding.avatar_storage_root' => 'avatar',
         ]);
 
@@ -238,7 +238,7 @@ class ProfileManagementTest extends TestCase
 
         config([
             'filesystems.avatar_disk' => 'avatars',
-            'filesystems.disks.avatars.url' => 'https://factory23-storage.lon1.cdn.digitaloceanspaces.com',
+            'filesystems.disks.avatars.url' => 'https://factory23-storage.lon1.digitaloceanspaces.com',
             'internal_onboarding.avatar_storage_root' => 'avatar',
         ]);
 

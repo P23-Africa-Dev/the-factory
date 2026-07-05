@@ -23,7 +23,7 @@ class AvatarApiTest extends TestCase
 
         config([
             'filesystems.avatar_disk' => 'avatars',
-            'filesystems.disks.avatars.url' => 'https://factory23-storage.lon1.cdn.digitaloceanspaces.com',
+            'filesystems.disks.avatars.url' => 'https://factory23-storage.lon1.digitaloceanspaces.com',
         ]);
 
         $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
@@ -50,7 +50,7 @@ class AvatarApiTest extends TestCase
         $this->assertNotEmpty($avatarData);
 
         $urls = array_column($avatarData, 'url');
-        $this->assertNotContains('https://factory23-storage.lon1.cdn.digitaloceanspaces.com/avatar/male/readme.txt', $urls);
+        $this->assertNotContains('https://factory23-storage.lon1.digitaloceanspaces.com/avatar/male/readme.txt', $urls);
 
         $firstUrl = (string) $avatarData[0]['url'];
         $this->assertStringContainsString('/avatar/male/', $firstUrl);

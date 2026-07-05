@@ -2,7 +2,7 @@ import type { SyntheticEvent } from "react";
 
 export const DEFAULT_AVATAR =
   process.env.NEXT_PUBLIC_AVATAR_DEFAULT_URL ??
-  "https://factory23-storage.lon1.cdn.digitaloceanspaces.com/avatar/default/ghost.svg";
+  "https://factory23-storage.lon1.digitaloceanspaces.com/avatar/default/ghost.svg";
 
 function apiOrigin(): string {
   const apiBase =

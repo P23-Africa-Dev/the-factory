@@ -2,7 +2,7 @@ import { env } from '@/constants/env';
 
 export const DEFAULT_AVATAR =
   process.env.NEXT_PUBLIC_AVATAR_DEFAULT_URL ??
-  'https://factory23-storage.lon1.cdn.digitaloceanspaces.com/avatar/default/ghost.svg';
+  'https://factory23-storage.lon1.digitaloceanspaces.com/avatar/default/ghost.svg';
 
 export function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
   if (!rawAvatar) return null;
