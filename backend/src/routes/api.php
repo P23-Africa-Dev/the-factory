@@ -17,10 +17,15 @@ use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
 use App\Http\Controllers\Api\V1\Billing\BillingCheckoutController;
 use App\Http\Controllers\Api\V1\Billing\BillingPlansController;
+use App\Http\Controllers\Api\V1\Billing\BillingPaymentMethodDefaultController;
+use App\Http\Controllers\Api\V1\Billing\BillingPaymentMethodDetachController;
+use App\Http\Controllers\Api\V1\Billing\BillingPaymentMethodsController;
+use App\Http\Controllers\Api\V1\Billing\BillingPaymentMethodSetupController;
 use App\Http\Controllers\Api\V1\Billing\BillingPortalController;
 use App\Http\Controllers\Api\V1\Billing\BillingStatusController;
 use App\Http\Controllers\Api\V1\Billing\BillingWebhookController;
 use App\Http\Controllers\Api\V1\Billing\PaymentLinkController;
+use App\Http\Controllers\Api\V1\Company\CompanySettingsController;
 use App\Http\Controllers\Api\V1\Calendar\CalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Calendar\MeetingController;
 use App\Http\Controllers\Api\V1\Calendar\UserCalendarIntegrationController;
@@ -179,6 +184,15 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::get('/plans', BillingPlansController::class)->name('plans');
         Route::post('/checkout', BillingCheckoutController::class)->name('checkout');
         Route::post('/portal', BillingPortalController::class)->name('portal');
+        Route::get('/payment-methods', [BillingPaymentMethodsController::class, 'index'])->name('payment-methods.index');
+        Route::post('/payment-methods/setup', BillingPaymentMethodSetupController::class)->name('payment-methods.setup');
+        Route::post('/payment-methods/{paymentMethodId}/default', BillingPaymentMethodDefaultController::class)->name('payment-methods.default');
+        Route::delete('/payment-methods/{paymentMethodId}', BillingPaymentMethodDetachController::class)->name('payment-methods.detach');
+    });
+
+    Route::prefix('company')->name('company.')->group(function (): void {
+        Route::get('/settings', [CompanySettingsController::class, 'show'])->name('settings.show');
+        Route::patch('/settings', [CompanySettingsController::class, 'update'])->name('settings.update');
     });
 
     Route::prefix('user')->name('user.')->group(function (): void {

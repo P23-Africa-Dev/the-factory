@@ -8,7 +8,7 @@ import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { clearAuthSession, getAuthTokenFromDocument } from "@/lib/auth/session";
 import { logout } from "@/lib/api/auth";
-import { ChevronDown, Menu, X, LogOut, User, Smartphone } from "lucide-react";
+import { ChevronDown, Menu, X, LogOut, User, Smartphone, Settings } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils/sample";
 import LogoutModal from "@/components/ui/logout-modal";
@@ -313,6 +313,14 @@ export function Navbar() {
                     <User size={15} />
                     Profile
                   </Link>
+                  <Link
+                    href={`${basePath}/settings`}
+                    onClick={() => setProfileOpen(false)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/60 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium"
+                  >
+                    <Settings size={15} />
+                    Settings
+                  </Link>
                   <button
                     onClick={() => {
                       setProfileOpen(false);
@@ -474,14 +482,18 @@ export function Navbar() {
                       </span>
                     )}
                   </button>
-                  <button className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer">
+                  <Link
+                    href={`${basePath}/settings`}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors"
+                  >
                     <Image
                       src={SettingsIcon}
                       alt="Settings"
                       width={24}
                       height={24}
                     />
-                  </button>
+                  </Link>
                   <button
                     onClick={() => {
                       setIsMobileMenuOpen(false);

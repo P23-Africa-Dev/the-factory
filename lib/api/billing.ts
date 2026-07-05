@@ -36,6 +36,27 @@ export type BillingStatus = {
     limit: number | null;
     remaining: number | null;
   };
+  payment_method?: {
+    type: string | null;
+    last_four: string | null;
+    exp_month: number | null;
+    exp_year: number | null;
+  };
+};
+
+export type BillingPaymentMethod = {
+  id: string;
+  brand: string | null;
+  last4: string | null;
+  exp_month: number | null;
+  exp_year: number | null;
+  is_default: boolean;
+};
+
+export type BillingPaymentMethodsResponse = {
+  items: BillingPaymentMethod[];
+  default_payment_method_id: string | null;
+  requires_payment_method: boolean;
 };
 
 export type BillingPlansResponse = {
@@ -92,6 +113,48 @@ export async function createBillingPortalSession() {
   return apiRequest<{ portal_url: string }>({
     method: "POST",
     path: "/billing/portal",
+    token: authToken(),
+  });
+}
+
+export async function getBillingPaymentMethods(companyId?: number | string) {
+  const qs = companyId != null ? `?company_id=${encodeURIComponent(String(companyId))}` : "";
+  return apiRequest<BillingPaymentMethodsResponse>({
+    method: "GET",
+    path: `/billing/payment-methods${qs}`,
+    token: authToken(),
+  });
+}
+
+export async function createBillingPaymentMethodSetup(companyId?: number | string) {
+  return apiRequest<{ client_secret: string; setup_intent_id: string }>({
+    method: "POST",
+    path: "/billing/payment-methods/setup",
+    token: authToken(),
+    body: companyId != null ? { company_id: companyId } : undefined,
+  });
+}
+
+export async function setDefaultBillingPaymentMethod(
+  paymentMethodId: string,
+  companyId?: number | string,
+) {
+  return apiRequest<BillingPaymentMethodsResponse>({
+    method: "POST",
+    path: `/billing/payment-methods/${paymentMethodId}/default`,
+    token: authToken(),
+    body: companyId != null ? { company_id: companyId } : undefined,
+  });
+}
+
+export async function detachBillingPaymentMethod(
+  paymentMethodId: string,
+  companyId?: number | string,
+) {
+  const qs = companyId != null ? `?company_id=${encodeURIComponent(String(companyId))}` : "";
+  return apiRequest<BillingPaymentMethodsResponse>({
+    method: "DELETE",
+    path: `/billing/payment-methods/${paymentMethodId}${qs}`,
     token: authToken(),
   });
 }

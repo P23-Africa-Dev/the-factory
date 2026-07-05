@@ -123,6 +123,8 @@ class TaskService
                 'longitude' => $longitude,
             ]))->hasTrackableLocation();
 
+            $operationalDefaults = $context->company->operationalDefaults();
+
             $task = Task::create([
                 'company_id' => $context->company->id,
                 'project_id' => $data['project_id'] ?? null,
@@ -138,8 +140,8 @@ class TaskService
                 'due_at' => $data['due_date'] ?? null,
                 'required_actions' => $data['required_actions'] ?? [],
                 'priority' => $data['priority'] ?? 'medium',
-                'minimum_photos_required' => (int) ($data['minimum_photos_required'] ?? 0),
-                'visit_verification_required' => $trackable && (bool) ($data['visit_verification_required'] ?? false),
+                'minimum_photos_required' => (int) ($data['minimum_photos_required'] ?? $operationalDefaults['minimum_photos_required']),
+                'visit_verification_required' => $trackable && (bool) ($data['visit_verification_required'] ?? $operationalDefaults['visit_verification_required']),
                 'status' => TaskStatus::PENDING->value,
             ]);
 
@@ -183,6 +185,8 @@ class TaskService
                 'longitude' => $longitude,
             ]))->hasTrackableLocation();
 
+            $operationalDefaults = $context->company->operationalDefaults();
+
             $task = Task::create([
                 'company_id' => $context->company->id,
                 'project_id' => null,
@@ -198,8 +202,8 @@ class TaskService
                 'due_at' => $data['due_date'] ?? null,
                 'required_actions' => $data['required_actions'] ?? [],
                 'priority' => $data['priority'] ?? 'medium',
-                'minimum_photos_required' => (int) ($data['minimum_photos_required'] ?? 0),
-                'visit_verification_required' => $trackable && (bool) ($data['visit_verification_required'] ?? false),
+                'minimum_photos_required' => (int) ($data['minimum_photos_required'] ?? $operationalDefaults['minimum_photos_required']),
+                'visit_verification_required' => $trackable && (bool) ($data['visit_verification_required'] ?? $operationalDefaults['visit_verification_required']),
                 'status' => TaskStatus::PENDING->value,
             ]);
 

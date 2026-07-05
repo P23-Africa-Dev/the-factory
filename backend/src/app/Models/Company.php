@@ -40,6 +40,11 @@ class Company extends Model
         'assigned_billing_interval',
         'payment_link_token_hash',
         'payment_link_expires_at',
+        'pm_type',
+        'pm_last_four',
+        'pm_exp_month',
+        'pm_exp_year',
+        'settings',
     ];
 
     protected function casts(): array
@@ -47,6 +52,7 @@ class Company extends Model
         return [
             'is_demo' => 'boolean',
             'demo_config' => 'array',
+            'settings' => 'array',
             'activated_at' => 'datetime',
             'subscription_current_period_start' => 'datetime',
             'subscription_current_period_end' => 'datetime',
@@ -167,6 +173,20 @@ class Company extends Model
         return [
             'company_id' => (string) $this->id,
             'public_company_id' => (string) $this->company_id,
+        ];
+    }
+
+    /**
+     * @return array{minimum_photos_required: int, visit_verification_required: bool}
+     */
+    public function operationalDefaults(): array
+    {
+        $settings = is_array($this->settings) ? $this->settings : [];
+        $defaults = $settings['operational_defaults'] ?? [];
+
+        return [
+            'minimum_photos_required' => max(0, (int) ($defaults['minimum_photos_required'] ?? 1)),
+            'visit_verification_required' => (bool) ($defaults['visit_verification_required'] ?? false),
         ];
     }
 

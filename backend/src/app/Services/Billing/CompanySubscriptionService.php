@@ -69,6 +69,12 @@ class CompanySubscriptionService
             'current_period_end' => $company->subscription_current_period_end?->toIso8601String(),
             'grace_ends_at' => $company->subscription_grace_ends_at?->toIso8601String(),
             'seat_usage' => $usage,
+            'payment_method' => [
+                'type' => $company->pm_type,
+                'last_four' => $company->pm_last_four,
+                'exp_month' => $company->pm_exp_month,
+                'exp_year' => $company->pm_exp_year,
+            ],
         ];
     }
 
@@ -179,6 +185,11 @@ class CompanySubscriptionService
         $frontendUrl = rtrim((string) config('billing.frontend_url'), '/');
 
         return $company->billingPortalUrl($frontendUrl . '/dashboard');
+    }
+
+    public function billableCompanyForManagement(User $user, ?int $companyId = null): Company
+    {
+        return $this->resolveBillableCompany($user, $companyId);
     }
 
     public function syncFromStripeSubscription(Company $company, StripeSubscription $stripeSubscription): void
@@ -337,7 +348,7 @@ class CompanySubscriptionService
         }
     }
 
-    private function ensureStripeConfigured(): void
+    public function ensureStripeConfigured(): void
     {
         $publishableKey = trim((string) config('cashier.key'));
         $secretKey = trim((string) config('cashier.secret'));

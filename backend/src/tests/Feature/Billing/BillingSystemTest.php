@@ -206,6 +206,36 @@ class BillingSystemTest extends TestCase
             ->assertJsonPath('data.viewer_role', 'agent');
     }
 
+    public function test_agent_cannot_access_payment_method_setup(): void
+    {
+        ['company' => $company] = $this->createCompanyWithOwner();
+
+        $agent = User::factory()->create([
+            'onboarding_completed_at' => now(),
+        ]);
+        $company->users()->attach($agent->id, [
+            'role' => 'agent',
+            'joined_at' => now(),
+        ]);
+
+        $this->withToken($this->ownerToken($agent))
+            ->postJson('/api/v1/billing/payment-methods/setup', [
+                'company_id' => $company->id,
+            ])
+            ->assertStatus(422);
+    }
+
+    public function test_owner_can_list_payment_methods_without_stripe_customer(): void
+    {
+        ['user' => $owner, 'company' => $company] = $this->createCompanyWithOwner();
+
+        $this->withToken($this->ownerToken($owner))
+            ->getJson('/api/v1/billing/payment-methods?company_id=' . $company->id)
+            ->assertOk()
+            ->assertJsonPath('data.items', [])
+            ->assertJsonPath('data.default_payment_method_id', null);
+    }
+
     public function test_seat_limit_blocks_internal_user_creation_at_cap(): void
     {
         ['user' => $owner, 'company' => $company] = $this->createCompanyWithOwner();
