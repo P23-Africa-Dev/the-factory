@@ -232,7 +232,7 @@ export default function AgentAttendanceListPage() {
   });
 
   const allRecords: AttendanceItem[] = (historyData?.items ?? []).map((r) =>
-    mapRecord(r, user?.name ?? 'Me', historyData?.avatar_url ?? user?.avatar),
+    mapRecord(r, user?.name ?? 'Me', user?.avatar),
   );
 
   const filtered = allRecords.filter((a) =>

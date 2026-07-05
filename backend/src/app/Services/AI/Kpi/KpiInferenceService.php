@@ -53,12 +53,12 @@ class KpiInferenceService
 
         $usedDefaultName = ! is_string($name) || trim($name) === '';
         if ($usedDefaultName) {
-            $name = $this->generateKpiNameFallback($message, $conversationSummary);
+            $name = $this->generateKpiNameFallback($message, $conversationSummary, $companyId);
         }
 
         $usedDefaultObjective = ! is_string($objective) || mb_strlen(trim($objective)) < 10;
         if ($usedDefaultObjective) {
-            $objective = $this->generateObjectiveFallback($message, (string) $name, $conversationSummary);
+            $objective = $this->generateObjectiveFallback($message, (string) $name, $conversationSummary, $companyId);
         }
 
         $usedDefaultTarget = ! is_string($targetValue) || trim($targetValue) === '';
@@ -418,16 +418,28 @@ class KpiInferenceService
             || preg_match('/\bfor\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\b/', $message) === 1;
     }
 
-    private function generateKpiNameFallback(string $message, string $conversationSummary): string
+    private function generateKpiNameFallback(string $message, string $conversationSummary, int $companyId): string
     {
-        $providerText = $this->aiProviderRouter->generateForPurpose(
+        $userPrompt = trim("Conversation:\n{$conversationSummary}\n\nMessage:\n{$message}");
+        $result = $this->aiProviderRouter->generateForPurpose(
             purpose: 'operational',
             systemPrompt: 'You extract a concise KPI name from user text. Respond with plain text only, no markdown, max 80 characters. If no name is present, respond with: New KPI',
-            userPrompt: trim("Conversation:\n{$conversationSummary}\n\nMessage:\n{$message}"),
-            options: ['max_tokens' => 60, 'temperature' => 0.1],
+            userPrompt: $userPrompt,
+            options: [
+                'max_tokens' => 60,
+                'temperature' => 0.1,
+                'company_id' => $companyId,
+                '_log' => [
+                    'company_id' => $companyId,
+                    'intent_type' => 'inference',
+                    'tool_name' => 'kpis.create',
+                    'routing_purpose' => 'operational',
+                    'user_prompt' => $userPrompt,
+                ],
+            ],
         );
 
-        $candidate = is_string($providerText) ? trim($providerText) : '';
+        $candidate = $result?->text !== null ? trim($result->text) : '';
         if ($candidate === '' || strtolower($candidate) === 'new kpi') {
             return 'New KPI';
         }
@@ -435,16 +447,28 @@ class KpiInferenceService
         return Str::limit($candidate, 255, '');
     }
 
-    private function generateObjectiveFallback(string $message, string $name, string $conversationSummary): string
+    private function generateObjectiveFallback(string $message, string $name, string $conversationSummary, int $companyId): string
     {
-        $providerText = $this->aiProviderRouter->generateForPurpose(
+        $userPrompt = trim("KPI name: {$name}\nConversation:\n{$conversationSummary}\n\nMessage:\n{$message}");
+        $result = $this->aiProviderRouter->generateForPurpose(
             purpose: 'operational',
             systemPrompt: 'Write one concise KPI objective sentence (minimum 10 characters) from the user request. Plain text only, no markdown.',
-            userPrompt: trim("KPI name: {$name}\nConversation:\n{$conversationSummary}\n\nMessage:\n{$message}"),
-            options: ['max_tokens' => 120, 'temperature' => 0.2],
+            userPrompt: $userPrompt,
+            options: [
+                'max_tokens' => 120,
+                'temperature' => 0.2,
+                'company_id' => $companyId,
+                '_log' => [
+                    'company_id' => $companyId,
+                    'intent_type' => 'inference',
+                    'tool_name' => 'kpis.create',
+                    'routing_purpose' => 'operational',
+                    'user_prompt' => $userPrompt,
+                ],
+            ],
         );
 
-        $candidate = is_string($providerText) ? trim($providerText) : '';
+        $candidate = $result?->text !== null ? trim($result->text) : '';
         if (mb_strlen($candidate) < 10) {
             return 'Deliver measurable progress toward the requested KPI target within the selected period.';
         }

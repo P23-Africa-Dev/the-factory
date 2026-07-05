@@ -390,7 +390,7 @@ final class CopilotActionEngineTest extends TestCase
             ]);
         $mockRouter
             ->shouldReceive('generateForPurpose')
-            ->andReturn('Visit Shoprite, engage store contacts, document observations, and log the visit outcome in CRM.');
+            ->andReturn(\Tests\Support\AiGenerationTestFactory::result('Visit Shoprite, engage store contacts, document observations, and log the visit outcome in CRM.'));
         $this->app->instance(\App\Services\AI\Providers\AiProviderRouter::class, $mockRouter);
 
         $first = $this

@@ -12,6 +12,7 @@ use App\Services\AI\Kpi\KpiInferenceService;
 use App\Services\AI\Context\ConversationMemoryService;
 use App\Services\AI\Policy\ActionConfirmationPolicyService;
 use App\Services\AI\Policy\ToolPolicyService;
+use App\Services\AI\Providers\AiGenerationResult;
 use App\Services\AI\Providers\AiProviderRouter;
 use App\Services\AI\Tools\ActionToolRegistry;
 use App\Services\AI\Tools\ReadToolRegistry;
@@ -310,8 +311,7 @@ class CopilotService
                 toolName: null,
                 routingPurpose: $routing['purpose'],
             );
-            $startMs = microtime(true);
-            $assistantText = $this->resolveGeneralResponse(
+            $generalResponse = $this->resolveGeneralResponse(
                 user: $user,
                 role: $role,
                 companyId: $resolvedCompanyId,
@@ -320,11 +320,17 @@ class CopilotService
                 threadId: $threadId,
                 message: $message,
             );
-            $execMs = (int) round((microtime(true) - $startMs) * 1000);
-            // Approximate token estimate: 1 token ≈ 4 chars
-            $inputEst = (int) ceil(mb_strlen($message) / 4);
-            $outputEst = (int) ceil(mb_strlen($assistantText) / 4);
-            $this->aiLoggingService->complete($aiLog, $inputEst, $outputEst, $routing['provider'], $routing['model']);
+            $assistantText = $generalResponse['text'];
+            $generationResult = $generalResponse['result'];
+            $inputEst = $generationResult?->inputTokens ?? (int) ceil(mb_strlen($message) / 4);
+            $outputEst = $generationResult?->outputTokens ?? (int) ceil(mb_strlen($assistantText) / 4);
+            $this->aiLoggingService->complete(
+                $aiLog,
+                $inputEst,
+                $outputEst,
+                $generationResult?->provider ?? $routing['provider'],
+                $generationResult?->model ?? $routing['model'],
+            );
         }
 
         // Complete AI log for tool/action paths (general path completes its own log inline above)
@@ -436,6 +442,9 @@ class CopilotService
         );
     }
 
+    /**
+     * @return array{text: string, result: ?AiGenerationResult}
+     */
     private function resolveGeneralResponse(
         User $user,
         string $role,
@@ -444,7 +453,7 @@ class CopilotService
         int $userId,
         ?string $threadId,
         string $message,
-    ): string {
+    ): array {
         $normalized = strtolower(trim($message));
         $resolvedCompanyName = trim($companyName) !== '' ? $companyName : 'your active organization';
         $promptContext = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
@@ -452,14 +461,14 @@ class CopilotService
 
         if ($this->looksLikeActionRequest($message) && $this->resolveActionToolFromMessage($message, $threadId, $companyId, $userId) === null) {
             if (preg_match('/\b(lead|crm|business)\b/i', $message) === 1) {
-                return 'I can add that lead to your CRM. Share the business name, phone number, and location (for example: Business Name: Acme Ltd, Phone: 080..., Location: Lagos), then I will prepare a confirmation form for you.';
+                return ['text' => 'I can add that lead to your CRM. Share the business name, phone number, and location (for example: Business Name: Acme Ltd, Phone: 080..., Location: Lagos), then I will prepare a confirmation form for you.', 'result' => null];
             }
 
             if (preg_match('/\bkpi\b/i', $message) === 1) {
-                return 'I can create that KPI. Share the KPI name, objective, target value, expected outcome, dates, and assignee (for example: KPI name: Retail Visits, Objective: Increase field visits, Target value: 50 visits, Expected outcome: Reach 50 qualified visits this month, Assign to: John Wick), then I will prepare a confirmation form for you.';
+                return ['text' => 'I can create that KPI. Share the KPI name, objective, target value, expected outcome, dates, and assignee (for example: KPI name: Retail Visits, Objective: Increase field visits, Target value: 50 visits, Expected outcome: Reach 50 qualified visits this month, Assign to: John Wick), then I will prepare a confirmation form for you.', 'result' => null];
             }
 
-            return 'This looks like a write action request, but I could not confidently map it to a supported tool. Try phrasing it like "Create a meeting with [name] tomorrow at 2 PM" so I can prepare the confirmation form for you.';
+            return ['text' => 'This looks like a write action request, but I could not confidently map it to a supported tool. Try phrasing it like "Create a meeting with [name] tomorrow at 2 PM" so I can prepare the confirmation form for you.', 'result' => null];
         }
 
         if ((str_contains($normalized, 'same agent') || str_contains($normalized, 'that agent')) && is_string($contextEntities['agent'] ?? null)) {
@@ -473,7 +482,7 @@ class CopilotService
             || str_contains($normalized, 'what is my name')
             || str_contains($normalized, 'who am i')
         ) {
-            return "Your name is {$user->name}.";
+            return ['text' => "Your name is {$user->name}.", 'result' => null];
         }
 
         if (
@@ -481,15 +490,18 @@ class CopilotService
             || str_contains($normalized, 'my role')
             || str_contains($normalized, 'about my account')
         ) {
-            return sprintf(
-                'You are signed in as %s in %s. I can help you with CRM, tasks, projects, meetings, attendance, tracking, and dashboard operations.',
-                $role,
-                $resolvedCompanyName,
-            );
+            return [
+                'text' => sprintf(
+                    'You are signed in as %s in %s. I can help you with CRM, tasks, projects, meetings, attendance, tracking, and dashboard operations.',
+                    $role,
+                    $resolvedCompanyName,
+                ),
+                'result' => null,
+            ];
         }
 
         if (str_contains($normalized, 'this software') || str_contains($normalized, 'what is factory23') || str_contains($normalized, 'what does this do')) {
-            return ElySystemPrompt::intro() . ' I can help with CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.';
+            return ['text' => ElySystemPrompt::intro() . ' I can help with CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.', 'result' => null];
         }
 
         $systemPrompt = ElySystemPrompt::core();
@@ -505,7 +517,7 @@ class CopilotService
             $this->redactSensitiveText($message),
         );
 
-        $providerText = $this->aiProviderRouter->generateForPurpose(
+        $generationResult = $this->aiProviderRouter->generateForPurpose(
             purpose: 'operational',
             systemPrompt: $systemPrompt,
             userPrompt: $userPrompt,
@@ -516,16 +528,19 @@ class CopilotService
             ],
         );
 
-        if (is_string($providerText) && trim($providerText) !== '') {
-            $trimmed = trim($providerText);
+        if ($generationResult instanceof AiGenerationResult && $generationResult->isSuccessful()) {
+            $trimmed = trim((string) $generationResult->text);
             if ($this->responseClaimsExecutedAction($trimmed)) {
-                return 'I have not executed that action yet. ELY only confirms task, meeting, KPI, lead, or project creation after the platform action engine succeeds. Please use the Confirm Action button when the confirmation form appears, or provide the required details so I can prepare the action for confirmation.';
+                return [
+                    'text' => 'I have not executed that action yet. ELY only confirms task, meeting, KPI, lead, or project creation after the platform action engine succeeds. Please use the Confirm Action button when the confirmation form appears, or provide the required details so I can prepare the action for confirmation.',
+                    'result' => $generationResult,
+                ];
             }
 
-            return $trimmed;
+            return ['text' => $trimmed, 'result' => $generationResult];
         }
 
-        return 'I can help with leads, tasks, projects, meetings, attendance, tracking, and dashboard summaries. Ask things like "How many leads are in my CRM?" or "Show overdue tasks."';
+        return ['text' => 'I can help with leads, tasks, projects, meetings, attendance, tracking, and dashboard summaries. Ask things like "How many leads are in my CRM?" or "Show overdue tasks."', 'result' => null];
     }
 
     private function responseClaimsExecutedAction(string $text): bool
@@ -881,7 +896,7 @@ class CopilotService
         }
 
         return match ($tool) {
-            'tasks.create' => $this->inferTaskCreateArgs($message, $companyId, $entities, $role),
+            'tasks.create' => $this->inferTaskCreateArgs($message, $companyId, $entities, $role, $userId),
             'projects.create' => [
                 'name' => $normalized !== '' ? $normalized : 'New Project',
                 'description' => $normalized !== '' ? $normalized : 'Project created by ELY',
@@ -914,6 +929,7 @@ class CopilotService
                 companyId: $companyId,
                 entities: $entities,
                 conversationSummary: (string) ($context['summary'] ?? ''),
+                userId: $userId,
             ),
             'kpis.create' => $this->kpiInferenceService->infer(
                 message: $message,
@@ -1088,7 +1104,7 @@ class CopilotService
      * @param array<string,string> $entities
      * @return array<string,mixed>
      */
-    private function inferTaskCreateArgs(string $message, int $companyId, array $entities, string $role = 'admin'): array
+    private function inferTaskCreateArgs(string $message, int $companyId, array $entities, string $role = 'admin', int $userId = 0): array
     {
         $normalized = trim($message);
         $isAgent = $role === 'agent';
@@ -1102,7 +1118,7 @@ class CopilotService
         $rawDescription = $this->extractLabeledValue($message, ['description']);
         if (! is_string($rawDescription) || trim($rawDescription) === '') {
             if (preg_match('/\bgenerate\b/i', $message) === 1) {
-                $rawDescription = $this->generateTaskDescription($message, $title, $companyId);
+                $rawDescription = $this->generateTaskDescription($message, $title, $companyId, $userId);
             } else {
                 $rawDescription = $this->buildTaskDescriptionFallback($message, $title);
             }
@@ -1148,20 +1164,29 @@ class CopilotService
         ];
     }
 
-    private function generateTaskDescription(string $message, string $title, int $companyId): string
+    private function generateTaskDescription(string $message, string $title, int $companyId, int $userId): string
     {
-        $providerText = $this->aiProviderRouter->generateForPurpose(
+        $userPrompt = trim("Task title: {$title}\nUser request:\n{$message}");
+        $result = $this->aiProviderRouter->generateForPurpose(
             purpose: 'operational',
             systemPrompt: 'Write one concise operational task description (minimum 20 characters) for a field workforce platform. Plain text only, no markdown.',
-            userPrompt: trim("Task title: {$title}\nUser request:\n{$message}"),
+            userPrompt: $userPrompt,
             options: [
                 'company_id' => $companyId,
                 'max_tokens' => 160,
                 'temperature' => 0.3,
+                '_log' => [
+                    'company_id' => $companyId,
+                    'user_id' => $userId,
+                    'intent_type' => 'inference',
+                    'tool_name' => 'tasks.create',
+                    'routing_purpose' => 'operational',
+                    'user_prompt' => $userPrompt,
+                ],
             ],
         );
 
-        $candidate = is_string($providerText) ? trim($providerText) : '';
+        $candidate = $result instanceof AiGenerationResult && is_string($result->text) ? trim($result->text) : '';
         if (mb_strlen($candidate) >= 10) {
             return Str::limit($candidate, 5000, '');
         }

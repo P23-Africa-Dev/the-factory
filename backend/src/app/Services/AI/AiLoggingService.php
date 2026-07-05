@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Services\AI;
 
 use App\Models\AiLog;
+use App\Services\AI\Providers\AiGenerationResult;
+use App\Services\AI\Providers\ClaudeModelResolver;
+use App\Services\AI\Providers\OpenAiModelResolver;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
@@ -31,7 +34,7 @@ class AiLoggingService
             'user_id' => $userId,
             'session_id' => $sessionId,
             'provider' => $provider,
-            'model' => $model,
+            'model' => $this->ensureConcreteModel($provider, $model, $routingPurpose),
             'user_prompt' => mb_substr($userPrompt, 0, 10000),
             'sanitized_prompt' => mb_substr($sanitizedPrompt, 0, 10000),
             'prompt_length' => mb_strlen($userPrompt),
@@ -46,6 +49,52 @@ class AiLoggingService
         }
 
         return AiLog::create($attributes);
+    }
+
+    /**
+     * Record a completed AI invocation in one step using post-call metadata.
+     *
+     * @param  array{
+     *   company_id?: int|null,
+     *   user_id?: int|null,
+     *   session_id?: string|null,
+     *   intent_type?: string|null,
+     *   tool_name?: string|null,
+     *   routing_purpose?: string|null,
+     *   user_prompt?: string,
+     *   sanitized_prompt?: string,
+     * }  $context
+     */
+    public function recordInvocation(AiGenerationResult $result, array $context): AiLog
+    {
+        $userPrompt = (string) ($context['user_prompt'] ?? '');
+        $sanitizedPrompt = (string) ($context['sanitized_prompt'] ?? $userPrompt);
+
+        $log = $this->begin(
+            companyId: isset($context['company_id']) ? (int) $context['company_id'] : null,
+            userId: isset($context['user_id']) ? (int) $context['user_id'] : null,
+            sessionId: isset($context['session_id']) ? (string) $context['session_id'] : null,
+            provider: $result->provider,
+            model: $result->model,
+            userPrompt: $userPrompt,
+            sanitizedPrompt: $sanitizedPrompt,
+            intentType: isset($context['intent_type']) ? (string) $context['intent_type'] : null,
+            toolName: isset($context['tool_name']) ? (string) $context['tool_name'] : null,
+            routingPurpose: isset($context['routing_purpose']) ? (string) $context['routing_purpose'] : $result->purpose,
+        );
+
+        $inputTokens = $result->inputTokens ?? $this->estimateTokens($userPrompt);
+        $outputTokens = $result->outputTokens ?? $this->estimateTokens((string) ($result->text ?? ''));
+
+        $this->complete(
+            $log,
+            $inputTokens,
+            $outputTokens,
+            $result->provider,
+            $result->model,
+        );
+
+        return $log;
     }
 
     /**
@@ -64,7 +113,14 @@ class AiLoggingService
             : null;
 
         $resolvedProvider = $provider ?? (string) $log->provider;
-        $resolvedModel = $model ?? (string) $log->model;
+        $routingPurpose = Schema::hasColumn('ai_logs', 'routing_purpose')
+            ? (string) ($log->routing_purpose ?? '')
+            : '';
+        $resolvedModel = $this->ensureConcreteModel(
+            $resolvedProvider,
+            $model ?? (string) $log->model,
+            $routingPurpose !== '' ? $routingPurpose : null,
+        );
 
         $estimatedCost = AiLog::estimateCost(
             provider: $resolvedProvider,
@@ -225,5 +281,26 @@ class AiLoggingService
                 : null,
             'by_provider' => $byProvider,
         ];
+    }
+
+    private function ensureConcreteModel(string $provider, string $model, ?string $purpose = null): string
+    {
+        if ($model !== '' && strtolower($model) !== 'auto') {
+            return $model;
+        }
+
+        $purposeKey = $purpose !== null && $purpose !== '' ? $purpose : 'default';
+
+        return match ($provider) {
+            'claude' => app(ClaudeModelResolver::class)->resolve($purposeKey, $model),
+            'openai' => app(OpenAiModelResolver::class)->resolve($purposeKey, $model),
+            'demo' => 'mock-ely',
+            default => $model !== '' ? $model : 'unknown',
+        };
+    }
+
+    private function estimateTokens(string $text): int
+    {
+        return (int) ceil(mb_strlen($text) / 4);
     }
 }

@@ -30,6 +30,14 @@ final class CopilotMeetingScheduleTest extends TestCase
         $company->users()->attach($elijah->id, ['role' => 'agent']);
 
         $mockRouter = Mockery::mock(AiProviderRouter::class);
+        $mockRouter
+            ->shouldReceive('routingMetadata')
+            ->with('operational')
+            ->andReturn([
+                'provider' => 'openai',
+                'model' => 'gpt-4.1-mini',
+                'purpose' => 'operational',
+            ]);
         $mockRouter->shouldReceive('generateText')->once()->andReturn(null);
         $this->app->instance(AiProviderRouter::class, $mockRouter);
 
@@ -63,6 +71,14 @@ final class CopilotMeetingScheduleTest extends TestCase
         [$company, $admin, $david] = $this->seedCompanyAdminWithMember();
 
         $mockRouter = Mockery::mock(AiProviderRouter::class);
+        $mockRouter
+            ->shouldReceive('routingMetadata')
+            ->with('operational')
+            ->andReturn([
+                'provider' => 'openai',
+                'model' => 'gpt-4.1-mini',
+                'purpose' => 'operational',
+            ]);
         $mockRouter->shouldReceive('generateText')->once()->andReturn(null);
         $this->app->instance(AiProviderRouter::class, $mockRouter);
 

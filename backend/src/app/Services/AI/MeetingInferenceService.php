@@ -35,7 +35,7 @@ class MeetingInferenceService
         $normalized = trim($message);
         $members = $this->companyMembers($companyId);
         $timezone = $this->userTimezoneResolver->resolve($clientTimezone, $companyCountry);
-        $generated = $this->generateTitleAndDescription($normalized, $conversationSummary);
+        $generated = $this->generateTitleAndDescription($normalized, $conversationSummary, $companyId);
         $schedule = $this->resolveSchedule($normalized, $timezone);
         $attendeeResolution = $this->resolveAttendees($normalized, $members, $entities, $conversationSummary);
         $reminders = $this->resolveRemindersFromMessage($normalized);
@@ -192,19 +192,29 @@ class MeetingInferenceService
     /**
      * @return array{title:string,description:string,used_default_title:bool}
      */
-    private function generateTitleAndDescription(string $message, string $conversationSummary): array
+    private function generateTitleAndDescription(string $message, string $conversationSummary, int $companyId): array
     {
-        $providerJson = $this->aiProviderRouter->generateText(
+        $userPrompt = trim("Conversation context:\n{$conversationSummary}\n\nUser request:\n{$message}");
+        $result = $this->aiProviderRouter->generateText(
             systemPrompt: 'You are ELY, your AI Assistant. Generate meeting metadata from user requests. Respond ONLY with valid JSON: {"title":"...","description":"..."}. Title must be professional (max 120 chars). Description must be 1-2 sentences about meeting purpose and outcomes (max 500 chars). Never copy the raw user message as the description.',
-            userPrompt: trim("Conversation context:\n{$conversationSummary}\n\nUser request:\n{$message}"),
+            userPrompt: $userPrompt,
             options: [
                 'max_tokens' => 280,
                 'temperature' => 0.3,
+                'company_id' => $companyId,
+                '_log' => [
+                    'company_id' => $companyId,
+                    'intent_type' => 'inference',
+                    'tool_name' => 'meetings.schedule',
+                    'routing_purpose' => 'operational',
+                    'user_prompt' => $userPrompt,
+                ],
             ],
         );
 
-        if (is_string($providerJson)) {
-            $decoded = $this->decodeJsonObject($providerJson);
+        if ($result instanceof \App\Services\AI\Providers\AiGenerationResult && $result->isSuccessful()) {
+            $providerJson = $result->text;
+            $decoded = $this->decodeJsonObject((string) $providerJson);
             if ($decoded !== null) {
                 $title = Str::limit(trim((string) ($decoded['title'] ?? '')), 255, '');
                 $description = Str::limit(trim((string) ($decoded['description'] ?? '')), 5000, '');

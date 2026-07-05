@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AI\Providers;
 
 use App\Services\AI\Admin\AiFailoverTracker;
-use App\Services\AI\Providers\ClaudeModelResolver;
-use App\Services\AI\Providers\ClaudeProvider;
-use App\Services\AI\Providers\OpenAiModelResolver;
+use App\Services\AI\AiLoggingService;
 use App\Services\Demo\DemoAiResponseService;
 use App\Services\Demo\DemoCompanyService;
 use Illuminate\Http\UploadedFile;
@@ -20,18 +18,23 @@ class AiProviderRouter
         private readonly AiFailoverTracker $failoverTracker,
         private readonly DemoCompanyService $demoCompanyService,
         private readonly DemoAiResponseService $demoAiResponseService,
+        private readonly AiLoggingService $aiLoggingService,
     ) {}
 
-    public function generateText(string $systemPrompt, string $userPrompt, array $options = []): ?string
+    public function generateText(string $systemPrompt, string $userPrompt, array $options = []): ?AiGenerationResult
     {
         $demoResponse = $this->maybeDemoResponse('operational', $systemPrompt, $userPrompt, $options);
         if ($demoResponse !== null) {
-            return $demoResponse;
+            return $this->finalizeInvocation($demoResponse, $options);
         }
 
-        return $this->tryProviders(
-            $this->orderedProviders(),
-            fn (AiProviderContract $provider) => $provider->generateText($systemPrompt, $userPrompt, $options),
+        return $this->finalizeInvocation(
+            $this->tryProviders(
+                $this->orderedProviders(),
+                'operational',
+                fn (AiProviderContract $provider) => $provider->generateText($systemPrompt, $userPrompt, $options),
+            ),
+            $options,
         );
     }
 
@@ -40,23 +43,28 @@ class AiProviderRouter
         string $systemPrompt,
         string $userPrompt,
         array $options = [],
-    ): ?string {
+    ): ?AiGenerationResult {
+        $purpose = strtolower(trim($purpose));
+
         $demoResponse = $this->maybeDemoResponse($purpose, $systemPrompt, $userPrompt, $options);
         if ($demoResponse !== null) {
-            return $demoResponse;
+            return $this->finalizeInvocation($demoResponse, $options);
         }
 
-        $purpose = strtolower(trim($purpose));
         $model = $this->resolveModelForPurpose($purpose);
         $providers = $this->orderedProvidersForPurpose($purpose);
 
-        return $this->tryProviders(
-            $providers,
-            fn (AiProviderContract $provider) => $provider->generateText(
-                $systemPrompt,
-                $userPrompt,
-                array_merge($options, ['model' => $model, 'purpose' => $purpose]),
+        return $this->finalizeInvocation(
+            $this->tryProviders(
+                $providers,
+                $purpose,
+                fn (AiProviderContract $provider) => $provider->generateText(
+                    $systemPrompt,
+                    $userPrompt,
+                    array_merge($options, ['model' => $model, 'purpose' => $purpose]),
+                ),
             ),
+            $options,
         );
     }
 
@@ -129,11 +137,15 @@ class AiProviderRouter
         return $ordered;
     }
 
-    public function transcribeAudio(UploadedFile $audio, string $prompt = '', array $options = []): ?string
+    public function transcribeAudio(UploadedFile $audio, string $prompt = '', array $options = []): ?AiGenerationResult
     {
-        return $this->tryProviders(
-            $this->orderedProviders(),
-            fn (AiProviderContract $provider) => $provider->transcribeAudio($audio, $prompt, $options),
+        return $this->finalizeInvocation(
+            $this->tryProviders(
+                $this->orderedProviders(),
+                (string) ($options['purpose'] ?? 'operational'),
+                fn (AiProviderContract $provider) => $provider->transcribeAudio($audio, $prompt, $options),
+            ),
+            $options,
         );
     }
 
@@ -153,7 +165,7 @@ class AiProviderRouter
     /**
      * @param  array<int, AiProviderContract>  $providers
      */
-    private function tryProviders(array $providers, callable $callback): ?string
+    private function tryProviders(array $providers, string $purpose, callable $callback): ?AiGenerationResult
     {
         $lastFailedProvider = null;
 
@@ -163,15 +175,18 @@ class AiProviderRouter
             }
 
             $result = $callback($provider);
-            if (is_string($result) && trim($result) !== '') {
+            if ($result instanceof AiGenerationResult && $result->isSuccessful()) {
+                $resolved = $result->withPurpose($purpose);
                 if ($lastFailedProvider !== null) {
                     $this->failoverTracker->record(
                         $lastFailedProvider,
                         $this->providerKey($provider),
                     );
+
+                    return $resolved->withFailoverFrom($lastFailedProvider);
                 }
 
-                return trim($result);
+                return $resolved;
             }
 
             $lastFailedProvider = $this->providerKey($provider);
@@ -207,7 +222,6 @@ class AiProviderRouter
             $ordered[] = $map[$fallback];
         }
 
-        // Ensure both providers are considered even if config values are unexpected.
         foreach ($map as $candidate) {
             if (! in_array($candidate, $ordered, true)) {
                 $ordered[] = $candidate;
@@ -217,13 +231,42 @@ class AiProviderRouter
         return $ordered;
     }
 
-    private function maybeDemoResponse(string $purpose, string $systemPrompt, string $userPrompt, array $options): ?string
+    private function maybeDemoResponse(string $purpose, string $systemPrompt, string $userPrompt, array $options): ?AiGenerationResult
     {
         $companyId = isset($options['company_id']) ? (int) $options['company_id'] : null;
         if ($companyId === null || $companyId <= 0 || ! $this->demoCompanyService->isDemo($companyId)) {
             return null;
         }
 
-        return $this->demoAiResponseService->respond($purpose, $systemPrompt, $userPrompt, $options);
+        $text = $this->demoAiResponseService->respond($purpose, $systemPrompt, $userPrompt, $options);
+        if (! is_string($text) || trim($text) === '') {
+            return null;
+        }
+
+        return new AiGenerationResult(
+            text: trim($text),
+            provider: 'demo',
+            model: 'mock-ely',
+            purpose: $purpose,
+            inputTokens: 0,
+            outputTokens: 0,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function finalizeInvocation(?AiGenerationResult $result, array $options): ?AiGenerationResult
+    {
+        if ($result === null || ! $result->isSuccessful()) {
+            return $result;
+        }
+
+        $logContext = $options['_log'] ?? null;
+        if (is_array($logContext)) {
+            $this->aiLoggingService->recordInvocation($result, $logContext);
+        }
+
+        return $result;
     }
 }

@@ -21,6 +21,7 @@ class EmailInferenceService
         int $companyId,
         array $entities = [],
         string $conversationSummary = '',
+        ?int $userId = null,
     ): array {
         $to = $this->extractLabeledValue($message, ['to', 'recipient', 'email to'])
             ?? ($entities['lead_email'] ?? null);
@@ -46,7 +47,7 @@ class EmailInferenceService
         }
 
         if ($body === null || trim((string) $body) === '') {
-            $body = $this->draftWithAi($message, $conversationSummary, (string) ($to ?? ''));
+            $body = $this->draftWithAi($message, $conversationSummary, (string) ($to ?? ''), $companyId, $userId);
         }
 
         $toRecipients = [];
@@ -129,20 +130,33 @@ class EmailInferenceService
         return null;
     }
 
-    private function draftWithAi(string $message, string $conversationSummary, string $recipientEmail): string
+    private function draftWithAi(string $message, string $conversationSummary, string $recipientEmail, int $companyId, ?int $userId = null): string
     {
-        $prompt = "Draft a concise professional CRM follow-up email based on this request.\n"
+        $userPrompt = "Draft a concise professional CRM follow-up email based on this request.\n"
             . "Recipient: {$recipientEmail}\n"
             . "Request: {$message}\n"
             . "Context: {$conversationSummary}\n"
             . 'Return only the email body text.';
 
         try {
-            return trim($this->aiProviderRouter->generateForPurpose(
+            $result = $this->aiProviderRouter->generateForPurpose(
                 purpose: 'operational',
-                prompt: $prompt,
                 systemPrompt: 'You write polished business emails for CRM follow-up.',
-            ));
+                userPrompt: $userPrompt,
+                options: [
+                    'company_id' => $companyId,
+                    '_log' => [
+                        'company_id' => $companyId,
+                        'user_id' => $userId,
+                        'intent_type' => 'inference',
+                        'tool_name' => 'crm.send_email',
+                        'routing_purpose' => 'operational',
+                        'user_prompt' => $userPrompt,
+                    ],
+                ],
+            );
+
+            return trim((string) ($result?->text ?? ''));
         } catch (\Throwable) {
             return 'Hello,' . "\n\n" . 'I wanted to follow up regarding our recent conversation.' . "\n\n" . 'Best regards';
         }

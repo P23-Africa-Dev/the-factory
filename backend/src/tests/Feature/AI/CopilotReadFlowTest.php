@@ -13,6 +13,7 @@ use App\Models\LeadPipeline;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\AI\Providers\AiProviderRouter;
+use Tests\Support\AiGenerationTestFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Mockery;
@@ -87,10 +88,10 @@ final class CopilotReadFlowTest extends TestCase
             ->withArgs(function (string $purpose): bool {
                 return $purpose === 'operational';
             })
-            ->andReturnUsing(function (string $purpose, string $systemPrompt, string $userPrompt) use (&$capturedPrompts): string {
+            ->andReturnUsing(function (string $purpose, string $systemPrompt, string $userPrompt) use (&$capturedPrompts) {
                 $capturedPrompts[] = $userPrompt;
 
-                return 'Provider response';
+                return AiGenerationTestFactory::result('Provider response');
             });
 
         $this->app->instance(AiProviderRouter::class, $mockRouter);
@@ -143,11 +144,11 @@ final class CopilotReadFlowTest extends TestCase
             ->withArgs(function (string $purpose): bool {
                 return $purpose === 'operational';
             })
-            ->andReturnUsing(function (string $purpose, string $systemPrompt, string $userPrompt) use (&$capturedPrompt, &$capturedSystemPrompt): string {
+            ->andReturnUsing(function (string $purpose, string $systemPrompt, string $userPrompt) use (&$capturedPrompt, &$capturedSystemPrompt) {
                 $capturedPrompt = $userPrompt;
                 $capturedSystemPrompt = $systemPrompt;
 
-                return 'Provider response';
+                return AiGenerationTestFactory::result('Provider response');
             });
 
         $this->app->instance(AiProviderRouter::class, $mockRouter);
@@ -265,7 +266,7 @@ final class CopilotReadFlowTest extends TestCase
         $mockRouter
             ->shouldReceive('generateForPurpose')
             ->once()
-            ->andReturn('Hello from ELY streaming.');
+            ->andReturn(AiGenerationTestFactory::result('Hello from ELY streaming.'));
         $this->app->instance(AiProviderRouter::class, $mockRouter);
 
         $response = $this

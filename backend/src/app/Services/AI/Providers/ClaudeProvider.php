@@ -19,7 +19,7 @@ class ClaudeProvider implements AiProviderContract
         return trim((string) config('services.ai.claude.api_key')) !== '';
     }
 
-    public function generateText(string $systemPrompt, string $userPrompt, array $options = []): ?string
+    public function generateText(string $systemPrompt, string $userPrompt, array $options = []): ?AiGenerationResult
     {
         if (! $this->isConfigured()) {
             return null;
@@ -61,13 +61,35 @@ class ClaudeProvider implements AiProviderContract
         }
 
         $content = $response->json('content.0.text');
+        if (! is_string($content) || trim($content) === '') {
+            return null;
+        }
 
-        return is_string($content) && trim($content) !== '' ? trim($content) : null;
+        $responseModel = $response->json('model');
+        $resolvedModel = is_string($responseModel) && trim($responseModel) !== '' ? trim($responseModel) : $model;
+
+        return new AiGenerationResult(
+            text: trim($content),
+            provider: 'claude',
+            model: $resolvedModel,
+            purpose: $purpose,
+            inputTokens: $this->intOrNull($response->json('usage.input_tokens')),
+            outputTokens: $this->intOrNull($response->json('usage.output_tokens')),
+        );
     }
 
-    public function transcribeAudio(UploadedFile $audio, string $prompt = '', array $options = []): ?string
+    public function transcribeAudio(UploadedFile $audio, string $prompt = '', array $options = []): ?AiGenerationResult
     {
         // Claude is currently used for text analytics in this app. Keep voice fallback on OpenAI provider.
         return null;
+    }
+
+    private function intOrNull(mixed $value): ?int
+    {
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        return (int) $value;
     }
 }

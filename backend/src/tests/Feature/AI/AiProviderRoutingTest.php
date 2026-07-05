@@ -18,8 +18,8 @@ final class AiProviderRoutingTest extends TestCase
 
         $router = app(AiProviderRouter::class);
 
-        $text = $router->generateText('You are helpful.', 'Summarize this text.');
+        $result = $router->generateText('You are helpful.', 'Summarize this text.');
 
-        $this->assertNull($text);
+        $this->assertNull($result);
     }
 }

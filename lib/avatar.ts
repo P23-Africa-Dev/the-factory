@@ -1,3 +1,5 @@
+import type { SyntheticEvent } from "react";
+
 export const DEFAULT_AVATAR = "/avatars/default-ghost.svg";
 
 function apiOrigin(): string {
@@ -50,8 +52,6 @@ export function resolveAvatarSrc(
 ): string {
   return getSafeAvatarSrc(rawAvatar) ?? fallback;
 }
-
-import type { SyntheticEvent } from "react";
 
 export function onAvatarError(
   event: SyntheticEvent<HTMLImageElement, Event>,

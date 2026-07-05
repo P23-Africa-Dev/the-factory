@@ -48,6 +48,8 @@ class AiManagementController extends Controller
         $topUsers = [];
         $topOrganizations = [];
         $modelUsage = [];
+        $modelUsageDetailed = [];
+        $providerModelMatrix = [];
         $dailyTrends = [];
         $recentErrors = [];
         $recentLogs = collect();
@@ -72,6 +74,8 @@ class AiManagementController extends Controller
             $topUsers = $this->operationsAnalytics->topUsers($now->copy()->subDays(30));
             $topOrganizations = $this->operationsAnalytics->topOrganizations($now->copy()->subDays(30));
             $modelUsage = $this->operationsAnalytics->modelUsage($now->copy()->subDays(30));
+            $modelUsageDetailed = $this->operationsAnalytics->modelUsageDetailed($now->copy()->subDays(30));
+            $providerModelMatrix = $this->operationsAnalytics->providerModelMatrix($now->copy()->subDays(30));
             $dailyTrends = $this->operationsAnalytics->dailyTrends($now->copy()->subDays(29)->startOfDay(), $now);
             $recentErrors = $this->operationsAnalytics->recentErrors(10);
 
@@ -143,6 +147,8 @@ class AiManagementController extends Controller
             'topUsers',
             'topOrganizations',
             'modelUsage',
+            'modelUsageDetailed',
+            'providerModelMatrix',
             'dailyTrends',
             'recentErrors',
             'recentLogs',
@@ -173,6 +179,8 @@ class AiManagementController extends Controller
 
         $stats = $this->emptyStats();
         $modelUsage = [];
+        $modelUsageDetailed = [];
+        $providerModelMatrix = [];
         $topUsers = [];
         $topOrganizations = [];
 
@@ -183,6 +191,8 @@ class AiManagementController extends Controller
                 to: $now->toDateTimeString(),
             );
             $modelUsage = $this->operationsAnalytics->modelUsage($from);
+            $modelUsageDetailed = $this->operationsAnalytics->modelUsageDetailed($from);
+            $providerModelMatrix = $this->operationsAnalytics->providerModelMatrix($from);
             $topUsers = $this->operationsAnalytics->topUsers($from, 8);
             $topOrganizations = $this->operationsAnalytics->topOrganizations($from, 8);
         }
@@ -219,6 +229,8 @@ class AiManagementController extends Controller
             'range',
             'aiLogsReady',
             'modelUsage',
+            'modelUsageDetailed',
+            'providerModelMatrix',
             'topUsers',
             'topOrganizations',
         ));

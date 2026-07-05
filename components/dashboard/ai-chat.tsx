@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 type MessageAction = "liked" | "disliked" | null;
 
@@ -175,8 +176,6 @@ const NOTIFICATION_CATEGORY_OPTIONS: EditFieldOption[] = [
   { value: "profile", label: "Profile" },
   { value: "system", label: "System" },
 ];
-
-import { resolveAvatarSrc } from "@/lib/avatar";
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

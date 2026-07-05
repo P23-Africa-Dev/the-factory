@@ -19,7 +19,7 @@ class OpenAiProvider implements AiProviderContract
         return trim((string) config('services.ai.openai.api_key')) !== '';
     }
 
-    public function generateText(string $systemPrompt, string $userPrompt, array $options = []): ?string
+    public function generateText(string $systemPrompt, string $userPrompt, array $options = []): ?AiGenerationResult
     {
         if (! $this->isConfigured()) {
             return null;
@@ -56,8 +56,21 @@ class OpenAiProvider implements AiProviderContract
         }
 
         $content = $response->json('choices.0.message.content');
+        if (! is_string($content) || trim($content) === '') {
+            return null;
+        }
 
-        return is_string($content) && trim($content) !== '' ? trim($content) : null;
+        $responseModel = $response->json('model');
+        $resolvedModel = is_string($responseModel) && trim($responseModel) !== '' ? trim($responseModel) : $model;
+
+        return new AiGenerationResult(
+            text: trim($content),
+            provider: 'openai',
+            model: $resolvedModel,
+            purpose: $purpose,
+            inputTokens: $this->intOrNull($response->json('usage.prompt_tokens')),
+            outputTokens: $this->intOrNull($response->json('usage.completion_tokens')),
+        );
     }
 
     public function analyzeDocumentFile(
@@ -140,7 +153,7 @@ class OpenAiProvider implements AiProviderContract
         return is_string($content) && trim($content) !== '' ? trim($content) : null;
     }
 
-    public function transcribeAudio(UploadedFile $audio, string $prompt = '', array $options = []): ?string
+    public function transcribeAudio(UploadedFile $audio, string $prompt = '', array $options = []): ?AiGenerationResult
     {
         if (! $this->isConfigured()) {
             return null;
@@ -149,6 +162,7 @@ class OpenAiProvider implements AiProviderContract
         try {
             $timeoutMs = (int) config('services.ai.request_timeout_ms', 30000);
             $baseUrl = rtrim((string) config('services.ai.openai.base_url', 'https://api.openai.com/v1'), '/');
+            $audioModel = (string) ($options['audio_model'] ?? config('services.ai.openai.audio_model', 'gpt-4o-mini-transcribe'));
 
             $response = $this->http
                 ->timeout(max(1, (int) ceil($timeoutMs / 1000)))
@@ -156,7 +170,7 @@ class OpenAiProvider implements AiProviderContract
                 ->attach('file', file_get_contents($audio->getRealPath()) ?: '', $audio->getClientOriginalName())
                 ->asMultipart()
                 ->post($baseUrl . '/audio/transcriptions', [
-                    ['name' => 'model', 'contents' => (string) ($options['audio_model'] ?? config('services.ai.openai.audio_model', 'gpt-4o-mini-transcribe'))],
+                    ['name' => 'model', 'contents' => $audioModel],
                     ['name' => 'prompt', 'contents' => $prompt],
                 ]);
 
@@ -165,10 +179,27 @@ class OpenAiProvider implements AiProviderContract
             }
 
             $text = $response->json('text');
+            if (! is_string($text) || trim($text) === '') {
+                return null;
+            }
 
-            return is_string($text) && trim($text) !== '' ? trim($text) : null;
+            return new AiGenerationResult(
+                text: trim($text),
+                provider: 'openai',
+                model: $audioModel,
+                purpose: (string) ($options['purpose'] ?? 'operational'),
+            );
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function intOrNull(mixed $value): ?int
+    {
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        return (int) $value;
     }
 }

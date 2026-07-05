@@ -11,6 +11,7 @@ use App\Services\AI\Providers\AiProviderRouter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Mockery;
+use Tests\Support\AiGenerationTestFactory;
 use Tests\TestCase;
 
 final class KpiInferenceServiceTest extends TestCase
@@ -64,7 +65,10 @@ final class KpiInferenceServiceTest extends TestCase
     private function mockRouter(): AiProviderRouter
     {
         $mock = Mockery::mock(AiProviderRouter::class);
-        $mock->shouldReceive('generateForPurpose')->andReturn('Retail Visits KPI', 'Increase qualified retailer visits in the assigned territory.');
+        $mock->shouldReceive('generateForPurpose')->andReturn(
+            AiGenerationTestFactory::result('Retail Visits KPI'),
+            AiGenerationTestFactory::result('Increase qualified retailer visits in the assigned territory.'),
+        );
 
         return $mock;
     }

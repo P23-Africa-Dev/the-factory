@@ -65,7 +65,7 @@ class LeadInferenceService
 
         $usedDefaultName = ! is_string($name) || trim($name) === '';
         if ($usedDefaultName) {
-            $name = $this->generateLeadNameFallback($message, $conversationSummary);
+            $name = $this->generateLeadNameFallback($message, $conversationSummary, $companyId, $userId);
         }
 
         $nextAction = $this->buildNextAction($notes, $industry, $location);
@@ -316,16 +316,29 @@ class LeadInferenceService
         return $userId !== null ? (int) $userId : null;
     }
 
-    private function generateLeadNameFallback(string $message, string $conversationSummary): string
+    private function generateLeadNameFallback(string $message, string $conversationSummary, int $companyId, int $userId): string
     {
-        $providerText = $this->aiProviderRouter->generateForPurpose(
+        $userPrompt = trim("Conversation:\n{$conversationSummary}\n\nMessage:\n{$message}");
+        $result = $this->aiProviderRouter->generateForPurpose(
             purpose: 'operational',
             systemPrompt: 'You extract a concise CRM lead business name from user text. Respond with plain text only, no markdown, max 80 characters. If no name is present, respond with: New Lead',
-            userPrompt: trim("Conversation:\n{$conversationSummary}\n\nMessage:\n{$message}"),
-            options: ['max_tokens' => 60, 'temperature' => 0.1],
+            userPrompt: $userPrompt,
+            options: [
+                'max_tokens' => 60,
+                'temperature' => 0.1,
+                'company_id' => $companyId,
+                '_log' => [
+                    'company_id' => $companyId,
+                    'user_id' => $userId,
+                    'intent_type' => 'inference',
+                    'tool_name' => 'crm.create_lead',
+                    'routing_purpose' => 'operational',
+                    'user_prompt' => $userPrompt,
+                ],
+            ],
         );
 
-        $candidate = is_string($providerText) ? trim($providerText) : '';
+        $candidate = $result?->text !== null ? trim($result->text) : '';
         if ($candidate === '' || strtolower($candidate) === 'new lead') {
             return 'New Lead';
         }

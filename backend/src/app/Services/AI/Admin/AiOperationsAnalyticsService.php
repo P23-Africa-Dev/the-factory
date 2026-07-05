@@ -21,7 +21,7 @@ class AiOperationsAnalyticsService
      */
     public function providerUsage(string $today, string $monthStart): array
     {
-        $providers = ['openai', 'claude'];
+        $providers = ['openai', 'claude', 'demo'];
         $result = [];
 
         foreach ($providers as $provider) {
@@ -100,22 +100,84 @@ class AiOperationsAnalyticsService
      */
     public function modelUsage(Carbon $from, int $limit = 8): array
     {
+        return array_map(
+            static fn (array $row): array => [
+                'model' => $row['label'],
+                'requests' => $row['requests'],
+                'percentage' => $row['percentage'],
+            ],
+            $this->modelUsageDetailed($from, $limit),
+        );
+    }
+
+    /**
+     * @return array<int, array{
+     *   provider: string,
+     *   model: string,
+     *   label: string,
+     *   requests: int,
+     *   tokens: int,
+     *   cost: float,
+     *   percentage: float,
+     * }>
+     */
+    public function modelUsageDetailed(Carbon $from, int $limit = 8): array
+    {
         $rows = AiLog::query()
             ->where('created_at', '>=', $from)
-            ->where('model', '!=', 'none')
-            ->selectRaw('model, COUNT(*) as requests')
-            ->groupBy('model')
+            ->whereNotIn('model', ['none', 'auto'])
+            ->whereNotNull('model')
+            ->selectRaw('provider, model, COUNT(*) as requests, SUM(COALESCE(total_tokens,0)) as tokens, SUM(COALESCE(estimated_cost_usd,0)) as cost')
+            ->groupBy('provider', 'model')
             ->orderByDesc('requests')
             ->limit($limit)
             ->get();
 
         $total = (int) $rows->sum('requests');
 
-        return $rows->map(fn ($row) => [
-            'model' => (string) $row->model,
-            'requests' => (int) $row->requests,
-            'percentage' => $total > 0 ? round(((int) $row->requests / $total) * 100, 1) : 0.0,
-        ])->all();
+        return $rows->map(function ($row) use ($total): array {
+            $provider = (string) $row->provider;
+            $model = (string) $row->model;
+
+            return [
+                'provider' => $provider,
+                'model' => $model,
+                'label' => ucfirst($provider) . ' → ' . $model,
+                'requests' => (int) $row->requests,
+                'tokens' => (int) $row->tokens,
+                'cost' => round((float) $row->cost, 4),
+                'percentage' => $total > 0 ? round(((int) $row->requests / $total) * 100, 1) : 0.0,
+            ];
+        })->all();
+    }
+
+    /**
+     * @return array<string, array<int, array{model: string, requests: int, tokens: int, cost: float}>>
+     */
+    public function providerModelMatrix(Carbon $from): array
+    {
+        $rows = AiLog::query()
+            ->where('created_at', '>=', $from)
+            ->whereNotIn('model', ['none', 'auto'])
+            ->whereIn('provider', ['openai', 'claude', 'demo'])
+            ->selectRaw('provider, model, COUNT(*) as requests, SUM(COALESCE(total_tokens,0)) as tokens, SUM(COALESCE(estimated_cost_usd,0)) as cost')
+            ->groupBy('provider', 'model')
+            ->orderBy('provider')
+            ->orderByDesc('requests')
+            ->get();
+
+        $matrix = [];
+        foreach ($rows as $row) {
+            $provider = (string) $row->provider;
+            $matrix[$provider][] = [
+                'model' => (string) $row->model,
+                'requests' => (int) $row->requests,
+                'tokens' => (int) $row->tokens,
+                'cost' => round((float) $row->cost, 4),
+            ];
+        }
+
+        return $matrix;
     }
 
     /**

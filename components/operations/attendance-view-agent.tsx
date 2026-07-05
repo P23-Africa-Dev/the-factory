@@ -295,7 +295,7 @@ export function AttendanceViewAgent() {
   const clockOutMut = useClockOut();
 
   const attendanceList: AttendanceItem[] = (historyData?.items ?? []).map((r) =>
-    mapRecord(r, user?.name ?? "Me", historyData?.avatar_url ?? user?.avatar),
+    mapRecord(r, user?.name ?? "Me", user?.avatar),
   );
 
   const filtered = attendanceList.filter(
