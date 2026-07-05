@@ -61,9 +61,19 @@ return Application::configure(basePath: dirname(__DIR__))
         // For admin/* web routes, fall through (return null) so Laravel renders HTML.
         $isApiRequest = static fn(Request $request): bool => $request->is('api/*');
 
-        $exceptions->render(function (ValidationException $e, Request $request) use ($jsonError, $isApiRequest): ?JsonResponse {
+        $validationMessage = static function (array $errors): string {
+            $messages = collect($errors)->flatten()->filter()->values();
+
+            return $messages->isNotEmpty()
+                ? $messages->implode(' ')
+                : 'The given data was invalid.';
+        };
+
+        $exceptions->render(function (ValidationException $e, Request $request) use ($jsonError, $isApiRequest, $validationMessage): ?JsonResponse {
             if ($isApiRequest($request) || $request->expectsJson()) {
-                return $jsonError('The given data was invalid.', $e->errors(), 422);
+                $errors = $e->errors();
+
+                return $jsonError($validationMessage($errors), $errors, 422);
             }
             return null;
         });
@@ -75,7 +85,13 @@ return Application::configure(basePath: dirname(__DIR__))
         });
         $exceptions->render(function (AuthorizationException $e, Request $request) use ($jsonError, $isApiRequest): ?JsonResponse {
             if ($isApiRequest($request) || $request->expectsJson()) {
-                return $jsonError('You do not have permission to perform this action.', null, 403);
+                $message = trim($e->getMessage());
+
+                return $jsonError(
+                    $message !== '' ? $message : 'You do not have permission to perform this action.',
+                    null,
+                    403
+                );
             }
             return null;
         });

@@ -11,6 +11,7 @@ import {
   enqueueOfflineHttpMutation,
   isOfflineQueueSupportedPath,
 } from "@/lib/offline/queue";
+import { resolveApiErrorMessage } from "@/lib/api/errors";
 
 export type ApiEnvelope<TData> = {
   success: boolean;
@@ -41,7 +42,7 @@ export class ApiRequestError extends Error {
     errors: Record<string, string[]> | null = null,
     code?: string
   ) {
-    super(message);
+    super(resolveApiErrorMessage(message, errors));
     this.status = status;
     this.errors = errors;
     this.code = code;
@@ -152,13 +153,22 @@ export async function apiRequest<TData>({
     const statusCode = (payload as { code?: string }).code ?? accountStatus;
 
     if (response.status === 402 && isSubscriptionStatusCode(statusCode)) {
-      handleSubscriptionRequired(statusCode, payload.message || undefined);
+      handleSubscriptionRequired(
+        statusCode,
+        resolveApiErrorMessage(payload.message, payload.errors) || undefined
+      );
     }
 
     if (response.status === 403 && isAccountStatusCode(accountStatus) && token) {
-      handleAccountAccessDenied(payload.message || "Your account access has been restricted.", {
-        accountStatus,
-      });
+      handleAccountAccessDenied(
+        resolveApiErrorMessage(
+          payload.message || "Your account access has been restricted.",
+          payload.errors
+        ),
+        {
+          accountStatus,
+        }
+      );
     }
 
     throw new ApiRequestError(
