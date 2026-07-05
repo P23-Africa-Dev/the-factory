@@ -16,6 +16,8 @@ use App\Services\AI\Providers\AiProviderRouter;
 use App\Services\AI\Tools\ActionToolRegistry;
 use App\Services\AI\Tools\ReadToolRegistry;
 use App\Services\Company\CompanyContextService;
+use App\Enums\NotificationCategory;
+use App\Services\Notification\NotificationService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use App\Services\AI\AiLoggingService;
@@ -39,6 +41,7 @@ class CopilotService
         private readonly LeadInferenceService $leadInferenceService,
         private readonly EmailInferenceService $emailInferenceService,
         private readonly KpiInferenceService $kpiInferenceService,
+        private readonly NotificationService $notificationService,
     ) {}
 
     public function chat(
@@ -274,6 +277,10 @@ class CopilotService
 
                 $assistantText = (string) ($toolResult['summary'] ?? $assistantText);
                 $resolvedTool = $candidateTool;
+
+                if ($resolvedTool === 'planning.daily') {
+                    $this->notifyDailyPlanReady($user, $resolvedCompanyId, is_array($toolResult['payload'] ?? null) ? $toolResult['payload'] : []);
+                }
             } else {
                 $assistantText = 'You are not permitted to access that information with your current role and scope.';
                 $resolvedTool = $candidateTool;
@@ -1922,5 +1929,31 @@ class CopilotService
         }
 
         return $value;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function notifyDailyPlanReady(User $user, int $companyId, array $payload): void
+    {
+        $itemCount = is_array($payload['items'] ?? null) ? count($payload['items']) : 0;
+        $creatableCount = (int) ($payload['acceptance']['creatable_count'] ?? 0);
+
+        $this->notificationService->notifyUser((int) $user->id, [
+            'company_id' => $companyId,
+            'type' => 'daily_plan.ready',
+            'category' => NotificationCategory::SYSTEM->value,
+            'title' => 'Your daily plan is ready',
+            'message' => $itemCount === 0
+                ? 'ELY reviewed your schedule. Open the assistant to see your plan.'
+                : sprintf(
+                    'ELY planned %d item%s for today%s. Review and accept to add tasks.',
+                    $itemCount,
+                    $itemCount === 1 ? '' : 's',
+                    $creatableCount > 0 ? " ({$creatableCount} can become tasks)" : '',
+                ),
+            'action_url' => '/assistant',
+            'dedupe_key' => 'daily-plan-ready:' . $user->id . ':' . ($payload['plan_date'] ?? now()->toDateString()),
+        ]);
     }
 }

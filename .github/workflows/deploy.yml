@@ -2,7 +2,7 @@
 # Factory23 — Production Deploy Workflow
 #
 # Triggers:
-#   push to `space`  → full build + deploy to production
+#   push to `main`  → full build + deploy to production
 #   pull_request      → lint + test only (no deploy)
 #
 # Required GitHub Secrets (Settings → Secrets and variables → Actions → New secret):
@@ -15,10 +15,10 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [space]
+    branches: [main]
   workflow_dispatch:
   pull_request:
-    branches: [space]
+    branches: [main]
     paths:
       - 'backend/src/**'
       - 'backend/Dockerfile'
@@ -109,7 +109,7 @@ jobs:
     name: Build & Push
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/space'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     outputs:
       image_tag: ${{ steps.meta.outputs.version }}
       image_digest: ${{ steps.build.outputs.digest }}
@@ -133,7 +133,7 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=sha,prefix=,format=short
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/space' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

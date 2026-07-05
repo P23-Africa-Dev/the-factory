@@ -50,6 +50,7 @@ use App\Http\Controllers\Api\V1\Onboarding\WorkspaceController;
 use App\Http\Controllers\Api\V1\Payroll\PayrollController;
 use App\Http\Controllers\Api\V1\Project\ProjectController;
 use App\Http\Controllers\Api\V1\Task\AdminTaskStatusController;
+use App\Http\Controllers\Api\V1\Agent\AgentPlanningController;
 use App\Http\Controllers\Api\V1\Task\AgentTaskController;
 use App\Http\Controllers\Api\V1\Task\TaskAssignmentController;
 use App\Http\Controllers\Api\V1\Task\TaskController;
@@ -714,6 +715,13 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
             ->middleware('access.role:agent')
             ->middleware('throttle:30,1')
             ->name('self.store');
+    });
+
+    Route::prefix('agent/planning')->name('agent.planning.')->group(function (): void {
+        Route::post('/accept', [AgentPlanningController::class, 'accept'])
+            ->middleware('access.role:agent')
+            ->middleware('throttle:20,1')
+            ->name('accept');
     });
 
     Route::prefix('projects')->name('projects.')->group(function (): void {

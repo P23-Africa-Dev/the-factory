@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace App\Services\AI\Planning;
 
+use App\Enums\KpiCategory;
+use App\Enums\KpiPriority;
+use App\Enums\KpiStatus;
 use App\Enums\LeadPriority;
 use App\Enums\LeadStatus;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
+use App\Enums\TaskType;
 use App\Models\AgentLocationSnapshot;
 use App\Models\AttendanceSetting;
 use App\Models\CompanyLocation;
+use App\Models\Kpi;
 use App\Models\Lead;
 use App\Models\Task;
 use App\Models\User;
@@ -94,6 +99,7 @@ class DailyPlanningService
 
         if ($focus === 'all') {
             $candidates = array_merge($candidates, $this->collectMeetingCandidates($user, $resolvedCompanyId));
+            $candidates = array_merge($candidates, $this->collectKpiCandidates($user, $resolvedCompanyId, $role));
         }
 
         usort($candidates, static fn(array $a, array $b): int => $b['score'] <=> $a['score']);
@@ -112,18 +118,33 @@ class DailyPlanningService
                 'distance_km' => $candidate['distance_km'],
                 'suggested_action' => $candidate['suggested_action'],
                 'score' => $candidate['score'],
+                'task_draft' => $this->buildTaskDraft($candidate),
             ];
         }
+
+        $items = $this->assignTimeSlots($items, $workingHours);
 
         $summaryCounts = [
             'tasks' => count(array_filter($items, static fn(array $i): bool => in_array($i['type'], ['task', 'overdue_task'], true))),
             'follow_ups' => count(array_filter($items, static fn(array $i): bool => $i['type'] === 'follow_up')),
             'meetings' => count(array_filter($items, static fn(array $i): bool => $i['type'] === 'meeting')),
             'nearby' => count(array_filter($items, static fn(array $i): bool => $i['type'] === 'nearby_visit')),
+            'kpis' => count(array_filter($items, static fn(array $i): bool => $i['type'] === 'kpi')),
         ];
 
+        $creatableCount = count(array_filter(
+            $items,
+            static fn(array $i): bool => ($i['task_draft']['creates_task'] ?? false) === true,
+        ));
+        $alreadyTaskCount = count(array_filter(
+            $items,
+            static fn(array $i): bool => in_array($i['type'], ['task', 'overdue_task'], true),
+        ));
+
+        $planDate = now()->toDateString();
+
         $payload = [
-            'plan_date' => now()->toDateString(),
+            'plan_date' => $planDate,
             'agent_location_available' => $locationAvailable,
             'working_hours' => $workingHours,
             'attendance' => $attendanceState,
@@ -136,6 +157,12 @@ class DailyPlanningService
             'items' => $items,
             'summary_counts' => $summaryCounts,
             'focus' => $focus,
+            'acceptance' => [
+                'plan_date' => $planDate,
+                'item_count' => count($items),
+                'creatable_count' => $creatableCount,
+                'already_task_count' => $alreadyTaskCount,
+            ],
         ];
 
         return [
@@ -256,6 +283,13 @@ class DailyPlanningService
                 'distance_km' => $distanceKm,
                 'suggested_action' => $isOverdue ? 'Complete or reschedule this task' : 'Work on this task today',
                 'score' => $score,
+                'task_id' => (int) $task->id,
+                'task_type' => $task->type?->value,
+                'task_description' => (string) ($task->description ?? ''),
+                'task_priority' => $task->priority?->value ?? 'medium',
+                'location_text' => $task->location_text,
+                'latitude' => $task->latitude !== null ? (float) $task->latitude : null,
+                'longitude' => $task->longitude !== null ? (float) $task->longitude : null,
             ];
         }
 
@@ -319,6 +353,8 @@ class DailyPlanningService
                 ? sprintf('No contact in %d days%s', $daysSince, $this->priorityLabel($lead->priority))
                 : 'Follow-up action pending';
 
+            $location = $lead->companyLocation;
+
             $candidates[] = [
                 'type' => 'follow_up',
                 'title' => 'Follow up: ' . $lead->name,
@@ -331,6 +367,10 @@ class DailyPlanningService
                     ? (string) $lead->next_action
                     : ($distanceKm !== null && $distanceKm < 5 ? 'Visit while nearby' : 'Call or email to re-engage'),
                 'score' => $score,
+                'lead_name' => (string) $lead->name,
+                'location_text' => $location?->name,
+                'latitude' => $location?->latitude !== null ? (float) $location->latitude : null,
+                'longitude' => $location?->longitude !== null ? (float) $location->longitude : null,
             ];
         }
 
@@ -399,6 +439,9 @@ class DailyPlanningService
                 'distance_km' => $distanceKm,
                 'suggested_action' => 'Stop by for a visit or discovery conversation',
                 'score' => $score,
+                'location_text' => (string) $location->name,
+                'latitude' => (float) $location->latitude,
+                'longitude' => (float) $location->longitude,
             ];
         }
 
@@ -443,10 +486,268 @@ class DailyPlanningService
                 'distance_km' => null,
                 'suggested_action' => 'Prepare talking points and attend on time',
                 'score' => $score,
+                'meeting_start_at' => $startAt?->toIso8601String(),
+                'location_text' => $meeting->location,
             ];
         }
 
         return $candidates;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function collectKpiCandidates(User $user, int $companyId, string $role): array
+    {
+        $query = Kpi::query()
+            ->where('company_id', $companyId)
+            ->whereIn('status', [KpiStatus::PENDING->value, KpiStatus::IN_PROGRESS->value])
+            ->where(function (Builder $builder): void {
+                $builder->whereNull('end_date')
+                    ->orWhere('end_date', '>=', now()->toDateString());
+            })
+            ->orderByDesc('priority')
+            ->limit(10);
+
+        if ($role === 'agent') {
+            $query->where('assigned_to_user_id', $user->id);
+        }
+
+        $candidates = [];
+        foreach ($query->get() as $kpi) {
+            $daysRemaining = $kpi->end_date !== null
+                ? max(0, (int) now()->startOfDay()->diffInDays($kpi->end_date, false))
+                : 30;
+            $priorityBonus = $this->kpiRecordPriorityBonus($kpi->priority);
+            $urgencyBonus = $daysRemaining <= 3 ? 20.0 : ($daysRemaining <= 7 ? 12.0 : 5.0);
+
+            $candidates[] = [
+                'type' => 'kpi',
+                'title' => 'KPI: ' . $kpi->name,
+                'reason' => $daysRemaining <= 7
+                    ? sprintf('KPI due in %d day%s — needs progress', $daysRemaining, $daysRemaining === 1 ? '' : 's')
+                    : 'Active KPI assigned to you',
+                'entity_id' => (int) $kpi->id,
+                'entity_type' => 'kpi',
+                'due_at' => $kpi->end_date?->endOfDay()->toIso8601String(),
+                'distance_km' => null,
+                'suggested_action' => trim((string) $kpi->objective) !== ''
+                    ? (string) $kpi->objective
+                    : 'Take action to advance this KPI target',
+                'score' => 50.0 + $priorityBonus + $urgencyBonus,
+                'kpi_name' => (string) $kpi->name,
+                'kpi_category' => $kpi->category?->value,
+                'kpi_objective' => (string) ($kpi->objective ?? ''),
+                'kpi_priority' => $kpi->priority?->value ?? 'medium',
+                'kpi_end_date' => $kpi->end_date?->toDateString(),
+            ];
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * @param  array<string, mixed>  $candidate
+     * @return array<string, mixed>
+     */
+    private function buildTaskDraft(array $candidate): array
+    {
+        $type = (string) ($candidate['type'] ?? '');
+        $entityId = (int) ($candidate['entity_id'] ?? 0);
+        $entityType = (string) ($candidate['entity_type'] ?? '');
+        $dedupeKey = hash('sha256', $entityType . ':' . $entityId . ':' . now()->toDateString());
+
+        if (in_array($type, ['task', 'overdue_task'], true)) {
+            return [
+                'creates_task' => false,
+                'linked_task_id' => (int) ($candidate['task_id'] ?? $entityId),
+                'dedupe_key' => $dedupeKey,
+                'title' => (string) $candidate['title'],
+                'type' => $candidate['task_type'] ?? null,
+                'description' => (string) ($candidate['task_description'] ?? 'Existing task in your plan.'),
+                'due_date' => $candidate['due_at'],
+                'priority' => $candidate['task_priority'] ?? 'medium',
+                'location' => $candidate['location_text'] ?? null,
+                'latitude' => $candidate['latitude'] ?? null,
+                'longitude' => $candidate['longitude'] ?? null,
+            ];
+        }
+
+        $endOfDay = now()->endOfDay()->toIso8601String();
+
+        if ($type === 'follow_up') {
+            $leadName = (string) ($candidate['lead_name'] ?? 'lead');
+            $action = (string) ($candidate['suggested_action'] ?? 'Follow up with this lead.');
+
+            return [
+                'creates_task' => true,
+                'linked_task_id' => null,
+                'dedupe_key' => $dedupeKey,
+                'title' => 'Follow up: ' . $leadName,
+                'type' => TaskType::SALES_VISIT->value,
+                'description' => 'Planned follow-up for ' . $leadName . '. ' . $action . ' [plan:' . $dedupeKey . ']',
+                'due_date' => $endOfDay,
+                'priority' => 'medium',
+                'location' => $candidate['location_text'] ?? null,
+                'latitude' => $candidate['latitude'] ?? null,
+                'longitude' => $candidate['longitude'] ?? null,
+            ];
+        }
+
+        if ($type === 'meeting') {
+            $meetingTitle = (string) ($candidate['title'] ?? 'meeting');
+            $dueDate = $candidate['meeting_start_at'] ?? $candidate['due_at'] ?? $endOfDay;
+            if (is_string($dueDate)) {
+                $dueDate = Carbon::parse($dueDate)->subMinutes(30)->toIso8601String();
+            }
+
+            return [
+                'creates_task' => true,
+                'linked_task_id' => null,
+                'dedupe_key' => $dedupeKey,
+                'title' => 'Prepare for: ' . $meetingTitle,
+                'type' => TaskType::AWARENESS->value,
+                'description' => 'Prepare talking points and materials for: ' . $meetingTitle . '. [plan:' . $dedupeKey . ']',
+                'due_date' => $dueDate,
+                'priority' => 'high',
+                'location' => $candidate['location_text'] ?? null,
+                'latitude' => null,
+                'longitude' => null,
+            ];
+        }
+
+        if ($type === 'nearby_visit') {
+            return [
+                'creates_task' => true,
+                'linked_task_id' => null,
+                'dedupe_key' => $dedupeKey,
+                'title' => (string) ($candidate['title'] ?? 'Nearby visit'),
+                'type' => TaskType::SALES_VISIT->value,
+                'description' => 'Planned nearby visit opportunity. ' . (string) ($candidate['suggested_action'] ?? '') . ' [plan:' . $dedupeKey . ']',
+                'due_date' => $endOfDay,
+                'priority' => 'medium',
+                'location' => $candidate['location_text'] ?? null,
+                'latitude' => $candidate['latitude'] ?? null,
+                'longitude' => $candidate['longitude'] ?? null,
+            ];
+        }
+
+        if ($type === 'kpi') {
+            $kpiName = (string) ($candidate['kpi_name'] ?? 'KPI');
+            $objective = trim((string) ($candidate['kpi_objective'] ?? ''));
+            $dueDate = $candidate['kpi_end_date'] !== null
+                ? Carbon::parse((string) $candidate['kpi_end_date'])->endOfDay()->toIso8601String()
+                : $endOfDay;
+
+            return [
+                'creates_task' => true,
+                'linked_task_id' => null,
+                'dedupe_key' => $dedupeKey,
+                'title' => 'Work on KPI: ' . $kpiName,
+                'type' => $this->kpiCategoryToTaskType($candidate['kpi_category'] ?? null),
+                'description' => ($objective !== '' ? $objective : 'Advance progress on KPI: ' . $kpiName) . ' [plan:' . $dedupeKey . ']',
+                'due_date' => $dueDate,
+                'priority' => $this->kpiPriorityToTaskPriority($candidate['kpi_priority'] ?? 'medium'),
+                'location' => null,
+                'latitude' => null,
+                'longitude' => null,
+            ];
+        }
+
+        return [
+            'creates_task' => false,
+            'linked_task_id' => null,
+            'dedupe_key' => $dedupeKey,
+            'title' => (string) ($candidate['title'] ?? 'Plan item'),
+            'type' => null,
+            'description' => '',
+            'due_date' => $endOfDay,
+            'priority' => 'medium',
+            'location' => null,
+            'latitude' => null,
+            'longitude' => null,
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     * @param  array{open: ?string, close: ?string, working_days: array<int, string>|null}  $workingHours
+     * @return array<int, array<string, mixed>>
+     */
+    private function assignTimeSlots(array $items, array $workingHours): array
+    {
+        if ($items === []) {
+            return $items;
+        }
+
+        $open = $workingHours['open'] ?? '09:00';
+        $close = $workingHours['close'] ?? '17:00';
+        $dayStart = now()->copy()->setTimeFromTimeString($open . ':00');
+        $dayEnd = now()->copy()->setTimeFromTimeString($close . ':00');
+
+        if ($dayEnd->lte($dayStart)) {
+            $dayEnd = $dayStart->copy()->addHours(8);
+        }
+
+        $totalMinutes = max(30, (int) $dayStart->diffInMinutes($dayEnd));
+        $blockMinutes = max(30, (int) floor($totalMinutes / count($items)));
+        $cursor = $dayStart->copy();
+
+        foreach ($items as $index => &$item) {
+            if ($item['type'] === 'meeting' && is_string($item['due_at'] ?? null)) {
+                $meetingStart = Carbon::parse($item['due_at']);
+                $slotStart = $meetingStart->copy()->subMinutes(30);
+                if ($slotStart->lt($dayStart)) {
+                    $slotStart = $dayStart->copy();
+                }
+                $item['scheduled_start'] = $slotStart->format('H:i');
+                $item['scheduled_end'] = $meetingStart->format('H:i');
+                if ($meetingStart->gt($cursor)) {
+                    $cursor = $meetingStart->copy();
+                }
+            } else {
+                $slotStart = $cursor->copy();
+                $slotEnd = $cursor->copy()->addMinutes($blockMinutes);
+                if ($slotEnd->gt($dayEnd)) {
+                    $slotEnd = $dayEnd->copy();
+                }
+                $item['scheduled_start'] = $slotStart->format('H:i');
+                $item['scheduled_end'] = $slotEnd->format('H:i');
+                $cursor = $slotEnd->copy();
+            }
+        }
+        unset($item);
+
+        return $items;
+    }
+
+    private function kpiCategoryToTaskType(?string $category): string
+    {
+        return match ($category) {
+            KpiCategory::COLLECTION->value => TaskType::COLLECTION->value,
+            KpiCategory::SURVEY->value, KpiCategory::MERCHANDISING->value => TaskType::AWARENESS->value,
+            default => TaskType::SALES_VISIT->value,
+        };
+    }
+
+    private function kpiPriorityToTaskPriority(string $priority): string
+    {
+        return match ($priority) {
+            KpiPriority::CRITICAL->value, KpiPriority::HIGH->value => 'high',
+            KpiPriority::LOW->value => 'low',
+            default => 'medium',
+        };
+    }
+
+    private function kpiRecordPriorityBonus(?KpiPriority $priority): float
+    {
+        return match ($priority) {
+            KpiPriority::CRITICAL => 25.0,
+            KpiPriority::HIGH => 18.0,
+            KpiPriority::MEDIUM => 10.0,
+            KpiPriority::LOW => 4.0,
+            default => 0.0,
+        };
     }
 
     private function applyAgentTaskScope(Builder $query, int $userId): void
@@ -562,6 +863,10 @@ class DailyPlanningService
         if ($summaryCounts['nearby'] > 0) {
             $parts[] = $summaryCounts['nearby'] . ' nearby opportunit' . ($summaryCounts['nearby'] > 1 ? 'ies' : 'y');
         }
+        if (($summaryCounts['kpis'] ?? 0) > 0) {
+            $kpiCount = (int) $summaryCounts['kpis'];
+            $parts[] = $kpiCount . ' KPI' . ($kpiCount > 1 ? 's' : '') . ' to advance';
+        }
 
         $top = $items[0];
         $topDetail = $top['title'];
@@ -569,7 +874,8 @@ class DailyPlanningService
             $topDetail .= sprintf(' (%.1f km away)', $top['distance_km']);
         }
 
-        $intro = 'Here is your prioritized plan for today: ' . implode(', ', $parts) . '.';
+        $segmentNote = count($items) . ' time block' . (count($items) > 1 ? 's' : '') . ' scheduled across your day.';
+        $intro = 'Here is your prioritized plan for today: ' . implode(', ', $parts) . '. ' . $segmentNote;
         $start = 'Start with ' . $topDetail . ' — ' . strtolower((string) $top['reason']) . '.';
 
         return $intro . ' ' . $start;

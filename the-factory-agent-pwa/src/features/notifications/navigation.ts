@@ -60,6 +60,14 @@ function resolveActionUrl(url: string): string | null {
     return '/';
   }
 
+  if (url === '/assistant') {
+    return '/assistant';
+  }
+
+  if (url === '/tasks') {
+    return '/tasks';
+  }
+
   // /internal-users — no dedicated page in the PWA, stay put
   return null;
 }

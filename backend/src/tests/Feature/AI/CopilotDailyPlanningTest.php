@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Tests\Feature\AI;
 
+use App\Enums\KpiCategory;
+use App\Enums\KpiPriority;
+use App\Enums\KpiStatus;
 use App\Enums\LeadPriority;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
 use App\Enums\TaskType;
 use App\Models\AttendanceSetting;
 use App\Models\Company;
+use App\Models\Kpi;
 use App\Models\Lead;
 use App\Models\LeadPipeline;
 use App\Models\Task;
@@ -53,6 +57,63 @@ final class CopilotDailyPlanningTest extends TestCase
         $items = $response->json('data.response.payload.items');
         $this->assertIsArray($items);
         $this->assertNotEmpty($items);
+        $this->assertArrayHasKey('task_draft', $items[0]);
+        $this->assertArrayHasKey('scheduled_start', $items[0]);
+        $this->assertArrayHasKey('acceptance', $response->json('data.response.payload'));
+    }
+
+    public function test_plan_includes_kpi_items_with_task_drafts(): void
+    {
+        [$company, $agent, $pipelineId] = $this->seedAgentCompany();
+
+        Kpi::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $agent->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Retail Visits',
+            'category' => KpiCategory::CUSTOMER_VISITS->value,
+            'objective' => 'Complete 20 retail visits this month',
+            'target_value' => '20',
+            'expected_outcome' => 'Higher store coverage',
+            'priority' => KpiPriority::HIGH->value,
+            'status' => KpiStatus::IN_PROGRESS->value,
+            'start_date' => now()->subDays(5)->toDateString(),
+            'end_date' => now()->addDays(10)->toDateString(),
+        ]);
+
+        $response = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Plan my day',
+            ]);
+
+        $response->assertOk();
+
+        $items = $response->json('data.response.payload.items') ?? [];
+        $kpiItems = array_values(array_filter($items, static fn(array $item): bool => ($item['type'] ?? '') === 'kpi'));
+
+        $this->assertNotEmpty($kpiItems);
+        $this->assertTrue($kpiItems[0]['task_draft']['creates_task'] ?? false);
+    }
+
+    public function test_plan_ready_notification_is_created(): void
+    {
+        [$company, $agent, $pipelineId] = $this->seedAgentCompany();
+
+        $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Plan my day',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $agent->id,
+            'type' => 'daily_plan.ready',
+            'title' => 'Your daily plan is ready',
+        ]);
     }
 
     public function test_agent_plan_excludes_other_agents_leads(): void

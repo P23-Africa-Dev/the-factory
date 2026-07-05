@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Copy,
   MoreVertical,
@@ -19,10 +20,20 @@ import {
   useDynamicSuggestions,
   type AssistantMessage,
 } from '@/features/assistant';
+import {
+  DailyPlanCard,
+  useAcceptDailyPlan,
+  type DailyPlanPayload,
+} from '@/features/planning';
 import { ELY_INPUT_PLACEHOLDER, ELY_INTRO, ELY_NAME, ELY_TYPING_LABEL } from '@/lib/ely-brand';
 import { toast } from '@/lib/toast';
 
 type LocalAction = 'liked' | 'disliked' | null;
+
+function asDailyPlanPayload(payload: Record<string, unknown> | null | undefined): DailyPlanPayload | null {
+  if (!payload || !Array.isArray(payload.items)) return null;
+  return payload as unknown as DailyPlanPayload;
+}
 
 // Parses <u>...</u> spans (used by some AI replies) into underlined elements.
 function ParsedHtmlText({ text }: { text: string }): React.ReactNode {
@@ -45,16 +56,24 @@ function ParsedHtmlText({ text }: { text: string }): React.ReactNode {
 }
 
 export default function AiAssistantPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { firstName, avatarSrc, userRole } = useAgentIdentity();
-  const { messages, isRestoring, isSending, processingLabel, send, clearCurrent, clearAll } =
+  const { messages, isRestoring, isSending, processingLabel, send, runPlanMyDay, clearCurrent, clearAll } =
     useAssistantConversation();
   const suggestions = useDynamicSuggestions();
+  const acceptPlan = useAcceptDailyPlan();
 
   const [input, setInput] = useState('');
   const [actions, setActions] = useState<Record<string, LocalAction>>({});
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmTarget, setConfirmTarget] = useState<'current' | 'all' | null>(null);
   const [isClearing, setIsClearing] = useState(false);
+  const [acceptedPlanIds, setAcceptedPlanIds] = useState<Set<string>>(new Set());
+  const [dismissedPlanIds, setDismissedPlanIds] = useState<Set<string>>(new Set());
+  const [notifiedPlanIds, setNotifiedPlanIds] = useState<Set<string>>(new Set());
+  const [acceptingPlanMessageId, setAcceptingPlanMessageId] = useState<string | null>(null);
+  const planDayTriggeredRef = useRef(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -90,11 +109,37 @@ export default function AiAssistantPage() {
     };
   }, [messages, isRestoring, isSending]);
 
-  const handleSend = (text?: string, withGeolocation = false) => {
+  useEffect(() => {
+    if (isRestoring || isSending || planDayTriggeredRef.current) return;
+    if (searchParams.get('flow') !== 'plan-day') return;
+
+    planDayTriggeredRef.current = true;
+    router.replace('/assistant');
+    void runPlanMyDay();
+  }, [isRestoring, isSending, searchParams, router, runPlanMyDay]);
+
+  useEffect(() => {
+    for (const msg of messages) {
+      if (msg.role !== 'assistant' || msg.tool !== 'planning.daily' || notifiedPlanIds.has(msg.id)) {
+        continue;
+      }
+      const payload = msg.payload as DailyPlanPayload | null | undefined;
+      if (!payload?.items?.length) continue;
+
+      setNotifiedPlanIds((prev) => new Set(prev).add(msg.id));
+      toast.info('Your daily plan is ready', 'Review the plan below and accept to create tasks.');
+    }
+  }, [messages, notifiedPlanIds]);
+
+  const handleSend = (
+    text?: string,
+    withGeolocation = false,
+    context?: { focus?: 'all' | 'visits' | 'followups' | 'tasks'; limit?: number },
+  ) => {
     const content = (text ?? input).trim();
     if (!content) return;
     setInput('');
-    void send(content, { withGeolocation });
+    void send(content, { withGeolocation, context });
   };
 
   const handleAction = (id: string, action: Exclude<LocalAction, null>) => {
@@ -134,11 +179,35 @@ export default function AiAssistantPage() {
         </div>
       );
     }
+
+    const planPayload =
+      msg.tool === 'planning.daily' ? asDailyPlanPayload(msg.payload) : null;
+
     return (
       <div key={msg.id} className="flex flex-col items-start">
         <div className="max-w-[85%] flex flex-col gap-2">
           <div className="bg-gradient-to-b from-[#333] to-[#16384B] border border-white/10 rounded-[24px] rounded-tl-none p-5 shadow-lg relative">
             <ParsedHtmlText text={msg.content} />
+            {planPayload && (
+              <DailyPlanCard
+                payload={planPayload}
+                accepted={acceptedPlanIds.has(msg.id)}
+                dismissed={dismissedPlanIds.has(msg.id)}
+                isAccepting={acceptPlan.isPending && acceptingPlanMessageId === msg.id}
+                onDismiss={() => setDismissedPlanIds((prev) => new Set(prev).add(msg.id))}
+                onAccept={() => {
+                  setAcceptingPlanMessageId(msg.id);
+                  acceptPlan.mutate(planPayload, {
+                    onSuccess: () => {
+                      setAcceptedPlanIds((prev) => new Set(prev).add(msg.id));
+                    },
+                    onSettled: () => {
+                      setAcceptingPlanMessageId(null);
+                    },
+                  });
+                }}
+              />
+            )}
           </div>
           {!msg.failed && (
             <div className="flex items-center gap-3 ml-3 select-none">
@@ -240,7 +309,7 @@ export default function AiAssistantPage() {
                     <button
                       key={suggestion.id}
                       type="button"
-                      onClick={() => handleSend(suggestion.prompt)}
+                      onClick={() => handleSend(suggestion.prompt, suggestion.withGeolocation ?? false)}
                       className="w-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 rounded-2xl py-4 px-5 text-left text-xs font-semibold text-[#D0E2E3] transition-all active:scale-98 flex items-center gap-3"
                     >
                       <Sparkles size={14} className="text-[#75ADAF] flex-shrink-0" />
