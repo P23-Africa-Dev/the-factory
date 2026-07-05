@@ -34,6 +34,7 @@ class AvatarStorageServiceTest extends TestCase
         $url = $service->resolveUrl('male_01', 'male');
 
         $this->assertStringContainsString('/avatar/male/male_01.png', (string) $url);
+        $this->assertStringContainsString('factory23-storage', (string) $url);
     }
 
     public function test_store_custom_avatar_writes_to_avatars_disk(): void

@@ -50,28 +50,46 @@ class AvatarStorageService
 
     public function defaultUrl(): string
     {
-        $path = $this->defaultPath();
+        return $this->pathToPublicUrl($this->defaultPath());
+    }
 
-        if ($this->safeExists($path)) {
-            return $this->url($path);
+    /**
+     * Public CDN/origin base for avatar objects (AWS_URL / disks.avatars.url).
+     */
+    public function publicBaseUrl(): string
+    {
+        $diskName = $this->diskName();
+        $configuredUrl = config("filesystems.disks.{$diskName}.url");
+
+        if (is_string($configuredUrl) && trim($configuredUrl) !== '') {
+            return rtrim($configuredUrl, '/');
         }
 
-        $legacyBase = rtrim((string) (
-            config('internal_onboarding.avatar_public_base_url')
-            ?: config('filesystems.disks.public.url')
-            ?: ''
-        ), '/');
-
+        $legacyBase = rtrim((string) config('internal_onboarding.avatar_public_base_url'), '/');
         if ($legacyBase !== '') {
-            return $legacyBase . '/' . ltrim($path, '/');
+            return $legacyBase;
         }
 
-        return $this->url($path);
+        $publicDiskUrl = config('filesystems.disks.public.url');
+
+        return is_string($publicDiskUrl) ? rtrim($publicDiskUrl, '/') : '';
+    }
+
+    public function pathToPublicUrl(string $path): string
+    {
+        $normalizedPath = ltrim($path, '/');
+        $baseUrl = $this->publicBaseUrl();
+
+        if ($baseUrl !== '') {
+            return $baseUrl . '/' . $normalizedPath;
+        }
+
+        return $this->disk()->url($normalizedPath);
     }
 
     public function url(string $path): string
     {
-        return $this->disk()->url(ltrim($path, '/'));
+        return $this->pathToPublicUrl($path);
     }
 
     public function exists(string $path): bool
@@ -96,18 +114,9 @@ class AvatarStorageService
         }
 
         $avatarRoot = $this->avatarRoot();
-        $disk = $this->disk();
 
-        if (str_starts_with($avatarValue, "{$avatarRoot}/") && $this->safeExists($avatarValue)) {
-            return $this->url($avatarValue);
-        }
-
-        if (str_starts_with($avatarValue, "{$avatarRoot}/custom/")) {
-            if ($this->safeExists($avatarValue)) {
-                return $this->url($avatarValue);
-            }
-
-            return null;
+        if (str_starts_with($avatarValue, "{$avatarRoot}/")) {
+            return $this->pathToPublicUrl($avatarValue);
         }
 
         $avatarFilename = pathinfo($avatarValue, PATHINFO_FILENAME);
@@ -136,13 +145,16 @@ class AvatarStorageService
                     $candidatePath = "{$avatarRoot}/{$candidateGender}/{$candidateKey}.{$candidateExtension}";
 
                     if ($this->safeExists($candidatePath)) {
-                        return $this->url($candidatePath);
+                        return $this->pathToPublicUrl($candidatePath);
                     }
                 }
             }
         }
 
-        return null;
+        $preferredGender = $candidateGenders[0] ?? 'male';
+        $preferredKey = $candidateKeys[0] ?? $avatarValue;
+
+        return $this->pathToPublicUrl("{$avatarRoot}/{$preferredGender}/{$preferredKey}.png");
     }
 
     public function resolveUrlOrDefault(mixed $avatar, mixed $gender = null): string
@@ -192,7 +204,7 @@ class AvatarStorageService
                 $entry = [
                     'key' => $avatarKey,
                     'svg' => null,
-                    'url' => $this->url($file),
+                    'url' => $this->pathToPublicUrl($file),
                 ];
 
                 if ($extension === 'svg') {
@@ -222,7 +234,7 @@ class AvatarStorageService
                     $catalog[$gender][$avatarKey] = [
                         'key' => $avatarKey,
                         'svg' => $svg,
-                        'url' => null,
+                        'url' => $this->pathToPublicUrl("{$basePath}/{$gender}/{$avatarKey}.svg"),
                     ];
 
                     continue;

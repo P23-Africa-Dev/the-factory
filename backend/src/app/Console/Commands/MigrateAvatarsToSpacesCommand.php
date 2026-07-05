@@ -17,7 +17,8 @@ class MigrateAvatarsToSpacesCommand extends Command
                             {--dry-run : Report actions without writing to Spaces or the database}
                             {--resume : Continue from the last processed user id}
                             {--user-id= : Migrate a single user by id}
-                            {--only-custom : Only migrate custom avatar uploads, skip catalog sync}';
+                            {--only-custom : Only migrate custom avatar uploads, skip catalog sync}
+                            {--catalog-only : Only sync catalog/default assets to Spaces, skip user custom avatars}';
 
     protected $description = 'Migrate avatar assets from local public storage to DigitalOcean Spaces';
 
@@ -28,6 +29,7 @@ class MigrateAvatarsToSpacesCommand extends Command
         $dryRun = (bool) $this->option('dry-run');
         $resume = (bool) $this->option('resume');
         $onlyCustom = (bool) $this->option('only-custom');
+        $catalogOnly = (bool) $this->option('catalog-only');
         $singleUserId = $this->option('user-id') !== null ? (int) $this->option('user-id') : null;
 
         $summary = [
@@ -50,6 +52,12 @@ class MigrateAvatarsToSpacesCommand extends Command
             $this->info('Syncing catalog and default avatar assets...');
             $this->syncCatalogAndDefault($avatarStorage, $dryRun, $summary);
             $this->clearAvatarManifestCache();
+        }
+
+        if ($catalogOnly) {
+            $this->info('Catalog-only mode complete.');
+
+            return $summary['errors'] > 0 ? self::FAILURE : self::SUCCESS;
         }
 
         $this->info('Migrating user custom avatars...');
