@@ -9,7 +9,10 @@ use Illuminate\Http\UploadedFile;
 
 class OpenAiProvider implements AiProviderContract
 {
-    public function __construct(private readonly HttpFactory $http) {}
+    public function __construct(
+        private readonly HttpFactory $http,
+        private readonly OpenAiModelResolver $modelResolver,
+    ) {}
 
     public function isConfigured(): bool
     {
@@ -29,11 +32,17 @@ class OpenAiProvider implements AiProviderContract
         $requestedMaxTokens = (int) ($options['max_tokens'] ?? $configuredMaxTokens);
         $effectiveMaxTokens = max(64, min($configuredMaxTokens, $requestedMaxTokens));
 
+        $purpose = (string) ($options['purpose'] ?? 'default');
+        $model = $this->modelResolver->resolve(
+            $purpose,
+            isset($options['model']) ? (string) $options['model'] : null,
+        );
+
         $response = $this->http
             ->timeout(max(1, (int) ceil($timeoutMs / 1000)))
             ->withToken((string) config('services.ai.openai.api_key'))
             ->post($baseUrl . '/chat/completions', [
-                'model' => (string) ($options['model'] ?? config('services.ai.openai.model', config('services.ai.default_model'))),
+                'model' => $model,
                 'max_tokens' => $effectiveMaxTokens,
                 'temperature' => (float) ($options['temperature'] ?? 0.2),
                 'messages' => [

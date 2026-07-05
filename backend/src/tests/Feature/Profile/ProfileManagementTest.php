@@ -197,16 +197,15 @@ class ProfileManagementTest extends TestCase
 
     public function test_user_can_select_existing_catalog_avatar(): void
     {
-        Storage::fake('public');
+        Storage::fake('avatars');
 
         config([
-            'app.url' => 'https://api.thefactory23.com',
-            'filesystems.disks.public.url' => 'https://api.thefactory23.com/storage',
-            'internal_onboarding.avatar_public_base_url' => 'https://api.thefactory23.com/storage',
+            'filesystems.avatar_disk' => 'avatars',
+            'filesystems.disks.avatars.url' => 'https://factory23-storage.lon1.cdn.digitaloceanspaces.com',
             'internal_onboarding.avatar_storage_root' => 'avatar',
         ]);
 
-        Storage::disk('public')->put('avatar/male/avatar_1.png', 'fake');
+        Storage::disk('avatars')->put('avatar/male/avatar_1.png', 'fake');
 
         $user = User::factory()->create([
             'gender' => 'male',
@@ -235,17 +234,16 @@ class ProfileManagementTest extends TestCase
 
     public function test_custom_avatar_upload_replaces_previous_custom_image_and_cleans_old_file(): void
     {
-        Storage::fake('public');
+        Storage::fake('avatars');
 
         config([
-            'app.url' => 'https://api.thefactory23.com',
-            'filesystems.disks.public.url' => 'https://api.thefactory23.com/storage',
-            'internal_onboarding.avatar_public_base_url' => 'https://api.thefactory23.com/storage',
+            'filesystems.avatar_disk' => 'avatars',
+            'filesystems.disks.avatars.url' => 'https://factory23-storage.lon1.cdn.digitaloceanspaces.com',
             'internal_onboarding.avatar_storage_root' => 'avatar',
         ]);
 
         $oldPath = 'avatar/custom/user_old.png';
-        Storage::disk('public')->put($oldPath, 'old-avatar');
+        Storage::disk('avatars')->put($oldPath, 'old-avatar');
 
         $user = User::factory()->create([
             'avatar' => $oldPath,
@@ -271,8 +269,8 @@ class ProfileManagementTest extends TestCase
 
         $this->assertNotSame($oldPath, $newAvatarPath);
         $this->assertStringStartsWith('avatar/custom/', $newAvatarPath);
-        $this->assertTrue(Storage::disk('public')->exists($newAvatarPath));
-        $this->assertFalse(Storage::disk('public')->exists($oldPath));
+        $this->assertTrue(Storage::disk('avatars')->exists($newAvatarPath));
+        $this->assertFalse(Storage::disk('avatars')->exists($oldPath));
     }
 
     public function test_profile_endpoints_reject_invalid_company_context_for_user(): void

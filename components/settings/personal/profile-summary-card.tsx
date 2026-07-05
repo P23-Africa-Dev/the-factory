@@ -8,19 +8,7 @@ import { SettingsSectionCard } from "@/components/settings/settings-section-card
 import { useSettingsAccess } from "@/hooks/use-settings-access";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { getProfile } from "@/lib/api/profile";
-
-function getSafeAvatar(url: string | null | undefined): string {
-  if (!url) return "/avatars/male-avatar.png";
-  const t = url.trim();
-  if (!t) return "/avatars/male-avatar.png";
-  if (t.startsWith("/") || t.startsWith("http")) return t;
-  const base = (
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    "https://api.thefactory23.com/api/v1"
-  ).replace(/\/api\/v1\/?$/, "");
-  if (t.startsWith("storage/")) return `${base}/${t}`;
-  return `${base}/storage/${t}`;
-}
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 export function ProfileSummaryCard() {
   const { basePath } = useSettingsAccess();
@@ -49,7 +37,7 @@ export function ProfileSummaryCard() {
         <div className="flex flex-col sm:flex-row sm:items-center gap-5">
           <div className="w-16 h-16 rounded-full overflow-hidden border border-gray-200 shrink-0">
             <Image
-              src={getSafeAvatar(data?.identity.avatar_url)}
+              src={resolveAvatarSrc(data?.identity.avatar_url)}
               alt="Avatar"
               width={64}
               height={64}

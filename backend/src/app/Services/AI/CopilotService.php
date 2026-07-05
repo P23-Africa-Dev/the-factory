@@ -157,12 +157,13 @@ class CopilotService
 
         if (($intentType === 'tool' || $intentType === 'action') && is_string($intent['tool'] ?? null)) {
             $candidateTool = (string) $intent['tool'];
+            $routing = $this->aiProviderRouter->routingMetadata('operational');
             $aiLog = $this->aiLoggingService->begin(
                 companyId: $resolvedCompanyId,
                 userId: (int) $user->id,
                 sessionId: $threadId,
-                provider: (string) config('services.ai.provider', 'openai'),
-                model: (string) config('services.ai.exec_model', config('services.ai.default_model', 'gpt-4.1-mini')),
+                provider: $routing['provider'],
+                model: $routing['model'],
                 userPrompt: $message,
                 sanitizedPrompt: $this->redactSensitiveText($message),
                 intentType: $intentType,
@@ -209,7 +210,7 @@ class CopilotService
                                 'validation_warning_codes' => $validationWarningCodes,
                                 'blocking_warning_codes' => $blockingWarningCodes,
                                 'blocking_confirmation' => $blockingConfirmation,
-                                'execution_model' => (string) config('services.ai.exec_model', config('services.ai.default_model')),
+                                'execution_model' => $routing['model'],
                             ],
                         ];
                     } else {

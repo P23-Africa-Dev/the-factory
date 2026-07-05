@@ -23,7 +23,7 @@ class ProfileResource extends JsonResource
         $membershipJoinedAt = $payload['membership_joined_at'] ?? null;
 
         $avatarKey = $user->avatar;
-        $avatarUrl = AvatarUrlResolver::resolve($avatarKey, $user->gender);
+        $avatarUrl = AvatarUrlResolver::resolveOrDefault($avatarKey, $user->gender);
 
         return [
             'identity' => [

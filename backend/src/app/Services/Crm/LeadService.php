@@ -393,7 +393,7 @@ class LeadService
                     'id' => (int) $agent->id,
                     'name' => (string) $agent->name,
                     'email' => (string) $agent->email,
-                    'avatar_url' => AvatarUrlResolver::resolve($agent->avatar, $agent->gender),
+                    'avatar_url' => AvatarUrlResolver::resolveOrDefault($agent->avatar, $agent->gender),
                     'total_uploads' => (int) $topUploader->total_uploads,
                 ];
             }
@@ -411,7 +411,7 @@ class LeadService
                     'id' => (int) $fallbackAgent->id,
                     'name' => (string) $fallbackAgent->name,
                     'email' => (string) $fallbackAgent->email,
-                    'avatar_url' => AvatarUrlResolver::resolve($fallbackAgent->avatar, $fallbackAgent->gender),
+                    'avatar_url' => AvatarUrlResolver::resolveOrDefault($fallbackAgent->avatar, $fallbackAgent->gender),
                     'total_uploads' => 0,
                 ];
             }
@@ -433,7 +433,7 @@ class LeadService
                         'id' => (int) $lead->creator->id,
                         'name' => (string) $lead->creator->name,
                         'email' => (string) $lead->creator->email,
-                        'avatar_url' => AvatarUrlResolver::resolve($lead->creator->avatar, $lead->creator->gender),
+                        'avatar_url' => AvatarUrlResolver::resolveOrDefault($lead->creator->avatar, $lead->creator->gender),
                     ] : null,
                 ];
             })

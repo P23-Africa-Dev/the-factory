@@ -12,6 +12,7 @@ import { useAttendanceStats, useAttendanceToday, useClockIn, useClockOut, useAtt
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import type { AgentAttendanceRecord } from "@/lib/api/attendance";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 type AttendanceItem = {
   id: number | string;
@@ -27,7 +28,7 @@ type AttendanceItem = {
   date: string;
 };
 
-function mapRecord(record: AgentAttendanceRecord, userName: string): AttendanceItem {
+function mapRecord(record: AgentAttendanceRecord, userName: string, avatarUrl?: string | null): AttendanceItem {
   const lat = record.metadata?.clock_in_latitude;
   const lng = record.metadata?.clock_in_longitude;
   return {
@@ -53,7 +54,7 @@ function mapRecord(record: AgentAttendanceRecord, userName: string): AttendanceI
         ? "Active"
         : "Absent",
     active: !!record.clock_in_at && !record.clock_out_at,
-    avatar: "/avatars/male-avatar.png",
+    avatar: resolveAvatarSrc(avatarUrl ?? null),
     date: record.attendance_date,
   };
 }
@@ -293,7 +294,9 @@ export function AttendanceViewAgent() {
   const clockInMut = useClockIn();
   const clockOutMut = useClockOut();
 
-  const attendanceList: AttendanceItem[] = (historyData?.items ?? []).map((r) => mapRecord(r, user?.name ?? "Me"));
+  const attendanceList: AttendanceItem[] = (historyData?.items ?? []).map((r) =>
+    mapRecord(r, user?.name ?? "Me", historyData?.avatar_url ?? user?.avatar),
+  );
 
   const filtered = attendanceList.filter(
     (i) =>

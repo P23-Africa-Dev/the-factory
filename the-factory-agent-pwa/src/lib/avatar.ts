@@ -1,5 +1,7 @@
 import { env } from '@/constants/env';
 
+export const DEFAULT_AVATAR = '/avatars/default-ghost.svg';
+
 export function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
   if (!rawAvatar) return null;
   const trimmed = rawAvatar.trim();
@@ -27,7 +29,7 @@ export function getSafeAvatarSrc(rawAvatar: string | null | undefined): string |
 
 export function resolveAvatarSrc(
   rawAvatar: string | null | undefined,
-  fallback = '/assets/animoji.png',
+  fallback: string = DEFAULT_AVATAR,
 ): string {
   return getSafeAvatarSrc(rawAvatar) ?? fallback;
 }

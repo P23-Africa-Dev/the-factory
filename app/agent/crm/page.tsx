@@ -5,6 +5,7 @@ import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
 import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { DEFAULT_AVATAR, resolveAvatarSrc } from "@/lib/avatar";
 import { useAgentUploadsOverview, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
@@ -644,12 +645,11 @@ function AgentUploadsCard({
           <div className="w-full h-full rounded-full overflow-hidden bg-[#EEF3F8]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={topAgentAvatarUrl || "/avatars/male-avatar.png"}
+              src={resolveAvatarSrc(topAgentAvatarUrl)}
               alt="Agent"
               className="w-full h-full object-cover"
               onError={(e) => {
-                (e.currentTarget as HTMLImageElement).src =
-                  "/avatars/male-avatar.png";
+                (e.currentTarget as HTMLImageElement).src = DEFAULT_AVATAR;
               }}
             />
           </div>

@@ -14,6 +14,7 @@ import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { ManagementAttendanceRecord, AgentAttendanceRecord } from "@/lib/api/attendance";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 type AttendanceItem = {
   id: number | string;
@@ -30,10 +31,7 @@ type AttendanceItem = {
 };
 
 function resolveAvatar(avatar: string | null): string {
-  if (!avatar) return "/avatars/male-avatar.png";
-  if (avatar.startsWith("http")) return avatar;
-  if (avatar.startsWith("/")) return avatar;
-  return "/avatars/male-avatar.png";
+  return resolveAvatarSrc(avatar);
 }
 
 function mapRecord(record: ManagementAttendanceRecord): AttendanceItem {

@@ -11,6 +11,7 @@ import { useAttendanceMetrics, useAttendanceRecords, usePayrollSummaries, useGen
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import type { ManagementAttendanceRecord } from '@/lib/api/attendance';
+import { resolveAvatarSrc } from '@/lib/avatar';
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 type AttendanceItem = {
@@ -28,10 +29,7 @@ type AttendanceItem = {
 };
 
 function resolveAvatar(avatar: string | null): string {
-  if (!avatar) return '/avatars/male-avatar.png';
-  if (avatar.startsWith('http')) return avatar;
-  if (avatar.startsWith('/')) return avatar;
-  return '/avatars/male-avatar.png';
+  return resolveAvatarSrc(avatar);
 }
 
 function mapRecord(record: ManagementAttendanceRecord): AttendanceItem {

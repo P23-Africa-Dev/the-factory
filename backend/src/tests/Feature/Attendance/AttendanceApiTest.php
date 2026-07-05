@@ -13,6 +13,7 @@ use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class AttendanceApiTest extends TestCase
@@ -168,6 +169,9 @@ class AttendanceApiTest extends TestCase
 
     public function test_management_records_support_role_and_expanded_status_filters_and_avatar_url(): void
     {
+        Storage::disk('avatars')->put('avatar/male/male_01.png', 'avatar');
+        Storage::disk('avatars')->put('avatar/female/female_01.png', 'avatar');
+
         [$company, $owner, $supervisor, $agentA, $agentB] = $this->seedCompanyUsers();
         $this->createAttendanceSetting($company);
 

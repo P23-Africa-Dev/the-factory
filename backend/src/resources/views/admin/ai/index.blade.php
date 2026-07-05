@@ -644,6 +644,14 @@
                         <span class="model-label">Execution</span>
                         <span class="model-value">{{ config('services.ai.exec_model') }}</span>
                     </div>
+                    <div class="model-row">
+                        <span class="model-label">OpenAI Model</span>
+                        <span class="model-value">{{ config('services.ai.openai.model') }}
+                            @if (($openaiHealth['resolved_model'] ?? null))
+                                → {{ $openaiHealth['resolved_model'] }}
+                            @endif
+                        </span>
+                    </div>
                         <div class="model-row">
                             <span class="model-label">Claude Model</span>
                             <span class="model-value">{{ config('services.ai.claude.model') }}

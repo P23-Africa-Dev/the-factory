@@ -16,6 +16,7 @@ use App\Jobs\SimulateDemoAgentMovementJob;
 use App\Services\Demo\DemoCompanyService;
 use App\Services\Notification\NotificationService;
 use App\Services\Tracking\AgentLocationSnapshotService;
+use App\Support\AvatarUrlResolver;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -1333,7 +1334,10 @@ class TaskTrackingService
             'agent' => [
                 'id' => $snapshot->user_id,
                 'name' => $snapshot->agent?->name,
-                'avatar_url' => $snapshot->agent?->avatar,
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault(
+                    $snapshot->agent?->avatar,
+                    $snapshot->agent?->gender,
+                ),
                 'internal_role' => $snapshot->agent?->internal_role,
             ],
             'location' => [

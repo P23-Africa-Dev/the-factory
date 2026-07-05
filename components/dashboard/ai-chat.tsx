@@ -176,22 +176,7 @@ const NOTIFICATION_CATEGORY_OPTIONS: EditFieldOption[] = [
   { value: "system", label: "System" },
 ];
 
-function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
-  if (!rawAvatar) return null;
-  const trimmed = rawAvatar.trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith("/")) return trimmed;
-  if (trimmed.startsWith("avatar/") || trimmed.startsWith("storage/")) {
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
-    const apiOrigin = apiBase.replace(/\/api\/v1\/?$/, "");
-    return trimmed.startsWith("storage/") ? `${apiOrigin}/${trimmed}` : `${apiOrigin}/storage/${trimmed}`;
-  }
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString();
-  } catch { }
-  return null;
-}
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -229,7 +214,7 @@ function formatSearchDate(value: string): string {
 export function AIChat({ open, onClose }: AIChatProps) {
   const user = useAuthStore((s) => s.user);
   const firstName = user?.name?.split(" ")[0] ?? "User";
-  const avatarSrc = getSafeAvatarSrc(user?.avatar) ?? "/avatars/male-avatar.png";
+  const avatarSrc = resolveAvatarSrc(user?.avatar);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const isAgent = role === "agent";
   const { data: crmLabels = [] } = useCrmLabels(companyId ?? undefined);

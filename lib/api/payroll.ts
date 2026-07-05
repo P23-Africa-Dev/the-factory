@@ -2,6 +2,7 @@
 
 import { apiRequest, ApiEnvelope, API_BASE_URL, ApiRequestError } from "./onboarding";
 import { formatPayrollMoney, resolvePayrollCurrency } from "@/lib/payroll/currency";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 export type PayrollSettings = {
   id: number;
@@ -151,7 +152,7 @@ export function mapPayrollAgentToUi(agent: PayrollAgentListItem, currencyOverrid
     name: agent.name,
     address: agent.email,
     lga: agent.assigned_zone ?? "Unassigned",
-    avatar: agent.avatar_url ?? "/avatars/male-avatar.png",
+    avatar: resolveAvatarSrc(agent.avatar_url),
     baseSalary: formatPayrollMoney(agent.base_salary, displayCurrency),
     netPay: formatPayrollMoney(agent.net_pay, displayCurrency),
     role: agent.role,
@@ -175,7 +176,7 @@ export function mapPayrollProfileToUi(profile: PayrollAgentProfile, currencyOver
     name: profile.name,
     address: profile.email,
     lga: profile.assigned_zone ?? "Unassigned",
-    avatar: profile.avatar_url ?? "/avatars/male-avatar.png",
+    avatar: resolveAvatarSrc(profile.avatar_url),
     baseSalary: formatPayrollMoney(profile.base_salary, displayCurrency),
     netPay: formatPayrollMoney(profile.salary_payable, displayCurrency),
     role: profile.role,

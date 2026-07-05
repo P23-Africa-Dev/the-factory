@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources;
 
+use App\Support\AvatarUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -19,6 +20,10 @@ class AttendancePayrollSummaryResource extends JsonResource
                 'id' => $this->user?->id,
                 'name' => $this->user?->name,
                 'avatar' => $this->user?->avatar,
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault(
+                    $this->user?->avatar,
+                    $this->user?->gender,
+                ),
             ]),
             'period_year' => (int) $this->period_year,
             'period_month' => (int) $this->period_month,

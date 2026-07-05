@@ -346,7 +346,7 @@ class AttendanceService
         return [
             'user_id' => (int) $agent->id,
             'agent_name' => (string) $agent->name,
-            'avatar_url' => AvatarUrlResolver::resolve($agent->avatar, $agent->gender ?? null),
+            'avatar_url' => AvatarUrlResolver::resolveOrDefault($agent->avatar, $agent->gender ?? null),
             'summary' => [
                 'present_days' => $presentDays,
                 'late_days' => $lateDays,
@@ -648,7 +648,7 @@ class AttendanceService
 
         $items = collect($paginated->items())->map(static function (object $item) use ($date): array {
             $status = $item->status !== null ? (string) $item->status : 'absent';
-            $avatarUrl = AvatarUrlResolver::resolve($item->avatar, null);
+            $avatarUrl = AvatarUrlResolver::resolveOrDefault($item->avatar, null);
             $attendanceDate = $item->attendance_date !== null
                 ? Carbon::parse((string) $item->attendance_date)->toDateString()
                 : $date;

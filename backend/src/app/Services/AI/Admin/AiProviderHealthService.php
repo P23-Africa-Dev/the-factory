@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AI\Admin;
 
 use App\Services\AI\Providers\ClaudeModelResolver;
+use App\Services\AI\Providers\OpenAiModelResolver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
@@ -89,6 +90,10 @@ class AiProviderHealthService
             );
         }
 
+        $resolver = app(OpenAiModelResolver::class);
+        $model = $resolver->resolve('default');
+        $availableModels = $resolver->availableModelIds();
+
         $start = microtime(true);
         try {
             $baseUrl = rtrim((string) config('services.ai.openai.base_url', 'https://api.openai.com/v1'), '/');
@@ -110,6 +115,9 @@ class AiProviderHealthService
                 return $this->result('openai', true, 'connected', 'Connected', 'OpenAI API reachable.', $latency, [
                     'sample_models' => $models,
                     'configured_model' => (string) config('services.ai.openai.model'),
+                    'resolved_model' => $model,
+                    'model_mode' => $this->openAiModelModeLabel(),
+                    'available_models' => array_slice($availableModels, 0, 5),
                 ]);
             }
 
@@ -195,6 +203,13 @@ class AiProviderHealthService
     private function claudeModelModeLabel(): string
     {
         $configured = strtolower(trim((string) config('services.ai.claude.model', 'auto')));
+
+        return in_array($configured, ['auto', 'latest', ''], true) ? 'auto' : $configured;
+    }
+
+    private function openAiModelModeLabel(): string
+    {
+        $configured = strtolower(trim((string) config('services.ai.openai.model', 'auto')));
 
         return in_array($configured, ['auto', 'latest', ''], true) ? 'auto' : $configured;
     }

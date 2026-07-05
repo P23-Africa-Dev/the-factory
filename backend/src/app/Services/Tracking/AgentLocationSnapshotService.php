@@ -7,6 +7,7 @@ namespace App\Services\Tracking;
 use App\Models\AgentLocationSnapshot;
 use App\Models\User;
 use App\Services\Company\CompanyContextService;
+use App\Support\AvatarUrlResolver;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -213,6 +214,10 @@ class AgentLocationSnapshotService
                 'name' => $snapshot->agent?->name,
                 'email' => $snapshot->agent?->email,
                 'avatar' => $snapshot->agent?->avatar,
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault(
+                    $snapshot->agent?->avatar,
+                    $snapshot->agent?->gender,
+                ),
                 'internal_role' => $snapshot->agent?->internal_role,
             ],
             'task' => [

@@ -41,13 +41,13 @@ class LeadResource extends JsonResource
                 'id' => $this->creator->id,
                 'name' => $this->creator->name,
                 'email' => $this->creator->email,
-                'avatar_url' => AvatarUrlResolver::resolve($this->creator->avatar, $this->creator->gender),
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($this->creator->avatar, $this->creator->gender),
             ] : null),
             'assignee' => $this->whenLoaded('assignee', fn(): ?array => $this->assignee ? [
                 'id' => $this->assignee->id,
                 'name' => $this->assignee->name,
                 'email' => $this->assignee->email,
-                'avatar_url' => AvatarUrlResolver::resolve($this->assignee->avatar, $this->assignee->gender),
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($this->assignee->avatar, $this->assignee->gender),
             ] : null),
             'pipeline' => $this->whenLoaded('pipeline', fn(): ?array => $this->pipeline ? [
                 'id' => $this->pipeline->id,

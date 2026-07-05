@@ -7,6 +7,7 @@ namespace App\Services\AI\Providers;
 use App\Services\AI\Admin\AiFailoverTracker;
 use App\Services\AI\Providers\ClaudeModelResolver;
 use App\Services\AI\Providers\ClaudeProvider;
+use App\Services\AI\Providers\OpenAiModelResolver;
 use App\Services\Demo\DemoAiResponseService;
 use App\Services\Demo\DemoCompanyService;
 use Illuminate\Http\UploadedFile;
@@ -63,7 +64,7 @@ class AiProviderRouter
     {
         return match ($purpose) {
             'analyst', 'report' => (string) config('services.ai.analyst_model', 'auto'),
-            default => (string) config('services.ai.exec_model', config('services.ai.default_model', 'gpt-4.1-mini')),
+            default => (string) config('services.ai.exec_model', config('services.ai.default_model', 'auto')),
         };
     }
 
@@ -83,6 +84,8 @@ class AiProviderRouter
         $model = $this->resolveModelForPurpose($purpose);
         if ($provider === 'claude') {
             $model = app(ClaudeModelResolver::class)->resolve($purpose, $model);
+        } elseif ($provider === 'openai') {
+            $model = app(OpenAiModelResolver::class)->resolve($purpose, $model);
         }
 
         return [

@@ -42,6 +42,6 @@ class InternalUserResource extends JsonResource
 
     private function resolveAvatarUrl(): ?string
     {
-        return AvatarUrlResolver::resolve($this->avatar, $this->gender);
+        return AvatarUrlResolver::resolveOrDefault($this->avatar, $this->gender);
     }
 }

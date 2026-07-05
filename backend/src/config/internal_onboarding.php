@@ -7,7 +7,8 @@ return [
     'frontend_onboarding_url' => env('INTERNAL_ONBOARDING_FRONTEND_URL', 'http://localhost:3000/onboarding/internal'),
     'default_currency' => env('INTERNAL_DEFAULT_CURRENCY', 'USD'),
     'avatar_storage_root' => env('INTERNAL_AVATAR_STORAGE_ROOT', 'avatar'),
-    'avatar_public_base_url' => rtrim((string) env('INTERNAL_AVATAR_PUBLIC_BASE_URL', 'https://api.thefactory23.com/storage'), '/'),
+    'default_avatar_path' => env('INTERNAL_DEFAULT_AVATAR_PATH', 'avatar/default/ghost.svg'),
+    'avatar_public_base_url' => rtrim((string) env('INTERNAL_AVATAR_PUBLIC_BASE_URL', ''), '/'),
     'avatar_catalog' => [
         'male' => [
             'male_01' => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><circle cx="60" cy="40" r="24" fill="#7CA8F8"/><rect x="25" y="70" width="70" height="35" rx="15" fill="#2F5CBE"/></svg>',

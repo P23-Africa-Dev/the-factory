@@ -9,6 +9,7 @@ import { useDashboardOverview } from "@/hooks/use-dashboard";
 import { useMeetingDetail, useMeetings } from "@/hooks/use-meetings";
 import { useCalendarIntegrationStatus } from "@/hooks/use-calendar-integration";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { DEFAULT_AVATAR } from "@/lib/avatar";
 import { canAccessMeetingCreation, canConnectGoogleCalendar, getMeetingAccessNotice, getMeetingCreationTooltip } from "@/lib/calendar-permissions";
 import { cn } from "@/lib/utils/sample";
 import { CalendarTooltip } from "@/components/ui/calendar-tooltip";
@@ -324,7 +325,7 @@ export function WeeklyTasks() {
             <div className="w-[20%] h-full bg-[#FD6046] rounded-full shadow-lg relative">
               <div className="absolute -top-6 -right-1.5 flex items-center gap-1.5  text-white rounded-full text-[9px] font-medium whitespace-nowrap -translate-y-1">
                 <Image
-                  src="/avatars/male-avatar.png"
+                  src={DEFAULT_AVATAR}
                   alt="Attendee"
                   width={16}
                   height={16}
