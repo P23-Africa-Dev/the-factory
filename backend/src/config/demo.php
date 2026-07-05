@@ -18,6 +18,9 @@ return [
 
     'auto_complete_tracking' => (bool) env('DEMO_AUTO_COMPLETE_TRACKING', false),
 
+    // MySQL TIMESTAMP columns cannot store values beyond 2038-01-19.
+    'grace_ends_at' => (string) env('DEMO_GRACE_ENDS_AT', '2038-01-01 00:00:00'),
+
     'geocode_centroids' => [
         'GB' => ['latitude' => 51.5074, 'longitude' => -0.1278, 'place_name' => 'London, UK'],
         'NG' => ['latitude' => 6.5244, 'longitude' => 3.3792, 'place_name' => 'Lagos, Nigeria'],

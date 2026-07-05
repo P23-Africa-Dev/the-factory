@@ -128,7 +128,7 @@ final class DemoTrackingSimulationTest extends TestCase
             'activated_at' => now(),
             'is_demo' => true,
             'subscription_status' => SubscriptionStatus::GRACE->value,
-            'subscription_grace_ends_at' => '2099-12-31 23:59:59',
+            'subscription_grace_ends_at' => '2038-01-01 00:00:00',
         ]);
 
         return $this->attachAdminAndAgent($company);

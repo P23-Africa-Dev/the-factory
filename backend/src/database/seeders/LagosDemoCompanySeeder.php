@@ -144,7 +144,7 @@ class LagosDemoCompanySeeder extends Seeder
                 'subscription_status' => 'grace',
                 'subscription_current_period_start' => $this->now->subMonth(),
                 'subscription_current_period_end' => $this->now->addYears(10),
-                'subscription_grace_ends_at' => '2099-12-31 23:59:59',
+                'subscription_grace_ends_at' => config('demo.grace_ends_at'),
                 'assigned_plan_key' => self::PLAN_KEY,
                 'assigned_billing_interval' => 'annual',
             ],

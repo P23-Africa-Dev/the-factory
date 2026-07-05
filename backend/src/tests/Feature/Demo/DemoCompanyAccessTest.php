@@ -29,7 +29,7 @@ final class DemoCompanyAccessTest extends TestCase
         ['user' => $user, 'company' => $company] = $this->createCompanyWithOwner([
             'is_demo' => true,
             'subscription_status' => SubscriptionStatus::GRACE->value,
-            'subscription_grace_ends_at' => '2099-12-31 23:59:59',
+            'subscription_grace_ends_at' => '2038-01-01 00:00:00',
         ]);
 
         $this->assertTrue($company->fresh()->hasEffectiveSubscriptionAccess());
@@ -48,7 +48,7 @@ final class DemoCompanyAccessTest extends TestCase
         ['user' => $user] = $this->createCompanyWithOwner([
             'is_demo' => true,
             'subscription_status' => SubscriptionStatus::GRACE->value,
-            'subscription_grace_ends_at' => '2099-12-31 23:59:59',
+            'subscription_grace_ends_at' => '2038-01-01 00:00:00',
         ]);
 
         $this->withToken($this->ownerToken($user))
@@ -84,7 +84,7 @@ final class DemoCompanyAccessTest extends TestCase
         ['user' => $user] = $this->createCompanyWithOwner([
             'is_demo' => true,
             'subscription_status' => SubscriptionStatus::GRACE->value,
-            'subscription_grace_ends_at' => '2099-12-31 23:59:59',
+            'subscription_grace_ends_at' => '2038-01-01 00:00:00',
         ]);
 
         $this->withToken($this->ownerToken($user))

@@ -36,7 +36,7 @@ return new class extends Migration
             ->update([
                 'is_demo' => true,
                 'subscription_status' => 'grace',
-                'subscription_grace_ends_at' => '2099-12-31 23:59:59',
+                'subscription_grace_ends_at' => config('demo.grace_ends_at'),
                 'updated_at' => now(),
             ]);
     }
