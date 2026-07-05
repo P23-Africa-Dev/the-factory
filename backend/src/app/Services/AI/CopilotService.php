@@ -17,6 +17,7 @@ use App\Services\AI\Tools\ActionToolRegistry;
 use App\Services\AI\Tools\ReadToolRegistry;
 use App\Services\Company\CompanyContextService;
 use App\Enums\NotificationCategory;
+use App\Services\Demo\DemoCompanyService;
 use App\Services\Notification\NotificationService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -42,6 +43,7 @@ class CopilotService
         private readonly EmailInferenceService $emailInferenceService,
         private readonly KpiInferenceService $kpiInferenceService,
         private readonly NotificationService $notificationService,
+        private readonly DemoCompanyService $demoCompanyService,
     ) {}
 
     public function chat(
@@ -350,7 +352,7 @@ class CopilotService
             tool: $resolvedTool,
             sources: $toolResult['sources'] ?? [],
             payload: $toolResult['payload'] ?? null,
-            creditsConsumed: 1,
+            creditsConsumed: $this->demoCompanyService->isDemo($resolvedCompanyId) ? 0 : 1,
         );
     }
 
@@ -507,6 +509,7 @@ class CopilotService
             systemPrompt: $systemPrompt,
             userPrompt: $userPrompt,
             options: [
+                'company_id' => $companyId,
                 'max_tokens' => max(64, (int) config('services.ai.max_tokens', 4000)),
                 'temperature' => 0.2,
             ],
@@ -1098,7 +1101,7 @@ class CopilotService
         $rawDescription = $this->extractLabeledValue($message, ['description']);
         if (! is_string($rawDescription) || trim($rawDescription) === '') {
             if (preg_match('/\bgenerate\b/i', $message) === 1) {
-                $rawDescription = $this->generateTaskDescription($message, $title);
+                $rawDescription = $this->generateTaskDescription($message, $title, $companyId);
             } else {
                 $rawDescription = $this->buildTaskDescriptionFallback($message, $title);
             }
@@ -1144,13 +1147,17 @@ class CopilotService
         ];
     }
 
-    private function generateTaskDescription(string $message, string $title): string
+    private function generateTaskDescription(string $message, string $title, int $companyId): string
     {
         $providerText = $this->aiProviderRouter->generateForPurpose(
             purpose: 'operational',
             systemPrompt: 'Write one concise operational task description (minimum 20 characters) for a field workforce platform. Plain text only, no markdown.',
             userPrompt: trim("Task title: {$title}\nUser request:\n{$message}"),
-            options: ['max_tokens' => 160, 'temperature' => 0.3],
+            options: [
+                'company_id' => $companyId,
+                'max_tokens' => 160,
+                'temperature' => 0.3,
+            ],
         );
 
         $candidate = is_string($providerText) ? trim($providerText) : '';
@@ -1872,6 +1879,10 @@ class CopilotService
 
     private function canConsumeCredits(int $companyId): bool
     {
+        if ($this->demoCompanyService->isDemo($companyId)) {
+            return true;
+        }
+
         $limit = (int) config('services.ai.monthly_org_credit_limit', 0);
         if ($limit <= 0) {
             return true;
@@ -1882,6 +1893,10 @@ class CopilotService
 
     private function registerCreditUsage(int $companyId, int $credits): void
     {
+        if ($this->demoCompanyService->isDemo($companyId)) {
+            return;
+        }
+
         if ($credits <= 0) {
             return;
         }

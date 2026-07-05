@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\Billing\BillingEnforcementController;
 use App\Http\Controllers\Admin\Billing\BillingOverviewController;
 use App\Http\Controllers\Admin\Billing\AdminPaymentLinkController;
 use App\Http\Controllers\Admin\Billing\BillingPlanController;
+use App\Http\Controllers\Admin\Billing\CompanyDemoController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\Database\DatabaseLockController;
 use App\Http\Controllers\Admin\Database\DatabaseManagerController;
@@ -123,6 +124,9 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
                 Route::patch('/{plan}', [BillingPlanController::class, 'update'])->name('update');
                 Route::delete('/{plan}', [BillingPlanController::class, 'destroy'])->name('destroy');
             });
+
+            Route::post('/companies/{company}/demo', [CompanyDemoController::class, 'update'])
+                ->name('companies.demo.update');
         });
     });
 });

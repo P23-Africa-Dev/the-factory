@@ -15,7 +15,7 @@ class UserResource extends JsonResource
             ->where('companies.status', 'active')
             ->orderByPivot('joined_at', 'desc')
             ->orderBy('company_users.created_at', 'desc')
-            ->first(['companies.id', 'companies.company_id', 'companies.name', 'companies.status', 'companies.subscription_status', 'companies.subscription_plan_key', 'companies.assigned_plan_key']);
+            ->first(['companies.id', 'companies.company_id', 'companies.name', 'companies.status', 'companies.is_demo', 'companies.subscription_status', 'companies.subscription_plan_key', 'companies.assigned_plan_key']);
 
         $billingActive = $activeCompany?->hasEffectiveSubscriptionAccess() ?? false;
         $paidSubscription = $activeCompany?->hasPaidSubscription() ?? false;
@@ -55,6 +55,7 @@ class UserResource extends JsonResource
                 'subscription_status' => $activeCompany->subscription_status,
                 'has_active_subscription' => $billingActive,
                 'has_paid_subscription' => $paidSubscription,
+                'is_demo' => $activeCompany->isDemo(),
                 'billing_enforced' => $billingEnforced,
             ] : null,
             'billing' => $activeCompany ? [

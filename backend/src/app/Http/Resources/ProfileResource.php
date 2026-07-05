@@ -42,6 +42,7 @@ class ProfileResource extends JsonResource
                     'company_id' => $company->company_id,
                     'name' => $company->name,
                     'status' => $company->status,
+                    'is_demo' => $company->isDemo(),
                     'team_size' => $company->team_size,
                     'country' => $company->country,
                     'purpose' => $company->use_case,

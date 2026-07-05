@@ -23,6 +23,7 @@ use App\Services\Attendance\AttendanceService;
 use App\Services\Calendar\MeetingService;
 use App\Services\Company\CompanyContextService;
 use App\Services\Dashboard\DashboardAggregateService;
+use App\Services\Demo\DemoCompanyService;
 use App\Support\GeoDistance;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -37,6 +38,7 @@ class DailyPlanningService
         private readonly DashboardAggregateService $dashboardAggregateService,
         private readonly MeetingService $meetingService,
         private readonly AttendanceService $attendanceService,
+        private readonly DemoCompanyService $demoCompanyService,
     ) {}
 
     /**
@@ -48,7 +50,10 @@ class DailyPlanningService
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
         $role = (string) $context['role'];
-        $limit = max(1, min(20, (int) ($args['limit'] ?? 8)));
+        $isDemo = $this->demoCompanyService->isDemo($resolvedCompanyId);
+        $limit = $isDemo
+            ? $this->demoPlanLimit($resolvedCompanyId, $args)
+            : max(1, min(20, (int) ($args['limit'] ?? 8)));
         $focus = in_array((string) ($args['focus'] ?? 'all'), ['all', 'visits', 'followups', 'tasks'], true)
             ? (string) ($args['focus'] ?? 'all')
             : 'all';
@@ -100,6 +105,10 @@ class DailyPlanningService
         if ($focus === 'all') {
             $candidates = array_merge($candidates, $this->collectMeetingCandidates($user, $resolvedCompanyId));
             $candidates = array_merge($candidates, $this->collectKpiCandidates($user, $resolvedCompanyId, $role));
+        }
+
+        if ($isDemo) {
+            $candidates = $this->applyDemoCandidateVariety($candidates, $resolvedCompanyId);
         }
 
         usort($candidates, static fn(array $a, array $b): int => $b['score'] <=> $a['score']);
@@ -879,5 +888,37 @@ class DailyPlanningService
         $start = 'Start with ' . $topDetail . ' — ' . strtolower((string) $top['reason']) . '.';
 
         return $intro . ' ' . $start;
+    }
+
+    /**
+     * @param  array<string, mixed>  $args
+     */
+    private function demoPlanLimit(int $companyId, array $args): int
+    {
+        if (isset($args['limit'])) {
+            return max(1, min(20, (int) $args['limit']));
+        }
+
+        $seed = crc32($companyId . ':' . now()->toDateString());
+
+        return 5 + ($seed % 4);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $candidates
+     * @return array<int, array<string, mixed>>
+     */
+    private function applyDemoCandidateVariety(array $candidates, int $companyId): array
+    {
+        $seed = crc32($companyId . ':' . now()->toDateString());
+
+        foreach ($candidates as &$candidate) {
+            $entityKey = (string) ($candidate['entity_id'] ?? $candidate['title'] ?? '');
+            $jitter = (crc32($seed . ':' . $entityKey) % 20) / 100.0;
+            $candidate['score'] = (float) ($candidate['score'] ?? 0) + $jitter;
+        }
+        unset($candidate);
+
+        return $candidates;
     }
 }

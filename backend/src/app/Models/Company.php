@@ -26,6 +26,8 @@ class Company extends Model
         'team_size',
         'use_case',
         'status',
+        'is_demo',
+        'demo_config',
         'activated_at',
         'stripe_id',
         'subscription_plan_key',
@@ -43,6 +45,8 @@ class Company extends Model
     protected function casts(): array
     {
         return [
+            'is_demo' => 'boolean',
+            'demo_config' => 'array',
             'activated_at' => 'datetime',
             'subscription_current_period_start' => 'datetime',
             'subscription_current_period_end' => 'datetime',
@@ -80,6 +84,10 @@ class Company extends Model
      */
     public function hasEffectiveSubscriptionAccess(): bool
     {
+        if ($this->isDemo()) {
+            return true;
+        }
+
         if ($this->subscriptionStatusEnum() === SubscriptionStatus::GRACE) {
             return true;
         }
@@ -99,6 +107,18 @@ class Company extends Model
     public function hasActiveSubscription(): bool
     {
         return $this->hasEffectiveSubscriptionAccess();
+    }
+
+    public function isDemo(): bool
+    {
+        if ((bool) $this->is_demo) {
+            return true;
+        }
+
+        $publicId = trim((string) $this->company_id);
+
+        return $publicId !== ''
+            && in_array($publicId, config('demo.company_public_ids', []), true);
     }
 
     public function canChoosePlan(): bool

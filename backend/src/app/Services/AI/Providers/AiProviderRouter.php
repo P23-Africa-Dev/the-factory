@@ -7,6 +7,8 @@ namespace App\Services\AI\Providers;
 use App\Services\AI\Admin\AiFailoverTracker;
 use App\Services\AI\Providers\ClaudeModelResolver;
 use App\Services\AI\Providers\ClaudeProvider;
+use App\Services\Demo\DemoAiResponseService;
+use App\Services\Demo\DemoCompanyService;
 use Illuminate\Http\UploadedFile;
 
 class AiProviderRouter
@@ -15,10 +17,17 @@ class AiProviderRouter
         private readonly OpenAiProvider $openAiProvider,
         private readonly ClaudeProvider $claudeProvider,
         private readonly AiFailoverTracker $failoverTracker,
+        private readonly DemoCompanyService $demoCompanyService,
+        private readonly DemoAiResponseService $demoAiResponseService,
     ) {}
 
     public function generateText(string $systemPrompt, string $userPrompt, array $options = []): ?string
     {
+        $demoResponse = $this->maybeDemoResponse('operational', $systemPrompt, $userPrompt, $options);
+        if ($demoResponse !== null) {
+            return $demoResponse;
+        }
+
         return $this->tryProviders(
             $this->orderedProviders(),
             fn (AiProviderContract $provider) => $provider->generateText($systemPrompt, $userPrompt, $options),
@@ -31,6 +40,11 @@ class AiProviderRouter
         string $userPrompt,
         array $options = [],
     ): ?string {
+        $demoResponse = $this->maybeDemoResponse($purpose, $systemPrompt, $userPrompt, $options);
+        if ($demoResponse !== null) {
+            return $demoResponse;
+        }
+
         $purpose = strtolower(trim($purpose));
         $model = $this->resolveModelForPurpose($purpose);
         $providers = $this->orderedProvidersForPurpose($purpose);
@@ -198,5 +212,15 @@ class AiProviderRouter
         }
 
         return $ordered;
+    }
+
+    private function maybeDemoResponse(string $purpose, string $systemPrompt, string $userPrompt, array $options): ?string
+    {
+        $companyId = isset($options['company_id']) ? (int) $options['company_id'] : null;
+        if ($companyId === null || $companyId <= 0 || ! $this->demoCompanyService->isDemo($companyId)) {
+            return null;
+        }
+
+        return $this->demoAiResponseService->respond($purpose, $systemPrompt, $userPrompt, $options);
     }
 }

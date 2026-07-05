@@ -57,6 +57,7 @@ class CompanySubscriptionService
             'subscription_status' => $status->value,
             'has_active_subscription' => $company->hasEffectiveSubscriptionAccess(),
             'has_paid_subscription' => $company->hasPaidSubscription(),
+            'is_demo' => $company->isDemo(),
             'plan_key' => $company->subscription_plan_key,
             'billing_interval' => $company->subscription_billing_interval,
             'assigned_plan_key' => $company->assigned_plan_key,

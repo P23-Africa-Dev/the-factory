@@ -294,6 +294,19 @@
                 </div>
             </div>
 
+            @if (session('status'))
+                <div class="alert alert-success mt-3 mb-0" style="font-size:.82rem">{{ session('status') }}</div>
+            @endif
+
+            <form method="POST" action="{{ route('admin.billing.companies.demo.update', $company) }}" class="mt-3">
+                @csrf
+                <input type="hidden" name="is_demo" value="{{ $company->is_demo ? '0' : '1' }}">
+                <button type="submit" class="btn btn-sm w-100" style="background:rgba(99,102,241,.1);color:#4f46e5;border:1px solid rgba(99,102,241,.2)">
+                    <i class="bi bi-{{ $company->is_demo ? 'x-circle' : 'play-circle' }} me-1"></i>
+                    {{ $company->is_demo ? 'Remove demo access' : 'Mark as demo account' }}
+                </button>
+            </form>
+
             @if (session('payment_link_url'))
                 <div class="alert alert-success mt-3 mb-0" style="font-size:.82rem">
                     Payment link generated:

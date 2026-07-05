@@ -4,18 +4,26 @@ declare(strict_types=1);
 
 namespace App\Services\Location;
 
+use App\Models\Company;
+use App\Services\Demo\DemoCompanyService;
 use Illuminate\Support\Facades\Http;
 
 class MapboxGeocodingService
 {
+    public function __construct(private readonly DemoCompanyService $demoCompanyService) {}
+
     /**
      * @return array{latitude: float, longitude: float, place_name: string|null}|null
      */
-    public function geocodeAddress(string $address): ?array
+    public function geocodeAddress(string $address, Company|int|null $company = null): ?array
     {
         $trimmed = trim($address);
         if ($trimmed === '') {
             return null;
+        }
+
+        if ($company !== null && $this->demoCompanyService->isDemo($company)) {
+            return $this->demoGeocode($trimmed, $company);
         }
 
         $token = trim((string) config('services.mapbox.access_token'));
@@ -65,5 +73,27 @@ class MapboxGeocodingService
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * @return array{latitude: float, longitude: float, place_name: string|null}
+     */
+    private function demoGeocode(string $address, Company|int $company): array
+    {
+        $model = $company instanceof Company
+            ? $company
+            : Company::query()->find((int) $company);
+
+        $country = strtoupper((string) ($model?->country ?? 'DEFAULT'));
+        $centroids = config('demo.geocode_centroids', []);
+        $centroid = is_array($centroids[$country] ?? null)
+            ? $centroids[$country]
+            : ($centroids['DEFAULT'] ?? ['latitude' => 51.5074, 'longitude' => -0.1278, 'place_name' => 'Demo location']);
+
+        return [
+            'latitude' => (float) ($centroid['latitude'] ?? 51.5074),
+            'longitude' => (float) ($centroid['longitude'] ?? -0.1278),
+            'place_name' => $address !== '' ? $address : (isset($centroid['place_name']) ? (string) $centroid['place_name'] : null),
+        ];
     }
 }

@@ -67,6 +67,7 @@ const proximityFieldsSchema = z.object({
   distance_to_destination_meters: z.number().nullable().optional(),
   distance_remaining_meters: z.number().nullable().optional(),
   movement_started: z.boolean().optional(),
+  demo_simulation_active: z.boolean().optional(),
 });
 
 export const startTaskResponseSchema = z

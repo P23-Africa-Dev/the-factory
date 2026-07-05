@@ -3,6 +3,7 @@ import type { LocationObject } from '../hooks/useGeolocation';
 import { trackingApi } from '../api';
 import { hydrateLiveTaskFromRoute } from '../hydrateRoute';
 import type { StartTaskPayload } from '../types';
+import { useTrackingStore } from '@/store/tracking';
 
 type PermissionStatus = 'granted' | 'denied' | 'prompt' | 'unknown';
 
@@ -23,7 +24,7 @@ export type StartMapTaskSessionParams = {
   startTaskAsync: (args: {
     taskId: number;
     payload: StartTaskPayload;
-  }) => Promise<{ arrived: boolean; tracking: { id: number } }>;
+  }) => Promise<{ arrived: boolean; tracking: { id: number }; demo_simulation_active?: boolean }>;
   beginSession: (opts: {
     arrived?: boolean;
     trackingSessionId?: number;
@@ -33,6 +34,8 @@ export type StartMapTaskSessionParams = {
   stopTracking: () => Promise<void>;
   onRollback: () => void;
   onRouteHydrated?: (arrived: boolean) => void;
+  /** When set, use these coords instead of waiting for device GPS (demo accounts). */
+  syntheticStart?: { latitude: number; longitude: number } | null;
 };
 
 async function resolveStartPoint(params: StartMapTaskSessionParams): Promise<[number, number]> {
@@ -49,6 +52,9 @@ async function resolveStartPoint(params: StartMapTaskSessionParams): Promise<[nu
   }
   if (customOrigin) {
     return [customOrigin.longitude, customOrigin.latitude];
+  }
+  if (params.syntheticStart) {
+    return [params.syntheticStart.longitude, params.syntheticStart.latitude];
   }
   if (effectiveOriginLng != null && effectiveOriginLat != null) {
     return [effectiveOriginLng, effectiveOriginLat];
@@ -117,6 +123,7 @@ export async function startMapTaskSession(
       trackingSessionId: data.tracking.id,
       startPoint,
     });
+    useTrackingStore.getState().setServerSimulatesMovement(data.demo_simulation_active === true);
     markTrackingLive();
     return { ok: true, startPoint, kind: 'fresh' };
   } catch (err: unknown) {

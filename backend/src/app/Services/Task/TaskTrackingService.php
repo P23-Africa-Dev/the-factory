@@ -12,6 +12,8 @@ use App\Models\TaskLocationPoint;
 use App\Models\TaskProof;
 use App\Models\TaskTrackingSession;
 use App\Models\User;
+use App\Jobs\SimulateDemoAgentMovementJob;
+use App\Services\Demo\DemoCompanyService;
 use App\Services\Notification\NotificationService;
 use App\Services\Tracking\AgentLocationSnapshotService;
 use Carbon\Carbon;
@@ -30,6 +32,7 @@ class TaskTrackingService
         private readonly TaskService $taskService,
         private readonly AgentLocationSnapshotService $agentLocationSnapshotService,
         private readonly NotificationService $notificationService,
+        private readonly DemoCompanyService $demoCompanyService,
     ) {}
 
     public function start(User $user, Task $task, array $data): array
@@ -104,7 +107,7 @@ class TaskTrackingService
             ? (float) $data['heading_degrees']
             : null;
 
-        return DB::transaction(function () use ($user, $task, $context, $latitude, $longitude, $accuracy, $speed, $heading, $recordedAt): array {
+        $result = DB::transaction(function () use ($user, $task, $context, $latitude, $longitude, $accuracy, $speed, $heading, $recordedAt): array {
             $session = TaskTrackingSession::query()->create([
                 'task_id' => $task->id,
                 'company_id' => $context->company->id,
@@ -244,8 +247,24 @@ class TaskTrackingService
                     ? round($proximity['distance_remaining_meters'], 2)
                     : null,
                 'movement_started' => $proximity['movement_started'],
+                'demo_simulation_active' => false,
             ];
         });
+
+        $demoSimulationActive = $this->demoCompanyService->isDemo($context->company)
+            && ! $result['arrived'];
+
+        if ($demoSimulationActive) {
+            SimulateDemoAgentMovementJob::dispatch(
+                sessionId: (int) $result['session']->id,
+                taskId: (int) $task->id,
+                userId: (int) $user->id,
+                companyId: (int) $context->company->id,
+            );
+            $result['demo_simulation_active'] = true;
+        }
+
+        return $result;
     }
 
     public function recordLocation(User $user, Task $task, array $data): array

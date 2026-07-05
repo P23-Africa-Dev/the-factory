@@ -45,6 +45,7 @@ import {
   requestTrackingNotificationPermission,
 } from '@/lib/notifications/trackingAlerts';
 import { getApiErrorMessage, startMapTaskSession } from '@/features/tracking/lib/startMapTaskSession';
+import { demoSyntheticStartFromDestination, isDemoOrganization } from '@/features/tracking/lib/demoTracking';
 import { toast } from '@/lib/toast';
 import {
   useSavedLocations,
@@ -1508,11 +1509,20 @@ function MapContent() {
     };
 
     try {
+      const demoSyntheticStart =
+        isDemoOrganization(profile) && selectedDestination
+          ? demoSyntheticStartFromDestination(
+              selectedDestination.latitude,
+              selectedDestination.longitude,
+            )
+          : null;
+
       const result = await startMapTaskSession({
         taskId,
         companyId,
         isResume,
         lastPosition,
+        syntheticStart: demoSyntheticStart,
         customOrigin: customOrigin
           ? { latitude: customOrigin.latitude, longitude: customOrigin.longitude }
           : null,
