@@ -52,7 +52,7 @@ class AvatarStorageService
     {
         $path = $this->defaultPath();
 
-        if ($this->disk()->exists($path)) {
+        if ($this->safeExists($path)) {
             return $this->url($path);
         }
 
@@ -76,7 +76,7 @@ class AvatarStorageService
 
     public function exists(string $path): bool
     {
-        return $this->disk()->exists(ltrim($path, '/'));
+        return $this->safeExists($path);
     }
 
     public function resolveUrl(mixed $avatar, mixed $gender = null): ?string
@@ -98,12 +98,12 @@ class AvatarStorageService
         $avatarRoot = $this->avatarRoot();
         $disk = $this->disk();
 
-        if (str_starts_with($avatarValue, "{$avatarRoot}/") && $disk->exists($avatarValue)) {
+        if (str_starts_with($avatarValue, "{$avatarRoot}/") && $this->safeExists($avatarValue)) {
             return $this->url($avatarValue);
         }
 
         if (str_starts_with($avatarValue, "{$avatarRoot}/custom/")) {
-            if ($disk->exists($avatarValue)) {
+            if ($this->safeExists($avatarValue)) {
                 return $this->url($avatarValue);
             }
 
@@ -135,7 +135,7 @@ class AvatarStorageService
                 foreach ($candidateExtensions as $candidateExtension) {
                     $candidatePath = "{$avatarRoot}/{$candidateGender}/{$candidateKey}.{$candidateExtension}";
 
-                    if ($disk->exists($candidatePath)) {
+                    if ($this->safeExists($candidatePath)) {
                         return $this->url($candidatePath);
                     }
                 }
@@ -173,7 +173,7 @@ class AvatarStorageService
         foreach (['male', 'female'] as $gender) {
             $genderPath = "{$basePath}/{$gender}";
 
-            if (! $disk->exists($genderPath)) {
+            if (! $this->safeExists($genderPath)) {
                 continue;
             }
 
@@ -306,8 +306,20 @@ class AvatarStorageService
             return;
         }
 
-        if ($this->disk()->exists($normalizedPath)) {
+        if ($this->safeExists($normalizedPath)) {
             $this->disk()->delete($normalizedPath);
+        }
+    }
+
+    /**
+     * Check object existence without letting storage driver errors break API responses.
+     */
+    private function safeExists(string $path): bool
+    {
+        try {
+            return $this->disk()->exists(ltrim($path, '/'));
+        } catch (\Throwable) {
+            return false;
         }
     }
 
