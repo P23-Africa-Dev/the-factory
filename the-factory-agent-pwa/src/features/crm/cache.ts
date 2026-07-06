@@ -227,6 +227,10 @@ export function buildOptimisticLead(params: {
     email?: string | null;
     phone?: string | null;
     location?: string | null;
+    company_name?: string | null;
+    website?: string | null;
+    position?: string | null;
+    profile_urls?: string[] | null;
     source?: string | null;
     status?: string;
     priority?: Lead['priority'];
@@ -247,6 +251,10 @@ export function buildOptimisticLead(params: {
     email: params.payload.email ?? null,
     phone: params.payload.phone ?? null,
     location: params.payload.location ?? null,
+    companyName: params.payload.company_name ?? null,
+    website: params.payload.website ?? null,
+    position: params.payload.position ?? null,
+    profileUrls: params.payload.profile_urls ?? [],
     source: params.payload.source ?? null,
     status: params.payload.status ?? null,
     priority: params.payload.priority ?? null,
