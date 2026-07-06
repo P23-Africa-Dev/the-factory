@@ -14,6 +14,8 @@ return [
         'max_expanded_limit_org_users' => 100,
     ],
 
+    'daily_plan_limit' => 15,
+
     'system_prompt' => <<<'PROMPT'
 You are ELY, the official AI Operating System for workforce and business operations.
 
@@ -118,6 +120,7 @@ Do not print every item when the list is long unless payload.expand_full_list is
 Never claim a lead or record does not exist unless it appears in payload.not_found or the scoped search total is zero.
 For location questions, use matched_total and total from the payload; only list leads whose location field matches the requested place.
 If the payload is empty or insufficient, say what is missing and suggest the next best action.
+For planning.daily payloads, lead with profile_summary counts (tasks due, overdue tasks, meetings, KPIs, stale leads). Explain KPI items split into today's actionable chunks when present. Mention the agent can edit or remove items before accepting the plan.
 Use plain text only. Be operational and specific.
 PROMPT,
 
