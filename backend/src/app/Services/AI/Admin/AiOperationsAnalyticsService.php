@@ -26,12 +26,14 @@ class AiOperationsAnalyticsService
 
         foreach ($providers as $provider) {
             $todayRow = AiLog::query()
+                ->llmInvocations()
                 ->where('provider', $provider)
                 ->whereDate('created_at', $today)
                 ->selectRaw('COUNT(*) as requests, SUM(COALESCE(input_tokens,0)) as input_tokens, SUM(COALESCE(output_tokens,0)) as output_tokens, SUM(COALESCE(total_tokens,0)) as total_tokens, SUM(COALESCE(estimated_cost_usd,0)) as cost')
                 ->first();
 
             $monthRow = AiLog::query()
+                ->llmInvocations()
                 ->where('provider', $provider)
                 ->where('created_at', '>=', $monthStart)
                 ->selectRaw('COUNT(*) as requests, SUM(COALESCE(input_tokens,0)) as input_tokens, SUM(COALESCE(output_tokens,0)) as output_tokens, SUM(COALESCE(total_tokens,0)) as total_tokens, SUM(COALESCE(estimated_cost_usd,0)) as cost')
@@ -56,6 +58,7 @@ class AiOperationsAnalyticsService
     public function topUsers(Carbon $from, int $limit = 5): array
     {
         return AiLog::query()
+            ->llmInvocations()
             ->where('ai_logs.created_at', '>=', $from)
             ->whereNotNull('ai_logs.user_id')
             ->join('users', 'users.id', '=', 'ai_logs.user_id')
@@ -79,6 +82,7 @@ class AiOperationsAnalyticsService
     public function topOrganizations(Carbon $from, int $limit = 5): array
     {
         return AiLog::query()
+            ->llmInvocations()
             ->where('ai_logs.created_at', '>=', $from)
             ->whereNotNull('ai_logs.company_id')
             ->join('companies', 'companies.id', '=', 'ai_logs.company_id')
@@ -124,6 +128,7 @@ class AiOperationsAnalyticsService
     public function modelUsageDetailed(Carbon $from, int $limit = 8): array
     {
         $rows = AiLog::query()
+            ->llmInvocations()
             ->where('created_at', '>=', $from)
             ->whereNotIn('model', ['none', 'auto'])
             ->whereNotNull('model')
@@ -157,6 +162,7 @@ class AiOperationsAnalyticsService
     public function providerModelMatrix(Carbon $from): array
     {
         $rows = AiLog::query()
+            ->llmInvocations()
             ->where('created_at', '>=', $from)
             ->whereNotIn('model', ['none', 'auto'])
             ->whereIn('provider', ['openai', 'claude', 'demo'])
@@ -186,6 +192,7 @@ class AiOperationsAnalyticsService
     public function dailyTrends(Carbon $from, Carbon $to): array
     {
         $rows = AiLog::query()
+            ->llmInvocations()
             ->whereBetween('created_at', [$from, $to])
             ->selectRaw("DATE(created_at) as day, COUNT(*) as requests, SUM(COALESCE(total_tokens,0)) as tokens, SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful, SUM(CASE WHEN status IN ('failed','timeout') THEN 1 ELSE 0 END) as failed")
             ->groupBy('day')
@@ -216,6 +223,7 @@ class AiOperationsAnalyticsService
     public function recentErrors(int $limit = 15): array
     {
         return AiLog::query()
+            ->llmInvocations()
             ->with(['user:id,name,email', 'company:id,name'])
             ->whereIn('status', ['failed', 'timeout'])
             ->latest()

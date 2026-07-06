@@ -172,17 +172,6 @@ class CopilotService
         if (($intentType === 'tool' || $intentType === 'action') && is_string($intent['tool'] ?? null)) {
             $candidateTool = (string) $intent['tool'];
             $routing = $this->aiProviderRouter->routingMetadata('operational');
-            $aiLog = $this->aiLoggingService->begin(
-                companyId: $resolvedCompanyId,
-                userId: (int) $user->id,
-                sessionId: $threadId,
-                provider: $routing['provider'],
-                model: $routing['model'],
-                userPrompt: $message,
-                sanitizedPrompt: $this->redactSensitiveText($message),
-                intentType: $intentType,
-                toolName: $candidateTool,
-            );
 
             if ($intentType === 'action' && ! (bool) config('services.ai.enable_actions', true)) {
                 $assistantText = 'ELY write actions are currently disabled by configuration. Read-only answers are still available.';
@@ -250,13 +239,6 @@ class CopilotService
                                 idempotencyKey: $idempotencyKey,
                             );
                         } catch (ValidationException $e) {
-                            $this->aiLoggingService->fail(
-                                $aiLog,
-                                'action_validation_failed',
-                                $e->getMessage(),
-                                $e,
-                            );
-
                             // Bubble validation issues so HTTP API returns 422 and
                             // clients can render field-level validation errors.
                             throw $e;
@@ -271,13 +253,6 @@ class CopilotService
                                     'action_args' => $this->redactValue($resolvedActionArgs),
                                 ],
                             ];
-
-                            $this->aiLoggingService->fail(
-                                $aiLog,
-                                'action_execution_failed',
-                                $e->getMessage(),
-                                $e,
-                            );
                         }
                     }
                 } else {
@@ -326,19 +301,6 @@ class CopilotService
                 ];
             }
         } else {
-            $routing = $this->aiProviderRouter->routingMetadata('operational');
-            $aiLog = $this->aiLoggingService->begin(
-                companyId: $resolvedCompanyId,
-                userId: (int) $user->id,
-                sessionId: $threadId,
-                provider: $routing['provider'],
-                model: $routing['model'],
-                userPrompt: $message,
-                sanitizedPrompt: $this->redactSensitiveText($message),
-                intentType: 'general',
-                toolName: null,
-                routingPurpose: $routing['purpose'],
-            );
             $generalResponse = $this->resolveGeneralResponse(
                 user: $user,
                 role: $role,
@@ -349,23 +311,6 @@ class CopilotService
                 message: $message,
             );
             $assistantText = $generalResponse['text'];
-            $generationResult = $generalResponse['result'];
-            $inputEst = $generationResult?->inputTokens ?? (int) ceil(mb_strlen($message) / 4);
-            $outputEst = $generationResult?->outputTokens ?? (int) ceil(mb_strlen($assistantText) / 4);
-            $this->aiLoggingService->complete(
-                $aiLog,
-                $inputEst,
-                $outputEst,
-                $generationResult?->provider ?? $routing['provider'],
-                $generationResult?->model ?? $routing['model'],
-            );
-        }
-
-        // Complete AI log for tool/action paths (general path completes its own log inline above)
-        if (isset($aiLog) && $aiLog instanceof \App\Models\AiLog && $aiLog->status === 'success' && $aiLog->ended_at === null) {
-            $inputEst = (int) ceil(mb_strlen($message) / 4);
-            $outputEst = (int) ceil(mb_strlen($assistantText) / 4);
-            $this->aiLoggingService->complete($aiLog, $inputEst, $outputEst);
         }
 
         if ((bool) config('services.ai.pii_redaction_enabled', true)) {
@@ -553,6 +498,15 @@ class CopilotService
                 'company_id' => $companyId,
                 'max_tokens' => max(64, (int) config('services.ai.max_tokens', 4000)),
                 'temperature' => 0.2,
+                '_log' => [
+                    'company_id' => $companyId,
+                    'user_id' => $userId,
+                    'session_id' => $threadId,
+                    'intent_type' => 'general',
+                    'routing_purpose' => 'operational',
+                    'user_prompt' => $message,
+                    'sanitized_prompt' => $this->redactSensitiveText($message),
+                ],
             ],
         );
 
@@ -606,7 +560,7 @@ class CopilotService
 
         $promptContext = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
         $recentMessages = is_array($promptContext['recent_messages'] ?? null) ? $promptContext['recent_messages'] : [];
-        $route = $this->llmIntentRouter->route($message, $role, $recentMessages, $companyId);
+        $route = $this->llmIntentRouter->route($message, $role, $recentMessages, $companyId, $userId, $threadId);
         if ($route === null) {
             return $intent;
         }

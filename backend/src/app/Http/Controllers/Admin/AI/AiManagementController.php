@@ -62,10 +62,12 @@ class AiManagementController extends Controller
             $statsMonth = $this->aiLoggingService->analytics(null, $thirtyDaysAgo . ' 00:00:00', $today . ' 23:59:59');
 
             $avgExecutionByProvider['openai'] = AiLog::query()
+                ->llmInvocations()
                 ->where('provider', 'openai')
                 ->where('created_at', '>=', $now->copy()->subDays(30))
                 ->avg('execution_ms');
             $avgExecutionByProvider['claude'] = AiLog::query()
+                ->llmInvocations()
                 ->where('provider', 'claude')
                 ->where('created_at', '>=', $now->copy()->subDays(30))
                 ->avg('execution_ms');
@@ -80,13 +82,14 @@ class AiManagementController extends Controller
             $recentErrors = $this->operationsAnalytics->recentErrors(10);
 
             $recentLogs = AiLog::query()
+                ->llmInvocations()
                 ->with(['user:id,name,email', 'company:id,name'])
                 ->latest()
                 ->limit(10)
                 ->get();
 
-            $last24hTotal = AiLog::query()->where('created_at', '>=', $now->copy()->subDay())->count();
-            $last24hFailed = AiLog::query()->where('created_at', '>=', $now->copy()->subDay())
+            $last24hTotal = AiLog::query()->llmInvocations()->where('created_at', '>=', $now->copy()->subDay())->count();
+            $last24hFailed = AiLog::query()->llmInvocations()->where('created_at', '>=', $now->copy()->subDay())
                 ->whereIn('status', ['failed', 'timeout'])
                 ->count();
 
@@ -201,6 +204,7 @@ class AiManagementController extends Controller
 
         if ($aiLogsReady) {
             $dailyData = AiLog::query()
+                ->llmInvocations()
                 ->where('created_at', '>=', $from)
                 ->selectRaw("DATE(created_at) as day, COUNT(*) as requests, SUM(COALESCE(total_tokens,0)) as tokens, SUM(COALESCE(estimated_cost_usd,0)) as cost, SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful, SUM(CASE WHEN status IN ('failed','timeout') THEN 1 ELSE 0 END) as failed")
                 ->groupBy('day')

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Schema;
 
 class AiLog extends Model
 {
@@ -29,6 +31,7 @@ class AiLog extends Model
         'intent_type',
         'tool_name',
         'routing_purpose',
+        'llm_invoked',
         'error_code',
         'error_message',
         'stack_trace',
@@ -38,7 +41,23 @@ class AiLog extends Model
         'started_at' => 'datetime',
         'ended_at' => 'datetime',
         'estimated_cost_usd' => 'decimal:6',
+        'llm_invoked' => 'boolean',
     ];
+
+    /**
+     * Limit analytics to rows where an LLM provider was actually called.
+     */
+    public function scopeLlmInvocations(Builder $query): Builder
+    {
+        if (Schema::hasColumn('ai_logs', 'llm_invoked')) {
+            return $query->where('llm_invoked', true);
+        }
+
+        return $query
+            ->whereIn('provider', ['openai', 'claude', 'demo'])
+            ->where('status', '!=', 'cancelled')
+            ->whereNotIn('model', ['none', 'auto', '']);
+    }
 
     public function company(): BelongsTo
     {

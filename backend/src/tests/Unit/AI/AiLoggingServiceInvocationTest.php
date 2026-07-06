@@ -40,7 +40,9 @@ final class AiLoggingServiceInvocationTest extends TestCase
         $this->assertNotSame('auto', $log->fresh()->model);
         $this->assertSame('openai', $log->fresh()->provider);
         $this->assertSame(20, $log->fresh()->total_tokens);
+        $this->assertTrue((bool) $log->fresh()->llm_invoked);
         $this->assertDatabaseCount('ai_logs', 1);
+        $this->assertSame(1, AiLog::query()->llmInvocations()->count());
     }
 
     public function test_complete_normalizes_auto_model_from_begin(): void

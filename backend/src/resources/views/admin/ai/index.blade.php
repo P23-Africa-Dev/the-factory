@@ -270,19 +270,19 @@
             @endphp
             <div style="font-size:.82rem">
                 <span class="me-3">OpenAI:
-                    <strong>{{ ($openaiHealth['ok'] ?? false) ? 'Online' : 'Offline' }}</strong></span>
+                    <strong>{{ $openaiHealth['label'] ?? (($openaiHealth['ok'] ?? false) ? 'Connected' : 'Unavailable') }}</strong></span>
                 <span>Claude:
-                    <strong>{{ ($claudeHealth['ok'] ?? false) ? 'Online' : 'Offline' }}</strong></span>
+                    <strong>{{ $claudeHealth['label'] ?? (($claudeHealth['ok'] ?? false) ? 'Connected' : 'Unavailable') }}</strong></span>
             </div>
             <span class="ai-status-badge {{ $statusClass }}">
                 <i class="bi {{ $statusIcon }}"></i> {{ $statusLabel }}
             </span>
             <div style="font-size:.8rem;color:var(--text-muted)">
-                Today: <strong>{{ number_format($statsToday['total_requests']) }}</strong> req ·
-                Month: <strong>{{ number_format($statsMonth['total_requests']) }}</strong> req ·
+                LLM calls today: <strong>{{ number_format($statsToday['total_requests']) }}</strong> ·
+                Month: <strong>{{ number_format($statsMonth['total_requests']) }}</strong> ·
                 Est. cost: <strong>${{ number_format($statsMonth['estimated_cost_usd'], 2) }}</strong>
             </div>
-            <div style="font-size:.8rem;color:var(--text-muted)">24h error rate: <strong>{{ $errorRate }}%</strong></div>
+            <div style="font-size:.8rem;color:var(--text-muted)">24h LLM error rate: <strong>{{ $errorRate }}%</strong></div>
         </div>
     </div>
 
@@ -334,8 +334,8 @@
                     </div>
                     <div style="background:var(--surface-hover);border-radius:.5rem;padding:.75rem;margin-bottom:.75rem;font-size:.78rem">
                         <div class="row g-2">
-                            <div class="col-4"><span style="color:var(--text-muted)">Req Today</span><br><strong>{{ number_format($usage['requests_today'] ?? 0) }}</strong></div>
-                            <div class="col-4"><span style="color:var(--text-muted)">Req Month</span><br><strong>{{ number_format($usage['requests_month'] ?? 0) }}</strong></div>
+                            <div class="col-4"><span style="color:var(--text-muted)">LLM Today</span><br><strong>{{ number_format($usage['requests_today'] ?? 0) }}</strong></div>
+                            <div class="col-4"><span style="color:var(--text-muted)">LLM Month</span><br><strong>{{ number_format($usage['requests_month'] ?? 0) }}</strong></div>
                             <div class="col-4"><span style="color:var(--text-muted)">Est. Cost</span><br><strong>${{ number_format($usage['estimated_cost_usd'] ?? 0, 4) }}</strong></div>
                             <div class="col-4"><span style="color:var(--text-muted)">Input Tokens</span><br><strong>{{ number_format($usage['input_tokens'] ?? 0) }}</strong></div>
                             <div class="col-4"><span style="color:var(--text-muted)">Output Tokens</span><br><strong>{{ number_format($usage['output_tokens'] ?? 0) }}</strong></div>
@@ -344,7 +344,7 @@
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-primary test-provider-btn"
                         data-provider="{{ $key }}">
-                        <i class="bi bi-plug me-1"></i>Test Connection
+                        <i class="bi bi-plug me-1"></i>Test LLM Access
                     </button>
                     <div class="test-result-box" id="test-result-{{ $key }}"></div>
                 </div>
@@ -507,7 +507,7 @@
         {{-- Recent activity logs --}}
         <div class="metric-card mb-4">
             <div class="table-card-header">
-                <span class="fw-bold" style="font-size:.88rem">Recent AI Activity</span>
+                <span class="fw-bold" style="font-size:.88rem">Recent LLM Invocations</span>
                 <a href="{{ route('admin.ai.logs.index') }}" class="btn btn-sm btn-outline-secondary">Full Logs</a>
             </div>
             <div class="table-responsive">
@@ -820,7 +820,7 @@
                 if (!box) return;
                 box.style.display = 'block';
                 box.className = 'test-result-box alert alert-info';
-                box.textContent = 'Running health check…';
+                box.textContent = 'Running LLM completion probe…';
                 btn.disabled = true;
                 try {
                     const res = await fetch(`{{ url('/admin/ai/health/test') }}/${provider}`, {

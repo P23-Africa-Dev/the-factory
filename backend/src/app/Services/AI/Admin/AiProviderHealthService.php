@@ -145,23 +145,42 @@ class AiProviderHealthService
         $start = microtime(true);
         try {
             $baseUrl = rtrim((string) config('services.ai.openai.base_url', 'https://api.openai.com/v1'), '/');
-            $response = Http::timeout(12)->withToken($apiKey)->get($baseUrl . '/models');
+            $response = Http::timeout(12)->withToken($apiKey)->post($baseUrl . '/chat/completions', [
+                'model' => $model,
+                'max_tokens' => 1,
+                'messages' => [
+                    ['role' => 'user', 'content' => 'ping'],
+                ],
+            ]);
             $latency = (int) round((microtime(true) - $start) * 1000);
+            $errorMessage = (string) $response->json('error.message', '');
+            $errorCode = strtolower((string) $response->json('error.code', ''));
+            $errorType = strtolower((string) $response->json('error.type', ''));
+            $combinedError = strtolower($errorMessage . ' ' . $errorCode . ' ' . $errorType);
 
             if ($response->status() === 401) {
                 return $this->result('openai', false, 'auth_failed', 'Authentication Failed', 'Invalid API key.', $latency);
             }
-            if ($response->status() === 429) {
-                return $this->result('openai', false, 'rate_limited', 'Rate Limited', 'Rate limit or quota exceeded.', $latency);
+            if ($response->status() === 404) {
+                return $this->result('openai', false, 'model_not_found', 'Model Not Found', $errorMessage !== '' ? $errorMessage : "Model {$model} is not available.", $latency, [
+                    'resolved_model' => $model,
+                    'available_models' => array_slice($availableModels, 0, 5),
+                ]);
             }
-            if ($response->status() === 402) {
-                return $this->result('openai', false, 'quota_exceeded', 'Billing Issue', 'Billing limit reached.', $latency);
+            if (in_array($response->status(), [402, 429], true) || $this->openAiErrorIndicatesQuotaIssue($combinedError)) {
+                $status = str_contains($combinedError, 'rate') && ! str_contains($combinedError, 'quota') && ! str_contains($combinedError, 'billing')
+                    ? 'rate_limited'
+                    : 'quota_exceeded';
+
+                $label = $status === 'rate_limited' ? 'Rate Limited' : 'Credits Exhausted';
+                $message = $errorMessage !== '' ? $errorMessage : ($status === 'rate_limited' ? 'Rate limit exceeded.' : 'Billing limit reached or API credits exhausted.');
+
+                return $this->result('openai', false, $status, $label, $message, $latency, [
+                    'resolved_model' => $model,
+                ]);
             }
             if ($response->successful()) {
-                $models = collect($response->json('data', []))->pluck('id')->take(5)->values()->all();
-
-                return $this->result('openai', true, 'connected', 'Connected', 'OpenAI API reachable.', $latency, [
-                    'sample_models' => $models,
+                return $this->result('openai', true, 'connected', 'Connected', 'OpenAI completions are available.', $latency, [
                     'configured_model' => (string) config('services.ai.openai.model'),
                     'resolved_model' => $model,
                     'model_mode' => $this->openAiModelModeLabel(),
@@ -169,7 +188,9 @@ class AiProviderHealthService
                 ]);
             }
 
-            return $this->result('openai', false, 'error', 'Error', 'HTTP ' . $response->status(), $latency);
+            return $this->result('openai', false, 'error', 'Error', $errorMessage !== '' ? $errorMessage : 'HTTP ' . $response->status(), $latency, [
+                'resolved_model' => $model,
+            ]);
         } catch (\Throwable $e) {
             $latency = (int) round((microtime(true) - $start) * 1000);
             $message = $e->getMessage();
@@ -177,6 +198,14 @@ class AiProviderHealthService
 
             return $this->result('openai', false, $status, ucfirst(str_replace('_', ' ', $status)), $message, $latency);
         }
+    }
+
+    private function openAiErrorIndicatesQuotaIssue(string $combinedError): bool
+    {
+        return str_contains($combinedError, 'quota')
+            || str_contains($combinedError, 'billing')
+            || str_contains($combinedError, 'insufficient_quota')
+            || str_contains($combinedError, 'exceeded your current');
     }
 
     /**
@@ -228,7 +257,7 @@ class AiProviderHealthService
                 }
             }
             if (in_array($response->status(), [200, 201], true)) {
-                return $this->result('claude', true, 'connected', 'Connected', 'Claude API reachable.', $latency, [
+                return $this->result('claude', true, 'connected', 'Connected', 'Claude completions are available.', $latency, [
                     'resolved_model' => $model,
                     'configured_model' => (string) config('services.ai.claude.model'),
                     'model_mode' => $this->claudeModelModeLabel(),

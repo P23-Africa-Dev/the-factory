@@ -48,6 +48,10 @@ class AiLoggingService
             $attributes['routing_purpose'] = $routingPurpose;
         }
 
+        if (Schema::hasColumn('ai_logs', 'llm_invoked')) {
+            $attributes['llm_invoked'] = false;
+        }
+
         return AiLog::create($attributes);
     }
 
@@ -94,6 +98,10 @@ class AiLoggingService
             $result->model,
         );
 
+        if (Schema::hasColumn('ai_logs', 'llm_invoked')) {
+            $log->update(['llm_invoked' => true]);
+        }
+
         return $log;
     }
 
@@ -135,6 +143,10 @@ class AiLoggingService
         );
 
         $this->fail($log, $errorCode, $errorMessage);
+
+        if (Schema::hasColumn('ai_logs', 'llm_invoked')) {
+            $log->update(['llm_invoked' => true]);
+        }
 
         return $log;
     }
@@ -263,6 +275,7 @@ class AiLoggingService
     public function analytics(?int $companyId, string $from, string $to): array
     {
         $query = AiLog::query()
+            ->llmInvocations()
             ->whereBetween('created_at', [$from, $to]);
 
         if ($companyId !== null) {

@@ -25,6 +25,8 @@ class LlmIntentRouter
         string $role,
         array $recentMessages = [],
         ?int $companyId = null,
+        ?int $userId = null,
+        ?string $sessionId = null,
     ): ?array {
         $allowedTools = $this->toolPolicyService->allowedToolsForRole($role);
         if ($allowedTools === []) {
@@ -65,6 +67,14 @@ PROMPT;
                 'company_id' => $companyId,
                 'max_tokens' => 220,
                 'temperature' => 0,
+                '_log' => [
+                    'company_id' => $companyId,
+                    'user_id' => $userId,
+                    'session_id' => $sessionId,
+                    'intent_type' => 'routing',
+                    'routing_purpose' => 'routing',
+                    'user_prompt' => mb_substr($message, 0, 10000),
+                ],
             ],
         );
 

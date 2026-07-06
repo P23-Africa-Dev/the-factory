@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\AI;
 
+use App\Models\AiLog;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
 use App\Enums\TaskType;
@@ -75,6 +76,9 @@ final class CopilotReadFlowTest extends TestCase
             ->getJson('/api/v1/copilot/threads/' . $response->json('data.thread_id') . '?company_id=' . $company->id)
             ->assertOk()
             ->assertJsonCount(2, 'data.thread.messages');
+
+        $this->assertSame(0, AiLog::query()->count());
+        $this->assertSame(0, AiLog::query()->llmInvocations()->count());
     }
 
     public function test_follow_up_general_prompt_includes_thread_context_and_entities(): void
@@ -83,14 +87,6 @@ final class CopilotReadFlowTest extends TestCase
 
         $capturedPrompts = [];
         $mockRouter = Mockery::mock(AiProviderRouter::class);
-        $mockRouter
-            ->shouldReceive('routingMetadata')
-            ->with('operational')
-            ->andReturn([
-                'provider' => 'openai',
-                'model' => 'gpt-4.1-mini',
-                'purpose' => 'operational',
-            ]);
         $mockRouter
             ->shouldReceive('generateForPurpose')
             ->twice()
@@ -139,14 +135,6 @@ final class CopilotReadFlowTest extends TestCase
         $capturedPrompt = null;
         $capturedSystemPrompt = null;
         $mockRouter = Mockery::mock(AiProviderRouter::class);
-        $mockRouter
-            ->shouldReceive('routingMetadata')
-            ->with('operational')
-            ->andReturn([
-                'provider' => 'openai',
-                'model' => 'gpt-4.1-mini',
-                'purpose' => 'operational',
-            ]);
         $mockRouter
             ->shouldReceive('generateForPurpose')
             ->once()
@@ -263,15 +251,6 @@ final class CopilotReadFlowTest extends TestCase
         [$company, $admin] = $this->seedCompanyAdmin();
 
         $mockRouter = Mockery::mock(AiProviderRouter::class);
-        $mockRouter
-            ->shouldReceive('routingMetadata')
-            ->once()
-            ->with('operational')
-            ->andReturn([
-                'provider' => 'openai',
-                'model' => 'gpt-4.1-mini',
-                'purpose' => 'operational',
-            ]);
         $mockRouter
             ->shouldReceive('generateForPurpose')
             ->once()
