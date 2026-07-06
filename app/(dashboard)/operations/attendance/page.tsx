@@ -10,56 +10,13 @@ import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableCont
 import { useAttendanceMetrics, useAttendanceRecords, usePayrollSummaries, useGeneratePayrollSummaries } from '@/hooks/use-attendance';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
-import type { ManagementAttendanceRecord } from '@/lib/api/attendance';
-import { resolveAvatarSrc } from '@/lib/avatar';
+import {
+  mapManagementAttendanceRecord,
+  type ManagementAttendanceListItem,
+} from '@/lib/attendance-management-ui';
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
-type AttendanceItem = {
-  id: number | string;
-  name: string;
-  address: string;
-  checkIn: string;
-  checkOut: string;
-  role: string;
-  zone: string;
-  status: string;
-  subText: string;
-  active: boolean;
-  avatar: string;
-};
-
-function resolveAvatar(avatar: string | null): string {
-  return resolveAvatarSrc(avatar);
-}
-
-function mapRecord(record: ManagementAttendanceRecord): AttendanceItem {
-  return {
-    id: record.user_id,
-    name: record.agent_name,
-    address: record.zone ?? '—',
-    zone: record.zone ?? '—',
-    checkIn: record.clock_in_at
-      ? format(parseISO(record.clock_in_at), 'h:mma')
-      : 'No check-in record',
-    checkOut: record.clock_out_at
-      ? format(parseISO(record.clock_out_at), 'h:mma')
-      : record.status !== 'absent'
-        ? 'Still Active'
-        : 'No check-out record',
-    role: record.role ?? 'Field Agent',
-    status: record.status === 'present' || record.status === 'late' || record.status === 'auto_clocked_out' ? 'Present' : 'Absent',
-    subText:
-      record.is_late
-        ? 'Late'
-        : record.clock_out_at
-          ? 'Checked Out'
-          : record.status !== 'absent'
-            ? 'Active'
-            : 'Absent',
-    active: !!record.clock_in_at && !record.clock_out_at,
-    avatar: resolveAvatar(record.avatar_url ?? record.avatar),
-  };
-}
+type AttendanceItem = ManagementAttendanceListItem;
 
 const SPARK_PRESENT = [{ v: 8 }, { v: 14 }, { v: 10 }, { v: 18 }, { v: 12 }, { v: 16 }, { v: 20 }];
 const SPARK_ABSENT = [{ v: 20 }, { v: 14 }, { v: 18 }, { v: 10 }, { v: 16 }, { v: 12 }, { v: 8 }];
@@ -248,7 +205,7 @@ export default function AttendanceListPage() {
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'agent' | 'supervisor'>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
-  const [selectedId, setSelectedId] = useState<number | string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [date, setDate] = useState(today);
 
   const now = new Date();
@@ -281,7 +238,7 @@ export default function AttendanceListPage() {
     page,
   });
 
-  const allRecords: AttendanceItem[] = (recordsData?.items ?? []).map(mapRecord);
+  const allRecords: AttendanceItem[] = (recordsData?.items ?? []).map(mapManagementAttendanceRecord);
   const pagination = recordsData?.pagination;
   const totalPages = Math.max(1, pagination?.last_page ?? 1);
   const currentPage = pagination?.current_page ?? page;
