@@ -8,7 +8,7 @@ import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { clearAuthSession, getAuthTokenFromDocument } from "@/lib/auth/session";
 import { logout } from "@/lib/api/auth";
-import { ChevronDown, Menu, X, LogOut, User, Smartphone, Settings } from "lucide-react";
+import { ChevronDown, Menu, X, LogOut, User, Smartphone, Settings, HardDrive } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils/sample";
 import LogoutModal from "@/components/ui/logout-modal";
@@ -291,6 +291,14 @@ export function Navbar() {
                   >
                     <Settings size={15} />
                     Settings
+                  </Link>
+                  <Link
+                    href={`${basePath}/drive`}
+                    onClick={() => setProfileOpen(false)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/60 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium"
+                  >
+                    <HardDrive size={15} />
+                    Company Drive
                   </Link>
                   <button
                     onClick={() => {

@@ -58,7 +58,7 @@ class ExecutiveReportService
         ]);
     }
 
-    public function markCompleted(int $companyId, int $userId, string $reportId, array $report): void
+    public function markCompleted(int $companyId, int $userId, string $reportId, array $report, ?int $driveFileId = null): void
     {
         $status = $this->statusByIds($companyId, $userId, $reportId);
 
@@ -69,6 +69,17 @@ class ExecutiveReportService
             'updated_at' => now()->toIso8601String(),
             'download_ready' => true,
             'report' => $report,
+            'drive_file_id' => $driveFileId,
+        ]);
+    }
+
+    public function attachDriveFileId(int $companyId, int $userId, string $reportId, int $driveFileId): void
+    {
+        $status = $this->statusByIds($companyId, $userId, $reportId);
+
+        $this->storeStatus($companyId, $userId, $reportId, [
+            ...$status,
+            'drive_file_id' => $driveFileId,
         ]);
     }
 

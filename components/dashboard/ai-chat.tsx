@@ -26,6 +26,7 @@ import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
+import Link from "next/link";
 import {
   ChevronLeft,
   Copy,
@@ -2391,6 +2392,14 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     >
                       Download Word
                     </button>
+                    {weeklyReport.drive_file_id != null && (
+                      <Link
+                        href={`/drive?folder=ely_reports&file=${weeklyReport.drive_file_id}`}
+                        className="rounded-full border border-[#3D6A78] bg-[#11303A] px-3 py-1.5 text-[11px] font-semibold text-[#9CC6CA] hover:bg-[#1A3D4D]"
+                      >
+                        Also saved in Drive
+                      </Link>
+                    )}
                   </>
                 )}
                 {weeklyReport?.status === "failed" && weeklyReport.error && (

@@ -20,6 +20,7 @@ import { AttendanceSettingsPanel } from "@/components/settings/organization/atte
 import { PayrollSettingsPanel } from "@/components/settings/organization/payroll-settings-panel";
 import { MeetingsIntegrationsPanel } from "@/components/settings/organization/meetings-integrations-panel";
 import { FieldOpsDefaultsPanel } from "@/components/settings/organization/field-ops-defaults-panel";
+import { DriveSettingsPanel } from "@/components/settings/organization/drive-settings-panel";
 import { BillingSettingsPanel } from "@/components/settings/billing/billing-settings-panel";
 
 const SCOPE_LABELS: Record<SettingsScope, string> = {
@@ -50,6 +51,8 @@ function SectionContent({ sectionId }: { sectionId: SettingsSectionId }) {
       return <MeetingsIntegrationsPanel />;
     case "field-ops":
       return <FieldOpsDefaultsPanel />;
+    case "drive":
+      return <DriveSettingsPanel />;
     case "billing":
       return <BillingSettingsPanel />;
     default:

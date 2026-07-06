@@ -65,6 +65,8 @@ data:
   AVATAR_FILESYSTEM_DISK: "avatars"
   # Browser-facing avatar links — must match direct origin (not .cdn.) unless CDN is enabled.
   AVATAR_PUBLIC_BASE_URL: "https://factory23-storage.lon1.digitaloceanspaces.com"
+  DRIVE_FILESYSTEM_DISK: "drive"
+  DRIVE_DEFAULT_QUOTA_GB: "5"
   INTERNAL_AVATAR_STORAGE_ROOT: "avatar"
   INTERNAL_DEFAULT_AVATAR_PATH: "avatar/default/ghost.svg"
 

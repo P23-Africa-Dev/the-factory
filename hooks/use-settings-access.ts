@@ -17,6 +17,7 @@ export type SettingsSectionId =
   | "payroll"
   | "meetings"
   | "field-ops"
+  | "drive"
   | "billing";
 
 export type SettingsSectionDef = {
@@ -123,6 +124,14 @@ export function useSettingsAccess() {
         scope: "organization",
         description: "Default task proof and visit rules",
         canView: isManagement,
+        canEdit: canEditOrg(role),
+      },
+      {
+        id: "drive",
+        label: "Company Drive",
+        scope: "organization",
+        description: "Shared storage and file sharing",
+        canView: true,
         canEdit: canEditOrg(role),
       },
       {

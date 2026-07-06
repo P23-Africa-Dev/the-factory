@@ -23,6 +23,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   auth: "Account & security",
   onboarding: "Onboarding",
   workforce: "Workforce",
+  drive: "Company Drive",
   enterprise: "Enterprise",
 };
 

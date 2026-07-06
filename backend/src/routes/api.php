@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\V1\Billing\BillingStatusController;
 use App\Http\Controllers\Api\V1\Billing\BillingWebhookController;
 use App\Http\Controllers\Api\V1\Billing\PaymentLinkController;
 use App\Http\Controllers\Api\V1\Company\CompanySettingsController;
+use App\Http\Controllers\Api\V1\Drive\DriveController;
 use App\Http\Controllers\Api\V1\Calendar\CalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Calendar\MeetingController;
 use App\Http\Controllers\Api\V1\Calendar\UserCalendarIntegrationController;
@@ -193,6 +194,23 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
     Route::prefix('company')->name('company.')->group(function (): void {
         Route::get('/settings', [CompanySettingsController::class, 'show'])->name('settings.show');
         Route::patch('/settings', [CompanySettingsController::class, 'update'])->name('settings.update');
+    });
+
+    Route::prefix('drive')->name('drive.')->group(function (): void {
+        Route::get('/usage', [DriveController::class, 'usage'])->name('usage');
+        Route::get('/folders', [DriveController::class, 'folders'])->name('folders.index');
+        Route::post('/folders', [DriveController::class, 'storeFolder'])->name('folders.store');
+        Route::patch('/folders/{folderId}', [DriveController::class, 'updateFolder'])->name('folders.update');
+        Route::delete('/folders/{folderId}', [DriveController::class, 'destroyFolder'])->name('folders.destroy');
+        Route::get('/files', [DriveController::class, 'files'])->name('files.index');
+        Route::post('/files', [DriveController::class, 'storeFile'])
+            ->middleware('throttle:30,1')
+            ->name('files.store');
+        Route::get('/files/{fileId}', [DriveController::class, 'showFile'])->name('files.show');
+        Route::get('/files/{fileId}/download', [DriveController::class, 'downloadFile'])->name('files.download');
+        Route::patch('/files/{fileId}', [DriveController::class, 'updateFile'])->name('files.update');
+        Route::delete('/files/{fileId}', [DriveController::class, 'destroyFile'])->name('files.destroy');
+        Route::put('/files/{fileId}/grants', [DriveController::class, 'syncGrants'])->name('files.grants.sync');
     });
 
     Route::prefix('user')->name('user.')->group(function (): void {
