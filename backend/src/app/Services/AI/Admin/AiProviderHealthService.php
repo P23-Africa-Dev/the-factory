@@ -122,6 +122,90 @@ class AiProviderHealthService
     }
 
     /**
+     * @return array{card_class: string, pill_class: string, label: string, message: string}
+     */
+    public function presentation(array $health): array
+    {
+        $ok = ($health['ok'] ?? false) === true;
+        $status = (string) ($health['status'] ?? '');
+
+        $cardClass = $ok
+            ? 'status-connected'
+            : (in_array($status, ['rate_limited', 'timeout'], true) ? 'status-warning' : 'status-error');
+
+        $pillClass = $ok
+            ? 'connected'
+            : (in_array($status, ['rate_limited', 'timeout'], true) ? 'warning' : 'error');
+
+        return [
+            'card_class' => $cardClass,
+            'pill_class' => $pillClass,
+            'label' => (string) ($health['label'] ?? ($ok ? 'Connected' : 'Unavailable')),
+            'message' => (string) ($health['message'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $openaiHealth
+     * @param  array<string, mixed>  $claudeHealth
+     * @return array{status: string, label: string, icon: string, class: string, active_provider: string}
+     */
+    public function aggregateStatus(
+        array $openaiHealth,
+        array $claudeHealth,
+        bool $openaiConfigured,
+        bool $claudeConfigured,
+        string $primaryProvider,
+        string $fallbackProvider,
+        ?array $lastFailover = null,
+        float $errorRate = 0.0,
+    ): array {
+        $openaiOk = ($openaiHealth['ok'] ?? false) === true;
+        $claudeOk = ($claudeHealth['ok'] ?? false) === true;
+
+        $status = 'online';
+        if (! $openaiConfigured && ! $claudeConfigured) {
+            $status = 'offline';
+        } elseif (! $openaiOk && ! $claudeOk) {
+            $status = 'offline';
+        } elseif ($errorRate > 20 || ($openaiOk xor $claudeOk)) {
+            $status = 'degraded';
+        } elseif ($lastFailover !== null) {
+            $status = 'fallback';
+        }
+
+        $activeProvider = ucfirst($primaryProvider);
+        if (! $openaiOk && $claudeOk) {
+            $activeProvider = ucfirst($fallbackProvider);
+        } elseif (! $claudeOk && $openaiOk) {
+            $activeProvider = ucfirst($primaryProvider);
+        }
+
+        return [
+            'status' => $status,
+            'label' => match ($status) {
+                'online' => 'Online',
+                'offline' => 'Offline',
+                'degraded' => 'Degraded',
+                default => 'Fallback Active',
+            },
+            'icon' => match ($status) {
+                'online' => 'bi-check-circle-fill',
+                'offline' => 'bi-x-circle-fill',
+                'degraded' => 'bi-exclamation-triangle-fill',
+                default => 'bi-arrow-repeat',
+            },
+            'class' => match ($status) {
+                'online' => 'ai-status-online',
+                'offline' => 'ai-status-offline',
+                'degraded' => 'ai-status-degraded',
+                default => 'ai-status-fallback',
+            },
+            'active_provider' => $activeProvider,
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function probeOpenAi(): array

@@ -65,4 +65,35 @@ final class AiProviderHealthServiceTest extends TestCase
         $this->assertFalse($result['ok']);
         $this->assertSame('auth_failed', $result['status']);
     }
+
+    public function test_presentation_marks_quota_exhausted_as_error_state(): void
+    {
+        $service = app(AiProviderHealthService::class);
+        $presentation = $service->presentation([
+            'ok' => false,
+            'status' => 'quota_exceeded',
+            'label' => 'Credits Exhausted',
+            'message' => 'Billing limit reached.',
+        ]);
+
+        $this->assertSame('status-error', $presentation['card_class']);
+        $this->assertSame('error', $presentation['pill_class']);
+        $this->assertSame('Credits Exhausted', $presentation['label']);
+    }
+
+    public function test_aggregate_status_is_degraded_when_only_one_provider_is_healthy(): void
+    {
+        $service = app(AiProviderHealthService::class);
+        $aggregate = $service->aggregateStatus(
+            openaiHealth: ['ok' => false, 'status' => 'quota_exceeded'],
+            claudeHealth: ['ok' => true, 'status' => 'connected'],
+            openaiConfigured: true,
+            claudeConfigured: true,
+            primaryProvider: 'openai',
+            fallbackProvider: 'claude',
+        );
+
+        $this->assertSame('degraded', $aggregate['status']);
+        $this->assertSame('Claude', $aggregate['active_provider']);
+    }
 }

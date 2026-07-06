@@ -196,11 +196,14 @@
         </div>
     @endif
 
+    <div id="ai-warning-banners">
     @foreach ($warningBanners as $banner)
-        <div class="alert alert-{{ $banner['severity'] === 'danger' ? 'danger' : 'warning' }} mb-3" role="alert">
+        <div class="alert alert-{{ $banner['severity'] === 'danger' ? 'danger' : 'warning' }} mb-3 ai-provider-warning"
+            role="alert" data-provider="{{ $banner['provider'] ?? '' }}">
             <i class="bi bi-exclamation-triangle-fill me-2"></i>{{ $banner['message'] }}
         </div>
     @endforeach
+    </div>
 
     @foreach ($activeAlerts as $alert)
         <div class="alert alert-{{ $alert->severity === 'critical' ? 'danger' : 'warning' }} mb-3 d-flex align-items-center justify-content-between"
@@ -243,39 +246,20 @@
             <div>
                 <div class="fw-bold" style="font-size:1rem">Real-Time AI Status</div>
                 <div style="font-size:.8rem;color:var(--text-secondary)">
-                    Active provider: <strong>{{ $activeProviderLabel }}</strong>
+                    Active provider: <strong id="ai-active-provider-label">{{ $activeProviderLabel }}</strong>
                 </div>
             </div>
         </div>
         <div class="d-flex align-items-center gap-4 flex-wrap ai-status-panel-metrics">
-            @php
-                $statusClass = match ($aiStatus) {
-                    'online' => 'ai-status-online',
-                    'offline' => 'ai-status-offline',
-                    'degraded' => 'ai-status-degraded',
-                    default => 'ai-status-fallback',
-                };
-                $statusIcon = match ($aiStatus) {
-                    'online' => 'bi-check-circle-fill',
-                    'offline' => 'bi-x-circle-fill',
-                    'degraded' => 'bi-exclamation-triangle-fill',
-                    default => 'bi-arrow-repeat',
-                };
-                $statusLabel = match ($aiStatus) {
-                    'online' => 'Online',
-                    'offline' => 'Offline',
-                    'degraded' => 'Degraded',
-                    default => 'Fallback Active',
-                };
-            @endphp
             <div style="font-size:.82rem">
                 <span class="me-3">OpenAI:
-                    <strong>{{ $openaiHealth['label'] ?? (($openaiHealth['ok'] ?? false) ? 'Connected' : 'Unavailable') }}</strong></span>
+                    <strong id="realtime-status-openai">{{ $openaiHealth['label'] ?? (($openaiHealth['ok'] ?? false) ? 'Connected' : 'Unavailable') }}</strong></span>
                 <span>Claude:
-                    <strong>{{ $claudeHealth['label'] ?? (($claudeHealth['ok'] ?? false) ? 'Connected' : 'Unavailable') }}</strong></span>
+                    <strong id="realtime-status-claude">{{ $claudeHealth['label'] ?? (($claudeHealth['ok'] ?? false) ? 'Connected' : 'Unavailable') }}</strong></span>
             </div>
-            <span class="ai-status-badge {{ $statusClass }}">
-                <i class="bi {{ $statusIcon }}"></i> {{ $statusLabel }}
+            <span class="ai-status-badge {{ $aggregateStatus['class'] }}" id="ai-aggregate-status-badge">
+                <i class="bi {{ $aggregateStatus['icon'] }}" id="ai-aggregate-status-icon"></i>
+                <span id="ai-aggregate-status-label">{{ $aggregateStatus['label'] }}</span>
             </span>
             <div style="font-size:.8rem;color:var(--text-muted)">
                 LLM calls today: <strong>{{ number_format($statsToday['total_requests']) }}</strong> ·
@@ -292,22 +276,13 @@
             @php
                 $health = $item['health'];
                 $usage = $providerUsage[$key] ?? [];
-                $cardClass = match (true) {
-                    ($health['ok'] ?? false) === true => 'status-connected',
-                    in_array($health['status'] ?? '', ['rate_limited', 'timeout'], true) => 'status-warning',
-                    default => 'status-error',
-                };
-                $pillClass = match (true) {
-                    ($health['ok'] ?? false) === true => 'connected',
-                    in_array($health['status'] ?? '', ['rate_limited', 'timeout'], true) => 'warning',
-                    default => 'error',
-                };
+                $presentation = app(\App\Services\AI\Admin\AiProviderHealthService::class)->presentation($health);
             @endphp
             <div class="col-lg-6">
-                <div class="provider-health-card {{ $cardClass }}">
+                <div class="provider-health-card {{ $presentation['card_class'] }}" id="provider-card-{{ $key }}">
                     <div class="d-flex align-items-center justify-content-between mb-3">
                         <h6 class="fw-bold mb-0" style="font-size:.9rem">{{ $item['label'] }}</h6>
-                        <span class="health-pill {{ $pillClass }}">{{ $health['label'] ?? 'Unknown' }}</span>
+                        <span class="health-pill {{ $presentation['pill_class'] }}" id="provider-pill-{{ $key }}">{{ $presentation['label'] }}</span>
                     </div>
                     <div class="row g-2 mb-3" style="font-size:.78rem">
                         <div class="col-6">
@@ -329,7 +304,7 @@
                         </div>
                         <div class="col-6">
                             <div style="color:var(--text-muted)">Status Message</div>
-                            <div>{{ $health['message'] ?? '—' }}</div>
+                            <div id="provider-message-{{ $key }}">{{ $presentation['message'] !== '' ? $presentation['message'] : '—' }}</div>
                         </div>
                     </div>
                     <div style="background:var(--surface-hover);border-radius:.5rem;padding:.75rem;margin-bottom:.75rem;font-size:.78rem">
@@ -813,6 +788,143 @@
 @push('scripts')
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
+        window.__aiProviderHealth = {
+            openai: @json($openaiHealth),
+            claude: @json($claudeHealth),
+        };
+        window.__aiProviderConfig = {
+            openaiConfigured: @json($openaiConfigured),
+            claudeConfigured: @json($claudeConfigured),
+            primaryProvider: @json($primaryProvider),
+            fallbackProvider: @json($fallbackProvider),
+        };
+
+        function providerPresentation(health) {
+            const ok = health?.ok === true;
+            const status = String(health?.status || '');
+            const warningStatuses = ['rate_limited', 'timeout'];
+            return {
+                cardClass: ok ? 'status-connected' : (warningStatuses.includes(status) ? 'status-warning' : 'status-error'),
+                pillClass: ok ? 'connected' : (warningStatuses.includes(status) ? 'warning' : 'error'),
+                label: health?.label || (ok ? 'Connected' : 'Unavailable'),
+                message: health?.message || '',
+            };
+        }
+
+        function warningBannerMessage(health) {
+            const provider = String(health?.provider || 'Provider');
+            const status = String(health?.status || '');
+            const name = provider.charAt(0).toUpperCase() + provider.slice(1);
+            return ({
+                auth_failed: `${name} API key invalid or revoked.`,
+                quota_exceeded: `${name} billing limit reached or API credits exhausted.`,
+                rate_limited: `${name} rate limit exceeded.`,
+                not_configured: `${name} is not configured.`,
+                timeout: `${name} connection timed out.`,
+            })[status] || health?.message || `${name} is unavailable.`;
+        }
+
+        function syncProviderWarningBanner(health) {
+            const container = document.getElementById('ai-warning-banners');
+            if (!container || health?.ok === true) {
+                return;
+            }
+            const provider = String(health?.provider || '');
+            const severity = ['auth_failed', 'quota_exceeded', 'not_configured'].includes(String(health?.status || ''))
+                ? 'danger'
+                : 'warning';
+            let banner = container.querySelector(`[data-provider="${provider}"]`);
+            const message = warningBannerMessage(health);
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.className = `alert alert-${severity} mb-3 ai-provider-warning`;
+                banner.dataset.provider = provider;
+                banner.setAttribute('role', 'alert');
+                banner.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i><span class="ai-provider-warning-text"></span>`;
+                container.prepend(banner);
+            }
+            banner.className = `alert alert-${severity} mb-3 ai-provider-warning`;
+            const text = banner.querySelector('.ai-provider-warning-text');
+            if (text) {
+                text.textContent = message;
+            }
+        }
+
+        function applyProviderHealth(provider, health) {
+            window.__aiProviderHealth[provider] = health;
+            const ui = providerPresentation(health);
+            const card = document.getElementById(`provider-card-${provider}`);
+            const pill = document.getElementById(`provider-pill-${provider}`);
+            const message = document.getElementById(`provider-message-${provider}`);
+            const realtime = document.getElementById(`realtime-status-${provider}`);
+
+            if (card) {
+                card.classList.remove('status-connected', 'status-warning', 'status-error');
+                card.classList.add(ui.cardClass);
+            }
+            if (pill) {
+                pill.classList.remove('connected', 'warning', 'error');
+                pill.classList.add(ui.pillClass);
+                pill.textContent = ui.label;
+            }
+            if (message) {
+                message.textContent = ui.message || '—';
+            }
+            if (realtime) {
+                realtime.textContent = ui.label;
+            }
+            syncProviderWarningBanner(health);
+            updateAggregateStatus();
+        }
+
+        function updateAggregateStatus() {
+            const openai = window.__aiProviderHealth.openai || {};
+            const claude = window.__aiProviderHealth.claude || {};
+            const cfg = window.__aiProviderConfig || {};
+            const openaiOk = openai.ok === true;
+            const claudeOk = claude.ok === true;
+            let status = 'online';
+            if (!cfg.openaiConfigured && !cfg.claudeConfigured) {
+                status = 'offline';
+            } else if (!openaiOk && !claudeOk) {
+                status = 'offline';
+            } else if (openaiOk !== claudeOk) {
+                status = 'degraded';
+            }
+
+            const map = {
+                online: { class: 'ai-status-online', icon: 'bi-check-circle-fill', label: 'Online' },
+                offline: { class: 'ai-status-offline', icon: 'bi-x-circle-fill', label: 'Offline' },
+                degraded: { class: 'ai-status-degraded', icon: 'bi-exclamation-triangle-fill', label: 'Degraded' },
+                fallback: { class: 'ai-status-fallback', icon: 'bi-arrow-repeat', label: 'Fallback Active' },
+            };
+            const current = map[status] || map.online;
+            const badge = document.getElementById('ai-aggregate-status-badge');
+            const icon = document.getElementById('ai-aggregate-status-icon');
+            const label = document.getElementById('ai-aggregate-status-label');
+            const activeProvider = document.getElementById('ai-active-provider-label');
+
+            if (badge) {
+                badge.classList.remove('ai-status-online', 'ai-status-offline', 'ai-status-degraded', 'ai-status-fallback');
+                badge.classList.add(current.class);
+            }
+            if (icon) {
+                icon.className = `bi ${current.icon}`;
+            }
+            if (label) {
+                label.textContent = current.label;
+            }
+            if (activeProvider) {
+                let providerName = cfg.primaryProvider || 'openai';
+                if (!openaiOk && claudeOk) {
+                    providerName = cfg.fallbackProvider || 'claude';
+                } else if (!claudeOk && openaiOk) {
+                    providerName = cfg.primaryProvider || 'openai';
+                }
+                activeProvider.textContent = providerName.charAt(0).toUpperCase() + providerName.slice(1);
+            }
+        }
+
         document.querySelectorAll('.test-provider-btn').forEach((btn) => {
             btn.addEventListener('click', async () => {
                 const provider = btn.dataset.provider;
@@ -835,6 +947,7 @@
                     box.innerHTML = `<strong>${data.label || 'Result'}</strong>: ${data.message || ''}` +
                         (data.latency_ms ? ` · ${data.latency_ms}ms` : '') +
                         (data.sample_models ? `<br><small>Models: ${data.sample_models.join(', ')}</small>` : '');
+                    applyProviderHealth(provider, data);
                 } catch (e) {
                     box.className = 'test-result-box alert alert-danger';
                     box.textContent = 'Health check failed: ' + e.message;

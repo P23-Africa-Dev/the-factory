@@ -101,31 +101,27 @@ class AiManagementController extends Controller
         $primaryProvider = (string) config('services.ai.provider', 'openai');
         $fallbackProvider = (string) config('services.ai.fallback_provider', 'claude');
 
-        $openaiHealth = $this->healthService->displayStatus('openai');
-        $claudeHealth = $this->healthService->displayStatus('claude');
+        $providerChecks = $this->healthService->checkAll(persist: true);
+        $openaiHealth = $providerChecks['openai'];
+        $claudeHealth = $providerChecks['claude'];
         $warningBanners = $this->operationsAnalytics->warningBanners($openaiHealth, $claudeHealth);
         $activeAlerts = $this->alertService->activeAlerts(10);
         $lastFailover = $this->failoverTracker->latest();
 
         $errorRate = $last24hTotal > 0 ? round(($last24hFailed / $last24hTotal) * 100, 1) : 0;
 
-        $aiStatus = 'online';
-        if (! $openaiConfigured && ! $claudeConfigured) {
-            $aiStatus = 'offline';
-        } elseif (($openaiHealth['ok'] ?? false) === false && ($claudeHealth['ok'] ?? false) === false) {
-            $aiStatus = 'offline';
-        } elseif ($errorRate > 20 || (($openaiHealth['ok'] ?? false) === false xor ($claudeHealth['ok'] ?? false) === false)) {
-            $aiStatus = 'degraded';
-        } elseif ($lastFailover !== null) {
-            $aiStatus = 'fallback';
-        }
-
-        $activeProviderLabel = ucfirst($primaryProvider);
-        if (($openaiHealth['ok'] ?? false) === false && ($claudeHealth['ok'] ?? false) === true) {
-            $activeProviderLabel = ucfirst($fallbackProvider);
-        } elseif (($claudeHealth['ok'] ?? false) === false && ($openaiHealth['ok'] ?? false) === true) {
-            $activeProviderLabel = ucfirst($primaryProvider);
-        }
+        $aggregateStatus = $this->healthService->aggregateStatus(
+            openaiHealth: $openaiHealth,
+            claudeHealth: $claudeHealth,
+            openaiConfigured: $openaiConfigured,
+            claudeConfigured: $claudeConfigured,
+            primaryProvider: $primaryProvider,
+            fallbackProvider: $fallbackProvider,
+            lastFailover: $lastFailover,
+            errorRate: $errorRate,
+        );
+        $aiStatus = $aggregateStatus['status'];
+        $activeProviderLabel = $aggregateStatus['active_provider'];
 
         return view('admin.ai.index', compact(
             'statsToday',
@@ -156,6 +152,7 @@ class AiManagementController extends Controller
             'recentErrors',
             'recentLogs',
             'activeProviderLabel',
+            'aggregateStatus',
         ));
     }
 
