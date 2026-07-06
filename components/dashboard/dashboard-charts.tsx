@@ -180,6 +180,7 @@ export function TotalLeadsChart() {
   );
 
   const hasLeadsTrend = hasLeadsTrendData(overview?.leads_trend ?? []);
+  const showLeadsChart = hasLeadsTrend || (!isLoading && totalLeads > 0);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -208,7 +209,7 @@ export function TotalLeadsChart() {
       </div>
 
       <div className="w-full h-10.25 mt-auto">
-        {hasLeadsTrend ? (
+        {showLeadsChart ? (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={leadsChartData}

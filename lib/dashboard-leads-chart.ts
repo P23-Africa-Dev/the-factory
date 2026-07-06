@@ -7,6 +7,9 @@ export const LEADS_TREND_BAR_COLORS = {
 
 export const LEADS_TREND_BUCKET_COUNT = 6;
 
+/** Minimum rendered bar height so zero-count days still show a visible trend slot. */
+export const LEADS_TREND_MIN_BAR_VALUE = 1;
+
 export function normalizeLeadsTrendBuckets(
   points: LeadsTrendPoint[] | undefined | null,
 ): LeadsTrendPoint[] {
@@ -33,8 +36,16 @@ export function hasLeadsTrendData(
   );
 }
 
+/**
+ * Normalize to six buckets and apply a display floor so every trend slot
+ * renders a visible bar. Actual counts above the floor scale proportionally.
+ */
 export function buildCalibratedLeadsTrendChart(
   points: LeadsTrendPoint[] | undefined | null,
 ): LeadsTrendPoint[] {
-  return normalizeLeadsTrendBuckets(points);
+  return normalizeLeadsTrendBuckets(points).map((point) => ({
+    name: point.name,
+    v1: Math.max(LEADS_TREND_MIN_BAR_VALUE, point.v1),
+    v2: Math.max(LEADS_TREND_MIN_BAR_VALUE, point.v2),
+  }));
 }

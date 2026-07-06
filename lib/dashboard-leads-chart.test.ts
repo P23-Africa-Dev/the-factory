@@ -4,6 +4,7 @@ import {
   buildCalibratedLeadsTrendChart,
   hasLeadsTrendData,
   LEADS_TREND_BUCKET_COUNT,
+  LEADS_TREND_MIN_BAR_VALUE,
   normalizeLeadsTrendBuckets,
 } from "@/lib/dashboard-leads-chart";
 
@@ -35,41 +36,41 @@ describe("dashboard-leads-chart", () => {
     ]);
   });
 
-  it("preserves actual counts without a minimum bar floor", () => {
+  it("floors zero buckets to the minimum display height", () => {
     expect(buildCalibratedLeadsTrendChart([])).toEqual(
       Array.from({ length: LEADS_TREND_BUCKET_COUNT }, (_, index) => ({
         name: String(index + 1),
-        v1: 0,
-        v2: 0,
+        v1: LEADS_TREND_MIN_BAR_VALUE,
+        v2: LEADS_TREND_MIN_BAR_VALUE,
       })),
     );
   });
 
-  it("keeps zero values when only one metric is present", () => {
+  it("floors only the zero side when one metric is missing", () => {
     expect(
       buildCalibratedLeadsTrendChart([{ name: "1", v1: 10, v2: 0 }]),
     ).toEqual([
-      { name: "1", v1: 10, v2: 0 },
-      { name: "2", v1: 0, v2: 0 },
-      { name: "3", v1: 0, v2: 0 },
-      { name: "4", v1: 0, v2: 0 },
-      { name: "5", v1: 0, v2: 0 },
-      { name: "6", v1: 0, v2: 0 },
+      { name: "1", v1: 10, v2: LEADS_TREND_MIN_BAR_VALUE },
+      { name: "2", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
+      { name: "3", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
+      { name: "4", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
+      { name: "5", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
+      { name: "6", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
     ]);
 
     expect(
       buildCalibratedLeadsTrendChart([{ name: "1", v1: 0, v2: 7 }]),
     ).toEqual([
-      { name: "1", v1: 0, v2: 7 },
-      { name: "2", v1: 0, v2: 0 },
-      { name: "3", v1: 0, v2: 0 },
-      { name: "4", v1: 0, v2: 0 },
-      { name: "5", v1: 0, v2: 0 },
-      { name: "6", v1: 0, v2: 0 },
+      { name: "1", v1: LEADS_TREND_MIN_BAR_VALUE, v2: 7 },
+      { name: "2", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
+      { name: "3", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
+      { name: "4", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
+      { name: "5", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
+      { name: "6", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
     ]);
   });
 
-  it("preserves non-zero values across sparse buckets", () => {
+  it("preserves values above the minimum floor", () => {
     expect(
       buildCalibratedLeadsTrendChart([
         { name: "1", v1: 12, v2: 5 },
@@ -78,14 +79,14 @@ describe("dashboard-leads-chart", () => {
     ).toEqual([
       { name: "1", v1: 12, v2: 5 },
       { name: "2", v1: 3, v2: 8 },
-      { name: "3", v1: 0, v2: 0 },
-      { name: "4", v1: 0, v2: 0 },
-      { name: "5", v1: 0, v2: 0 },
-      { name: "6", v1: 0, v2: 0 },
+      { name: "3", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
+      { name: "4", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
+      { name: "5", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
+      { name: "6", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
     ]);
   });
 
-  it("detects when trend data is empty or present", () => {
+  it("detects when trend data is empty or present using raw counts", () => {
     expect(hasLeadsTrendData([])).toBe(false);
     expect(hasLeadsTrendData([{ name: "1", v1: 0, v2: 0 }])).toBe(false);
     expect(hasLeadsTrendData([{ name: "1", v1: 2, v2: 0 }])).toBe(true);
