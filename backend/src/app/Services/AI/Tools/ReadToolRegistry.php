@@ -11,7 +11,6 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\AI\Crm\EmailInferenceService;
-use App\Services\AI\Crm\CrmIntelligenceService;
 use App\Services\AI\Crm\VisitAssistantService;
 use App\Services\AI\Kpi\TeamPerformanceService;
 use App\Services\AI\Planning\DailyPlanningService;
@@ -20,10 +19,13 @@ use App\Services\Calendar\MeetingService;
 use App\Services\Company\CompanyContextService;
 use App\Services\Crm\CrmEmailService;
 use App\Services\Crm\LeadService;
+use App\Services\AI\Crm\CrmIntelligenceService;
 use App\Services\Dashboard\DashboardAggregateService;
+use App\Support\UserDisplayNameResolver;
 use App\Services\Tracking\AgentLocationSnapshotService;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 class ReadToolRegistry
 {
@@ -40,6 +42,7 @@ class ReadToolRegistry
         private readonly EmailInferenceService $emailInferenceService,
         private readonly VisitAssistantService $visitAssistantService,
         private readonly TeamPerformanceService $teamPerformanceService,
+        private readonly UserDisplayNameResolver $userDisplayNameResolver,
     ) {}
 
     public function execute(string $tool, User $user, int $companyId, array $args = []): array
@@ -80,18 +83,11 @@ class ReadToolRegistry
             'per_page' => $limit,
         ]);
 
-        $assigneeNames = User::query()
-            ->whereIn(
-                'id',
-                collect($leads->items())
-                    ->pluck('assigned_to_user_id')
-                    ->filter(static fn($id): bool => is_numeric($id) && (int) $id > 0)
-                    ->map(static fn($id): int => (int) $id)
-                    ->unique()
-                    ->values()
-                    ->all()
-            )
-            ->pluck('name', 'id');
+        $assigneeNames = $this->userDisplayNameResolver->resolveMap(
+            collect($leads->items())
+                ->pluck('assigned_to_user_id')
+                ->all(),
+        );
 
         $items = collect($leads->items())
             ->map(static function ($lead) use ($assigneeNames): array {
@@ -103,8 +99,8 @@ class ReadToolRegistry
                     'status' => $lead->status?->value ?? (is_string($lead->status) ? $lead->status : null),
                     'priority' => $lead->priority?->value,
                     'assigned_to_user_id' => $assignedToUserId,
-                    'assigned_to_name' => $assignedToUserId !== null
-                        ? (string) ($assigneeNames->get($assignedToUserId) ?? '')
+                    'assigned_to_name' => $assignedToUserId !== null && trim((string) ($assigneeNames[$assignedToUserId] ?? '')) !== ''
+                        ? (string) $assigneeNames[$assignedToUserId]
                         : null,
                     'phone' => is_string($lead->phone ?? null) ? $lead->phone : null,
                     'location' => is_string($lead->location ?? null) ? $lead->location : null,
@@ -266,30 +262,134 @@ class ReadToolRegistry
             });
         }
 
-        $items = $query->get(['id', 'title', 'status', 'priority', 'due_at', 'assigned_agent_id', 'project_id'])
-            ->map(static fn(Task $task): array => [
-                'id' => $task->id,
-                'title' => $task->title,
-                'status' => $task->status?->value,
-                'priority' => $task->priority?->value,
-                'due_at' => $task->due_at?->toIso8601String(),
-                'assigned_agent_id' => $task->assigned_agent_id,
-                'project_id' => $task->project_id,
+        $tasks = $query
+            ->with([
+                'assignedAgent:id,name',
+                'project:id,name',
             ])
+            ->get();
+
+        $currentAssigneeIdsByTask = DB::table('task_assignments')
+            ->whereIn('task_id', $tasks->pluck('id'))
+            ->where('is_current', true)
+            ->get(['task_id', 'assigned_agent_id'])
+            ->groupBy('task_id')
+            ->map(static fn ($rows) => collect($rows)->pluck('assigned_agent_id')->map(static fn ($id): int => (int) $id)->all());
+
+        $assigneeIds = $tasks
+            ->flatMap(static function (Task $task) use ($currentAssigneeIdsByTask): array {
+                $ids = [];
+                if (is_numeric($task->assigned_agent_id) && (int) $task->assigned_agent_id > 0) {
+                    $ids[] = (int) $task->assigned_agent_id;
+                }
+
+                foreach ($currentAssigneeIdsByTask->get($task->id, []) as $assigneeId) {
+                    $ids[] = $assigneeId;
+                }
+
+                return $ids;
+            })
+            ->unique()
+            ->values()
+            ->all();
+
+        $assigneeNames = $this->userDisplayNameResolver->resolveMap($assigneeIds);
+
+        $items = $tasks
+            ->map(function (Task $task) use ($assigneeNames, $currentAssigneeIdsByTask): array {
+                $assigneeIdList = collect([(int) ($task->assigned_agent_id ?? 0)])
+                    ->merge($currentAssigneeIdsByTask->get($task->id, []))
+                    ->filter(static fn (int $id): bool => $id > 0)
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                $assigneeNameList = $this->userDisplayNameResolver->labelsForIds($assigneeIdList, $assigneeNames);
+                $primaryAssigneeName = $this->userDisplayNameResolver->label(
+                    is_numeric($task->assigned_agent_id) ? (int) $task->assigned_agent_id : null,
+                    $assigneeNames,
+                );
+                if ($primaryAssigneeName === 'Unassigned' && $assigneeNameList !== []) {
+                    $primaryAssigneeName = $assigneeNameList[0];
+                }
+
+                $assigneesLabel = $assigneeNameList !== []
+                    ? implode(', ', $assigneeNameList)
+                    : 'Unassigned';
+
+                return [
+                    'id' => $task->id,
+                    'title' => $task->title,
+                    'status' => $task->status?->value,
+                    'priority' => $task->priority?->value,
+                    'due_at' => $task->due_at?->toIso8601String(),
+                    'assigned_agent_id' => $task->assigned_agent_id,
+                    'assigned_agent_name' => $primaryAssigneeName !== 'Unassigned' ? $primaryAssigneeName : null,
+                    'assignee_names' => $assigneeNameList,
+                    'assignees_label' => $assigneesLabel,
+                    'project_id' => $task->project_id,
+                    'project_name' => $task->project?->name,
+                ];
+            })
             ->values()
             ->all();
 
         return [
             'tool' => 'tasks.overdue',
-            'summary' => count($items) > 0
-                ? 'I found overdue tasks in your permitted scope.'
-                : 'No overdue tasks found in your permitted scope.',
+            'summary' => $this->formatOverdueTasksSummary($items),
             'payload' => [
                 'items' => $items,
                 'count' => count($items),
             ],
             'sources' => ['tasks.overdue'],
         ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    private function formatOverdueTasksSummary(array $items): string
+    {
+        if ($items === []) {
+            return 'No overdue tasks found in your permitted scope.';
+        }
+
+        $grouped = collect($items)->groupBy(static fn (array $item): string => (string) ($item['assignees_label'] ?? 'Unassigned'));
+
+        $lines = $grouped
+            ->map(static function ($tasks, string $assignee): string {
+                $titles = collect($tasks)
+                    ->pluck('title')
+                    ->filter(static fn (mixed $title): bool => is_string($title) && trim($title) !== '')
+                    ->map(static fn (string $title): string => '"' . $title . '"')
+                    ->values()
+                    ->all();
+
+                if ($titles === []) {
+                    return sprintf('%s has overdue tasks with no title available.', $assignee);
+                }
+
+                if (count($titles) === 1) {
+                    return sprintf('%s is assigned to the task %s.', $assignee, $titles[0]);
+                }
+
+                $lastTitle = array_pop($titles);
+
+                return sprintf(
+                    '%s is assigned to the tasks %s and %s.',
+                    $assignee,
+                    implode(', ', $titles),
+                    $lastTitle,
+                );
+            })
+            ->values()
+            ->all();
+
+        return sprintf(
+            "I found %d overdue task(s) in your permitted scope:\n%s",
+            count($items),
+            implode("\n", $lines),
+        );
     }
 
     private function projectRiskSummary(User $user, int $companyId, array $args): array

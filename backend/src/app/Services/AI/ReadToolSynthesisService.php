@@ -6,10 +6,14 @@ namespace App\Services\AI;
 
 use App\Services\AI\Providers\AiGenerationResult;
 use App\Services\AI\Providers\AiProviderRouter;
+use App\Services\AI\Support\AiPayloadDisplaySanitizer;
 
 class ReadToolSynthesisService
 {
-    public function __construct(private readonly AiProviderRouter $aiProviderRouter) {}
+    public function __construct(
+        private readonly AiProviderRouter $aiProviderRouter,
+        private readonly AiPayloadDisplaySanitizer $payloadDisplaySanitizer,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $toolResult
@@ -32,6 +36,8 @@ class ReadToolSynthesisService
             $payload = [];
         }
 
+        $displayPayload = $this->payloadDisplaySanitizer->sanitize($payload);
+
         $systemPrompt = ElySystemPrompt::readToolSynthesis();
         $userPrompt = sprintf(
             "Company: %s\nRole: %s\nTool: %s\nUser question: %s\nTool summary: %s\nTool payload JSON:\n%s",
@@ -40,7 +46,7 @@ class ReadToolSynthesisService
             $tool,
             $userMessage,
             (string) ($toolResult['summary'] ?? ''),
-            json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+            json_encode($displayPayload, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
         );
 
         $result = $this->aiProviderRouter->generateForPurpose(

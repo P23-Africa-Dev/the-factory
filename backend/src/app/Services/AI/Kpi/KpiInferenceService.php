@@ -8,12 +8,16 @@ use App\Enums\KpiCategory;
 use App\Enums\KpiPriority;
 use App\Models\User;
 use App\Services\AI\Providers\AiProviderRouter;
+use App\Support\UserDisplayNameResolver;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 class KpiInferenceService
 {
-    public function __construct(private readonly AiProviderRouter $aiProviderRouter) {}
+    public function __construct(
+        private readonly AiProviderRouter $aiProviderRouter,
+        private readonly UserDisplayNameResolver $userDisplayNameResolver,
+    ) {}
 
     /**
      * @param  array<string, string>  $entities
@@ -152,7 +156,11 @@ class KpiInferenceService
         $name = (string) ($args['name'] ?? 'Untitled KPI');
         $target = (string) ($args['target_value'] ?? 'Not set');
         $assigneeId = $args['assigned_to_user_id'] ?? null;
-        $assigneeLabel = is_numeric($assigneeId) ? 'User #' . (int) $assigneeId : 'Unassigned';
+        $assigneeLabel = 'Unassigned';
+        if (is_numeric($assigneeId)) {
+            $nameMap = $this->userDisplayNameResolver->resolveMap([(int) $assigneeId]);
+            $assigneeLabel = $this->userDisplayNameResolver->label((int) $assigneeId, $nameMap);
+        }
 
         $base = sprintf(
             'ELY action ready: create KPI "%s" (target: %s, assignee: %s). Review the details below and click Confirm Action to save this KPI.',
