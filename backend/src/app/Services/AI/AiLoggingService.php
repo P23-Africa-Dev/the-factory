@@ -98,6 +98,48 @@ class AiLoggingService
     }
 
     /**
+     * Record a failed provider invocation without a successful generation result.
+     *
+     * @param  array{
+     *   company_id?: int|null,
+     *   user_id?: int|null,
+     *   session_id?: string|null,
+     *   intent_type?: string|null,
+     *   tool_name?: string|null,
+     *   routing_purpose?: string|null,
+     *   user_prompt?: string,
+     *   sanitized_prompt?: string,
+     * }  $context
+     */
+    public function recordFailure(
+        string $provider,
+        string $model,
+        string $errorCode,
+        string $errorMessage,
+        array $context = [],
+    ): AiLog {
+        $userPrompt = (string) ($context['user_prompt'] ?? '');
+        $sanitizedPrompt = (string) ($context['sanitized_prompt'] ?? $userPrompt);
+
+        $log = $this->begin(
+            companyId: isset($context['company_id']) ? (int) $context['company_id'] : null,
+            userId: isset($context['user_id']) ? (int) $context['user_id'] : null,
+            sessionId: isset($context['session_id']) ? (string) $context['session_id'] : null,
+            provider: $provider,
+            model: $model,
+            userPrompt: $userPrompt,
+            sanitizedPrompt: $sanitizedPrompt,
+            intentType: isset($context['intent_type']) ? (string) $context['intent_type'] : null,
+            toolName: isset($context['tool_name']) ? (string) $context['tool_name'] : null,
+            routingPurpose: isset($context['routing_purpose']) ? (string) $context['routing_purpose'] : null,
+        );
+
+        $this->fail($log, $errorCode, $errorMessage);
+
+        return $log;
+    }
+
+    /**
      * Mark a log entry as successfully completed with token/cost data.
      */
     public function complete(

@@ -35,6 +35,11 @@ class ClaudeModelResolver
             if ($analystModel !== '' && ! $this->isAutoMode($analystModel)) {
                 return $analystModel;
             }
+        } elseif ($purpose === 'routing') {
+            $routerModel = trim((string) config('services.ai.router_model', 'auto'));
+            if ($routerModel !== '' && ! $this->isAutoMode($routerModel)) {
+                return $routerModel;
+            }
         }
 
         $cacheKey = self::CACHE_KEY_RESOLVED . $purpose;
@@ -165,6 +170,7 @@ class ClaudeModelResolver
 
         $preferencePatterns = match ($purpose) {
             'analyst', 'report' => ['sonnet', 'opus', 'haiku'],
+            'routing' => ['haiku', 'sonnet'],
             default => ['sonnet', 'haiku', 'opus'],
         };
 

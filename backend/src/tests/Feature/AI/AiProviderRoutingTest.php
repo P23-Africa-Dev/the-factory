@@ -20,6 +20,7 @@ final class AiProviderRoutingTest extends TestCase
 
         $result = $router->generateText('You are helpful.', 'Summarize this text.');
 
-        $this->assertNull($result);
+        $this->assertNotNull($result);
+        $this->assertTrue($result->isFailure());
     }
 }

@@ -23,6 +23,15 @@ final class CopilotReadFlowTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config([
+            'services.ai.enable_read_synthesis' => false,
+            'services.ai.enable_hybrid_router' => false,
+        ]);
+    }
+
     public function test_admin_can_get_overdue_tasks_summary_and_thread_is_persisted(): void
     {
         [$company, $admin] = $this->seedCompanyAdmin();

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AI\Providers;
 
 use App\Services\AI\Admin\AiFailoverTracker;
+use App\Services\AI\Admin\AiProviderHealthService;
 use App\Services\AI\AiLoggingService;
 use App\Services\Demo\DemoAiResponseService;
 use App\Services\Demo\DemoCompanyService;
@@ -16,6 +17,7 @@ class AiProviderRouter
         private readonly OpenAiProvider $openAiProvider,
         private readonly ClaudeProvider $claudeProvider,
         private readonly AiFailoverTracker $failoverTracker,
+        private readonly AiProviderHealthService $healthService,
         private readonly DemoCompanyService $demoCompanyService,
         private readonly DemoAiResponseService $demoAiResponseService,
         private readonly AiLoggingService $aiLoggingService,
@@ -30,8 +32,9 @@ class AiProviderRouter
 
         return $this->finalizeInvocation(
             $this->tryProviders(
-                $this->orderedProviders(),
+                $this->orderedProviders('operational', $options),
                 'operational',
+                $options,
                 fn (AiProviderContract $provider) => $provider->generateText($systemPrompt, $userPrompt, $options),
             ),
             $options,
@@ -51,26 +54,36 @@ class AiProviderRouter
             return $this->finalizeInvocation($demoResponse, $options);
         }
 
-        $model = $this->resolveModelForPurpose($purpose);
-        $providers = $this->orderedProvidersForPurpose($purpose);
+        $model = $this->resolveModelForPurpose($purpose, $options);
+        $mergedOptions = array_merge($options, ['model' => $model, 'purpose' => $purpose]);
+        $providers = $this->orderedProviders($purpose, $mergedOptions);
 
         return $this->finalizeInvocation(
             $this->tryProviders(
                 $providers,
                 $purpose,
+                $mergedOptions,
                 fn (AiProviderContract $provider) => $provider->generateText(
                     $systemPrompt,
                     $userPrompt,
-                    array_merge($options, ['model' => $model, 'purpose' => $purpose]),
+                    $mergedOptions,
                 ),
             ),
-            $options,
+            $mergedOptions,
         );
     }
 
-    private function resolveModelForPurpose(string $purpose): string
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function resolveModelForPurpose(string $purpose, array $options = []): string
     {
+        if (isset($options['model']) && is_string($options['model']) && trim($options['model']) !== '' && strtolower($options['model']) !== 'auto') {
+            return trim($options['model']);
+        }
+
         return match ($purpose) {
+            'routing' => (string) config('services.ai.router_model', 'auto'),
             'analyst', 'report' => (string) config('services.ai.analyst_model', 'auto'),
             default => (string) config('services.ai.exec_model', config('services.ai.default_model', 'auto')),
         };
@@ -82,7 +95,7 @@ class AiProviderRouter
     public function routingMetadata(string $purpose): array
     {
         $purpose = strtolower(trim($purpose));
-        $providers = $this->orderedProvidersForPurpose($purpose);
+        $providers = $this->orderedProviders($purpose);
         $first = $providers[0] ?? null;
         $provider = match (true) {
             $first instanceof OpenAiProvider => 'openai',
@@ -104,10 +117,19 @@ class AiProviderRouter
     }
 
     /**
+     * @param  array<string, mixed>  $options
      * @return array<int, AiProviderContract>
      */
-    private function orderedProvidersForPurpose(string $purpose): array
+    private function orderedProviders(string $purpose, array $options = []): array
     {
+        $forced = isset($options['force_provider']) ? strtolower(trim((string) $options['force_provider'])) : '';
+        if ($forced === 'openai') {
+            return [$this->openAiProvider];
+        }
+        if ($forced === 'claude') {
+            return [$this->claudeProvider];
+        }
+
         if (in_array($purpose, ['analyst', 'report'], true)) {
             $primary = strtolower((string) config('services.ai.fallback_provider', 'claude'));
             $fallback = strtolower((string) config('services.ai.provider', 'openai'));
@@ -122,15 +144,23 @@ class AiProviderRouter
         ];
 
         $ordered = [];
-        if (isset($map[$primary])) {
+        if (isset($map[$primary]) && ! $this->healthService->shouldSkipProvider($primary)) {
             $ordered[] = $map[$primary];
         }
-        if ($fallback !== $primary && isset($map[$fallback])) {
+        if ($fallback !== $primary && isset($map[$fallback]) && ! $this->healthService->shouldSkipProvider($fallback)) {
             $ordered[] = $map[$fallback];
         }
-        foreach ($map as $candidate) {
-            if (! in_array($candidate, $ordered, true)) {
+        foreach ($map as $key => $candidate) {
+            if (! in_array($candidate, $ordered, true) && ! $this->healthService->shouldSkipProvider($key)) {
                 $ordered[] = $candidate;
+            }
+        }
+
+        if ($ordered === []) {
+            foreach ($map as $candidate) {
+                if (! in_array($candidate, $ordered, true)) {
+                    $ordered[] = $candidate;
+                }
             }
         }
 
@@ -141,8 +171,9 @@ class AiProviderRouter
     {
         return $this->finalizeInvocation(
             $this->tryProviders(
-                $this->orderedProviders(),
+                $this->orderedProviders((string) ($options['purpose'] ?? 'operational'), $options),
                 (string) ($options['purpose'] ?? 'operational'),
+                $options,
                 fn (AiProviderContract $provider) => $provider->transcribeAudio($audio, $prompt, $options),
             ),
             $options,
@@ -155,7 +186,7 @@ class AiProviderRouter
         string $userPrompt,
         array $options = [],
     ): ?string {
-        if (! $this->openAiProvider->isConfigured()) {
+        if (! $this->openAiProvider->isConfigured() || $this->healthService->shouldSkipProvider('openai')) {
             return null;
         }
 
@@ -164,18 +195,39 @@ class AiProviderRouter
 
     /**
      * @param  array<int, AiProviderContract>  $providers
+     * @param  array<string, mixed>  $options
      */
-    private function tryProviders(array $providers, string $purpose, callable $callback): ?AiGenerationResult
+    private function tryProviders(array $providers, string $purpose, array $options, callable $callback): ?AiGenerationResult
     {
         $lastFailedProvider = null;
+        $lastFailureResult = null;
+        $attempted = false;
 
         foreach ($providers as $provider) {
             if (! $provider->isConfigured()) {
                 continue;
             }
 
+            $attempted = true;
             $result = $callback($provider);
-            if ($result instanceof AiGenerationResult && $result->isSuccessful()) {
+            if (! $result instanceof AiGenerationResult) {
+                $lastFailedProvider = $this->providerKey($provider);
+                continue;
+            }
+
+            if ($result->isFailure()) {
+                $this->healthService->markUnhealthy(
+                    $result->provider,
+                    (string) $result->errorClass,
+                    (string) $result->errorMessage,
+                );
+                $this->recordProviderFailure($result, $options, $purpose);
+                $lastFailedProvider = $this->providerKey($provider);
+                $lastFailureResult = $result;
+                continue;
+            }
+
+            if ($result->isSuccessful()) {
                 $resolved = $result->withPurpose($purpose);
                 if ($lastFailedProvider !== null) {
                     $this->failoverTracker->record(
@@ -192,43 +244,41 @@ class AiProviderRouter
             $lastFailedProvider = $this->providerKey($provider);
         }
 
-        return null;
+        if (! $attempted) {
+            return AiGenerationResult::failure(
+                provider: 'none',
+                model: 'unconfigured',
+                errorClass: 'not_configured',
+                errorMessage: 'No AI provider API keys are configured.',
+                purpose: $purpose,
+            );
+        }
+
+        return $lastFailureResult;
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function recordProviderFailure(AiGenerationResult $result, array $options, string $purpose): void
+    {
+        $logContext = $options['_log'] ?? null;
+        if (! is_array($logContext)) {
+            return;
+        }
+
+        $this->aiLoggingService->recordFailure(
+            provider: $result->provider,
+            model: $result->model,
+            errorCode: (string) ($result->errorClass ?? 'provider_error'),
+            errorMessage: (string) ($result->errorMessage ?? 'Provider request failed.'),
+            context: array_merge($logContext, ['routing_purpose' => $purpose]),
+        );
     }
 
     private function providerKey(AiProviderContract $provider): string
     {
         return $provider instanceof OpenAiProvider ? 'openai' : 'claude';
-    }
-
-    /**
-     * @return array<int, AiProviderContract>
-     */
-    private function orderedProviders(): array
-    {
-        $provider = strtolower((string) config('services.ai.provider', 'openai'));
-        $fallback = strtolower((string) config('services.ai.fallback_provider', 'claude'));
-
-        $map = [
-            'openai' => $this->openAiProvider,
-            'claude' => $this->claudeProvider,
-        ];
-
-        $ordered = [];
-        if (isset($map[$provider])) {
-            $ordered[] = $map[$provider];
-        }
-
-        if ($fallback !== $provider && isset($map[$fallback])) {
-            $ordered[] = $map[$fallback];
-        }
-
-        foreach ($map as $candidate) {
-            if (! in_array($candidate, $ordered, true)) {
-                $ordered[] = $candidate;
-            }
-        }
-
-        return $ordered;
     }
 
     private function maybeDemoResponse(string $purpose, string $systemPrompt, string $userPrompt, array $options): ?AiGenerationResult

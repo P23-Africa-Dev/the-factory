@@ -54,7 +54,7 @@ final class AiProviderRouterInvocationTest extends TestCase
         $this->assertSame('claude-sonnet-4-20250514', $result->model);
         $this->assertSame('openai', $result->failoverFrom);
 
-        $log = AiLog::query()->first();
+        $log = AiLog::query()->where('status', 'success')->latest('id')->first();
         $this->assertNotNull($log);
         $this->assertSame('claude', $log->provider);
         $this->assertSame('claude-sonnet-4-20250514', $log->model);

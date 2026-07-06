@@ -73,6 +73,54 @@ class AiProviderHealthService
         return $provider === 'claude' ? $this->probeClaude() : $this->probeOpenAi();
     }
 
+    public function shouldSkipProvider(string $provider): bool
+    {
+        $cached = $this->cachedStatus($provider);
+        if ($cached === null || ($cached['ok'] ?? false) === true) {
+            return false;
+        }
+
+        $skipStatuses = ['quota_exceeded', 'auth_failed', 'rate_limited', 'not_configured', 'model_not_found'];
+        if (! in_array((string) ($cached['status'] ?? ''), $skipStatuses, true)) {
+            return false;
+        }
+
+        $lastFailedAt = $cached['last_failed_at'] ?? null;
+        if (! is_string($lastFailedAt) || trim($lastFailedAt) === '') {
+            return true;
+        }
+
+        $ttl = max(60, (int) config('services.ai.provider_skip_ttl_seconds', 300));
+
+        try {
+            $failedAt = \Illuminate\Support\Carbon::parse($lastFailedAt);
+        } catch (\Throwable) {
+            return true;
+        }
+
+        return $failedAt->diffInSeconds(now()) < $ttl;
+    }
+
+    public function markUnhealthy(string $provider, string $status, string $message): void
+    {
+        $label = match ($status) {
+            'quota_exceeded' => 'Credits Exhausted',
+            'auth_failed' => 'Authentication Failed',
+            'rate_limited' => 'Rate Limited',
+            'not_configured' => 'Disconnected',
+            'model_not_found' => 'Model Not Found',
+            'timeout' => 'Timeout',
+            'unreachable' => 'Unreachable',
+            default => 'Error',
+        };
+
+        $this->persistIfNeeded(
+            $this->result($provider, false, $status, $label, $message, null),
+            $provider,
+            true,
+        );
+    }
+
     /**
      * @return array<string, mixed>
      */

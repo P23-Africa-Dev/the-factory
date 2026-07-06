@@ -16,6 +16,12 @@ final class CopilotMeetingScheduleTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['services.ai.enable_hybrid_router' => false]);
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();
@@ -38,7 +44,7 @@ final class CopilotMeetingScheduleTest extends TestCase
                 'model' => 'gpt-4.1-mini',
                 'purpose' => 'operational',
             ]);
-        $mockRouter->shouldReceive('generateText')->once()->andReturn(null);
+        $mockRouter->shouldReceive('generateForPurpose')->once()->andReturn(null);
         $this->app->instance(AiProviderRouter::class, $mockRouter);
 
         $response = $this
@@ -79,7 +85,7 @@ final class CopilotMeetingScheduleTest extends TestCase
                 'model' => 'gpt-4.1-mini',
                 'purpose' => 'operational',
             ]);
-        $mockRouter->shouldReceive('generateText')->once()->andReturn(null);
+        $mockRouter->shouldReceive('generateForPurpose')->once()->andReturn(null);
         $this->app->instance(AiProviderRouter::class, $mockRouter);
 
         $response = $this

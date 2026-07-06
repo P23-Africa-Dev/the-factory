@@ -45,6 +45,8 @@ class CopilotService
         private readonly KpiInferenceService $kpiInferenceService,
         private readonly NotificationService $notificationService,
         private readonly DemoCompanyService $demoCompanyService,
+        private readonly LlmIntentRouter $llmIntentRouter,
+        private readonly ReadToolSynthesisService $readToolSynthesisService,
     ) {}
 
     public function chat(
@@ -150,9 +152,20 @@ class CopilotService
 
         $actionMessage = $this->buildActionableMessage($message, $threadId, $resolvedCompanyId, (int) $user->id);
 
+        $intent = $this->maybeEnhanceIntentWithLlmRouter(
+            intent: $intent,
+            message: $message,
+            role: $role,
+            threadId: $threadId,
+            companyId: $resolvedCompanyId,
+            userId: (int) $user->id,
+            resolvedActionTool: $resolvedActionTool,
+            resolvedReadTool: $resolvedReadTool,
+        );
+
         $intentType = (string) ($intent['type'] ?? 'general');
 
-        $assistantText = 'I can help with leads, tasks, projects, meetings, attendance, tracking, and dashboard summaries. Ask things like "How many leads are in my CRM?" or "Show overdue tasks."';
+        $assistantText = $this->degradedModeMessage();
         $toolResult = null;
         $resolvedTool = null;
 
@@ -280,6 +293,21 @@ class CopilotService
                 }
 
                 $assistantText = (string) ($toolResult['summary'] ?? $assistantText);
+                if ($intentType === 'tool' && is_array($toolResult)) {
+                    $synthesized = $this->readToolSynthesisService->synthesize(
+                        tool: $candidateTool,
+                        toolResult: $toolResult,
+                        userMessage: $message,
+                        role: $role,
+                        companyName: (string) ($companyContext['company']->name ?? 'your active organization'),
+                        companyId: $resolvedCompanyId,
+                        userId: (int) $user->id,
+                    );
+                    if (is_string($synthesized) && trim($synthesized) !== '') {
+                        $assistantText = $synthesized;
+                    }
+                }
+
                 $resolvedTool = $candidateTool;
 
                 if ($resolvedTool === 'planning.daily') {
@@ -504,7 +532,7 @@ class CopilotService
             return ['text' => ElySystemPrompt::intro() . ' I can help with CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.', 'result' => null];
         }
 
-        $systemPrompt = ElySystemPrompt::core();
+        $systemPrompt = ElySystemPrompt::core() . "\n\n" . ElySystemPrompt::fewShotExamples();
         $userPrompt = sprintf(
             "Company name: %s\nTenant scope ID (internal, do not mention): %d\nUser name: %s\nRole: %s\nConversation summary:\n%s\nRecent conversation:\n%s\nKnown entities: %s\nQuestion: %s",
             $this->redactSensitiveText($resolvedCompanyName),
@@ -540,7 +568,73 @@ class CopilotService
             return ['text' => $trimmed, 'result' => $generationResult];
         }
 
-        return ['text' => 'I can help with leads, tasks, projects, meetings, attendance, tracking, and dashboard summaries. Ask things like "How many leads are in my CRM?" or "Show overdue tasks."', 'result' => null];
+        return ['text' => $this->degradedModeMessage(), 'result' => null];
+    }
+
+    private function degradedModeMessage(): string
+    {
+        return 'ELY is running in limited mode right now because the AI provider is temporarily unavailable. I can still run dashboard queries if you ask specifically, for example: "show overdue tasks", "plan my day", or "list my CRM leads".';
+    }
+
+    /**
+     * @param  array{type:string,tool:?string,confidence:float}  $intent
+     * @return array{type:string,tool:?string,confidence:float}
+     */
+    private function maybeEnhanceIntentWithLlmRouter(
+        array $intent,
+        string $message,
+        string $role,
+        ?string $threadId,
+        int $companyId,
+        int $userId,
+        ?string $resolvedActionTool,
+        ?string $resolvedReadTool,
+    ): array {
+        if (! (bool) config('services.ai.enable_hybrid_router', true)) {
+            return $intent;
+        }
+
+        $confidence = (float) ($intent['confidence'] ?? 0.4);
+        $intentType = (string) ($intent['type'] ?? 'general');
+        $needsRouter = ($intentType === 'general' && $resolvedActionTool === null && $resolvedReadTool === null)
+            || ($confidence < 0.9 && in_array($intentType, ['general', 'tool', 'action'], true))
+            || ($this->looksLikeActionRequest($message) && $resolvedActionTool === null);
+
+        if (! $needsRouter) {
+            return $intent;
+        }
+
+        $promptContext = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
+        $recentMessages = is_array($promptContext['recent_messages'] ?? null) ? $promptContext['recent_messages'] : [];
+        $route = $this->llmIntentRouter->route($message, $role, $recentMessages, $companyId);
+        if ($route === null) {
+            return $intent;
+        }
+
+        $routeConfidence = (float) ($route['confidence'] ?? 0.0);
+        if ($routeConfidence < 0.7) {
+            return $intent;
+        }
+
+        $routeType = (string) ($route['type'] ?? 'chat');
+        if ($routeType === 'chat') {
+            return [
+                'type' => 'general',
+                'tool' => null,
+                'confidence' => $routeConfidence,
+            ];
+        }
+
+        $routeTool = is_string($route['tool'] ?? null) ? trim((string) $route['tool']) : '';
+        if ($routeTool === '') {
+            return $intent;
+        }
+
+        return [
+            'type' => $routeType,
+            'tool' => $routeTool,
+            'confidence' => max($confidence, $routeConfidence),
+        ];
     }
 
     private function responseClaimsExecutedAction(string $text): bool

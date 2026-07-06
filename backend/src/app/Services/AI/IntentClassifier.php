@@ -54,6 +54,7 @@ class IntentClassifier
                 '/\b(create|add|set|define|new)\b.{0,60}\bkpi\b/i',
                 '/\b(create|add|set|define)\b.{0,60}\b(key\s*performance\s*indicator|performance\s*target)\b/i',
                 '/\bkpi\s+name\b/i',
+                '/\bset\s+kpi\s+for\b/i',
             ],
         ];
 
@@ -74,9 +75,13 @@ class IntentClassifier
                 '/\bfollow[\s-]?up\s+(summary|recommend)/i',
                 '/\blead\s+summar/i',
                 '/\bcrm\s+follow[\s-]?ups?\b/i',
+                '/\bwho\s+should\s+i\s+follow[\s-]?up\b/i',
+                '/\bwho\s+needs\s+(a\s+)?follow[\s-]?up\b/i',
             ],
             'crm.stale_leads' => [
                 '/\b(stale\s+leads?|not\s+visited\s+recently|businesses?\s+not\s+visited)\b/i',
+                '/\bwho\s+hasn[\x27\x60]?t\s+been\s+contacted\b/i',
+                '/\bnot\s+contacted\s+(lately|recently)\b/i',
             ],
             'crm.visit_extract' => [
                 '/\b(process|structure|extract)\s+visit\s+notes?\b/i',
@@ -116,6 +121,9 @@ class IntentClassifier
                 '/\boverdue\s+tasks?\b/i',
                 '/\bdue\s+today\b/i',
                 '/\blate\s+tasks?\b/i',
+                '/\bwhat[\x27\x60]?s\s+overdue\b/i',
+                '/\bwhat\s+is\s+overdue\b/i',
+                '/\bshow\s+overdue\b/i',
             ],
             'projects.at_risk_summary' => [
                 '/\b(projects?\s+at\s+risk|project\s+risk|behind\s+schedule|delayed\s+projects?)\b/i',
@@ -136,6 +144,7 @@ class IntentClassifier
                 '/\b(dashboard|overview|kpi\s+snapshot|performance\s+snapshot)\b/i',
             ],
             'kpi.team_performance' => [
+                '/\bhow\s+is\s+the\s+team\s+perform/i',
                 '/\b(who\s+is\s+perform|who\s+performs?\s+best|who\s+performs?\s+(the\s+)?least)\b/i',
                 '/\bperforming\s+the\s+(best|least)\b/i',
                 '/\b(best|top)\s+perform/i',
@@ -146,6 +155,7 @@ class IntentClassifier
             'planning.daily' => [
                 '/\bplan\s+my\s+day\b/i',
                 '/\bwhat\s+should\s+i\s+(visit|do)\s+next\b/i',
+                '/\bwhat\s+should\s+i\s+do\s+today\b/i',
                 '/\bfollow[\s-]?ups?\s+due\b/i',
                 '/\bnearby\s+opportunit/i',
                 '/\bhelp\s+me\s+achieve\s+my\s+kpi\b/i',

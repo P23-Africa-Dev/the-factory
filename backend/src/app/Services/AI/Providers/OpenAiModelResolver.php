@@ -35,6 +35,11 @@ class OpenAiModelResolver
             if ($analystModel !== '' && ! $this->isAutoMode($analystModel)) {
                 return $analystModel;
             }
+        } elseif ($purpose === 'routing') {
+            $routerModel = trim((string) config('services.ai.router_model', 'auto'));
+            if ($routerModel !== '' && ! $this->isAutoMode($routerModel)) {
+                return $routerModel;
+            }
         } else {
             $execModel = trim((string) config('services.ai.exec_model', 'auto'));
             if ($execModel !== '' && ! $this->isAutoMode($execModel)) {
@@ -172,6 +177,7 @@ class OpenAiModelResolver
 
         $preferencePatterns = match ($purpose) {
             'analyst', 'report' => ['gpt-4.1', 'gpt-4o', 'o4', 'o3'],
+            'routing' => ['gpt-4.1-mini', 'gpt-4o-mini', 'gpt-4.1-nano'],
             default => ['gpt-4.1-mini', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4o'],
         };
 

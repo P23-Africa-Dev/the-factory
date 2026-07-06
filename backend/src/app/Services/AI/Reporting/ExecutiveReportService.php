@@ -176,7 +176,7 @@ PROMPT;
         $userPrompt = "Weekly executive metrics JSON:\n" . json_encode($pack, JSON_UNESCAPED_SLASHES);
 
         $result = $this->aiProviderRouter->generateForPurpose(
-            purpose: 'report',
+            purpose: 'analyst',
             systemPrompt: $systemPrompt,
             userPrompt: $userPrompt,
             options: [
