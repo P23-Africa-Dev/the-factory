@@ -30,6 +30,7 @@ use App\Services\Task\TaskReassignmentService;
 use App\Services\Task\TaskService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -359,6 +360,23 @@ class ActionToolRegistry
             ...$validated,
             'company_id' => $companyId,
         ]);
+
+        $lead->update([
+            'last_interaction_at' => now(),
+            'last_interaction' => 'Follow-up email sent: ' . Str::limit((string) $validated['subject'], 120),
+        ]);
+
+        $this->leadService->addActivity($user, $lead, [
+            'type' => 'email',
+            'title' => 'Follow-up email sent',
+            'description' => Str::limit((string) $validated['subject'], 255),
+            'happened_at' => now()->toIso8601String(),
+            'meta' => [
+                'message_id' => (int) $message->id,
+                'subject' => (string) $validated['subject'],
+                'to' => $validated['to'] ?? [],
+            ],
+        ], $companyId);
 
         return [
             'tool' => 'crm.send_email',

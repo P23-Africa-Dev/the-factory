@@ -50,6 +50,8 @@ class IntentClassifier
             ],
             'crm.send_email' => [
                 '/\b(send|email|write|draft)\b.{0,80}\b(email|mail|message)\b/i',
+                '/\b(send|write|draft)\s+(?:a\s+)?follow[\s-]?up\b/i',
+                '/\bfollow[\s-]?up\s+(?:to|with)\b/i',
                 '/\bfollow[\s-]?up\b.{0,60}\b(email|mail|client|lead|customer)\b/i',
                 '/\bemail\b.{0,40}\b(about|regarding|for)\b/i',
             ],

@@ -345,7 +345,17 @@ class CopilotService
             $assistantText = $this->redactSensitiveText($assistantText);
             if (is_array($toolResult)) {
                 if ($resolvedTool !== 'planning.daily') {
-                    $toolResult['payload'] = $this->redactValue($toolResult['payload'] ?? null);
+                    $payload = $toolResult['payload'] ?? null;
+                    if (is_array($payload) && ($payload['confirmation_required'] ?? false) === true) {
+                        $actionArgs = is_array($payload['action_args'] ?? null) ? $payload['action_args'] : null;
+                        $redactedPayload = $this->redactValue($payload);
+                        if (is_array($redactedPayload) && is_array($actionArgs)) {
+                            $redactedPayload['action_args'] = $actionArgs;
+                        }
+                        $toolResult['payload'] = $redactedPayload;
+                    } else {
+                        $toolResult['payload'] = $this->redactValue($payload);
+                    }
                 }
                 $toolResult['summary'] = $this->redactSensitiveText((string) ($toolResult['summary'] ?? ''));
             }
@@ -746,6 +756,11 @@ class CopilotService
             return 'crm.send_email';
         }
 
+        if (preg_match('/\b(send|write|draft)\s+(?:a\s+)?follow[\s-]?up\b/i', $normalized) === 1
+            || preg_match('/\bfollow[\s-]?up\s+(?:to|with)\b/i', $normalized) === 1) {
+            return 'crm.send_email';
+        }
+
         if (preg_match('/\bkpi\b/i', $normalized) && preg_match('/\b(create|add|new|set|define)\b/i', $normalized) === 1) {
             return 'kpis.create';
         }
@@ -1029,6 +1044,7 @@ class CopilotService
                 entities: $entities,
                 conversationSummary: (string) ($context['summary'] ?? ''),
                 userId: $userId,
+                threadId: $threadId,
             ),
             'kpis.create' => $this->kpiInferenceService->infer(
                 message: $message,
@@ -1080,7 +1096,7 @@ class CopilotService
         }
 
         if ($tool === 'crm.send_email') {
-            return $this->emailInferenceService->normalizeProvidedArgs($companyId, $actionArgs);
+            return $this->emailInferenceService->normalizeProvidedArgs($companyId, $actionArgs, $userId);
         }
 
         if ($tool === 'kpis.create') {
@@ -1696,6 +1712,8 @@ class CopilotService
             'used_default_dates' => 'Start or end date was not clear and defaulted to the next month.',
             'recipients_unresolved' => 'No matching recipients were found. Please verify agent names or select recipients before confirming.',
             'message_too_generic' => 'The reminder message is too generic. Edit it to describe the overdue tasks before confirming.',
+            'lead_unresolved' => 'No matching CRM lead was found. Select the correct lead before confirming.',
+            'recipient_email_missing' => 'This lead does not have a recipient email yet. Add an email address before confirming.',
         ];
 
         return collect($codes)
@@ -1724,6 +1742,10 @@ class CopilotService
 
         if ($tool === 'notifications.send') {
             return $this->notificationInferenceService->warningCodes($args);
+        }
+
+        if ($tool === 'crm.send_email') {
+            return $this->emailInferenceService->warningCodes($args);
         }
 
         if ($tool !== 'tasks.create') {
@@ -1794,6 +1816,14 @@ class CopilotService
 
         if (in_array('message_too_generic', $validationWarningCodes, true)) {
             $blockingCodes[] = 'message_too_generic';
+        }
+
+        if (in_array('lead_unresolved', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'lead_unresolved';
+        }
+
+        if (in_array('recipient_email_missing', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'recipient_email_missing';
         }
 
         if ((bool) config('services.ai.strict_confirmation_blocking', false)) {

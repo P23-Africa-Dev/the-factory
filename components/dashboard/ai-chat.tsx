@@ -23,6 +23,12 @@ import { resolveCopilotGeolocationContext } from "@/lib/copilot-geolocation";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useCrmLabels } from "@/hooks/use-crm";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
+import { listLeads } from "@/lib/api/crm";
+import {
+  createUserCalendarConnectUrl,
+  createUserCalendarReconnectUrl,
+  getUserCalendarIntegrationStatus,
+} from "@/lib/api/calendar-integration";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
@@ -99,6 +105,18 @@ interface MeetingAttendeeOptionsState {
   loading: boolean;
   loaded: boolean;
   items: MeetingAttendeeCandidate[];
+}
+
+interface LeadOption {
+  id: number;
+  name: string;
+  email: string | null;
+}
+
+interface LeadOptionsState {
+  loading: boolean;
+  loaded: boolean;
+  items: LeadOption[];
 }
 
 type EditControlType = "text" | "textarea" | "select" | "date" | "datetime-local" | "number";
@@ -339,7 +357,9 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
   const [meetingActionDrafts, setMeetingActionDrafts] = useState<Record<string, ElyMeetingDraft>>({});
   const [assigneeOptions, setAssigneeOptions] = useState<Record<string, AssigneeOptionsState>>({});
+  const [leadOptions, setLeadOptions] = useState<Record<string, LeadOptionsState>>({});
   const [meetingAttendeeOptions, setMeetingAttendeeOptions] = useState<Record<string, MeetingAttendeeOptionsState>>({});
+  const pendingEmailConfirmRef = useRef<{ index: number; msg: Message } | null>(null);
   const closeSearchPanel = useCallback(() => {
     setSearchOpen(false);
     setSearchQuery("");
@@ -520,7 +540,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
         continue;
       }
 
-      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "crm.send_email", "kpis.create", "notifications.send"].includes(tool) || hasUserAssignmentField) {
+      if (tool === "crm.send_email") {
+        void loadLeadOptions(msg.id);
+        continue;
+      }
+
+      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "kpis.create", "notifications.send"].includes(tool) || hasUserAssignmentField) {
         if (isAgent && tool === "tasks.create") {
           continue;
         }
@@ -723,13 +748,24 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function updateActionDraft(msgId: string, field: string, value: string) {
-    setActionDrafts((prev) => ({
-      ...prev,
-      [msgId]: {
+    setActionDrafts((prev) => {
+      const nextDraft: Record<string, string> = {
         ...(prev[msgId] ?? {}),
         [field]: value,
-      },
-    }));
+      };
+
+      if (field === "lead_id" && value.trim() !== "") {
+        const selectedLead = (leadOptions[msgId]?.items ?? []).find((item) => String(item.id) === value.trim());
+        if (selectedLead?.email) {
+          nextDraft.to_email = selectedLead.email;
+        }
+      }
+
+      return {
+        ...prev,
+        [msgId]: nextDraft,
+      };
+    });
   }
 
   async function loadMeetingAttendeeOptions(msgId: string) {
@@ -775,6 +811,53 @@ export function AIChat({ open, onClose }: AIChatProps) {
       ...prev,
       [msgId]: draft,
     }));
+  }
+
+  async function loadLeadOptions(msgId: string) {
+    const current = leadOptions[msgId];
+    if (current?.loading === true || current?.loaded === true) {
+      return;
+    }
+
+    setLeadOptions((prev) => ({
+      ...prev,
+      [msgId]: {
+        loading: true,
+        loaded: false,
+        items: prev[msgId]?.items ?? [],
+      },
+    }));
+
+    try {
+      const token = getAuthTokenFromDocument();
+      const response = await listLeads(
+        { company_id: companyId ?? undefined, per_page: 100 },
+        token,
+      );
+      const items = (response.data.items ?? []).map((lead) => ({
+        id: lead.id,
+        name: lead.name,
+        email: lead.email ?? null,
+      }));
+
+      setLeadOptions((prev) => ({
+        ...prev,
+        [msgId]: {
+          loading: false,
+          loaded: true,
+          items,
+        },
+      }));
+    } catch {
+      setLeadOptions((prev) => ({
+        ...prev,
+        [msgId]: {
+          loading: false,
+          loaded: true,
+          items: [],
+        },
+      }));
+    }
   }
 
   async function loadAssigneeOptions(msgId: string) {
@@ -934,6 +1017,47 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return merged;
     }
 
+    if (tool === "crm.send_email") {
+      const merged: Record<string, unknown> = { ...baseArgs, ...draft };
+      const leadIdRaw = String(draft.lead_id ?? merged.lead_id ?? "").trim();
+      if (leadIdRaw !== "" && !Number.isNaN(Number(leadIdRaw))) {
+        merged.lead_id = Number(leadIdRaw);
+        const selectedLead = (leadOptions[msg.id]?.items ?? []).find((item) => item.id === Number(leadIdRaw));
+        if (selectedLead) {
+          merged.lead_name = selectedLead.name;
+          merged.lead_email = selectedLead.email;
+        }
+      }
+
+      const toEmail = String(draft.to_email ?? "").trim();
+      if (toEmail !== "") {
+        merged.to_email = toEmail;
+        merged.to = [{
+          email: toEmail,
+          name: typeof merged.lead_name === "string" ? merged.lead_name : null,
+        }];
+      } else if (Array.isArray(merged.to) && merged.to.length > 0) {
+        const first = merged.to[0];
+        if (first && typeof first === "object" && first !== null && typeof (first as Record<string, unknown>).email === "string") {
+          merged.to_email = (first as Record<string, unknown>).email;
+        }
+      } else if (typeof merged.lead_email === "string" && merged.lead_email.trim() !== "") {
+        merged.to_email = merged.lead_email;
+        merged.to = [{ email: merged.lead_email, name: merged.lead_name ?? null }];
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "subject")) {
+        merged.subject = draft.subject;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "body_text")) {
+        merged.body_text = draft.body_text;
+        merged.body_html = `<p>${String(draft.body_text).replace(/\n/g, "<br />")}</p>`;
+      }
+
+      return merged;
+    }
+
     if (Object.keys(draft).length === 0) {
       return baseArgs;
     }
@@ -987,6 +1111,58 @@ export function AIChat({ open, onClose }: AIChatProps) {
     if (assignedId !== null) {
       const byId = options.find((item) => item.id === assignedId);
       return byId?.name ?? `Agent #${String(assignedId)}`;
+    }
+
+    return "";
+  }
+
+  function leadSelectOptions(msg: Message): EditFieldOption[] {
+    return (leadOptions[msg.id]?.items ?? []).map((item) => ({
+      value: String(item.id),
+      label: item.email ? `${item.name} (${item.email})` : item.name,
+    }));
+  }
+
+  function leadDisplayName(msg: Message, args: Record<string, unknown>): string {
+    const draftLeadId = String(resolveActionDraft(msg.id).lead_id ?? "").trim();
+    const leadId = draftLeadId !== "" && !Number.isNaN(Number(draftLeadId))
+      ? Number(draftLeadId)
+      : (typeof args.lead_id === "number" ? args.lead_id : null);
+
+    if (leadId !== null) {
+      const matched = (leadOptions[msg.id]?.items ?? []).find((item) => item.id === leadId);
+      if (matched) {
+        return matched.name;
+      }
+    }
+
+    if (typeof args.lead_name === "string" && args.lead_name.trim() !== "") {
+      return args.lead_name.trim();
+    }
+
+    return "";
+  }
+
+  function emailRecipientValue(msg: Message, args: Record<string, unknown>): string {
+    const draftEmail = String(resolveActionDraft(msg.id).to_email ?? "").trim();
+    if (draftEmail !== "") {
+      return draftEmail;
+    }
+
+    const to = Array.isArray(args.to) ? args.to : [];
+    if (to[0] && typeof to[0] === "object" && to[0] !== null) {
+      const email = String((to[0] as Record<string, unknown>).email ?? "").trim();
+      if (email !== "") {
+        return email;
+      }
+    }
+
+    if (typeof args.lead_email === "string" && args.lead_email.trim() !== "") {
+      return args.lead_email.trim();
+    }
+
+    if (typeof args.to_email === "string" && args.to_email.trim() !== "") {
+      return args.to_email.trim();
     }
 
     return "";
@@ -1099,7 +1275,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     if (tool === "crm.send_email") {
       return [
-        { key: "lead_id", label: "Lead ID", control: "number" },
+        { key: "lead_id", label: "Lead", control: "select", options: leadSelectOptions(msg) },
+        { key: "to_email", label: "To", control: "text" },
         { key: "subject", label: "Subject", control: "text" },
         { key: "body_text", label: "Message", control: "textarea" },
       ];
@@ -1210,6 +1387,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return parseDeliveryTypesValue(args.delivery_types).join(", ");
     }
 
+    if (field.key === "to_email") {
+      return emailRecipientValue(msg, args);
+    }
+
+    if (field.key === "lead_id") {
+      const draftLeadId = String(draft.lead_id ?? "").trim();
+      if (draftLeadId !== "") {
+        return draftLeadId;
+      }
+
+      if (typeof args.lead_id === "number") {
+        return String(args.lead_id);
+      }
+
+      return "";
+    }
+
     const raw = args[field.key];
 
     if (field.control === "date") {
@@ -1306,6 +1500,25 @@ export function AIChat({ open, onClose }: AIChatProps) {
       if (code === "message_too_generic") {
         const message = String(args?.message ?? "").trim();
         if (message.length < 10) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "lead_unresolved") {
+        const draftLeadId = String(draft.lead_id ?? "").trim();
+        const hasLeadId =
+          (typeof args?.lead_id === "number" && args.lead_id > 0)
+          || (draftLeadId !== "" && !Number.isNaN(Number(draftLeadId)));
+        if (!hasLeadId) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "recipient_email_missing") {
+        const recipient = emailRecipientValue(msg, argsForChecks);
+        if (recipient === "") {
           remaining.push(code);
         }
         continue;
@@ -1439,16 +1652,32 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }
 
     if (tool === "crm.send_email") {
-      const to = Array.isArray(args.to) ? args.to : [];
-      const recipient = to[0] && typeof to[0] === "object" && to[0] !== null
-        ? String((to[0] as Record<string, unknown>).email ?? "")
-        : formatPreviewValue("to", args.to);
+      const leadName = leadDisplayName(msg, args);
+      const recipient = emailRecipientValue(msg, args);
+      const inference = parseRecord(args.__inference);
+      const gmailRequired = inference?.gmail_connection_required === true;
 
       return [
-        { key: "lead_id", label: "Lead ID", value: formatPreviewValue("lead_id", args.lead_id) },
-        { key: "to", label: "To", value: recipient },
+        {
+          key: "lead",
+          label: "Lead",
+          value: leadName !== "" ? leadName : "Not provided",
+          warning: warningCodes.includes("lead_unresolved"),
+        },
+        {
+          key: "to",
+          label: "To",
+          value: recipient !== "" ? recipient : "Not provided",
+          warning: warningCodes.includes("recipient_email_missing"),
+        },
         { key: "subject", label: "Subject", value: formatPreviewValue("subject", args.subject) },
         { key: "body_text", label: "Message", value: formatPreviewValue("body_text", args.body_text) },
+        ...(gmailRequired ? [{
+          key: "gmail",
+          label: "Google Email",
+          value: "Connect Google to send this follow-up",
+          warning: true,
+        }] : []),
       ];
     }
 
@@ -1538,7 +1767,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     return "";
   }
 
-  function handleConfirmAction(index: number, msg: Message) {
+  function submitConfirmedAction(index: number, msg: Message) {
     const payload = messagePayload(msg);
     if (!payload) return;
 
@@ -1555,6 +1784,102 @@ export function AIChat({ open, onClose }: AIChatProps) {
       actionConfirmed: true,
       actionArgs: hasSanitizedArgs ? sanitizedArgs : undefined,
     });
+  }
+
+  function openGoogleAuthorizationPopup(authorizationUrl: string, popupName: string) {
+    const popup = window.open(authorizationUrl, popupName, "width=560,height=720");
+    if (!popup) {
+      window.location.href = authorizationUrl;
+      return;
+    }
+
+    toast.info("Complete Google sign-in in the popup. Your follow-up will send automatically after connection.");
+  }
+
+  async function ensureGmailReadyForEmail(): Promise<boolean> {
+    if (!companyId) {
+      toast.error("Select a company before sending CRM email.");
+      return false;
+    }
+
+    const token = getAuthTokenFromDocument();
+    if (!token) {
+      toast.error("You must be signed in to connect Google.");
+      return false;
+    }
+
+    const statusResponse = await getUserCalendarIntegrationStatus({ company_id: companyId }, token);
+    const status = statusResponse.data;
+    const gmailReady =
+      status.connected === true
+      && status.gmail_enabled === true
+      && status.requires_gmail_reconnect !== true
+      && status.requires_reauthentication !== true;
+
+    if (gmailReady) {
+      return true;
+    }
+
+    const connectResponse = status.requires_gmail_reconnect === true
+      ? await createUserCalendarReconnectUrl({ company_id: companyId }, token)
+      : await createUserCalendarConnectUrl({ company_id: companyId }, token);
+
+    openGoogleAuthorizationPopup(connectResponse.data.authorization_url, "google-calendar-connect");
+    return false;
+  }
+
+  useEffect(() => {
+    const handleOAuthMessage = (event: MessageEvent) => {
+      const payload = event.data as {
+        type?: string;
+        status?: "success" | "error";
+        message?: string;
+        gmail_enabled?: boolean;
+        requires_gmail_reconnect?: boolean;
+      };
+
+      if (!payload || payload.type !== "google-calendar-oauth") {
+        return;
+      }
+
+      if (payload.status !== "success") {
+        toast.error(payload.message || "Google connection failed.");
+        pendingEmailConfirmRef.current = null;
+        return;
+      }
+
+      const pending = pendingEmailConfirmRef.current;
+      pendingEmailConfirmRef.current = null;
+
+      if (payload.gmail_enabled === true || payload.requires_gmail_reconnect !== true) {
+        toast.success(payload.message || "Google connected. Sending your follow-up email now.");
+      } else {
+        toast.warning("Google connected for calendar only. Reconnect with Gmail permissions to send email.");
+        return;
+      }
+
+      if (pending) {
+        submitConfirmedAction(pending.index, pending.msg);
+      }
+    };
+
+    window.addEventListener("message", handleOAuthMessage);
+    return () => window.removeEventListener("message", handleOAuthMessage);
+  }, [companyId]);
+
+  async function handleConfirmAction(index: number, msg: Message) {
+    const tool = actionToolForMessage(msg);
+
+    if (tool === "crm.send_email") {
+      pendingEmailConfirmRef.current = { index, msg };
+      const ready = await ensureGmailReadyForEmail();
+      if (!ready) {
+        return;
+      }
+      pendingEmailConfirmRef.current = null;
+    }
+
+    submitConfirmedAction(index, msg);
   }
 
   function handleEditActionDetails(index: number) {
@@ -1584,6 +1909,14 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     if (issues.includes("missing_lead_name")) {
       return "Confirmation is blocked until the business name is provided.";
+    }
+
+    if (issues.includes("lead_unresolved")) {
+      return "Confirmation is blocked until a CRM lead is selected.";
+    }
+
+    if (issues.includes("recipient_email_missing")) {
+      return "Confirmation is blocked until a recipient email is provided.";
     }
 
     return "Confirmation is currently blocked until required fields are corrected.";
