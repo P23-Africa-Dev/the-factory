@@ -8,6 +8,7 @@ use App\Http\Middleware\EnsureApiAccessRole;
 use App\Http\Middleware\EnsureCompanyHasActiveSubscription;
 use App\Http\Middleware\EnsureUserAccountIsActive;
 use App\Http\Middleware\NormalizeRequestPath;
+use App\Http\Middleware\ThrottleLoginAttempts;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -32,6 +33,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(NormalizeRequestPath::class);
+        $middleware->trustProxies(at: '*');
 
         $middleware->redirectGuestsTo(function (Request $request): string {
             if ($request->is('admin/*')) {
@@ -50,6 +52,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'access.role' => EnsureApiAccessRole::class,
             'account.active' => EnsureUserAccountIsActive::class,
             'subscription.active' => EnsureCompanyHasActiveSubscription::class,
+            'throttle.login' => ThrottleLoginAttempts::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

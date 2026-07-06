@@ -11,7 +11,7 @@ import {
   enqueueOfflineHttpMutation,
   isOfflineQueueSupportedPath,
 } from "@/lib/offline/queue";
-import { resolveApiErrorMessage } from "@/lib/api/errors";
+import { formatRateLimitMessage, resolveApiErrorMessage } from "@/lib/api/errors";
 
 export type ApiEnvelope<TData> = {
   success: boolean;
@@ -35,17 +35,24 @@ export class ApiRequestError extends Error {
   status: number;
   errors: Record<string, string[]> | null;
   code?: string;
+  retryAfter?: number;
 
   constructor(
     message: string,
     status: number,
     errors: Record<string, string[]> | null = null,
-    code?: string
+    code?: string,
+    retryAfter?: number
   ) {
-    super(resolveApiErrorMessage(message, errors));
+    super(
+      status === 429
+        ? formatRateLimitMessage(resolveApiErrorMessage(message, errors), retryAfter)
+        : resolveApiErrorMessage(message, errors)
+    );
     this.status = status;
     this.errors = errors;
     this.code = code;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -171,11 +178,15 @@ export async function apiRequest<TData>({
       );
     }
 
+    const retryAfterHeader = response.headers.get("Retry-After");
+    const retryAfter = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : undefined;
+
     throw new ApiRequestError(
       payload.message || "Request failed.",
       response.status,
       payload.errors,
-      accountStatus
+      accountStatus,
+      Number.isFinite(retryAfter) ? retryAfter : undefined
     );
   }
 

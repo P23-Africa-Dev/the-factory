@@ -567,7 +567,7 @@ class InternalUserOnboardingService
         }
 
         if ($normalizedAvatarKey === null && $assignRandomAvatar && $normalizedGender !== null) {
-            $normalizedAvatarKey = $this->randomAvatarKeyForGender($normalizedGender);
+            $normalizedAvatarKey = $this->avatarStorage->randomCatalogKeyForGender($normalizedGender);
         }
 
         if ($requireCompleteProfile) {
@@ -635,17 +635,6 @@ class InternalUserOnboardingService
             ->all();
 
         return $this->avatarGenderMapCache;
-    }
-
-    private function randomAvatarKeyForGender(string $gender): ?string
-    {
-        $options = array_keys($this->avatarCatalog()[$gender] ?? []);
-
-        if ($options === []) {
-            return null;
-        }
-
-        return $options[array_rand($options)];
     }
 
     private function ensureValidSupervisor(int $companyId, int $supervisorUserId): void

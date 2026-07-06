@@ -128,7 +128,7 @@ Route::prefix('auth')->name('auth.')->group(function (): void {
 
     // Unified admin login for self-serve and enterprise users
     Route::post('/login', AdminLoginController::class)
-        ->middleware('throttle:10,1')
+        ->middleware('throttle.login')
         ->name('login');
 });
 
@@ -151,20 +151,20 @@ Route::prefix('enterprise')->name('enterprise.')->group(function (): void {
 
     // Deprecated: Use /api/auth/login instead
     Route::post('/login', EnterpriseLoginController::class)
-        ->middleware('throttle:10,1')
+        ->middleware('throttle.login')
         ->name('login');
 });
 
 Route::prefix('agent')->name('agent.')->group(function (): void {
     Route::post('/login', AgentLoginController::class)
-        ->middleware('throttle:10,1')
+        ->middleware('throttle.login')
         ->name('login');
 });
 
 Route::prefix('internal')->name('internal.')->group(function (): void {
     // Deprecated: use /api/v1/agent/login.
     Route::post('/login', InternalLoginController::class)
-        ->middleware('throttle:10,1')
+        ->middleware('throttle.login')
         ->name('login');
 
     Route::post('/onboarding/preview', [InternalOnboardingController::class, 'preview'])

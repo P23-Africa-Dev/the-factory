@@ -1,5 +1,21 @@
 const GENERIC_API_MESSAGES = new Set(["The given data was invalid.", "Request failed."]);
 
+export function formatRateLimitMessage(
+  message: string | null | undefined,
+  retryAfter?: number | null
+): string {
+  if (retryAfter && retryAfter > 0) {
+    return `Too many login attempts. Please wait ${retryAfter}s and try again.`;
+  }
+
+  const trimmed = message?.trim();
+  if (trimmed && trimmed !== "Too many requests. Please slow down and try again later.") {
+    return trimmed;
+  }
+
+  return trimmed || "Too many requests. Please slow down and try again later.";
+}
+
 export function resolveApiErrorMessage(
   message: string | null | undefined,
   errors?: Record<string, string[]> | null

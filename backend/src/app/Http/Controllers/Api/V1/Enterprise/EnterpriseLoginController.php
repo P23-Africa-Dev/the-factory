@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Enterprise\EnterpriseLoginRequest;
 use App\Http\Resources\UserResource;
 use App\Services\Enterprise\EnterpriseAuthService;
+use App\Support\LoginRateLimiter;
 use Illuminate\Http\JsonResponse;
 
 class EnterpriseLoginController extends Controller
@@ -20,12 +21,16 @@ class EnterpriseLoginController extends Controller
         );
 
         if (! $result) {
+            LoginRateLimiter::recordFailedAttempt($request);
+
             return $this->error(
                 message: 'Invalid credentials or account not activated.',
                 errors: ['email' => ['Credentials are invalid or onboarding is not complete.']],
                 status: 401,
             );
         }
+
+        LoginRateLimiter::clear($request);
 
         return $this->success(
             message: 'Login successful.',
