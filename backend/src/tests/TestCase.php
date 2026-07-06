@@ -33,5 +33,9 @@ abstract class TestCase extends BaseTestCase
 
         Storage::fake('avatars');
         Storage::disk('avatars')->put('avatar/default/ghost.svg', '<svg></svg>');
+
+        config([
+            'filesystems.avatar_public_base_url' => 'https://factory23-storage.lon1.digitaloceanspaces.com',
+        ]);
     }
 }

@@ -54,15 +54,27 @@ class AvatarStorageService
     }
 
     /**
-     * Public CDN/origin base for avatar objects (AWS_URL / disks.avatars.url).
+     * Public origin base for avatar URLs shown to browsers.
+     *
+     * Priority: AVATAR_PUBLIC_BASE_URL > AWS_URL > derived Spaces origin.
+     * Never uses the Flysystem disk url() helper (it may emit CDN hostnames).
      */
     public function publicBaseUrl(): string
     {
+        $explicit = config('filesystems.avatar_public_base_url');
+        if (is_string($explicit) && trim($explicit) !== '') {
+            return rtrim($explicit, '/');
+        }
+
         $diskName = $this->diskName();
         $configuredUrl = config("filesystems.disks.{$diskName}.url");
-
         if (is_string($configuredUrl) && trim($configuredUrl) !== '') {
             return rtrim($configuredUrl, '/');
+        }
+
+        $derivedOrigin = $this->deriveSpacesOriginUrl();
+        if ($derivedOrigin !== '') {
+            return $derivedOrigin;
         }
 
         $legacyBase = rtrim((string) config('internal_onboarding.avatar_public_base_url'), '/');
@@ -70,9 +82,27 @@ class AvatarStorageService
             return $legacyBase;
         }
 
-        $publicDiskUrl = config('filesystems.disks.public.url');
+        return '';
+    }
 
-        return is_string($publicDiskUrl) ? rtrim($publicDiskUrl, '/') : '';
+    /**
+     * Build direct DigitalOcean Spaces origin URL (never the .cdn. hostname).
+     */
+    private function deriveSpacesOriginUrl(): string
+    {
+        $diskName = $this->diskName();
+        $bucket = config("filesystems.disks.{$diskName}.bucket");
+        $region = config("filesystems.disks.{$diskName}.region");
+
+        if (! is_string($bucket) || trim($bucket) === '' || ! is_string($region) || trim($region) === '') {
+            return '';
+        }
+
+        return sprintf(
+            'https://%s.%s.digitaloceanspaces.com',
+            trim($bucket),
+            trim($region),
+        );
     }
 
     public function pathToPublicUrl(string $path): string
@@ -80,11 +110,11 @@ class AvatarStorageService
         $normalizedPath = ltrim($path, '/');
         $baseUrl = $this->publicBaseUrl();
 
-        if ($baseUrl !== '') {
-            return $baseUrl . '/' . $normalizedPath;
+        if ($baseUrl === '') {
+            return '/' . $normalizedPath;
         }
 
-        return $this->disk()->url($normalizedPath);
+        return $baseUrl . '/' . $normalizedPath;
     }
 
     public function url(string $path): string

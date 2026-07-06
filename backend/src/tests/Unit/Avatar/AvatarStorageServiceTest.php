@@ -19,6 +19,7 @@ class AvatarStorageServiceTest extends TestCase
         Storage::fake('public');
 
         config([
+            'filesystems.avatar_public_base_url' => 'https://factory23-storage.lon1.digitaloceanspaces.com',
             'internal_onboarding.avatar_storage_root' => 'avatar',
             'internal_onboarding.default_avatar_path' => 'avatar/default/ghost.svg',
         ]);

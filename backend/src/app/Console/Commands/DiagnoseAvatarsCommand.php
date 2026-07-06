@@ -27,6 +27,8 @@ class DiagnoseAvatarsCommand extends Command
             ['region', (string) ($diskConfig['region'] ?? 'missing')],
             ['endpoint', (string) ($diskConfig['endpoint'] ?? 'missing')],
             ['public_base_url', $avatarStorage->publicBaseUrl() ?: '(not set)'],
+            ['avatar_public_base_url (env)', (string) config('filesystems.avatar_public_base_url') ?: '(not set)'],
+            ['aws_url (env)', (string) config('filesystems.disks.avatars.url') ?: '(not set)'],
             ['avatar_root', $avatarStorage->avatarRoot()],
             ['default_path', $avatarStorage->defaultPath()],
             ['default_url', $avatarStorage->defaultUrl()],

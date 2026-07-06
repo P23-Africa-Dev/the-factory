@@ -63,6 +63,7 @@ data:
   AWS_URL: "https://factory23-storage.lon1.digitaloceanspaces.com"
   AWS_USE_PATH_STYLE_ENDPOINT: "false"
   AVATAR_FILESYSTEM_DISK: "avatars"
+  AVATAR_PUBLIC_BASE_URL: "https://factory23-storage.lon1.digitaloceanspaces.com"
   INTERNAL_AVATAR_STORAGE_ROOT: "avatar"
   INTERNAL_DEFAULT_AVATAR_PATH: "avatar/default/ghost.svg"
 

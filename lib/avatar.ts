@@ -1,8 +1,37 @@
 import type { SyntheticEvent } from "react";
 
+const SPACES_ORIGIN =
+  process.env.NEXT_PUBLIC_SPACES_ORIGIN_URL ??
+  "https://factory23-storage.lon1.digitaloceanspaces.com";
+
 export const DEFAULT_AVATAR =
   process.env.NEXT_PUBLIC_AVATAR_DEFAULT_URL ??
-  "https://factory23-storage.lon1.digitaloceanspaces.com/avatar/default/ghost.svg";
+  `${SPACES_ORIGIN}/avatar/default/ghost.svg`;
+
+/**
+ * DigitalOcean CDN hostnames can 404 when CDN is disabled or not yet propagated.
+ * Rewrite to the direct Spaces origin so stale API URLs still load.
+ */
+export function normalizeSpacesAvatarUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+
+    if (!parsed.hostname.endsWith(".cdn.digitaloceanspaces.com")) {
+      return url;
+    }
+
+    const origin = new URL(SPACES_ORIGIN);
+    parsed.hostname = origin.hostname;
+    parsed.protocol = origin.protocol;
+
+    return parsed.toString();
+  } catch {
+    return url.replace(
+      /\.cdn\.digitaloceanspaces\.com/g,
+      ".digitaloceanspaces.com",
+    );
+  }
+}
 
 function apiOrigin(): string {
   const apiBase =
@@ -13,7 +42,7 @@ function apiOrigin(): string {
 
 /**
  * Normalize avatar values from API payloads into a browser-safe image src.
- * Prefers absolute CDN URLs returned by the backend; retains legacy relative
+ * Prefers absolute Spaces URLs returned by the backend; retains legacy relative
  * path support during the storage migration cutover.
  */
 export function getSafeAvatarSrc(
@@ -39,7 +68,7 @@ export function getSafeAvatarSrc(
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return parsed.toString();
+      return normalizeSpacesAvatarUrl(parsed.toString());
     }
 
     return null;
@@ -67,5 +96,5 @@ export function onAvatarError(
   }
 
   target.dataset.avatarFallbackApplied = "true";
-  target.src = fallback;
+  target.src = normalizeSpacesAvatarUrl(fallback);
 }

@@ -30,6 +30,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Avatar Public Base URL
+    |--------------------------------------------------------------------------
+    |
+    | Base URL used when building browser-facing avatar links. Prefer the
+    | direct Spaces origin (not the CDN hostname) unless CDN is verified.
+    | Falls back to AWS_URL when unset.
+    |
+    */
+
+    'avatar_public_base_url' => env('AVATAR_PUBLIC_BASE_URL', env('AWS_URL')),
+
+    /*
+    |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
     |
