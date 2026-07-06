@@ -10,6 +10,7 @@
 | Default allowed origins:
 |   - https://thefactory23.com
 |   - https://www.thefactory23.com
+|   - https://app.thefactory23.com (agent PWA)
 |
 | Wildcard '*' is intentionally NOT allowed in production.
 */
@@ -21,9 +22,11 @@ $allowedOrigins = $envOrigins
     : [
         'https://thefactory23.com',
         'https://www.thefactory23.com',
+        'https://app.thefactory23.com',
         'https://the-factory-frontend-git-space-p23-africa.vercel.app',
         'https://the-factory-frontend-git-dev-work-p23-africa.vercel.app',
-        'http://localhost:3000'
+        'http://localhost:3000',
+        'http://localhost:3001',
     ];
 
 return [
