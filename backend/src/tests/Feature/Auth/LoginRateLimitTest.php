@@ -60,7 +60,7 @@ class LoginRateLimitTest extends TestCase
 
     public function test_login_rate_limit_is_per_email_not_global(): void
     {
-        for ($i = 0; $i < LoginRateLimiter::EMAIL_IP_MAX_ATTEMPTS; $i++) {
+        for ($i = 0; $i < LoginRateLimiter::emailIpMaxAttempts(); $i++) {
             $this->postJson('/api/v1/auth/login', [
                 'email' => 'user-a@example.com',
                 'password' => 'wrong-password',
@@ -82,7 +82,7 @@ class LoginRateLimitTest extends TestCase
 
     public function test_successful_login_clears_rate_limit(): void
     {
-        for ($i = 0; $i < LoginRateLimiter::EMAIL_IP_MAX_ATTEMPTS - 1; $i++) {
+        for ($i = 0; $i < LoginRateLimiter::emailIpMaxAttempts() - 1; $i++) {
             $this->postJson('/api/v1/auth/login', [
                 'email' => 'user-a@example.com',
                 'password' => 'wrong-password',
@@ -102,7 +102,7 @@ class LoginRateLimitTest extends TestCase
 
     public function test_login_returns_429_with_retry_after_after_limit(): void
     {
-        for ($i = 0; $i < LoginRateLimiter::EMAIL_IP_MAX_ATTEMPTS; $i++) {
+        for ($i = 0; $i < LoginRateLimiter::emailIpMaxAttempts(); $i++) {
             $this->postJson('/api/v1/auth/login', [
                 'email' => 'user-a@example.com',
                 'password' => 'wrong-password',

@@ -9,11 +9,17 @@ use Illuminate\Support\Facades\RateLimiter;
 
 class LoginRateLimiter
 {
-    public const EMAIL_IP_MAX_ATTEMPTS = 20;
-
-    public const IP_MAX_ATTEMPTS = 120;
-
     public const DECAY_SECONDS = 60;
+
+    public static function emailIpMaxAttempts(): int
+    {
+        return (int) config('rate_limits.login_email_ip_per_minute', 60);
+    }
+
+    public static function ipMaxAttempts(): int
+    {
+        return (int) config('rate_limits.login_ip_per_minute', 500);
+    }
 
     public static function emailIpKey(Request $request): string
     {
@@ -29,17 +35,17 @@ class LoginRateLimiter
 
     public static function tooManyAttempts(Request $request): bool
     {
-        return RateLimiter::tooManyAttempts(self::emailIpKey($request), self::EMAIL_IP_MAX_ATTEMPTS)
-            || RateLimiter::tooManyAttempts(self::ipKey($request), self::IP_MAX_ATTEMPTS);
+        return RateLimiter::tooManyAttempts(self::emailIpKey($request), self::emailIpMaxAttempts())
+            || RateLimiter::tooManyAttempts(self::ipKey($request), self::ipMaxAttempts());
     }
 
     public static function availableIn(Request $request): int
     {
-        $emailIpWait = RateLimiter::tooManyAttempts(self::emailIpKey($request), self::EMAIL_IP_MAX_ATTEMPTS)
+        $emailIpWait = RateLimiter::tooManyAttempts(self::emailIpKey($request), self::emailIpMaxAttempts())
             ? RateLimiter::availableIn(self::emailIpKey($request))
             : 0;
 
-        $ipWait = RateLimiter::tooManyAttempts(self::ipKey($request), self::IP_MAX_ATTEMPTS)
+        $ipWait = RateLimiter::tooManyAttempts(self::ipKey($request), self::ipMaxAttempts())
             ? RateLimiter::availableIn(self::ipKey($request))
             : 0;
 
