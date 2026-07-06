@@ -1482,8 +1482,40 @@ export function AIChat({ open, onClose }: AIChatProps) {
       }
 
       if (code === "missing_lead_name") {
-        const name = String(args?.name ?? "").trim().toLowerCase();
+        const name = String(draft.name ?? args?.name ?? "").trim().toLowerCase();
         if (name === "" || name === "new lead") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_kpi_name") {
+        const name = String(draft.name ?? args?.name ?? "").trim();
+        if (name === "" || name.toLowerCase() === "new kpi") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_objective") {
+        const objective = String(draft.objective ?? args?.objective ?? "").trim();
+        if (objective.length < 10) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_target_value") {
+        const target = String(draft.target_value ?? args?.target_value ?? "").trim();
+        if (target === "" || target.toLowerCase() === "to be defined") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_expected_outcome") {
+        const outcome = String(draft.expected_outcome ?? args?.expected_outcome ?? "").trim();
+        if (outcome.length < 10) {
           remaining.push(code);
         }
         continue;
@@ -1909,6 +1941,26 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     if (issues.includes("missing_lead_name")) {
       return "Confirmation is blocked until the business name is provided.";
+    }
+
+    if (issues.includes("missing_kpi_name")) {
+      return "Confirmation is blocked until the KPI name is provided.";
+    }
+
+    if (issues.includes("missing_objective")) {
+      return "Confirmation is blocked until the KPI objective is at least 10 characters.";
+    }
+
+    if (issues.includes("missing_target_value")) {
+      return "Confirmation is blocked until a measurable target value is provided.";
+    }
+
+    if (issues.includes("missing_expected_outcome")) {
+      return "Confirmation is blocked until the expected outcome is at least 10 characters.";
+    }
+
+    if (issues.includes("assignee_unresolved")) {
+      return "Confirmation is blocked until an assignee is selected.";
     }
 
     if (issues.includes("lead_unresolved")) {
