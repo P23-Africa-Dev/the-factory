@@ -62,6 +62,97 @@ final class CopilotDailyPlanningTest extends TestCase
         $this->assertArrayHasKey('acceptance', $response->json('data.response.payload'));
     }
 
+    public function test_copilot_plan_payload_can_be_accepted_to_create_tasks(): void
+    {
+        [$company, $agent, $pipelineId] = $this->seedAgentCompany();
+
+        Lead::query()->create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $agent->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Acme Corp',
+            'status' => 'contacted',
+            'priority' => LeadPriority::HIGH->value,
+            'last_interaction_at' => now()->subDays(21),
+        ]);
+
+        $planResponse = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Plan my day',
+            ]);
+
+        $planResponse->assertOk();
+
+        $payload = $planResponse->json('data.response.payload');
+        $this->assertIsArray($payload);
+
+        $items = $payload['items'] ?? [];
+        $this->assertNotEmpty($items);
+
+        $drafts = array_values(array_map(
+            static fn (array $item): array => $item['task_draft'],
+            $items,
+        ));
+
+        $acceptResponse = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/agent/planning/accept', [
+                'company_id' => $company->id,
+                'plan_date' => $payload['plan_date'] ?? now()->toDateString(),
+                'items' => $drafts,
+            ]);
+
+        $acceptResponse
+            ->assertCreated()
+            ->assertJsonPath('data.linked_existing', fn (mixed $value): bool => is_int($value) || is_numeric($value));
+
+        $created = $acceptResponse->json('data.created');
+        $this->assertIsArray($created);
+
+        $creatableCount = count(array_filter(
+            $drafts,
+            static fn (array $draft): bool => ($draft['creates_task'] ?? false) === true,
+        ));
+
+        if ($creatableCount > 0) {
+            $this->assertNotEmpty($created);
+            $this->assertDatabaseHas('tasks', [
+                'company_id' => $company->id,
+                'assigned_agent_id' => $agent->id,
+            ]);
+        }
+    }
+
+    public function test_accept_accepts_plan_drafts_with_empty_location_strings(): void
+    {
+        [$company, $agent] = $this->seedAgentCompany();
+        $dedupeKey = hash('sha256', 'meeting:1:' . now()->toDateString());
+
+        $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/agent/planning/accept', [
+                'company_id' => $company->id,
+                'plan_date' => now()->toDateString(),
+                'items' => [
+                    [
+                        'creates_task' => true,
+                        'dedupe_key' => $dedupeKey,
+                        'title' => 'Prepare for: Team standup',
+                        'type' => TaskType::AWARENESS->value,
+                        'description' => 'Prepare talking points for Team standup. [plan:' . $dedupeKey . ']',
+                        'due_date' => now()->addHours(2)->toIso8601String(),
+                        'priority' => TaskPriority::HIGH->value,
+                        'location' => '',
+                    ],
+                ],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.skipped', 0);
+    }
+
     public function test_plan_includes_kpi_items_with_task_drafts(): void
     {
         [$company, $agent, $pipelineId] = $this->seedAgentCompany();

@@ -576,7 +576,7 @@ class DailyPlanningService
                 'description' => (string) ($candidate['task_description'] ?? 'Existing task in your plan.'),
                 'due_date' => $candidate['due_at'],
                 'priority' => $candidate['task_priority'] ?? 'medium',
-                'location' => $candidate['location_text'] ?? null,
+                'location' => $this->nullableLocation($candidate['location_text'] ?? null),
                 'latitude' => $candidate['latitude'] ?? null,
                 'longitude' => $candidate['longitude'] ?? null,
             ];
@@ -597,7 +597,7 @@ class DailyPlanningService
                 'description' => 'Planned follow-up for ' . $leadName . '. ' . $action . ' [plan:' . $dedupeKey . ']',
                 'due_date' => $endOfDay,
                 'priority' => 'medium',
-                'location' => $candidate['location_text'] ?? null,
+                'location' => $this->nullableLocation($candidate['location_text'] ?? null),
                 'latitude' => $candidate['latitude'] ?? null,
                 'longitude' => $candidate['longitude'] ?? null,
             ];
@@ -619,7 +619,7 @@ class DailyPlanningService
                 'description' => 'Prepare talking points and materials for: ' . $meetingTitle . '. [plan:' . $dedupeKey . ']',
                 'due_date' => $dueDate,
                 'priority' => 'high',
-                'location' => $candidate['location_text'] ?? null,
+                'location' => $this->nullableLocation($candidate['location_text'] ?? null),
                 'latitude' => null,
                 'longitude' => null,
             ];
@@ -635,7 +635,7 @@ class DailyPlanningService
                 'description' => 'Planned nearby visit opportunity. ' . (string) ($candidate['suggested_action'] ?? '') . ' [plan:' . $dedupeKey . ']',
                 'due_date' => $endOfDay,
                 'priority' => 'medium',
-                'location' => $candidate['location_text'] ?? null,
+                'location' => $this->nullableLocation($candidate['location_text'] ?? null),
                 'latitude' => $candidate['latitude'] ?? null,
                 'longitude' => $candidate['longitude'] ?? null,
             ];
@@ -893,6 +893,17 @@ class DailyPlanningService
     /**
      * @param  array<string, mixed>  $args
      */
+    private function nullableLocation(mixed $location): ?string
+    {
+        if (! is_string($location)) {
+            return null;
+        }
+
+        $trimmed = trim($location);
+
+        return $trimmed !== '' ? $trimmed : null;
+    }
+
     private function demoPlanLimit(int $companyId, array $args): int
     {
         if (isset($args['limit'])) {

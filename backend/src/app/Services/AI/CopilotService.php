@@ -316,7 +316,9 @@ class CopilotService
         if ((bool) config('services.ai.pii_redaction_enabled', true)) {
             $assistantText = $this->redactSensitiveText($assistantText);
             if (is_array($toolResult)) {
-                $toolResult['payload'] = $this->redactValue($toolResult['payload'] ?? null);
+                if ($resolvedTool !== 'planning.daily') {
+                    $toolResult['payload'] = $this->redactValue($toolResult['payload'] ?? null);
+                }
                 $toolResult['summary'] = $this->redactSensitiveText((string) ($toolResult['summary'] ?? ''));
             }
         }
@@ -1996,10 +1998,21 @@ class CopilotService
             return $text;
         }
 
+        if ($this->isIsoDateLikeString($text)) {
+            return $text;
+        }
+
         $redacted = preg_replace('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i', '[redacted-email]', $text);
         $redacted = preg_replace('/\+?\d[\d\s\-()]{7,}\d/', '[redacted-phone]', (string) $redacted);
 
         return (string) $redacted;
+    }
+
+    private function isIsoDateLikeString(string $text): bool
+    {
+        $trimmed = trim($text);
+
+        return preg_match('/^\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/', $trimmed) === 1;
     }
 
     private function redactValue(mixed $value): mixed
@@ -2011,6 +2024,11 @@ class CopilotService
         if (is_array($value)) {
             $result = [];
             foreach ($value as $key => $item) {
+                if (is_string($key) && $this->isRedactionExemptKey($key)) {
+                    $result[$key] = $item;
+                    continue;
+                }
+
                 $result[$key] = $this->redactValue($item);
             }
 
@@ -2018,6 +2036,22 @@ class CopilotService
         }
 
         return $value;
+    }
+
+    private function isRedactionExemptKey(string $key): bool
+    {
+        return in_array($key, [
+            'plan_date',
+            'due_date',
+            'due_at',
+            'scheduled_start',
+            'scheduled_end',
+            'meeting_start_at',
+            'kpi_end_date',
+            'dedupe_key',
+            'created_at',
+            'updated_at',
+        ], true);
     }
 
     /**

@@ -46,7 +46,7 @@ class PlanAcceptanceService
                     ]);
                 }
 
-                if (($item['creates_task'] ?? false) !== true) {
+                if (! $this->itemCreatesTask($item)) {
                     if (! empty($item['linked_task_id'])) {
                         $linkedExisting++;
                     }
@@ -54,7 +54,7 @@ class PlanAcceptanceService
                     continue;
                 }
 
-                $validated = $this->validateDraftItem($item, $index);
+                $validated = $this->validateDraftItem($this->normalizeDraftItem($item), $index);
                 $dedupeKey = (string) ($validated['dedupe_key'] ?? '');
 
                 if ($dedupeKey !== '' && $this->taskAlreadyCreatedFromPlan((int) $user->id, $resolvedCompanyId, $dedupeKey)) {
@@ -88,6 +88,33 @@ class PlanAcceptanceService
             'skipped' => $skipped,
             'linked_existing' => $linkedExisting,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function itemCreatesTask(array $item): bool
+    {
+        return filter_var($item['creates_task'] ?? false, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>
+     */
+    private function normalizeDraftItem(array $item): array
+    {
+        foreach (['title', 'type', 'description', 'location', 'priority', 'dedupe_key'] as $field) {
+            if (array_key_exists($field, $item) && is_string($item[$field]) && trim($item[$field]) === '') {
+                $item[$field] = null;
+            }
+        }
+
+        if (array_key_exists('type', $item) && $item['type'] === null) {
+            unset($item['type']);
+        }
+
+        return $item;
     }
 
     /**

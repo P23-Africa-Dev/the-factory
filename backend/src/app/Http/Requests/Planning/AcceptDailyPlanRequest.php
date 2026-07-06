@@ -13,9 +13,37 @@ class AcceptDailyPlanRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $items = $this->input('items');
+        $normalizedItems = is_array($items)
+            ? array_map(fn (mixed $item): mixed => $this->normalizePlanItem($item), $items)
+            : $items;
+
         $this->merge([
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
+            'items' => $normalizedItems,
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>|mixed
+     */
+    private function normalizePlanItem(mixed $item): mixed
+    {
+        if (! is_array($item)) {
+            return $item;
+        }
+
+        foreach (['title', 'type', 'description', 'location', 'priority', 'dedupe_key'] as $field) {
+            if (array_key_exists($field, $item) && is_string($item[$field]) && trim($item[$field]) === '') {
+                $item[$field] = null;
+            }
+        }
+
+        if (array_key_exists('creates_task', $item)) {
+            $item['creates_task'] = filter_var($item['creates_task'], FILTER_VALIDATE_BOOLEAN);
+        }
+
+        return $item;
     }
 
     public function authorize(): bool

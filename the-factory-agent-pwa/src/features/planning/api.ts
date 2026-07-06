@@ -13,9 +13,10 @@ function unwrap(data: unknown): Record<string, unknown> {
 export const planningApi = {
   acceptDailyPlan: async (params: {
     planDate: string;
+    companyId?: number | null;
     items: PlanTaskDraft[];
   }): Promise<AcceptDailyPlanResult> => {
-    const companyId = getActiveCompanyId();
+    const companyId = params.companyId ?? getActiveCompanyId();
     const res = await client.post('/agent/planning/accept', {
       company_id: companyId ?? undefined,
       plan_date: params.planDate,
