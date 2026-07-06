@@ -1080,6 +1080,7 @@ function MapContent() {
 
   // Restore destination on resume (e.g. /map?taskId=…) before task detail fetch completes.
   useEffect(() => {
+    if (!isFromTrackingScreen) return;
     if (selectedDestination) return;
     const dest = taskRoute?.destination ?? liveTask?.destination;
     if (!dest) return;
@@ -1093,6 +1094,7 @@ function MapContent() {
       taskStatus: trackingTask?.status ?? activeTask?.status,
     });
   }, [
+    isFromTrackingScreen,
     selectedDestination,
     taskRoute?.destination,
     liveTask?.destination,
@@ -1107,6 +1109,7 @@ function MapContent() {
 
   // Auto-fill destination from resolved task
   useEffect(() => {
+    if (!isFromTrackingScreen) return;
     if (selectedDestination !== null) return;
     if (!activeTask || !taskHasMapLocation(activeTask)) return;
     setTimeout(() => setSelectedDestination({
@@ -1116,7 +1119,7 @@ function MapContent() {
       longitude: activeTask.longitude,
       taskId: Number(activeTask.id),
     }), 0);
-  }, [activeTask, selectedDestination]);
+  }, [isFromTrackingScreen, activeTask, selectedDestination]);
 
   // Advance idle → destination_selected when destination arrives
   useEffect(() => {
