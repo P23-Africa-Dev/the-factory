@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: config
 data:
   # ── Application ─────────────────────────────────────────────────────────────
-  APP_NAME: "Factory API"
+  APP_NAME: "Factory23"
   APP_ENV: "production"
   APP_DEBUG: "false"
   APP_URL: "https://api.thefactory23.com"
@@ -102,7 +102,7 @@ data:
   # ── Mail (non-sensitive) ──────────────────────────────────────────────────────
   MAIL_MAILER: "resend"
   MAIL_FROM_ADDRESS: "noreply@thefactory23.com"
-  MAIL_FROM_NAME: "Factory API"
+  MAIL_FROM_NAME: "Factory23"
 
   # ── Realtime WebSocket Server ─────────────────────────────────────────────────
   TRACKING_WS_HOST: "0.0.0.0"

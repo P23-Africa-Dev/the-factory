@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Notifications\Concerns\UsesFactory23MailBranding;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class DriveFileSharedNotification extends Notification implements ShouldQueue
 {
     use Queueable;
+    use UsesFactory23MailBranding;
 
     public function __construct(
         private readonly string $sharerName,
@@ -28,14 +29,19 @@ class DriveFileSharedNotification extends Notification implements ShouldQueue
         return ['mail'];
     }
 
-    public function toMail(object $notifiable): MailMessage
+    public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
     {
-        return (new MailMessage)
-            ->mailer('resend')
-            ->subject('A file was shared with you in Company Drive')
+        return $this->factory23Mail()
+            ->subject('File shared with you — Factory23')
             ->greeting('Hello ' . ($notifiable->name ?? 'there') . ',')
-            ->line(sprintf('%s shared "%s" with you in %s Company Drive.', $this->sharerName, $this->fileName, $this->companyName))
+            ->line(sprintf('%s shared a file with you in Company Drive.', $this->sharerName))
+            ->line($this->factory23DetailTable([
+                'File' => $this->fileName,
+                'Company' => $this->companyName,
+                'Shared by' => $this->sharerName,
+            ]))
             ->action('Open in Drive', $this->actionUrl)
-            ->line('You can download this file any time from your drive.');
+            ->line('You can download this file any time from your drive.')
+            ->salutation($this->factory23Salutation());
     }
 }
