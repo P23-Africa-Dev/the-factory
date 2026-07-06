@@ -43,6 +43,7 @@ class CopilotService
         private readonly LeadInferenceService $leadInferenceService,
         private readonly EmailInferenceService $emailInferenceService,
         private readonly KpiInferenceService $kpiInferenceService,
+        private readonly NotificationInferenceService $notificationInferenceService,
         private readonly NotificationService $notificationService,
         private readonly DemoCompanyService $demoCompanyService,
         private readonly LlmIntentRouter $llmIntentRouter,
@@ -702,7 +703,11 @@ class CopilotService
             return 'projects.create';
         }
 
-        if (preg_match('/\b(notification|alert)\b/i', $normalized) && preg_match('/\b(send|notify|broadcast)\b/i', $normalized) === 1) {
+        if (preg_match('/\b(notification|alert|reminder)\b/i', $normalized) && preg_match('/\b(send|notify|broadcast|remind)\b/i', $normalized) === 1) {
+            return 'notifications.send';
+        }
+
+        if (preg_match('/\b(remind|notify)\b/i', $normalized) && preg_match('/\b(agents?|team|them|these)\b/i', $normalized) === 1) {
             return 'notifications.send';
         }
 
@@ -777,6 +782,10 @@ class CopilotService
 
         if (preg_match('/\b(lead|crm|business\s+name)\b/i', $blob) === 1 && preg_match('/\b(create|add|register|phone|location)\b/i', $blob) === 1) {
             return 'crm.create_lead';
+        }
+
+        if (preg_match('/\b(remind|reminder|notify)\b/i', $blob) === 1 && preg_match('/\b(agents?|team|them|these|overdue)\b/i', $blob) === 1) {
+            return 'notifications.send';
         }
 
         return null;
@@ -874,8 +883,15 @@ class CopilotService
             ->implode(' ');
 
         $taskContext = collect($userLines)
-            ->filter(static fn(string $line): bool => preg_match('/\b(task|assign|visit|due|priority|tomorrow|title|description)\b/i', $line) === 1)
+            ->filter(static fn(string $line): bool => preg_match('/\b(task|assign|visit|due|priority|tomorrow|title|description|overdue)\b/i', $line) === 1)
             ->implode(' ');
+
+        $reminderContext = collect($userLines)
+            ->filter(static fn(string $line): bool => preg_match('/\b(overdue|assigned|agents?|tasks?)\b/i', $line) === 1)
+            ->implode(' ');
+
+        $hasReminderIntent = preg_match('/\b(remind|reminder|notify)\b/i', $message) === 1
+            && preg_match('/\b(agents?|them|these|team)\b/i', $message) === 1;
 
         $hasLeadDetails = preg_match('/\b(business\s+name|business\/lead\s+name|lead\s+name|phone\s+number|phone|location)\s*:/i', $message) === 1;
         $hasTaskIntent = preg_match('/\b(task|assign|visit|due|priority|tomorrow)\b/i', $message) === 1
@@ -899,6 +915,10 @@ class CopilotService
                 ->implode(' ');
 
             return trim($taskLines);
+        }
+
+        if ($hasReminderIntent && $reminderContext !== '') {
+            return trim($reminderContext . ' ' . $message);
         }
 
         if ($isFollowUp && $meetingContext !== '') {
@@ -960,12 +980,14 @@ class CopilotService
                 clientTimezone: $clientTimezone,
                 companyCountry: $companyCountry,
             ),
-            'notifications.send' => [
-                'title' => 'ELY Notification',
-                'message' => $normalized !== '' ? $normalized : 'New notification from ELY',
-                'category' => 'system',
-                'user_ids' => [$userId],
-            ],
+            'notifications.send' => $this->notificationInferenceService->infer(
+                message: $message,
+                companyId: $companyId,
+                userId: $userId,
+                threadId: $threadId,
+                conversationSummary: (string) ($context['summary'] ?? ''),
+                companyName: (string) (\App\Models\Company::query()->find($companyId)?->name ?? 'your organization'),
+            ),
             'crm.create_lead' => $this->leadInferenceService->infer(
                 message: $message,
                 companyId: $companyId,
@@ -1039,6 +1061,10 @@ class CopilotService
                 $companyId,
                 $actionArgs,
             );
+        }
+
+        if ($tool === 'notifications.send') {
+            return $this->notificationInferenceService->normalizeProvidedArgs($companyId, $actionArgs);
         }
 
         return $actionArgs;
@@ -1607,6 +1633,10 @@ class CopilotService
             return $this->kpiInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
         }
 
+        if ($tool === 'notifications.send') {
+            return $this->notificationInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
+        }
+
         return 'ELY prepared an action. Review and click Confirm Action to proceed.';
     }
 
@@ -1637,6 +1667,8 @@ class CopilotService
             'missing_target_value' => 'Target value was not detected. Add a measurable target before confirming.',
             'missing_expected_outcome' => 'Expected outcome is required and must be at least 10 characters.',
             'used_default_dates' => 'Start or end date was not clear and defaulted to the next month.',
+            'recipients_unresolved' => 'No matching recipients were found. Please verify agent names or select recipients before confirming.',
+            'message_too_generic' => 'The reminder message is too generic. Edit it to describe the overdue tasks before confirming.',
         ];
 
         return collect($codes)
@@ -1661,6 +1693,10 @@ class CopilotService
 
         if ($tool === 'kpis.create') {
             return $this->kpiInferenceService->warningCodes($args);
+        }
+
+        if ($tool === 'notifications.send') {
+            return $this->notificationInferenceService->warningCodes($args);
         }
 
         if ($tool !== 'tasks.create') {
@@ -1723,6 +1759,14 @@ class CopilotService
 
         if (in_array('missing_kpi_name', $validationWarningCodes, true)) {
             $blockingCodes[] = 'missing_kpi_name';
+        }
+
+        if (in_array('recipients_unresolved', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'recipients_unresolved';
+        }
+
+        if (in_array('message_too_generic', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'message_too_generic';
         }
 
         if ((bool) config('services.ai.strict_confirmation_blocking', false)) {

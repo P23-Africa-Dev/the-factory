@@ -58,6 +58,14 @@ interface Message {
 
 const ACTION_TOOL_PATTERN = /^(?:tasks|meetings|projects|notifications|crm|kpis)\.[a-z_]+$/;
 
+const ARRAY_ACTION_DRAFT_SKIP_KEYS = new Set([
+  "user_ids",
+  "roles",
+  "delivery_types",
+  "recipient_names",
+  "__inference",
+]);
+
 const USER_ASSIGNMENT_FIELD_PATTERN = /(^|_)(user_id|assigned_to_user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/;
 
 interface AIChatProps {
@@ -180,6 +188,83 @@ const NOTIFICATION_CATEGORY_OPTIONS: EditFieldOption[] = [
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function parseUserIdsValue(value: unknown): number[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => Number(item))
+      .filter((id) => Number.isFinite(id) && id > 0);
+  }
+
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return [value];
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") {
+      return [];
+    }
+
+    if (trimmed.startsWith("[")) {
+      try {
+        return parseUserIdsValue(JSON.parse(trimmed));
+      } catch {
+        return [];
+      }
+    }
+
+    return trimmed
+      .split(/\s*,\s*/)
+      .map((part) => Number(part))
+      .filter((id) => Number.isFinite(id) && id > 0);
+  }
+
+  return [];
+}
+
+function parseDeliveryTypesValue(value: unknown): string[] {
+  const fallback = ["in_app", "push", "email"];
+
+  if (Array.isArray(value)) {
+    const types = value.map((item) => String(item).trim().toLowerCase()).filter((item) => item !== "");
+    return types.length > 0 ? types : fallback;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") {
+      return fallback;
+    }
+
+    if (trimmed.startsWith("[")) {
+      try {
+        return parseDeliveryTypesValue(JSON.parse(trimmed));
+      } catch {
+        return fallback;
+      }
+    }
+
+    const types = trimmed
+      .split(/\s*,\s*/)
+      .map((part) => part.trim().toLowerCase())
+      .filter((part) => part !== "");
+    return types.length > 0 ? types : fallback;
+  }
+
+  return fallback;
+}
+
+function formatDeliveryTypesLabel(value: unknown): string {
+  const labels: Record<string, string> = {
+    in_app: "In-app",
+    push: "Push",
+    email: "Email",
+  };
+
+  const types = Array.isArray(value) ? value.map((item) => String(item)) : parseDeliveryTypesValue(value);
+  return types.map((type) => labels[type] ?? type).join(", ") || "In-app, Push, Email";
 }
 
 function highlightPlainText(content: string, query: string): string {
@@ -426,7 +511,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const argKeys = rawArgs ? Object.keys(rawArgs) : [];
       const hasUserAssignmentField = argKeys.some((key) => USER_ASSIGNMENT_FIELD_PATTERN.test(key));
 
-      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "crm.send_email", "kpis.create"].includes(tool) && !hasUserAssignmentField) {
+      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "crm.send_email", "kpis.create", "notifications.send"].includes(tool) && !hasUserAssignmentField) {
         continue;
       }
 
@@ -435,7 +520,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         continue;
       }
 
-      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "crm.send_email", "kpis.create"].includes(tool) || hasUserAssignmentField) {
+      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "crm.send_email", "kpis.create", "notifications.send"].includes(tool) || hasUserAssignmentField) {
         if (isAgent && tool === "tasks.create") {
           continue;
         }
@@ -570,7 +655,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
         if (key.startsWith("__") || key === "company_id" || key === "meta" || key === "pipeline_id") {
           continue;
         }
+        if (ARRAY_ACTION_DRAFT_SKIP_KEYS.has(key) || Array.isArray(value)) {
+          continue;
+        }
         if (value === null || value === undefined) {
+          continue;
+        }
+        if (typeof value === "object") {
           continue;
         }
         seed[key] = String(value);
@@ -600,6 +691,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
   function sanitizeActionArgs(args: Record<string, unknown>): Record<string, unknown> {
     return Object.fromEntries(
       Object.entries(args).filter(([key]) => !key.startsWith("__")),
+    );
+  }
+
+  function sanitizeActionArgsForConfirm(args: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(args).filter(([key]) => !key.startsWith("__") && key !== "recipient_names" && key !== "recipient_labels"),
     );
   }
 
@@ -806,6 +903,37 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return merged;
     }
 
+    if (tool === "notifications.send") {
+      const merged: Record<string, unknown> = { ...baseArgs };
+
+      for (const field of ["title", "message", "category", "priority", "type"] as const) {
+        if (Object.prototype.hasOwnProperty.call(draft, field)) {
+          merged[field] = draft[field];
+        }
+      }
+
+      const userIdsSource = Object.prototype.hasOwnProperty.call(draft, "user_ids")
+        ? draft.user_ids
+        : baseArgs.user_ids;
+      const userIds = parseUserIdsValue(userIdsSource);
+      if (userIds.length > 0) {
+        merged.user_ids = userIds;
+      } else {
+        delete merged.user_ids;
+      }
+
+      const deliverySource = Object.prototype.hasOwnProperty.call(draft, "delivery_types")
+        ? draft.delivery_types
+        : baseArgs.delivery_types;
+      merged.delivery_types = parseDeliveryTypesValue(deliverySource);
+
+      if (Array.isArray(baseArgs.recipient_names)) {
+        merged.recipient_names = baseArgs.recipient_names;
+      }
+
+      return merged;
+    }
+
     if (Object.keys(draft).length === 0) {
       return baseArgs;
     }
@@ -878,6 +1006,29 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }));
   }
 
+  function notificationRecipientLabel(msg: Message, args: Record<string, unknown>): string {
+    const explicitNames = Array.isArray(args.recipient_names)
+      ? args.recipient_names.map((name) => String(name).trim()).filter((name) => name !== "")
+      : [];
+
+    if (explicitNames.length > 0) {
+      return explicitNames.join(", ");
+    }
+
+    const userIds = parseUserIdsValue(args.user_ids);
+    if (userIds.length === 0) {
+      return "";
+    }
+
+    const options = assigneeOptions[msg.id]?.items ?? [];
+    const names = userIds.map((id) => {
+      const matched = options.find((item) => item.id === id);
+      return matched?.name ?? `User #${String(id)}`;
+    });
+
+    return names.join(", ");
+  }
+
   function editFieldsForMessage(msg: Message, args: Record<string, unknown>): EditFieldConfig[] {
     const tool = actionToolForMessage(msg);
 
@@ -913,11 +1064,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     if (tool === "notifications.send") {
       return [
+        { key: "user_ids", label: "Recipients (user IDs, comma-separated)", control: "text" },
         { key: "title", label: "Title", control: "text" },
         { key: "message", label: "Message", control: "textarea" },
         { key: "category", label: "Category", control: "select", options: NOTIFICATION_CATEGORY_OPTIONS },
         { key: "priority", label: "Priority", control: "select", options: NOTIFICATION_PRIORITY_OPTIONS },
-        { key: "type", label: "Type", control: "text" },
+        { key: "delivery_types", label: "Delivery (in_app, push, email)", control: "text" },
       ];
     }
 
@@ -1041,6 +1193,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return assigneeDropdownValue(msg, args);
     }
 
+    if (field.key === "user_ids") {
+      if (Object.prototype.hasOwnProperty.call(draft, "user_ids")) {
+        return String(draft.user_ids ?? "");
+      }
+
+      const userIds = parseUserIdsValue(args.user_ids);
+      return userIds.length > 0 ? userIds.join(", ") : "";
+    }
+
+    if (field.key === "delivery_types") {
+      if (Object.prototype.hasOwnProperty.call(draft, "delivery_types")) {
+        return String(draft.delivery_types ?? "");
+      }
+
+      return parseDeliveryTypesValue(args.delivery_types).join(", ");
+    }
+
     const raw = args[field.key];
 
     if (field.control === "date") {
@@ -1121,6 +1290,22 @@ export function AIChat({ open, onClose }: AIChatProps) {
       if (code === "missing_lead_name") {
         const name = String(args?.name ?? "").trim().toLowerCase();
         if (name === "" || name === "new lead") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "recipients_unresolved") {
+        const userIds = parseUserIdsValue(args?.user_ids);
+        if (userIds.length === 0) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "message_too_generic") {
+        const message = String(args?.message ?? "").trim();
+        if (message.length < 10) {
           remaining.push(code);
         }
         continue;
@@ -1291,6 +1476,33 @@ export function AIChat({ open, onClose }: AIChatProps) {
       ];
     }
 
+    if (tool === "notifications.send") {
+      const recipientLabel = notificationRecipientLabel(msg, args);
+
+      return [
+        {
+          key: "recipients",
+          label: "Recipients",
+          value: recipientLabel !== "" ? recipientLabel : "Needs correction",
+          warning: warningCodes.includes("recipients_unresolved"),
+        },
+        { key: "title", label: "Title", value: formatPreviewValue("title", args.title) },
+        {
+          key: "message",
+          label: "Message",
+          value: formatPreviewValue("message", args.message),
+          warning: warningCodes.includes("message_too_generic"),
+        },
+        { key: "category", label: "Category", value: formatPreviewValue("category", args.category) },
+        { key: "priority", label: "Priority", value: formatPreviewValue("priority", args.priority) },
+        {
+          key: "delivery_types",
+          label: "Delivery",
+          value: formatDeliveryTypesLabel(args.delivery_types),
+        },
+      ];
+    }
+
     return Object.entries(args)
       .filter(([key]) => key !== "company_id")
       .map(([key, value]) => ({
@@ -1301,8 +1513,6 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function findActionContextForConfirm(index: number): string {
-    const parts: string[] = [];
-
     for (let i = index - 1; i >= 0; i -= 1) {
       const candidate = messages[i];
       if (!candidate) {
@@ -1320,12 +1530,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
       if (candidate.role === "user") {
         const content = String(candidate.content ?? "").trim();
         if (content !== "" && !/^\s*confirm\b/i.test(content)) {
-          parts.unshift(content);
+          return content;
         }
       }
     }
 
-    return parts.join("\n");
+    return "";
   }
 
   function handleConfirmAction(index: number, msg: Message) {
@@ -1336,7 +1546,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     if (!priorPrompt.trim()) return;
 
     const actionArgs = actionArgsForMessage(msg);
-    const sanitizedArgs = actionArgs ? sanitizeActionArgs(actionArgs) : undefined;
+    const sanitizedArgs = actionArgs ? sanitizeActionArgsForConfirm(actionArgs) : undefined;
     const hasSanitizedArgs = sanitizedArgs ? Object.keys(sanitizedArgs).length > 0 : false;
 
     void sendCopilotMessage({

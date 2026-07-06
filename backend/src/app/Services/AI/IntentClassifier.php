@@ -31,6 +31,9 @@ class IntentClassifier
             'notifications.send' => [
                 '/\b(send|broadcast|push)\s+(a\s+|an\s+)?notification\b/i',
                 '/\bnotify\s+(team|everyone|all|agents|supervisors|admins)\b/i',
+                '/\b(send|give)\b.{0,40}\b(reminder|reminders)\b/i',
+                '/\b(remind|notify)\b.{0,40}\b(these\s+)?agents\b/i',
+                '/\bsend\s+(them\s+)?a\s+reminder\b/i',
             ],
             'projects.create' => [
                 '/\b(create|start|open|new)\s+(a\s+|an\s+)?project\b/i',

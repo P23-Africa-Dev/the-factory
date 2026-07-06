@@ -8,6 +8,7 @@ use App\Enums\LeadPriority;
 use App\Enums\KpiCategory;
 use App\Enums\KpiPriority;
 use App\Enums\NotificationCategory;
+use App\Enums\NotificationDeliveryType;
 use App\Enums\NotificationPriority;
 use App\Enums\ProjectPriority;
 use App\Enums\ProjectStatus;
@@ -213,7 +214,18 @@ class ActionToolRegistry
             'user_ids.*' => ['integer', 'distinct', 'exists:users,id'],
             'roles' => ['nullable', 'array', 'min:1', 'max:4'],
             'roles.*' => ['string', Rule::in(['owner', 'admin', 'supervisor', 'agent'])],
+            'delivery_types' => ['nullable', 'array', 'min:1', 'max:5'],
+            'delivery_types.*' => ['string', Rule::in(NotificationDeliveryType::values())],
+            'action_url' => ['nullable', 'string', 'max:255'],
         ])->validate();
+
+        if (! isset($validated['delivery_types']) || $validated['delivery_types'] === []) {
+            $validated['delivery_types'] = [
+                NotificationDeliveryType::IN_APP->value,
+                NotificationDeliveryType::PUSH->value,
+                NotificationDeliveryType::EMAIL->value,
+            ];
+        }
 
         $hasUsers = ! empty($validated['user_ids']);
         $hasRoles = ! empty($validated['roles']);
@@ -232,6 +244,8 @@ class ActionToolRegistry
             'message' => (string) $validated['message'],
             'priority' => (string) ($validated['priority'] ?? NotificationPriority::NORMAL->value),
             'created_by_user_id' => (int) $user->id,
+            'delivery_types' => $validated['delivery_types'],
+            'action_url' => $validated['action_url'] ?? '/tasks',
         ];
 
         if ($hasUsers) {
