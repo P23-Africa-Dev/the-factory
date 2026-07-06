@@ -6,6 +6,7 @@ import { useLeadPipeline, useLeads } from "@/hooks/use-crm";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import {
   buildCalibratedLeadsTrendChart,
+  hasLeadsTrendData,
   LEADS_TREND_BAR_COLORS,
 } from "@/lib/dashboard-leads-chart";
 import { useAuthStore } from "@/store/auth";
@@ -178,6 +179,8 @@ export function TotalLeadsChart() {
     [overview?.leads_trend],
   );
 
+  const hasLeadsTrend = hasLeadsTrendData(overview?.leads_trend ?? []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
@@ -205,28 +208,34 @@ export function TotalLeadsChart() {
       </div>
 
       <div className="w-full h-10.25 mt-auto">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={leadsChartData}
-            barGap={4}
-            margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-          >
-            <YAxis domain={[0, "dataMax"]} hide />
-            <XAxis hide padding={{ left: 0, right: 0 }} />
-            <Bar
-              dataKey="v1"
-              fill={LEADS_TREND_BAR_COLORS.rise}
-              radius={10}
-              barSize={15}
-            />
-            <Bar
-              dataKey="v2"
-              fill={LEADS_TREND_BAR_COLORS.fall}
-              radius={10}
-              barSize={15}
-            />
-          </BarChart>
-        </ResponsiveContainer>
+        {hasLeadsTrend ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={leadsChartData}
+              barGap={4}
+              margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+            >
+              <YAxis domain={[0, "dataMax"]} hide />
+              <XAxis hide padding={{ left: 0, right: 0 }} />
+              <Bar
+                dataKey="v1"
+                fill={LEADS_TREND_BAR_COLORS.rise}
+                radius={10}
+                barSize={15}
+              />
+              <Bar
+                dataKey="v2"
+                fill={LEADS_TREND_BAR_COLORS.fall}
+                radius={10}
+                barSize={15}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="w-full h-full flex items-center">
+            <div className="w-full h-0.75 rounded-full bg-dash-dark/15" />
+          </div>
+        )}
       </div>
     </div>
   );

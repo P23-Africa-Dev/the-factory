@@ -7,8 +7,6 @@ export const LEADS_TREND_BAR_COLORS = {
 
 export const LEADS_TREND_BUCKET_COUNT = 6;
 
-export const LEADS_TREND_MIN_BAR_VALUE = 1;
-
 export function normalizeLeadsTrendBuckets(
   points: LeadsTrendPoint[] | undefined | null,
 ): LeadsTrendPoint[] {
@@ -27,12 +25,16 @@ export function normalizeLeadsTrendBuckets(
   return normalized;
 }
 
+export function hasLeadsTrendData(
+  points: LeadsTrendPoint[] | undefined | null,
+): boolean {
+  return normalizeLeadsTrendBuckets(points).some(
+    (point) => point.v1 > 0 || point.v2 > 0,
+  );
+}
+
 export function buildCalibratedLeadsTrendChart(
   points: LeadsTrendPoint[] | undefined | null,
 ): LeadsTrendPoint[] {
-  return normalizeLeadsTrendBuckets(points).map((point) => ({
-    name: point.name,
-    v1: Math.max(LEADS_TREND_MIN_BAR_VALUE, point.v1),
-    v2: Math.max(LEADS_TREND_MIN_BAR_VALUE, point.v2),
-  }));
+  return normalizeLeadsTrendBuckets(points);
 }

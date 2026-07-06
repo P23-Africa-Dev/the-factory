@@ -716,8 +716,7 @@ class DashboardAggregateService
                 ->whereBetween('created_at', [$dayStart, $dayEnd])
                 ->count();
             $converted = (int) (clone $query)
-                ->whereBetween('created_at', [$dayStart, $dayEnd])
-                ->whereNotNull('converted_at')
+                ->whereBetween('converted_at', [$dayStart, $dayEnd])
                 ->count();
 
             $points[] = [
