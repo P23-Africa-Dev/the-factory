@@ -20,6 +20,7 @@ use App\Services\Company\CompanyContextService;
 use App\Services\Crm\CrmEmailService;
 use App\Services\Crm\LeadService;
 use App\Services\AI\Crm\CrmIntelligenceService;
+use App\Services\AI\Support\ReadListPresenter;
 use App\Services\Dashboard\DashboardAggregateService;
 use App\Support\UserDisplayNameResolver;
 use App\Services\Tracking\AgentLocationSnapshotService;
@@ -43,6 +44,7 @@ class ReadToolRegistry
         private readonly VisitAssistantService $visitAssistantService,
         private readonly TeamPerformanceService $teamPerformanceService,
         private readonly UserDisplayNameResolver $userDisplayNameResolver,
+        private readonly ReadListPresenter $readListPresenter,
     ) {}
 
     public function execute(string $tool, User $user, int $companyId, array $args = []): array
@@ -75,21 +77,148 @@ class ReadToolRegistry
 
     private function topLeads(User $user, int $companyId, array $args): array
     {
-        $limit = max(1, min(20, (int) ($args['limit'] ?? 5)));
+        $namedLeads = is_array($args['named_leads'] ?? null) ? $args['named_leads'] : [];
+        $namedLeads = array_values(array_filter(
+            array_map(static fn (mixed $name): string => trim((string) $name), $namedLeads),
+            static fn (string $name): bool => $name !== '',
+        ));
 
-        /** @var Paginator $leads */
-        $leads = $this->leadService->listForUser($user, [
+        if ($namedLeads !== []) {
+            return $this->topLeadsByName($user, $companyId, $namedLeads, $args);
+        }
+
+        $limit = max(1, min($this->readListPresenter->maxExpandedLimit('crm.top_leads'), (int) ($args['limit'] ?? $this->readListPresenter->previewLimit())));
+        $search = is_string($args['search'] ?? null) ? trim((string) $args['search']) : '';
+        $countOnly = ($args['count_only'] ?? false) === true;
+
+        $filters = [
             'company_id' => $companyId,
             'per_page' => $limit,
-        ]);
+        ];
 
+        if ($search !== '') {
+            $filters['search'] = $search;
+        }
+
+        /** @var Paginator $leads */
+        $leads = $this->leadService->listForUser($user, $filters);
+        $items = $this->mapLeadItems($leads->items());
+
+        $matchedTotal = method_exists($leads, 'total') ? (int) $leads->total() : count($items);
+        $organizationTotal = $matchedTotal;
+
+        if ($search !== '') {
+            /** @var Paginator $allLeads */
+            $allLeads = $this->leadService->listForUser($user, [
+                'company_id' => $companyId,
+                'per_page' => 1,
+            ]);
+            $organizationTotal = method_exists($allLeads, 'total') ? (int) $allLeads->total() : $matchedTotal;
+        }
+
+        $payload = $this->readListPresenter->enrichPayload(
+            items: $items,
+            total: $matchedTotal,
+            matchedTotal: $search !== '' ? $matchedTotal : null,
+            organizationTotal: $search !== '' ? $organizationTotal : null,
+        );
+
+        if ($search !== '') {
+            $payload['search'] = $search;
+        }
+
+        if ($countOnly) {
+            $payload['count_only'] = true;
+        }
+
+        $summary = $this->formatLeadListSummary(
+            items: $items,
+            payload: $payload,
+            search: $search !== '' ? $search : null,
+            countOnly: $countOnly,
+        );
+
+        return [
+            'tool' => 'crm.top_leads',
+            'summary' => $summary,
+            'payload' => $payload,
+            'sources' => ['crm.top_leads'],
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $namedLeads
+     * @param  array<string, mixed>  $args
+     */
+    private function topLeadsByName(User $user, int $companyId, array $namedLeads, array $args): array
+    {
+        $limit = max(1, min($this->readListPresenter->maxExpandedLimit('crm.top_leads'), (int) ($args['limit'] ?? $this->readListPresenter->previewLimit())));
+        $foundById = [];
+        $foundNames = [];
+        $notFound = [];
+
+        foreach ($namedLeads as $requestedName) {
+            /** @var Paginator $leads */
+            $leads = $this->leadService->listForUser($user, [
+                'company_id' => $companyId,
+                'per_page' => $limit,
+                'search' => $requestedName,
+            ]);
+
+            $matched = collect($leads->items())
+                ->first(static function ($lead) use ($requestedName): bool {
+                    $leadName = strtolower(trim((string) ($lead->name ?? '')));
+                    $needle = strtolower(trim($requestedName));
+
+                    return $leadName === $needle
+                        || str_contains($leadName, $needle)
+                        || str_contains($needle, $leadName);
+                });
+
+            if ($matched === null) {
+                $notFound[] = $requestedName;
+                continue;
+            }
+
+            $leadId = (int) $matched->id;
+            if (! isset($foundById[$leadId])) {
+                $foundById[$leadId] = $matched;
+                $foundNames[] = (string) $matched->name;
+            }
+        }
+
+        $items = $this->mapLeadItems(array_values($foundById));
+        $summary = $this->formatNamedLeadLookupSummary($items, $namedLeads, $foundNames, $notFound);
+
+        return [
+            'tool' => 'crm.top_leads',
+            'summary' => $summary,
+            'payload' => [
+                'items' => $items,
+                'count' => count($items),
+                'total' => count($items),
+                'truncated' => false,
+                'named_leads' => $namedLeads,
+                'found' => $foundNames,
+                'not_found' => $notFound,
+            ],
+            'sources' => ['crm.top_leads'],
+        ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $leadModels
+     * @return array<int, array<string, mixed>>
+     */
+    private function mapLeadItems(array $leadModels): array
+    {
         $assigneeNames = $this->userDisplayNameResolver->resolveMap(
-            collect($leads->items())
+            collect($leadModels)
                 ->pluck('assigned_to_user_id')
                 ->all(),
         );
 
-        $items = collect($leads->items())
+        return collect($leadModels)
             ->map(static function ($lead) use ($assigneeNames): array {
                 $assignedToUserId = is_numeric($lead->assigned_to_user_id ?? null) ? (int) $lead->assigned_to_user_id : null;
 
@@ -109,63 +238,140 @@ class ReadToolRegistry
             })
             ->values()
             ->all();
-
-        $total = method_exists($leads, 'total') ? (int) $leads->total() : count($items);
-        $summary = $this->formatLeadListSummary($items, $total);
-
-        return [
-            'tool' => 'crm.top_leads',
-            'summary' => $summary,
-            'payload' => [
-                'items' => $items,
-                'count' => count($items),
-                'total' => $total,
-            ],
-            'sources' => ['crm.top_leads'],
-        ];
     }
 
     /**
      * @param  array<int, array<string, mixed>>  $items
+     * @param  array<int, string>  $requestedNames
+     * @param  array<int, string>  $foundNames
+     * @param  array<int, string>  $notFound
      */
-    private function formatLeadListSummary(array $items, int $total): string
+    private function formatNamedLeadLookupSummary(
+        array $items,
+        array $requestedNames,
+        array $foundNames,
+        array $notFound,
+    ): string {
+        $lines = collect($items)
+            ->values()
+            ->map(fn (array $lead, int $index): string => $this->formatLeadSummaryLine($lead, $index))
+            ->all();
+
+        $header = sprintf(
+            'Searched for %d named lead(s). Found %d, not found %d.',
+            count($requestedNames),
+            count($foundNames),
+            count($notFound),
+        );
+
+        if ($notFound !== []) {
+            $header .= ' Not found: ' . implode(', ', $notFound) . '.';
+        }
+
+        if ($lines === []) {
+            return $header;
+        }
+
+        return $header . "\n" . implode("\n", $lines);
+    }
+
+    private function formatLeadSummaryLine(array $lead, int $index): string
     {
-        if ($total <= 0) {
-            return 'No leads were found in your active organization scope.';
+        $status = is_string($lead['status'] ?? null) ? $lead['status'] : 'unknown';
+        $priority = is_string($lead['priority'] ?? null) ? $lead['priority'] : 'unknown';
+        $assignee = is_string($lead['assigned_to_name'] ?? null) && trim($lead['assigned_to_name']) !== ''
+            ? (string) $lead['assigned_to_name']
+            : 'unassigned';
+        $location = is_string($lead['location'] ?? null) && trim($lead['location']) !== ''
+            ? (string) $lead['location']
+            : 'no location on file';
+
+        return sprintf(
+            '%d. %s — %s — Status: %s, Priority: %s, Assigned: %s',
+            $index + 1,
+            (string) ($lead['name'] ?? 'Lead'),
+            $location,
+            $status,
+            $priority,
+            $assignee,
+        );
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     * @param  array<string, mixed>  $payload
+     */
+    private function formatLeadListSummary(
+        array $items,
+        array $payload,
+        ?string $search = null,
+        bool $countOnly = false,
+    ): string {
+        $scopeTotal = is_int($payload['matched_total'] ?? null)
+            ? (int) $payload['matched_total']
+            : (int) ($payload['total'] ?? count($items));
+        $organizationTotal = is_int($payload['total'] ?? null) ? (int) $payload['total'] : $scopeTotal;
+        $truncated = ($payload['truncated'] ?? false) === true;
+        $remainingCount = (int) ($payload['remaining_count'] ?? 0);
+
+        $header = $this->readListPresenter->formatListHeader(
+            resourceLabel: 'lead(s)',
+            shownCount: count($items),
+            scopeTotal: $scopeTotal,
+            filterLabel: $search,
+            truncated: $truncated,
+            remainingCount: $remainingCount,
+            organizationTotal: $search !== null ? $organizationTotal : null,
+        );
+
+        if ($countOnly && $items === []) {
+            return rtrim($header, ':') . '.';
+        }
+
+        if ($countOnly && count($items) <= 3) {
+            $lines = collect($items)
+                ->values()
+                ->map(fn (array $lead, int $index): string => $this->formatLeadSummaryLine($lead, $index))
+                ->all();
+
+            return rtrim($header, ':') . ":\n" . implode("\n", $lines);
+        }
+
+        if ($countOnly) {
+            return rtrim($header, ':') . '.';
+        }
+
+        if ($items === []) {
+            return rtrim($header, ':') . '.';
         }
 
         $lines = collect($items)
             ->values()
-            ->map(static function (array $lead, int $index): string {
-                $status = is_string($lead['status'] ?? null) ? $lead['status'] : 'unknown';
-                $priority = is_string($lead['priority'] ?? null) ? $lead['priority'] : 'unknown';
-                $assignee = is_string($lead['assigned_to_name'] ?? null) && trim($lead['assigned_to_name']) !== ''
-                    ? (string) $lead['assigned_to_name']
-                    : 'unassigned';
-
-                return sprintf(
-                    '%d. %s, Status: %s, Priority: %s, Assigned: %s',
-                    $index + 1,
-                    (string) ($lead['name'] ?? 'Lead'),
-                    $status,
-                    $priority,
-                    $assignee,
-                );
-            })
+            ->map(fn (array $lead, int $index): string => $this->formatLeadSummaryLine($lead, $index))
             ->all();
 
-        $header = $total > count($items)
-            ? sprintf('You have %d lead(s) in your CRM. Showing %d in your active scope:', $total, count($items))
-            : sprintf('You have %d lead(s) in your CRM:', $total);
+        $footer = $truncated
+            ? "\nWould you like me to list all of them?"
+            : '';
 
-        return $header . "\n" . implode("\n", $lines);
+        return $header . "\n" . implode("\n", $lines) . $footer;
     }
 
     private function organizationUsers(User $user, int $companyId, array $args): array
     {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
-        $limit = max(1, min(50, (int) ($args['limit'] ?? 25)));
+        $limit = max(1, min($this->readListPresenter->maxExpandedLimit('org.users'), (int) ($args['limit'] ?? $this->readListPresenter->previewLimit())));
+        $countOnly = ($args['count_only'] ?? false) === true;
+
+        $total = (int) User::query()
+            ->join(
+                'company_users',
+                static fn ($join) => $join
+                    ->on('company_users.user_id', '=', 'users.id')
+                    ->where('company_users.company_id', '=', $resolvedCompanyId)
+            )
+            ->count();
 
         $users = User::query()
             ->select(['users.id', 'users.name', 'users.email'])
@@ -191,26 +397,42 @@ class ReadToolRegistry
             ->values()
             ->all();
 
-        $summary = $this->formatOrganizationUsersSummary($items);
+        $payload = $this->readListPresenter->enrichPayload($items, $total);
+        if ($countOnly) {
+            $payload['count_only'] = true;
+        }
+
+        $summary = $this->formatOrganizationUsersSummary($items, $payload, $countOnly);
 
         return [
             'tool' => 'org.users',
             'summary' => $summary,
-            'payload' => [
-                'items' => $items,
-                'count' => count($items),
-            ],
+            'payload' => $payload,
             'sources' => ['org.users'],
         ];
     }
 
     /**
      * @param  array<int, array<string, mixed>>  $items
+     * @param  array<string, mixed>  $payload
      */
-    private function formatOrganizationUsersSummary(array $items): string
+    private function formatOrganizationUsersSummary(array $items, array $payload, bool $countOnly = false): string
     {
-        if ($items === []) {
-            return 'No users were found in your active organization scope.';
+        $total = (int) ($payload['total'] ?? count($items));
+        $truncated = ($payload['truncated'] ?? false) === true;
+        $remainingCount = (int) ($payload['remaining_count'] ?? 0);
+
+        $header = $this->readListPresenter->formatListHeader(
+            resourceLabel: 'user(s)',
+            shownCount: count($items),
+            scopeTotal: $total,
+            filterLabel: null,
+            truncated: $truncated,
+            remainingCount: $remainingCount,
+        );
+
+        if ($countOnly || $items === []) {
+            return rtrim($header, ':') . '.';
         }
 
         $lines = collect($items)
@@ -231,7 +453,9 @@ class ReadToolRegistry
             })
             ->all();
 
-        return sprintf("Here are %d user(s) in your organization:\n%s", count($items), implode("\n", $lines));
+        $footer = $truncated ? "\nWould you like me to list all of them?" : '';
+
+        return $header . "\n" . implode("\n", $lines) . $footer;
     }
 
     private function overdueTasks(User $user, int $companyId, array $args): array
@@ -239,18 +463,17 @@ class ReadToolRegistry
         $context = $this->companyContextService->resolve($user, $companyId);
         $role = (string) $context['role'];
         $resolvedCompanyId = (int) $context['company']->id;
-        $limit = max(1, min(30, (int) ($args['limit'] ?? 10)));
+        $limit = max(1, min($this->readListPresenter->maxExpandedLimit('tasks.overdue'), (int) ($args['limit'] ?? $this->readListPresenter->previewLimit())));
+        $countOnly = ($args['count_only'] ?? false) === true;
 
-        $query = Task::query()
+        $baseQuery = Task::query()
             ->where('company_id', $resolvedCompanyId)
             ->whereNotNull('due_at')
             ->where('due_at', '<', now())
-            ->whereNotIn('status', [TaskStatus::COMPLETED->value, TaskStatus::CANCELLED->value])
-            ->orderBy('due_at')
-            ->limit($limit);
+            ->whereNotIn('status', [TaskStatus::COMPLETED->value, TaskStatus::CANCELLED->value]);
 
         if ($role === 'agent') {
-            $query->where(function (Builder $builder) use ($user): void {
+            $baseQuery->where(function (Builder $builder) use ($user): void {
                 $builder->where('assigned_agent_id', $user->id)
                     ->orWhereExists(function ($sub) use ($user): void {
                         $sub->selectRaw('1')
@@ -262,7 +485,11 @@ class ReadToolRegistry
             });
         }
 
-        $tasks = $query
+        $total = (int) (clone $baseQuery)->count();
+
+        $tasks = (clone $baseQuery)
+            ->orderBy('due_at')
+            ->limit($limit)
             ->with([
                 'assignedAgent:id,name',
                 'project:id,name',
@@ -334,24 +561,48 @@ class ReadToolRegistry
             ->values()
             ->all();
 
+        $payload = $this->readListPresenter->enrichPayload($items, $total);
+        if ($countOnly) {
+            $payload['count_only'] = true;
+        }
+
         return [
             'tool' => 'tasks.overdue',
-            'summary' => $this->formatOverdueTasksSummary($items),
-            'payload' => [
-                'items' => $items,
-                'count' => count($items),
-            ],
+            'summary' => $this->formatOverdueTasksSummary($items, $payload, $countOnly),
+            'payload' => $payload,
             'sources' => ['tasks.overdue'],
         ];
     }
 
     /**
      * @param  array<int, array<string, mixed>>  $items
+     * @param  array<string, mixed>  $payload
      */
-    private function formatOverdueTasksSummary(array $items): string
+    private function formatOverdueTasksSummary(array $items, array $payload, bool $countOnly = false): string
     {
-        if ($items === []) {
+        $total = (int) ($payload['total'] ?? count($items));
+        $truncated = ($payload['truncated'] ?? false) === true;
+        $remainingCount = (int) ($payload['remaining_count'] ?? 0);
+
+        $header = $this->readListPresenter->formatListHeader(
+            resourceLabel: 'overdue task(s)',
+            shownCount: count($items),
+            scopeTotal: $total,
+            filterLabel: null,
+            truncated: $truncated,
+            remainingCount: $remainingCount,
+        );
+
+        if ($total <= 0) {
             return 'No overdue tasks found in your permitted scope.';
+        }
+
+        if ($countOnly && count($items) > 3) {
+            return rtrim($header, ':') . '.';
+        }
+
+        if ($items === []) {
+            return rtrim($header, ':') . '.';
         }
 
         $grouped = collect($items)->groupBy(static fn (array $item): string => (string) ($item['assignees_label'] ?? 'Unassigned'));
@@ -385,11 +636,9 @@ class ReadToolRegistry
             ->values()
             ->all();
 
-        return sprintf(
-            "I found %d overdue task(s) in your permitted scope:\n%s",
-            count($items),
-            implode("\n", $lines),
-        );
+        $footer = $truncated ? "\nWould you like me to list all of them?" : '';
+
+        return $header . "\n" . implode("\n", $lines) . $footer;
     }
 
     private function projectRiskSummary(User $user, int $companyId, array $args): array
@@ -397,7 +646,8 @@ class ReadToolRegistry
         $context = $this->companyContextService->resolve($user, $companyId);
         $role = (string) $context['role'];
         $resolvedCompanyId = (int) $context['company']->id;
-        $limit = max(1, min(20, (int) ($args['limit'] ?? 8)));
+        $limit = max(1, min($this->readListPresenter->maxExpandedLimit('projects.at_risk_summary'), (int) ($args['limit'] ?? $this->readListPresenter->previewLimit())));
+        $countOnly = ($args['count_only'] ?? false) === true;
 
         $projectQuery = Project::query()
             ->where('company_id', $resolvedCompanyId)
@@ -411,8 +661,7 @@ class ReadToolRegistry
                 'tasks as completed_tasks_count' => fn(Builder $query) => $query->where('status', TaskStatus::COMPLETED->value),
             ])
             ->orderByDesc('overdue_tasks_count')
-            ->orderBy('end_date')
-            ->limit($limit);
+            ->orderBy('end_date');
 
         if ($role === 'agent') {
             $projectQuery->whereHas('tasks', function (Builder $query) use ($user): void {
@@ -429,7 +678,11 @@ class ReadToolRegistry
             });
         }
 
-        $items = $projectQuery->get(['id', 'name', 'status', 'start_date', 'end_date'])
+        $total = (int) (clone $projectQuery)->count();
+
+        $items = (clone $projectQuery)
+            ->limit($limit)
+            ->get(['id', 'name', 'status', 'start_date', 'end_date'])
             ->map(static fn(Project $project): array => [
                 'id' => $project->id,
                 'name' => $project->name,
@@ -446,15 +699,36 @@ class ReadToolRegistry
             ->values()
             ->all();
 
+        $payload = $this->readListPresenter->enrichPayload($items, $total);
+        if ($countOnly) {
+            $payload['count_only'] = true;
+        }
+
+        $truncated = ($payload['truncated'] ?? false) === true;
+        $header = $this->readListPresenter->formatListHeader(
+            resourceLabel: 'at-risk project(s)',
+            shownCount: count($items),
+            scopeTotal: $total,
+            filterLabel: null,
+            truncated: $truncated,
+            remainingCount: (int) ($payload['remaining_count'] ?? 0),
+        );
+
+        $summary = $total <= 0
+            ? 'No project risk records were found in your active scope.'
+            : rtrim($header, ':') . ($countOnly || $items === [] ? '.' : ':');
+
+        if (! $countOnly && $items !== [] && $total > 0) {
+            $summary .= "\nHere is the at-risk project snapshot from your active scope.";
+            if ($truncated) {
+                $summary .= "\nWould you like me to list all of them?";
+            }
+        }
+
         return [
             'tool' => 'projects.at_risk_summary',
-            'summary' => count($items) > 0
-                ? 'Here is the at-risk project snapshot from your active scope.'
-                : 'No project risk records were found in your active scope.',
-            'payload' => [
-                'items' => $items,
-                'count' => count($items),
-            ],
+            'summary' => $summary,
+            'payload' => $payload,
             'sources' => ['projects.at_risk_summary'],
         ];
     }
@@ -482,7 +756,8 @@ class ReadToolRegistry
 
     private function meetingsToday(User $user, int $companyId, array $args): array
     {
-        $limit = max(1, min(25, (int) ($args['limit'] ?? 10)));
+        $limit = max(1, min($this->readListPresenter->maxExpandedLimit('meetings.today'), (int) ($args['limit'] ?? $this->readListPresenter->previewLimit())));
+        $countOnly = ($args['count_only'] ?? false) === true;
 
         /** @var Paginator $meetings */
         $meetings = $this->meetingService->listForUser($user, [
@@ -504,22 +779,45 @@ class ReadToolRegistry
             ->values()
             ->all();
 
+        $total = method_exists($meetings, 'total') ? (int) $meetings->total() : count($items);
+        $payload = $this->readListPresenter->enrichPayload($items, $total);
+        if ($countOnly) {
+            $payload['count_only'] = true;
+        }
+
+        $truncated = ($payload['truncated'] ?? false) === true;
+        $header = $this->readListPresenter->formatListHeader(
+            resourceLabel: 'meeting(s) today',
+            shownCount: count($items),
+            scopeTotal: $total,
+            filterLabel: null,
+            truncated: $truncated,
+            remainingCount: (int) ($payload['remaining_count'] ?? 0),
+        );
+
+        $summary = $total <= 0
+            ? 'No meetings are scheduled for today in your permitted scope.'
+            : rtrim($header, ':') . ($countOnly ? '.' : ':');
+
+        if (! $countOnly && $items !== [] && $total > 0) {
+            $summary .= "\nThese are the meetings scheduled for today in your permitted scope.";
+            if ($truncated) {
+                $summary .= "\nWould you like me to list all of them?";
+            }
+        }
+
         return [
             'tool' => 'meetings.today',
-            'summary' => count($items) > 0
-                ? 'These are the meetings scheduled for today in your permitted scope.'
-                : 'No meetings are scheduled for today in your permitted scope.',
-            'payload' => [
-                'items' => $items,
-                'count' => count($items),
-            ],
+            'summary' => $summary,
+            'payload' => $payload,
             'sources' => ['meetings.today'],
         ];
     }
 
     private function activeAgents(User $user, int $companyId, array $args): array
     {
-        $limit = max(1, min(100, (int) ($args['limit'] ?? 50)));
+        $limit = max(1, min($this->readListPresenter->maxExpandedLimit('tracking.active_agents'), (int) ($args['limit'] ?? $this->readListPresenter->previewLimit())));
+        $countOnly = ($args['count_only'] ?? false) === true;
 
         $active = $this->agentLocationSnapshotService->listForUser($user, [
             'company_id' => $companyId,
@@ -527,12 +825,38 @@ class ReadToolRegistry
             'include_offline' => false,
         ]);
 
+        $items = is_array($active['items'] ?? null) ? $active['items'] : [];
+        $total = is_int($active['total'] ?? null)
+            ? (int) $active['total']
+            : (is_int($active['count'] ?? null) ? (int) $active['count'] : count($items));
+
+        $payload = $this->readListPresenter->enrichPayload($items, max($total, count($items)));
+        if ($countOnly) {
+            $payload['count_only'] = true;
+        }
+
+        $truncated = ($payload['truncated'] ?? false) === true;
+        $header = $this->readListPresenter->formatListHeader(
+            resourceLabel: 'active agent(s)',
+            shownCount: count($items),
+            scopeTotal: (int) ($payload['total'] ?? count($items)),
+            filterLabel: null,
+            truncated: $truncated,
+            remainingCount: (int) ($payload['remaining_count'] ?? 0),
+        );
+
+        $summary = (int) ($payload['total'] ?? 0) <= 0
+            ? 'No active agents are currently online in the selected scope.'
+            : rtrim($header, ':') . ($countOnly ? '.' : ': Live active agent locations are available now.');
+
+        if ($truncated && ! $countOnly) {
+            $summary .= "\nWould you like me to list all of them?";
+        }
+
         return [
             'tool' => 'tracking.active_agents',
-            'summary' => count($active['items'] ?? []) > 0
-                ? 'Live active agent locations are available now.'
-                : 'No active agents are currently online in the selected scope.',
-            'payload' => $active,
+            'summary' => $summary,
+            'payload' => array_merge($active, $payload),
             'sources' => ['tracking.active_agents'],
         ];
     }

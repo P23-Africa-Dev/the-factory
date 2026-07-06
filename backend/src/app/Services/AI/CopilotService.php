@@ -6,6 +6,7 @@ namespace App\Services\AI;
 
 use App\Enums\TaskType;
 use App\Models\User;
+use App\Services\AI\Crm\CrmLeadReadArgsResolver;
 use App\Services\AI\Crm\EmailInferenceService;
 use App\Services\AI\Crm\LeadInferenceService;
 use App\Services\AI\Kpi\KpiInferenceService;
@@ -48,6 +49,8 @@ class CopilotService
         private readonly DemoCompanyService $demoCompanyService,
         private readonly LlmIntentRouter $llmIntentRouter,
         private readonly ReadToolSynthesisService $readToolSynthesisService,
+        private readonly CrmLeadReadArgsResolver $crmLeadReadArgsResolver,
+        private readonly ReadToolArgsResolver $readToolArgsResolver,
     ) {}
 
     public function chat(
@@ -129,6 +132,23 @@ class CopilotService
                     'confidence' => 0.95,
                 ];
                 $actionConfirmed = true;
+            }
+        }
+
+        if (($intent['type'] ?? 'general') === 'general') {
+            $truncatedListTool = $this->readToolArgsResolver->resolveTruncatedListToolFromThread(
+                $message,
+                $threadId,
+                $resolvedCompanyId,
+                (int) $user->id,
+            );
+
+            if (is_string($truncatedListTool) && $truncatedListTool !== '') {
+                $intent = [
+                    'type' => 'tool',
+                    'tool' => $truncatedListTool,
+                    'confidence' => 0.95,
+                ];
             }
         }
 
@@ -263,7 +283,14 @@ class CopilotService
                         $resolvedCompanyId,
                         array_merge(
                             $this->buildReadToolArgs($candidateTool, $chatContext),
-                            $this->buildReadToolMessageArgs($candidateTool, $message),
+                            $this->buildReadToolMessageArgs(
+                                $candidateTool,
+                                $message,
+                                $role,
+                                $threadId,
+                                $resolvedCompanyId,
+                                (int) $user->id,
+                            ),
                         ),
                     );
                 }
@@ -1975,26 +2002,27 @@ class CopilotService
     /**
      * @return array<string, mixed>
      */
-    private function buildReadToolMessageArgs(string $tool, string $message): array
-    {
+    private function buildReadToolMessageArgs(
+        string $tool,
+        string $message,
+        string $role = 'admin',
+        ?string $threadId = null,
+        ?int $companyId = null,
+        ?int $userId = null,
+    ): array {
         if ($tool === 'crm.visit_extract') {
             return ['notes' => $message];
         }
 
+        $args = $this->readToolArgsResolver->isListTool($tool)
+            ? $this->readToolArgsResolver->resolve($tool, $message, $role, $threadId, $companyId, $userId)
+            : [];
+
         if ($tool === 'crm.top_leads') {
-            $normalized = strtolower(trim($message));
-            $wantsFullList = preg_match('/\b(all|full|complete|entire)\b.{0,30}\b(leads?|list|crm)\b/i', $normalized) === 1
-                || preg_match('/\b(leads?|list|crm)\b.{0,30}\b(all|full|complete|entire)\b/i', $normalized) === 1
-                || preg_match('/\b(list|provide|show)\b.{0,40}\b(leads?|crm)\b/i', $normalized) === 1;
-
-            return $wantsFullList ? ['limit' => 20] : [];
+            return array_merge($args, $this->crmLeadReadArgsResolver->resolveFilters($message));
         }
 
-        if ($tool === 'org.users') {
-            return ['limit' => 50];
-        }
-
-        return [];
+        return $args;
     }
 
     private function canConsumeCredits(int $companyId): bool
