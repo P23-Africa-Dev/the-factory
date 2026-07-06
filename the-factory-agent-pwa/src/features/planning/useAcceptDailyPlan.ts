@@ -16,7 +16,7 @@ function isPlanTaskDraft(draft: PlanTaskDraft | null | undefined): draft is Plan
 function normalizeDraftForAccept(draft: PlanTaskDraft): PlanTaskDraft {
   const normalized = { ...draft };
 
-  for (const field of ['title', 'type', 'description', 'location', 'priority', 'dedupe_key'] as const) {
+  for (const field of ['type', 'description', 'location', 'priority', 'dedupe_key'] as const) {
     const value = normalized[field];
     if (typeof value === 'string' && value.trim() === '') {
       normalized[field] = null;
