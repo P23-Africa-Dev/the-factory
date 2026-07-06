@@ -13,6 +13,7 @@ import {
   Image as ImageIcon,
   Loader2,
   HardDrive,
+  Eye,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -28,8 +29,10 @@ import {
   type DriveFile,
 } from "@/hooks/use-drive";
 import { formatDriveBytes } from "@/lib/api/drive";
-import { useInternalUsersPaginated } from "@/hooks/use-internal-users";
+import { canPreviewDriveFile } from "@/lib/drive-preview";
 import { DriveShareModal } from "./drive-share-modal";
+import { DriveQuickPreview } from "./drive-quick-preview";
+import { DrivePreviewModal } from "./drive-preview-modal";
 
 function fileIcon(mime: string | null) {
   if (mime?.startsWith("image/")) return ImageIcon;
@@ -46,6 +49,8 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
   const canManage = role === "owner" || role === "admin" || role === "supervisor";
 
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
+  const [selectedFile, setSelectedFile] = useState<DriveFile | null>(null);
+  const [previewModalFile, setPreviewModalFile] = useState<DriveFile | null>(null);
   const [search, setSearch] = useState("");
   const [shareFile, setShareFile] = useState<DriveFile | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
@@ -84,6 +89,20 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
   }, [folders, elyFolder, selectedFolderId, deepLinkFolderKey]);
 
   const highlightedFileId = deepLinkFileId ? Number(deepLinkFileId) : null;
+
+  useEffect(() => {
+    if (!highlightedFileId || files.length === 0) return;
+    const match = files.find((f) => f.id === highlightedFileId);
+    if (match) setSelectedFile(match);
+  }, [highlightedFileId, files]);
+
+  function handleDownload(file: DriveFile) {
+    downloadFile.mutate({
+      fileId: file.id,
+      company_id: apiCompanyId ?? undefined,
+      filename: file.original_name,
+    });
+  }
 
   async function handleUpload(fileList: FileList | null) {
     if (!fileList?.length || !canManage || selectedFolderId == null || !apiCompanyId) return;
@@ -161,7 +180,10 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
                   <button
                     key={folder.id}
                     type="button"
-                    onClick={() => setSelectedFolderId(folder.id)}
+                    onClick={() => {
+                      setSelectedFolderId(folder.id);
+                      setSelectedFile(null);
+                    }}
                     className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-left text-[13px] font-medium transition-colors ${
                       selectedFolderId === folder.id
                         ? "bg-dash-dark text-white"
@@ -196,106 +218,138 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
             )}
           </aside>
 
-          <main className="flex-1 min-w-0 bg-white rounded-3xl border border-gray-100 shadow-sm p-5 flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search files..."
-                className="flex-1 rounded-full border border-gray-200 px-4 py-2.5 text-[13px] outline-none focus:ring-2 focus:ring-dash-dark/10"
-              />
-              {canManage && selectedFolderId != null && (
-                <label className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-full bg-dash-dark text-white text-[13px] font-bold cursor-pointer hover:opacity-90">
-                  <Upload size={15} />
-                  Upload
-                  <input
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => {
-                      void handleUpload(e.target.files);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-              )}
-            </div>
-
-            {filesLoading ? (
-              <div className="flex justify-center py-16">
-                <Loader2 className="animate-spin text-gray-300" size={28} />
+          <div className="flex-1 min-w-0 flex flex-col xl:flex-row gap-4">
+            <main className="flex-1 min-w-0 bg-white rounded-3xl border border-gray-100 shadow-sm p-5 flex flex-col gap-4">
+              <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search files..."
+                  className="flex-1 rounded-full border border-gray-200 px-4 py-2.5 text-[13px] outline-none focus:ring-2 focus:ring-dash-dark/10"
+                />
+                {canManage && selectedFolderId != null && (
+                  <label className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-full bg-dash-dark text-white text-[13px] font-bold cursor-pointer hover:opacity-90">
+                    <Upload size={15} />
+                    Upload
+                    <input
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        void handleUpload(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                )}
               </div>
-            ) : files.length === 0 ? (
-              <div className="py-16 text-center text-gray-400 text-[14px]">
-                {canManage ? "No files in this folder yet. Upload your first document." : "No files have been shared with you in this folder."}
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-50">
-                {files.map((file) => {
-                  const Icon = fileIcon(file.mime_type);
-                  const isHighlighted = highlightedFileId === file.id;
 
-                  return (
-                    <div
-                      key={file.id}
-                      className={`flex items-center gap-3 py-3 px-2 rounded-2xl ${
-                        isHighlighted ? "bg-amber-50 ring-1 ring-amber-200" : ""
-                      }`}
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
-                        <Icon size={18} className="text-dash-dark" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[14px] font-bold text-dash-dark truncate">{file.original_name}</p>
-                        <p className="text-[11px] text-gray-400">
-                          {formatDriveBytes(file.size_bytes)}
-                          {file.source === "ely_report" ? " · ELY Report" : ""}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            downloadFile.mutate({
-                              fileId: file.id,
-                              company_id: apiCompanyId ?? undefined,
-                              filename: file.original_name,
-                            })
+              {filesLoading ? (
+                <div className="flex justify-center py-16">
+                  <Loader2 className="animate-spin text-gray-300" size={28} />
+                </div>
+              ) : files.length === 0 ? (
+                <div className="py-16 text-center text-gray-400 text-[14px]">
+                  {canManage ? "No files in this folder yet. Upload your first document." : "No files have been shared with you in this folder."}
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {files.map((file) => {
+                    const Icon = fileIcon(file.mime_type);
+                    const isSelected = selectedFile?.id === file.id;
+                    const isHighlighted = highlightedFileId === file.id;
+                    const previewable = canPreviewDriveFile(file);
+
+                    return (
+                      <div
+                        key={file.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedFile(file)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedFile(file);
                           }
-                          className="p-2 rounded-full hover:bg-gray-100 text-gray-600"
-                          title="Download"
-                        >
-                          <Download size={16} />
-                        </button>
-                        {canManage && (
-                          <>
+                        }}
+                        className={`flex items-center gap-3 py-3 px-2 rounded-2xl cursor-pointer transition-colors ${
+                          isSelected
+                            ? "bg-dash-dark/5 ring-2 ring-dash-dark/20"
+                            : isHighlighted
+                              ? "bg-amber-50 ring-1 ring-amber-200"
+                              : "hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+                          <Icon size={18} className="text-dash-dark" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[14px] font-bold text-dash-dark truncate">{file.original_name}</p>
+                          <p className="text-[11px] text-gray-400">
+                            {formatDriveBytes(file.size_bytes)}
+                            {file.source === "ely_report" ? " · ELY Report" : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {previewable && (
                             <button
                               type="button"
-                              onClick={() => setShareFile(file)}
+                              onClick={() => setPreviewModalFile(file)}
                               className="p-2 rounded-full hover:bg-gray-100 text-gray-600"
-                              title="Share"
+                              title="View file"
                             >
-                              <Share2 size={16} />
+                              <Eye size={16} />
                             </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                deleteFile.mutate({ fileId: file.id, company_id: apiCompanyId ?? undefined })
-                              }
-                              className="p-2 rounded-full hover:bg-red-50 text-red-500"
-                              title="Delete"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </>
-                        )}
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDownload(file)}
+                            className="p-2 rounded-full hover:bg-gray-100 text-gray-600"
+                            title="Download"
+                          >
+                            <Download size={16} />
+                          </button>
+                          {canManage && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setShareFile(file)}
+                                className="p-2 rounded-full hover:bg-gray-100 text-gray-600"
+                                title="Share"
+                              >
+                                <Share2 size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  deleteFile.mutate({ fileId: file.id, company_id: apiCompanyId ?? undefined });
+                                  if (selectedFile?.id === file.id) setSelectedFile(null);
+                                }}
+                                className="p-2 rounded-full hover:bg-red-50 text-red-500"
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
+            </main>
+
+            {selectedFile && apiCompanyId && (
+              <aside className="xl:w-80 shrink-0">
+                <DriveQuickPreview
+                  file={selectedFile}
+                  companyId={apiCompanyId}
+                  onOpenFullPreview={() => setPreviewModalFile(selectedFile)}
+                />
+              </aside>
             )}
-          </main>
+          </div>
         </div>
       </div>
 
@@ -314,6 +368,15 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
             setShareFile(null);
           }}
           isSaving={syncGrants.isPending}
+        />
+      )}
+
+      {previewModalFile && apiCompanyId && (
+        <DrivePreviewModal
+          file={previewModalFile}
+          companyId={apiCompanyId}
+          onClose={() => setPreviewModalFile(null)}
+          onDownload={() => handleDownload(previewModalFile)}
         />
       )}
     </div>

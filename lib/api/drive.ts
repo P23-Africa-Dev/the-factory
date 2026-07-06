@@ -164,12 +164,11 @@ export async function deleteDriveFile(token: string, fileId: number, companyId?:
   });
 }
 
-export async function downloadDriveFile(
+export async function fetchDriveFileBlob(
   token: string,
   fileId: number,
   companyId?: number | string,
-  filename?: string,
-) {
+): Promise<Blob> {
   const q = companyQuery(companyId);
   const response = await fetch(`${API_BASE_URL}/drive/files/${fileId}/download${q ? `?${q}` : ""}`, {
     headers: {
@@ -178,10 +177,19 @@ export async function downloadDriveFile(
   });
 
   if (!response.ok) {
-    throw new ApiRequestError("Download failed", response.status, null);
+    throw new ApiRequestError("Unable to load file preview", response.status, null);
   }
 
-  const blob = await response.blob();
+  return response.blob();
+}
+
+export async function downloadDriveFile(
+  token: string,
+  fileId: number,
+  companyId?: number | string,
+  filename?: string,
+) {
+  const blob = await fetchDriveFileBlob(token, fileId, companyId);
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
