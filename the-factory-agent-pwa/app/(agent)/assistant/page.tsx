@@ -11,12 +11,14 @@ import {
   ThumbsUp,
   Trash,
   Trash2,
+  Paperclip,
 } from 'lucide-react';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { useAgentIdentity } from '@/features/auth';
 import {
   useAssistantConversation,
   useDynamicSuggestions,
+  assistantApi,
   type AssistantMessage,
 } from '@/features/assistant';
 import { ELY_INPUT_PLACEHOLDER, ELY_INTRO, ELY_NAME, ELY_TYPING_LABEL } from '@/lib/ely-brand';
@@ -58,6 +60,8 @@ export default function AiAssistantPage() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
 
   useEffect(() => {
     const scrollContainer = scrollRef.current;
@@ -95,6 +99,24 @@ export default function AiAssistantPage() {
     if (!content) return;
     setInput('');
     void send(content, { withGeolocation });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsAnalyzingPhoto(true);
+    try {
+      const result = await assistantApi.analyzeFile(file);
+      void send(`File Analysis (${file.name}):\n\n${result.summary}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to analyze file.');
+    } finally {
+      setIsAnalyzingPhoto(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   const handleAction = (id: string, action: Exclude<LocalAction, null>) => {
@@ -261,6 +283,14 @@ export default function AiAssistantPage() {
               </div>
             )}
 
+            {isAnalyzingPhoto && (
+              <div className="flex items-start">
+                <div className="bg-[#16384B]/80 text-[#D0E2E3]/80 border border-white/5 rounded-2xl px-5 py-3 text-xs font-semibold animate-pulse">
+                  ELY is analyzing your attachment...
+                </div>
+              </div>
+            )}
+
             {!isRestoring && <div className="h-24 flex-shrink-0" />}
           </div>
         </div>
@@ -268,11 +298,20 @@ export default function AiAssistantPage() {
         {/* Input Bar pinned above Bottom Navigation */}
         <div className="fixed bottom-[80px] left-0 right-0 max-w-md mx-auto z-50 pb-1">
           <div className="bg-white rounded-t-3xl shadow-xl flex items-center p-6 gap-3 border border-gray-100">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.csv,image/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
             <button
               type="button"
-              className="w-11 h-11 rounded-full bg-gray-100 flex items-center justify-center text-[#091519] focus:outline-none flex-shrink-0"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isSending || isAnalyzingPhoto}
+              className="w-11 h-11 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-800 focus:outline-none flex-shrink-0 disabled:opacity-50 transition-colors"
             >
-              <img src="/assets/ai-camera.png" alt="camera" className="w-[38px] h-[38px] object-contain" />
+              <Paperclip size={20} />
             </button>
 
             <div className="flex-1 bg-gray-100 rounded-full h-12 flex items-center px-4">
