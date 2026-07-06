@@ -221,8 +221,13 @@ jobs:
           # Delete old migration job if exists
           kubectl delete job laravel-migrate -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
 
+          # Pin autoscaling during migration so HPA does not surge replicas while we
+          # scale down for CPU headroom on small clusters.
+          echo "Temporarily constraining backend HPA for migration window..."
+          kubectl patch hpa backend-hpa -n ${{ env.K8S_NAMESPACE }} --type merge \
+            -p '{"spec":{"minReplicas":1,"maxReplicas":1}}' || true
+
           # Free CPU on small single-node clusters so the migrate pod can schedule.
-          # Pending pods do not consume node CPU, but their requests still block scheduling.
           echo "Scaling backend to 1 replica to free cluster CPU for migration..."
           kubectl scale deployment/backend -n ${{ env.K8S_NAMESPACE }} --replicas=1
           kubectl rollout status deployment/backend -n ${{ env.K8S_NAMESPACE }} --timeout=180s || true
@@ -249,14 +254,44 @@ jobs:
           kubectl apply -f backend/k8s/queue-worker-deployment.yaml -n ${{ env.K8S_NAMESPACE }}
           kubectl apply -f backend/k8s/scheduler-deployment.yaml -n ${{ env.K8S_NAMESPACE }}
 
+          # Replace one pod at a time on small clusters (no extra surge capacity needed).
+          kubectl patch deployment/backend -n ${{ env.K8S_NAMESPACE }} --type=strategic \
+            -p '{"spec":{"strategy":{"rollingUpdate":{"maxUnavailable":1,"maxSurge":0}}}}' || true
+
       - name: Wait for rollout
         run: |
-          kubectl rollout status deployment/backend \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+          rollout_failed=0
+
+          if ! kubectl rollout status deployment/backend \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=600s; then
+            rollout_failed=1
+            echo "=== Backend rollout timed out — collecting diagnostics ==="
+            kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=backend -o wide || true
+            kubectl describe pods -n ${{ env.K8S_NAMESPACE }} -l app=backend || true
+            for pod in $(kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=backend \
+              -o jsonpath='{.items[?(@.status.phase!="Running")].metadata.name}'); do
+              echo "--- logs: $pod (init-app) ---"
+              kubectl logs -n ${{ env.K8S_NAMESPACE }} "$pod" -c init-app --tail=80 || true
+              echo "--- logs: $pod (nginx) ---"
+              kubectl logs -n ${{ env.K8S_NAMESPACE }} "$pod" -c nginx --tail=80 || true
+            done
+          fi
+
           kubectl rollout status deployment/queue-worker \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=120s
+            -n ${{ env.K8S_NAMESPACE }} --timeout=180s || rollout_failed=1
           kubectl rollout status deployment/scheduler \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=120s
+            -n ${{ env.K8S_NAMESPACE }} --timeout=180s || rollout_failed=1
+
+          if [ "$rollout_failed" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Restore backend autoscaling
+        if: always()
+        run: |
+          kubectl patch hpa backend-hpa -n ${{ env.K8S_NAMESPACE }} --type merge \
+            -p '{"spec":{"minReplicas":2,"maxReplicas":10}}' || true
+          kubectl scale deployment/backend -n ${{ env.K8S_NAMESPACE }} --replicas=2 || true
 
       - name: Smoke test — health endpoint
         run: |
