@@ -51,6 +51,10 @@ export type LeadApiItem = {
     email?: string | null;
     phone?: string | null;
     location?: string | null;
+    company_name?: string | null;
+    website?: string | null;
+    position?: string | null;
+    profile_urls?: string[] | null;
     source?: string | null;
     status?: ApiLeadStatus | null;
     priority?: ApiLeadPriority | null;
@@ -124,6 +128,10 @@ export type CreateLeadPayload = {
     email?: string | null;
     phone?: string | null;
     location?: string | null;
+    company_name?: string | null;
+    website?: string | null;
+    position?: string | null;
+    profile_urls?: string[] | null;
     source?: string | null;
     status?: ApiLeadStatus;
     priority?: ApiLeadPriority;
@@ -143,6 +151,10 @@ export type UpdateLeadPayload = {
     email?: string | null;
     phone?: string | null;
     location?: string | null;
+    company_name?: string | null;
+    website?: string | null;
+    position?: string | null;
+    profile_urls?: string[] | null;
     source?: string | null;
     status?: ApiLeadStatus;
     priority?: ApiLeadPriority;
@@ -194,6 +206,10 @@ export type ImportLeadRow = {
     email?: string;
     phone?: string;
     location?: string;
+    company_name?: string;
+    website?: string;
+    position?: string;
+    profile_urls?: string | string[];
     source?: string;
     status?: string;
     priority?: ApiLeadPriority;

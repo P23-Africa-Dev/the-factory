@@ -693,6 +693,165 @@ class LeadManagementTest extends TestCase
         ]);
     }
 
+    public function test_create_lead_persists_professional_fields(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($admin->createToken('admin-professional-lead', ['*'])->plainTextToken)
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'name' => 'Jane Prospect',
+                'status' => 'newly_lead',
+                'priority' => 'medium',
+                'company_name' => 'Acme Ltd',
+                'website' => 'acme.com',
+                'position' => 'Head of Sales',
+                'profile_urls' => [
+                    'https://linkedin.com/in/jane',
+                    'https://x.com/jane',
+                ],
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.lead.company_name', 'Acme Ltd')
+            ->assertJsonPath('data.lead.website', 'https://acme.com')
+            ->assertJsonPath('data.lead.position', 'Head of Sales')
+            ->assertJsonPath('data.lead.profile_urls', [
+                'https://linkedin.com/in/jane',
+                'https://x.com/jane',
+            ]);
+
+        $this->assertDatabaseHas('leads', [
+            'name' => 'Jane Prospect',
+            'company_name' => 'Acme Ltd',
+            'website' => 'https://acme.com',
+            'position' => 'Head of Sales',
+        ]);
+    }
+
+    public function test_import_leads_with_professional_fields_and_profile_urls(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($admin->createToken('admin-import-professional', ['*'])->plainTextToken)
+            ->postJson('/api/v1/crm/leads/import', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'duplicate_policy' => 'create',
+                'rows' => [[
+                    'name' => 'Imported Jane',
+                    'email' => 'imported-jane@example.com',
+                    'company_name' => 'Imported Co',
+                    'website' => 'https://imported.example',
+                    'position' => 'Director',
+                    'profile_urls' => 'https://linkedin.com/in/imported,https://x.com/imported',
+                ]],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.imported_count', 1);
+
+        $this->assertDatabaseHas('leads', [
+            'email' => 'imported-jane@example.com',
+            'company_name' => 'Imported Co',
+            'website' => 'https://imported.example',
+            'position' => 'Director',
+        ]);
+
+        $lead = Lead::query()->where('email', 'imported-jane@example.com')->first();
+        $this->assertNotNull($lead);
+        $this->assertSame([
+            'https://linkedin.com/in/imported',
+            'https://x.com/imported',
+        ], $lead->profile_urls);
+    }
+
+    public function test_import_rejects_invalid_profile_urls(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+
+        $response = $this->withToken($admin->createToken('admin-import-invalid-url', ['*'])->plainTextToken)
+            ->postJson('/api/v1/crm/leads/import', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'duplicate_policy' => 'create',
+                'rows' => [[
+                    'name' => 'Bad URL Lead',
+                    'profile_urls' => 'not-a-valid-url',
+                ]],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.imported_count', 0)
+            ->assertJsonPath('data.failed_rows.0.row_index', 1);
+    }
+
+    public function test_export_includes_professional_fields(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+
+        Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Professional Export Lead',
+            'email' => 'pro-export@example.com',
+            'company_name' => 'Export Co',
+            'website' => 'https://export.example',
+            'position' => 'VP Sales',
+            'profile_urls' => ['https://linkedin.com/in/export'],
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+        ]);
+
+        $response = $this->withToken($admin->createToken('admin-export-professional', ['*'])->plainTextToken)
+            ->get('/api/v1/crm/leads/export?company_id=' . $company->id . '&format=csv');
+
+        $response->assertOk();
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('Company Name', $content);
+        $this->assertStringContainsString('Profile URLs', $content);
+        $this->assertStringContainsString('Export Co', $content);
+        $this->assertStringContainsString('https://linkedin.com/in/export', $content);
+    }
+
+    public function test_import_duplicate_update_updates_company_name(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+
+        Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Duplicate Co Lead',
+            'email' => 'dup-co@example.com',
+            'company_name' => 'Old Co',
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+        ]);
+
+        $response = $this->withToken($admin->createToken('admin-import-dup-co', ['*'])->plainTextToken)
+            ->postJson('/api/v1/crm/leads/import', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'duplicate_policy' => 'update',
+                'rows' => [[
+                    'name' => 'Duplicate Co Lead',
+                    'email' => 'dup-co@example.com',
+                    'company_name' => 'New Co',
+                ]],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.updated_count', 1);
+
+        $this->assertDatabaseHas('leads', [
+            'email' => 'dup-co@example.com',
+            'company_name' => 'New Co',
+        ]);
+    }
+
     public function test_legacy_budget_string_is_normalized_on_create(): void
     {
         [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();

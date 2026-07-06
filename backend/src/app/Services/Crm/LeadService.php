@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\Company\CompanyContextService;
 use App\Services\Notification\NotificationService;
 use App\Support\AvatarUrlResolver;
+use App\Support\LeadFieldNormalizer;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -34,6 +35,10 @@ class LeadService
         'Email',
         'Phone',
         'Location',
+        'Company Name',
+        'Website',
+        'Position',
+        'Profile URLs',
         'Source',
         'Status',
         'Priority',
@@ -102,6 +107,10 @@ class LeadService
             'email' => $data['email'] ?? null,
             'phone' => $data['phone'] ?? null,
             'location' => $data['location'] ?? null,
+            'company_name' => $data['company_name'] ?? null,
+            'website' => isset($data['website']) ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null,
+            'position' => $data['position'] ?? null,
+            'profile_urls' => ! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null,
             'source' => $source,
             'status' => $data['status'],
             'priority' => $data['priority'],
@@ -208,6 +217,14 @@ class LeadService
             'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
             'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
             'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
+            'company_name' => array_key_exists('company_name', $data) ? $data['company_name'] : $lead->company_name,
+            'website' => array_key_exists('website', $data)
+                ? ($data['website'] !== null ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null)
+                : $lead->website,
+            'position' => array_key_exists('position', $data) ? $data['position'] : $lead->position,
+            'profile_urls' => array_key_exists('profile_urls', $data)
+                ? (! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null)
+                : $lead->profile_urls,
             'source' => array_key_exists('source', $data) ? $data['source'] : $lead->source,
             'status' => $data['status'] ?? $lead->status,
             'priority' => $data['priority'] ?? $lead->priority,
@@ -890,6 +907,10 @@ class LeadService
                 'email' => $data['email'],
                 'phone' => $data['phone'],
                 'location' => $data['location'],
+                'company_name' => $data['company_name'] ?? null,
+                'website' => $data['website'] ?? null,
+                'position' => $data['position'] ?? null,
+                'profile_urls' => $data['profile_urls'] ?? null,
                 'source' => $normalizedSource,
                 'status' => $data['status'],
                 'priority' => $data['priority'],
@@ -1408,9 +1429,15 @@ class LeadService
         $update = [];
         $provided = static fn(string $key): bool => trim((string) ($row[$key] ?? '')) !== '';
 
-        foreach (['name', 'email', 'phone', 'location', 'source'] as $field) {
+        foreach (['name', 'email', 'phone', 'location', 'company_name', 'website', 'position', 'source'] as $field) {
             if ($provided($field) && $normalized[$field] !== null) {
                 $update[$field] = $normalized[$field];
+            }
+        }
+
+        if ($provided('profile_urls') || (is_array($row['profile_urls'] ?? null) && ($row['profile_urls'] ?? []) !== [])) {
+            if (! empty($normalized['profile_urls'])) {
+                $update['profile_urls'] = $normalized['profile_urls'];
             }
         }
 
@@ -1568,6 +1595,10 @@ class LeadService
                     (string) ($lead->email ?? ''),
                     (string) ($lead->phone ?? ''),
                     (string) ($lead->location ?? ''),
+                    (string) ($lead->company_name ?? ''),
+                    (string) ($lead->website ?? ''),
+                    (string) ($lead->position ?? ''),
+                    implode(', ', is_array($lead->profile_urls) ? $lead->profile_urls : []),
                     (string) ($lead->source ?? ''),
                     (string) ($labelNames[$lead->status] ?? $lead->status ?? ''),
                     (string) ($lead->priority?->value ?? ''),
@@ -1599,6 +1630,10 @@ class LeadService
         $email = trim((string) ($row['email'] ?? ''));
         $phone = trim((string) ($row['phone'] ?? ''));
         $location = trim((string) ($row['location'] ?? ''));
+        $companyName = trim((string) ($row['company_name'] ?? ''));
+        $websiteRaw = trim((string) ($row['website'] ?? ''));
+        $position = trim((string) ($row['position'] ?? ''));
+        $profileUrlsRaw = $row['profile_urls'] ?? null;
         $source = trim((string) ($row['source'] ?? ''));
         $status = trim((string) ($row['status'] ?? 'newly_lead'));
         $priority = strtolower(trim((string) ($row['priority'] ?? 'medium')));
@@ -1613,6 +1648,17 @@ class LeadService
 
         if ($email !== '' && ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $errors[] = 'Email is invalid.';
+        }
+
+        $website = $websiteRaw !== '' ? LeadFieldNormalizer::normalizeWebsite($websiteRaw) : null;
+        if ($websiteRaw !== '' && ! LeadFieldNormalizer::isValidWebsite($website)) {
+            $errors[] = 'Website is invalid.';
+        }
+
+        $profileUrls = LeadFieldNormalizer::normalizeProfileUrls($profileUrlsRaw);
+        $invalidProfileUrls = LeadFieldNormalizer::invalidProfileUrls($profileUrls);
+        if ($invalidProfileUrls !== []) {
+            $errors[] = 'Profile URLs contain invalid entries: ' . implode(', ', $invalidProfileUrls) . '.';
         }
 
         if (! in_array($priority, ['low', 'medium', 'high', 'urgent'], true)) {
@@ -1649,6 +1695,10 @@ class LeadService
                 'email' => $email !== '' ? $email : null,
                 'phone' => $phone !== '' ? $phone : null,
                 'location' => $location !== '' ? $location : null,
+                'company_name' => $companyName !== '' ? $companyName : null,
+                'website' => $website,
+                'position' => $position !== '' ? $position : null,
+                'profile_urls' => $profileUrls !== [] ? $profileUrls : null,
                 'source' => $source !== '' ? $source : null,
                 'status' => $resolvedStatus ?? $status,
                 'priority' => $priority,

@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
 import { useCreateLead, useCrmPipelines, useCrmLabels } from '@/features/crm';
+import { PwaProfileUrlInputs, isValidUrl, normalizeWebsite, parseProfileUrls } from './PwaProfileUrlInputs';
 
 interface AddLeadModalProps {
   visible: boolean;
@@ -18,6 +19,9 @@ interface FormState {
   email: string;
   phone: string;
   location: string;
+  companyName: string;
+  website: string;
+  position: string;
   source: string;
   status: string;
   pipelineId: string;
@@ -28,6 +32,9 @@ const INITIAL_FORM: FormState = {
   email: '',
   phone: '',
   location: '',
+  companyName: '',
+  website: '',
+  position: '',
   source: '',
   status: '',
   pipelineId: '',
@@ -46,7 +53,8 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [countryCode, setCountryCode] = useState('+44');
   const [phonePart, setPhonePart] = useState('');
-  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [profileUrls, setProfileUrls] = useState<string[]>(['']);
+  const [errors, setErrors] = useState<Partial<Record<keyof FormState | 'profileUrls', string>>>({});
 
   const { data: pipelines = [] } = useCrmPipelines();
   const { data: labels = [] } = useCrmLabels();
@@ -57,6 +65,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
       setForm(INITIAL_FORM);
       setCountryCode('+234');
       setPhonePart('');
+      setProfileUrls(['']);
       setErrors({});
       onSuccess?.();
       onClose();
@@ -64,10 +73,16 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
   });
 
   const validate = (): boolean => {
-    const newErrors: Partial<Record<keyof FormState, string>> = {};
+    const newErrors: Partial<Record<keyof FormState | 'profileUrls', string>> = {};
     if (!form.name.trim()) newErrors.name = 'Name is required';
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
       newErrors.email = 'Enter a valid email';
+    }
+    if (form.website.trim() && !isValidUrl(form.website)) {
+      newErrors.website = 'Enter a valid website URL';
+    }
+    if (parseProfileUrls(profileUrls).some((url) => !isValidUrl(url))) {
+      newErrors.profileUrls = 'One or more profile URLs are invalid';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -94,6 +109,8 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
 
     const defaultStatus = labels[0]?.slug ?? 'newly_lead';
 
+    const cleanedProfileUrls = parseProfileUrls(profileUrls);
+
     createLead({
       company_id: companyId,
       pipeline_id: pipelineId,
@@ -101,6 +118,10 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
       email: form.email.trim() || null,
       phone: phonePart.trim() ? (countryCode + phonePart.trim()) : null,
       location: form.location.trim() || null,
+      company_name: form.companyName.trim() || null,
+      website: form.website.trim() ? normalizeWebsite(form.website) : null,
+      position: form.position.trim() || null,
+      profile_urls: cleanedProfileUrls.length > 0 ? cleanedProfileUrls : null,
       source: form.source.trim() || 'agent upload',
       status: form.status || defaultStatus,
     });
@@ -111,6 +132,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
     setForm(INITIAL_FORM);
     setCountryCode('+234');
     setPhonePart('');
+    setProfileUrls(['']);
     setErrors({});
     onClose();
   };
@@ -207,6 +229,51 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                   className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
                 />
               </div>
+
+              <p className="text-[10px] text-white/45 -mt-1">Company & professional fields below are optional.</p>
+
+              <div className="flex flex-col">
+                <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Company Name</label>
+                <input
+                  type="text"
+                  placeholder="Enter company name"
+                  value={form.companyName}
+                  onChange={(e) => setForm((f) => ({ ...f, companyName: e.target.value }))}
+                  className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
+                />
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Website</label>
+                <input
+                  type="url"
+                  placeholder="https://company.com"
+                  value={form.website}
+                  onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))}
+                  className={`h-12 border-1.5 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF] ${
+                    errors.website ? 'border-[#EF4444]' : 'border-white/12'
+                  }`}
+                />
+                {errors.website && (
+                  <span className="text-[#EF4444] text-[11px] mt-1 ml-1">{errors.website}</span>
+                )}
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Position</label>
+                <input
+                  type="text"
+                  placeholder="E.g Head of Sales"
+                  value={form.position}
+                  onChange={(e) => setForm((f) => ({ ...f, position: e.target.value }))}
+                  className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
+                />
+              </div>
+
+              <PwaProfileUrlInputs values={profileUrls} onChange={setProfileUrls} />
+              {errors.profileUrls && (
+                <span className="text-[#EF4444] text-[11px] -mt-2 ml-1">{errors.profileUrls}</span>
+              )}
 
               {/* Source */}
               <div className="flex flex-col">
