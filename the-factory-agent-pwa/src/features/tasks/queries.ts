@@ -124,6 +124,10 @@ export function useCreateSelfTask() {
       } else {
         toast.success('Task created successfully');
       }
+    },
+  });
+}
+
 export function useUpdateTask() {
   return useMutation({
     mutationFn: taskApi.update,
