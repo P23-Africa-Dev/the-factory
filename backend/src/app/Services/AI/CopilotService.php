@@ -6,6 +6,7 @@ namespace App\Services\AI;
 
 use App\Enums\TaskType;
 use App\Models\User;
+use App\Services\AI\Crm\CrmLeadReadArgsResolver;
 use App\Services\AI\Crm\EmailInferenceService;
 use App\Services\AI\Crm\LeadInferenceService;
 use App\Services\AI\Kpi\KpiInferenceService;
@@ -43,10 +44,13 @@ class CopilotService
         private readonly LeadInferenceService $leadInferenceService,
         private readonly EmailInferenceService $emailInferenceService,
         private readonly KpiInferenceService $kpiInferenceService,
+        private readonly NotificationInferenceService $notificationInferenceService,
         private readonly NotificationService $notificationService,
         private readonly DemoCompanyService $demoCompanyService,
         private readonly LlmIntentRouter $llmIntentRouter,
         private readonly ReadToolSynthesisService $readToolSynthesisService,
+        private readonly CrmLeadReadArgsResolver $crmLeadReadArgsResolver,
+        private readonly ReadToolArgsResolver $readToolArgsResolver,
     ) {}
 
     public function chat(
@@ -128,6 +132,23 @@ class CopilotService
                     'confidence' => 0.95,
                 ];
                 $actionConfirmed = true;
+            }
+        }
+
+        if (($intent['type'] ?? 'general') === 'general') {
+            $truncatedListTool = $this->readToolArgsResolver->resolveTruncatedListToolFromThread(
+                $message,
+                $threadId,
+                $resolvedCompanyId,
+                (int) $user->id,
+            );
+
+            if (is_string($truncatedListTool) && $truncatedListTool !== '') {
+                $intent = [
+                    'type' => 'tool',
+                    'tool' => $truncatedListTool,
+                    'confidence' => 0.95,
+                ];
             }
         }
 
@@ -262,7 +283,14 @@ class CopilotService
                         $resolvedCompanyId,
                         array_merge(
                             $this->buildReadToolArgs($candidateTool, $chatContext),
-                            $this->buildReadToolMessageArgs($candidateTool, $message),
+                            $this->buildReadToolMessageArgs(
+                                $candidateTool,
+                                $message,
+                                $role,
+                                $threadId,
+                                $resolvedCompanyId,
+                                (int) $user->id,
+                            ),
                         ),
                     );
                 }
@@ -317,7 +345,17 @@ class CopilotService
             $assistantText = $this->redactSensitiveText($assistantText);
             if (is_array($toolResult)) {
                 if ($resolvedTool !== 'planning.daily') {
-                    $toolResult['payload'] = $this->redactValue($toolResult['payload'] ?? null);
+                    $payload = $toolResult['payload'] ?? null;
+                    if (is_array($payload) && ($payload['confirmation_required'] ?? false) === true) {
+                        $actionArgs = is_array($payload['action_args'] ?? null) ? $payload['action_args'] : null;
+                        $redactedPayload = $this->redactValue($payload);
+                        if (is_array($redactedPayload) && is_array($actionArgs)) {
+                            $redactedPayload['action_args'] = $actionArgs;
+                        }
+                        $toolResult['payload'] = $redactedPayload;
+                    } else {
+                        $toolResult['payload'] = $this->redactValue($payload);
+                    }
                 }
                 $toolResult['summary'] = $this->redactSensitiveText((string) ($toolResult['summary'] ?? ''));
             }
@@ -702,7 +740,11 @@ class CopilotService
             return 'projects.create';
         }
 
-        if (preg_match('/\b(notification|alert)\b/i', $normalized) && preg_match('/\b(send|notify|broadcast)\b/i', $normalized) === 1) {
+        if (preg_match('/\b(notification|alert|reminder)\b/i', $normalized) && preg_match('/\b(send|notify|broadcast|remind)\b/i', $normalized) === 1) {
+            return 'notifications.send';
+        }
+
+        if (preg_match('/\b(remind|notify)\b/i', $normalized) && preg_match('/\b(agents?|team|them|these)\b/i', $normalized) === 1) {
             return 'notifications.send';
         }
 
@@ -711,6 +753,11 @@ class CopilotService
         }
 
         if (preg_match('/\b(email|mail|message)\b/i', $normalized) && preg_match('/\b(send|draft|write|follow[\s-]?up)\b/i', $normalized) === 1) {
+            return 'crm.send_email';
+        }
+
+        if (preg_match('/\b(send|write|draft)\s+(?:a\s+)?follow[\s-]?up\b/i', $normalized) === 1
+            || preg_match('/\bfollow[\s-]?up\s+(?:to|with)\b/i', $normalized) === 1) {
             return 'crm.send_email';
         }
 
@@ -777,6 +824,10 @@ class CopilotService
 
         if (preg_match('/\b(lead|crm|business\s+name)\b/i', $blob) === 1 && preg_match('/\b(create|add|register|phone|location)\b/i', $blob) === 1) {
             return 'crm.create_lead';
+        }
+
+        if (preg_match('/\b(remind|reminder|notify)\b/i', $blob) === 1 && preg_match('/\b(agents?|team|them|these|overdue)\b/i', $blob) === 1) {
+            return 'notifications.send';
         }
 
         return null;
@@ -874,8 +925,15 @@ class CopilotService
             ->implode(' ');
 
         $taskContext = collect($userLines)
-            ->filter(static fn(string $line): bool => preg_match('/\b(task|assign|visit|due|priority|tomorrow|title|description)\b/i', $line) === 1)
+            ->filter(static fn(string $line): bool => preg_match('/\b(task|assign|visit|due|priority|tomorrow|title|description|overdue)\b/i', $line) === 1)
             ->implode(' ');
+
+        $reminderContext = collect($userLines)
+            ->filter(static fn(string $line): bool => preg_match('/\b(overdue|assigned|agents?|tasks?)\b/i', $line) === 1)
+            ->implode(' ');
+
+        $hasReminderIntent = preg_match('/\b(remind|reminder|notify)\b/i', $message) === 1
+            && preg_match('/\b(agents?|them|these|team)\b/i', $message) === 1;
 
         $hasLeadDetails = preg_match('/\b(business\s+name|business\/lead\s+name|lead\s+name|phone\s+number|phone|location)\s*:/i', $message) === 1;
         $hasTaskIntent = preg_match('/\b(task|assign|visit|due|priority|tomorrow)\b/i', $message) === 1
@@ -899,6 +957,10 @@ class CopilotService
                 ->implode(' ');
 
             return trim($taskLines);
+        }
+
+        if ($hasReminderIntent && $reminderContext !== '') {
+            return trim($reminderContext . ' ' . $message);
         }
 
         if ($isFollowUp && $meetingContext !== '') {
@@ -960,12 +1022,14 @@ class CopilotService
                 clientTimezone: $clientTimezone,
                 companyCountry: $companyCountry,
             ),
-            'notifications.send' => [
-                'title' => 'ELY Notification',
-                'message' => $normalized !== '' ? $normalized : 'New notification from ELY',
-                'category' => 'system',
-                'user_ids' => [$userId],
-            ],
+            'notifications.send' => $this->notificationInferenceService->infer(
+                message: $message,
+                companyId: $companyId,
+                userId: $userId,
+                threadId: $threadId,
+                conversationSummary: (string) ($context['summary'] ?? ''),
+                companyName: (string) (\App\Models\Company::query()->find($companyId)?->name ?? 'your organization'),
+            ),
             'crm.create_lead' => $this->leadInferenceService->infer(
                 message: $message,
                 companyId: $companyId,
@@ -980,6 +1044,7 @@ class CopilotService
                 entities: $entities,
                 conversationSummary: (string) ($context['summary'] ?? ''),
                 userId: $userId,
+                threadId: $threadId,
             ),
             'kpis.create' => $this->kpiInferenceService->infer(
                 message: $message,
@@ -1031,7 +1096,7 @@ class CopilotService
         }
 
         if ($tool === 'crm.send_email') {
-            return $this->emailInferenceService->normalizeProvidedArgs($companyId, $actionArgs);
+            return $this->emailInferenceService->normalizeProvidedArgs($companyId, $actionArgs, $userId);
         }
 
         if ($tool === 'kpis.create') {
@@ -1039,6 +1104,10 @@ class CopilotService
                 $companyId,
                 $actionArgs,
             );
+        }
+
+        if ($tool === 'notifications.send') {
+            return $this->notificationInferenceService->normalizeProvidedArgs($companyId, $actionArgs);
         }
 
         return $actionArgs;
@@ -1607,6 +1676,10 @@ class CopilotService
             return $this->kpiInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
         }
 
+        if ($tool === 'notifications.send') {
+            return $this->notificationInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
+        }
+
         return 'ELY prepared an action. Review and click Confirm Action to proceed.';
     }
 
@@ -1637,6 +1710,10 @@ class CopilotService
             'missing_target_value' => 'Target value was not detected. Add a measurable target before confirming.',
             'missing_expected_outcome' => 'Expected outcome is required and must be at least 10 characters.',
             'used_default_dates' => 'Start or end date was not clear and defaulted to the next month.',
+            'recipients_unresolved' => 'No matching recipients were found. Please verify agent names or select recipients before confirming.',
+            'message_too_generic' => 'The reminder message is too generic. Edit it to describe the overdue tasks before confirming.',
+            'lead_unresolved' => 'No matching CRM lead was found. Select the correct lead before confirming.',
+            'recipient_email_missing' => 'This lead does not have a recipient email yet. Add an email address before confirming.',
         ];
 
         return collect($codes)
@@ -1661,6 +1738,14 @@ class CopilotService
 
         if ($tool === 'kpis.create') {
             return $this->kpiInferenceService->warningCodes($args);
+        }
+
+        if ($tool === 'notifications.send') {
+            return $this->notificationInferenceService->warningCodes($args);
+        }
+
+        if ($tool === 'crm.send_email') {
+            return $this->emailInferenceService->warningCodes($args);
         }
 
         if ($tool !== 'tasks.create') {
@@ -1723,6 +1808,22 @@ class CopilotService
 
         if (in_array('missing_kpi_name', $validationWarningCodes, true)) {
             $blockingCodes[] = 'missing_kpi_name';
+        }
+
+        if (in_array('recipients_unresolved', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'recipients_unresolved';
+        }
+
+        if (in_array('message_too_generic', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'message_too_generic';
+        }
+
+        if (in_array('lead_unresolved', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'lead_unresolved';
+        }
+
+        if (in_array('recipient_email_missing', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'recipient_email_missing';
         }
 
         if ((bool) config('services.ai.strict_confirmation_blocking', false)) {
@@ -1931,26 +2032,27 @@ class CopilotService
     /**
      * @return array<string, mixed>
      */
-    private function buildReadToolMessageArgs(string $tool, string $message): array
-    {
+    private function buildReadToolMessageArgs(
+        string $tool,
+        string $message,
+        string $role = 'admin',
+        ?string $threadId = null,
+        ?int $companyId = null,
+        ?int $userId = null,
+    ): array {
         if ($tool === 'crm.visit_extract') {
             return ['notes' => $message];
         }
 
+        $args = $this->readToolArgsResolver->isListTool($tool)
+            ? $this->readToolArgsResolver->resolve($tool, $message, $role, $threadId, $companyId, $userId)
+            : [];
+
         if ($tool === 'crm.top_leads') {
-            $normalized = strtolower(trim($message));
-            $wantsFullList = preg_match('/\b(all|full|complete|entire)\b.{0,30}\b(leads?|list|crm)\b/i', $normalized) === 1
-                || preg_match('/\b(leads?|list|crm)\b.{0,30}\b(all|full|complete|entire)\b/i', $normalized) === 1
-                || preg_match('/\b(list|provide|show)\b.{0,40}\b(leads?|crm)\b/i', $normalized) === 1;
-
-            return $wantsFullList ? ['limit' => 20] : [];
+            return array_merge($args, $this->crmLeadReadArgsResolver->resolveFilters($message));
         }
 
-        if ($tool === 'org.users') {
-            return ['limit' => 50];
-        }
-
-        return [];
+        return $args;
     }
 
     private function canConsumeCredits(int $companyId): bool

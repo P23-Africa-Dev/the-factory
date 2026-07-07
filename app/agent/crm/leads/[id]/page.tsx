@@ -700,6 +700,61 @@ export default function LeadDetailsPage() {
                   </div>
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
+                      Company Name
+                    </label>
+                    <p className="text-white text-[16px] font-semibold truncate">
+                      {leadData.company_name || "N/A"}
+                    </p>
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
+                      Website
+                    </label>
+                    {leadData.website ? (
+                      <a
+                        href={leadData.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#7DD3FC] text-[16px] font-semibold truncate hover:underline"
+                      >
+                        {leadData.website}
+                      </a>
+                    ) : (
+                      <p className="text-white text-[16px] font-semibold truncate">N/A</p>
+                    )}
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
+                      Position
+                    </label>
+                    <p className="text-white text-[16px] font-semibold truncate">
+                      {leadData.position || "N/A"}
+                    </p>
+                  </div>
+                  <div className="flex flex-col min-[480px]:col-span-2">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
+                      Profile URLs
+                    </label>
+                    {(leadData.profile_urls?.length ?? 0) > 0 ? (
+                      <div className="flex flex-col gap-1">
+                        {leadData.profile_urls?.map((url) => (
+                          <a
+                            key={url}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#7DD3FC] text-[14px] font-semibold truncate hover:underline"
+                          >
+                            {url}
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-white text-[16px] font-semibold truncate">N/A</p>
+                    )}
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Status
                     </label>
                     <p className="text-white text-[16px] font-semibold capitalize">

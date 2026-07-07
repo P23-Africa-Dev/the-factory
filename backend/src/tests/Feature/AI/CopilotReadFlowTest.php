@@ -81,6 +81,71 @@ final class CopilotReadFlowTest extends TestCase
         $this->assertSame(0, AiLog::query()->llmInvocations()->count());
     }
 
+    public function test_overdue_tasks_response_uses_agent_names_instead_of_ids(): void
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+
+        $agentOne = User::factory()->createOne(['name' => 'Tunde Ade']);
+        $agentTwo = User::factory()->createOne(['name' => 'Amara Bello']);
+        $company->users()->attach($agentOne->id, ['role' => 'agent', 'joined_at' => now()]);
+        $company->users()->attach($agentTwo->id, ['role' => 'agent', 'joined_at' => now()]);
+
+        Task::query()->create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agentOne->id,
+            'last_status_updated_by_user_id' => $admin->id,
+            'title' => 'test the task stuff',
+            'type' => TaskType::SALES_VISIT->value,
+            'due_at' => now()->subDay(),
+            'priority' => TaskPriority::MEDIUM->value,
+            'status' => TaskStatus::PENDING->value,
+        ]);
+
+        Task::query()->create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agentOne->id,
+            'last_status_updated_by_user_id' => $admin->id,
+            'title' => 'Outreach to Bokku',
+            'type' => TaskType::SALES_VISIT->value,
+            'due_at' => now()->subDays(2),
+            'priority' => TaskPriority::HIGH->value,
+            'status' => TaskStatus::PENDING->value,
+        ]);
+
+        Task::query()->create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agentTwo->id,
+            'last_status_updated_by_user_id' => $admin->id,
+            'title' => 'Visit Lekki',
+            'type' => TaskType::SALES_VISIT->value,
+            'due_at' => now()->subDay(),
+            'priority' => TaskPriority::MEDIUM->value,
+            'status' => TaskStatus::PENDING->value,
+        ]);
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'What are the agents assigned to these overdue tasks?',
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.response.tool', 'tasks.overdue');
+
+        $items = $response->json('data.response.payload.items');
+        $this->assertIsArray($items);
+        $this->assertSame('Tunde Ade', $items[0]['assigned_agent_name'] ?? null);
+
+        $content = (string) $response->json('data.response.content');
+        $this->assertStringContainsString('Tunde Ade', $content);
+        $this->assertStringContainsString('Amara Bello', $content);
+        $this->assertStringNotContainsString('Agent with ID', $content);
+        $this->assertDoesNotMatchRegularExpression('/\bAgent\b.*\bID\b/i', $content);
+    }
+
     public function test_follow_up_general_prompt_includes_thread_context_and_entities(): void
     {
         [$company, $admin] = $this->seedCompanyAdmin();

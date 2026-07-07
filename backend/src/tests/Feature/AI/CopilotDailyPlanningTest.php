@@ -37,7 +37,7 @@ final class CopilotDailyPlanningTest extends TestCase
             'last_status_updated_by_user_id' => $agent->id,
             'title' => 'Due today inspection',
             'type' => TaskType::INSPECTION->value,
-            'due_at' => now()->addHours(3),
+            'due_at' => now()->copy()->endOfDay()->subHours(2),
             'priority' => TaskPriority::MEDIUM->value,
             'status' => TaskStatus::PENDING->value,
         ]);
@@ -186,6 +186,41 @@ final class CopilotDailyPlanningTest extends TestCase
 
         $this->assertNotEmpty($kpiItems);
         $this->assertTrue($kpiItems[0]['task_draft']['creates_task'] ?? false);
+        $this->assertArrayHasKey('item_id', $kpiItems[0]);
+    }
+
+    public function test_plan_includes_profile_summary_and_overdue_follow_up_types(): void
+    {
+        [$company, $agent, $pipelineId] = $this->seedAgentCompany();
+
+        Lead::query()->create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $agent->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Faith University',
+            'status' => 'contacted',
+            'priority' => LeadPriority::HIGH->value,
+            'last_interaction_at' => now()->subDays(21),
+        ]);
+
+        $response = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Plan my day',
+            ]);
+
+        $response->assertOk();
+
+        $payload = $response->json('data.response.payload');
+        $this->assertIsArray($payload['profile_summary'] ?? null);
+        $this->assertGreaterThan(0, (int) ($payload['profile_summary']['stale_leads'] ?? 0));
+
+        $types = array_column($payload['items'] ?? [], 'type');
+        $this->assertTrue(
+            in_array('overdue_follow_up', $types, true) || in_array('follow_up', $types, true),
+        );
     }
 
     public function test_plan_ready_notification_is_created(): void

@@ -202,7 +202,7 @@ export function useAssistantConversation() {
   const runPlanMyDay = useCallback(() => {
     return send('Plan my day', {
       withGeolocation: true,
-      context: { focus: 'all', limit: 8 },
+      context: { focus: 'all', limit: 15 },
     });
   }, [send]);
 

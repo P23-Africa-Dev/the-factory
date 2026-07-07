@@ -100,6 +100,11 @@ data:
   TASK_TRACKING_PRUNE_CHUNK_SIZE: "1000"
   MAP_PROVIDER_DEFAULT: "mapbox"
 
+  # ── Google Calendar / Gmail OAuth ───────────────────────────────────────────
+  # Client ID + secret live in factory23-secret. Redirect URI must match Google Cloud Console.
+  GOOGLE_CALENDAR_REDIRECT_URI: "https://api.thefactory23.com/api/v1/calendar/integration/callback"
+  GOOGLE_CALENDAR_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify"
+
   # ── Mail (non-sensitive) ──────────────────────────────────────────────────────
   MAIL_MAILER: "resend"
   MAIL_FROM_ADDRESS: "noreply@thefactory23.com"
@@ -117,3 +122,13 @@ data:
   TRACKING_WS_AUTH_TIMEOUT_MS: "10000"
   TRACKING_WS_MAX_MESSAGE_BYTES: "32768"
   TRACKING_WS_LOG_LEVEL: "info"
+
+  # ── API rate limits (per minute unless noted) ─────────────────────────────────
+  RATE_LIMIT_API_PER_MINUTE: "300"
+  RATE_LIMIT_API_HEAVY_PER_MINUTE: "600"
+  RATE_LIMIT_LOGIN_EMAIL_IP: "60"
+  RATE_LIMIT_LOGIN_IP: "500"
+  RATE_LIMIT_AUTH_SENSITIVE: "30"
+  RATE_LIMIT_AUTH_REGISTER: "15"
+  RATE_LIMIT_AUTH_RESEND_OTP: "5"
+  RATE_LIMIT_AUTH_FORGOT_PASSWORD: "15"

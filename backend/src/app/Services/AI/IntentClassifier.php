@@ -31,6 +31,9 @@ class IntentClassifier
             'notifications.send' => [
                 '/\b(send|broadcast|push)\s+(a\s+|an\s+)?notification\b/i',
                 '/\bnotify\s+(team|everyone|all|agents|supervisors|admins)\b/i',
+                '/\b(send|give)\b.{0,40}\b(reminder|reminders)\b/i',
+                '/\b(remind|notify)\b.{0,40}\b(these\s+)?agents\b/i',
+                '/\bsend\s+(them\s+)?a\s+reminder\b/i',
             ],
             'projects.create' => [
                 '/\b(create|start|open|new)\s+(a\s+|an\s+)?project\b/i',
@@ -47,6 +50,8 @@ class IntentClassifier
             ],
             'crm.send_email' => [
                 '/\b(send|email|write|draft)\b.{0,80}\b(email|mail|message)\b/i',
+                '/\b(send|write|draft)\s+(?:a\s+)?follow[\s-]?up\b/i',
+                '/\bfollow[\s-]?up\s+(?:to|with)\b/i',
                 '/\bfollow[\s-]?up\b.{0,60}\b(email|mail|client|lead|customer)\b/i',
                 '/\bemail\b.{0,40}\b(about|regarding|for)\b/i',
             ],
@@ -105,10 +110,14 @@ class IntentClassifier
                 '/\b(show|list)\s+(my\s+)?leads?\b/i',
                 '/\bcrm\s+leads?\b/i',
                 '/\bleads?\s+(in|on|from)\s+(my\s+)?crm\b/i',
+                '/\bleads?\s+in\s+[a-z]/i',
+                '/\bleads?\s+(located|based)\s+in\b/i',
                 '/\b(my\s+)?crm\s+(leads?|records?|pipeline)\b/i',
                 '/\bhow\s+many\s+leads?\b/i',
                 '/\b(list|show|get|give|provide|pull|fetch|display|retrieve|view)\b.{0,60}\bleads?\b/i',
                 '/\bleads?\s+(list|listing|overview|summary)\b/i',
+                '/\bwhat\s+about\b.{0,80}\b(leads?|faith|university|bank|school|station)\b/i',
+                '/\bdo\s+i\s+have\b.{0,40}\bleads?\s+in\b/i',
             ],
             'org.users' => [
                 '/\b(list|show|get|display|view|who\s+are)\b.{0,60}\b(users?|members?|staff|workforce|team\s+members?)\b/i',

@@ -22,8 +22,11 @@ import {
 } from '@/features/assistant';
 import {
   DailyPlanCard,
+  loadPlanEdits,
+  persistPlanEdits,
   useAcceptDailyPlan,
   type DailyPlanPayload,
+  type PlanEditsMap,
 } from '@/features/planning';
 import { ELY_INPUT_PLACEHOLDER, ELY_INTRO, ELY_NAME, ELY_TYPING_LABEL } from '@/lib/ely-brand';
 import { toast } from '@/lib/toast';
@@ -59,7 +62,7 @@ export default function AiAssistantPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { firstName, avatarSrc, userRole } = useAgentIdentity();
-  const { messages, isRestoring, isSending, processingLabel, send, runPlanMyDay, clearCurrent, clearAll } =
+  const { messages, isRestoring, isSending, processingLabel, send, runPlanMyDay, clearCurrent, clearAll, threadId } =
     useAssistantConversation();
   const suggestions = useDynamicSuggestions();
   const acceptPlan = useAcceptDailyPlan();
@@ -72,6 +75,7 @@ export default function AiAssistantPage() {
   const [acceptedPlanIds, setAcceptedPlanIds] = useState<Set<string>>(new Set());
   const [dismissedPlanIds, setDismissedPlanIds] = useState<Set<string>>(new Set());
   const [notifiedPlanIds, setNotifiedPlanIds] = useState<Set<string>>(new Set());
+  const [planEditsByMessage, setPlanEditsByMessage] = useState<Record<string, PlanEditsMap>>({});
   const [acceptingPlanMessageId, setAcceptingPlanMessageId] = useState<string | null>(null);
   const planDayTriggeredRef = useRef(false);
 
@@ -182,29 +186,42 @@ export default function AiAssistantPage() {
 
     const planPayload =
       msg.tool === 'planning.daily' ? asDailyPlanPayload(msg.payload) : null;
+    const planStorageKey = `plan-edit:${threadId ?? 'default'}:${msg.id}`;
+    const planEdits =
+      planPayload !== null
+        ? (planEditsByMessage[msg.id] ?? loadPlanEdits(planStorageKey, planPayload))
+        : null;
 
     return (
       <div key={msg.id} className="flex flex-col items-start">
         <div className="max-w-[85%] flex flex-col gap-2">
           <div className="bg-gradient-to-b from-[#333] to-[#16384B] border border-white/10 rounded-[24px] rounded-tl-none p-5 shadow-lg relative">
             <ParsedHtmlText text={msg.content} />
-            {planPayload && (
+            {planPayload && planEdits && (
               <DailyPlanCard
                 payload={planPayload}
+                edits={planEdits}
+                onEditsChange={(nextEdits) => {
+                  setPlanEditsByMessage((prev) => ({ ...prev, [msg.id]: nextEdits }));
+                  persistPlanEdits(planStorageKey, nextEdits);
+                }}
                 accepted={acceptedPlanIds.has(msg.id)}
                 dismissed={dismissedPlanIds.has(msg.id)}
                 isAccepting={acceptPlan.isPending && acceptingPlanMessageId === msg.id}
                 onDismiss={() => setDismissedPlanIds((prev) => new Set(prev).add(msg.id))}
                 onAccept={() => {
                   setAcceptingPlanMessageId(msg.id);
-                  acceptPlan.mutate(planPayload, {
-                    onSuccess: () => {
-                      setAcceptedPlanIds((prev) => new Set(prev).add(msg.id));
+                  acceptPlan.mutate(
+                    { payload: planPayload, edits: planEdits },
+                    {
+                      onSuccess: () => {
+                        setAcceptedPlanIds((prev) => new Set(prev).add(msg.id));
+                      },
+                      onSettled: () => {
+                        setAcceptingPlanMessageId(null);
+                      },
                     },
-                    onSettled: () => {
-                      setAcceptingPlanMessageId(null);
-                    },
-                  });
+                  );
                 }}
               />
             )}

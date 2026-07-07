@@ -74,19 +74,19 @@ use Illuminate\Support\Facades\Route;
 // Public
 Route::get('/health', HealthController::class)->name('health');
 Route::get('/avatars', [AvatarController::class, 'index'])
-    ->middleware('throttle:30,1')
+    ->middleware('throttle:api')
     ->name('avatars.index');
 Route::get('/currencies', [CurrencyController::class, 'index'])
-    ->middleware('throttle:60,1')
+    ->middleware('throttle:api-heavy')
     ->name('currencies.index');
 Route::get('/countries', [CountryController::class, 'index'])
-    ->middleware('throttle:60,1')
+    ->middleware('throttle:api-heavy')
     ->name('countries.index');
 Route::get('/map/provider', MapProviderController::class)
-    ->middleware('throttle:60,1')
+    ->middleware('throttle:api-heavy')
     ->name('map.provider');
 Route::get('/calendar/integration/callback', [CalendarIntegrationController::class, 'callback'])
-    ->middleware('throttle:30,1')
+    ->middleware('throttle:api')
     ->name('calendar.integration.callback');
 
 Route::post('/billing/webhook', [BillingWebhookController::class, 'handleWebhook'])
@@ -94,85 +94,85 @@ Route::post('/billing/webhook', [BillingWebhookController::class, 'handleWebhook
 
 Route::prefix('billing/payment-link')->name('billing.payment-link.')->group(function (): void {
     Route::get('/{token}', [PaymentLinkController::class, 'show'])
-        ->middleware('throttle:30,1')
+        ->middleware('throttle:api')
         ->name('show');
     Route::post('/{token}/checkout', [PaymentLinkController::class, 'checkout'])
-        ->middleware('throttle:10,1')
+        ->middleware('throttle:auth-sensitive')
         ->name('checkout');
 });
 
 Route::prefix('auth')->name('auth.')->group(function (): void {
     Route::post('/register', RegisterController::class)
-        ->middleware('throttle:5,1')
+        ->middleware('throttle:auth-register')
         ->name('register');
 
     Route::post('/verify-email', VerifyEmailController::class)
-        ->middleware('throttle:10,1')
+        ->middleware('throttle:auth-sensitive')
         ->name('verify-email');
 
     Route::post('/resend-otp', ResendOtpController::class)
-        ->middleware('throttle:3,10')
+        ->middleware('throttle:auth-resend-otp')
         ->name('resend-otp');
 
     Route::post('/forgot-password', ForgotPasswordController::class)
-        ->middleware('throttle:5,1')
+        ->middleware('throttle:auth-forgot-password')
         ->name('forgot-password');
 
     Route::get('/reset-password/{token}', [ResetPasswordController::class, 'validateToken'])
-        ->middleware('throttle:20,1')
+        ->middleware('throttle:api')
         ->name('reset-password.validate');
 
     Route::post('/reset-password', [ResetPasswordController::class, 'reset'])
-        ->middleware('throttle:10,1')
+        ->middleware('throttle:auth-sensitive')
         ->name('reset-password');
 
     // Unified admin login for self-serve and enterprise users
     Route::post('/login', AdminLoginController::class)
-        ->middleware('throttle:10,1')
+        ->middleware('throttle.login')
         ->name('login');
 });
 
 Route::prefix('enterprise')->name('enterprise.')->group(function (): void {
     Route::post('/demo-requests', BookDemoController::class)
-        ->middleware('throttle:10,1')
+        ->middleware('throttle:auth-sensitive')
         ->name('demo-requests.store');
 
     Route::post('/onboarding/verify-company-id', VerifyCompanyIdController::class)
-        ->middleware('throttle:20,1')
+        ->middleware('throttle:api')
         ->name('onboarding.verify-company-id');
 
     Route::get('/onboarding/setup-info', SetupInfoController::class)
-        ->middleware('throttle:20,1')
+        ->middleware('throttle:api')
         ->name('onboarding.setup-info');
 
     Route::post('/onboarding/complete', CompleteFirstTimeSetupController::class)
-        ->middleware('throttle:10,1')
+        ->middleware('throttle:auth-sensitive')
         ->name('onboarding.complete');
 
     // Deprecated: Use /api/auth/login instead
     Route::post('/login', EnterpriseLoginController::class)
-        ->middleware('throttle:10,1')
+        ->middleware('throttle.login')
         ->name('login');
 });
 
 Route::prefix('agent')->name('agent.')->group(function (): void {
     Route::post('/login', AgentLoginController::class)
-        ->middleware('throttle:10,1')
+        ->middleware('throttle.login')
         ->name('login');
 });
 
 Route::prefix('internal')->name('internal.')->group(function (): void {
     // Deprecated: use /api/v1/agent/login.
     Route::post('/login', InternalLoginController::class)
-        ->middleware('throttle:10,1')
+        ->middleware('throttle.login')
         ->name('login');
 
     Route::post('/onboarding/preview', [InternalOnboardingController::class, 'preview'])
-        ->middleware('throttle:30,1')
+        ->middleware('throttle:api')
         ->name('onboarding.preview');
 
     Route::post('/onboarding/complete', [InternalOnboardingController::class, 'complete'])
-        ->middleware('throttle:10,1')
+        ->middleware('throttle:auth-sensitive')
         ->name('onboarding.complete');
 });
 
@@ -204,7 +204,7 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::delete('/folders/{folderId}', [DriveController::class, 'destroyFolder'])->name('folders.destroy');
         Route::get('/files', [DriveController::class, 'files'])->name('files.index');
         Route::post('/files', [DriveController::class, 'storeFile'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('files.store');
         Route::get('/files/{fileId}', [DriveController::class, 'showFile'])->name('files.show');
         Route::get('/files/{fileId}/download', [DriveController::class, 'downloadFile'])->name('files.download');
@@ -218,19 +218,19 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::get('/profile', [ProfileController::class, 'show'])->name('profile.show');
         Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
         Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('profile.avatar.update');
     });
 
     Route::prefix('copilot')->name('copilot.')->group(function (): void {
         Route::post('/chat', [CopilotController::class, 'chat'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('chat');
         Route::get('/assignees', [CopilotController::class, 'assignees'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('assignees.index');
         Route::get('/threads/search', [CopilotController::class, 'search'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('threads.search');
         Route::get('/threads', [CopilotController::class, 'index'])->name('threads.index');
         Route::get('/threads/{thread}', [CopilotController::class, 'show'])->name('threads.show');
@@ -238,11 +238,11 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::delete('/threads/{thread}', [CopilotController::class, 'destroy'])->name('threads.destroy');
 
         Route::get('/analytics/context-pack', [CopilotReportingController::class, 'contextPack'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('analytics.context-pack');
 
         Route::post('/reports/weekly-summary', [CopilotReportingController::class, 'queueWeeklySummary'])
-            ->middleware('throttle:10,1')
+            ->middleware('throttle:api')
             ->name('reports.weekly-summary.queue');
         Route::get('/reports/weekly-summary/{reportId}', [CopilotReportingController::class, 'weeklySummaryStatus'])
             ->name('reports.weekly-summary.status');
@@ -250,34 +250,34 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
             ->name('reports.weekly-summary.download');
 
         Route::post('/automations/preview', [CopilotAutomationController::class, 'preview'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('automations.preview');
         Route::post('/automations', [CopilotAutomationController::class, 'store'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('automations.store');
         Route::get('/automations', [CopilotAutomationController::class, 'index'])
             ->name('automations.index');
         Route::post('/automations/{automation}/run', [CopilotAutomationController::class, 'run'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('automations.run');
 
         Route::post('/voice/transcriptions', ['App\\Http\\Controllers\\Api\\V1\\AI\\CopilotInnovationController', 'transcribeVoice'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('voice.transcriptions.store');
         Route::post('/files/analyze', ['App\\Http\\Controllers\\Api\\V1\\AI\\CopilotInnovationController', 'analyzeFile'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('files.analyze');
         Route::post('/meetings/transcripts/summarize', ['App\\Http\\Controllers\\Api\\V1\\AI\\CopilotInnovationController', 'summarizeTranscript'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('meetings.transcripts.summarize');
         Route::get('/forecast/overview', ['App\\Http\\Controllers\\Api\\V1\\AI\\CopilotInnovationController', 'forecastOverview'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('forecast.overview');
     });
 
     Route::prefix('onboarding')->name('onboarding.')->group(function (): void {
         Route::post('/workspace', [WorkspaceController::class, 'store'])
-            ->middleware('throttle:10,1')
+            ->middleware('throttle:api')
             ->name('workspace');
     });
 
@@ -304,55 +304,55 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
     Route::prefix('calendar/integration')->name('calendar.integration.')->group(function (): void {
         Route::get('/status', [CalendarIntegrationController::class, 'status'])->name('status');
         Route::post('/connect-url', [CalendarIntegrationController::class, 'connectUrl'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('connect-url');
         Route::post('/switch-url', [CalendarIntegrationController::class, 'switchUrl'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('switch-url');
         Route::post('/reconnect-url', [CalendarIntegrationController::class, 'reconnectUrl'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('reconnect-url');
         Route::delete('/disconnect', [CalendarIntegrationController::class, 'disconnect'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('disconnect');
     });
 
     Route::prefix('calendar/user-integration')->name('calendar.user_integration.')->group(function (): void {
         Route::get('/status', [UserCalendarIntegrationController::class, 'status'])->name('status');
         Route::post('/connect-url', [UserCalendarIntegrationController::class, 'connectUrl'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('connect-url');
         Route::post('/switch-url', [UserCalendarIntegrationController::class, 'switchUrl'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('switch-url');
         Route::post('/reconnect-url', [UserCalendarIntegrationController::class, 'reconnectUrl'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('reconnect-url');
         Route::delete('/disconnect', [UserCalendarIntegrationController::class, 'disconnect'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('disconnect');
     });
 
     Route::prefix('meetings')->name('meetings.')->group(function (): void {
         Route::get('/', [MeetingController::class, 'index'])->name('index');
         Route::get('/attendees', [MeetingController::class, 'attendees'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('attendees');
         Route::post('/', [MeetingController::class, 'store'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('store');
         Route::get('/{meeting}', [MeetingController::class, 'show'])->name('show');
         Route::patch('/{meeting}', [MeetingController::class, 'update'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('update');
         Route::post('/{meeting}/cancel', [MeetingController::class, 'cancel'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('cancel');
         Route::delete('/{meeting}', [MeetingController::class, 'destroy'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('destroy');
         Route::post('/{meeting}/resync', [MeetingController::class, 'resync'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('resync');
     });
 
@@ -364,7 +364,7 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
             Route::prefix('tasks')->name('tasks.')->group(function (): void {
                 Route::get('/', [TaskController::class, 'index'])->name('index');
                 Route::post('/', [TaskController::class, 'store'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('store');
                 Route::get('/reassignments/inbox', [TaskAssignmentController::class, 'inbox'])->name('reassignments.inbox');
                 Route::post('/reassignments/{reassignment}/accept', [TaskAssignmentController::class, 'accept'])
@@ -381,28 +381,28 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
             Route::prefix('kpis')->name('kpis.')->group(function (): void {
                 Route::get('/', [KpiController::class, 'index'])->name('index');
                 Route::post('/', [KpiController::class, 'store'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('store');
                 Route::get('/{kpi}', [KpiController::class, 'show'])->name('show');
                 Route::patch('/{kpi}', [KpiController::class, 'update'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('update');
                 Route::delete('/{kpi}', [KpiController::class, 'destroy'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('destroy');
                 Route::patch('/{kpi}/status', [AdminKpiStatusController::class, 'update'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('status.update');
             });
 
             Route::prefix('projects')->name('projects.')->group(function (): void {
                 Route::get('/', [ProjectController::class, 'index'])->name('index');
                 Route::post('/', [ProjectController::class, 'store'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('store');
                 Route::get('/{project}', [ProjectController::class, 'show'])->name('show');
                 Route::patch('/{project}', [ProjectController::class, 'update'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('update');
             });
 
@@ -413,23 +413,23 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::get('/agents', [PayrollController::class, 'agents'])->name('agents.index');
                 Route::get('/agents/{user}', [PayrollController::class, 'agentProfile'])->name('agents.show');
                 Route::patch('/agents/{user}', [PayrollController::class, 'updateAgentPayroll'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('agents.update');
                 Route::patch('/agents/{user}/approval', [PayrollController::class, 'approveAgentPayroll'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('agents.approval');
                 Route::post('/', [PayrollController::class, 'store'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('store');
                 Route::put('/{payrollSetting}', [PayrollController::class, 'update'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('update');
             });
 
             Route::prefix('attendance')->name('attendance.')->group(function (): void {
                 Route::get('/settings', [AttendanceSettingsController::class, 'show'])->name('settings.show');
                 Route::put('/settings', [AttendanceSettingsController::class, 'update'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('settings.update');
                 Route::get('/metrics', [AttendanceManagementController::class, 'metrics'])->name('metrics');
                 Route::get('/records', [AttendanceManagementController::class, 'index'])->name('records.index');
@@ -438,114 +438,114 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::get('/payroll-summaries', [AttendanceManagementController::class, 'payrollSummaries'])
                     ->name('payroll-summaries.index');
                 Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('payroll-summaries.generate');
             });
 
             Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
                 Route::get('/', [InternalUserController::class, 'index'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('index');
 
                 Route::get('/onboarding-status', [InternalUserController::class, 'onboardingStatus'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('onboarding-status');
 
                 Route::post('/', [InternalUserController::class, 'store'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('store');
 
                 Route::post('/{user}/invite', [InternalUserController::class, 'resendInvite'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('invite');
 
                 Route::patch('/{user}', [InternalUserController::class, 'update'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('update');
 
                 Route::patch('/{user}/supervisor', [InternalUserController::class, 'assignSupervisor'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('supervisor.assign');
             });
 
             Route::prefix('crm')->name('crm.')->group(function (): void {
                 Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
                 Route::post('/leads', [LeadController::class, 'store'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('leads.store');
                 Route::post('/leads/import', [LeadController::class, 'import'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('leads.import');
                 Route::post('/leads/import/preview', [LeadController::class, 'importPreview'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('leads.import.preview');
                 Route::get('/leads/export', [LeadController::class, 'export'])
-                    ->middleware('throttle:10,1')
+                    ->middleware('throttle:api')
                     ->name('leads.export');
                 Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
                 Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
                 Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
                 Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
                 Route::post('/pipelines', [LeadController::class, 'storePipeline'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('pipelines.store');
                 Route::patch('/pipelines/{pipeline}', [LeadController::class, 'updatePipeline'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('pipelines.update');
                 Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
                 Route::post('/labels', [LeadController::class, 'storeLabel'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('labels.store');
                 Route::patch('/labels/{label}', [LeadController::class, 'updateLabel'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('labels.update');
                 Route::post('/labels/{label}/delete', [LeadController::class, 'deleteLabel'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('labels.delete');
                 Route::post('/labels/reorder', [LeadController::class, 'reorderLabels'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('labels.reorder');
                 Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('leads.update');
                 Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('leads.destroy');
                 Route::post('/leads/{lead}/notes', [LeadController::class, 'storeNote'])
-                    ->middleware('throttle:60,1')
+                    ->middleware('throttle:api-heavy')
                     ->name('leads.notes.store');
                 Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
-                    ->middleware('throttle:60,1')
+                    ->middleware('throttle:api-heavy')
                     ->name('leads.activities.store');
                 Route::get('/emails/activity', [CrmEmailController::class, 'activity'])->name('emails.activity');
                 Route::get('/emails/attachments/{attachment}', [CrmEmailController::class, 'downloadAttachment'])->name('emails.attachments.download');
                 Route::get('/leads/{lead}/emails', [CrmEmailController::class, 'index'])->name('leads.emails.index');
                 Route::get('/leads/{lead}/emails/threads/{thread}', [CrmEmailController::class, 'showThread'])->name('leads.emails.threads.show');
                 Route::post('/leads/{lead}/emails/send', [CrmEmailController::class, 'send'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('leads.emails.send');
                 Route::post('/leads/{lead}/emails/threads/{thread}/reply', [CrmEmailController::class, 'reply'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('leads.emails.reply');
                 Route::patch('/leads/{lead}/emails/messages/{message}/read', [CrmEmailController::class, 'markRead'])->name('leads.emails.messages.read');
                 Route::delete('/leads/{lead}/emails/messages/{message}', [CrmEmailController::class, 'destroy'])->name('leads.emails.messages.destroy');
                 Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('leads.emails.attachments.upload');
             });
 
             Route::prefix('locations')->name('locations.')->group(function (): void {
                 Route::get('/', [CompanyLocationController::class, 'index'])->name('index');
                 Route::post('/', [CompanyLocationController::class, 'store'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('store');
                 Route::get('/{location}', [CompanyLocationController::class, 'show'])->name('show');
                 Route::patch('/{location}', [CompanyLocationController::class, 'update'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('update');
                 Route::delete('/{location}', [CompanyLocationController::class, 'destroy'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('destroy');
             });
 
@@ -564,10 +564,10 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::get('/', [TerritoryController::class, 'index'])->name('index');
                 Route::get('/coverage-points', [TerritoryController::class, 'coveragePoints'])->name('coverage-points');
                 Route::put('/{user}', [TerritoryController::class, 'upsert'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('upsert');
                 Route::delete('/{user}', [TerritoryController::class, 'destroy'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('destroy');
             });
         });
@@ -585,7 +585,7 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
             Route::prefix('tasks')->name('tasks.')->group(function (): void {
                 Route::get('/', [TaskController::class, 'index'])->name('index');
                 Route::post('/self', [AgentTaskController::class, 'storeSelf'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('self.store');
                 Route::get('/{task}', [TaskController::class, 'show'])->name('show');
                 Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
@@ -594,7 +594,7 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::post('/{task}/complete', [TaskTrackingController::class, 'complete'])->name('complete');
                 Route::patch('/{task}/status', [TaskStatusController::class, 'update'])->name('status.update');
                 Route::post('/{task}/proofs', [TaskProofController::class, 'store'])
-                    ->middleware('throttle:60,1')
+                    ->middleware('throttle:api-heavy')
                     ->name('proofs.store');
             });
 
@@ -602,23 +602,23 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::get('/', [KpiController::class, 'index'])->name('index');
                 Route::get('/{kpi}', [KpiController::class, 'show'])->name('show');
                 Route::patch('/{kpi}/status', [KpiStatusController::class, 'update'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('status.update');
             });
 
             Route::prefix('crm')->name('crm.')->group(function (): void {
                 Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
                 Route::post('/leads', [LeadController::class, 'store'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('leads.store');
                 Route::post('/leads/import', [LeadController::class, 'import'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('leads.import');
                 Route::post('/leads/import/preview', [LeadController::class, 'importPreview'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('leads.import.preview');
                 Route::get('/leads/export', [LeadController::class, 'export'])
-                    ->middleware('throttle:10,1')
+                    ->middleware('throttle:api')
                     ->name('leads.export');
                 Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
                 Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
@@ -627,55 +627,55 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
                 Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('leads.update');
                 Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('leads.destroy');
                 Route::post('/leads/{lead}/notes', [LeadController::class, 'storeNote'])
-                    ->middleware('throttle:60,1')
+                    ->middleware('throttle:api-heavy')
                     ->name('leads.notes.store');
                 Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
-                    ->middleware('throttle:60,1')
+                    ->middleware('throttle:api-heavy')
                     ->name('leads.activities.store');
                 Route::get('/emails/activity', [CrmEmailController::class, 'activity'])->name('emails.activity');
                 Route::get('/emails/attachments/{attachment}', [CrmEmailController::class, 'downloadAttachment'])->name('emails.attachments.download');
                 Route::get('/leads/{lead}/emails', [CrmEmailController::class, 'index'])->name('leads.emails.index');
                 Route::get('/leads/{lead}/emails/threads/{thread}', [CrmEmailController::class, 'showThread'])->name('leads.emails.threads.show');
                 Route::post('/leads/{lead}/emails/send', [CrmEmailController::class, 'send'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('leads.emails.send');
                 Route::post('/leads/{lead}/emails/threads/{thread}/reply', [CrmEmailController::class, 'reply'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('leads.emails.reply');
                 Route::patch('/leads/{lead}/emails/messages/{message}/read', [CrmEmailController::class, 'markRead'])->name('leads.emails.messages.read');
                 Route::delete('/leads/{lead}/emails/messages/{message}', [CrmEmailController::class, 'destroy'])->name('leads.emails.messages.destroy');
                 Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('leads.emails.attachments.upload');
             });
 
             Route::prefix('locations')->name('locations.')->group(function (): void {
                 Route::get('/', [CompanyLocationController::class, 'index'])->name('index');
                 Route::post('/', [CompanyLocationController::class, 'store'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('store');
                 Route::get('/{location}', [CompanyLocationController::class, 'show'])->name('show');
                 Route::patch('/{location}', [CompanyLocationController::class, 'update'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('update');
                 Route::delete('/{location}', [CompanyLocationController::class, 'destroy'])
-                    ->middleware('throttle:30,1')
+                    ->middleware('throttle:api')
                     ->name('destroy');
             });
 
             Route::prefix('attendance')->name('attendance.')->group(function (): void {
                 Route::get('/today', [AttendanceAgentController::class, 'today'])->name('today');
                 Route::post('/clock-in', [AttendanceAgentController::class, 'clockIn'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('clock-in');
                 Route::post('/clock-out', [AttendanceAgentController::class, 'clockOut'])
-                    ->middleware('throttle:20,1')
+                    ->middleware('throttle:api')
                     ->name('clock-out');
                 Route::get('/history', [AttendanceAgentController::class, 'history'])->name('history');
                 Route::get('/stats', [AttendanceAgentController::class, 'stats'])->name('stats');
@@ -690,7 +690,7 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 ->name('workforce.summary');
 
             Route::post('/presence/heartbeat', [AgentPresenceController::class, 'heartbeat'])
-                ->middleware('throttle:120,1')
+                ->middleware('throttle:api-heavy')
                 ->name('presence.heartbeat');
 
             Route::prefix('agents')->name('agents.')->group(function (): void {
@@ -704,7 +704,7 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
     Route::prefix('tasks')->name('tasks.')->group(function (): void {
         Route::get('/', [TaskController::class, 'index'])->name('index');
         Route::post('/', [TaskController::class, 'store'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('store');
         Route::get('/reassignments/inbox', [TaskAssignmentController::class, 'inbox'])->name('reassignments.inbox');
         Route::post('/reassignments/{reassignment}/accept', [TaskAssignmentController::class, 'accept'])
@@ -719,7 +719,7 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::patch('/{task}/assign', [TaskAssignmentController::class, 'update'])->name('assign');
         Route::patch('/{task}/status', [TaskStatusController::class, 'update'])->name('status.update');
         Route::post('/{task}/proofs', [TaskProofController::class, 'store'])
-            ->middleware('throttle:60,1')
+            ->middleware('throttle:api-heavy')
             ->name('proofs.store');
         Route::get('/{task}/proofs/{proof}', [TaskProofController::class, 'show'])
             ->name('proofs.show');
@@ -728,42 +728,42 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
     Route::prefix('kpis')->name('kpis.')->group(function (): void {
         Route::get('/', [KpiController::class, 'index'])->name('index');
         Route::post('/', [KpiController::class, 'store'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('store');
         Route::get('/{kpi}', [KpiController::class, 'show'])->name('show');
         Route::patch('/{kpi}', [KpiController::class, 'update'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('update');
         Route::delete('/{kpi}', [KpiController::class, 'destroy'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('destroy');
         Route::patch('/{kpi}/status', [KpiStatusController::class, 'update'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('status.update');
     });
 
     Route::prefix('agent/tasks')->name('agent.tasks.')->group(function (): void {
         Route::post('/self', [AgentTaskController::class, 'storeSelf'])
             ->middleware('access.role:agent')
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('self.store');
     });
 
     Route::prefix('agent/planning')->name('agent.planning.')->group(function (): void {
         Route::post('/accept', [AgentPlanningController::class, 'accept'])
             ->middleware('access.role:agent')
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('accept');
     });
 
     Route::prefix('projects')->name('projects.')->group(function (): void {
         Route::get('/', [ProjectController::class, 'index'])->name('index');
         Route::post('/', [ProjectController::class, 'store'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('store');
         Route::get('/{project}', [ProjectController::class, 'show'])->name('show');
         Route::patch('/{project}', [ProjectController::class, 'update'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('update');
     });
 
@@ -776,16 +776,16 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::get('/agents', [PayrollController::class, 'agents'])->name('agents.index');
         Route::get('/agents/{user}', [PayrollController::class, 'agentProfile'])->name('agents.show');
         Route::patch('/agents/{user}', [PayrollController::class, 'updateAgentPayroll'])
-            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->middleware(['access.role:management', 'throttle:api'])
             ->name('agents.update');
         Route::patch('/agents/{user}/approval', [PayrollController::class, 'approveAgentPayroll'])
-            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->middleware(['access.role:management', 'throttle:api'])
             ->name('agents.approval');
         Route::post('/', [PayrollController::class, 'store'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('store');
         Route::put('/{payrollSetting}', [PayrollController::class, 'update'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('update');
     });
 
@@ -794,7 +794,7 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
             ->middleware('access.role:management')
             ->name('settings.show');
         Route::put('/settings', [AttendanceSettingsController::class, 'update'])
-            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->middleware(['access.role:management', 'throttle:api'])
             ->name('settings.update');
         Route::get('/metrics', [AttendanceManagementController::class, 'metrics'])
             ->middleware('access.role:management')
@@ -809,17 +809,17 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
             ->middleware('access.role:management')
             ->name('payroll-summaries.index');
         Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
-            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->middleware(['access.role:management', 'throttle:api'])
             ->name('payroll-summaries.generate');
 
         Route::get('/today', [AttendanceAgentController::class, 'today'])
             ->middleware('access.role:agent')
             ->name('today');
         Route::post('/clock-in', [AttendanceAgentController::class, 'clockIn'])
-            ->middleware(['access.role:agent', 'throttle:20,1'])
+            ->middleware(['access.role:agent', 'throttle:api'])
             ->name('clock-in');
         Route::post('/clock-out', [AttendanceAgentController::class, 'clockOut'])
-            ->middleware(['access.role:agent', 'throttle:20,1'])
+            ->middleware(['access.role:agent', 'throttle:api'])
             ->name('clock-out');
         Route::get('/history', [AttendanceAgentController::class, 'history'])
             ->middleware('access.role:agent')
@@ -834,94 +834,94 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
 
     Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
         Route::get('/', [InternalUserController::class, 'index'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('index');
 
         Route::get('/onboarding-status', [InternalUserController::class, 'onboardingStatus'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('onboarding-status');
 
         Route::post('/', [InternalUserController::class, 'store'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('store');
 
         Route::post('/{user}/invite', [InternalUserController::class, 'resendInvite'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('invite');
 
         Route::patch('/{user}', [InternalUserController::class, 'update'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('update');
 
         Route::patch('/{user}/supervisor', [InternalUserController::class, 'assignSupervisor'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('supervisor.assign');
     });
 
     Route::prefix('crm')->name('crm.')->group(function (): void {
         Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
         Route::post('/leads', [LeadController::class, 'store'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('leads.store');
         Route::post('/leads/import', [LeadController::class, 'import'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('leads.import');
         Route::post('/leads/import/preview', [LeadController::class, 'importPreview'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('leads.import.preview');
         Route::get('/leads/export', [LeadController::class, 'export'])
-            ->middleware('throttle:10,1')
+            ->middleware('throttle:api')
             ->name('leads.export');
         Route::get('/leads/pipeline', [LeadController::class, 'pipeline'])->name('leads.pipeline');
         Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
         Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
         Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
         Route::post('/pipelines', [LeadController::class, 'storePipeline'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('pipelines.store');
         Route::patch('/pipelines/{pipeline}', [LeadController::class, 'updatePipeline'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('pipelines.update');
         Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
         Route::post('/labels', [LeadController::class, 'storeLabel'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('labels.store');
         Route::patch('/labels/{label}', [LeadController::class, 'updateLabel'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('labels.update');
         Route::post('/labels/{label}/delete', [LeadController::class, 'deleteLabel'])
-            ->middleware(['access.role:management', 'throttle:20,1'])
+            ->middleware(['access.role:management', 'throttle:api'])
             ->name('labels.delete');
         Route::post('/labels/reorder', [LeadController::class, 'reorderLabels'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('labels.reorder');
         Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
         Route::patch('/leads/{lead}', [LeadController::class, 'update'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('leads.update');
         Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:api')
             ->name('leads.destroy');
         Route::post('/leads/{lead}/notes', [LeadController::class, 'storeNote'])
-            ->middleware('throttle:60,1')
+            ->middleware('throttle:api-heavy')
             ->name('leads.notes.store');
         Route::post('/leads/{lead}/activities', [LeadController::class, 'storeActivity'])
-            ->middleware('throttle:60,1')
+            ->middleware('throttle:api-heavy')
             ->name('leads.activities.store');
         Route::get('/emails/activity', [CrmEmailController::class, 'activity'])->name('emails.activity');
         Route::get('/emails/attachments/{attachment}', [CrmEmailController::class, 'downloadAttachment'])->name('emails.attachments.download');
         Route::get('/leads/{lead}/emails', [CrmEmailController::class, 'index'])->name('leads.emails.index');
         Route::get('/leads/{lead}/emails/threads/{thread}', [CrmEmailController::class, 'showThread'])->name('leads.emails.threads.show');
         Route::post('/leads/{lead}/emails/send', [CrmEmailController::class, 'send'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('leads.emails.send');
         Route::post('/leads/{lead}/emails/threads/{thread}/reply', [CrmEmailController::class, 'reply'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('leads.emails.reply');
         Route::patch('/leads/{lead}/emails/messages/{message}/read', [CrmEmailController::class, 'markRead'])->name('leads.emails.messages.read');
         Route::delete('/leads/{lead}/emails/messages/{message}', [CrmEmailController::class, 'destroy'])->name('leads.emails.messages.destroy');
         Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:api')
             ->name('leads.emails.attachments.upload');
     });
 

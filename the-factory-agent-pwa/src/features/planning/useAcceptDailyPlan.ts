@@ -7,7 +7,8 @@ import { flattenApiError } from '@/lib/api/errors';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
 import { planningApi } from './api';
-import type { DailyPlanPayload, PlanTaskDraft } from './types';
+import { buildAcceptDrafts } from './planEditorState';
+import type { AcceptDailyPlanInput, PlanTaskDraft } from './types';
 
 function isPlanTaskDraft(draft: PlanTaskDraft | null | undefined): draft is PlanTaskDraft {
   return Boolean(draft && typeof draft === 'object');
@@ -28,14 +29,13 @@ function normalizeDraftForAccept(draft: PlanTaskDraft): PlanTaskDraft {
 
 export function useAcceptDailyPlan() {
   return useMutation({
-    mutationFn: async (payload: DailyPlanPayload) => {
-      const drafts = payload.items
-        .map((item) => item.task_draft)
+    mutationFn: async ({ payload, edits }: AcceptDailyPlanInput) => {
+      const drafts = buildAcceptDrafts(payload, edits)
         .filter(isPlanTaskDraft)
         .map(normalizeDraftForAccept);
 
       if (drafts.length === 0) {
-        throw new Error('This plan has no items to accept.');
+        throw new Error('Select at least one item to accept.');
       }
 
       return planningApi.acceptDailyPlan({

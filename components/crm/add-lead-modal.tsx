@@ -16,6 +16,8 @@ import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import type { ApiLeadStatus, ApiLeadPriority, ApiRoleBasePath, LeadApiItem } from "@/lib/api/crm";
 import type { ApiRequestError } from "@/lib/api/onboarding";
+import { ProfileUrlInputs } from "@/components/crm/profile-url-inputs";
+import { isValidUrl, normalizeWebsite, parseProfileUrls } from "@/lib/crm/lead-fields";
 
 type FormErrors = Partial<{
   pipelineId: string;
@@ -23,6 +25,10 @@ type FormErrors = Partial<{
   email: string;
   phone: string;
   location: string;
+  companyName: string;
+  website: string;
+  position: string;
+  profileUrls: string;
   source: string;
   status: string;
   priority: string;
@@ -194,6 +200,12 @@ export function AddLeadModal({
   const [email, setEmail] = useState(lead?.email ?? "");
   const [phone, setPhone] = useState(lead?.phone ?? "");
   const [location, setLocation] = useState(lead?.location ?? "");
+  const [companyName, setCompanyName] = useState(lead?.company_name ?? "");
+  const [website, setWebsite] = useState(lead?.website ?? "");
+  const [position, setPosition] = useState(lead?.position ?? "");
+  const [profileUrls, setProfileUrls] = useState<string[]>(
+    lead?.profile_urls?.length ? lead.profile_urls : [""]
+  );
   const [source, setSource] = useState(lead?.source ?? "");
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, apiBasePath);
@@ -265,6 +277,13 @@ export function AddLeadModal({
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       e.email = "Enter a valid email address.";
     }
+    if (website.trim() && !isValidUrl(website)) {
+      e.website = "Enter a valid website URL.";
+    }
+    const cleanedProfileUrls = parseProfileUrls(profileUrls);
+    if (cleanedProfileUrls.some((url) => !isValidUrl(url))) {
+      e.profileUrls = "One or more profile URLs are invalid.";
+    }
     return e;
   };
 
@@ -279,6 +298,10 @@ export function AddLeadModal({
       if (apiErr.errors.email) fe.email = apiErr.errors.email[0];
       if (apiErr.errors.phone) fe.phone = apiErr.errors.phone[0];
       if (apiErr.errors.location) fe.location = apiErr.errors.location[0];
+      if (apiErr.errors.company_name) fe.companyName = apiErr.errors.company_name[0];
+      if (apiErr.errors.website) fe.website = apiErr.errors.website[0];
+      if (apiErr.errors.position) fe.position = apiErr.errors.position[0];
+      if (apiErr.errors.profile_urls) fe.profileUrls = apiErr.errors.profile_urls[0];
       if (apiErr.errors.source) fe.source = apiErr.errors.source[0];
       if (apiErr.errors.status) fe.status = apiErr.errors.status[0];
       if (apiErr.errors.priority) fe.priority = apiErr.errors.priority[0];
@@ -303,6 +326,8 @@ export function AddLeadModal({
       return;
     }
 
+    const cleanedProfileUrls = parseProfileUrls(profileUrls);
+
     const payload = {
       company_id: companyId,
       pipeline_id: Number(effectivePipelineId),
@@ -312,6 +337,10 @@ export function AddLeadModal({
       budget_amount: budgetAmount.trim() ? Number(budgetAmount.replace(/,/g, "")) : null,
       budget_currency: budgetAmount.trim() ? budgetCurrency : null,
       location: location.trim() || null,
+      company_name: companyName.trim() || null,
+      website: website.trim() ? normalizeWebsite(website) : null,
+      position: position.trim() || null,
+      profile_urls: cleanedProfileUrls.length > 0 ? cleanedProfileUrls : null,
       source: source.trim() || (isAgentContext ? "agent_upload" : null),
       status,
       priority,
@@ -440,6 +469,58 @@ export function AddLeadModal({
               </FormRow>
               <FieldError message={errors.location} />
             </div>
+          </div>
+
+          <div className="space-y-4 mb-5">
+            <SectionDivider
+              label={lead ? "Edit Company & Professional Details" : "Company & Professional Details"}
+              subtitle="All fields in this section are optional."
+            />
+
+            <div>
+              <FormRow label="Company Name" labelClassName="w-28">
+                <InlineInput
+                  value={companyName}
+                  onChange={(e) => { setCompanyName(e.target.value); clearError("companyName"); }}
+                  placeholder="E.g Acme Ltd"
+                  className="col-span-2"
+                />
+              </FormRow>
+              <FieldError message={errors.companyName} />
+            </div>
+
+            <div>
+              <FormRow label="Website" labelClassName="w-28">
+                <InlineInput
+                  value={website}
+                  onChange={(e) => { setWebsite(e.target.value); clearError("website"); }}
+                  placeholder="https://company.com"
+                  className="col-span-2"
+                />
+              </FormRow>
+              <FieldError message={errors.website} />
+            </div>
+
+            <div>
+              <FormRow label="Position" labelClassName="w-28">
+                <InlineInput
+                  value={position}
+                  onChange={(e) => { setPosition(e.target.value); clearError("position"); }}
+                  placeholder="E.g Head of Sales"
+                  className="col-span-2"
+                />
+              </FormRow>
+              <FieldError message={errors.position} />
+            </div>
+
+            <ProfileUrlInputs
+              values={profileUrls}
+              onChange={(values) => {
+                setProfileUrls(values);
+                clearError("profileUrls");
+              }}
+              errors={errors.profileUrls ? [errors.profileUrls] : []}
+            />
           </div>
 
           <div className="space-y-4 mb-5">

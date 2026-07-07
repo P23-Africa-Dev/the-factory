@@ -184,6 +184,82 @@ final class AgentPlanningAcceptTest extends TestCase
         ]);
     }
 
+    public function test_accept_accepts_modified_draft_subset(): void
+    {
+        [$company, $agent] = $this->seedAgentCompany();
+        $dedupeKeyOne = 'subset-dedupe-one';
+        $dedupeKeyTwo = 'subset-dedupe-two';
+
+        $response = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/agent/planning/accept', [
+                'company_id' => $company->id,
+                'plan_date' => now()->toDateString(),
+                'items' => [
+                    [
+                        'creates_task' => true,
+                        'dedupe_key' => $dedupeKeyOne,
+                        'title' => 'Custom follow up title',
+                        'type' => TaskType::SALES_VISIT->value,
+                        'description' => 'Modified follow-up description for today. [plan:' . $dedupeKeyOne . ']',
+                        'due_date' => now()->endOfDay()->toIso8601String(),
+                        'priority' => TaskPriority::HIGH->value,
+                    ],
+                ],
+            ]);
+
+        $response
+            ->assertCreated()
+            ->assertJsonPath('data.skipped', 0);
+
+        $created = $response->json('data.created');
+        $this->assertCount(1, $created);
+
+        $this->assertDatabaseHas('tasks', [
+            'company_id' => $company->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Custom follow up title',
+            'priority' => TaskPriority::HIGH->value,
+        ]);
+
+        $this->assertDatabaseMissing('tasks', [
+            'company_id' => $company->id,
+            'assigned_agent_id' => $agent->id,
+            'description' => '%' . $dedupeKeyTwo . '%',
+        ]);
+    }
+
+    public function test_accept_skips_removed_items_when_subset_sent(): void
+    {
+        [$company, $agent] = $this->seedAgentCompany();
+        $dedupeKey = 'removed-item-dedupe';
+
+        $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/agent/planning/accept', [
+                'company_id' => $company->id,
+                'plan_date' => now()->toDateString(),
+                'items' => [
+                    [
+                        'creates_task' => true,
+                        'dedupe_key' => $dedupeKey,
+                        'title' => 'Only selected plan item',
+                        'type' => TaskType::SALES_VISIT->value,
+                        'description' => 'This is the only item the agent kept in the plan. [plan:' . $dedupeKey . ']',
+                        'due_date' => now()->endOfDay()->toIso8601String(),
+                        'priority' => TaskPriority::MEDIUM->value,
+                    ],
+                ],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.skipped', 0);
+
+        $this->assertSame(1, Task::query()
+            ->where('assigned_agent_id', $agent->id)
+            ->where('title', 'Only selected plan item')
+            ->count());
+    }
+
     /**
      * @return array{0: Company, 1: User, 2: int}
      */

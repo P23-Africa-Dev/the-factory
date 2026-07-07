@@ -43,6 +43,7 @@ import {
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { EmailPanel } from "@/components/crm/email/email-panel";
+import { isValidUrl, normalizeWebsite, parseProfileUrls } from "@/lib/crm/lead-fields";
 
 /* --- Mock Lead Data -------------------------------------- */
 
@@ -492,6 +493,10 @@ type EditLeadForm = {
   name: string;
   phone: string;
   location: string;
+  companyName: string;
+  website: string;
+  position: string;
+  profileUrls: string[];
   status: ApiLeadStatus;
   source: string;
   priority: ApiLeadPriority;
@@ -526,6 +531,10 @@ export default function LeadDetailsPage() {
     name: "",
     phone: "",
     location: "",
+    companyName: "",
+    website: "",
+    position: "",
+    profileUrls: [""],
     status: "new",
     source: "",
     priority: "medium",
@@ -537,6 +546,10 @@ export default function LeadDetailsPage() {
     name: lead.name || "",
     phone: lead.phone || "",
     location: lead.location || "",
+    companyName: lead.company_name || "",
+    website: lead.website || "",
+    position: lead.position || "",
+    profileUrls: lead.profile_urls?.length ? lead.profile_urls : [""],
     status: lead.status || "new",
     source: lead.source || "",
     priority: lead.priority || "medium",
@@ -555,10 +568,24 @@ export default function LeadDetailsPage() {
   };
 
   const handleSave = () => {
+    const cleanedProfileUrls = parseProfileUrls(editForm.profileUrls);
+    if (editForm.website.trim() && !isValidUrl(editForm.website)) {
+      toast.error("Enter a valid website URL.");
+      return;
+    }
+    if (cleanedProfileUrls.some((url) => !isValidUrl(url))) {
+      toast.error("One or more profile URLs are invalid.");
+      return;
+    }
+
     const payload: UpdateLeadPayload = {
       name: editForm.name,
       phone: editForm.phone,
       location: editForm.location,
+      company_name: editForm.companyName.trim() || null,
+      website: editForm.website.trim() ? normalizeWebsite(editForm.website) : null,
+      position: editForm.position.trim() || null,
+      profile_urls: cleanedProfileUrls.length > 0 ? cleanedProfileUrls : null,
       status: editForm.status,
       source: editForm.source,
       priority: editForm.priority,
@@ -741,6 +768,111 @@ export default function LeadDetailsPage() {
                       <p className="text-white text-[16px] font-semibold truncate">
                         {leadData.location || "N/A"}
                       </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
+                      Company Name
+                    </label>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editForm.companyName}
+                        onChange={(e) => updateField("companyName", e.target.value)}
+                        className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
+                      />
+                    ) : (
+                      <p className="text-white text-[16px] font-semibold truncate">
+                        {leadData.company_name || "N/A"}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
+                      Website
+                    </label>
+                    {isEditing ? (
+                      <input
+                        type="url"
+                        value={editForm.website}
+                        onChange={(e) => updateField("website", e.target.value)}
+                        className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
+                      />
+                    ) : leadData.website ? (
+                      <a
+                        href={leadData.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#7DD3FC] text-[16px] font-semibold truncate hover:underline"
+                      >
+                        {leadData.website}
+                      </a>
+                    ) : (
+                      <p className="text-white text-[16px] font-semibold truncate">N/A</p>
+                    )}
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
+                      Position
+                    </label>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editForm.position}
+                        onChange={(e) => updateField("position", e.target.value)}
+                        className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
+                      />
+                    ) : (
+                      <p className="text-white text-[16px] font-semibold truncate">
+                        {leadData.position || "N/A"}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col min-[480px]:col-span-2">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
+                      Profile URLs
+                    </label>
+                    {isEditing ? (
+                      <div className="space-y-2">
+                        {(editForm.profileUrls.length ? editForm.profileUrls : [""]).map((url, index) => (
+                          <div key={index} className="flex gap-2">
+                            <input
+                              type="url"
+                              value={url}
+                              onChange={(e) => {
+                                const next = [...(editForm.profileUrls.length ? editForm.profileUrls : [""])];
+                                next[index] = e.target.value;
+                                updateField("profileUrls", next);
+                              }}
+                              className="flex-1 bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
+                              placeholder="https://linkedin.com/in/username"
+                            />
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => updateField("profileUrls", [...editForm.profileUrls, ""])}
+                          className="text-[11px] font-semibold text-[#7DD3FC] hover:text-white"
+                        >
+                          + Add another URL
+                        </button>
+                      </div>
+                    ) : (leadData.profile_urls?.length ?? 0) > 0 ? (
+                      <div className="flex flex-col gap-1">
+                        {leadData.profile_urls?.map((url) => (
+                          <a
+                            key={url}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#7DD3FC] text-[14px] font-semibold truncate hover:underline"
+                          >
+                            {url}
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-white text-[16px] font-semibold truncate">N/A</p>
                     )}
                   </div>
                   <div className="flex flex-col">

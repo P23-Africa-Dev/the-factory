@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\AdminLoginRequest;
 use App\Http\Resources\UserResource;
 use App\Services\Auth\AdminAuthService;
+use App\Support\LoginRateLimiter;
 use Illuminate\Http\JsonResponse;
 
 class AdminLoginController extends Controller
@@ -25,12 +26,16 @@ class AdminLoginController extends Controller
         );
 
         if (! $result) {
+            LoginRateLimiter::recordFailedAttempt($request);
+
             return $this->error(
                 message: 'Invalid credentials or account not activated.',
                 errors: ['email' => ['Credentials are invalid, role is not permitted for this endpoint, or onboarding is not complete.']],
                 status: 401,
             );
         }
+
+        LoginRateLimiter::clear($request);
 
         return $this->success(
             message: 'Login successful.',

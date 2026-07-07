@@ -16,12 +16,14 @@ class AvatarStorageServiceTest extends TestCase
 
     private function configureAvatarsDisk(): AvatarStorageService
     {
-        Storage::fake('public');
+        Storage::fake('avatars');
 
         config([
+            'filesystems.avatar_disk' => 'avatars',
             'filesystems.avatar_public_base_url' => 'https://factory23-storage.lon1.digitaloceanspaces.com',
             'internal_onboarding.avatar_storage_root' => 'avatar',
             'internal_onboarding.default_avatar_path' => 'avatar/default/ghost.svg',
+            'internal_onboarding.avatar_catalog' => [],
         ]);
 
         return app(AvatarStorageService::class);
@@ -68,5 +70,42 @@ class AvatarStorageServiceTest extends TestCase
         $url = $service->resolveUrlOrDefault(null, null);
 
         $this->assertStringContainsString('avatar/default/ghost.svg', $url);
+    }
+
+    public function test_random_catalog_key_for_gender_returns_gender_bucket_key(): void
+    {
+        $service = $this->configureAvatarsDisk();
+        $service->disk()->put('avatar/male/male_01.png', 'png');
+        $service->disk()->put('avatar/male/male_02.png', 'png');
+        $service->disk()->put('avatar/female/female_01.png', 'png');
+
+        $maleKey = $service->randomCatalogKeyForGender('male');
+        $femaleKey = $service->randomCatalogKeyForGender('female');
+
+        $this->assertContains($maleKey, ['male_01', 'male_02']);
+        $this->assertSame('female_01', $femaleKey);
+    }
+
+    public function test_stable_catalog_key_for_gender_is_deterministic(): void
+    {
+        $service = $this->configureAvatarsDisk();
+        $service->disk()->put('avatar/male/male_01.png', 'png');
+        $service->disk()->put('avatar/male/male_02.png', 'png');
+
+        $first = $service->stableCatalogKeyForGender('male', 'oliver.bennett@thefactory23.com');
+        $second = $service->stableCatalogKeyForGender('male', 'oliver.bennett@thefactory23.com');
+
+        $this->assertSame($first, $second);
+        $this->assertContains($first, ['male_01', 'male_02']);
+    }
+
+    public function test_random_catalog_key_falls_back_when_gender_missing(): void
+    {
+        $service = $this->configureAvatarsDisk();
+        $service->disk()->put('avatar/female/female_01.png', 'png');
+
+        $key = $service->randomCatalogKeyForGender(null);
+
+        $this->assertSame('female_01', $key);
     }
 }

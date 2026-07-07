@@ -13,6 +13,12 @@ export interface PlanTaskDraft {
 }
 
 export interface DailyPlanItem {
+  item_id?: string;
+  parent_item_id?: string | null;
+  parent_entity_type?: string | null;
+  parent_entity_id?: number | null;
+  editable?: boolean;
+  removable?: boolean;
   rank: number;
   type: string;
   title: string;
@@ -28,10 +34,20 @@ export interface DailyPlanItem {
   task_draft: PlanTaskDraft;
 }
 
+export interface DailyPlanProfileSummary {
+  tasks_due?: number;
+  overdue_tasks?: number;
+  meetings_today?: number;
+  active_kpis?: number;
+  stale_leads?: number;
+  nearby_opportunities?: number;
+}
+
 export interface DailyPlanPayload {
   plan_date: string;
   agent_location_available?: boolean;
   items: DailyPlanItem[];
+  profile_summary?: DailyPlanProfileSummary;
   summary_counts?: Record<string, number>;
   kpi_snapshot?: Record<string, number>;
   acceptance?: {
@@ -41,6 +57,19 @@ export interface DailyPlanPayload {
     already_task_count: number;
     accepted_at?: string | null;
   };
+}
+
+export interface PlanItemEditState {
+  selected: boolean;
+  removed: boolean;
+  draft?: Partial<PlanTaskDraft>;
+}
+
+export type PlanEditsMap = Record<string, PlanItemEditState>;
+
+export interface AcceptDailyPlanInput {
+  payload: DailyPlanPayload;
+  edits: PlanEditsMap;
 }
 
 export interface AcceptDailyPlanResult {

@@ -277,6 +277,66 @@ class AvatarStorageService
         return $catalog;
     }
 
+    public function randomCatalogKeyForGender(?string $gender): ?string
+    {
+        $catalog = $this->catalog();
+        $normalizedGender = $this->normalizeGender($gender);
+
+        if ($normalizedGender !== null) {
+            $options = array_keys($catalog[$normalizedGender] ?? []);
+            if ($options !== []) {
+                return $options[array_rand($options)];
+            }
+        }
+
+        $allKeys = array_merge(
+            array_keys($catalog['male'] ?? []),
+            array_keys($catalog['female'] ?? []),
+        );
+
+        if ($allKeys === []) {
+            return null;
+        }
+
+        return $allKeys[array_rand($allKeys)];
+    }
+
+    public function stableCatalogKeyForGender(?string $gender, string $seed): ?string
+    {
+        $catalog = $this->catalog();
+        $normalizedGender = $this->normalizeGender($gender);
+
+        $options = $normalizedGender !== null
+            ? array_keys($catalog[$normalizedGender] ?? [])
+            : [];
+
+        if ($options === []) {
+            $options = array_merge(
+                array_keys($catalog['male'] ?? []),
+                array_keys($catalog['female'] ?? []),
+            );
+        }
+
+        if ($options === []) {
+            return null;
+        }
+
+        sort($options);
+
+        return $options[abs(crc32($seed)) % count($options)];
+    }
+
+    private function normalizeGender(?string $gender): ?string
+    {
+        if ($gender === null || trim($gender) === '') {
+            return null;
+        }
+
+        $normalized = strtolower(trim($gender));
+
+        return in_array($normalized, ['male', 'female'], true) ? $normalized : null;
+    }
+
     /**
      * @return list<array{key: string, url: ?string, file: ?string, extension: string, svg: ?string}>
      */
