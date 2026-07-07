@@ -3,6 +3,8 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { useTrackingStore } from "@/store/tracking";
+import { useAttendanceMapStore } from "@/store/attendance-map";
+import type { AttendanceMapSnapshotItem } from "@/lib/api/attendance";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { getTrackingWebSocketUrl } from "@/lib/config/public-env";
@@ -337,6 +339,21 @@ export function useTrackingWebSocket() {
         } else {
           console.warn(LOG, "Tracking event missing payload", msg.type);
         }
+        return;
+      }
+
+      if (msg.type === "attendance.clocked_in" || msg.type === "attendance.clocked_out") {
+        const attendanceStore = useAttendanceMapStore.getState();
+        const data = msg.payload?.data as AttendanceMapSnapshotItem | undefined;
+
+        if (msg.type === "attendance.clocked_in" && data) {
+          attendanceStore.upsertSnapshot(data);
+        }
+
+        if (msg.type === "attendance.clocked_out" && msg.payload?.user_id) {
+          attendanceStore.removeSnapshot(Number(msg.payload.user_id));
+        }
+
         return;
       }
 

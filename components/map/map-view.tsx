@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import mapboxgl from 'mapbox-gl';
 import { Search, Eye, EyeOff, Radio, RefreshCcw, MoreHorizontal, LocateFixed } from 'lucide-react';
 import {
@@ -49,6 +50,11 @@ import { getSavedLocationLabel } from '@/lib/map/location-types';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { LocationSearchInput } from '@/components/map/LocationSearchInput';
 import { BusinessListPanel } from '@/components/map/BusinessListPanel';
+import { ClockedInLayer } from '@/components/map/ClockedInLayer';
+import { ClockedInPanel } from '@/components/map/ClockedInPanel';
+import { useAttendanceMapSnapshots } from '@/hooks/use-attendance-map';
+import { useAttendanceMapStore } from '@/store/attendance-map';
+import type { AttendanceMapSnapshotItem } from '@/lib/api/attendance';
 import { isInsideLocationContext, type LocationContext } from '@/lib/map/location-search';
 import {
   fetchBusinessesInBbox,
@@ -57,6 +63,7 @@ import {
   type PoiResult,
 } from '@/lib/map/overpass-search';
 
+type MapLeftTab = 'feeds' | 'clocked-in' | 'businesses';
 const STALE_MS = 2 * 60_000;
 const MARKER_ANIMATION_MS = 700;
 const SEARCH_DEBOUNCE_MS = 280;
@@ -248,6 +255,9 @@ function hasUsableTaskPosition(task: LiveTaskState): boolean {
 }
 
 export function MapboxMapView({ compact = false, providerState }: MapViewProps & { providerState: EffectiveMapProviderState }) {
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get('tab');
+  const initialAgentId = Number.parseInt(searchParams.get('agent') ?? '', 10);
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const mapLoadedRef = useRef(false);
@@ -278,7 +288,9 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const [pinMode, setPinMode] = useState(false);
   const [focusLocation, setFocusLocation] = useState<SavedLocation | null>(null);
   const [locationCtx, setLocationCtx] = useState<LocationContext | null>(null);
-  const [leftTab, setLeftTab] = useState<'feeds' | 'businesses'>('feeds');
+  const [leftTab, setLeftTab] = useState<MapLeftTab>(
+    initialTab === 'clocked-in' ? 'clocked-in' : initialTab === 'businesses' ? 'businesses' : 'feeds'
+  );
   const [mapMode, setMapMode] = useState<'2d' | '3d'>('2d');
   const [showBusinessPins, setShowBusinessPins] = useState(true);
   const [poiResults, setPoiResults] = useState<PoiResult[]>([]);
@@ -287,6 +299,26 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const poiTooltipRef = useRef<mapboxgl.Popup | null>(null);
   const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
   const savedLocationPermissions = useSavedLocationPermissions();
+  const { isLoading: clockedInLoading } = useAttendanceMapSnapshots({}, { scope: 'management' });
+  const clockedInItems = useAttendanceMapStore((s) => Object.values(s.items));
+  const selectedClockedInUserId = useAttendanceMapStore((s) => s.selectedUserId);
+  const setSelectedClockedInUserId = useAttendanceMapStore((s) => s.setSelectedUserId);
+
+  const handleClockedInSelect = useCallback((item: AttendanceMapSnapshotItem) => {
+    setSelectedClockedInUserId(item.user_id);
+    const map = mapRef.current;
+    if (!map) return;
+    map.flyTo({ center: [item.longitude, item.latitude], zoom: Math.max(map.getZoom(), 14), speed: 1.2 });
+  }, [setSelectedClockedInUserId]);
+
+  useEffect(() => {
+    if (!Number.isFinite(initialAgentId) || clockedInItems.length === 0) return;
+    const match = clockedInItems.find((item) => item.user_id === initialAgentId);
+    if (match) {
+      setLeftTab('clocked-in');
+      handleClockedInSelect(match);
+    }
+  }, [clockedInItems, handleClockedInSelect, initialAgentId]);
 
   const filteredBusinesses = useMemo(() => {
     if (!locationCtx) return savedLocations;
@@ -1211,6 +1243,17 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           readOnly
         />
 
+        {clockedInItems.length > 0 && (
+          <ClockedInLayer
+            provider="mapbox"
+            ready={mapVersion > 0}
+            items={clockedInItems}
+            selectedUserId={selectedClockedInUserId}
+            onSelectUserId={setSelectedClockedInUserId}
+            getMapboxMap={() => mapRef.current}
+          />
+        )}
+
         {providerState.fallbackReason === 'missing_google_api_key' && providerState.requestedProvider === 'google' && (
           <div className="absolute bottom-1 left-1 right-1 rounded bg-black/70 px-2 py-1 text-[9px] font-medium text-white">
             Google key missing. Showing Mapbox fallback.
@@ -1316,6 +1359,12 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             Live Feeds
           </button>
           <button
+            onClick={() => setLeftTab('clocked-in')}
+            className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'clocked-in' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            Clocked In ({clockedInItems.length})
+          </button>
+          <button
             onClick={() => setLeftTab('businesses')}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'businesses' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
@@ -1389,6 +1438,13 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
               })
             )}
           </div>
+        ) : leftTab === 'clocked-in' ? (
+          <ClockedInPanel
+            items={clockedInItems}
+            isLoading={clockedInLoading}
+            selectedUserId={selectedClockedInUserId}
+            onSelect={handleClockedInSelect}
+          />
         ) : (
           <BusinessListPanel
             activeLocation={locationCtx}
@@ -1416,6 +1472,17 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           onPinModeChange={setPinMode}
           focusLocation={focusLocation}
           visibleIds={filteredBusinessIds}
+        />
+      )}
+
+      {(leftTab === 'clocked-in' || compact) && clockedInItems.length > 0 && (
+        <ClockedInLayer
+          provider="mapbox"
+          ready={mapVersion > 0}
+          items={clockedInItems}
+          selectedUserId={selectedClockedInUserId}
+          onSelectUserId={setSelectedClockedInUserId}
+          getMapboxMap={() => mapRef.current}
         />
       )}
 
@@ -1565,6 +1632,9 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 }
 
 function GoogleMapView({ compact = false, providerState }: MapViewProps & { providerState: EffectiveMapProviderState }) {
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get('tab');
+  const initialAgentId = Number.parseInt(searchParams.get('agent') ?? '', 10);
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<GoogleMapLike | null>(null);
   const googleRef = useRef<GoogleMapsNamespaceLike | null>(null);
@@ -1584,7 +1654,9 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const [pinMode, setPinMode] = useState(false);
   const [focusLocation, setFocusLocation] = useState<SavedLocation | null>(null);
   const [locationCtx, setLocationCtx] = useState<LocationContext | null>(null);
-  const [leftTab, setLeftTab] = useState<'feeds' | 'businesses'>('feeds');
+  const [leftTab, setLeftTab] = useState<MapLeftTab>(
+    initialTab === 'clocked-in' ? 'clocked-in' : initialTab === 'businesses' ? 'businesses' : 'feeds'
+  );
   const [showBusinessPins, setShowBusinessPins] = useState(true);
   const [poiResults, setPoiResults] = useState<PoiResult[]>([]);
   const [poiBusy, setPoiBusy] = useState(false);
@@ -1592,6 +1664,29 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const googlePoiMarkersRef = useRef<{ setMap: (m: unknown) => void }[]>([]);
   const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
   const savedLocationPermissions = useSavedLocationPermissions();
+  const { isLoading: clockedInLoading } = useAttendanceMapSnapshots({}, { scope: 'management' });
+  const clockedInItems = useAttendanceMapStore((s) => Object.values(s.items));
+  const selectedClockedInUserId = useAttendanceMapStore((s) => s.selectedUserId);
+  const setSelectedClockedInUserId = useAttendanceMapStore((s) => s.setSelectedUserId);
+
+  const handleClockedInSelect = useCallback((item: AttendanceMapSnapshotItem) => {
+    setSelectedClockedInUserId(item.user_id);
+    const map = mapRef.current;
+    if (!map) return;
+    map.panTo({ lat: item.latitude, lng: item.longitude });
+    if (map.getZoom() < 14) {
+      map.setZoom(14);
+    }
+  }, [setSelectedClockedInUserId]);
+
+  useEffect(() => {
+    if (!Number.isFinite(initialAgentId) || clockedInItems.length === 0) return;
+    const match = clockedInItems.find((item) => item.user_id === initialAgentId);
+    if (match) {
+      setLeftTab('clocked-in');
+      handleClockedInSelect(match);
+    }
+  }, [clockedInItems, handleClockedInSelect, initialAgentId]);
 
   const filteredBusinesses = useMemo(() => {
     if (!locationCtx) return savedLocations;
@@ -2181,6 +2276,12 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             Live Feeds
           </button>
           <button
+            onClick={() => setLeftTab('clocked-in')}
+            className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'clocked-in' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            Clocked In ({clockedInItems.length})
+          </button>
+          <button
             onClick={() => setLeftTab('businesses')}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'businesses' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
@@ -2237,6 +2338,13 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
               })
             )}
           </div>
+        ) : leftTab === 'clocked-in' ? (
+          <ClockedInPanel
+            items={clockedInItems}
+            isLoading={clockedInLoading}
+            selectedUserId={selectedClockedInUserId}
+            onSelect={handleClockedInSelect}
+          />
         ) : (
           <BusinessListPanel
             activeLocation={locationCtx}
@@ -2270,6 +2378,21 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           onPinModeChange={setPinMode}
           focusLocation={focusLocation}
           visibleIds={filteredBusinessIds}
+        />
+      )}
+
+      {(leftTab === 'clocked-in' || compact) && clockedInItems.length > 0 && (
+        <ClockedInLayer
+          provider="google"
+          ready={googleReady}
+          items={clockedInItems}
+          selectedUserId={selectedClockedInUserId}
+          onSelectUserId={setSelectedClockedInUserId}
+          getGoogleMap={() =>
+            mapRef.current && googleRef.current
+              ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)
+              : null
+          }
         />
       )}
 

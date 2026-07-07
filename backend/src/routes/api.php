@@ -453,6 +453,8 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
                     ->middleware('throttle:api')
                     ->name('payroll-summaries.generate');
+                Route::get('/map-snapshots', [AttendanceManagementController::class, 'mapSnapshots'])
+                    ->name('map-snapshots');
             });
 
             Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
@@ -713,6 +715,8 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::get('/stats', [AttendanceAgentController::class, 'stats'])->name('stats');
                 Route::get('/payroll-summary', [AttendanceAgentController::class, 'payrollSummary'])
                     ->name('payroll-summary');
+                Route::get('/map-snapshot', [AttendanceAgentController::class, 'mapSnapshot'])
+                    ->name('map-snapshot');
             });
 
             Route::get('/dashboard/overview', DashboardOverviewController::class)
@@ -849,6 +853,9 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
             ->middleware(['access.role:management', 'throttle:api'])
             ->name('payroll-summaries.generate');
+        Route::get('/map-snapshots', [AttendanceManagementController::class, 'mapSnapshots'])
+            ->middleware('access.role:management')
+            ->name('map-snapshots');
 
         Route::get('/today', [AttendanceAgentController::class, 'today'])
             ->middleware('access.role:agent')
@@ -868,6 +875,9 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::get('/payroll-summary', [AttendanceAgentController::class, 'payrollSummary'])
             ->middleware('access.role:agent')
             ->name('payroll-summary');
+        Route::get('/map-snapshot', [AttendanceAgentController::class, 'mapSnapshot'])
+            ->middleware('access.role:agent')
+            ->name('map-snapshot');
     });
 
     Route::prefix('internal-users')->name('internal-users.')->group(function (): void {

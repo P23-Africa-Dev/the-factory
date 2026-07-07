@@ -60,15 +60,23 @@ function mapRecord(record: AgentAttendanceRecord, userName: string, avatarUrl?: 
 }
 
 async function getCurrentPosition(): Promise<{ latitude: number; longitude: number }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
-      resolve({ latitude: 0, longitude: 0 });
+      reject(new Error("Location is required to record attendance."));
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-      () => resolve({ latitude: 0, longitude: 0 }),
-      { timeout: 5000 }
+      (pos) => {
+        const latitude = pos.coords.latitude;
+        const longitude = pos.coords.longitude;
+        if (Math.abs(latitude) < 0.0001 && Math.abs(longitude) < 0.0001) {
+          reject(new Error("A valid GPS location is required to record attendance."));
+          return;
+        }
+        resolve({ latitude, longitude });
+      },
+      () => reject(new Error("A valid GPS location is required to record attendance.")),
+      { timeout: 10000, enableHighAccuracy: true }
     );
   });
 }
@@ -324,7 +332,16 @@ export function AttendanceViewAgent() {
       toast.error("No active company found.");
       return;
     }
-    const { latitude, longitude } = await getCurrentPosition();
+
+    let latitude: number;
+    let longitude: number;
+    try {
+      ({ latitude, longitude } = await getCurrentPosition());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "A valid GPS location is required.");
+      return;
+    }
+
     const recorded_at = format(new Date(), "yyyy-MM-dd HH:mm:ss");
     const payload = {
       company_id: apiCompanyId,
@@ -335,7 +352,14 @@ export function AttendanceViewAgent() {
 
     if (clockIn) {
       clockInMut.mutate(payload, {
-        onSuccess: () => toast.success("Clocked in successfully!"),
+        onSuccess: () => {
+          toast.success("Clocked in successfully!", {
+            action: {
+              label: "View on map",
+              onClick: () => window.location.assign("/agent/map"),
+            },
+          });
+        },
         onError: (err: Error) => toast.error(err.message ?? "Failed to clock in."),
       });
     } else if (clockOut) {

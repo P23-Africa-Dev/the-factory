@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useCurrentLocation } from '@/hooks/useCurrentLocation';
 import { toast } from '@/lib/toast';
 import { flattenApiError } from '@/lib/api/errors';
@@ -13,6 +14,7 @@ type ClockInModalProps = {
 };
 
 export function ClockInModal({ visible, onClose, onPendingChange }: ClockInModalProps): React.ReactElement | null {
+  const router = useRouter();
   const { data: today, isError: isTodayError, error: todayError } = useTodayAttendance();
   const { location, error: locationError, isLoading: isLocating, refresh } = useCurrentLocation();
   const { mutateAsync: clockIn, isPending: isClockingIn } = useClockIn();
@@ -48,15 +50,19 @@ export function ClockInModal({ visible, onClose, onPendingChange }: ClockInModal
     const payload = {
       latitude: location.latitude,
       longitude: location.longitude,
-      timestamp: new Date(location.timestamp).toISOString(),
+      recorded_at: new Date(location.timestamp).toISOString(),
     };
 
     const actionFn = isClockedIn ? clockOut : clockIn;
+    const wasClockIn = !isClockedIn;
 
     try {
       await actionFn(payload);
       toast.success(isClockedIn ? 'Clocked out' : 'Clocked in', 'Your location has been recorded.');
       onClose();
+      if (wasClockIn) {
+        router.push('/map?highlight=clock-in');
+      }
     } catch (err: unknown) {
       toast.error(flattenApiError(err) || 'Something went wrong. Please try again.');
     }

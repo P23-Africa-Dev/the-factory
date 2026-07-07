@@ -199,6 +199,32 @@ export type GeneratePayrollPayload = {
   month: number;
 };
 
+export type AttendanceMapSnapshotItem = {
+  user_id: number;
+  attendance_record_id: number;
+  agent_name: string;
+  avatar_url: string | null;
+  clock_in_at: string;
+  clock_out_at: string | null;
+  status: string;
+  is_late: boolean;
+  latitude: number;
+  longitude: number;
+  address: string | null;
+  zone: string | null;
+};
+
+export type AttendanceMapSnapshotsResponse = {
+  date: string;
+  items: AttendanceMapSnapshotItem[];
+};
+
+export type AttendanceMapSnapshotsParams = {
+  company_id?: number | string;
+  date?: string;
+  include_clocked_out?: boolean;
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function buildQuery(params: Record<string, unknown>): string {
@@ -270,6 +296,18 @@ export function getAgentPayrollSummary(
   });
 }
 
+export function getAgentAttendanceMapSnapshot(
+  params: AttendanceMapSnapshotsParams,
+  token: string
+) {
+  const query = buildQuery(params as Record<string, unknown>);
+  return apiRequest<AttendanceMapSnapshotsResponse>({
+    method: "GET",
+    path: `/agent/attendance/map-snapshot${query}`,
+    token,
+  });
+}
+
 // ─── Management API Functions ─────────────────────────────────────────────────
 
 export function getAttendanceMetrics(
@@ -289,6 +327,18 @@ export function getAttendanceRecords(params: AttendanceRecordsParams, token: str
   return apiRequest<AttendanceRecordsResponse>({
     method: "GET",
     path: `/attendance/records${query}`,
+    token,
+  });
+}
+
+export function getAttendanceMapSnapshots(
+  params: AttendanceMapSnapshotsParams,
+  token: string
+) {
+  const query = buildQuery(params as Record<string, unknown>);
+  return apiRequest<AttendanceMapSnapshotsResponse>({
+    method: "GET",
+    path: `/attendance/map-snapshots${query}`,
     token,
   });
 }

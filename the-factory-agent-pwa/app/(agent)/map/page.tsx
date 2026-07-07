@@ -26,7 +26,8 @@ import {
   MAP_SHEET_COLLAPSED_SNAP_INDEX,
   MAP_SHEET_EXPANDED_SNAP_INDEX,
 } from '@/features/tracking/components/MapBottomSheet';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { attendanceApi } from '@/features/attendance/api';
 import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { env } from '@/constants/env';
@@ -893,6 +894,33 @@ function MapContent() {
 
   // Saved organization locations
   const { data: savedLocations = [] } = useSavedLocations();
+  const { data: attendanceMapSnapshot } = useQuery({
+    queryKey: ['attendance-map-snapshot'],
+    queryFn: attendanceApi.getMapSnapshot,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+  const clockInPin = useMemo(() => {
+    const item = attendanceMapSnapshot?.items?.[0] as
+      | {
+          latitude?: number;
+          longitude?: number;
+          agent_name?: string;
+          avatar_url?: string | null;
+          is_late?: boolean;
+        }
+      | undefined;
+    if (!item || typeof item.latitude !== 'number' || typeof item.longitude !== 'number') {
+      return null;
+    }
+    return {
+      latitude: item.latitude,
+      longitude: item.longitude,
+      agentName: item.agent_name ?? 'You',
+      avatarUrl: item.avatar_url ?? null,
+      isLate: Boolean(item.is_late),
+    };
+  }, [attendanceMapSnapshot]);
   const { mutateAsync: createSavedLocation, isPending: isSavingLocation } = useCreateSavedLocation();
   const [pinMode, setPinMode] = useState(false);
   const [pendingPin, setPendingPin] = useState<{ lat: number; lng: number; address: string | null } | null>(null);
@@ -1963,6 +1991,7 @@ function MapContent() {
           dimmed={phase === 'activity_ended'}
           savedLocations={savedLocationPins}
           onSavedLocationClick={handleSavedLocationClick}
+          clockInPin={phase === 'idle' ? clockInPin : null}
           pinMode={pinMode}
           onMapPin={handleMapPin}
         />

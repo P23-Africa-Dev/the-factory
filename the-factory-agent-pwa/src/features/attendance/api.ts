@@ -22,7 +22,7 @@ export const attendanceApi = {
       return {
         record: {
           id: `offline-clock-in-${Date.now()}`,
-          clock_in_at: payload.timestamp,
+          clock_in_at: payload.recorded_at,
           clock_out_at: null,
         },
       };
@@ -30,7 +30,9 @@ export const attendanceApi = {
 
     const response = await client.post('/agent/attendance/clock-in', {
       company_id: companyId ?? undefined,
-      ...payload,
+      recorded_at: payload.recorded_at,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
     });
     return clockEventSchema.parse(unwrapItem(response.data));
   },
@@ -47,14 +49,16 @@ export const attendanceApi = {
         record: {
           id: `offline-clock-out-${Date.now()}`,
           clock_in_at: null,
-          clock_out_at: payload.timestamp,
+          clock_out_at: payload.recorded_at,
         },
       };
     }
 
     const response = await client.post('/agent/attendance/clock-out', {
       company_id: companyId ?? undefined,
-      ...payload,
+      recorded_at: payload.recorded_at,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
     });
     return clockEventSchema.parse(unwrapItem(response.data));
   },
@@ -65,5 +69,13 @@ export const attendanceApi = {
       params: { company_id: companyId ?? undefined },
     });
     return todayAttendanceSchema.parse(unwrapItem(response.data));
+  },
+
+  getMapSnapshot: async () => {
+    const companyId = getActiveCompanyId();
+    const response = await client.get('/agent/attendance/map-snapshot', {
+      params: { company_id: companyId ?? undefined },
+    });
+    return unwrapItem(response.data) as { date: string; items: Array<Record<string, unknown>> };
   },
 };
