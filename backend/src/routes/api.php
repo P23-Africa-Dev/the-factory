@@ -44,6 +44,7 @@ use App\Http\Controllers\Api\V1\Enterprise\VerifyCompanyIdController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\Internal\InternalLoginController;
 use App\Http\Controllers\Api\V1\Internal\InternalOnboardingController;
+use App\Http\Controllers\Api\V1\Internal\CompanyZoneController;
 use App\Http\Controllers\Api\V1\Internal\InternalUserController;
 use App\Http\Controllers\Api\V1\Kpi\AdminKpiStatusController;
 use App\Http\Controllers\Api\V1\Kpi\KpiController;
@@ -443,6 +444,19 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
             });
 
             Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
+                Route::get('/zones', [CompanyZoneController::class, 'index'])
+                    ->middleware('throttle:api')
+                    ->name('zones.index');
+                Route::post('/zones', [CompanyZoneController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('zones.store');
+                Route::patch('/zones/{zone}', [CompanyZoneController::class, 'update'])
+                    ->middleware('throttle:api')
+                    ->name('zones.update');
+                Route::delete('/zones/{zone}', [CompanyZoneController::class, 'destroy'])
+                    ->middleware('throttle:api')
+                    ->name('zones.destroy');
+
                 Route::get('/', [InternalUserController::class, 'index'])
                     ->middleware('throttle:api')
                     ->name('index');
@@ -833,6 +847,19 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
     });
 
     Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
+        Route::get('/zones', [CompanyZoneController::class, 'index'])
+            ->middleware('throttle:api')
+            ->name('zones.index');
+        Route::post('/zones', [CompanyZoneController::class, 'store'])
+            ->middleware('throttle:api')
+            ->name('zones.store');
+        Route::patch('/zones/{zone}', [CompanyZoneController::class, 'update'])
+            ->middleware('throttle:api')
+            ->name('zones.update');
+        Route::delete('/zones/{zone}', [CompanyZoneController::class, 'destroy'])
+            ->middleware('throttle:api')
+            ->name('zones.destroy');
+
         Route::get('/', [InternalUserController::class, 'index'])
             ->middleware('throttle:api')
             ->name('index');

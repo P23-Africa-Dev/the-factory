@@ -21,12 +21,14 @@ class InternalUserInferenceService
         $supervisorId = $role === 'agent'
             ? $this->resolveSupervisorIdFromMessage($message, $companyId, $entities)
             : null;
+        $zoneIds = $this->resolveZoneIdsFromMessage($message, $companyId);
 
         return [
             'full_name' => $name ?? '',
             'email' => $email ?? '',
             'role' => $role,
-            'assigned_zone' => $this->extractAssignedZone($message) ?? 'General',
+            'assigned_zone' => $this->extractAssignedZone($message) ?? '',
+            'assigned_zone_ids' => $zoneIds,
             'work_days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
             'base_salary' => 0,
             'salary_type' => 'monthly',
@@ -36,6 +38,7 @@ class InternalUserInferenceService
                 'missing_full_name' => ! is_string($name) || trim($name) === '',
                 'missing_email' => ! is_string($email) || trim($email) === '',
                 'missing_supervisor' => $role === 'agent' && $supervisorId === null,
+                'missing_zone' => $zoneIds === [],
                 'role_defaulted' => $this->extractRole($message) === null,
             ],
         ];
@@ -52,7 +55,12 @@ class InternalUserInferenceService
         $normalized['full_name'] = Str::limit(trim((string) ($normalized['full_name'] ?? '')), 255, '');
         $normalized['email'] = strtolower(trim((string) ($normalized['email'] ?? '')));
         $normalized['role'] = $this->normalizeRole((string) ($normalized['role'] ?? 'agent'));
-        $normalized['assigned_zone'] = Str::limit(trim((string) ($normalized['assigned_zone'] ?? 'General')), 120, '');
+        $normalized['assigned_zone'] = Str::limit(trim((string) ($normalized['assigned_zone'] ?? '')), 120, '');
+        $normalized['assigned_zone_ids'] = $this->normalizeZoneIds(
+            companyId: $companyId,
+            zoneIds: $normalized['assigned_zone_ids'] ?? null,
+            fallbackZoneName: $normalized['assigned_zone'] ?? null,
+        );
         $normalized['work_days'] = is_array($normalized['work_days'] ?? null) && $normalized['work_days'] !== []
             ? array_values(array_map(
                 static fn (mixed $day): string => strtolower(trim((string) $day)),
@@ -60,7 +68,7 @@ class InternalUserInferenceService
             ))
             : ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
         $normalized['base_salary'] = is_numeric($normalized['base_salary'] ?? null) ? (float) $normalized['base_salary'] : 0;
-        $normalized['salary_type'] = strtolower(trim((string) ($normalized['salary_type'] ?? 'monthly')));
+        $normalized['salary_type'] = $this->normalizeSalaryType((string) ($normalized['salary_type'] ?? 'monthly'));
         $normalized['commission_enabled'] = (bool) ($normalized['commission_enabled'] ?? false);
 
         if (($normalized['role'] ?? 'agent') === 'agent') {
@@ -81,6 +89,7 @@ class InternalUserInferenceService
             'missing_full_name' => in_array('missing_full_name', $codes, true),
             'missing_email' => in_array('missing_email', $codes, true),
             'missing_supervisor' => in_array('missing_supervisor', $codes, true),
+            'missing_zone' => in_array('missing_zone', $codes, true),
             'role_defaulted' => false,
         ];
 
@@ -106,6 +115,11 @@ class InternalUserInferenceService
 
         if (($args['role'] ?? 'agent') === 'agent' && ! is_numeric($args['supervisor_user_id'] ?? null)) {
             $warnings[] = 'missing_supervisor';
+        }
+
+        $zoneIds = is_array($args['assigned_zone_ids'] ?? null) ? $args['assigned_zone_ids'] : [];
+        if ($zoneIds === []) {
+            $warnings[] = 'missing_zone';
         }
 
         return $warnings;
@@ -196,6 +210,19 @@ class InternalUserInferenceService
     }
 
     /**
+     * @return array<int, int>
+     */
+    private function resolveZoneIdsFromMessage(string $message, int $companyId): array
+    {
+        $zoneName = $this->extractAssignedZone($message);
+        if (! is_string($zoneName) || trim($zoneName) === '') {
+            return [];
+        }
+
+        return $this->normalizeZoneIds($companyId, null, $zoneName);
+    }
+
+    /**
      * @param array<string, string> $entities
      */
     private function resolveSupervisorIdFromMessage(string $message, int $companyId, array $entities): ?int
@@ -240,5 +267,54 @@ class InternalUserInferenceService
             'manager' => 'supervisor',
             default => in_array($normalized, ['admin', 'supervisor', 'agent'], true) ? $normalized : 'agent',
         };
+    }
+
+    /**
+     * @param  mixed  $zoneIds
+     * @return array<int, int>
+     */
+    private function normalizeZoneIds(int $companyId, mixed $zoneIds, ?string $fallbackZoneName): array
+    {
+        $ids = collect(is_array($zoneIds) ? $zoneIds : [])
+            ->map(static fn(mixed $id): int => (int) $id)
+            ->filter(static fn(int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($ids !== []) {
+            $valid = DB::table('company_zones')
+                ->where('company_id', $companyId)
+                ->whereIn('id', $ids)
+                ->pluck('id')
+                ->map(static fn(mixed $id): int => (int) $id)
+                ->values()
+                ->all();
+
+            return $valid;
+        }
+
+        $zoneName = trim((string) ($fallbackZoneName ?? ''));
+        if ($zoneName === '') {
+            return [];
+        }
+
+        $row = DB::table('company_zones')
+            ->where('company_id', $companyId)
+            ->where(function ($query) use ($zoneName): void {
+                $query->where('name', 'like', '%' . $zoneName . '%')
+                    ->orWhere('lga_name', 'like', '%' . $zoneName . '%')
+                    ->orWhere('state_name', 'like', '%' . $zoneName . '%');
+            })
+            ->value('id');
+
+        return is_numeric($row) ? [(int) $row] : [];
+    }
+
+    private function normalizeSalaryType(string $salaryType): string
+    {
+        $normalized = strtolower(trim($salaryType));
+
+        return in_array($normalized, ['daily', 'weekly', 'monthly'], true) ? $normalized : 'monthly';
     }
 }

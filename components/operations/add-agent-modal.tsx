@@ -12,7 +12,7 @@ import {
   AgentDetailsModal,
   type AgentDetails,
 } from "@/components/operations/agent-details-modal";
-import { useCreateInternalUser } from "@/hooks/use-internal-users";
+import { useCompanyZones, useCreateInternalUser } from "@/hooks/use-internal-users";
 import { useInternalUsers } from "@/hooks/use-projects";
 import { useSupportedCurrencies } from "@/hooks/use-currencies";
 import { useAuthStore } from "@/store/auth";
@@ -21,7 +21,7 @@ import { getActiveCompanyContext } from "@/lib/company-context";
 import { PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
 
 const ROLE_OPTIONS = [
-  // { label: "Admin", value: "admin" },
+  { label: "Admin", value: "admin" },
   { label: "Supervisor", value: "supervisor" },
   { label: "Agent", value: "agent" },
 ] as const;
@@ -44,6 +44,7 @@ type FormErrors = Partial<{
   salary: string;
   currency: string;
   workDays: string;
+  assignedZoneIds: string;
   supervisorId: string;
   phone: string;
   gender: string;
@@ -66,6 +67,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const [currencyCode, setCurrencyCode] = useState(PAYROLL_DEFAULT_CURRENCY);
   const [salary, setSalary] = useState("");
   const [workDays, setWorkDays] = useState<string[]>(["monday", "tuesday", "wednesday", "thursday", "friday"]);
+  const [assignedZoneIds, setAssignedZoneIds] = useState<number[]>([]);
   const [supervisorId, setSupervisorId] = useState("");
   const [commissionEnabled, setCommissionEnabled] = useState(false);
   const [fillForAgent, setFillForAgent] = useState(false);
@@ -98,6 +100,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const { data: supervisors = [], isLoading: loadingSupervisors } = useInternalUsers(
     { role: "supervisor", company_id: companyId ?? undefined },
   );
+  const { data: zones = [], isLoading: loadingZones } = useCompanyZones(companyId ?? undefined);
 
   const handleFillForAgentToggle = () => {
     if (role !== "agent") {
@@ -114,6 +117,13 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
     );
     setErrors((prev) => ({ ...prev, workDays: undefined }));
+  };
+
+  const toggleZone = (zoneId: number) => {
+    setAssignedZoneIds((prev) => (
+      prev.includes(zoneId) ? prev.filter((id) => id !== zoneId) : [...prev, zoneId]
+    ));
+    setErrors((prev) => ({ ...prev, assignedZoneIds: undefined }));
   };
 
   const clearError = (field: keyof FormErrors) =>
@@ -147,6 +157,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       e.salary = "Base salary is required.";
     }
     if (workDays.length === 0) e.workDays = "Select at least one work day.";
+    if (assignedZoneIds.length === 0) e.assignedZoneIds = "Select at least one zone.";
     if (role === "agent" && !supervisorId) e.supervisorId = "Supervisor is required for agents.";
     if (fillForAgent && role === "agent") {
       if (!agentDetails.phone.trim()) e.phone = "Phone number is required.";
@@ -169,6 +180,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       if (apiErr.errors.base_salary) fe.salary = apiErr.errors.base_salary[0];
       if (apiErr.errors.currency_code) fe.currency = apiErr.errors.currency_code[0];
       if (apiErr.errors.work_days) fe.workDays = apiErr.errors.work_days[0];
+      if (apiErr.errors.assigned_zone_ids) fe.assignedZoneIds = apiErr.errors.assigned_zone_ids[0];
       if (apiErr.errors.supervisor_user_id) fe.supervisorId = apiErr.errors.supervisor_user_id[0];
       if (apiErr.errors.phone_number) fe.phone = apiErr.errors.phone_number[0];
       if (apiErr.errors.gender) fe.gender = apiErr.errors.gender[0];
@@ -202,6 +214,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       email: email.trim(),
       role: role as "admin" | "supervisor" | "agent",
       assigned_zone: "",
+      assigned_zone_ids: assignedZoneIds,
       work_days: workDays,
       base_salary: baseSalaryNum,
       salary_type: salaryType,
@@ -366,13 +379,41 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 </div>
               )}
 
+              <div>
+                <p className="text-[11px] text-gray-500 mb-2">Assigned Zones</p>
+                <div className="flex flex-wrap gap-2">
+                  {zones.map((zone) => {
+                    const selected = assignedZoneIds.includes(zone.id);
+                    return (
+                      <button
+                        key={zone.id}
+                        type="button"
+                        onClick={() => toggleZone(zone.id)}
+                        className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all border ${selected
+                          ? "bg-dash-dark text-white border-dash-dark"
+                          : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
+                          }`}
+                      >
+                        {zone.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                {zones.length === 0 && (
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    {loadingZones ? "Loading zones..." : "No zones available. Add company zones first."}
+                  </p>
+                )}
+                <FieldError message={errors.assignedZoneIds} />
+              </div>
+
 
               <div>
                 <FormRow label="Salary" labelClassName="w-28">
                   <InlineInput
                     value={salary}
                     onChange={(e) => {
-                      setSalary(e.target.value.replace(/[^0-9,]/g, ""));
+                      setSalary(e.target.value.replace(/[^0-9,]/g, "").slice(0, 60));
                       clearError("salary");
                     }}
                     placeholder="E.g 120000"

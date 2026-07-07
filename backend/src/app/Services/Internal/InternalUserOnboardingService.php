@@ -6,6 +6,7 @@ namespace App\Services\Internal;
 
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
+use App\Models\CompanyZone;
 use App\Models\InternalUserInvitation;
 use App\Models\User;
 use App\Notifications\InternalUserOnboardingInviteNotification;
@@ -64,6 +65,13 @@ class InternalUserOnboardingService
                 currency: $data['currency_code'] ?? null,
                 fallbackCurrency: $company->currency_code ?? config('internal_onboarding.default_currency', 'USD'),
             );
+            $assignedZoneIds = $this->resolveAssignedZoneIds(
+                companyId: (int) $company->id,
+                assignedZoneIds: isset($data['assigned_zone_ids']) && is_array($data['assigned_zone_ids']) ? $data['assigned_zone_ids'] : null,
+                assignedZoneText: isset($data['assigned_zone']) ? (string) $data['assigned_zone'] : null,
+                actorUserId: (int) $creator->id,
+                fallbackCountryCode: (string) ($company->country ?? ''),
+            );
 
             $user = User::query()->create([
                 'name' => $data['full_name'],
@@ -72,7 +80,7 @@ class InternalUserOnboardingService
                 'is_active' => false,
                 'onboarding_status' => 'pending_onboarding',
                 'internal_role' => $role,
-                'assigned_zone' => $data['assigned_zone'],
+                'assigned_zone' => $this->resolveLegacyAssignedZoneLabel($assignedZoneIds, isset($data['assigned_zone']) ? (string) $data['assigned_zone'] : null),
                 'work_days' => $workDays,
                 'base_salary' => $data['base_salary'],
                 'payroll_salary_type' => $salaryType,
@@ -101,6 +109,8 @@ class InternalUserOnboardingService
             if ($role === 'supervisor' && ! empty($data['assign_agent_ids'])) {
                 $this->assignAgentsToSupervisor($company->id, (int) $user->id, Arr::wrap($data['assign_agent_ids']));
             }
+
+            $this->syncUserZones($user, $assignedZoneIds);
 
             ['invitation' => $invitation, 'plain_token' => $plainToken] = $this->createInvitation(
                 companyId: (int) $company->id,
@@ -317,6 +327,20 @@ class InternalUserOnboardingService
 
             if ($updates !== []) {
                 $target->update($updates);
+            }
+
+            if (array_key_exists('assigned_zone_ids', $data) || array_key_exists('assigned_zone', $data)) {
+                $assignedZoneIds = $this->resolveAssignedZoneIds(
+                    companyId: (int) $company->id,
+                    assignedZoneIds: array_key_exists('assigned_zone_ids', $data) && is_array($data['assigned_zone_ids']) ? $data['assigned_zone_ids'] : null,
+                    assignedZoneText: array_key_exists('assigned_zone', $data) ? (string) ($data['assigned_zone'] ?? '') : null,
+                    actorUserId: (int) $target->id,
+                    fallbackCountryCode: (string) ($company->country ?? ''),
+                );
+                $this->syncUserZones($target, $assignedZoneIds);
+                $target->update([
+                    'assigned_zone' => $this->resolveLegacyAssignedZoneLabel($assignedZoneIds, array_key_exists('assigned_zone', $data) ? (string) ($data['assigned_zone'] ?? '') : $target->assigned_zone),
+                ]);
             }
 
             if (isset($data['role'])) {
@@ -666,5 +690,107 @@ class InternalUserOnboardingService
                 'supervisor_user_id' => $supervisorUserId,
             ]);
         }
+    }
+
+    /**
+     * @param  array<int, mixed>|null  $assignedZoneIds
+     * @return array<int, int>
+     */
+    private function resolveAssignedZoneIds(
+        int $companyId,
+        ?array $assignedZoneIds,
+        ?string $assignedZoneText,
+        int $actorUserId,
+        string $fallbackCountryCode = 'NG',
+    ): array {
+        $zoneIds = collect($assignedZoneIds ?? [])
+            ->map(static fn(mixed $id): int => (int) $id)
+            ->filter(static fn(int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($zoneIds !== []) {
+            $count = CompanyZone::query()
+                ->where('company_id', $companyId)
+                ->whereIn('id', $zoneIds)
+                ->count();
+
+            if ($count !== count($zoneIds)) {
+                throw ValidationException::withMessages([
+                    'assigned_zone_ids' => ['One or more selected zones do not belong to your company.'],
+                ]);
+            }
+
+            return $zoneIds;
+        }
+
+        $zoneText = trim((string) ($assignedZoneText ?? ''));
+        if ($zoneText === '') {
+            return [];
+        }
+
+        $normalized = Str::lower(trim(preg_replace('/\s+/', ' ', $zoneText) ?? $zoneText));
+        $existing = CompanyZone::query()
+            ->where('company_id', $companyId)
+            ->where('normalized_name', $normalized)
+            ->first();
+
+        if ($existing instanceof CompanyZone) {
+            return [(int) $existing->id];
+        }
+
+        $countryCode = strtoupper(trim($fallbackCountryCode));
+        if (strlen($countryCode) !== 2) {
+            $countryCode = 'NG';
+        }
+
+        $created = CompanyZone::query()->create([
+            'company_id' => $companyId,
+            'name' => $zoneText,
+            'normalized_name' => $normalized,
+            'country_code' => $countryCode,
+            'state_name' => 'General',
+            'lga_name' => $zoneText,
+            'is_active' => true,
+            'created_by_user_id' => $actorUserId,
+        ]);
+
+        return [(int) $created->id];
+    }
+
+    /**
+     * @param  array<int, int>  $zoneIds
+     */
+    private function syncUserZones(User $user, array $zoneIds): void
+    {
+        if ($zoneIds === []) {
+            $user->zones()->detach();
+
+            return;
+        }
+
+        $syncPayload = [];
+        foreach ($zoneIds as $index => $zoneId) {
+            $syncPayload[$zoneId] = ['is_primary' => $index === 0];
+        }
+        $user->zones()->sync($syncPayload);
+    }
+
+    /**
+     * @param  array<int, int>  $zoneIds
+     */
+    private function resolveLegacyAssignedZoneLabel(array $zoneIds, ?string $fallback): ?string
+    {
+        if ($zoneIds !== []) {
+            $primaryZone = CompanyZone::query()->whereKey($zoneIds[0])->first();
+            if ($primaryZone instanceof CompanyZone) {
+                return (string) $primaryZone->name;
+            }
+        }
+
+        $fallbackText = trim((string) ($fallback ?? ''));
+
+        return $fallbackText !== '' ? $fallbackText : null;
     }
 }

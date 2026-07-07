@@ -34,6 +34,7 @@ class FetchInternalUsersRequest extends FormRequest
             'status' => ['nullable', 'string', Rule::in(['active', 'offline', 'pending_onboarding', 'inactive'])],
             'search' => ['nullable', 'string', 'max:255'],
             'zone' => ['nullable', 'string', 'max:120'],
+            'zone_id' => ['nullable', 'integer', 'exists:company_zones,id'],
             'include_inactive' => ['nullable', 'boolean'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             'page' => ['nullable', 'integer', 'min:1'],

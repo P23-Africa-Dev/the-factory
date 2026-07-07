@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createInternalUser,
   getInternalUsersOnboardingStatus,
+  listCompanyZones,
   listInternalUsers,
   listInternalUsersPaginated,
   updateInternalUser,
@@ -11,6 +12,7 @@ import {
   type CreatedInternalUser,
   type InternalOnboardingStatusData,
   type InternalUserListItem,
+  type CompanyZoneOption,
   type ListInternalUsersParams,
   type PaginatedInternalUsersData,
   type UpdateInternalUserPayload,
@@ -96,5 +98,19 @@ export function useUpdateInternalUser() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["internal-users"] });
     },
+  });
+}
+
+export function useCompanyZones(companyId?: number | string) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useQuery({
+    queryKey: ["company-zones", companyId] as const,
+    queryFn: async (): Promise<CompanyZoneOption[]> => {
+      const res = await listCompanyZones({ company_id: companyId, is_active: 1 }, token);
+      return res.data;
+    },
+    enabled: !!token && !!companyId,
+    staleTime: 1000 * 60 * 2,
   });
 }

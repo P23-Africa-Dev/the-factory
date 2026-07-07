@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import type { AgentItem } from './agent-list';
 import { getAgentSessionBadgeClass } from '@/lib/agent-presence';
 import { useUpdateInternalUser } from '@/hooks/use-internal-users';
+import { useCompanyZones } from '@/hooks/use-internal-users';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { SearchableSelect } from '@/components/ui/searchable-select';
@@ -28,12 +29,14 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(agent.name);
   const [zone, setZone] = useState(agent.zone === 'Unassigned' ? '' : agent.zone);
+  const [zoneIds, setZoneIds] = useState<number[]>(agent.zoneIds ?? []);
   const [phone, setPhone] = useState(agent.phone);
   const [role, setRole] = useState(agent.role);
 
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const updateMutation = useUpdateInternalUser();
+  const { data: zones = [] } = useCompanyZones(companyId ?? undefined);
 
   // Reset local state when a new agent is selected
   const agentId = agent.id;
@@ -41,6 +44,7 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
   const handleEdit = () => {
     setName(agent.name);
     setZone(agent.zone === 'Unassigned' ? '' : agent.zone);
+    setZoneIds(agent.zoneIds ?? []);
     setPhone(agent.phone);
     setRole(agent.role);
     setEditing(true);
@@ -66,6 +70,7 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
           full_name: name.trim(),
           role: role as 'admin' | 'supervisor' | 'agent',
           assigned_zone: zone.trim() || null,
+          assigned_zone_ids: zoneIds,
           phone_number: phone.trim() || null,
         },
       },
@@ -111,12 +116,31 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
               {/* Zone */}
               <div>
                 <p className="text-[11px] font-bold text-dash-dark mb-1">Zone</p>
-                <input
-                  value={zone}
-                  onChange={(e) => setZone(e.target.value)}
-                  className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark outline-none focus:border-dash-dark transition-colors"
-                  placeholder="E.g Ikeja"
-                />
+                <div className="flex flex-wrap gap-1.5">
+                  {zones.map((zoneOption) => {
+                    const selected = zoneIds.includes(zoneOption.id);
+                    return (
+                      <button
+                        key={zoneOption.id}
+                        type="button"
+                        onClick={() => {
+                          setZoneIds((prev) => selected
+                            ? prev.filter((id) => id !== zoneOption.id)
+                            : [...prev, zoneOption.id]);
+                          if (!selected) {
+                            setZone((prev) => prev || zoneOption.name);
+                          }
+                        }}
+                        className={`px-2.5 py-1 rounded-full border text-[11px] ${selected
+                          ? 'bg-dash-dark text-white border-dash-dark'
+                          : 'bg-white text-gray-500 border-gray-200'
+                          }`}
+                      >
+                        {zoneOption.name}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Phone */}

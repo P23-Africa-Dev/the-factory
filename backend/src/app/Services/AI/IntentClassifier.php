@@ -10,6 +10,17 @@ class IntentClassifier
     {
         $normalized = strtolower(trim($message));
 
+        if (
+            preg_match('/\bproject\b/i', $normalized) === 1
+            && preg_match('/\b(delete|remove|cancel|archive)\b/i', $normalized) === 1
+        ) {
+            return [
+                'type' => 'general',
+                'tool' => null,
+                'confidence' => 0.4,
+            ];
+        }
+
         $actionPatterns = [
             'tasks.create' => [
                 '/\b(create|add|open|new|set|assign|give)\s+(a\s+|an\s+)?task\b/i',

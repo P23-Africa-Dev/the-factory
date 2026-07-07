@@ -10,6 +10,7 @@ use App\Enums\KpiPriority;
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationDeliveryType;
 use App\Enums\NotificationPriority;
+use App\Enums\PayrollSalaryType;
 use App\Enums\ProjectPriority;
 use App\Enums\ProjectStatus;
 use App\Enums\ProjectType;
@@ -29,6 +30,7 @@ use App\Services\Internal\InternalUserOnboardingService;
 use App\Services\Project\ProjectService;
 use App\Services\Task\TaskReassignmentService;
 use App\Services\Task\TaskService;
+use App\Support\CurrencyCatalog;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -473,11 +475,13 @@ class ActionToolRegistry
             'gender' => ['nullable', 'string', Rule::in(['male', 'female'])],
             'avatar_key' => ['nullable', 'string', 'max:50'],
             'assigned_zone' => ['nullable', 'string', 'min:2', 'max:120'],
+            'assigned_zone_ids' => ['nullable', 'array', 'max:50'],
+            'assigned_zone_ids.*' => ['integer', 'exists:company_zones,id'],
             'work_days' => ['required', 'array', 'min:1', 'max:7'],
             'work_days.*' => ['string', Rule::in(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])],
             'base_salary' => ['required', 'numeric', 'min:0'],
-            'salary_type' => ['nullable', 'string'],
-            'currency_code' => ['nullable', 'string', 'size:3'],
+            'salary_type' => ['nullable', 'string', Rule::in(PayrollSalaryType::values())],
+            'currency_code' => ['nullable', 'string', 'size:3', Rule::in(CurrencyCatalog::codes())],
             'commission_enabled' => ['nullable', 'boolean'],
             'supervisor_user_id' => ['nullable', 'integer', 'exists:users,id'],
             'assign_agent_ids' => ['nullable', 'array', 'max:100'],

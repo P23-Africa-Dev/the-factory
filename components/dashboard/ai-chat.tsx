@@ -22,6 +22,7 @@ import {
 import { resolveCopilotGeolocationContext } from "@/lib/copilot-geolocation";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useCrmLabels } from "@/hooks/use-crm";
+import { useCompanyZones } from "@/hooks/use-internal-users";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
 import { listLeads } from "@/lib/api/crm";
 import {
@@ -62,7 +63,7 @@ interface Message {
   payload?: unknown;
 }
 
-const ACTION_TOOL_PATTERN = /^(?:tasks|meetings|projects|notifications|crm|kpis)\.[a-z_]+$/;
+const ACTION_TOOL_PATTERN = /^(?:tasks|meetings|projects|notifications|crm|kpis|org)\.[a-z_]+$/;
 
 const ARRAY_ACTION_DRAFT_SKIP_KEYS = new Set([
   "user_ids",
@@ -119,7 +120,7 @@ interface LeadOptionsState {
   items: LeadOption[];
 }
 
-type EditControlType = "text" | "textarea" | "select" | "date" | "datetime-local" | "number";
+type EditControlType = "text" | "textarea" | "select" | "date" | "datetime-local" | "number" | "multi-select";
 
 interface EditFieldOption {
   value: string;
@@ -202,6 +203,28 @@ const NOTIFICATION_CATEGORY_OPTIONS: EditFieldOption[] = [
   { value: "workforce", label: "Workforce" },
   { value: "profile", label: "Profile" },
   { value: "system", label: "System" },
+];
+
+const ORG_USER_ROLE_OPTIONS: EditFieldOption[] = [
+  { value: "admin", label: "Admin" },
+  { value: "supervisor", label: "Supervisor" },
+  { value: "agent", label: "Agent" },
+];
+
+const ORG_USER_SALARY_TYPE_OPTIONS: EditFieldOption[] = [
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+];
+
+const ORG_USER_WEEKDAY_OPTIONS: EditFieldOption[] = [
+  { value: "monday", label: "Monday" },
+  { value: "tuesday", label: "Tuesday" },
+  { value: "wednesday", label: "Wednesday" },
+  { value: "thursday", label: "Thursday" },
+  { value: "friday", label: "Friday" },
+  { value: "saturday", label: "Saturday" },
+  { value: "sunday", label: "Sunday" },
 ];
 
 function escapeRegExp(value: string): string {
@@ -321,6 +344,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const isAgent = role === "agent";
   const { data: crmLabels = [] } = useCrmLabels(companyId ?? undefined);
+  const { data: companyZones = [] } = useCompanyZones(companyId ?? undefined);
   const leadStatusOptions: EditFieldOption[] = crmLabels.length > 0
     ? crmLabels.map((label) => ({ value: label.slug, label: label.name }))
     : LEAD_STATUS_OPTIONS;
@@ -531,7 +555,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const argKeys = rawArgs ? Object.keys(rawArgs) : [];
       const hasUserAssignmentField = argKeys.some((key) => USER_ASSIGNMENT_FIELD_PATTERN.test(key));
 
-      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "crm.send_email", "kpis.create", "notifications.send"].includes(tool) && !hasUserAssignmentField) {
+      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "crm.send_email", "kpis.create", "notifications.send", "org.users.create"].includes(tool) && !hasUserAssignmentField) {
         continue;
       }
 
@@ -545,7 +569,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         continue;
       }
 
-      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "kpis.create", "notifications.send"].includes(tool) || hasUserAssignmentField) {
+      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "kpis.create", "notifications.send", "org.users.create"].includes(tool) || hasUserAssignmentField) {
         if (isAgent && tool === "tasks.create") {
           continue;
         }
@@ -1058,6 +1082,51 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return merged;
     }
 
+    if (tool === "org.users.create") {
+      const merged: Record<string, unknown> = { ...baseArgs, ...draft };
+
+      if (Object.prototype.hasOwnProperty.call(draft, "base_salary")) {
+        const salary = Number(String(draft.base_salary ?? "").trim());
+        merged.base_salary = Number.isFinite(salary) ? salary : 0;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "commission_enabled")) {
+        const boolValue = String(draft.commission_enabled ?? "").trim().toLowerCase();
+        merged.commission_enabled = boolValue === "true";
+      }
+
+      const workDaysSource = Object.prototype.hasOwnProperty.call(draft, "work_days")
+        ? String(draft.work_days ?? "")
+        : (Array.isArray(baseArgs.work_days) ? baseArgs.work_days.join(",") : String(baseArgs.work_days ?? ""));
+      merged.work_days = workDaysSource
+        .split(",")
+        .map((item) => item.trim().toLowerCase())
+        .filter((item) => item !== "");
+
+      const zoneIdsSource = Object.prototype.hasOwnProperty.call(draft, "assigned_zone_ids")
+        ? String(draft.assigned_zone_ids ?? "")
+        : (Array.isArray(baseArgs.assigned_zone_ids) ? baseArgs.assigned_zone_ids.join(",") : "");
+      merged.assigned_zone_ids = zoneIdsSource
+        .split(",")
+        .map((item) => Number(item.trim()))
+        .filter((item) => Number.isFinite(item) && item > 0);
+
+      if (Object.prototype.hasOwnProperty.call(draft, "supervisor_user_id")) {
+        const supervisorId = Number(String(draft.supervisor_user_id ?? "").trim());
+        merged.supervisor_user_id = Number.isFinite(supervisorId) && supervisorId > 0 ? supervisorId : null;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "role")) {
+        const roleValue = String(draft.role ?? "").trim().toLowerCase();
+        merged.role = roleValue;
+        if (roleValue !== "agent") {
+          merged.supervisor_user_id = null;
+        }
+      }
+
+      return merged;
+    }
+
     if (Object.keys(draft).length === 0) {
       return baseArgs;
     }
@@ -1182,6 +1251,22 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }));
   }
 
+  function supervisorSelectOptions(msg: Message): EditFieldOption[] {
+    return (assigneeOptions[msg.id]?.items ?? [])
+      .filter((item) => ["owner", "admin", "supervisor"].includes(String(item.role ?? "").toLowerCase()))
+      .map((item) => ({
+        value: String(item.id),
+        label: item.name,
+      }));
+  }
+
+  function zoneSelectOptions(): EditFieldOption[] {
+    return companyZones.map((zone) => ({
+      value: String(zone.id),
+      label: zone.name,
+    }));
+  }
+
   function notificationRecipientLabel(msg: Message, args: Record<string, unknown>): string {
     const explicitNames = Array.isArray(args.recipient_names)
       ? args.recipient_names.map((name) => String(name).trim()).filter((name) => name !== "")
@@ -1296,6 +1381,20 @@ export function AIChat({ open, onClose }: AIChatProps) {
       ];
     }
 
+    if (tool === "org.users.create") {
+      return [
+        { key: "full_name", label: "Full Name", control: "text" },
+        { key: "email", label: "Email", control: "text" },
+        { key: "role", label: "Role", control: "select", options: ORG_USER_ROLE_OPTIONS },
+        { key: "assigned_zone_ids", label: "Assigned Zones", control: "multi-select", options: zoneSelectOptions() },
+        { key: "work_days", label: "Work Days", control: "multi-select", options: ORG_USER_WEEKDAY_OPTIONS },
+        { key: "salary_type", label: "Salary Type", control: "select", options: ORG_USER_SALARY_TYPE_OPTIONS },
+        { key: "base_salary", label: "Base Salary", control: "number" },
+        { key: "commission_enabled", label: "Commission Enabled", control: "select", options: [{ value: "true", label: "True" }, { value: "false", label: "False" }] },
+        { key: "supervisor_user_id", label: "Supervisor", control: "select", options: supervisorSelectOptions(msg) },
+      ];
+    }
+
     return Object.entries(args)
       .filter(([key]) => key !== "company_id")
       .map(([key]) => {
@@ -1385,6 +1484,14 @@ export function AIChat({ open, onClose }: AIChatProps) {
       }
 
       return parseDeliveryTypesValue(args.delivery_types).join(", ");
+    }
+
+    if (field.key === "assigned_zone_ids" || field.key === "work_days") {
+      const rawValue = args[field.key];
+      if (Array.isArray(rawValue)) {
+        return rawValue.map((item) => String(item)).join(",");
+      }
+      return "";
     }
 
     if (field.key === "to_email") {
@@ -1551,6 +1658,42 @@ export function AIChat({ open, onClose }: AIChatProps) {
       if (code === "recipient_email_missing") {
         const recipient = emailRecipientValue(msg, argsForChecks);
         if (recipient === "") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_full_name") {
+        const name = String(draft.full_name ?? args?.full_name ?? "").trim();
+        if (name.length < 2) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_email") {
+        const email = String(draft.email ?? args?.email ?? "").trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_supervisor") {
+        const resolvedRole = String(draft.role ?? args?.role ?? "").trim().toLowerCase();
+        const supervisorId = String(draft.supervisor_user_id ?? args?.supervisor_user_id ?? "").trim();
+        if (resolvedRole === "agent" && (supervisorId === "" || Number.isNaN(Number(supervisorId)))) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_zone") {
+        const fromDraft = String(draft.assigned_zone_ids ?? "").trim();
+        const zoneIds = fromDraft !== ""
+          ? fromDraft.split(",").map((item) => Number(item.trim())).filter((item) => Number.isFinite(item) && item > 0)
+          : (Array.isArray(args?.assigned_zone_ids) ? args.assigned_zone_ids : []);
+        if (!Array.isArray(zoneIds) || zoneIds.length === 0) {
           remaining.push(code);
         }
         continue;
@@ -3147,6 +3290,43 @@ export function AIChat({ open, onClose }: AIChatProps) {
                                             rows={3}
                                             className={`${baseClassName} resize-none`}
                                           />
+                                        </div>
+                                      );
+                                    }
+
+                                    if (field.control === "multi-select") {
+                                      const options = field.options ?? [];
+                                      const selectedValues = value
+                                        .split(",")
+                                        .map((item) => item.trim())
+                                        .filter((item) => item !== "");
+
+                                      return (
+                                        <div key={`${msg.id}-edit-${field.key}`} className="grid gap-1">
+                                          <label className="text-[11px] text-[#8CB9B3]">{field.label}</label>
+                                          <div className="flex flex-wrap gap-1.5">
+                                            {options.map((option) => {
+                                              const selected = selectedValues.includes(option.value);
+                                              return (
+                                                <button
+                                                  key={`${msg.id}-multi-${field.key}-${option.value}`}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const nextValues = selected
+                                                      ? selectedValues.filter((item) => item !== option.value)
+                                                      : [...selectedValues, option.value];
+                                                    updateActionDraft(msg.id, field.key, nextValues.join(","));
+                                                  }}
+                                                  className={`rounded-full border px-2.5 py-1 text-[11px] ${selected
+                                                    ? "border-[#4F8C83] bg-[#1E3E3A] text-[#C9E5E0]"
+                                                    : "border-[#355C57] bg-[#0D1C1C] text-[#8CB9B3]"
+                                                    }`}
+                                                >
+                                                  {option.label}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
                                         </div>
                                       );
                                     }

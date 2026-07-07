@@ -103,6 +103,17 @@ class CopilotService
             (int) $user->id,
         );
 
+        if (
+            preg_match('/\bproject\b/i', $message) === 1
+            && preg_match('/\b(delete|remove|cancel|archive)\b/i', $message) === 1
+        ) {
+            $intent = [
+                'type' => 'general',
+                'tool' => null,
+                'confidence' => 0.4,
+            ];
+        }
+
         if (($intent['type'] ?? 'general') === 'general' && $resolvedActionTool !== null) {
             $intent = [
                 'type' => 'action',
@@ -1752,6 +1763,7 @@ class CopilotService
             'missing_full_name' => 'Full name is required to create this organization user.',
             'missing_email' => 'A valid email address is required to create this organization user.',
             'missing_supervisor' => 'Agents must be assigned to a supervisor before confirming.',
+            'missing_zone' => 'At least one assigned zone is required for this organization user.',
         ];
 
         return collect($codes)
@@ -1878,6 +1890,10 @@ class CopilotService
 
         if (in_array('missing_supervisor', $validationWarningCodes, true)) {
             $blockingCodes[] = 'missing_supervisor';
+        }
+
+        if (in_array('missing_zone', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_zone';
         }
 
         if ((bool) config('services.ai.strict_confirmation_blocking', false)) {

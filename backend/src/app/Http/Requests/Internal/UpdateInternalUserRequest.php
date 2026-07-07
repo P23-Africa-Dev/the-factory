@@ -32,6 +32,8 @@ class UpdateInternalUserRequest extends FormRequest
             'role'         => ['sometimes', 'string', Rule::in(['admin', 'supervisor', 'agent'])],
             'phone_number' => ['sometimes', 'nullable', 'string', 'regex:/^\+[1-9][0-9]{7,14}$/'],
             'assigned_zone'=> ['sometimes', 'nullable', 'string', 'min:2', 'max:120'],
+            'assigned_zone_ids' => ['sometimes', 'nullable', 'array', 'max:50'],
+            'assigned_zone_ids.*' => ['integer', 'exists:company_zones,id'],
         ];
     }
 }
