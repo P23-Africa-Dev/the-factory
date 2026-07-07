@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\AI;
 
+use App\Models\AiLog;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
 use App\Enums\TaskType;
@@ -13,6 +14,7 @@ use App\Models\LeadPipeline;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\AI\Providers\AiProviderRouter;
+use Tests\Support\AiGenerationTestFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Mockery;
@@ -21,6 +23,15 @@ use Tests\TestCase;
 final class CopilotReadFlowTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config([
+            'services.ai.enable_read_synthesis' => false,
+            'services.ai.enable_hybrid_router' => false,
+        ]);
+    }
 
     public function test_admin_can_get_overdue_tasks_summary_and_thread_is_persisted(): void
     {
@@ -65,6 +76,74 @@ final class CopilotReadFlowTest extends TestCase
             ->getJson('/api/v1/copilot/threads/' . $response->json('data.thread_id') . '?company_id=' . $company->id)
             ->assertOk()
             ->assertJsonCount(2, 'data.thread.messages');
+
+        $this->assertSame(0, AiLog::query()->count());
+        $this->assertSame(0, AiLog::query()->llmInvocations()->count());
+    }
+
+    public function test_overdue_tasks_response_uses_agent_names_instead_of_ids(): void
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+
+        $agentOne = User::factory()->createOne(['name' => 'Tunde Ade']);
+        $agentTwo = User::factory()->createOne(['name' => 'Amara Bello']);
+        $company->users()->attach($agentOne->id, ['role' => 'agent', 'joined_at' => now()]);
+        $company->users()->attach($agentTwo->id, ['role' => 'agent', 'joined_at' => now()]);
+
+        Task::query()->create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agentOne->id,
+            'last_status_updated_by_user_id' => $admin->id,
+            'title' => 'test the task stuff',
+            'type' => TaskType::SALES_VISIT->value,
+            'due_at' => now()->subDay(),
+            'priority' => TaskPriority::MEDIUM->value,
+            'status' => TaskStatus::PENDING->value,
+        ]);
+
+        Task::query()->create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agentOne->id,
+            'last_status_updated_by_user_id' => $admin->id,
+            'title' => 'Outreach to Bokku',
+            'type' => TaskType::SALES_VISIT->value,
+            'due_at' => now()->subDays(2),
+            'priority' => TaskPriority::HIGH->value,
+            'status' => TaskStatus::PENDING->value,
+        ]);
+
+        Task::query()->create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agentTwo->id,
+            'last_status_updated_by_user_id' => $admin->id,
+            'title' => 'Visit Lekki',
+            'type' => TaskType::SALES_VISIT->value,
+            'due_at' => now()->subDay(),
+            'priority' => TaskPriority::MEDIUM->value,
+            'status' => TaskStatus::PENDING->value,
+        ]);
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'What are the agents assigned to these overdue tasks?',
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.response.tool', 'tasks.overdue');
+
+        $items = $response->json('data.response.payload.items');
+        $this->assertIsArray($items);
+        $this->assertSame('Tunde Ade', $items[0]['assigned_agent_name'] ?? null);
+
+        $content = (string) $response->json('data.response.content');
+        $this->assertStringContainsString('Tunde Ade', $content);
+        $this->assertStringContainsString('Amara Bello', $content);
+        $this->assertStringNotContainsString('Agent with ID', $content);
+        $this->assertDoesNotMatchRegularExpression('/\bAgent\b.*\bID\b/i', $content);
     }
 
     public function test_follow_up_general_prompt_includes_thread_context_and_entities(): void
@@ -74,23 +153,15 @@ final class CopilotReadFlowTest extends TestCase
         $capturedPrompts = [];
         $mockRouter = Mockery::mock(AiProviderRouter::class);
         $mockRouter
-            ->shouldReceive('routingMetadata')
-            ->with('operational')
-            ->andReturn([
-                'provider' => 'openai',
-                'model' => 'gpt-4.1-mini',
-                'purpose' => 'operational',
-            ]);
-        $mockRouter
             ->shouldReceive('generateForPurpose')
             ->twice()
             ->withArgs(function (string $purpose): bool {
                 return $purpose === 'operational';
             })
-            ->andReturnUsing(function (string $purpose, string $systemPrompt, string $userPrompt) use (&$capturedPrompts): string {
+            ->andReturnUsing(function (string $purpose, string $systemPrompt, string $userPrompt) use (&$capturedPrompts) {
                 $capturedPrompts[] = $userPrompt;
 
-                return 'Provider response';
+                return AiGenerationTestFactory::result('Provider response');
             });
 
         $this->app->instance(AiProviderRouter::class, $mockRouter);
@@ -130,24 +201,16 @@ final class CopilotReadFlowTest extends TestCase
         $capturedSystemPrompt = null;
         $mockRouter = Mockery::mock(AiProviderRouter::class);
         $mockRouter
-            ->shouldReceive('routingMetadata')
-            ->with('operational')
-            ->andReturn([
-                'provider' => 'openai',
-                'model' => 'gpt-4.1-mini',
-                'purpose' => 'operational',
-            ]);
-        $mockRouter
             ->shouldReceive('generateForPurpose')
             ->once()
             ->withArgs(function (string $purpose): bool {
                 return $purpose === 'operational';
             })
-            ->andReturnUsing(function (string $purpose, string $systemPrompt, string $userPrompt) use (&$capturedPrompt, &$capturedSystemPrompt): string {
+            ->andReturnUsing(function (string $purpose, string $systemPrompt, string $userPrompt) use (&$capturedPrompt, &$capturedSystemPrompt) {
                 $capturedPrompt = $userPrompt;
                 $capturedSystemPrompt = $systemPrompt;
 
-                return 'Provider response';
+                return AiGenerationTestFactory::result('Provider response');
             });
 
         $this->app->instance(AiProviderRouter::class, $mockRouter);
@@ -254,18 +317,9 @@ final class CopilotReadFlowTest extends TestCase
 
         $mockRouter = Mockery::mock(AiProviderRouter::class);
         $mockRouter
-            ->shouldReceive('routingMetadata')
-            ->once()
-            ->with('operational')
-            ->andReturn([
-                'provider' => 'openai',
-                'model' => 'gpt-4.1-mini',
-                'purpose' => 'operational',
-            ]);
-        $mockRouter
             ->shouldReceive('generateForPurpose')
             ->once()
-            ->andReturn('Hello from ELY streaming.');
+            ->andReturn(AiGenerationTestFactory::result('Hello from ELY streaming.'));
         $this->app->instance(AiProviderRouter::class, $mockRouter);
 
         $response = $this

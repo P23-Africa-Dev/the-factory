@@ -7,9 +7,11 @@ namespace App\Services\Notification;
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationDeliveryType;
 use App\Enums\NotificationPriority;
+use App\Jobs\DeliverEmailNotificationJob;
 use App\Jobs\DeliverPushNotificationJob;
 use App\Models\AppNotification;
 use App\Models\User;
+use App\Services\Demo\DemoCompanyService;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +23,7 @@ class NotificationService
         private readonly NotificationPreferenceService $notificationPreferenceService,
         private readonly NotificationRealtimeService $notificationRealtimeService,
         private readonly PushNotificationService $pushNotificationService,
+        private readonly DemoCompanyService $demoCompanyService,
     ) {}
 
     public function notifyUser(int $userId, array $payload): ?AppNotification
@@ -47,6 +50,14 @@ class NotificationService
 
         $pushAllowed = $preference['push_enabled']
             && in_array(NotificationDeliveryType::PUSH->value, $deliveryTypes, true);
+
+        $emailAllowed = $preference['email_enabled']
+            && in_array(NotificationDeliveryType::EMAIL->value, $deliveryTypes, true);
+
+        if ($companyId !== null && $this->demoCompanyService->isDemo($companyId)) {
+            $pushAllowed = false;
+            $emailAllowed = false;
+        }
 
         $dedupeKey = $payload['dedupe_key'] ?? null;
         if (is_string($dedupeKey) && $dedupeKey !== '') {
@@ -81,6 +92,10 @@ class NotificationService
             foreach ($subscriptions as $subscription) {
                 DeliverPushNotificationJob::dispatch((int) $subscription->id, (int) $notification->id);
             }
+        }
+
+        if ($emailAllowed) {
+            DeliverEmailNotificationJob::dispatch((int) $notification->id, $userId);
         }
 
         $this->notificationRealtimeService->publishToUser($userId, 'notifications.created', [

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Calendar;
 
 use App\Models\Meeting;
+use App\Services\Demo\DemoCompanyService;
 use Illuminate\Support\Facades\Log;
 
 class MeetingSyncService
@@ -12,6 +13,7 @@ class MeetingSyncService
     public function __construct(
         private readonly GoogleCalendarEventService $googleCalendarEventService,
         private readonly CalendarConnectionResolver $connectionResolver,
+        private readonly DemoCompanyService $demoCompanyService,
     ) {}
 
     public function syncMeeting(int $meetingId): void
@@ -21,6 +23,15 @@ class MeetingSyncService
             ->find($meetingId);
 
         if (! $meeting) {
+            return;
+        }
+
+        if ($this->demoCompanyService->isDemo((int) $meeting->company_id)) {
+            Log::info('Meeting sync skipped for demo company.', [
+                'meeting_id' => $meeting->id,
+                'company_id' => $meeting->company_id,
+            ]);
+
             return;
         }
 
@@ -91,6 +102,15 @@ class MeetingSyncService
         $meeting = Meeting::query()->find($meetingId);
 
         if (! $meeting) {
+            return;
+        }
+
+        if ($this->demoCompanyService->isDemo((int) $meeting->company_id)) {
+            Log::info('Meeting cancel skipped for demo company.', [
+                'meeting_id' => $meeting->id,
+                'company_id' => $meeting->company_id,
+            ]);
+
             return;
         }
 

@@ -1,0 +1,56 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CoreDNS Split-Horizon DNS Override
+#
+# WHY THIS EXISTS:
+#   DigitalOcean Kubernetes does not support "hairpin NAT" — pods inside the
+#   cluster cannot connect to the LoadBalancer's external IP (157.245.28.86)
+#   because DO's LB drops intra-cluster loopback traffic.
+#
+#   cert-manager's HTTP-01 self-check resolves api.thefactory23.com →
+#   157.245.28.86, then tries to connect from inside the cluster. The
+#   connection times out (reported as EOF by cert-manager), blocking all
+#   certificate issuance forever.
+#
+# FIX:
+#   DOKS CoreDNS supports a custom ConfigMap extension via:
+#     import custom/*.override  (injected inside the .:53 server block)
+#     import custom/*.server    (injected as additional top-level server blocks)
+#   Keys matching *.override are inserted inside the main .:53 block.
+#
+#   This ConfigMap adds a CoreDNS `hosts` block that resolves
+#   api.thefactory23.com → 10.108.53.190 (ingress-nginx ClusterIP) for all
+#   pods inside the cluster. External DNS is unaffected.
+#
+#   Result:
+#   - cert-manager self-check → 10.108.53.190:80 → ingress-nginx → solver ✓
+#   - Let's Encrypt ACME server → 157.245.28.86 (external LB) → solver ✓
+#   - In-cluster services → 10.108.53.190 (no hairpin, fast) ✓
+#   - External clients → 157.245.28.86 (LB, unchanged) ✓
+#
+# APPLY:
+#   kubectl apply -f coredns-custom.yaml
+#   kubectl rollout restart deployment/coredns -n kube-system
+#
+# UPDATE IF LB IP CHANGES:
+#   kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.spec.clusterIP}'
+#   Update the IP below and re-apply.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: coredns-custom
+    app.kubernetes.io/component: dns-override
+data:
+  # Key MUST end in .override to be picked up by `import custom/*.override`
+  # inside DOKS's CoreDNS main Corefile (imported inside the .:53 block)
+  thefactory23.override: |
+    hosts {
+      # ingress-nginx ClusterIP — stable internal endpoint for api.thefactory23.com
+      # To find this: kubectl get svc -n ingress-nginx ingress-nginx-controller \
+      #               -o jsonpath='{.spec.clusterIP}'
+      10.108.53.190 api.thefactory23.com
+      fallthrough
+    }

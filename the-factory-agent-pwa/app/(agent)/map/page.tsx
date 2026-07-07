@@ -45,6 +45,7 @@ import {
   requestTrackingNotificationPermission,
 } from '@/lib/notifications/trackingAlerts';
 import { getApiErrorMessage, startMapTaskSession } from '@/features/tracking/lib/startMapTaskSession';
+import { demoSyntheticStartFromDestination, isDemoOrganization } from '@/features/tracking/lib/demoTracking';
 import { toast } from '@/lib/toast';
 import {
   useSavedLocations,
@@ -1079,6 +1080,7 @@ function MapContent() {
 
   // Restore destination on resume (e.g. /map?taskId=…) before task detail fetch completes.
   useEffect(() => {
+    if (!isFromTrackingScreen) return;
     if (selectedDestination) return;
     const dest = taskRoute?.destination ?? liveTask?.destination;
     if (!dest) return;
@@ -1092,6 +1094,7 @@ function MapContent() {
       taskStatus: trackingTask?.status ?? activeTask?.status,
     });
   }, [
+    isFromTrackingScreen,
     selectedDestination,
     taskRoute?.destination,
     liveTask?.destination,
@@ -1106,6 +1109,7 @@ function MapContent() {
 
   // Auto-fill destination from resolved task
   useEffect(() => {
+    if (!isFromTrackingScreen) return;
     if (selectedDestination !== null) return;
     if (!activeTask || !taskHasMapLocation(activeTask)) return;
     setTimeout(() => setSelectedDestination({
@@ -1115,7 +1119,7 @@ function MapContent() {
       longitude: activeTask.longitude,
       taskId: Number(activeTask.id),
     }), 0);
-  }, [activeTask, selectedDestination]);
+  }, [isFromTrackingScreen, activeTask, selectedDestination]);
 
   // Advance idle → destination_selected when destination arrives
   useEffect(() => {
@@ -1508,11 +1512,20 @@ function MapContent() {
     };
 
     try {
+      const demoSyntheticStart =
+        isDemoOrganization(profile) && selectedDestination
+          ? demoSyntheticStartFromDestination(
+              selectedDestination.latitude,
+              selectedDestination.longitude,
+            )
+          : null;
+
       const result = await startMapTaskSession({
         taskId,
         companyId,
         isResume,
         lastPosition,
+        syntheticStart: demoSyntheticStart,
         customOrigin: customOrigin
           ? { latitude: customOrigin.latitude, longitude: customOrigin.longitude }
           : null,

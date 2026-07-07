@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, ChevronUp, ClipboardList, Radio, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, ClipboardList, Eye, EyeOff, Radio, X } from 'lucide-react';
 import { AgentMapView } from '@/components/map/agent-map-view';
 import { BusinessListPanel } from '@/components/map/BusinessListPanel';
 import { LocationSearchInput } from '@/components/map/LocationSearchInput';
@@ -35,6 +35,7 @@ export default function AgentMapPage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [locationCtx, setLocationCtx] = useState<LocationContext | null>(null);
   const [focusLocation, setFocusLocation] = useState<SavedLocation | null>(null);
+  const [showPinnedBusinesses, setShowPinnedBusinesses] = useState(true);
 
   const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
 
@@ -109,6 +110,7 @@ export default function AgentMapPage() {
   return (
     <div className="relative">
       <AgentMapView
+        showSavedLocations={showPinnedBusinesses}
         focusLocation={focusLocation}
         pinToolbarClassName={
           sheetOpen
@@ -189,6 +191,13 @@ export default function AgentMapPage() {
                 <Radio size={14} />
               )}
               {resuming ? 'Loading…' : 'Active Tracking'}
+            </button>
+            <button
+              onClick={() => setShowPinnedBusinesses((visible) => !visible)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white/95 backdrop-blur rounded-full text-[12px] font-bold text-dash-dark shadow-lg border border-slate-100 hover:bg-white transition-all"
+            >
+              {showPinnedBusinesses ? <EyeOff size={14} className="text-[#7EB5AE]" /> : <Eye size={14} className="text-[#7EB5AE]" />}
+              {showPinnedBusinesses ? 'Hide Pins' : 'Show Pins'}
             </button>
           </div>
           {resumeError && (

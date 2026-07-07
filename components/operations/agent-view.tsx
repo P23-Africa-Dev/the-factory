@@ -16,6 +16,7 @@ import {
   mapApiPresence,
 } from "@/lib/agent-presence";
 import type { InternalUserListItem } from "@/lib/api/internal-users";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 function mapToAgentItem(input: InternalUserListItem): AgentItem {
   const presence = mapApiPresence(input.presence);
@@ -34,7 +35,7 @@ function mapToAgentItem(input: InternalUserListItem): AgentItem {
     role: input.internal_role ?? input.role,
     status: labels.badgeLabel,
     time: labels.subtextLabel,
-    avatar: input.avatar_url ?? "/avatars/male-avatar.png",
+    avatar: resolveAvatarSrc(input.avatar_url),
     active: labels.isMapActive,
     isMapActive: labels.isMapActive,
     isSessionOnline: labels.isSessionOnline,

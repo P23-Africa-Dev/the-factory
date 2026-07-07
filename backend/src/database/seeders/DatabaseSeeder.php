@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call(AdminUserSeeder::class);
+        $this->call(BillingPlanSeeder::class);
 
         // if (app()->environment('local', 'testing')) {
         //     User::factory()->create([

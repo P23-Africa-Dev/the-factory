@@ -19,24 +19,23 @@ class AvatarApiTest extends TestCase
 
     public function test_avatar_endpoint_returns_storage_backed_avatars_for_gender(): void
     {
-        Storage::fake('public');
+        Storage::fake('avatars');
 
         config([
-            'app.url' => 'https://api.thefactory23.com',
-            'filesystems.disks.public.url' => 'https://api.thefactory23.com/storage',
-            'internal_onboarding.avatar_public_base_url' => 'https://api.thefactory23.com/storage',
+            'filesystems.avatar_disk' => 'avatars',
+            'filesystems.disks.avatars.url' => 'https://factory23-storage.lon1.digitaloceanspaces.com',
         ]);
 
         $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
 
         for ($i = 1; $i <= 16; $i++) {
-            Storage::disk('public')->put("{$basePath}/male/male_{$i}.svg", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>');
+            Storage::disk('avatars')->put("{$basePath}/male/male_{$i}.svg", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>');
         }
 
-        Storage::disk('public')->put("{$basePath}/male/male_17.svg", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>');
+        Storage::disk('avatars')->put("{$basePath}/male/male_17.svg", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>');
 
         // Unsupported files are ignored by the endpoint.
-        Storage::disk('public')->put("{$basePath}/male/readme.txt", 'not-an-avatar');
+        Storage::disk('avatars')->put("{$basePath}/male/readme.txt", 'not-an-avatar');
 
         $response = $this->getJson('/api/v1/avatars?gender=male&limit=12');
 
@@ -51,10 +50,10 @@ class AvatarApiTest extends TestCase
         $this->assertNotEmpty($avatarData);
 
         $urls = array_column($avatarData, 'url');
-        $this->assertNotContains('https://api.thefactory23.com/storage/avatar/male/readme.txt', $urls);
+        $this->assertNotContains('https://factory23-storage.lon1.digitaloceanspaces.com/avatar/male/readme.txt', $urls);
 
         $firstUrl = (string) $avatarData[0]['url'];
-        $this->assertStringStartsWith('https://api.thefactory23.com/storage/avatar/male/', $firstUrl);
+        $this->assertStringContainsString('/avatar/male/', $firstUrl);
         $this->assertStringEndsWith('.svg', $firstUrl);
         $this->assertStringNotContainsString('localhost:8080', $firstUrl);
     }

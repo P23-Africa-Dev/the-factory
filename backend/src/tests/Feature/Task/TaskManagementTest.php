@@ -60,7 +60,7 @@ class TaskManagementTest extends TestCase
 
                 return in_array('mail', $channels, true)
                     && $mailMessage->mailer === 'resend'
-                    && $mailMessage->subject === 'New task assigned';
+                    && $mailMessage->subject === 'New task assigned — Factory23';
             },
         );
     }
@@ -91,7 +91,7 @@ class TaskManagementTest extends TestCase
 
                 return in_array('mail', $channels, true)
                     && $mailMessage->mailer === 'resend'
-                    && $mailMessage->subject === 'Self task created';
+                    && $mailMessage->subject === 'Task created — Factory23';
             },
         );
     }

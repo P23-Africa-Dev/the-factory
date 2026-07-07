@@ -74,6 +74,31 @@ class WorkspaceCreationTest extends TestCase
         $this->assertNotNull($user->fresh()->onboarding_completed_at);
     }
 
+    public function test_verified_user_can_create_workspace_with_full_country_name(): void
+    {
+        $user = User::factory()->create([
+            'email_verified_at' => now(),
+            'onboarding_completed_at' => null,
+        ]);
+
+        $token = $user->createToken('test-token', ['*'])->plainTextToken;
+
+        $response = $this->withToken($token)->postJson('/api/v1/onboarding/workspace', [
+            'company_name' => 'The Factory Labs',
+            'country' => 'Nigeria',
+            'team_size' => '2-10',
+            'purpose' => 'startup',
+            'user_type' => 'founder',
+        ]);
+
+        $response->assertStatus(201);
+
+        $this->assertDatabaseHas('workspaces', [
+            'name' => 'The Factory Labs',
+            'country' => 'NG',
+        ]);
+    }
+
     public function test_unauthenticated_user_cannot_create_workspace(): void
     {
         $response = $this->postJson('/api/v1/onboarding/workspace', [

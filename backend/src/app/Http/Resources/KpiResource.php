@@ -38,7 +38,7 @@ class KpiResource extends JsonResource
                 'id' => $this->assignee->id,
                 'name' => $this->assignee->name,
                 'email' => $this->assignee->email,
-                'avatar_url' => AvatarUrlResolver::resolve($this->assignee->avatar, $this->assignee->gender),
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($this->assignee->avatar, $this->assignee->gender),
             ] : null),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

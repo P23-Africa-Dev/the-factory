@@ -17,11 +17,12 @@ class SubscriptionLifecycleService
 {
     public function __construct(
         private readonly CompanySubscriptionService $subscriptionService,
+        private readonly BillingEnforcementSettingService $billingEnforcement,
     ) {}
 
     public function process(): void
     {
-        if (! (bool) config('billing.enforce', true)) {
+        if (! $this->billingEnforcement->isEnabled()) {
             Log::info('billing.enforce is disabled — skipping subscription lifecycle processing.');
 
             return;
@@ -38,7 +39,7 @@ class SubscriptionLifecycleService
         $daysList = config('billing.reminder_days_before_expiry', [7, 5, 3, 1]);
 
         foreach ($daysList as $days) {
-            Company::query()
+            $this->nonDemoCompanies()
                 ->where('subscription_status', SubscriptionStatus::ACTIVE->value)
                 ->whereNotNull('subscription_current_period_end')
                 ->whereDate('subscription_current_period_end', now()->addDays((int) $days)->toDateString())
@@ -74,7 +75,7 @@ class SubscriptionLifecycleService
 
     private function transitionExpiredToGrace(): void
     {
-        Company::query()
+        $this->nonDemoCompanies()
             ->where('subscription_status', SubscriptionStatus::ACTIVE->value)
             ->whereNotNull('subscription_current_period_end')
             ->where('subscription_current_period_end', '<=', now())
@@ -108,7 +109,7 @@ class SubscriptionLifecycleService
     {
         $daysList = config('billing.grace_reminder_days', [5, 3, 1]);
 
-        Company::query()
+        $this->nonDemoCompanies()
             ->where('subscription_status', SubscriptionStatus::GRACE->value)
             ->whereNotNull('subscription_grace_ends_at')
             ->each(function (Company $company) use ($daysList): void {
@@ -148,7 +149,7 @@ class SubscriptionLifecycleService
 
     private function suspendAfterGrace(): void
     {
-        Company::query()
+        $this->nonDemoCompanies()
             ->whereIn('subscription_status', [
                 SubscriptionStatus::GRACE->value,
                 SubscriptionStatus::PAST_DUE->value,
@@ -195,5 +196,10 @@ class SubscriptionLifecycleService
             'days_remaining' => $daysRemaining,
             'sent_at' => now(),
         ]);
+    }
+
+    private function nonDemoCompanies()
+    {
+        return Company::query()->where('is_demo', false);
     }
 }

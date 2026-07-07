@@ -6,6 +6,7 @@ export interface AssistantMessage {
   content: string;
   sources?: string[];
   tool?: string | null;
+  payload?: Record<string, unknown> | null;
   created_at?: string;
   /** Local-only flag for optimistic messages that failed to send. */
   failed?: boolean;
@@ -37,4 +38,5 @@ export interface SendMessageResult {
   content: string;
   sources: string[];
   tool: string | null;
+  payload: Record<string, unknown> | null;
 }

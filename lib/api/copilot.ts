@@ -123,6 +123,7 @@ export type WeeklySummaryStatusResponse = {
     progress: number;
     error: string | null;
     available: boolean;
+    drive_file_id?: number | null;
 };
 
 const WEEKLY_SUMMARY_STATUSES = new Set<WeeklySummaryStatusResponse["status"]>([
@@ -145,6 +146,7 @@ export function normalizeWeeklySummaryStatus(raw: Record<string, unknown>): Week
         progress: typeof raw.progress === "number" ? raw.progress : Number(raw.progress) || 0,
         error: typeof raw.error === "string" ? raw.error : null,
         available: status === "completed" && downloadReady,
+        drive_file_id: raw.drive_file_id != null ? Number(raw.drive_file_id) : null,
     };
 }
 

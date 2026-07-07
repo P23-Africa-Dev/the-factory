@@ -2,15 +2,17 @@
 
 import { useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { toast } from "sonner";
 
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Select from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { getCountries } from "@/lib/api/enterprise";
 import {
   ApiRequestError,
   createWorkspace,
@@ -26,11 +28,7 @@ import { useAuthStore } from "@/store/auth";
 
 const onboardingSchema = z.object({
   company_name: z.string().min(2, "Company name must be at least 2 characters."),
-  country: z
-    .string()
-    .trim()
-    .length(2, "Country must be a 2-letter ISO code (e.g. NG, US).")
-    .regex(/^[A-Za-z]{2}$/, "Country must contain only letters."),
+  country: z.string().min(2, "Please select a country."),
   team_size: z.enum(["solo", "2-10", "11-50", "51-200", "201-500", "500+"]),
   purpose: z.enum([
     "personal",
@@ -55,6 +53,9 @@ const onboardingSchema = z.object({
 });
 
 type SelfServeOnboardingValues = z.infer<typeof onboardingSchema>;
+
+const countrySelectClassName =
+  "w-full h-[60px] px-7 rounded-full border shadow-[0px_1px_2px_0px_#0000004D] border-gray-200 text-xs text-[#34373C] outline-none focus:border-[#A9AAAB] transition-colors bg-white cursor-pointer disabled:cursor-not-allowed disabled:opacity-60";
 
 const teamSizeOptions = [
   { label: "Solo", value: "solo" },
@@ -92,7 +93,19 @@ export default function SelfServeOnboardingForm() {
   const setUser = useAuthStore((s) => s.setUser);
 
   const {
+    data: countryOptions = [],
+    isPending: isCountriesPending,
+    isError: isCountriesError,
+  } = useQuery({
+    queryKey: ["countries"],
+    queryFn: getCountries,
+    retry: 1,
+    staleTime: Infinity,
+  });
+
+  const {
     register,
+    control,
     handleSubmit,
     formState: { errors },
     watch,
@@ -112,7 +125,7 @@ export default function SelfServeOnboardingForm() {
   const isFilled = useMemo(
     () =>
       values.company_name?.trim().length > 1 &&
-      values.country?.trim().length === 2 &&
+      values.country?.trim().length >= 2 &&
       Boolean(values.team_size) &&
       Boolean(values.purpose) &&
       Boolean(values.user_type),
@@ -195,7 +208,7 @@ export default function SelfServeOnboardingForm() {
   const submit = (formValues: SelfServeOnboardingValues) => {
     completeMutation.mutate({
       company_name: formValues.company_name.trim(),
-      country: formValues.country.trim().toUpperCase(),
+      country: formValues.country.trim(),
       team_size: formValues.team_size,
       purpose: formValues.purpose,
       user_type: formValues.user_type,
@@ -214,13 +227,26 @@ export default function SelfServeOnboardingForm() {
         <p className="text-xs text-red-500 mb-4 px-4">{errors.company_name.message}</p>
       )}
 
-      <Input
-        type="text"
-        placeholder="Country Code (e.g. NG)"
-        className="mb-2 uppercase"
-        maxLength={2}
-        {...register("country")}
-      />
+      <div className="mb-2">
+        <Controller
+          name="country"
+          control={control}
+          render={({ field }) => (
+            <SearchableSelect
+              value={field.value}
+              onChange={field.onChange}
+              options={countryOptions}
+              placeholder={isCountriesPending ? "Loading countries..." : "Select Country"}
+              searchPlaceholder="Search countries..."
+              disabled={isCountriesPending || isCountriesError}
+              className={countrySelectClassName}
+            />
+          )}
+        />
+      </div>
+      {isCountriesError && (
+        <p className="text-xs text-red-500 mb-4 px-4">Unable to load countries. Please refresh.</p>
+      )}
       {errors.country && (
         <p className="text-xs text-red-500 mb-4 px-4">{errors.country.message}</p>
       )}

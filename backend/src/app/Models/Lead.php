@@ -27,6 +27,10 @@ class Lead extends Model
         'email',
         'phone',
         'location',
+        'company_name',
+        'website',
+        'position',
+        'profile_urls',
         'source',
         'status',
         'priority',
@@ -46,6 +50,7 @@ class Lead extends Model
             'priority' => LeadPriority::class,
             'budget_amount' => 'decimal:2',
             'meta' => 'array',
+            'profile_urls' => 'array',
             'last_interaction_at' => 'datetime',
             'converted_at' => 'datetime',
         ];

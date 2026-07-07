@@ -3,13 +3,15 @@
 import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, MapPin, AlertCircle, Plus } from 'lucide-react';
 import { CreateTaskModal } from '@/features/tasks/components/CreateTaskModal';
+import { ArrowLeft, MapPin, AlertCircle, Pencil, Trash2 } from 'lucide-react';
 
 import {
   useTaskList,
   useUpdateTaskStatus,
   useTaskNavigation,
+  useUpdateTask,
+  useDeleteTask,
   isResumeTrackingStatus,
   flattenTaskPages,
   taskHasMapLocation,
@@ -119,11 +121,15 @@ function TaskCard({
   onPrimaryAction,
   onDecline,
   onPress,
+  onEdit,
+  onDelete,
 }: {
   task: Task;
   onPrimaryAction: (e: React.MouseEvent) => void;
   onDecline: (e: React.MouseEvent) => void;
   onPress: () => void;
+  onEdit: (e: React.MouseEvent) => void;
+  onDelete: (e: React.MouseEvent) => void;
 }) {
   const statusColor = STATUS_COLOR[task.status] ?? '#8F9098';
   const isPending = task.status === 'pending';
@@ -146,12 +152,26 @@ function TaskCard({
           <h4 className="font-sans font-bold text-sm text-white line-clamp-2 leading-relaxed">
             {task.title}
           </h4>
-          <span
-            className="px-2.5 py-1 rounded-full text-[10px] font-semibold flex-shrink-0 font-sans"
-            style={{ backgroundColor: `${statusColor}22`, color: statusColor }}
-          >
-            {STATUS_LABEL[task.status] ?? task.status}
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onEdit}
+              className="h-7 w-7 rounded-full border border-white/15 text-[#75ADAF] flex items-center justify-center"
+            >
+              <Pencil size={13} />
+            </button>
+            <button
+              onClick={onDelete}
+              className="h-7 w-7 rounded-full border border-white/15 text-[#FD6046] flex items-center justify-center"
+            >
+              <Trash2 size={13} />
+            </button>
+            <span
+              className="px-2.5 py-1 rounded-full text-[10px] font-semibold flex-shrink-0 font-sans"
+              style={{ backgroundColor: `${statusColor}22`, color: statusColor }}
+            >
+              {STATUS_LABEL[task.status] ?? task.status}
+            </span>
+          </div>
         </div>
 
         {task.description && (
@@ -321,6 +341,9 @@ export default function TasksPage() {
   const [activeFilter, setActiveFilter] = useState<FilterKey>('pending');
   const [taskToDecline, setTaskToDecline] = useState<Task | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [editForm, setEditForm] = useState({ title: '', description: '', location: '', address: '' });
 
   // KPIs States
   const [activeKpiFilter, setActiveKpiFilter] = useState<KpiStatus | 'all'>('all');
@@ -344,7 +367,9 @@ export default function TasksPage() {
 
   const tasks = useMemo(() => flattenTaskPages(listData), [listData]);
   const { mutate: updateStatus, isPending: isDeclining } = useUpdateTaskStatus();
-  const { goToTaskDetail, goToTracking, goToContinueTracking } = useTaskNavigation();
+  const { mutate: updateTask, isPending: isSavingTask } = useUpdateTask();
+  const { mutate: deleteTask, isPending: isDeletingTask } = useDeleteTask();
+  const { goToTaskDetail, goToContinueTracking } = useTaskNavigation();
 
   // KPIs Queries
   const kpiFilters = useMemo(
@@ -540,6 +565,20 @@ export default function TasksPage() {
                       e.stopPropagation();
                       setTaskToDecline(task);
                     }}
+                    onEdit={(e) => {
+                      e.stopPropagation();
+                      setTaskToEdit(task);
+                      setEditForm({
+                        title: task.title ?? '',
+                        description: task.description ?? '',
+                        location: task.location ?? '',
+                        address: task.address ?? '',
+                      });
+                    }}
+                    onDelete={(e) => {
+                      e.stopPropagation();
+                      setTaskToDelete(task);
+                    }}
                   />
                 ))}
 
@@ -708,6 +747,91 @@ export default function TasksPage() {
           refetchTasks();
         }}
       />
+      <AnimatePresence>
+        {taskToEdit && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/65 px-6">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md rounded-3xl border border-white/10 bg-[#0B1E26] p-5 text-white"
+            >
+              <h3 className="mb-4 text-lg font-bold font-sans">Edit Task</h3>
+              <div className="space-y-3">
+                <input className="w-full h-10 rounded-xl bg-white/5 border border-white/10 px-3 text-sm" value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} placeholder="Task title" />
+                <textarea className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm min-h-20" value={editForm.description} onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))} placeholder="Description" />
+                <input className="w-full h-10 rounded-xl bg-white/5 border border-white/10 px-3 text-sm" value={editForm.location} onChange={(e) => setEditForm((p) => ({ ...p, location: e.target.value }))} placeholder="Location" />
+                <input className="w-full h-10 rounded-xl bg-white/5 border border-white/10 px-3 text-sm" value={editForm.address} onChange={(e) => setEditForm((p) => ({ ...p, address: e.target.value }))} placeholder="Address" />
+              </div>
+              <div className="mt-5 flex gap-3">
+                <button className="flex-1 h-10 rounded-full border border-white/15 text-xs font-semibold" onClick={() => setTaskToEdit(null)}>Cancel</button>
+                <button
+                  className="flex-1 h-10 rounded-full bg-[#75ADAF] text-xs font-semibold"
+                  disabled={isSavingTask}
+                  onClick={() => {
+                    updateTask(
+                      {
+                        id: taskToEdit.id,
+                        title: editForm.title,
+                        description: editForm.description || undefined,
+                        location: editForm.location || undefined,
+                        address: editForm.address || undefined,
+                      },
+                      {
+                        onSuccess: () => {
+                          toast.success('Task updated');
+                          setTaskToEdit(null);
+                        },
+                        onError: (err: unknown) => {
+                          toast.error(err instanceof Error ? err.message : 'Failed to update task');
+                        },
+                      },
+                    );
+                  }}
+                >
+                  {isSavingTask ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {taskToDelete && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/65 px-8">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0B1E26] p-6 text-center"
+            >
+              <h3 className="mb-2 text-lg font-bold text-white font-sans">Delete Task</h3>
+              <p className="mb-6 text-xs text-[#8F9098]">Delete &quot;{taskToDelete.title}&quot; permanently?</p>
+              <div className="flex gap-3">
+                <button className="flex-1 h-11 rounded-full border border-white/15 text-white text-xs" onClick={() => setTaskToDelete(null)}>Cancel</button>
+                <button
+                  className="flex-1 h-11 rounded-full bg-[#FD6046] text-white text-xs font-semibold"
+                  disabled={isDeletingTask}
+                  onClick={() => {
+                    deleteTask(taskToDelete.id, {
+                      onSuccess: () => {
+                        toast.success('Task deleted');
+                        setTaskToDelete(null);
+                      },
+                      onError: (err: unknown) => {
+                        toast.error(err instanceof Error ? err.message : 'Failed to delete task');
+                      },
+                    });
+                  }}
+                >
+                  {isDeletingTask ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

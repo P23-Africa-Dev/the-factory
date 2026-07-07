@@ -327,7 +327,12 @@ function resolveWebNotificationUrl(notification: AppNotification, isAgent: boole
       return isAgent ? '/agent/profile' : '/profile';
     }
 
-    // 10. Internal users / workforce onboarding status
+    // 10. Company Drive
+    if (target.startsWith('/drive') || target.startsWith('/agent/drive')) {
+      return isAgent ? target.replace('/drive', '/agent/drive') : target.replace('/agent/drive', '/drive');
+    }
+
+    // 11. Internal users / workforce onboarding status
     if (target.includes('/internal-users')) {
       return isAgent ? '/agent/operations/agents' : '/operations/agents';
     }
@@ -352,6 +357,9 @@ function resolveWebNotificationUrl(notification: AppNotification, isAgent: boole
     }
     if (type.includes('Project')) {
       return isAgent ? `/agent/projects/${id}` : `/projects/${id}`;
+    }
+    if (type.includes('DriveFile')) {
+      return isAgent ? `/agent/drive?file=${id}` : `/drive?file=${id}`;
     }
   }
 

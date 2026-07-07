@@ -1,0 +1,20 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# nginx-deployment.yaml  —  DESIGN NOTICE
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Nginx does NOT have a separate Deployment in this Kubernetes setup.
+#
+# Nginx runs as a SIDECAR container inside the "backend" Deployment Pod.
+# This is the production-standard pattern for Nginx + PHP-FPM in Kubernetes.
+#
+# Reason: Nginx and PHP-FPM must share file-system paths because:
+#   1. Static assets (public/) are served by Nginx (emptyDir, set by initContainer)
+#   2. Storage symlink (public/storage → ../storage/app/public) requires both
+#      containers to access /var/www/html/storage
+#   3. FastCGI communication is on 127.0.0.1:9000 (loopback, same pod)
+#
+# Both containers scale together as one unit (3 → 10 replicas via HPA).
+#
+# Full Pod spec is in: k8s/backend-deployment.yaml
+# Nginx configuration:  k8s/nginx-configmap.yaml  (ConfigMap: nginx-config)
+# ─────────────────────────────────────────────────────────────────────────────

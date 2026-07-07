@@ -39,6 +39,7 @@ yarn-error.log*
 backend/.env*
 frontend/.env*
 backend/src/.env*
+!backend/src/.env.example
 backend/src/config/.env*
 backend/src/vendor
 api-docs/.env*
@@ -57,6 +58,13 @@ api-docs/.env*
 debug-*.log
 *.log
 !**/*.log.example
+
+# accidental Windows/Git Bash output artifacts
+/nul
+/backend/k8s/nul
+
+# local database dumps
+/backend/backup.sql
 
 
 # vercel

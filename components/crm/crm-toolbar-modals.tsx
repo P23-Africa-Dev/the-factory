@@ -1,17 +1,15 @@
 "use client";
 
-import type { ChangeEvent, ReactNode } from "react";
-import { useMemo, useRef, useState } from "react";
-import { X, ChevronUp, ChevronDown, Upload, AlertTriangle } from "lucide-react";
+import type { ReactNode } from "react";
+import { useMemo, useState } from "react";
+import { X, ChevronUp, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ApiRequestError } from "@/lib/api/onboarding";
-import type { ApiLeadPriority, ApiRoleBasePath, CrmLabel, CrmPipeline, ImportLeadRow } from "@/lib/api/crm";
+import type { ApiRoleBasePath, CrmLabel, CrmPipeline } from "@/lib/api/crm";
 import {
     useCreateCrmLabel,
     useCreateCrmPipeline,
     useDeleteCrmLabel,
-    useImportCrmLeads,
     useReorderCrmLabels,
     useUpdateCrmLabel,
     useUpdateCrmPipeline,
@@ -23,7 +21,7 @@ type BaseModalProps = {
     onClose: () => void;
 };
 
-function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
     return (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
             <button className="absolute inset-0 bg-black/40" onClick={onClose} aria-label="Close modal" />
@@ -270,236 +268,3 @@ export function LabelManagerModal({ companyId, apiBasePath, labels, onClose }: B
     );
 }
 
-function parseCsv(content: string): ImportLeadRow[] {
-    const lines = content
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
-
-    if (lines.length < 2) {
-        return [];
-    }
-
-    const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-
-    return lines.slice(1).map((line) => {
-        const values = line.split(",").map((v) => v.trim());
-        const row: ImportLeadRow = {};
-        headers.forEach((header, idx) => {
-            const val = values[idx] ?? "";
-            if (!val) return;
-            switch (header) {
-                case "name":
-                    row.name = val;
-                    break;
-                case "email":
-                    row.email = val;
-                    break;
-                case "phone":
-                    row.phone = val;
-                    break;
-                case "location":
-                    row.location = val;
-                    break;
-                case "source":
-                    row.source = val;
-                    break;
-                case "status":
-                    row.status = val;
-                    break;
-                case "priority":
-                    row.priority = val.toLowerCase() as ApiLeadPriority;
-                    break;
-                case "budget_amount":
-                    row.budget_amount = val;
-                    break;
-                case "budget_currency":
-                    row.budget_currency = val.toUpperCase();
-                    break;
-            }
-        });
-        return row;
-    });
-}
-
-export function ImportLeadsModal({
-    companyId,
-    apiBasePath,
-    pipelines,
-    defaultPipelineId,
-    labels,
-    onClose,
-}: BaseModalProps & {
-    pipelines: CrmPipeline[];
-    defaultPipelineId?: number | null;
-    labels: CrmLabel[];
-}) {
-    const [pipelineId, setPipelineId] = useState<string>(defaultPipelineId ? String(defaultPipelineId) : pipelines[0] ? String(pipelines[0].id) : "");
-    const [rows, setRows] = useState<ImportLeadRow[]>([]);
-    const [failedRows, setFailedRows] = useState<Array<{ row_index: number; data: ImportLeadRow; errors: string[] }>>([]);
-    const [phase, setPhase] = useState<"upload" | "diagnosis">("upload");
-    const fileRef = useRef<HTMLInputElement | null>(null);
-
-    const importMutation = useImportCrmLeads(apiBasePath);
-
-    const onFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const text = await file.text();
-        const parsed = parseCsv(text);
-        setRows(parsed);
-        if (parsed.length === 0) {
-            toast.error("No valid rows found in CSV.");
-        }
-    };
-
-    const submitImport = async (targetRows: ImportLeadRow[]) => {
-        if (!pipelineId) {
-            toast.error("Select a pipeline for import.");
-            return;
-        }
-        if (!targetRows.length) {
-            toast.error("No rows to import.");
-            return;
-        }
-
-        try {
-            const res = await importMutation.mutateAsync({
-                company_id: companyId,
-                pipeline_id: Number(pipelineId),
-                rows: targetRows,
-            });
-
-            const result = res.data;
-            if (result.failed_rows.length > 0) {
-                setFailedRows(result.failed_rows);
-                setPhase("diagnosis");
-                toast.error(`${result.failed_rows.length} row(s) failed import. Fix and retry.`);
-            } else {
-                toast.success(`Imported ${result.imported_count} lead(s).`);
-                onClose();
-            }
-        } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Import failed.");
-        }
-    };
-
-    return (
-        <ModalShell title="Import Leads" onClose={onClose}>
-            <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                        <label className="block text-[12px] font-semibold text-gray-500 mb-1">Target Pipeline</label>
-                        <SearchableSelect
-                            value={pipelineId}
-                            onChange={setPipelineId}
-                            options={[{ value: "", label: "Select pipeline" }, ...pipelines.map((p) => ({ value: String(p.id), label: p.name }))]}
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-white"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-[12px] font-semibold text-gray-500 mb-1">Label Keys</label>
-                        <p className="text-[12px] text-gray-500 border border-gray-200 rounded-lg px-3 py-2 bg-gray-50">
-                            {labels.map((label) => label.slug).join(", ") || "newly_lead"}
-                        </p>
-                    </div>
-                </div>
-
-                {phase === "upload" ? (
-                    <>
-                        <div className="border border-dashed border-gray-300 rounded-xl p-4 bg-gray-50">
-                            <p className="text-[12px] text-gray-500 mb-2">Upload CSV with headers: name,email,phone,location,source,status,priority,budget_amount,budget_currency</p>
-                            <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onFileChange} className="text-[12px]" />
-                        </div>
-
-                        <div className="rounded-xl border border-gray-200 overflow-hidden">
-                            <div className="px-3 py-2 bg-gray-50 text-[12px] font-semibold text-gray-500">Preview Rows ({rows.length})</div>
-                            <div className="max-h-64 overflow-auto">
-                                {rows.length === 0 ? (
-                                    <div className="px-3 py-4 text-[12px] text-gray-400">No rows loaded yet.</div>
-                                ) : (
-                                    <table className="w-full text-[12px]">
-                                        <thead className="bg-white sticky top-0">
-                                            <tr className="text-left text-gray-400">
-                                                <th className="px-3 py-2">Name</th>
-                                                <th className="px-3 py-2">Email</th>
-                                                <th className="px-3 py-2">Status</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {rows.map((row, idx) => (
-                                                <tr key={idx} className="border-t border-gray-100">
-                                                    <td className="px-3 py-2">{row.name || "-"}</td>
-                                                    <td className="px-3 py-2">{row.email || "-"}</td>
-                                                    <td className="px-3 py-2">{row.status || "newly_lead"}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end">
-                            <button
-                                onClick={() => submitImport(rows)}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold"
-                            >
-                                <Upload size={13} />
-                                Import
-                            </button>
-                        </div>
-                    </>
-                ) : (
-                    <>
-                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700 flex items-start gap-2">
-                            <AlertTriangle size={14} className="mt-0.5" />
-                            Import diagnosis: fix failed rows below, then retry without restarting.
-                        </div>
-
-                        <div className="space-y-3 max-h-[52vh] overflow-auto pr-1">
-                            {failedRows.map((row, idx) => (
-                                <div key={`${row.row_index}-${idx}`} className="border border-gray-200 rounded-xl p-3">
-                                    <p className="text-[12px] font-semibold text-gray-500 mb-2">Row {row.row_index}</p>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
-                                        <input
-                                            value={row.data.name || ""}
-                                            onChange={(e) => setFailedRows((prev) => prev.map((item, i) => i === idx ? { ...item, data: { ...item.data, name: e.target.value } } : item))}
-                                            placeholder="Name"
-                                            className="border border-gray-200 rounded-lg px-3 py-2 text-[12px]"
-                                        />
-                                        <input
-                                            value={row.data.email || ""}
-                                            onChange={(e) => setFailedRows((prev) => prev.map((item, i) => i === idx ? { ...item, data: { ...item.data, email: e.target.value } } : item))}
-                                            placeholder="Email"
-                                            className="border border-gray-200 rounded-lg px-3 py-2 text-[12px]"
-                                        />
-                                        <input
-                                            value={row.data.status || "newly_lead"}
-                                            onChange={(e) => setFailedRows((prev) => prev.map((item, i) => i === idx ? { ...item, data: { ...item.data, status: e.target.value } } : item))}
-                                            placeholder="Status"
-                                            className="border border-gray-200 rounded-lg px-3 py-2 text-[12px]"
-                                        />
-                                    </div>
-                                    <ul className="text-[11px] text-red-500 list-disc pl-4">
-                                        {row.errors.map((err, i) => <li key={i}>{err}</li>)}
-                                    </ul>
-                                </div>
-                            ))}
-                        </div>
-
-                        <div className="flex items-center justify-end gap-2">
-                            <button onClick={() => setPhase("upload")} className="px-4 py-2 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-600">Back</button>
-                            <button
-                                onClick={() => submitImport(failedRows.map((row) => row.data))}
-                                className="px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold"
-                            >
-                                Retry Import
-                            </button>
-                        </div>
-                    </>
-                )}
-            </div>
-        </ModalShell>
-    );
-}

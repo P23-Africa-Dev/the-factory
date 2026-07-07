@@ -13,6 +13,7 @@ use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class AttendanceApiTest extends TestCase
@@ -73,7 +74,7 @@ class AttendanceApiTest extends TestCase
         $clockOutResponse->assertOk()
             ->assertJsonPath('data.record.work_duration_minutes', 460);
 
-        $this->assertDatabaseHas('attendance_records', [
+        $this->assertAttendanceRecordExists([
             'company_id' => $company->id,
             'user_id' => $agent->id,
             'attendance_date' => '2026-06-01',
@@ -153,7 +154,7 @@ class AttendanceApiTest extends TestCase
         $this->assertContains('present', $statuses);
         $this->assertContains('absent', $statuses);
 
-        $this->assertDatabaseMissing('attendance_records', [
+        $this->assertAttendanceRecordMissing([
             'company_id' => $company->id,
             'user_id' => $otherAgent->id,
             'attendance_date' => '2026-06-01',
@@ -168,6 +169,9 @@ class AttendanceApiTest extends TestCase
 
     public function test_management_records_support_role_and_expanded_status_filters_and_avatar_url(): void
     {
+        Storage::disk('avatars')->put('avatar/male/male_01.png', 'avatar');
+        Storage::disk('avatars')->put('avatar/female/female_01.png', 'avatar');
+
         [$company, $owner, $supervisor, $agentA, $agentB] = $this->seedCompanyUsers();
         $this->createAttendanceSetting($company);
 
@@ -247,6 +251,77 @@ class AttendanceApiTest extends TestCase
             ->assertJsonCount(1, 'data.items')
             ->assertJsonPath('data.items.0.user_id', $agentB->id)
             ->assertJsonPath('data.items.0.status', 'absent');
+    }
+
+    public function test_management_range_records_include_attendance_record_id_and_avatar_url_per_row(): void
+    {
+        Storage::disk('avatars')->put('avatar/male/male_01.png', 'avatar');
+        Storage::disk('avatars')->put('avatar/female/female_01.png', 'avatar');
+
+        [$company, $owner,, $agentA, $agentB] = $this->seedCompanyUsers();
+        $this->createAttendanceSetting($company);
+
+        $agentA->update(['avatar' => 'male_01', 'gender' => 'male']);
+        $agentB->update(['avatar' => 'female_01', 'gender' => 'female']);
+
+        $recordA = AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentA->id,
+            'attendance_date' => '2026-06-01',
+            'clock_in_at' => '2026-06-01 09:00:00',
+            'clock_out_at' => '2026-06-01 17:00:00',
+            'status' => 'present',
+            'work_duration_minutes' => 480,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        $recordB = AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentA->id,
+            'attendance_date' => '2026-06-02',
+            'clock_in_at' => '2026-06-02 09:00:00',
+            'clock_out_at' => '2026-06-02 17:00:00',
+            'status' => 'present',
+            'work_duration_minutes' => 480,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentB->id,
+            'attendance_date' => '2026-06-01',
+            'clock_in_at' => '2026-06-01 09:00:00',
+            'clock_out_at' => '2026-06-01 17:00:00',
+            'status' => 'present',
+            'work_duration_minutes' => 480,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        $response = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/records?company_id=' . $company->id
+                . '&from_date=2026-06-01&to_date=2026-06-02&per_page=10');
+
+        $response->assertOk()
+            ->assertJsonCount(3, 'data.items');
+
+        $items = collect($response->json('data.items'));
+
+        $this->assertSame(
+            [$recordA->id, $recordB->id],
+            $items->where('user_id', $agentA->id)->pluck('attendance_record_id')->sort()->values()->all(),
+        );
+
+        $agentAAvatar = (string) $items->firstWhere('user_id', $agentA->id)['avatar_url'];
+        $agentBAvatar = (string) $items->firstWhere('user_id', $agentB->id)['avatar_url'];
+
+        $this->assertNotSame('', $agentAAvatar);
+        $this->assertNotSame('', $agentBAvatar);
+        $this->assertNotSame($agentAAvatar, $agentBAvatar);
+        $this->assertStringContainsString('male_01', $agentAAvatar);
+        $this->assertStringContainsString('female_01', $agentBAvatar);
     }
 
     public function test_attendance_payroll_generation_respects_attendance_affects_pay(): void
@@ -537,5 +612,45 @@ class AttendanceApiTest extends TestCase
             'attendance_affects_pay' => $attendanceAffectsPay,
             'commission_enabled' => false,
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function assertAttendanceRecordExists(array $attributes): void
+    {
+        $date = $attributes['attendance_date'] ?? null;
+        unset($attributes['attendance_date']);
+
+        $query = AttendanceRecord::query()->where($attributes);
+
+        if ($date !== null) {
+            $query->whereDate('attendance_date', $date);
+        }
+
+        $this->assertTrue(
+            $query->exists(),
+            'Failed asserting that an attendance record exists matching the given attributes.',
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function assertAttendanceRecordMissing(array $attributes): void
+    {
+        $date = $attributes['attendance_date'] ?? null;
+        unset($attributes['attendance_date']);
+
+        $query = AttendanceRecord::query()->where($attributes);
+
+        if ($date !== null) {
+            $query->whereDate('attendance_date', $date);
+        }
+
+        $this->assertFalse(
+            $query->exists(),
+            'Failed asserting that an attendance record is missing for the given attributes.',
+        );
     }
 }

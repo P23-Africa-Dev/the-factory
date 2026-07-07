@@ -122,7 +122,18 @@ export function useAssistantConversation() {
   }, [isAuthenticated]);
 
   const send = useCallback(
-    async (text: string, options?: { withGeolocation?: boolean }) => {
+    async (
+      text: string,
+      options?: {
+        withGeolocation?: boolean;
+        context?: {
+          latitude?: number;
+          longitude?: number;
+          focus?: 'all' | 'visits' | 'followups' | 'tasks';
+          limit?: number;
+        };
+      },
+    ) => {
       const content = text.trim();
       if (!content || isSending) return;
 
@@ -143,9 +154,12 @@ export function useAssistantConversation() {
       }, 900);
 
       try {
-        const context = options?.withGeolocation
+        const geoContext = options?.withGeolocation
           ? await resolveAssistantGeolocationContext()
           : undefined;
+        const context = geoContext
+          ? { ...geoContext, ...options?.context }
+          : options?.context;
         const result = await assistantApi.sendMessage({
           message: content,
           threadId,
@@ -157,6 +171,7 @@ export function useAssistantConversation() {
           content: result.content || 'I could not generate a response. Please try rephrasing.',
           sources: result.sources,
           tool: result.tool,
+          payload: result.payload,
         };
         setMessages((prev) => [...prev, aiMsg]);
         if (result.thread_id) {
@@ -183,6 +198,13 @@ export function useAssistantConversation() {
     },
     [threadId, isSending, userId],
   );
+
+  const runPlanMyDay = useCallback(() => {
+    return send('Plan my day', {
+      withGeolocation: true,
+      context: { focus: 'all', limit: 15 },
+    });
+  }, [send]);
 
   const clearCurrent = useCallback(async () => {
     const current = threadId;
@@ -216,6 +238,7 @@ export function useAssistantConversation() {
     isSending,
     processingLabel,
     send,
+    runPlanMyDay,
     clearCurrent,
     clearAll,
   };

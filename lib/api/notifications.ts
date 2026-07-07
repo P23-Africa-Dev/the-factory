@@ -157,3 +157,55 @@ export async function deleteNotification(
     },
   });
 }
+
+export type NotificationPreference = {
+  id: number;
+  user_id: number;
+  company_id: number | null;
+  category: NotificationCategory | "all";
+  is_enabled: boolean;
+  in_app_enabled: boolean;
+  push_enabled: boolean;
+  email_enabled: boolean;
+  muted_until: string | null;
+  quiet_hours: { start: string; end: string } | null;
+  digest_mode: string | null;
+};
+
+export type UpdateNotificationPreferencesPayload = {
+  company_id?: number | string;
+  preferences: Array<{
+    category: NotificationCategory | "all";
+    is_enabled?: boolean;
+    in_app_enabled?: boolean;
+    push_enabled?: boolean;
+    email_enabled?: boolean;
+    muted_until?: string | null;
+    quiet_hours?: { start: string; end: string } | null;
+    digest_mode?: string | null;
+  }>;
+};
+
+export function getNotificationPreferences(
+  token: string,
+  companyId?: number | string
+): Promise<ApiEnvelope<{ items: NotificationPreference[] }>> {
+  const query = buildQuery({ company_id: companyId });
+  return apiRequest<{ items: NotificationPreference[] }>({
+    method: "GET",
+    path: `/notifications/preferences${query}`,
+    token,
+  });
+}
+
+export function updateNotificationPreferences(
+  payload: UpdateNotificationPreferencesPayload,
+  token: string
+): Promise<ApiEnvelope<{ items: NotificationPreference[] }>> {
+  return apiRequest<{ items: NotificationPreference[] }>({
+    method: "PUT",
+    path: "/notifications/preferences",
+    body: payload,
+    token,
+  });
+}

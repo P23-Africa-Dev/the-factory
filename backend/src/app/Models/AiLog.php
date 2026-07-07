@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Schema;
 
 class AiLog extends Model
 {
@@ -29,6 +31,7 @@ class AiLog extends Model
         'intent_type',
         'tool_name',
         'routing_purpose',
+        'llm_invoked',
         'error_code',
         'error_message',
         'stack_trace',
@@ -38,7 +41,23 @@ class AiLog extends Model
         'started_at' => 'datetime',
         'ended_at' => 'datetime',
         'estimated_cost_usd' => 'decimal:6',
+        'llm_invoked' => 'boolean',
     ];
+
+    /**
+     * Limit analytics to rows where an LLM provider was actually called.
+     */
+    public function scopeLlmInvocations(Builder $query): Builder
+    {
+        if (Schema::hasColumn('ai_logs', 'llm_invoked')) {
+            return $query->where('llm_invoked', true);
+        }
+
+        return $query
+            ->whereIn('provider', ['openai', 'claude', 'demo'])
+            ->where('status', '!=', 'cancelled')
+            ->whereNotIn('model', ['none', 'auto', '']);
+    }
 
     public function company(): BelongsTo
     {
@@ -59,12 +78,16 @@ class AiLog extends Model
         $pricing = [
             'openai' => [
                 'gpt-4.1-mini' => ['input' => 0.40, 'output' => 1.60],
+                'gpt-4.1' => ['input' => 2.00, 'output' => 8.00],
                 'gpt-4o' => ['input' => 2.50, 'output' => 10.00],
                 'gpt-4o-mini' => ['input' => 0.15, 'output' => 0.60],
-                'gpt-4.1' => ['input' => 2.00, 'output' => 8.00],
                 'default' => ['input' => 0.40, 'output' => 1.60],
             ],
             'claude' => [
+                'claude-sonnet-4-6' => ['input' => 3.00, 'output' => 15.00],
+                'claude-sonnet-4-5-20250929' => ['input' => 3.00, 'output' => 15.00],
+                'claude-haiku-4-5-20251001' => ['input' => 0.80, 'output' => 4.00],
+                'claude-opus-4-8' => ['input' => 15.00, 'output' => 75.00],
                 'claude-3-5-sonnet-latest' => ['input' => 3.00, 'output' => 15.00],
                 'claude-3-5-sonnet-20241022' => ['input' => 3.00, 'output' => 15.00],
                 'claude-3-haiku-20240307' => ['input' => 0.25, 'output' => 1.25],

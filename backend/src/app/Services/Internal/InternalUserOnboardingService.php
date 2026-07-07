@@ -9,6 +9,7 @@ use App\Enums\NotificationPriority;
 use App\Models\InternalUserInvitation;
 use App\Models\User;
 use App\Notifications\InternalUserOnboardingInviteNotification;
+use App\Services\Avatar\AvatarStorageService;
 use App\Services\Notification\NotificationService;
 use App\Support\CurrencyCatalog;
 use Illuminate\Http\UploadedFile;
@@ -16,7 +17,6 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -31,6 +31,7 @@ class InternalUserOnboardingService
         private readonly InternalUserAccessService $accessService,
         private readonly NotificationService $notificationService,
         private readonly \App\Services\Billing\CompanySeatLimitService $seatLimitService,
+        private readonly AvatarStorageService $avatarStorage,
     ) {}
 
     public function createByManager(User $creator, array $data): array
@@ -394,30 +395,45 @@ class InternalUserOnboardingService
             $avatarKey = $resolvedProfile['avatar_key'];
             $avatarSvg = $resolvedProfile['avatar_svg'];
             $avatarUrl = $resolvedProfile['avatar_url'];
+            $previousAvatar = $user->avatar;
+            $uploadedPath = null;
 
-            if (isset($data['avatar_file']) && $data['avatar_file'] instanceof UploadedFile) {
-                $avatarKey = $this->storeCustomAvatar($data['avatar_file'], (int) $user->id);
-                $avatarSvg = null;
-                $avatarUrl = $this->buildAvatarPublicUrl($avatarKey);
+            try {
+                if (isset($data['avatar_file']) && $data['avatar_file'] instanceof UploadedFile) {
+                    $uploadedPath = $this->avatarStorage->storeCustom($data['avatar_file'], (int) $user->id, allowSvg: true);
+                    $avatarKey = $uploadedPath;
+                    $avatarSvg = null;
+                    $avatarUrl = $this->avatarStorage->resolveUrl($avatarKey) ?? $this->avatarStorage->defaultUrl();
+                }
+
+                $invitation->company->users()->syncWithoutDetaching([
+                    $user->id => [
+                        'role' => $pivotRole,
+                        'joined_at' => now(),
+                    ],
+                ]);
+
+                $user->update([
+                    'phone_number' => $resolvedProfile['phone_number'],
+                    'gender' => $resolvedProfile['gender'],
+                    'avatar' => $avatarKey,
+                    'password' => $data['password'],
+                    'onboarding_status' => 'active',
+                    'internal_onboarding_completed_at' => now(),
+                    'is_active' => true,
+                    'email_verified_at' => $user->email_verified_at ?? now(),
+                ]);
+            } catch (\Throwable $exception) {
+                if (is_string($uploadedPath) && $uploadedPath !== '') {
+                    $this->avatarStorage->deleteIfOrphaned($uploadedPath);
+                }
+
+                throw $exception;
             }
 
-            $invitation->company->users()->syncWithoutDetaching([
-                $user->id => [
-                    'role' => $pivotRole,
-                    'joined_at' => now(),
-                ],
-            ]);
-
-            $user->update([
-                'phone_number' => $resolvedProfile['phone_number'],
-                'gender' => $resolvedProfile['gender'],
-                'avatar' => $avatarKey,
-                'password' => $data['password'],
-                'onboarding_status' => 'active',
-                'internal_onboarding_completed_at' => now(),
-                'is_active' => true,
-                'email_verified_at' => $user->email_verified_at ?? now(),
-            ]);
+            if (is_string($uploadedPath) && $uploadedPath !== '') {
+                $this->avatarStorage->replaceCustomAvatar($previousAvatar, $uploadedPath);
+            }
 
             $invitation->update([
                 'accepted_at' => now(),
@@ -527,7 +543,7 @@ class InternalUserOnboardingService
             ]);
         }
 
-        if ($normalizedAvatarKey !== null && ! $this->isCustomAvatarPath($normalizedAvatarKey)) {
+        if ($normalizedAvatarKey !== null && ! $this->avatarStorage->isCustomAvatarPath($normalizedAvatarKey)) {
             if ($normalizedGender !== null) {
                 if (! isset($avatarCatalog[$normalizedGender][$normalizedAvatarKey])) {
                     throw ValidationException::withMessages([
@@ -551,7 +567,7 @@ class InternalUserOnboardingService
         }
 
         if ($normalizedAvatarKey === null && $assignRandomAvatar && $normalizedGender !== null) {
-            $normalizedAvatarKey = $this->randomAvatarKeyForGender($normalizedGender);
+            $normalizedAvatarKey = $this->avatarStorage->randomCatalogKeyForGender($normalizedGender);
         }
 
         if ($requireCompleteProfile) {
@@ -578,11 +594,11 @@ class InternalUserOnboardingService
         $avatarUrl = null;
 
         if ($normalizedAvatarKey !== null) {
-            if ($this->isCustomAvatarPath($normalizedAvatarKey)) {
-                $avatarUrl = $this->buildAvatarPublicUrl($normalizedAvatarKey);
+            if ($this->avatarStorage->isCustomAvatarPath($normalizedAvatarKey)) {
+                $avatarUrl = $this->avatarStorage->resolveUrl($normalizedAvatarKey);
             } elseif ($normalizedGender !== null) {
                 $avatarOption = $avatarCatalog[$normalizedGender][$normalizedAvatarKey] ?? null;
-                $avatarUrl = $avatarOption['url'] ?? null;
+                $avatarUrl = $avatarOption['url'] ?? $this->avatarStorage->resolveUrl($normalizedAvatarKey, $normalizedGender);
             }
         }
 
@@ -595,108 +611,13 @@ class InternalUserOnboardingService
         ];
     }
 
-    private function storeCustomAvatar(UploadedFile $avatarFile, int $userId): string
-    {
-        $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
-        $directory = "{$basePath}/custom";
-        $extension = strtolower($avatarFile->getClientOriginalExtension() ?: $avatarFile->extension() ?: 'png');
-        $filename = sprintf('user_%d_%s.%s', $userId, Str::random(16), $extension);
-
-        return $avatarFile->storeAs($directory, $filename, ['disk' => 'public']);
-    }
-
-    private function buildAvatarPublicUrl(string $path): string
-    {
-        $publicBaseUrl = rtrim((string) (
-            config('internal_onboarding.avatar_public_base_url')
-            ?: config('filesystems.disks.public.url')
-            ?: asset('storage')
-        ), '/');
-
-        return $publicBaseUrl . '/' . ltrim($path, '/');
-    }
-
-    private function isCustomAvatarPath(string $avatarKey): bool
-    {
-        $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
-
-        return str_starts_with($avatarKey, "{$basePath}/custom/");
-    }
-
     private function avatarCatalog(): array
     {
         if ($this->avatarCatalogCache !== null) {
             return $this->avatarCatalogCache;
         }
 
-        $catalog = [
-            'male' => [],
-            'female' => [],
-        ];
-
-        $disk = Storage::disk('public');
-        $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
-        $publicBaseUrl = rtrim((string) (
-            config('internal_onboarding.avatar_public_base_url')
-            ?: config('filesystems.disks.public.url')
-            ?: asset('storage')
-        ), '/');
-
-        foreach (['male', 'female'] as $gender) {
-            $files = $disk->files("{$basePath}/{$gender}");
-            sort($files);
-
-            foreach ($files as $file) {
-                $filename = basename($file);
-                $extension = strtolower((string) pathinfo($filename, PATHINFO_EXTENSION));
-
-                if (! in_array($extension, ['png', 'svg'], true)) {
-                    continue;
-                }
-
-                $avatarKey = pathinfo($filename, PATHINFO_FILENAME);
-                $catalog[$gender][$avatarKey] = [
-                    'key' => $avatarKey,
-                    'svg' => null,
-                    'url' => $publicBaseUrl . '/' . ltrim($file, '/'),
-                ];
-
-                if ($extension === 'svg') {
-                    try {
-                        $catalog[$gender][$avatarKey]['svg'] = $disk->get($file);
-                    } catch (\Throwable) {
-                        // Non-fatal: URL fallback will be used.
-                    }
-                }
-            }
-        }
-
-        $fallbackCatalog = config('internal_onboarding.avatar_catalog', []);
-        if (! is_array($fallbackCatalog)) {
-            $fallbackCatalog = [];
-        }
-
-        foreach ($fallbackCatalog as $gender => $avatars) {
-            if (! isset($catalog[$gender]) || ! is_array($avatars)) {
-                continue;
-            }
-
-            foreach ($avatars as $avatarKey => $svg) {
-                if (! isset($catalog[$gender][$avatarKey])) {
-                    $catalog[$gender][$avatarKey] = [
-                        'key' => $avatarKey,
-                        'svg' => $svg,
-                        'url' => null,
-                    ];
-
-                    continue;
-                }
-
-                $catalog[$gender][$avatarKey]['svg'] = $svg;
-            }
-        }
-
-        $this->avatarCatalogCache = $catalog;
+        $this->avatarCatalogCache = $this->avatarStorage->catalog();
 
         return $this->avatarCatalogCache;
     }
@@ -714,17 +635,6 @@ class InternalUserOnboardingService
             ->all();
 
         return $this->avatarGenderMapCache;
-    }
-
-    private function randomAvatarKeyForGender(string $gender): ?string
-    {
-        $options = array_keys($this->avatarCatalog()[$gender] ?? []);
-
-        if ($options === []) {
-            return null;
-        }
-
-        return $options[array_rand($options)];
     }
 
     private function ensureValidSupervisor(int $companyId, int $supervisorUserId): void

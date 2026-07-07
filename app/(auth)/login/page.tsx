@@ -1,15 +1,23 @@
 import LoginForm from "@/components/forms/login-form";
-import { AUTH_TOKEN_COOKIE, ONBOARDING_DONE_COOKIE } from "@/lib/auth/session";
+import { AUTH_TOKEN_COOKIE } from "@/lib/auth/session";
+import { getServerSessionState } from "@/lib/auth/server-session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 export default async function LoginPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_TOKEN_COOKIE)?.value;
-  const onboardingDone = cookieStore.get(ONBOARDING_DONE_COOKIE)?.value === "1";
 
   if (token) {
-    redirect(onboardingDone ? "/dashboard" : "/complete-onboarding");
+    const session = await getServerSessionState(token);
+
+    if (session.isAuthenticated) {
+      if (session.role === "agent") {
+        redirect("/agent/dashboard");
+      }
+
+      redirect(session.onboardingCompleted ? "/dashboard" : "/complete-onboarding");
+    }
   }
 
   return (

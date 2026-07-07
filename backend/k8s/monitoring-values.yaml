@@ -1,0 +1,155 @@
+# kube-prometheus-stack values for DOKS 2x s-2vcpu-4gb nodes
+# Resources are intentionally lightweight — actual cluster usage is <10% CPU, ~65% memory.
+# Retention: 15d metrics, 30d Grafana data
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    replicas: 1
+    retention: 120h  # 5 days
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: do-block-storage
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: 'null'
+      routes:
+        - matchers:
+            - alertname =~ "InfoInhibitor|Watchdog"
+          receiver: 'null'
+    receivers:
+      - name: 'null'
+
+prometheus:
+  prometheusSpec:
+    replicas: 1
+    retention: 15d
+    retentionSize: "8GB"
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    # Only scrape factory23 namespace + monitoring namespace
+    serviceMonitorNamespaceSelector: {}
+    serviceMonitorSelector: {}
+    podMonitorSelector: {}
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: do-block-storage
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    # Collect all namespaces
+    ruleSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+
+grafana:
+  enabled: true
+  replicas: 1
+  adminPassword: "GrafanaAdmin@F23!"  # Change via UI after first login
+  persistence:
+    enabled: true
+    storageClassName: do-block-storage
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Pre-load dashboards for Laravel/PHP, Redis, MySQL, Kubernetes
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          orgId: 1
+          folder: 'Factory23'
+          type: file
+          disableDeletion: false
+          options:
+            path: /var/lib/grafana/dashboards/default
+  dashboards:
+    default:
+      kubernetes-cluster:
+        gnetId: 7249
+        revision: 1
+        datasource: Prometheus
+      kubernetes-pods:
+        gnetId: 6417
+        revision: 1
+        datasource: Prometheus
+      redis:
+        gnetId: 11835
+        revision: 1
+        datasource: Prometheus
+      nginx-ingress:
+        gnetId: 9614
+        revision: 1
+        datasource: Prometheus
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s/"
+    security:
+      allow_embedding: false
+      cookie_secure: true
+    auth.anonymous:
+      enabled: false
+
+# Node exporter: collects host-level metrics (CPU, memory, disk, network)
+nodeExporter:
+  enabled: true
+
+# kube-state-metrics: Kubernetes object state metrics
+kubeStateMetrics:
+  enabled: true
+
+# Reduce default scrape targets to lower cardinality
+kubeApiServer:
+  enabled: true
+kubeEtcd:
+  enabled: false  # DOKS etcd not accessible
+kubeControllerManager:
+  enabled: false  # DOKS control plane not accessible
+kubeScheduler:
+  enabled: false  # DOKS control plane not accessible
+kubeProxy:
+  enabled: true
+
+# Prometheus Operator
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

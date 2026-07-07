@@ -1,0 +1,134 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: factory23-config
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: factory23
+    app.kubernetes.io/component: config
+data:
+  # ── Application ─────────────────────────────────────────────────────────────
+  APP_NAME: "Factory23"
+  APP_ENV: "production"
+  APP_DEBUG: "false"
+  APP_URL: "https://api.thefactory23.com"
+  APP_LOCALE: "en"
+  APP_FALLBACK_LOCALE: "en"
+  APP_FAKER_LOCALE: "en_US"
+  APP_MAINTENANCE_DRIVER: "file"
+
+  # ── Logging ──────────────────────────────────────────────────────────────────
+  LOG_CHANNEL: "stack"
+  LOG_STACK: "single"
+  LOG_LEVEL: "warning"
+
+  # ── Database (non-sensitive) ──────────────────────────────────────────────────
+  DB_CONNECTION: "mysql"
+  DB_HOST: "db-mysql-lon1-fac23-do-user-25707955-0.e.db.ondigitalocean.com"
+  DB_PORT: "25060"
+  DB_DATABASE: "factory23-db"
+  DB_USERNAME: "factory23-user"
+
+  # ── Cache / Queue / Session ───────────────────────────────────────────────────
+  CACHE_STORE: "redis"
+  QUEUE_CONNECTION: "redis"
+  SESSION_DRIVER: "redis"
+  SESSION_LIFETIME: "120"
+  SESSION_ENCRYPT: "false"
+  SESSION_PATH: "/"
+  SESSION_SECURE_COOKIE: "true"
+  SESSION_CONNECTION: "default"
+  BROADCAST_CONNECTION: "log"
+
+  # ── Redis (non-sensitive) ─────────────────────────────────────────────────────
+  REDIS_CLIENT: "predis"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+
+  # ── Frontend / CORS ───────────────────────────────────────────────────────────
+  FRONTEND_URL: "https://thefactory23.com"
+  CORS_ALLOWED_ORIGINS: "https://thefactory23.com,https://www.thefactory23.com,https://app.thefactory23.com,https://the-factory-frontend-git-space-p23-africa.vercel.app,https://the-factory-frontend-git-dev-work-p23-africa.vercel.app,http://localhost:3000,http://localhost:3001"
+  SANCTUM_STATEFUL_DOMAINS: "thefactory23.com,www.thefactory23.com,app.thefactory23.com,api.thefactory23.com"
+  BILLING_ENFORCE: "false"
+  ENTERPRISE_ONBOARDING_SETUP_PATH: "/enterprise/setup"
+  ENTERPRISE_ONBOARDING_SETUP_URL: ""
+  # Explicit view compiled path avoids realpath() returning false on fresh containers
+  VIEW_COMPILED_PATH: "/var/www/html/storage/framework/views"
+
+  # ── Storage (DigitalOcean Spaces / S3-compatible) ─────────────────────────────
+  # Bucket: factory23-storage (lon1) — created 2025-07-03
+  FILESYSTEM_DISK: "s3"
+  AWS_DEFAULT_REGION: "lon1"
+  AWS_BUCKET: "factory23-storage"
+  AWS_ENDPOINT: "https://lon1.digitaloceanspaces.com"
+  AWS_URL: "https://factory23-storage.lon1.digitaloceanspaces.com"
+  AWS_USE_PATH_STYLE_ENDPOINT: "false"
+  AVATAR_FILESYSTEM_DISK: "avatars"
+  # Browser-facing avatar links — must match direct origin (not .cdn.) unless CDN is enabled.
+  AVATAR_PUBLIC_BASE_URL: "https://factory23-storage.lon1.digitaloceanspaces.com"
+  DRIVE_FILESYSTEM_DISK: "drive"
+  DRIVE_DEFAULT_QUOTA_GB: "5"
+  INTERNAL_AVATAR_STORAGE_ROOT: "avatar"
+  INTERNAL_DEFAULT_AVATAR_PATH: "avatar/default/ghost.svg"
+
+  # ── AI Providers (non-sensitive config) ───────────────────────────────────────
+  AI_PROVIDER: "openai"
+  AI_FALLBACK_PROVIDER: "claude"
+  AI_DEFAULT_MODEL: "auto"
+  AI_EXEC_MODEL: "auto"
+  AI_ANALYST_MODEL: "auto"
+  AI_REQUEST_TIMEOUT_MS: "30000"
+  OPENAI_BASE_URL: "https://api.openai.com/v1"
+  OPENAI_MODEL: "auto"
+  OPENAI_AUDIO_MODEL: "gpt-4o-mini-transcribe"
+  ANTHROPIC_BASE_URL: "https://api.anthropic.com/v1"
+  ANTHROPIC_VERSION: "2023-06-01"
+  CLAUDE_MODEL: "auto"
+
+  # ── Task Tracking ─────────────────────────────────────────────────────────────
+  TASK_TRACKING_ARRIVAL_RADIUS_METERS: "75"
+  TASK_TRACKING_NEAR_RADIUS_METERS: "250"
+  TASK_TRACKING_NEAR_MAX_ACCURACY_METERS: "150"
+  TASK_TRACKING_ARRIVAL_MAX_ACCURACY_METERS: "60"
+  TASK_TRACKING_MIN_MOVEMENT_BEFORE_PROXIMITY_METERS: "20"
+  TASK_TRACKING_MIN_SECONDS_BETWEEN_NEAR_AND_ARRIVAL: "10"
+  TASK_TRACKING_PERSIST_MIN_INTERVAL_SECONDS: "15"
+  TASK_TRACKING_PERSIST_MIN_DISTANCE_METERS: "20"
+  TASK_TRACKING_MAX_BATCH_POINTS: "50"
+  TASK_TRACKING_REDIS_CHANNEL_PREFIX: "factory23.tracking"
+  TASK_TRACKING_RETENTION_DAYS: "90"
+  TASK_TRACKING_PRUNE_CHUNK_SIZE: "1000"
+  MAP_PROVIDER_DEFAULT: "mapbox"
+
+  # ── Google Calendar / Gmail OAuth ───────────────────────────────────────────
+  # Client ID + secret live in factory23-secret. Redirect URI must match Google Cloud Console.
+  GOOGLE_CALENDAR_REDIRECT_URI: "https://api.thefactory23.com/api/v1/calendar/integration/callback"
+  GOOGLE_CALENDAR_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify"
+
+  # ── Mail (non-sensitive) ──────────────────────────────────────────────────────
+  MAIL_MAILER: "resend"
+  MAIL_FROM_ADDRESS: "noreply@thefactory23.com"
+  MAIL_FROM_NAME: "Factory23"
+
+  # ── Realtime WebSocket Server ─────────────────────────────────────────────────
+  TRACKING_WS_HOST: "0.0.0.0"
+  TRACKING_WS_PORT: "8081"
+  TRACKING_WS_REDIS_HOST: "redis-service"
+  TRACKING_WS_REDIS_PORT: "6379"
+  TRACKING_WS_REDIS_DB: "0"
+  TRACKING_WS_AUTH_API_BASE_URL: "http://backend-service.factory23.svc.cluster.local"
+  TRACKING_WS_AUTH_ME_PATH: "/api/v1/user/me"
+  TRACKING_WS_HEARTBEAT_MS: "30000"
+  TRACKING_WS_AUTH_TIMEOUT_MS: "10000"
+  TRACKING_WS_MAX_MESSAGE_BYTES: "32768"
+  TRACKING_WS_LOG_LEVEL: "info"
+
+  # ── API rate limits (per minute unless noted) ─────────────────────────────────
+  RATE_LIMIT_API_PER_MINUTE: "300"
+  RATE_LIMIT_API_HEAVY_PER_MINUTE: "600"
+  RATE_LIMIT_LOGIN_EMAIL_IP: "60"
+  RATE_LIMIT_LOGIN_IP: "500"
+  RATE_LIMIT_AUTH_SENSITIVE: "30"
+  RATE_LIMIT_AUTH_REGISTER: "15"
+  RATE_LIMIT_AUTH_RESEND_OTP: "5"
+  RATE_LIMIT_AUTH_FORGOT_PASSWORD: "15"

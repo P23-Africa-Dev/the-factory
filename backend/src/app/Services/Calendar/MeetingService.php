@@ -397,7 +397,7 @@ class MeetingService
                     'id' => $member->id,
                     'name' => $member->name,
                     'email' => $member->email,
-                    'avatar_url' => AvatarUrlResolver::resolve($member->avatar, $member->gender),
+                    'avatar_url' => AvatarUrlResolver::resolveOrDefault($member->avatar, $member->gender),
                     'company_role' => $companyRole,
                     'internal_role' => $member->internal_role,
                     'display_role' => ucfirst(str_replace('_', ' ', $companyRole)),

@@ -62,6 +62,10 @@ export const assistantApi = {
       content: String(response.content ?? ''),
       sources: Array.isArray(response.sources) ? (response.sources as string[]) : [],
       tool: (response.tool as string | null) ?? null,
+      payload:
+        response.payload && typeof response.payload === 'object'
+          ? (response.payload as Record<string, unknown>)
+          : null,
     };
   },
 
