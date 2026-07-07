@@ -1,11 +1,10 @@
 import { client } from '@/lib/api/client';
 import { getActiveCompanyId, setActiveCompanyId } from '@/lib/storage/stores';
 import { taskSchema, taskListSchema } from './schema';
-import type { Task, TaskFilters, UpdateTaskStatusPayload } from './types';
+import type { Task, TaskFilters, UpdateTaskStatusPayload, UpdateTaskPayload, CreateSelfTaskPayload } from './types';
 import { env } from '@/constants/env';
 import { queueOfflineAction } from '@/lib/offline/queue';
 import { appStore } from '@/lib/storage/stores';
-import { buildCompleteFormData } from '@/features/tracking/completeTaskForm';
 import { isOffline, shouldUseCache } from '@/lib/offline/connectivity';
 import { setShowingCachedData } from '@/lib/offline/cacheIndicator';
 import {
@@ -232,6 +231,24 @@ export const taskApi = {
     });
   },
 
+  update: async ({ id, title, description, location, address }: UpdateTaskPayload): Promise<void> => {
+    const companyId = getActiveCompanyId();
+    await client.patch(`/agent/tasks/${id}`, {
+      company_id: companyId ?? undefined,
+      title,
+      description,
+      location,
+      address,
+    });
+  },
+
+  delete: async (id: string): Promise<void> => {
+    const companyId = getActiveCompanyId();
+    await client.delete(`/agent/tasks/${id}`, {
+      params: { company_id: companyId ?? undefined },
+    });
+  },
+
   completeTask: async (taskId: number, formData: FormData): Promise<void> => {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       const companyIdFromForm = formData.get('company_id');
@@ -270,5 +287,52 @@ export const taskApi = {
       const err = (await res.json()) as { message?: string };
       throw { status: res.status, message: err.message ?? 'Completion failed' };
     }
+  },
+
+  createSelf: async (payload: CreateSelfTaskPayload): Promise<Task> => {
+    const companyId = getActiveCompanyId();
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await queueOfflineAction({
+        actionType: 'task.create_self',
+        payload: { ...payload, company_id: companyId },
+      });
+      const tempId = `temp-${Date.now()}`;
+      const mockTask: Task = {
+        id: tempId,
+        companyId: companyId ?? null,
+        title: payload.title,
+        address: payload.address ?? payload.location ?? '—',
+        location: payload.location ?? null,
+        latitude: payload.latitude ? Number(payload.latitude) : 0,
+        longitude: payload.longitude ? Number(payload.longitude) : 0,
+        hasMapLocation: Boolean(payload.latitude && payload.longitude),
+        proximityThreshold: 50,
+        status: 'pending',
+        dueDate: payload.due_date ?? null,
+        assignedAt: new Date().toISOString(),
+        description: payload.description ?? undefined,
+        instructions: undefined,
+        priority: payload.priority ?? undefined,
+        assignedBy: 'You',
+        assignedAgentId: null,
+      };
+      if (companyId) {
+        await putCachedTaskDetail(companyId, mockTask);
+      }
+      return mockTask;
+    }
+
+    const response = await client.post('/agent/tasks/self', {
+      ...payload,
+      company_id: companyId ?? undefined,
+    });
+    const item = unwrapItem(response.data);
+    seedCompanyId(item);
+    const task = taskSchema.parse(item);
+    const resolvedCompanyId = getActiveCompanyId();
+    if (resolvedCompanyId) {
+      await putCachedTaskDetail(resolvedCompanyId, task).catch(() => {});
+    }
+    return task;
   },
 };

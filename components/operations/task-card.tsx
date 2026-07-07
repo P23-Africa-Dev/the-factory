@@ -4,15 +4,17 @@ import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { DndItem } from '@/types/operations';
-import { Maximize2 } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 
 interface TaskCardProps {
   item: DndItem;
   onClick?: (item: DndItem) => void;
   onViewMap?: (item: DndItem) => void;
+  onEdit?: (item: DndItem) => void;
+  onDelete?: (item: DndItem) => void;
 }
 
-export function TaskCard({ item, onClick, onViewMap }: TaskCardProps) {
+export function TaskCard({ item, onClick, onViewMap, onEdit, onDelete }: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -34,12 +36,38 @@ export function TaskCard({ item, onClick, onViewMap }: TaskCardProps) {
       {...attributes}
       {...listeners}
       className={`
-        bg-white rounded-[32px] p-6 shadow-[0px_4px_20px_rgba(0,0,0,0.03)] border border-gray-100 flex flex-col gap-6
+        group relative bg-white rounded-[32px] p-6 shadow-[0px_4px_20px_rgba(0,0,0,0.03)] border border-gray-100 flex flex-col gap-6
         cursor-pointer transition-all duration-200 select-none mb-3
         ${isDragging ? 'opacity-50 scale-105 z-50 shadow-xl cursor-grabbing' : 'hover:shadow-md hover:-translate-y-0.5'}
       `}
       onClick={() => onClick?.(item)}
     >
+      <div className="absolute right-4 top-4 z-20 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        {onEdit ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(item);
+            }}
+            className="h-8 w-8 rounded-full bg-white border border-gray-200 text-[#094B5C] hover:bg-gray-50 flex items-center justify-center"
+            aria-label="Edit task"
+          >
+            <Pencil size={14} />
+          </button>
+        ) : null}
+        {onDelete ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(item);
+            }}
+            className="h-8 w-8 rounded-full bg-white border border-gray-200 text-red-500 hover:bg-red-50 flex items-center justify-center"
+            aria-label="Delete task"
+          >
+            <Trash2 size={14} />
+          </button>
+        ) : null}
+      </div>
       <div>
         <h4 className="text-[#0B1215] font-bold text-[17px] tracking-tight">{item.label}</h4>
         <p className="text-gray-400 text-[13px] mt-1">{item.description}</p>

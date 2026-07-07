@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\V1\Task;
 use App\Http\Controllers\Concerns\ResolvesCompanyContextId;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Task\CreateTaskRequest;
+use App\Http\Requests\Task\UpdateTaskRequest;
 use App\Http\Resources\TaskResource;
 use App\Models\Task;
 use App\Services\Task\TaskService;
@@ -64,6 +65,30 @@ class TaskController extends Controller
         return $this->success(
             message: 'Task fetched successfully.',
             data: ['task' => new TaskResource($task)],
+        );
+    }
+
+    public function update(UpdateTaskRequest $request, Task $task): JsonResponse
+    {
+        $task = $this->taskService->update($request->user(), $task, $request->validated());
+
+        return $this->success(
+            message: 'Task updated successfully.',
+            data: ['task' => new TaskResource($task)],
+        );
+    }
+
+    public function destroy(Request $request, Task $task): JsonResponse
+    {
+        $this->taskService->delete(
+            $request->user(),
+            $task,
+            $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
+        return $this->success(
+            message: 'Task deleted successfully.',
+            data: ['deleted_task_id' => $task->id],
         );
     }
 }

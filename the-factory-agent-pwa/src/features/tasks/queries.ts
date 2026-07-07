@@ -1,13 +1,13 @@
 import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
-import { appStore, getActiveCompanyId } from '@/lib/storage/stores';
+import { appStore } from '@/lib/storage/stores';
 import { useTrackingStore } from '@/store/tracking';
 import { toast } from '@/lib/toast';
 import { taskApi } from './api';
 import type { TaskListResult } from './api';
 import { taskKeys } from './queryKeys';
-import type { Task, TaskFilters, UpdateTaskStatusPayload } from './types';
+import type { Task, TaskFilters, UpdateTaskStatusPayload, CreateSelfTaskPayload } from './types';
 
 export function flattenTaskPages(data: InfiniteData<TaskListResult> | undefined): Task[] {
   if (!data?.pages.length) return [];
@@ -110,6 +110,35 @@ export function useCompleteTask() {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         toast.info('Offline queue', 'Task completion queued and will sync automatically.');
       }
+    },
+  });
+}
+
+export function useCreateSelfTask() {
+  return useMutation({
+    mutationFn: (payload: CreateSelfTaskPayload) => taskApi.createSelf(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        toast.info('Offline queue', 'Task creation queued and will sync automatically.');
+      } else {
+        toast.success('Task created successfully');
+      }
+export function useUpdateTask() {
+  return useMutation({
+    mutationFn: taskApi.update,
+    onSuccess: (_, payload) => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(payload.id) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+    },
+  });
+}
+
+export function useDeleteTask() {
+  return useMutation({
+    mutationFn: (id: string) => taskApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
     },
   });
 }

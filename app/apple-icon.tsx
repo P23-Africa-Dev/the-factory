@@ -7,6 +7,7 @@ export const size = {
 };
 
 export default function AppleIcon() {
+  
   return new ImageResponse(
     (
       <div

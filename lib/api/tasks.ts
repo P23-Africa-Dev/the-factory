@@ -183,6 +183,22 @@ export type UpdateTaskStatusPayload = {
   status: ApiTaskStatus;
 };
 
+export type UpdateTaskPayload = {
+  company_id: number | string;
+  title?: string;
+  type?: string;
+  description?: string;
+  location?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  due_date?: string;
+  required_actions?: string[];
+  priority?: ApiTaskPriority;
+  minimum_photos_required?: number;
+  visit_verification_required?: boolean;
+};
+
 export type CreateSelfTaskPayload = Omit<
   CreateTaskPayload,
   "project_id" | "assigned_agent_id" | "assigned_agent_ids"
@@ -323,6 +339,35 @@ export function createSelfTask(
     method: "POST",
     path: "/agent/tasks/self",
     body: payload,
+    token,
+  });
+}
+
+export function updateTask(
+  taskId: number | string,
+  payload: UpdateTaskPayload,
+  token: string
+): Promise<ApiEnvelope<TaskDetailData>> {
+  return apiRequest<TaskDetailData>({
+    method: "PATCH",
+    path: `/tasks/${taskId}`,
+    body: payload,
+    token,
+  });
+}
+
+export function deleteTask(
+  taskId: number | string,
+  params: { company_id?: number | string },
+  token: string
+): Promise<ApiEnvelope<{ deleted_task_id: number }>> {
+  const qs = new URLSearchParams();
+  if (params.company_id != null) qs.set("company_id", String(params.company_id));
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+
+  return apiRequest<{ deleted_task_id: number }>({
+    method: "DELETE",
+    path: `/tasks/${taskId}${query}`,
     token,
   });
 }

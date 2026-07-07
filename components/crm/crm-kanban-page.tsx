@@ -62,6 +62,8 @@ function mapLeadToItem(lead: LeadApiItem): DndItem {
         id: String(lead.id),
         label: lead.name,
         description: lead.location || lead.source || lead.email || lead.phone || "No details",
+        companyName: lead.company_name ?? undefined,
+        position: lead.position ?? undefined,
         location: lead.location ?? "",
         assignedBy: lead.assignee?.name ?? "Unassigned",
         assignedToUserId: lead.assigned_to_user_id ?? null,
@@ -143,7 +145,12 @@ function LeadCard({
             <div className="flex justify-between items-start gap-2">
                 <div className="min-w-0 flex-1">
                     <p className="text-[#2F3033] font-extrabold text-[17px] leading-tight truncate">{item.label}</p>
-                    <p className="text-[#8C93A1] text-[13px] mt-1 truncate">{item.description}</p>
+                    <p className="text-[#8C93A1] text-[13px] mt-1 truncate">
+                        {item.companyName || "No company"}
+                    </p>
+                    <p className="text-[#8C93A1] text-[12px] mt-0.5 truncate">
+                        {item.position || "No position"}
+                    </p>
                 </div>
                 {!disabled && (
                     <div className="flex items-center shrink-0">

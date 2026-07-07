@@ -373,6 +373,12 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::post('/reassignments/{reassignment}/reject', [TaskAssignmentController::class, 'reject'])
                     ->name('reassignments.reject');
                 Route::get('/{task}', [TaskController::class, 'show'])->name('show');
+                Route::patch('/{task}', [TaskController::class, 'update'])
+                    ->middleware('throttle:api')
+                    ->name('update');
+                Route::delete('/{task}', [TaskController::class, 'destroy'])
+                    ->middleware('throttle:api')
+                    ->name('destroy');
                 Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
                 Route::patch('/{task}/assign', [TaskAssignmentController::class, 'update'])->name('assign');
                 Route::patch('/{task}/status', [AdminTaskStatusController::class, 'update'])->name('status.update');
@@ -602,6 +608,12 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                     ->middleware('throttle:api')
                     ->name('self.store');
                 Route::get('/{task}', [TaskController::class, 'show'])->name('show');
+                Route::patch('/{task}', [TaskController::class, 'update'])
+                    ->middleware('throttle:api')
+                    ->name('update');
+                Route::delete('/{task}', [TaskController::class, 'destroy'])
+                    ->middleware('throttle:api')
+                    ->name('destroy');
                 Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
                 Route::post('/{task}/start', [TaskTrackingController::class, 'start'])->name('start');
                 Route::post('/{task}/location', [TaskTrackingController::class, 'location'])->name('location');
@@ -726,6 +738,12 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::post('/reassignments/{reassignment}/reject', [TaskAssignmentController::class, 'reject'])
             ->name('reassignments.reject');
         Route::get('/{task}', [TaskController::class, 'show'])->name('show');
+        Route::patch('/{task}', [TaskController::class, 'update'])
+            ->middleware('throttle:api')
+            ->name('update');
+        Route::delete('/{task}', [TaskController::class, 'destroy'])
+            ->middleware('throttle:api')
+            ->name('destroy');
         Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
         Route::post('/{task}/start', [TaskTrackingController::class, 'start'])->name('start');
         Route::post('/{task}/location', [TaskTrackingController::class, 'location'])->name('location');

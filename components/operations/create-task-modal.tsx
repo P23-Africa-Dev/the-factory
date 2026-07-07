@@ -7,7 +7,6 @@ import {
   User,
   FileText,
   CheckCircle,
-  ChevronDown,
   Camera,
   Calendar,
   AlertCircle,
@@ -32,6 +31,36 @@ interface CreateTaskModalProps {
   onClose: () => void;
   onCreateTask?: (containerId: StatusType, item: DndItem) => void;
   projectId?: number | string;
+  mode?: "create" | "edit";
+  initialValues?: Partial<{
+    title: string;
+    taskType: string;
+    description: string;
+    assignTo: string;
+    location: string;
+    address: string;
+    dueDate: string;
+    requiredActions: string;
+    priority: Priority | "";
+    minPhotos: string;
+    visitVerification: boolean;
+    status: StatusType;
+  }>;
+  submitLabel?: string;
+  onSubmitTask?: (payload: {
+    title: string;
+    taskType?: string;
+    description?: string;
+    location?: string;
+    address?: string;
+    dueDate?: string;
+    requiredActions?: string[];
+    priority?: ApiTaskPriority;
+    minPhotos?: number;
+    visitVerification?: boolean;
+    latitude?: number;
+    longitude?: number;
+  }) => void;
 }
 
 const STATUS_OPTIONS: {
@@ -121,6 +150,10 @@ export function CreateTaskModal({
   onClose,
   onCreateTask,
   projectId,
+  mode = "create",
+  initialValues,
+  submitLabel,
+  onSubmitTask,
 }: CreateTaskModalProps) {
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
@@ -144,21 +177,21 @@ export function CreateTaskModal({
     },
   });
   const taskIdRef = useRef(0);
-  const [form, setForm] = useState({
-    title: "",
-    taskType: "",
-    description: "",
-    assignTo: "",
-    location: "",
-    address: "",
-    dueDate: "",
-    requiredActions: "",
-    priority: "" as Priority | "",
-    minPhotos: "2",
-    visitVerification: false,
-    status: "pending" as StatusType,
+  const [form, setForm] = useState(() => ({
+    title: initialValues?.title ?? "",
+    taskType: initialValues?.taskType ?? "",
+    description: initialValues?.description ?? "",
+    assignTo: initialValues?.assignTo ?? "",
+    location: initialValues?.location ?? "",
+    address: initialValues?.address ?? "",
+    dueDate: initialValues?.dueDate ?? "",
+    requiredActions: initialValues?.requiredActions ?? "",
+    priority: (initialValues?.priority ?? "") as Priority | "",
+    minPhotos: initialValues?.minPhotos ?? "2",
+    visitVerification: initialValues?.visitVerification ?? false,
+    status: (initialValues?.status ?? "pending") as StatusType,
     category: "all" as TaskCategory,
-  });
+  }));
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -232,6 +265,28 @@ export function CreateTaskModal({
 
   const handleSubmit = () => {
     if (!validate()) return;
+
+    const payload = {
+      title: form.title,
+      taskType: form.taskType || undefined,
+      description: form.description || undefined,
+      location: form.location || undefined,
+      address: form.address || undefined,
+      dueDate: form.dueDate || undefined,
+      requiredActions: form.requiredActions
+        ? form.requiredActions.split(",").map((s) => s.trim()).filter(Boolean)
+        : undefined,
+      priority: form.priority ? (form.priority.toLowerCase() as ApiTaskPriority) : undefined,
+      minPhotos: form.minPhotos ? Number(form.minPhotos) : undefined,
+      visitVerification: coords?.lat != null && coords?.lng != null ? form.visitVerification : false,
+      latitude: coords?.lat,
+      longitude: coords?.lng,
+    };
+
+    if (mode === "edit" && onSubmitTask) {
+      onSubmitTask(payload);
+      return;
+    }
 
     if (companyId) {
       const typeKey = TASK_TYPES[form.taskType] || "general";
@@ -359,9 +414,8 @@ export function CreateTaskModal({
             </svg>
           </div>
           <h2 className="text-[18px] font-bold text-dash-dark relative z-10 leading-tight">
-            Create New
-            <br />
-            Task
+            {mode === "edit" ? "Edit Task" : "Create New"}
+            {mode === "edit" ? "" : <><br />Task</>}
           </h2>
           <button
             onClick={handleClose}
@@ -716,7 +770,11 @@ export function CreateTaskModal({
             ) : (
               <CheckCircle size={15} />
             )}
-            {isPending || isSelfTaskPending ? "Creating..." : "Create Task"}
+            {isPending || isSelfTaskPending
+              ? mode === "edit"
+                ? "Saving..."
+                : "Creating..."
+              : submitLabel ?? (mode === "edit" ? "Save Changes" : "Create Task")}
           </button>
         </div>
       </div>
