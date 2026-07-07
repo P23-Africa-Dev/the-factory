@@ -10,8 +10,9 @@ import { KpiBoard } from './kpi-board';
 import { CreateKpiModal } from './create-kpi-modal';
 import { KpiDetailsModal } from './kpi-details-modal';
 import { EditKpiModal } from './edit-kpi-modal';
+import ConfirmDeleteModal from '@/components/ui/confirm-delete-modal';
 import { useAuthStore } from '@/store/auth';
-import { useKpis, useUpdateKpiStatus } from '@/hooks/use-kpi';
+import { useDeleteKpi, useKpis, useUpdateKpiStatus } from '@/hooks/use-kpi';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import type { DndContainer, DndItem } from '@/types/operations';
 import { TaskBoardSkeleton } from './skeletons/task-board-skeleton';
@@ -237,6 +238,7 @@ export function AllTasksView() {
   const [showKpiModal, setShowKpiModal] = useState(false);
   const [selectedKpi, setSelectedKpi] = useState<KpiItem | null>(null);
   const [kpiToEdit, setKpiToEdit] = useState<KpiItem | null>(null);
+  const [kpiToDelete, setKpiToDelete] = useState<KpiItem | null>(null);
   const [statusFilter, setStatusFilter] = useState('All');
 
   const searchParams = useSearchParams();
@@ -260,6 +262,12 @@ export function AllTasksView() {
   const updateKpiStatusMutation = useUpdateKpiStatus({
     adminScope: canManage,
     agentScope: isAgent,
+  });
+  const deleteKpiMutation = useDeleteKpi({
+    onSuccess: () => {
+      toast.success('KPI deleted.');
+      setKpiToDelete(null);
+    },
   });
 
   const kpis = kpisData?.kpis;
@@ -408,6 +416,20 @@ export function AllTasksView() {
     setSelectedKpi(kpiById.get(item.id) ?? null);
   };
 
+  const openKpiEdit = (item: DndItem) => {
+    const kpi = kpiById.get(item.id) ?? null;
+    if (!kpi) return;
+    setKpiToEdit(kpi);
+    setSelectedKpi(null);
+  };
+
+  const openKpiDelete = (item: DndItem) => {
+    const kpi = kpiById.get(item.id) ?? null;
+    if (!kpi) return;
+    setKpiToDelete(kpi);
+    setSelectedKpi(null);
+  };
+
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Toolbar */}
@@ -511,11 +533,14 @@ export function AllTasksView() {
           {/* ── KPI Board (full width, below) ─────────────────────── */}
           <KpiBoard
             containers={displayContainers}
+            canManageCards={canManage || isAgent}
             findContainer={findContainer}
             moveItem={moveItem}
             moveToContainer={moveToContainer}
             moveBetweenContainers={moveBetweenContainers}
             onKpiClick={(item) => openKpiDetails(item)}
+            onKpiEdit={(item) => openKpiEdit(item)}
+            onKpiDelete={(item) => openKpiDelete(item)}
             onStatusDrop={handleStatusDrop}
           />
         </div>
@@ -541,6 +566,21 @@ export function AllTasksView() {
       <EditKpiModal
         kpi={kpiToEdit}
         onClose={() => setKpiToEdit(null)}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={!!kpiToDelete}
+        onClose={() => setKpiToDelete(null)}
+        onConfirm={() => {
+          if (!kpiToDelete || !companyId) return;
+          deleteKpiMutation.mutate({
+            kpiId: kpiToDelete.id,
+            companyId,
+          });
+        }}
+        title="Delete KPI"
+        description={`Are you sure you want to delete "${kpiToDelete?.name ?? 'this KPI'}"? This action cannot be undone.`}
+        confirmLabel={deleteKpiMutation.isPending ? 'Deleting...' : 'Delete'}
       />
     </div>
   );
