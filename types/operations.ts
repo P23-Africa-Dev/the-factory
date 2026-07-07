@@ -4,6 +4,8 @@ export interface DndItem {
   id: string;
   label: string;
   description: string;
+  companyName?: string;
+  position?: string;
   location: string;
   latitude?: number | null;
   longitude?: number | null;
