@@ -80,6 +80,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
       const hours = String(today.getHours()).padStart(2, '0');
       const minutes = String(today.getMinutes()).padStart(2, '0');
       
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- default due date when modal opens
       setDueDate(`${year}-${month}-${day}T${hours}:${minutes}`);
     }
   }, [isOpen]);
@@ -183,10 +184,11 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
         handleReset();
         onClose();
       },
-      onError: (err: any) => {
-        let msg = err?.message || 'Failed to create task.';
-        if (err?.errors && typeof err.errors === 'object') {
-          const validationMsgs = Object.values(err.errors)
+      onError: (err: unknown) => {
+        const apiErr = err as { message?: string; errors?: Record<string, string[] | string> };
+        let msg = apiErr?.message || 'Failed to create task.';
+        if (apiErr?.errors && typeof apiErr.errors === 'object') {
+          const validationMsgs = Object.values(apiErr.errors)
             .flat()
             .filter((m): m is string => typeof m === 'string');
           if (validationMsgs.length > 0) {
@@ -264,7 +266,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
             </label>
             <select
               value={type}
-              onChange={(e) => setType(e.target.value as any)}
+              onChange={(e) => setType(e.target.value as typeof type)}
               className="bg-[#0B1E26] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors"
             >
               {TASK_TYPES.map((t) => (

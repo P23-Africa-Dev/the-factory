@@ -886,7 +886,9 @@ function MapContent() {
   const [distanceRemainingM, setDistanceRemainingM] = useState<number | null>(null);
   const [routesByMode, setRoutesByMode] = useState<Partial<Record<TransportMode, DirectionsResult>>>({});
   const transportModeRef = useRef<TransportMode>(transportMode);
-  transportModeRef.current = transportMode;
+  useEffect(() => {
+    transportModeRef.current = transportMode;
+  }, [transportMode]);
   // Permission gate overlay for the Start flow: null = hidden.
   const [permGate, setPermGate] = useState<'request' | 'denied' | null>(null);
   const [resumePermBusy, setResumePermBusy] = useState(false);
@@ -1007,6 +1009,7 @@ function MapContent() {
     if (!trackingTaskId || !taskRoute) return;
     hydrateLiveTaskFromRoute(trackingTaskId, taskRoute);
     if (taskRoute.arrival) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate arrival from persisted route
       setHasArrived(true);
     }
     // Restore route trail immediately so resume is not blank while directions load.
@@ -1037,6 +1040,7 @@ function MapContent() {
 
   useEffect(() => {
     if (liveTask?.status === 'arrived' || liveTask?.arrivedAt) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync arrived flag from live task store
       setHasArrived(true);
     }
   }, [liveTask?.status, liveTask?.arrivedAt]);
@@ -1083,7 +1087,7 @@ function MapContent() {
     if (!trackingTaskId) return;
     setResumePermBusy(true);
     try {
-      let status = await retryLocationPermission();
+      const status = await retryLocationPermission();
       if (status === 'denied') {
         setPermGate('denied');
         return;
@@ -1113,6 +1117,7 @@ function MapContent() {
     const dest = taskRoute?.destination ?? liveTask?.destination;
     if (!dest) return;
     const taskId = trackingTaskId ?? 0;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- restore destination before task detail loads
     setSelectedDestination({
       name: trackingTask?.title ?? activeTask?.title ?? 'Destination',
       address: trackingTask?.address ?? activeTask?.address ?? undefined,
@@ -1254,10 +1259,12 @@ function MapContent() {
   useEffect(() => {
     const token = getMapboxPublicToken() || env.MAPBOX_TOKEN;
     if (!token || !selectedDestination) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- route fetch gate
       setIsRouteLoading(false);
       return;
     }
     if (effectiveOriginLng == null || effectiveOriginLat == null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- route fetch gate
       setIsRouteLoading(false);
       return;
     }
@@ -1311,6 +1318,7 @@ function MapContent() {
   useEffect(() => {
     const result = routesByMode[transportMode];
     if (result && result.coords.length > 1) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- swap cached route geometry for mode
       setPlannedRoute(result.coords);
     }
   }, [transportMode, routesByMode]);
@@ -1729,6 +1737,7 @@ function MapContent() {
   useEffect(() => {
     if (phase !== 'activity_started' || trackingStatus === 'live') return;
     if (liveTask?.lastUpdatedAt) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- promote connecting to live when GPS resumes
       setTrackingStatus('live');
     }
   }, [phase, trackingStatus, liveTask?.lastUpdatedAt]);
@@ -1951,7 +1960,7 @@ function MapContent() {
 
   const selectedDestTask = useMemo(
     () => (selectedDestination?.taskId ? tasks.find((t) => t.id === String(selectedDestination.taskId)) : undefined),
-    [selectedDestination?.taskId, tasks],
+    [selectedDestination, tasks],
   );
 
   const selectedDestLng = selectedDestination?.longitude ?? null;
@@ -1970,6 +1979,7 @@ function MapContent() {
 
   useEffect(() => {
     if (selectedDestination) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- expand sheet when destination is selected
       setSheetSnapIndex(MAP_SHEET_EXPANDED_SNAP_INDEX);
     }
   }, [selectedDestination?.taskId, selectedDestination?.latitude, selectedDestination?.longitude]);

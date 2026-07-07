@@ -110,6 +110,7 @@ export function AddPaymentMethodModal({
 
   useEffect(() => {
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset Stripe setup when modal closes
       setClientSecret(null);
       return;
     }

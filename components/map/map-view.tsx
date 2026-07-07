@@ -311,14 +311,9 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     map.flyTo({ center: [item.longitude, item.latitude], zoom: Math.max(map.getZoom(), 14), speed: 1.2 });
   }, [setSelectedClockedInUserId]);
 
-  useEffect(() => {
-    if (!Number.isFinite(initialAgentId) || clockedInItems.length === 0) return;
-    const match = clockedInItems.find((item) => item.user_id === initialAgentId);
-    if (match) {
-      setLeftTab('clocked-in');
-      handleClockedInSelect(match);
-    }
-  }, [clockedInItems, handleClockedInSelect, initialAgentId]);
+  const highlightedClockedInUserId =
+    selectedClockedInUserId ??
+    (Number.isFinite(initialAgentId) ? initialAgentId : null);
 
   const filteredBusinesses = useMemo(() => {
     if (!locationCtx) return savedLocations;
@@ -375,7 +370,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       setPlaceResults([]);
       setSearchBusy(false);
     }
-  }, []);
+  }, [setPlaceResults, setSearchBusy, setSearchQuery]);
 
   const handleLocationSelect = useCallback((ctx: LocationContext | null) => {
     setLocationCtx(ctx);
@@ -391,7 +386,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     } else {
       map.flyTo({ center: ctx.center, zoom: 13, speed: 1.2 });
     }
-  }, []);
+  }, [setLeftTab, setLocationCtx]);
 
   const showHoverPopup = useCallback((position: [number, number], html: string) => {
     const map = mapRef.current;
@@ -484,7 +479,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       () => setLocating(false),
       { timeout: 10000, enableHighAccuracy: true },
     );
-  }, [locating]);
+  }, [locating, setLocating]);
 
   const animateMarkerTo = useCallback((taskId: number, marker: mapboxgl.Marker, target: [number, number]) => {
     const cached = markerPositionRef.current.get(taskId);
@@ -1248,7 +1243,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             provider="mapbox"
             ready={mapVersion > 0}
             items={clockedInItems}
-            selectedUserId={selectedClockedInUserId}
+            selectedUserId={highlightedClockedInUserId}
             onSelectUserId={setSelectedClockedInUserId}
             getMapboxMap={() => mapRef.current}
           />
@@ -1442,7 +1437,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           <ClockedInPanel
             items={clockedInItems}
             isLoading={clockedInLoading}
-            selectedUserId={selectedClockedInUserId}
+            selectedUserId={highlightedClockedInUserId}
             onSelect={handleClockedInSelect}
           />
         ) : (
@@ -1480,7 +1475,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           provider="mapbox"
           ready={mapVersion > 0}
           items={clockedInItems}
-          selectedUserId={selectedClockedInUserId}
+          selectedUserId={highlightedClockedInUserId}
           onSelectUserId={setSelectedClockedInUserId}
           getMapboxMap={() => mapRef.current}
         />
@@ -1679,14 +1674,9 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     }
   }, [setSelectedClockedInUserId]);
 
-  useEffect(() => {
-    if (!Number.isFinite(initialAgentId) || clockedInItems.length === 0) return;
-    const match = clockedInItems.find((item) => item.user_id === initialAgentId);
-    if (match) {
-      setLeftTab('clocked-in');
-      handleClockedInSelect(match);
-    }
-  }, [clockedInItems, handleClockedInSelect, initialAgentId]);
+  const highlightedClockedInUserId =
+    selectedClockedInUserId ??
+    (Number.isFinite(initialAgentId) ? initialAgentId : null);
 
   const filteredBusinesses = useMemo(() => {
     if (!locationCtx) return savedLocations;
@@ -1777,7 +1767,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       mapRef.current.setCenter({ lat: ctx.center[1], lng: ctx.center[0] });
       mapRef.current.setZoom(13);
     }
-  }, []);
+  }, [setLeftTab, setLocationCtx]);
 
   const handleLocateMe = useCallback(() => {
     if (!navigator.geolocation || locating) return;
@@ -1805,7 +1795,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       () => setLocating(false),
       { timeout: 10000, enableHighAccuracy: true },
     );
-  }, [locating]);
+  }, [locating, setLocating]);
 
   // ── Fetch real-world businesses when a location is selected ──────────────────
   useEffect(() => {
@@ -2342,7 +2332,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           <ClockedInPanel
             items={clockedInItems}
             isLoading={clockedInLoading}
-            selectedUserId={selectedClockedInUserId}
+            selectedUserId={highlightedClockedInUserId}
             onSelect={handleClockedInSelect}
           />
         ) : (
@@ -2386,7 +2376,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           provider="google"
           ready={googleReady}
           items={clockedInItems}
-          selectedUserId={selectedClockedInUserId}
+          selectedUserId={highlightedClockedInUserId}
           onSelectUserId={setSelectedClockedInUserId}
           getGoogleMap={() =>
             mapRef.current && googleRef.current

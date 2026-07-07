@@ -9,27 +9,12 @@ import {
   createClockInMarkerElement,
   createClockInMarkerGoogleIcon,
 } from "@/lib/map/attendance-marker";
+import type { GoogleMapBridge } from "@/components/map/SavedLocationsLayer";
 
 type GoogleMarkerInstance = {
   setMap: (map: unknown) => void;
-  setPosition: (point: { lat: number; lng: number }) => void;
-  setIcon: (icon: Record<string, unknown>) => void;
   addListener: (event: string, handler: () => void) => void;
 };
-
-type GoogleMapInstance = {
-  panTo: (point: { lat: number; lng: number }) => void;
-  setZoom: (zoom: number) => void;
-  getZoom: () => number;
-};
-
-type GoogleNamespaceLike = {
-  maps: {
-    Marker: new (options: Record<string, unknown>) => GoogleMarkerInstance;
-  };
-};
-
-export type GoogleMapBridge = { map: GoogleMapInstance; maps: GoogleNamespaceLike };
 
 export type ClockedInLayerProps = {
   provider: "mapbox" | "google";
@@ -191,13 +176,16 @@ export function ClockedInLayer({
       map.on("moveend", renderClusters);
       map.on("zoomend", renderClusters);
 
+      const mapboxMarkers = mapboxMarkersRef.current;
+      const clusterMarkers = clusterMarkersRef.current;
+
       return () => {
         map.off("moveend", renderClusters);
         map.off("zoomend", renderClusters);
-        mapboxMarkersRef.current.forEach((marker) => marker.remove());
-        mapboxMarkersRef.current.clear();
-        clusterMarkersRef.current.forEach((marker) => marker.remove());
-        clusterMarkersRef.current = [];
+        mapboxMarkers.forEach((marker) => marker.remove());
+        mapboxMarkers.clear();
+        clusterMarkers.forEach((marker) => marker.remove());
+        clusterMarkers.length = 0;
         popupRef.current?.remove();
       };
     }
@@ -208,26 +196,29 @@ export function ClockedInLayer({
     googleMarkersRef.current.forEach((marker) => marker.setMap(null));
     googleMarkersRef.current.clear();
 
+    const googleMarkers = googleMarkersRef.current;
+    const googleMap = bridge.map;
+
     items.forEach((item) => {
-      const marker = new bridge.maps.Marker({
-        map: bridge.map,
+      const marker = new bridge.maps.maps.Marker({
+        map: googleMap,
         position: { lat: item.latitude, lng: item.longitude },
         icon: createClockInMarkerGoogleIcon(item.is_late),
         title: item.agent_name,
-      });
+      }) as GoogleMarkerInstance;
       marker.addListener("click", () => {
         onSelectUserId(item.user_id);
-        bridge.map.panTo({ lat: item.latitude, lng: item.longitude });
-        if (bridge.map.getZoom() < 14) {
-          bridge.map.setZoom(14);
+        googleMap.panTo({ lat: item.latitude, lng: item.longitude });
+        if (googleMap.getZoom() < 14) {
+          googleMap.setZoom(14);
         }
       });
-      googleMarkersRef.current.set(item.user_id, marker);
+      googleMarkers.set(item.user_id, marker);
     });
 
     return () => {
-      googleMarkersRef.current.forEach((marker) => marker.setMap(null));
-      googleMarkersRef.current.clear();
+      googleMarkers.forEach((marker) => marker.setMap(null));
+      googleMarkers.clear();
     };
   }, [provider, ready, items, selectedUserId, onSelectUserId, getMapboxMap, getGoogleMap]);
 

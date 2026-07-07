@@ -38,6 +38,7 @@ export default function AgentSyncQueuePage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial queue hydration + polling bootstrap
     void refresh();
     const interval = window.setInterval(() => {
       void refresh();

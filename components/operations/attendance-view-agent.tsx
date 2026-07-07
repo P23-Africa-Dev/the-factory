@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { MapPin, Search, SlidersHorizontal, ChevronLeft, ChevronRight, Download, Clock, ChevronDown, Loader2, CalendarDays, TrendingUp } from "lucide-react";
+import { Search, SlidersHorizontal, ChevronLeft, ChevronRight, Download, Clock, ChevronDown, Loader2, CalendarDays, TrendingUp } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";

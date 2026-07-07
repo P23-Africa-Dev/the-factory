@@ -358,7 +358,19 @@ export function MapboxMap({
     radiusMeters,
     arrived,
   });
-  syncPayloadRef.current = {
+  useEffect(() => {
+    syncPayloadRef.current = {
+      mode,
+      effectiveTraveled,
+      effectiveRemaining,
+      agentPosition,
+      destinationPosition,
+      agentMarker,
+      destinationMarkerKind,
+      radiusMeters,
+      arrived,
+    };
+  }, [
     mode,
     effectiveTraveled,
     effectiveRemaining,
@@ -368,7 +380,7 @@ export function MapboxMap({
     destinationMarkerKind,
     radiusMeters,
     arrived,
-  };
+  ]);
 
   // fallbackView is removed
 
