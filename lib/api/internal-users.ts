@@ -264,3 +264,60 @@ export function listCompanyZones(
     token,
   });
 }
+
+export type CreateCompanyZonePayload = {
+  company_id?: number | string;
+  name?: string;
+  country_code: string;
+  state_name: string;
+  lga_name: string;
+  is_active?: boolean;
+};
+
+export type UpdateCompanyZonePayload = {
+  company_id?: number | string;
+  name?: string;
+  country_code?: string;
+  state_name?: string;
+  lga_name?: string;
+  is_active?: boolean;
+};
+
+export function createCompanyZone(
+  payload: CreateCompanyZonePayload,
+  token: string,
+): Promise<ApiEnvelope<{ zone: CompanyZoneOption }>> {
+  return apiRequest<{ zone: CompanyZoneOption }>({
+    method: "POST",
+    path: "/internal-users/zones",
+    body: payload,
+    token,
+  });
+}
+
+export function updateCompanyZone(
+  zoneId: number | string,
+  payload: UpdateCompanyZonePayload,
+  token: string,
+): Promise<ApiEnvelope<{ zone: CompanyZoneOption }>> {
+  return apiRequest<{ zone: CompanyZoneOption }>({
+    method: "PATCH",
+    path: `/internal-users/zones/${zoneId}`,
+    body: payload,
+    token,
+  });
+}
+
+export function deleteCompanyZone(
+  zoneId: number | string,
+  companyId: number | string,
+  token: string,
+): Promise<ApiEnvelope<{ deleted_zone_id: number }>> {
+  const query = buildQuery({ company_id: companyId });
+
+  return apiRequest<{ deleted_zone_id: number }>({
+    method: "DELETE",
+    path: `/internal-users/zones/${zoneId}${query}`,
+    token,
+  });
+}

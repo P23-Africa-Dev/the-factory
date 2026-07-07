@@ -50,6 +50,57 @@ class AttendanceApiTest extends TestCase
         ]);
     }
 
+    public function test_management_can_fetch_persisted_attendance_settings(): void
+    {
+        [$company, $owner] = $this->seedCompanyUsers();
+
+        AttendanceSetting::query()->create([
+            'company_id' => $company->id,
+            'opening_time' => '08:30:00',
+            'closing_time' => '18:00:00',
+            'working_days' => ['monday', 'wednesday', 'friday'],
+            'clockin_window_minutes' => 20,
+            'auto_clockout_enabled' => false,
+            'timezone' => 'Europe/London',
+        ]);
+
+        $response = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/settings?company_id=' . $company->id);
+
+        $response->assertOk()
+            ->assertJsonPath('data.settings.company_id', $company->id)
+            ->assertJsonPath('data.settings.opening_time', '08:30:00')
+            ->assertJsonPath('data.settings.closing_time', '18:00:00')
+            ->assertJsonPath('data.settings.working_days', ['monday', 'wednesday', 'friday'])
+            ->assertJsonPath('data.settings.clockin_window_minutes', 20)
+            ->assertJsonPath('data.settings.auto_clockout_enabled', false)
+            ->assertJsonPath('data.settings.timezone', 'Europe/London');
+    }
+
+    public function test_management_can_upsert_attendance_settings_with_timezone(): void
+    {
+        [$company, $owner] = $this->seedCompanyUsers();
+
+        $response = $this->actingAs($owner, 'sanctum')
+            ->putJson('/api/v1/attendance/settings', [
+                'company_id' => $company->company_id,
+                'opening_time' => '09:00',
+                'closing_time' => '17:00',
+                'working_days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+                'clockin_window_minutes' => 15,
+                'auto_clockout_enabled' => true,
+                'timezone' => 'Europe/London',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.settings.timezone', 'Europe/London');
+
+        $this->assertDatabaseHas('attendance_settings', [
+            'company_id' => $company->id,
+            'timezone' => 'Europe/London',
+        ]);
+    }
+
     public function test_agent_can_clock_in_and_clock_out_with_duration_tracking(): void
     {
         [$company,,, $agent] = $this->seedCompanyUsers();

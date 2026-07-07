@@ -192,8 +192,9 @@ class AttendanceService
         $context = $this->attendanceAccessService->resolve($user, $companyId);
         $this->attendanceAccessService->ensureAgent($context);
 
-        $now = now();
         $setting = $this->requireSetting((int) $context->company->id);
+        $timezone = $this->resolveSettingTimezone($setting);
+        $now = now($timezone);
         [$windowStart, $openingTime, $closingTime] = $this->scheduleBoundsForDate($now, $setting);
 
         $attendanceDate = $now->toDateString();
@@ -703,18 +704,21 @@ class AttendanceService
         $issueAlertCount = 0;
 
         foreach ($settings as $setting) {
+            $timezone = $this->resolveSettingTimezone($setting);
+            $companyNow = now($timezone);
+
             $openRecords = AttendanceRecord::query()
                 ->where('company_id', $setting->company_id)
                 ->whereNull('clock_out_at')
                 ->whereNotNull('clock_in_at')
-                ->whereDate('attendance_date', '<=', now()->toDateString())
+                ->whereDate('attendance_date', '<=', $companyNow->toDateString())
                 ->get();
 
             foreach ($openRecords as $record) {
-                $attendanceDate = Carbon::parse((string) $record->attendance_date);
+                $attendanceDate = Carbon::parse((string) $record->attendance_date, $timezone);
                 [,, $closingTime] = $this->scheduleBoundsForDate($attendanceDate, $setting);
 
-                if (now()->lt($closingTime)) {
+                if ($companyNow->lt($closingTime)) {
                     continue;
                 }
 
@@ -749,13 +753,13 @@ class AttendanceService
                 $autoClockedCount++;
             }
 
-            $today = now();
+            $today = $companyNow;
             if (! $this->isWorkingDay($today, $setting)) {
                 continue;
             }
 
             [,, $todayClosing] = $this->scheduleBoundsForDate($today, $setting);
-            if (now()->lt($todayClosing)) {
+            if ($companyNow->lt($todayClosing)) {
                 continue;
             }
 
@@ -883,12 +887,20 @@ class AttendanceService
 
     private function scheduleBoundsForDate(Carbon $date, AttendanceSetting $setting): array
     {
-        $day = $date->toDateString();
-        $openingTime = Carbon::parse($day . ' ' . (string) $setting->opening_time);
-        $closingTime = Carbon::parse($day . ' ' . (string) $setting->closing_time);
+        $timezone = $this->resolveSettingTimezone($setting);
+        $day = $date->copy()->timezone($timezone)->toDateString();
+        $openingTime = Carbon::parse($day . ' ' . (string) $setting->opening_time, $timezone);
+        $closingTime = Carbon::parse($day . ' ' . (string) $setting->closing_time, $timezone);
         $windowStart = $openingTime->copy()->subMinutes((int) $setting->clockin_window_minutes);
 
         return [$windowStart, $openingTime, $closingTime];
+    }
+
+    private function resolveSettingTimezone(AttendanceSetting $setting): string
+    {
+        $timezone = is_string($setting->timezone) ? trim($setting->timezone) : '';
+
+        return $timezone !== '' ? $timezone : (string) config('app.timezone', 'UTC');
     }
 
     private function requiredWorkMinutes(int $companyId, AttendanceSetting $setting): int

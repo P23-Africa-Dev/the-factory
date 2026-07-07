@@ -31,7 +31,7 @@ use App\Http\Controllers\Api\V1\Calendar\CalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Calendar\MeetingController;
 use App\Http\Controllers\Api\V1\Calendar\UserCalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Company\CompanyLocationController;
-use App\Http\Controllers\Api\V1\CountryController;
+use App\Http\Controllers\Api\V1\GeographyController;
 use App\Http\Controllers\Api\V1\Crm\CrmEmailController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
 use App\Http\Controllers\Api\V1\CurrencyController;
@@ -83,6 +83,12 @@ Route::get('/currencies', [CurrencyController::class, 'index'])
 Route::get('/countries', [CountryController::class, 'index'])
     ->middleware('throttle:api-heavy')
     ->name('countries.index');
+Route::get('/geography/states', [GeographyController::class, 'states'])
+    ->middleware('throttle:api-heavy')
+    ->name('geography.states');
+Route::get('/geography/lgas', [GeographyController::class, 'lgas'])
+    ->middleware('throttle:api-heavy')
+    ->name('geography.lgas');
 Route::get('/map/provider', MapProviderController::class)
     ->middleware('throttle:api-heavy')
     ->name('map.provider');

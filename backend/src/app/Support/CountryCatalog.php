@@ -31,17 +31,24 @@ final class CountryCatalog
         return self::$cachedNames = $configured;
     }
 
-    /** @return list<array{label: string, value: string}> */
+    /** @return list<array{label: string, value: string, code: string}> */
     public static function asOptions(): array
     {
         return collect(self::names())
-            ->map(fn (string $name): array => [
+            ->map(fn (string $name, string $code): array => [
                 'label' => $name,
                 'value' => $name,
+                'code' => strtoupper($code),
             ])
             ->sortBy('label', SORT_NATURAL | SORT_FLAG_CASE)
             ->values()
             ->all();
+    }
+
+    /** @return list<string> */
+    public static function codes(): array
+    {
+        return array_keys(self::names());
     }
 
     public static function resolveName(string $country): ?string

@@ -12,6 +12,7 @@ export type SettingsSectionId =
   | "calendar"
   | "security"
   | "organization"
+  | "zones"
   | "crm"
   | "workforce"
   | "payroll"
@@ -84,6 +85,14 @@ export function useSettingsAccess() {
         scope: "organization",
         description: "Company profile and team",
         canView: isManagement || isAgent,
+        canEdit: canEditOrg(role),
+      },
+      {
+        id: "zones",
+        label: "Zones",
+        scope: "organization",
+        description: "Coverage areas for agent assignment",
+        canView: isManagement,
         canEdit: canEditOrg(role),
       },
       {

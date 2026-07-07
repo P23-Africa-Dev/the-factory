@@ -23,6 +23,7 @@ import { resolveCopilotGeolocationContext } from "@/lib/copilot-geolocation";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useCrmLabels } from "@/hooks/use-crm";
 import { useCompanyZones } from "@/hooks/use-internal-users";
+import { CreateZoneModal } from "@/components/zones/create-zone-modal";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
 import { listLeads } from "@/lib/api/crm";
 import {
@@ -377,6 +378,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [searchResults, setSearchResults] = useState<CopilotThreadSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  const [showCreateZoneModal, setShowCreateZoneModal] = useState(false);
   const [highlightQuery, setHighlightQuery] = useState("");
   const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
   const [meetingActionDrafts, setMeetingActionDrafts] = useState<Record<string, ElyMeetingDraft>>({});
@@ -1263,7 +1265,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   function zoneSelectOptions(): EditFieldOption[] {
     return companyZones.map((zone) => ({
       value: String(zone.id),
-      label: zone.name,
+      label: `${zone.name} (${zone.state_name}, ${zone.lga_name})`,
     }));
   }
 
@@ -3251,6 +3253,19 @@ export function AIChat({ open, onClose }: AIChatProps) {
                             return (
                               <div className="mb-2 rounded-xl border border-[#355C57]/70 bg-[#102322] px-3 py-2">
                                 <p className="text-[11px] font-semibold text-[#9FD3C8] mb-2">Edit before confirm:</p>
+                                {payloadTool === "org.users.create" && companyZones.length === 0 ? (
+                                  <div className="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+                                    No company zones found.{" "}
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowCreateZoneModal(true)}
+                                      className="underline font-semibold"
+                                    >
+                                      Create a zone
+                                    </button>{" "}
+                                    or open Settings &gt; Zones first.
+                                  </div>
+                                ) : null}
                                 <div className="grid grid-cols-1 gap-2">
                                   {fields.map((field) => {
                                     const value = editFieldValue(msg, args, field);
@@ -3496,6 +3511,15 @@ export function AIChat({ open, onClose }: AIChatProps) {
           text-decoration-thickness: 1px;
         }
       `}</style>
+
+      {companyId ? (
+        <CreateZoneModal
+          isOpen={showCreateZoneModal}
+          onClose={() => setShowCreateZoneModal(false)}
+          companyId={companyId}
+          defaultCountry="NG"
+        />
+      ) : null}
     </>
   );
 }

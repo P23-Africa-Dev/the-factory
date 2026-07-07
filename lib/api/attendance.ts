@@ -162,12 +162,18 @@ export type AttendanceRecordsResponse = {
 };
 
 export type AttendanceSettings = {
+  id?: number;
   company_id?: number | string;
   opening_time?: string;
   closing_time?: string;
   working_days?: string[];
   clockin_window_minutes?: number;
   auto_clockout_enabled?: boolean;
+  timezone?: string;
+};
+
+export type AttendanceSettingsResponse = {
+  settings: AttendanceSettings | null;
 };
 
 export type UpdateAttendanceSettingsPayload = {
@@ -177,6 +183,7 @@ export type UpdateAttendanceSettingsPayload = {
   working_days?: string[];
   clockin_window_minutes?: number;
   auto_clockout_enabled?: boolean;
+  timezone?: string;
 };
 
 export type PayrollSummariesParams = {
@@ -304,7 +311,7 @@ export function getAttendanceSettings(
   token: string
 ) {
   const query = buildQuery(params as Record<string, unknown>);
-  return apiRequest<AttendanceSettings>({
+  return apiRequest<AttendanceSettingsResponse>({
     method: "GET",
     path: `/attendance/settings${query}`,
     token,
@@ -315,7 +322,7 @@ export function updateAttendanceSettings(
   payload: UpdateAttendanceSettingsPayload,
   token: string
 ) {
-  return apiRequest<AttendanceSettings>({
+  return apiRequest<AttendanceSettingsResponse>({
     method: "PUT",
     path: "/attendance/settings",
     body: payload,

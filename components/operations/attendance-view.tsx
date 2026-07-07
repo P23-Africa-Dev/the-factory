@@ -6,6 +6,10 @@ import { MapPin, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRi
 import { toast } from "sonner";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { useAttendanceSettings, useUpdateAttendanceSettings } from "@/hooks/use-attendance";
+import {
+  AttendanceTimezoneSelect,
+  DEFAULT_ATTENDANCE_TIMEZONE,
+} from "@/components/attendance/attendance-timezone-select";
 import { endOfMonth, endOfWeek, format, parseISO, startOfMonth, startOfWeek, subDays } from "date-fns";
 import { AddAgentModal } from "./add-agent-modal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
@@ -311,8 +315,9 @@ function AttendanceSettingsModal({
   const [openingTime, setOpeningTime] = useState("09:00");
   const [closingTime, setClosingTime] = useState("17:00");
   const [workingDays, setWorkingDays] = useState<string[]>(["monday", "tuesday", "wednesday", "thursday", "friday"]);
-  const [windowMinutes, setWindowMinutes] = useState(30);
-  const [autoClockout, setAutoClockout] = useState(false);
+  const [windowMinutes, setWindowMinutes] = useState(15);
+  const [autoClockout, setAutoClockout] = useState(true);
+  const [timezone, setTimezone] = useState(DEFAULT_ATTENDANCE_TIMEZONE);
 
   useEffect(() => {
     if (settings) {
@@ -322,6 +327,7 @@ function AttendanceSettingsModal({
         if (settings.working_days) setWorkingDays(settings.working_days);
         if (settings.clockin_window_minutes !== undefined) setWindowMinutes(settings.clockin_window_minutes);
         if (settings.auto_clockout_enabled !== undefined) setAutoClockout(settings.auto_clockout_enabled);
+        if (settings.timezone) setTimezone(settings.timezone);
       });
     }
   }, [settings]);
@@ -341,6 +347,7 @@ function AttendanceSettingsModal({
         working_days: workingDays,
         clockin_window_minutes: windowMinutes,
         auto_clockout_enabled: autoClockout,
+        timezone,
       },
       {
         onSuccess: () => {
@@ -437,6 +444,16 @@ function AttendanceSettingsModal({
               </div>
 
               {/* Auto-clockout */}
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+                  Timezone
+                </label>
+                <AttendanceTimezoneSelect value={timezone} onChange={setTimezone} />
+                <p className="text-[11px] text-gray-400 mt-1.5">
+                  Opening and closing times are interpreted in this timezone.
+                </p>
+              </div>
+
               <div className="flex items-center justify-between py-4 px-4 bg-gray-50 rounded-2xl border border-gray-100">
                 <div>
                   <p className="text-[13px] font-bold text-dash-dark">Auto Clock-out</p>

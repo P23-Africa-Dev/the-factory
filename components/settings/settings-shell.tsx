@@ -15,6 +15,7 @@ import { NotificationsPanel } from "@/components/settings/personal/notifications
 import { CalendarUserPanel } from "@/components/settings/personal/calendar-user-panel";
 import { SecurityPanel } from "@/components/settings/personal/security-panel";
 import { OrgProfilePanel } from "@/components/settings/organization/org-profile-panel";
+import { ZonesSettingsPanel } from "@/components/settings/organization/zones-settings-panel";
 import { CrmSettingsPanel } from "@/components/settings/organization/crm-settings-panel";
 import { AttendanceSettingsPanel } from "@/components/settings/organization/attendance-settings-panel";
 import { PayrollSettingsPanel } from "@/components/settings/organization/payroll-settings-panel";
@@ -41,6 +42,8 @@ function SectionContent({ sectionId }: { sectionId: SettingsSectionId }) {
       return <SecurityPanel />;
     case "organization":
       return <OrgProfilePanel />;
+    case "zones":
+      return <ZonesSettingsPanel />;
     case "crm":
       return <CrmSettingsPanel />;
     case "workforce":

@@ -2,12 +2,16 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  createCompanyZone,
   createInternalUser,
+  deleteCompanyZone,
   getInternalUsersOnboardingStatus,
   listCompanyZones,
   listInternalUsers,
   listInternalUsersPaginated,
+  updateCompanyZone,
   updateInternalUser,
+  type CreateCompanyZonePayload,
   type CreateInternalUserPayload,
   type CreatedInternalUser,
   type InternalOnboardingStatusData,
@@ -15,6 +19,7 @@ import {
   type CompanyZoneOption,
   type ListInternalUsersParams,
   type PaginatedInternalUsersData,
+  type UpdateCompanyZonePayload,
   type UpdateInternalUserPayload,
 } from "@/lib/api/internal-users";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
@@ -112,5 +117,46 @@ export function useCompanyZones(companyId?: number | string) {
     },
     enabled: !!token && !!companyId,
     staleTime: 1000 * 60 * 2,
+  });
+}
+
+export function useCreateCompanyZone(options?: { onSuccess?: () => void }) {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useMutation({
+    mutationFn: (payload: CreateCompanyZonePayload) => createCompanyZone(payload, token),
+    onSuccess: (_, payload) => {
+      queryClient.invalidateQueries({ queryKey: ["company-zones", payload.company_id] });
+      options?.onSuccess?.();
+    },
+  });
+}
+
+export function useUpdateCompanyZone(options?: { onSuccess?: () => void }) {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useMutation({
+    mutationFn: ({ zoneId, payload }: { zoneId: number | string; payload: UpdateCompanyZonePayload }) =>
+      updateCompanyZone(zoneId, payload, token),
+    onSuccess: (_, { payload }) => {
+      queryClient.invalidateQueries({ queryKey: ["company-zones", payload.company_id] });
+      options?.onSuccess?.();
+    },
+  });
+}
+
+export function useDeleteCompanyZone(options?: { onSuccess?: () => void }) {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useMutation({
+    mutationFn: ({ zoneId, companyId }: { zoneId: number | string; companyId: number | string }) =>
+      deleteCompanyZone(zoneId, companyId, token),
+    onSuccess: (_, { companyId }) => {
+      queryClient.invalidateQueries({ queryKey: ["company-zones", companyId] });
+      options?.onSuccess?.();
+    },
   });
 }
