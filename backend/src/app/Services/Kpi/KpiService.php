@@ -130,12 +130,23 @@ class KpiService
     public function update(User $user, Kpi $kpi, array $data): Kpi
     {
         $context = $this->accessService->resolve($user, $data['company_id'] ?? null);
-        $this->accessService->ensureManager($context);
         $this->assertKpiInCompany($kpi, (int) $context->company->id);
+        $canManage = $context->canManageKpis();
+
+        if (! $canManage && ! $this->canAgentMutateKpi($context, $user, $kpi)) {
+            throw ValidationException::withMessages([
+                'authorization' => ['You can only edit KPIs assigned to you.'],
+            ]);
+        }
 
         $assigneeId = array_key_exists('assigned_to_user_id', $data)
             ? ($data['assigned_to_user_id'] !== null ? (int) $data['assigned_to_user_id'] : null)
             : $kpi->assigned_to_user_id;
+
+        if (! $canManage) {
+            // Agents can edit their own KPI details but cannot reassign ownership.
+            $assigneeId = $kpi->assigned_to_user_id;
+        }
 
         if ($assigneeId !== null) {
             $this->ensureAgentBelongsToCompany((int) $context->company->id, $assigneeId);
@@ -159,8 +170,13 @@ class KpiService
     public function delete(User $user, Kpi $kpi, ?int $companyId = null): void
     {
         $context = $this->accessService->resolve($user, $companyId);
-        $this->accessService->ensureManager($context);
         $this->assertKpiInCompany($kpi, (int) $context->company->id);
+
+        if (! $context->canManageKpis() && ! $this->canAgentMutateKpi($context, $user, $kpi)) {
+            throw ValidationException::withMessages([
+                'authorization' => ['You can only delete KPIs assigned to you.'],
+            ]);
+        }
 
         $kpi->delete();
     }
@@ -273,6 +289,11 @@ class KpiService
                 'assigned_to_user_id' => ['Selected user must have agent role.'],
             ]);
         }
+    }
+
+    private function canAgentMutateKpi(KpiAccessContext $context, User $user, Kpi $kpi): bool
+    {
+        return $context->isAgent() && (int) $kpi->assigned_to_user_id === (int) $user->id;
     }
 
     private function assertAgentStatusTransition(?string $currentStatus, string $nextStatus): void

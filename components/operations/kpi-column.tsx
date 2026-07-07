@@ -13,9 +13,11 @@ interface KpiColumnProps {
   color: string;
   items: DndItem[];
   onKpiClick?: (item: DndItem) => void;
+  onKpiEdit?: (item: DndItem) => void;
+  onKpiDelete?: (item: DndItem) => void;
 }
 
-export function KpiColumn({ id, title, color, items, onKpiClick }: KpiColumnProps) {
+export function KpiColumn({ id, title, color, items, onKpiClick, onKpiEdit, onKpiDelete }: KpiColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id });
 
   return (
@@ -44,7 +46,13 @@ export function KpiColumn({ id, title, color, items, onKpiClick }: KpiColumnProp
         <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
           <div className="pt-2">
             {items.map((item) => (
-              <KpiCard key={item.id} item={item} onClick={onKpiClick} />
+              <KpiCard
+                key={item.id}
+                item={item}
+                onClick={onKpiClick}
+                onEdit={onKpiEdit}
+                onDelete={onKpiDelete}
+              />
             ))}
           </div>
         </SortableContext>
