@@ -4,7 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CreateTaskModal } from '@/features/tasks/components/CreateTaskModal';
-import { ArrowLeft, MapPin, AlertCircle, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, MapPin, AlertCircle, Pencil, Trash2, Plus } from 'lucide-react';
 
 import {
   useTaskList,
