@@ -224,6 +224,87 @@ class TaskService
         return $task;
     }
 
+    public function update(User $user, Task $task, array $data): Task
+    {
+        $context = $this->accessService->resolve($user, $data['company_id'] ?? null);
+        $this->assertTaskIntegrityInCompany($task, $context->company->id);
+
+        if (! $this->canMutateTask($context, $user, $task)) {
+            throw ValidationException::withMessages([
+                'authorization' => ['You can only edit tasks assigned to you.'],
+            ]);
+        }
+
+        if (! $context->canManageTasks()) {
+            unset($data['project_id'], $data['assigned_agent_id'], $data['assigned_agent_ids']);
+        }
+
+        if (! empty($data['project_id']) && $context->canManageTasks()) {
+            $this->ensureProjectBelongsToCompany($context->company->id, (int) $data['project_id']);
+        }
+
+        $updatedTask = DB::transaction(function () use ($task, $data, $context): Task {
+            $latitude = array_key_exists('latitude', $data)
+                ? ($data['latitude'] !== null ? (float) $data['latitude'] : null)
+                : $task->latitude;
+            $longitude = array_key_exists('longitude', $data)
+                ? ($data['longitude'] !== null ? (float) $data['longitude'] : null)
+                : $task->longitude;
+            $trackable = (new Task([
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+            ]))->hasTrackableLocation();
+
+            $payload = array_filter([
+                'title' => $data['title'] ?? null,
+                'type' => $data['type'] ?? null,
+                'description' => $data['description'] ?? null,
+                'location_text' => $data['location'] ?? null,
+                'address_full' => $data['address'] ?? null,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+                'due_at' => $data['due_date'] ?? null,
+                'required_actions' => $data['required_actions'] ?? null,
+                'priority' => $data['priority'] ?? null,
+                'minimum_photos_required' => array_key_exists('minimum_photos_required', $data)
+                    ? (int) $data['minimum_photos_required']
+                    : null,
+                'visit_verification_required' => array_key_exists('visit_verification_required', $data)
+                    ? ($trackable && (bool) $data['visit_verification_required'])
+                    : null,
+            ], static fn(mixed $value): bool => $value !== null);
+
+            if ($payload !== []) {
+                $task->update($payload);
+            }
+
+            return $this->loadTask($task, $context);
+        });
+
+        return $updatedTask;
+    }
+
+    public function delete(User $user, Task $task, ?int $companyId = null): void
+    {
+        $context = $this->accessService->resolve($user, $companyId);
+        $this->assertTaskIntegrityInCompany($task, $context->company->id);
+
+        if (! $this->canMutateTask($context, $user, $task)) {
+            throw ValidationException::withMessages([
+                'authorization' => ['You can only delete tasks assigned to you.'],
+            ]);
+        }
+
+        DB::transaction(function () use ($task): void {
+            $task->proofs()->delete();
+            $task->trackingPoints()->delete();
+            $task->trackingSession()->delete();
+            $task->reassignments()->delete();
+            $task->assignments()->delete();
+            $task->delete();
+        });
+    }
+
     public function reassign(User $user, Task $task, array $agentIds, ?int $companyId = null): Task
     {
         $context = $this->accessService->resolve($user, $companyId);
@@ -572,6 +653,15 @@ class TaskService
         return $task->assignments()
             ->where('assigned_agent_id', $user->id)
             ->exists();
+    }
+
+    private function canMutateTask(TaskAccessContext $context, User $user, Task $task): bool
+    {
+        if ($context->canManageTasks()) {
+            return true;
+        }
+
+        return $context->isAgent() && $this->isUserAssignedToTask($task, $user);
     }
 
     private function notifyCurrentAssignees(Task $task, User $actor, bool $selfAssignedFlow): void

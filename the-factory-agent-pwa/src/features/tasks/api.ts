@@ -1,11 +1,10 @@
 import { client } from '@/lib/api/client';
 import { getActiveCompanyId, setActiveCompanyId } from '@/lib/storage/stores';
 import { taskSchema, taskListSchema } from './schema';
-import type { Task, TaskFilters, UpdateTaskStatusPayload } from './types';
+import type { Task, TaskFilters, UpdateTaskStatusPayload, UpdateTaskPayload } from './types';
 import { env } from '@/constants/env';
 import { queueOfflineAction } from '@/lib/offline/queue';
 import { appStore } from '@/lib/storage/stores';
-import { buildCompleteFormData } from '@/features/tracking/completeTaskForm';
 import { isOffline, shouldUseCache } from '@/lib/offline/connectivity';
 import { setShowingCachedData } from '@/lib/offline/cacheIndicator';
 import {
@@ -229,6 +228,24 @@ export const taskApi = {
     await client.patch(`/agent/tasks/${id}/status`, {
       status,
       company_id: companyId ?? undefined,
+    });
+  },
+
+  update: async ({ id, title, description, location, address }: UpdateTaskPayload): Promise<void> => {
+    const companyId = getActiveCompanyId();
+    await client.patch(`/agent/tasks/${id}`, {
+      company_id: companyId ?? undefined,
+      title,
+      description,
+      location,
+      address,
+    });
+  },
+
+  delete: async (id: string): Promise<void> => {
+    const companyId = getActiveCompanyId();
+    await client.delete(`/agent/tasks/${id}`, {
+      params: { company_id: companyId ?? undefined },
     });
   },
 
