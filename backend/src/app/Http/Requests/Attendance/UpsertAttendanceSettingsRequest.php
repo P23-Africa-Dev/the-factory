@@ -43,6 +43,7 @@ class UpsertAttendanceSettingsRequest extends FormRequest
             ],
             'clockin_window_minutes' => ['nullable', 'integer', 'min:0', 'max:240'],
             'auto_clockout_enabled' => ['nullable', 'boolean'],
+            'timezone' => ['nullable', 'string', 'max:64', 'timezone'],
         ];
     }
 }

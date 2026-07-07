@@ -74,6 +74,7 @@ export function useClockIn() {
     mutationFn: (payload: ClockPayload) => clockIn(payload, token),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ATTENDANCE_KEYS.all });
+      queryClient.invalidateQueries({ queryKey: ["attendance-map"] });
       if (res.meta?.queued_offline) {
         toast.info("Clock in queued offline.");
       }
@@ -89,6 +90,7 @@ export function useClockOut() {
     mutationFn: (payload: ClockPayload) => clockOut(payload, token),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ATTENDANCE_KEYS.all });
+      queryClient.invalidateQueries({ queryKey: ["attendance-map"] });
       if (res.meta?.queued_offline) {
         toast.info("Clock out queued offline.");
       }
@@ -184,9 +186,9 @@ export function useAttendanceSettings(companyId: number | string | undefined) {
 
   return useQuery({
     queryKey: ATTENDANCE_KEYS.settings(companyId),
-    queryFn: async (): Promise<AttendanceSettings> => {
+    queryFn: async (): Promise<AttendanceSettings | null> => {
       const res = await getAttendanceSettings({ company_id: companyId }, token);
-      return res.data;
+      return res.data.settings ?? null;
     },
     enabled: !!token && !!companyId,
     staleTime: 1000 * 60 * 5,

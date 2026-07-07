@@ -162,12 +162,18 @@ export type AttendanceRecordsResponse = {
 };
 
 export type AttendanceSettings = {
+  id?: number;
   company_id?: number | string;
   opening_time?: string;
   closing_time?: string;
   working_days?: string[];
   clockin_window_minutes?: number;
   auto_clockout_enabled?: boolean;
+  timezone?: string;
+};
+
+export type AttendanceSettingsResponse = {
+  settings: AttendanceSettings | null;
 };
 
 export type UpdateAttendanceSettingsPayload = {
@@ -177,6 +183,7 @@ export type UpdateAttendanceSettingsPayload = {
   working_days?: string[];
   clockin_window_minutes?: number;
   auto_clockout_enabled?: boolean;
+  timezone?: string;
 };
 
 export type PayrollSummariesParams = {
@@ -190,6 +197,32 @@ export type GeneratePayrollPayload = {
   company_id: number | string;
   year: number;
   month: number;
+};
+
+export type AttendanceMapSnapshotItem = {
+  user_id: number;
+  attendance_record_id: number;
+  agent_name: string;
+  avatar_url: string | null;
+  clock_in_at: string;
+  clock_out_at: string | null;
+  status: string;
+  is_late: boolean;
+  latitude: number;
+  longitude: number;
+  address: string | null;
+  zone: string | null;
+};
+
+export type AttendanceMapSnapshotsResponse = {
+  date: string;
+  items: AttendanceMapSnapshotItem[];
+};
+
+export type AttendanceMapSnapshotsParams = {
+  company_id?: number | string;
+  date?: string;
+  include_clocked_out?: boolean;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -263,6 +296,18 @@ export function getAgentPayrollSummary(
   });
 }
 
+export function getAgentAttendanceMapSnapshot(
+  params: AttendanceMapSnapshotsParams,
+  token: string
+) {
+  const query = buildQuery(params as Record<string, unknown>);
+  return apiRequest<AttendanceMapSnapshotsResponse>({
+    method: "GET",
+    path: `/agent/attendance/map-snapshot${query}`,
+    token,
+  });
+}
+
 // ─── Management API Functions ─────────────────────────────────────────────────
 
 export function getAttendanceMetrics(
@@ -286,6 +331,18 @@ export function getAttendanceRecords(params: AttendanceRecordsParams, token: str
   });
 }
 
+export function getAttendanceMapSnapshots(
+  params: AttendanceMapSnapshotsParams,
+  token: string
+) {
+  const query = buildQuery(params as Record<string, unknown>);
+  return apiRequest<AttendanceMapSnapshotsResponse>({
+    method: "GET",
+    path: `/attendance/map-snapshots${query}`,
+    token,
+  });
+}
+
 export function getAgentAttendanceHistory(
   userId: number | string,
   params: ManagedAgentHistoryParams,
@@ -304,7 +361,7 @@ export function getAttendanceSettings(
   token: string
 ) {
   const query = buildQuery(params as Record<string, unknown>);
-  return apiRequest<AttendanceSettings>({
+  return apiRequest<AttendanceSettingsResponse>({
     method: "GET",
     path: `/attendance/settings${query}`,
     token,
@@ -315,7 +372,7 @@ export function updateAttendanceSettings(
   payload: UpdateAttendanceSettingsPayload,
   token: string
 ) {
-  return apiRequest<AttendanceSettings>({
+  return apiRequest<AttendanceSettingsResponse>({
     method: "PUT",
     path: "/attendance/settings",
     body: payload,

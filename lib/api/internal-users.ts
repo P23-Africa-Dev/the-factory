@@ -9,7 +9,8 @@ export type CreateInternalUserPayload = {
   full_name: string;
   email: string;
   role: InternalUserRole;
-  assigned_zone: string;
+  assigned_zone?: string;
+  assigned_zone_ids?: number[];
   work_days: string[];
   base_salary: number;
   salary_type?: "daily" | "monthly" | "weekly";
@@ -40,6 +41,8 @@ export type InternalUserListItem = {
   role: InternalUserRole;
   internal_role?: InternalUserRole;
   assigned_zone?: string | null;
+  assigned_zone_ids?: number[];
+  assigned_zones?: CompanyZoneOption[];
   base_salary?: number | null;
   payroll_salary_type?: "daily" | "monthly" | "weekly" | null;
   salary_currency?: string | null;
@@ -72,6 +75,7 @@ export type ListInternalUsersParams = {
   status?: "active" | "offline" | "pending_onboarding" | "inactive";
   search?: string;
   zone?: string;
+  zone_id?: number;
   include_inactive?: 0 | 1;
   per_page?: number;
   page?: number;
@@ -158,6 +162,7 @@ export function listInternalUsersPaginated(
     status: params.status,
     search: params.search,
     zone: params.zone,
+    zone_id: params.zone_id,
     include_inactive: params.include_inactive,
     per_page: params.per_page,
     page: params.page,
@@ -217,6 +222,17 @@ export type UpdateInternalUserPayload = {
   role?: InternalUserRole;
   phone_number?: string | null;
   assigned_zone?: string | null;
+  assigned_zone_ids?: number[] | null;
+};
+
+export type CompanyZoneOption = {
+  id: number;
+  company_id: number;
+  name: string;
+  country_code: string;
+  state_name: string;
+  lga_name: string;
+  is_active: boolean;
 };
 
 export function updateInternalUser(
@@ -228,6 +244,80 @@ export function updateInternalUser(
     method: "PATCH",
     path: `/internal-users/${userId}`,
     body: payload,
+    token,
+  });
+}
+
+export function listCompanyZones(
+  params: { company_id?: number | string; q?: string; is_active?: 0 | 1 },
+  token: string,
+): Promise<ApiEnvelope<CompanyZoneOption[]>> {
+  const query = buildQuery({
+    company_id: params.company_id,
+    q: params.q,
+    is_active: params.is_active,
+  });
+
+  return apiRequest<CompanyZoneOption[]>({
+    method: "GET",
+    path: `/internal-users/zones${query}`,
+    token,
+  });
+}
+
+export type CreateCompanyZonePayload = {
+  company_id?: number | string;
+  name?: string;
+  country_code: string;
+  state_name: string;
+  lga_name: string;
+  is_active?: boolean;
+};
+
+export type UpdateCompanyZonePayload = {
+  company_id?: number | string;
+  name?: string;
+  country_code?: string;
+  state_name?: string;
+  lga_name?: string;
+  is_active?: boolean;
+};
+
+export function createCompanyZone(
+  payload: CreateCompanyZonePayload,
+  token: string,
+): Promise<ApiEnvelope<{ zone: CompanyZoneOption }>> {
+  return apiRequest<{ zone: CompanyZoneOption }>({
+    method: "POST",
+    path: "/internal-users/zones",
+    body: payload,
+    token,
+  });
+}
+
+export function updateCompanyZone(
+  zoneId: number | string,
+  payload: UpdateCompanyZonePayload,
+  token: string,
+): Promise<ApiEnvelope<{ zone: CompanyZoneOption }>> {
+  return apiRequest<{ zone: CompanyZoneOption }>({
+    method: "PATCH",
+    path: `/internal-users/zones/${zoneId}`,
+    body: payload,
+    token,
+  });
+}
+
+export function deleteCompanyZone(
+  zoneId: number | string,
+  companyId: number | string,
+  token: string,
+): Promise<ApiEnvelope<{ deleted_zone_id: number }>> {
+  const query = buildQuery({ company_id: companyId });
+
+  return apiRequest<{ deleted_zone_id: number }>({
+    method: "DELETE",
+    path: `/internal-users/zones/${zoneId}${query}`,
     token,
   });
 }

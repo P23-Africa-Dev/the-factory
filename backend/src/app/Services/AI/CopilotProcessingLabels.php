@@ -21,6 +21,7 @@ final class CopilotProcessingLabels
                 'crm.create_lead' => ['Thinking...', 'Parsing lead details...', 'Preparing CRM record...'],
                 'crm.send_email' => ['Thinking...', 'Drafting email...', 'Preparing send confirmation...'],
                 'kpis.create' => ['Thinking...', 'Parsing KPI details...', 'Preparing KPI record...'],
+                'org.users.create' => ['Thinking...', 'Parsing user details...', 'Preparing invitation...'],
                 'crm.follow_up_summary', 'crm.stale_leads', 'crm.top_leads' => ['Thinking...', 'Scanning CRM records...', 'Sorting leads...'],
                 'org.users' => ['Thinking...', 'Loading organization users...', 'Applying role scope...'],
                 'crm.visit_extract' => ['Thinking...', 'Reading visit notes...', 'Extracting insights...'],

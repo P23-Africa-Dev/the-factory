@@ -10,6 +10,17 @@ class IntentClassifier
     {
         $normalized = strtolower(trim($message));
 
+        if (
+            preg_match('/\bproject\b/i', $normalized) === 1
+            && preg_match('/\b(delete|remove|cancel|archive)\b/i', $normalized) === 1
+        ) {
+            return [
+                'type' => 'general',
+                'tool' => null,
+                'confidence' => 0.4,
+            ];
+        }
+
         $actionPatterns = [
             'tasks.create' => [
                 '/\b(create|add|open|new|set|assign|give)\s+(a\s+|an\s+)?task\b/i',
@@ -51,7 +62,7 @@ class IntentClassifier
             'crm.send_email' => [
                 '/\b(send|email|write|draft)\b.{0,80}\b(email|mail|message)\b/i',
                 '/\b(send|write|draft)\s+(?:a\s+)?follow[\s-]?up\b/i',
-                '/\bfollow[\s-]?up\s+(?:to|with)\b/i',
+                '/\bfollow[\s-]?up\s+to\b/i',
                 '/\bfollow[\s-]?up\b.{0,60}\b(email|mail|client|lead|customer)\b/i',
                 '/\bemail\b.{0,40}\b(about|regarding|for)\b/i',
             ],
@@ -60,6 +71,11 @@ class IntentClassifier
                 '/\b(create|add|set|define)\b.{0,60}\b(key\s*performance\s*indicator|performance\s*target)\b/i',
                 '/\bkpi\s+name\b/i',
                 '/\bset\s+kpi\s+for\b/i',
+            ],
+            'org.users.create' => [
+                '/\b(create|add|invite|register|onboard)\b.{0,80}\b(agent|supervisor|admin|user|staff|team\s+member)\b/i',
+                '/\bnew\s+(agent|supervisor|admin|user)\b/i',
+                '/\badd\s+(an?\s+)?(agent|supervisor|admin)\b/i',
             ],
         ];
 

@@ -19,6 +19,7 @@ function TrackingStatusPill({
 }) {
   const freshness = useMemo(() => {
     if (!lastUpdatedAt) return 'unknown' as const;
+    // eslint-disable-next-line react-hooks/purity -- relative age against server timestamp
     const ageMs = Date.now() - new Date(lastUpdatedAt).getTime();
     if (ageMs <= 15_000) return 'fresh' as const;
     if (ageMs <= 30_000) return 'aging' as const;

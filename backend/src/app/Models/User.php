@@ -127,6 +127,13 @@ class User extends Authenticatable
             ->withTimestamps();
     }
 
+    public function zones(): BelongsToMany
+    {
+        return $this->belongsToMany(CompanyZone::class, 'user_zones', 'user_id', 'company_zone_id')
+            ->withPivot(['is_primary'])
+            ->withTimestamps();
+    }
+
     public function createdTasks(): HasMany
     {
         return $this->hasMany(Task::class, 'created_by_user_id');

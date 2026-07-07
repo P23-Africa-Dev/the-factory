@@ -12,7 +12,7 @@ export const clockEventSchema = z.object({
 export const clockInPayloadSchema = z.object({
   latitude: z.number(),
   longitude: z.number(),
-  timestamp: z.string(),
+  recorded_at: z.string(),
 });
 
 const attendanceRecordSchema = z

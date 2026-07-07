@@ -193,3 +193,39 @@ export function updateAgentMarkerElement(
 
   applyFallback();
 }
+
+export function createClockInMarkerElement(input: {
+  agentName: string;
+  avatarUrl?: string | null;
+  isLate?: boolean;
+}): HTMLDivElement {
+  const palette = input.isLate
+    ? { border: '#D97706', fill: '#FEF3C7', text: '#92400E', halo: 'rgba(217, 119, 6, 0.35)' }
+    : { border: '#16A34A', fill: '#DCFCE7', text: '#14532D', halo: 'rgba(22, 163, 74, 0.35)' };
+
+  const root = document.createElement('div');
+  root.style.cssText = 'position:relative;display:flex;flex-direction:column;align-items:center;pointer-events:none';
+
+  const avatar = document.createElement('div');
+  avatar.style.cssText = `position:relative;width:44px;height:44px;border-radius:9999px;border:3px solid ${palette.border};background:${palette.fill};display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(15,23,42,0.18);overflow:hidden`;
+
+  if (input.avatarUrl) {
+    const img = document.createElement('img');
+    img.src = input.avatarUrl;
+    img.alt = input.agentName;
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+    avatar.appendChild(img);
+  } else {
+    const initials = document.createElement('span');
+    initials.textContent = getAgentInitials(input.agentName) ?? 'A';
+    initials.style.cssText = `font-size:13px;font-weight:700;color:${palette.text}`;
+    avatar.appendChild(initials);
+  }
+
+  const pin = document.createElement('div');
+  pin.style.cssText = `width:0;height:0;margin-top:2px;border-left:7px solid transparent;border-right:7px solid transparent;border-top:10px solid ${palette.border}`;
+
+  root.appendChild(avatar);
+  root.appendChild(pin);
+  return root;
+}

@@ -28,6 +28,7 @@ type Agent = {
   name: string;
   description: string;
   zone: string;
+  zoneIds: number[];
   phone: string;
   role: string;
   status: string;
@@ -61,7 +62,8 @@ function mapAgent(user: InternalUserListItem): Agent {
     id: String(user.id),
     name: user.name,
     description: user.email,
-    zone: user.assigned_zone ?? 'Unassigned',
+    zone: (user.assigned_zones ?? []).map((zone) => zone.name).join(', ') || user.assigned_zone || 'Unassigned',
+    zoneIds: user.assigned_zone_ids ?? [],
     phone: user.phone_number ?? '—',
     role: internalRole === 'admin' ? 'Admin' : internalRole === 'supervisor' ? 'Supervisor' : 'Field Agent',
     status: labels.badgeLabel,

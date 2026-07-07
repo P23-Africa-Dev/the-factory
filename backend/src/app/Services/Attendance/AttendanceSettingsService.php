@@ -8,6 +8,7 @@ use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
 use App\Models\AttendanceSetting;
 use App\Models\User;
+use App\Services\Calendar\UserTimezoneResolver;
 use App\Services\Notification\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Validation\ValidationException;
@@ -17,6 +18,7 @@ class AttendanceSettingsService
     public function __construct(
         private readonly AttendanceAccessService $attendanceAccessService,
         private readonly NotificationService $notificationService,
+        private readonly UserTimezoneResolver $timezoneResolver,
     ) {}
 
     public function findForManager(User $user, ?int $companyId = null): ?AttendanceSetting
@@ -43,6 +45,14 @@ class AttendanceSettingsService
             ]);
         }
 
+        $timezone = isset($data['timezone']) && is_string($data['timezone']) && trim($data['timezone']) !== ''
+            ? $this->timezoneResolver->normalizeTimezone((string) $data['timezone'])
+            : null;
+        $timezone = $timezone ?? $this->timezoneResolver->resolve(
+            null,
+            (string) ($context->company->country ?? ''),
+        );
+
         $setting = AttendanceSetting::query()->updateOrCreate(
             ['company_id' => $context->company->id],
             [
@@ -51,6 +61,7 @@ class AttendanceSettingsService
                 'working_days' => $data['working_days'],
                 'clockin_window_minutes' => (int) ($data['clockin_window_minutes'] ?? 15),
                 'auto_clockout_enabled' => (bool) ($data['auto_clockout_enabled'] ?? true),
+                'timezone' => $timezone,
             ],
         );
 

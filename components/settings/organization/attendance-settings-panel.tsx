@@ -6,6 +6,10 @@ import { toast } from "sonner";
 import { SettingsSectionCard } from "@/components/settings/settings-section-card";
 import { useSettingsAccess } from "@/hooks/use-settings-access";
 import { useAttendanceSettings, useUpdateAttendanceSettings } from "@/hooks/use-attendance";
+import {
+  AttendanceTimezoneSelect,
+  DEFAULT_ATTENDANCE_TIMEZONE,
+} from "@/components/attendance/attendance-timezone-select";
 
 const DAYS_OF_WEEK = [
   { key: "monday", label: "Mon" },
@@ -31,8 +35,9 @@ export function AttendanceSettingsPanel() {
     "thursday",
     "friday",
   ]);
-  const [windowMinutes, setWindowMinutes] = useState(30);
-  const [autoClockout, setAutoClockout] = useState(false);
+  const [windowMinutes, setWindowMinutes] = useState(15);
+  const [autoClockout, setAutoClockout] = useState(true);
+  const [timezone, setTimezone] = useState(DEFAULT_ATTENDANCE_TIMEZONE);
 
   useEffect(() => {
     if (settings) {
@@ -45,6 +50,9 @@ export function AttendanceSettingsPanel() {
         }
         if (settings.auto_clockout_enabled !== undefined) {
           setAutoClockout(settings.auto_clockout_enabled);
+        }
+        if (settings.timezone) {
+          setTimezone(settings.timezone);
         }
       });
     }
@@ -66,6 +74,7 @@ export function AttendanceSettingsPanel() {
         working_days: workingDays,
         clockin_window_minutes: windowMinutes,
         auto_clockout_enabled: autoClockout,
+        timezone,
       },
       {
         onSuccess: () => toast.success("Attendance settings saved."),
@@ -145,6 +154,16 @@ export function AttendanceSettingsPanel() {
               onChange={(e) => setWindowMinutes(Number(e.target.value))}
               className="w-full border border-gray-200 rounded-xl px-4 py-3 text-[14px]"
             />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+              Timezone
+            </label>
+            <AttendanceTimezoneSelect value={timezone} onChange={setTimezone} />
+            <p className="text-[11px] text-gray-400 mt-1.5">
+              Opening and closing times are interpreted in this timezone.
+            </p>
           </div>
 
           <div className="flex items-center justify-between p-4 rounded-xl border border-gray-100">

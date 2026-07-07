@@ -242,6 +242,11 @@ class Company extends Model
         return $this->hasMany(Meeting::class);
     }
 
+    public function zones(): HasMany
+    {
+        return $this->hasMany(CompanyZone::class);
+    }
+
     public function reminderLogs(): HasMany
     {
         return $this->hasMany(SubscriptionReminderLog::class);

@@ -81,6 +81,7 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
     if (selectedFolderId != null || folders.length === 0) return;
 
     if (deepLinkFolderKey === "ely_reports" && elyFolder) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- apply deep-link folder selection once folders load
       setSelectedFolderId(elyFolder.id);
       return;
     }
@@ -93,7 +94,10 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
   useEffect(() => {
     if (!highlightedFileId || files.length === 0) return;
     const match = files.find((f) => f.id === highlightedFileId);
-    if (match) setSelectedFile(match);
+    if (match) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- select file highlighted via URL once files load
+      setSelectedFile(match);
+    }
   }, [highlightedFileId, files]);
 
   function handleDownload(file: DriveFile) {

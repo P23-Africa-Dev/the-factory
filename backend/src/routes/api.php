@@ -31,7 +31,7 @@ use App\Http\Controllers\Api\V1\Calendar\CalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Calendar\MeetingController;
 use App\Http\Controllers\Api\V1\Calendar\UserCalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Company\CompanyLocationController;
-use App\Http\Controllers\Api\V1\CountryController;
+use App\Http\Controllers\Api\V1\GeographyController;
 use App\Http\Controllers\Api\V1\Crm\CrmEmailController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
 use App\Http\Controllers\Api\V1\CurrencyController;
@@ -44,6 +44,7 @@ use App\Http\Controllers\Api\V1\Enterprise\VerifyCompanyIdController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\Internal\InternalLoginController;
 use App\Http\Controllers\Api\V1\Internal\InternalOnboardingController;
+use App\Http\Controllers\Api\V1\Internal\CompanyZoneController;
 use App\Http\Controllers\Api\V1\Internal\InternalUserController;
 use App\Http\Controllers\Api\V1\Kpi\AdminKpiStatusController;
 use App\Http\Controllers\Api\V1\Kpi\KpiController;
@@ -82,6 +83,12 @@ Route::get('/currencies', [CurrencyController::class, 'index'])
 Route::get('/countries', [CountryController::class, 'index'])
     ->middleware('throttle:api-heavy')
     ->name('countries.index');
+Route::get('/geography/states', [GeographyController::class, 'states'])
+    ->middleware('throttle:api-heavy')
+    ->name('geography.states');
+Route::get('/geography/lgas', [GeographyController::class, 'lgas'])
+    ->middleware('throttle:api-heavy')
+    ->name('geography.lgas');
 Route::get('/map/provider', MapProviderController::class)
     ->middleware('throttle:api-heavy')
     ->name('map.provider');
@@ -446,9 +453,24 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
                     ->middleware('throttle:api')
                     ->name('payroll-summaries.generate');
+                Route::get('/map-snapshots', [AttendanceManagementController::class, 'mapSnapshots'])
+                    ->name('map-snapshots');
             });
 
             Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
+                Route::get('/zones', [CompanyZoneController::class, 'index'])
+                    ->middleware('throttle:api')
+                    ->name('zones.index');
+                Route::post('/zones', [CompanyZoneController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('zones.store');
+                Route::patch('/zones/{zone}', [CompanyZoneController::class, 'update'])
+                    ->middleware('throttle:api')
+                    ->name('zones.update');
+                Route::delete('/zones/{zone}', [CompanyZoneController::class, 'destroy'])
+                    ->middleware('throttle:api')
+                    ->name('zones.destroy');
+
                 Route::get('/', [InternalUserController::class, 'index'])
                     ->middleware('throttle:api')
                     ->name('index');
@@ -693,6 +715,8 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::get('/stats', [AttendanceAgentController::class, 'stats'])->name('stats');
                 Route::get('/payroll-summary', [AttendanceAgentController::class, 'payrollSummary'])
                     ->name('payroll-summary');
+                Route::get('/map-snapshot', [AttendanceAgentController::class, 'mapSnapshot'])
+                    ->name('map-snapshot');
             });
 
             Route::get('/dashboard/overview', DashboardOverviewController::class)
@@ -829,6 +853,9 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::post('/payroll-summaries/generate', [AttendanceManagementController::class, 'generatePayroll'])
             ->middleware(['access.role:management', 'throttle:api'])
             ->name('payroll-summaries.generate');
+        Route::get('/map-snapshots', [AttendanceManagementController::class, 'mapSnapshots'])
+            ->middleware('access.role:management')
+            ->name('map-snapshots');
 
         Route::get('/today', [AttendanceAgentController::class, 'today'])
             ->middleware('access.role:agent')
@@ -848,9 +875,25 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::get('/payroll-summary', [AttendanceAgentController::class, 'payrollSummary'])
             ->middleware('access.role:agent')
             ->name('payroll-summary');
+        Route::get('/map-snapshot', [AttendanceAgentController::class, 'mapSnapshot'])
+            ->middleware('access.role:agent')
+            ->name('map-snapshot');
     });
 
     Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
+        Route::get('/zones', [CompanyZoneController::class, 'index'])
+            ->middleware('throttle:api')
+            ->name('zones.index');
+        Route::post('/zones', [CompanyZoneController::class, 'store'])
+            ->middleware('throttle:api')
+            ->name('zones.store');
+        Route::patch('/zones/{zone}', [CompanyZoneController::class, 'update'])
+            ->middleware('throttle:api')
+            ->name('zones.update');
+        Route::delete('/zones/{zone}', [CompanyZoneController::class, 'destroy'])
+            ->middleware('throttle:api')
+            ->name('zones.destroy');
+
         Route::get('/', [InternalUserController::class, 'index'])
             ->middleware('throttle:api')
             ->name('index');

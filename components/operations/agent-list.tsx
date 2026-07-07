@@ -13,6 +13,7 @@ export type AgentItem = {
   email: string;
   description: string;
   zone: string;
+  zoneIds?: number[];
   phone: string;
   role: string;
   status: string;

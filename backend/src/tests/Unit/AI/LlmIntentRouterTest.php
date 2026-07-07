@@ -70,6 +70,7 @@ final class LlmIntentRouterTest extends TestCase
             ['Plan my day', 'tool', 'planning.daily'],
             ['Who should I follow up with?', 'tool', 'crm.follow_up_summary'],
             ['Create KPI for retailer visits', 'action', 'kpis.create'],
+            ['Create a new supervisor named Ella Star', 'action', 'org.users.create'],
         ];
 
         foreach ($cases as [$message, $type, $tool]) {

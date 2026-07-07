@@ -61,6 +61,7 @@ export function usePwaInstall() {
     if (typeof window === 'undefined') return;
 
     const standalone = getStandaloneSignals().standalone;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read install/standalone state on mount
     setIsInstalled(standalone);
 
     if (standalone) return;

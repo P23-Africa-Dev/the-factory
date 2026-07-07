@@ -68,7 +68,10 @@ export function NotificationsPanel() {
   });
 
   useEffect(() => {
-    if (data) setDrafts(data);
+    if (data) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate notification drafts from server
+      setDrafts(data);
+    }
   }, [data]);
 
   const saveMutation = useMutation({

@@ -42,7 +42,7 @@ class InternalUserFetchService
         $company = $context['company'];
 
         $query = $company->users()
-            ->with('latestInternalInvitation')
+            ->with(['latestInternalInvitation', 'zones'])
             ->whereNotNull('internal_role')
             ->orderBy('internal_role')
             ->orderBy('name');
@@ -104,7 +104,21 @@ class InternalUserFetchService
         }
 
         if (! empty($filters['zone'])) {
-            $query->where('assigned_zone', (string) $filters['zone']);
+            $zoneText = (string) $filters['zone'];
+            $query->where(function (Builder $builder) use ($zoneText): void {
+                $builder->where('assigned_zone', $zoneText)
+                    ->orWhereHas('zones', static function (Builder $zoneQuery) use ($zoneText): void {
+                        $zoneQuery->where('name', 'like', '%' . $zoneText . '%')
+                            ->orWhere('lga_name', 'like', '%' . $zoneText . '%')
+                            ->orWhere('state_name', 'like', '%' . $zoneText . '%');
+                    });
+            });
+        }
+
+        if (! empty($filters['zone_id'])) {
+            $query->whereHas('zones', static function (Builder $zoneQuery) use ($filters): void {
+                $zoneQuery->where('company_zones.id', (int) $filters['zone_id']);
+            });
         }
 
         if (! empty($filters['search'])) {
@@ -113,7 +127,12 @@ class InternalUserFetchService
                 $sub->where('name', 'like', $search)
                     ->orWhere('email', 'like', $search)
                     ->orWhere('assigned_zone', 'like', $search)
-                    ->orWhere('phone_number', 'like', $search);
+                    ->orWhere('phone_number', 'like', $search)
+                    ->orWhereHas('zones', static function (Builder $zoneQuery) use ($search): void {
+                        $zoneQuery->where('name', 'like', $search)
+                            ->orWhere('lga_name', 'like', $search)
+                            ->orWhere('state_name', 'like', $search);
+                    });
             });
         }
 
@@ -186,6 +205,7 @@ class InternalUserFetchService
                     ->where('company_users.company_id', $companyId);
             })
             ->with('latestInternalInvitation')
+            ->with('zones')
             ->orderBy('internal_role')
             ->orderBy('name');
     }
