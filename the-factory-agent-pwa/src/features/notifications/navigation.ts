@@ -60,6 +60,19 @@ function resolveActionUrl(url: string): string | null {
     return '/';
   }
 
+  if (url === '/assistant') {
+    return '/assistant';
+  }
+
+  if (url === '/tasks') {
+    return '/tasks';
+  }
+
+  if (url.startsWith('/agent/drive') || url.startsWith('/drive')) {
+    const normalized = url.startsWith('/agent/drive') ? url : url.replace('/drive', '/agent/drive');
+    return normalized;
+  }
+
   // /internal-users — no dedicated page in the PWA, stay put
   return null;
 }
@@ -73,6 +86,9 @@ function resolveReferenceType(type: string, id: number): string | null {
   }
   if (type.includes('Lead') || type.includes('Crm')) {
     return `/crm/leads/${id}`;
+  }
+  if (type.includes('DriveFile')) {
+    return `/agent/drive?file=${id}`;
   }
   return null;
 }

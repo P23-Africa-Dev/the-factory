@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\BillingInterval;
 use App\Enums\CompanyUserRole;
 use App\Enums\SubscriptionStatus;
+use App\Services\Billing\BillingEnforcementSettingService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -25,6 +26,8 @@ class Company extends Model
         'team_size',
         'use_case',
         'status',
+        'is_demo',
+        'demo_config',
         'activated_at',
         'stripe_id',
         'subscription_plan_key',
@@ -37,11 +40,19 @@ class Company extends Model
         'assigned_billing_interval',
         'payment_link_token_hash',
         'payment_link_expires_at',
+        'pm_type',
+        'pm_last_four',
+        'pm_exp_month',
+        'pm_exp_year',
+        'settings',
     ];
 
     protected function casts(): array
     {
         return [
+            'is_demo' => 'boolean',
+            'demo_config' => 'array',
+            'settings' => 'array',
             'activated_at' => 'datetime',
             'subscription_current_period_start' => 'datetime',
             'subscription_current_period_end' => 'datetime',
@@ -56,13 +67,64 @@ class Company extends Model
             ?? SubscriptionStatus::NONE;
     }
 
-    public function hasActiveSubscription(): bool
+    /**
+     * Raw paid-subscription state, independent of the Billing Enforcement toggle.
+     *
+     * Returns true only when the company currently holds an ACTIVE Stripe subscription.
+     * Use this for decisions that must reflect actual paid state (payment link "already paid",
+     * markPendingPayment guards, seed/reset logic, etc.).
+     */
+    public function hasPaidSubscription(): bool
     {
-        if (! (bool) config('billing.enforce', true)) {
+        return $this->subscriptionStatusEnum() === SubscriptionStatus::ACTIVE;
+    }
+
+    /**
+     * Effective org-wide access, honoring the runtime Billing Enforcement toggle.
+     *
+     * - GRACE status          => always true (manual or lifecycle grace bypasses billing)
+     * - Enforcement disabled  => always true (all accounts work freely)
+     * - Enforcement enabled   => true only when the company has a paid ACTIVE subscription
+     *
+     * Use this for API payloads and any gating logic that must mirror middleware behavior.
+     */
+    public function hasEffectiveSubscriptionAccess(): bool
+    {
+        if ($this->isDemo()) {
             return true;
         }
 
-        return $this->subscriptionStatusEnum()->allowsDashboardAccess();
+        if ($this->subscriptionStatusEnum() === SubscriptionStatus::GRACE) {
+            return true;
+        }
+
+        if (! app(BillingEnforcementSettingService::class)->isEnabled()) {
+            return true;
+        }
+
+        return $this->hasPaidSubscription();
+    }
+
+    /**
+     * Backwards-compatible alias for effective access.
+     *
+     * @deprecated Prefer hasEffectiveSubscriptionAccess() or hasPaidSubscription() explicitly.
+     */
+    public function hasActiveSubscription(): bool
+    {
+        return $this->hasEffectiveSubscriptionAccess();
+    }
+
+    public function isDemo(): bool
+    {
+        if ((bool) $this->is_demo) {
+            return true;
+        }
+
+        $publicId = trim((string) $this->company_id);
+
+        return $publicId !== ''
+            && in_array($publicId, config('demo.company_public_ids', []), true);
     }
 
     public function canChoosePlan(): bool
@@ -111,6 +173,20 @@ class Company extends Model
         return [
             'company_id' => (string) $this->id,
             'public_company_id' => (string) $this->company_id,
+        ];
+    }
+
+    /**
+     * @return array{minimum_photos_required: int, visit_verification_required: bool}
+     */
+    public function operationalDefaults(): array
+    {
+        $settings = is_array($this->settings) ? $this->settings : [];
+        $defaults = $settings['operational_defaults'] ?? [];
+
+        return [
+            'minimum_photos_required' => max(0, (int) ($defaults['minimum_photos_required'] ?? 1)),
+            'visit_verification_required' => (bool) ($defaults['visit_verification_required'] ?? false),
         ];
     }
 

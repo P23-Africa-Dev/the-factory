@@ -15,16 +15,41 @@ use App\Models\User;
 use App\Services\Company\CompanyContextService;
 use App\Services\Notification\NotificationService;
 use App\Support\AvatarUrlResolver;
+use App\Support\LeadFieldNormalizer;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use OpenSpout\Common\Entity\Row;
+use OpenSpout\Common\Entity\Style\Style;
+use OpenSpout\Writer\XLSX\Writer as XlsxWriter;
 
 class LeadService
 {
+    private const LEAD_EXPORT_HEADERS = [
+        'Name',
+        'Email',
+        'Phone',
+        'Location',
+        'Company Name',
+        'Website',
+        'Position',
+        'Profile URLs',
+        'Source',
+        'Status',
+        'Priority',
+        'Budget Amount',
+        'Budget Currency',
+        'Pipeline',
+        'Assigned To',
+        'Created At',
+        'Updated At',
+    ];
+
     public function __construct(
         private readonly CompanyContextService $companyContextService,
         private readonly NotificationService $notificationService,
@@ -82,6 +107,10 @@ class LeadService
             'email' => $data['email'] ?? null,
             'phone' => $data['phone'] ?? null,
             'location' => $data['location'] ?? null,
+            'company_name' => $data['company_name'] ?? null,
+            'website' => isset($data['website']) ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null,
+            'position' => $data['position'] ?? null,
+            'profile_urls' => ! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null,
             'source' => $source,
             'status' => $data['status'],
             'priority' => $data['priority'],
@@ -188,6 +217,14 @@ class LeadService
             'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
             'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
             'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
+            'company_name' => array_key_exists('company_name', $data) ? $data['company_name'] : $lead->company_name,
+            'website' => array_key_exists('website', $data)
+                ? ($data['website'] !== null ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null)
+                : $lead->website,
+            'position' => array_key_exists('position', $data) ? $data['position'] : $lead->position,
+            'profile_urls' => array_key_exists('profile_urls', $data)
+                ? (! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null)
+                : $lead->profile_urls,
             'source' => array_key_exists('source', $data) ? $data['source'] : $lead->source,
             'status' => $data['status'] ?? $lead->status,
             'priority' => $data['priority'] ?? $lead->priority,
@@ -373,7 +410,7 @@ class LeadService
                     'id' => (int) $agent->id,
                     'name' => (string) $agent->name,
                     'email' => (string) $agent->email,
-                    'avatar_url' => AvatarUrlResolver::resolve($agent->avatar, $agent->gender),
+                    'avatar_url' => AvatarUrlResolver::resolveOrDefault($agent->avatar, $agent->gender),
                     'total_uploads' => (int) $topUploader->total_uploads,
                 ];
             }
@@ -391,7 +428,7 @@ class LeadService
                     'id' => (int) $fallbackAgent->id,
                     'name' => (string) $fallbackAgent->name,
                     'email' => (string) $fallbackAgent->email,
-                    'avatar_url' => AvatarUrlResolver::resolve($fallbackAgent->avatar, $fallbackAgent->gender),
+                    'avatar_url' => AvatarUrlResolver::resolveOrDefault($fallbackAgent->avatar, $fallbackAgent->gender),
                     'total_uploads' => 0,
                 ];
             }
@@ -413,7 +450,7 @@ class LeadService
                         'id' => (int) $lead->creator->id,
                         'name' => (string) $lead->creator->name,
                         'email' => (string) $lead->creator->email,
-                        'avatar_url' => AvatarUrlResolver::resolve($lead->creator->avatar, $lead->creator->gender),
+                        'avatar_url' => AvatarUrlResolver::resolveOrDefault($lead->creator->avatar, $lead->creator->gender),
                     ] : null,
                 ];
             })
@@ -791,7 +828,7 @@ class LeadService
 
     /**
      * @param  array<int, array<string, mixed>>  $rows
-     * @return array{imported_count:int,failed_rows:array<int,array<string,mixed>>}
+     * @return array{imported_count:int,updated_count:int,skipped_count:int,failed_rows:array<int,array<string,mixed>>,skipped_rows:array<int,array<string,mixed>>}
      */
     public function importLeads(User $user, array $payload): array
     {
@@ -804,13 +841,17 @@ class LeadService
         $pipelineId = (int) ($payload['pipeline_id'] ?? 0);
         $this->assertPipelineInCompany($companyId, $pipelineId);
 
+        $duplicatePolicy = (string) ($payload['duplicate_policy'] ?? 'create');
+        $labelLookup = $this->buildLabelLookup($companyId);
         $rows = collect($payload['rows'] ?? []);
 
         $importedCount = 0;
+        $updatedCount = 0;
         $failedRows = [];
+        $skippedRows = [];
 
         foreach ($rows as $index => $row) {
-            $validation = $this->validateImportRow($companyId, $row, $index + 1);
+            $validation = $this->validateImportRow($labelLookup, $row, $index + 1);
 
             if ($validation['errors'] !== []) {
                 $failedRows[] = [
@@ -822,6 +863,38 @@ class LeadService
             }
 
             $data = $validation['normalized'];
+
+            $duplicate = $duplicatePolicy === 'create'
+                ? null
+                : $this->resolveDuplicateLead($companyId, $data['email'], $data['phone']);
+
+            if ($duplicate !== null && $duplicatePolicy === 'skip') {
+                $skippedRows[] = [
+                    'row_index' => $index + 1,
+                    'data' => $row,
+                    'reason' => "A lead with the same email or phone already exists ('{$duplicate->name}').",
+                ];
+                continue;
+            }
+
+            if ($duplicate !== null && $duplicatePolicy === 'update') {
+                if ($role === 'agent'
+                    && (int) $duplicate->created_by_user_id !== (int) $user->id
+                    && (int) ($duplicate->assigned_to_user_id ?? 0) !== (int) $user->id
+                ) {
+                    $skippedRows[] = [
+                        'row_index' => $index + 1,
+                        'data' => $row,
+                        'reason' => "A matching lead exists ('{$duplicate->name}') but is not assigned to you, so it was not updated.",
+                    ];
+                    continue;
+                }
+
+                $duplicate->update($this->buildDuplicateUpdatePayload($duplicate, $row, $data));
+                $updatedCount++;
+                continue;
+            }
+
             $normalizedSource = $data['source'];
             if ($role === 'agent' && $normalizedSource === null) {
                 $normalizedSource = 'agent_upload';
@@ -834,6 +907,10 @@ class LeadService
                 'email' => $data['email'],
                 'phone' => $data['phone'],
                 'location' => $data['location'],
+                'company_name' => $data['company_name'] ?? null,
+                'website' => $data['website'] ?? null,
+                'position' => $data['position'] ?? null,
+                'profile_urls' => $data['profile_urls'] ?? null,
                 'source' => $normalizedSource,
                 'status' => $data['status'],
                 'priority' => $data['priority'],
@@ -846,7 +923,104 @@ class LeadService
 
         return [
             'imported_count' => $importedCount,
+            'updated_count' => $updatedCount,
+            'skipped_count' => count($skippedRows),
             'failed_rows' => $failedRows,
+            'skipped_rows' => $skippedRows,
+        ];
+    }
+
+    /**
+     * Dry-run import validation: reports readiness without writing any leads.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array{total_rows:int,valid_count:int,duplicate_count:int,error_rows:array<int,array<string,mixed>>,duplicate_rows:array<int,array<string,mixed>>}
+     */
+    public function previewImportLeads(User $user, array $payload): array
+    {
+        $context = $this->companyContextService->resolve($user, $payload['company_id'] ?? null);
+        $role = (string) $context['role'];
+        $this->ensureCanCreateLeads($role);
+        $companyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($companyId);
+
+        $pipelineId = (int) ($payload['pipeline_id'] ?? 0);
+        $this->assertPipelineInCompany($companyId, $pipelineId);
+
+        $labelLookup = $this->buildLabelLookup($companyId);
+        $rows = collect($payload['rows'] ?? []);
+
+        $validCount = 0;
+        $errorRows = [];
+        $duplicateRows = [];
+
+        foreach ($rows as $index => $row) {
+            $validation = $this->validateImportRow($labelLookup, $row, $index + 1);
+
+            if ($validation['errors'] !== []) {
+                $errorRows[] = [
+                    'row_index' => $index + 1,
+                    'data' => $row,
+                    'errors' => $validation['errors'],
+                ];
+                continue;
+            }
+
+            $data = $validation['normalized'];
+            $duplicate = $this->resolveDuplicateLead($companyId, $data['email'], $data['phone']);
+
+            if ($duplicate !== null) {
+                $duplicateRows[] = [
+                    'row_index' => $index + 1,
+                    'data' => $row,
+                    'existing_lead_id' => (int) $duplicate->id,
+                    'existing_lead_name' => (string) $duplicate->name,
+                ];
+                continue;
+            }
+
+            $validCount++;
+        }
+
+        return [
+            'total_rows' => $rows->count(),
+            'valid_count' => $validCount,
+            'duplicate_count' => count($duplicateRows),
+            'error_rows' => $errorRows,
+            'duplicate_rows' => $duplicateRows,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array{filename:string,content_type:string,stream:callable}
+     */
+    public function exportLeads(User $user, array $filters): array
+    {
+        $context = $this->companyContextService->resolve($user, $filters['company_id'] ?? null);
+        $role = (string) $context['role'];
+        $companyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($companyId);
+
+        $format = strtolower((string) ($filters['format'] ?? 'csv'));
+        $filename = sprintf('crm-leads-export-%s.%s', now()->format('Y-m-d'), $format === 'xlsx' ? 'xlsx' : 'csv');
+
+        if ($format === 'xlsx') {
+            return [
+                'filename' => $filename,
+                'content_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'stream' => function () use ($companyId, $user, $role, $filters): void {
+                    $this->streamLeadsXlsxExport($companyId, $user, $role, $filters);
+                },
+            ];
+        }
+
+        return [
+            'filename' => $filename,
+            'content_type' => 'text/csv; charset=UTF-8',
+            'stream' => function () use ($companyId, $user, $role, $filters): void {
+                $this->streamLeadsCsvExport($companyId, $user, $role, $filters);
+            },
         ];
     }
 
@@ -1161,10 +1335,289 @@ class LeadService
     }
 
     /**
+     * Lookup of lowercase label slugs AND display names to their canonical slug,
+     * so import rows can reference a status either way (e.g. "New Lead" or "newly_lead").
+     *
+     * @return array<string, string>
+     */
+    private function buildLabelLookup(int $companyId): array
+    {
+        $lookup = [];
+
+        foreach (LeadLabel::query()->where('company_id', $companyId)->get(['slug', 'name']) as $label) {
+            $lookup[Str::lower(trim((string) $label->slug))] = (string) $label->slug;
+            $lookup[Str::lower(trim((string) $label->name))] = (string) $label->slug;
+        }
+
+        return $lookup;
+    }
+
+    /**
+     * @param  array<string, string>  $labelLookup
+     */
+    private function suggestClosestLabel(array $labelLookup, string $status): ?string
+    {
+        $needle = Str::lower(trim($status));
+        $bestKey = null;
+        $bestDistance = PHP_INT_MAX;
+
+        foreach (array_keys($labelLookup) as $candidate) {
+            $distance = levenshtein($needle, $candidate);
+            if ($distance < $bestDistance) {
+                $bestDistance = $distance;
+                $bestKey = $candidate;
+            }
+        }
+
+        return ($bestKey !== null && $bestDistance <= 4) ? $labelLookup[$bestKey] : null;
+    }
+
+    private function normalizePhoneDigits(?string $phone): ?string
+    {
+        if ($phone === null) {
+            return null;
+        }
+
+        $digits = preg_replace('/\D+/', '', $phone) ?? '';
+
+        return $digits !== '' ? $digits : null;
+    }
+
+    /**
+     * Find an existing company lead matching by email (preferred) or phone.
+     */
+    private function resolveDuplicateLead(int $companyId, ?string $email, ?string $phone): ?Lead
+    {
+        $normalizedEmail = $email !== null ? Str::lower(trim($email)) : null;
+
+        if ($normalizedEmail !== null && $normalizedEmail !== '') {
+            $match = Lead::query()
+                ->where('company_id', $companyId)
+                ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+                ->orderBy('id')
+                ->first();
+
+            if ($match !== null) {
+                return $match;
+            }
+        }
+
+        $phoneDigits = $this->normalizePhoneDigits($phone);
+        if ($phoneDigits === null) {
+            return null;
+        }
+
+        $strippedPhoneSql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '(', ''), ')', ''), '+', ''), '.', '')";
+
+        return Lead::query()
+            ->where('company_id', $companyId)
+            ->whereRaw("$strippedPhoneSql = ?", [$phoneDigits])
+            ->orderBy('id')
+            ->first();
+    }
+
+    /**
+     * Build the update payload for a duplicate match: only fields the import row
+     * actually provided are applied, so existing values are never wiped by blanks.
+     *
      * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $normalized
+     * @return array<string, mixed>
+     */
+    private function buildDuplicateUpdatePayload(Lead $existing, array $row, array $normalized): array
+    {
+        $update = [];
+        $provided = static fn(string $key): bool => trim((string) ($row[$key] ?? '')) !== '';
+
+        foreach (['name', 'email', 'phone', 'location', 'company_name', 'website', 'position', 'source'] as $field) {
+            if ($provided($field) && $normalized[$field] !== null) {
+                $update[$field] = $normalized[$field];
+            }
+        }
+
+        if ($provided('profile_urls') || (is_array($row['profile_urls'] ?? null) && ($row['profile_urls'] ?? []) !== [])) {
+            if (! empty($normalized['profile_urls'])) {
+                $update['profile_urls'] = $normalized['profile_urls'];
+            }
+        }
+
+        if ($provided('status')) {
+            $update['status'] = $normalized['status'];
+        }
+
+        if ($provided('priority')) {
+            $update['priority'] = $normalized['priority'];
+        }
+
+        if ($provided('budget_amount') && $normalized['budget_amount'] !== null) {
+            $update['budget_amount'] = $normalized['budget_amount'];
+            $update['budget_currency'] = $normalized['budget_currency'] ?? $existing->budget_currency;
+        }
+
+        return $update;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function streamLeadsCsvExport(int $companyId, User $user, string $role, array $filters): void
+    {
+        $out = fopen('php://output', 'wb');
+        if (! is_resource($out)) {
+            return;
+        }
+
+        fwrite($out, "\xEF\xBB\xBF");
+        fputcsv($out, self::LEAD_EXPORT_HEADERS);
+
+        $this->streamLeadExportRows($companyId, $user, $role, $filters, static function (array $row) use ($out): void {
+            fputcsv($out, $row);
+        });
+
+        fclose($out);
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function streamLeadsXlsxExport(int $companyId, User $user, string $role, array $filters): void
+    {
+        if (! extension_loaded('zip') || ! class_exists(\ZipArchive::class)) {
+            Log::error('CRM leads XLSX export failed: zip extension missing.', [
+                'company_id' => $companyId,
+                'actor_user_id' => (int) $user->id,
+            ]);
+
+            throw ValidationException::withMessages([
+                'export' => ['XLSX export is unavailable because the server zip extension is not enabled.'],
+            ]);
+        }
+
+        $exportDir = storage_path('app/exports');
+        if (! is_dir($exportDir)) {
+            @mkdir($exportDir, 0775, true);
+        }
+
+        if (! is_dir($exportDir) || ! is_writable($exportDir)) {
+            throw ValidationException::withMessages([
+                'export' => ['XLSX export failed because the export temp directory is not writable.'],
+            ]);
+        }
+
+        $tmpFile = tempnam($exportDir, 'crm-leads-export-');
+        if ($tmpFile === false) {
+            throw ValidationException::withMessages([
+                'export' => ['Unable to prepare export file. Please try again.'],
+            ]);
+        }
+
+        $writer = null;
+
+        try {
+            $writer = new XlsxWriter();
+            $writer->openToFile($tmpFile);
+            $writer->setCreator('Factory23 CRM');
+
+            $sheet = $writer->getCurrentSheet();
+            $sheet->setName('Leads Export');
+
+            $headerStyle = (new Style())->setFontBold();
+            $columnStyles = [];
+            foreach (array_keys(self::LEAD_EXPORT_HEADERS) as $index) {
+                $columnStyles[$index] = $headerStyle;
+            }
+
+            $writer->addRow(Row::fromValuesWithStyles(self::LEAD_EXPORT_HEADERS, null, $columnStyles));
+
+            $this->streamLeadExportRows($companyId, $user, $role, $filters, static function (array $row) use ($writer): void {
+                $writer->addRow(Row::fromValues($row));
+            });
+
+            $writer->close();
+
+            $reader = fopen($tmpFile, 'rb');
+            if (is_resource($reader)) {
+                fpassthru($reader);
+                fclose($reader);
+            }
+        } catch (\Throwable $exception) {
+            Log::error('CRM leads XLSX export failed.', [
+                'company_id' => $companyId,
+                'actor_user_id' => (int) $user->id,
+                'exception_class' => $exception::class,
+                'exception_message' => $exception->getMessage(),
+            ]);
+
+            throw ValidationException::withMessages([
+                'export' => ['Unable to generate the Excel export file.'],
+            ]);
+        } finally {
+            if ($writer instanceof XlsxWriter) {
+                try {
+                    $writer->close();
+                } catch (\Throwable) {
+                    // ignore close failures during cleanup
+                }
+            }
+
+            if (is_file($tmpFile)) {
+                @unlink($tmpFile);
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @param  callable(array<int, mixed>): void  $emit
+     */
+    private function streamLeadExportRows(int $companyId, User $user, string $role, array $filters, callable $emit): void
+    {
+        $labelNames = LeadLabel::query()
+            ->where('company_id', $companyId)
+            ->pluck('name', 'slug')
+            ->all();
+
+        $query = Lead::query()
+            ->where('company_id', $companyId)
+            ->with(['pipeline:id,name', 'assignee:id,name,email']);
+
+        $this->applyLeadListFilters($query, $user, $role, $filters);
+
+        if (! empty($filters['lead_ids'])) {
+            $leadIds = array_map(static fn($id): int => (int) $id, (array) $filters['lead_ids']);
+            $query->whereIn('id', $leadIds);
+        }
+
+        $query->orderBy('id')->chunkById(250, static function (Collection $leads) use ($labelNames, $emit): void {
+            foreach ($leads as $lead) {
+                $emit([
+                    (string) $lead->name,
+                    (string) ($lead->email ?? ''),
+                    (string) ($lead->phone ?? ''),
+                    (string) ($lead->location ?? ''),
+                    (string) ($lead->company_name ?? ''),
+                    (string) ($lead->website ?? ''),
+                    (string) ($lead->position ?? ''),
+                    implode(', ', is_array($lead->profile_urls) ? $lead->profile_urls : []),
+                    (string) ($lead->source ?? ''),
+                    (string) ($labelNames[$lead->status] ?? $lead->status ?? ''),
+                    (string) ($lead->priority?->value ?? ''),
+                    $lead->budget_amount !== null ? (string) $lead->budget_amount : '',
+                    (string) ($lead->budget_currency ?? ''),
+                    (string) ($lead->pipeline?->name ?? ''),
+                    (string) ($lead->assignee?->name ?? $lead->assignee?->email ?? ''),
+                    $lead->created_at?->toIso8601String() ?? '',
+                    $lead->updated_at?->toIso8601String() ?? '',
+                ]);
+            }
+        });
+    }
+
+    /**
+     * @param  array<string, string>  $labelLookup
      * @return array{normalized:array<string,mixed>,errors:array<int,string>}
      */
-    private function validateImportRow(int $companyId, mixed $row, int $rowIndex): array
+    private function validateImportRow(array $labelLookup, mixed $row, int $rowIndex): array
     {
         if (! is_array($row)) {
             return [
@@ -1177,9 +1630,13 @@ class LeadService
         $email = trim((string) ($row['email'] ?? ''));
         $phone = trim((string) ($row['phone'] ?? ''));
         $location = trim((string) ($row['location'] ?? ''));
+        $companyName = trim((string) ($row['company_name'] ?? ''));
+        $websiteRaw = trim((string) ($row['website'] ?? ''));
+        $position = trim((string) ($row['position'] ?? ''));
+        $profileUrlsRaw = $row['profile_urls'] ?? null;
         $source = trim((string) ($row['source'] ?? ''));
         $status = trim((string) ($row['status'] ?? 'newly_lead'));
-        $priority = trim((string) ($row['priority'] ?? 'medium'));
+        $priority = strtolower(trim((string) ($row['priority'] ?? 'medium')));
         $budgetAmountRaw = trim((string) ($row['budget_amount'] ?? ''));
         $budgetCurrency = strtoupper(trim((string) ($row['budget_currency'] ?? '')));
 
@@ -1191,6 +1648,17 @@ class LeadService
 
         if ($email !== '' && ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $errors[] = 'Email is invalid.';
+        }
+
+        $website = $websiteRaw !== '' ? LeadFieldNormalizer::normalizeWebsite($websiteRaw) : null;
+        if ($websiteRaw !== '' && ! LeadFieldNormalizer::isValidWebsite($website)) {
+            $errors[] = 'Website is invalid.';
+        }
+
+        $profileUrls = LeadFieldNormalizer::normalizeProfileUrls($profileUrlsRaw);
+        $invalidProfileUrls = LeadFieldNormalizer::invalidProfileUrls($profileUrls);
+        if ($invalidProfileUrls !== []) {
+            $errors[] = 'Profile URLs contain invalid entries: ' . implode(', ', $invalidProfileUrls) . '.';
         }
 
         if (! in_array($priority, ['low', 'medium', 'high', 'urgent'], true)) {
@@ -1213,8 +1681,12 @@ class LeadService
             $errors[] = 'Budget currency must be a 3-letter ISO code.';
         }
 
-        if (! LeadLabel::query()->where('company_id', $companyId)->where('slug', $status)->exists()) {
-            $errors[] = 'Status/label is not recognized.';
+        $resolvedStatus = $labelLookup[Str::lower($status)] ?? null;
+        if ($resolvedStatus === null) {
+            $suggestion = $this->suggestClosestLabel($labelLookup, $status);
+            $errors[] = $suggestion !== null
+                ? "Status/label '{$status}' is not recognized. Did you mean '{$suggestion}'?"
+                : "Status/label '{$status}' is not recognized.";
         }
 
         return [
@@ -1223,8 +1695,12 @@ class LeadService
                 'email' => $email !== '' ? $email : null,
                 'phone' => $phone !== '' ? $phone : null,
                 'location' => $location !== '' ? $location : null,
+                'company_name' => $companyName !== '' ? $companyName : null,
+                'website' => $website,
+                'position' => $position !== '' ? $position : null,
+                'profile_urls' => $profileUrls !== [] ? $profileUrls : null,
                 'source' => $source !== '' ? $source : null,
-                'status' => $status,
+                'status' => $resolvedStatus ?? $status,
                 'priority' => $priority,
                 'budget_amount' => $budgetAmount,
                 'budget_currency' => $budgetCurrency !== '' ? $budgetCurrency : ($budgetAmount !== null ? 'USD' : null),

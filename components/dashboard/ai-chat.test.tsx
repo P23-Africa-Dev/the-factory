@@ -230,6 +230,76 @@ describe("AIChat", () => {
         expect(screen.queryByText("Assigned To User Id")).toBeNull();
     });
 
+    it("confirms notifications.send with user_ids as an integer array", async () => {
+        useCopilotChatMock.mockReturnValue({
+            messages: [
+                {
+                    id: "u-remind",
+                    role: "user",
+                    content: "Send a reminder to these agents",
+                    sources: [],
+                },
+                {
+                    id: "a-remind",
+                    role: "assistant",
+                    content: "Review this reminder before confirming.",
+                    sources: ["notifications.send"],
+                    payload: {
+                        confirmation_required: true,
+                        action_args: {
+                            title: "Overdue task reminder",
+                            message: "You have overdue tasks assigned: John Wick — \"test the task stuff\".",
+                            user_ids: [38, 39],
+                            recipient_names: ["John Wick", "Taraji Henson"],
+                            delivery_types: ["in_app", "push", "email"],
+                            category: "task",
+                            priority: "high",
+                        },
+                    },
+                },
+            ],
+            isStreaming: false,
+            weeklyReport: null,
+            isQueueingWeeklyReport: false,
+            initialize: initializeMock,
+            sendMessage: sendMessageMock,
+            queueWeeklyReport: queueWeeklyReportMock,
+            downloadWeeklyReport: downloadWeeklyReportMock,
+            runVoiceTranscription: runVoiceTranscriptionMock,
+            runFileAnalysis: runFileAnalysisMock,
+            runTranscriptSummary: runTranscriptSummaryMock,
+            loadForecastOverview: loadForecastOverviewMock,
+            searchAssignees: searchAssigneesMock,
+        });
+
+        render(<AIChat open onClose={() => { }} />);
+
+        await waitFor(() => {
+            expect(searchAssigneesMock).toHaveBeenCalled();
+            expect(screen.getByText("John Wick, Taraji Henson")).toBeTruthy();
+        });
+
+        expect(screen.queryByText("User Ids")).toBeNull();
+
+        fireEvent.click(screen.getByText("Confirm Action"));
+
+        await waitFor(() => {
+            expect(sendMessageMock).toHaveBeenCalledWith({
+                message: "Send a reminder to these agents",
+                companyId: 99,
+                actionConfirmed: true,
+                actionArgs: {
+                    title: "Overdue task reminder",
+                    message: 'You have overdue tasks assigned: John Wick — "test the task stuff".',
+                    user_ids: [38, 39],
+                    delivery_types: ["in_app", "push", "email"],
+                    category: "task",
+                    priority: "high",
+                },
+            });
+        });
+    });
+
     it("queues weekly summary from quick action button", async () => {
         useCopilotChatMock.mockReturnValue({
             messages: [],

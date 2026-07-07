@@ -9,6 +9,8 @@ import {
     deleteCrmLabel,
     createCrmPipeline,
     createLead,
+    deleteLead,
+    downloadCrmLeadsExport,
     getAgentUploadsOverview,
     getCrmLeadsAnalytics,
     getLead,
@@ -17,10 +19,12 @@ import {
     listCrmLabels,
     listCrmPipelines,
     listLeads,
+    previewImportCrmLeads,
     reorderCrmLabels,
     type CrmLabel,
     type CrmPipeline,
-    type ImportLeadRow,
+    type ExportLeadsParams,
+    type ImportLeadsPayload,
     updateLead,
     updateCrmLabel,
     updateCrmPipeline,
@@ -231,6 +235,30 @@ export function useUpdateLead(
     });
 }
 
+export function useDeleteLead(
+    options?: { onSuccess?: (deletedLeadId: number) => void },
+    basePath: ApiRoleBasePath = "/admin"
+) {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({
+            leadId,
+            companyId,
+        }: {
+            leadId: number | string;
+            companyId: number | string | undefined;
+        }) => deleteLead(leadId, companyId, token, basePath),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            // Deleting a lead unlinks any saved map location tied to it.
+            queryClient.invalidateQueries({ queryKey: SAVED_LOCATION_KEYS.all });
+            options?.onSuccess?.(res.data.deleted_lead_id);
+        },
+    });
+}
+
 export function useAddLeadNote(
     options?: { onSuccess?: (note: LeadNote) => void },
     basePath: ApiRoleBasePath = "/admin"
@@ -369,10 +397,51 @@ export function useDeleteCrmLabel(basePath: ApiRoleBasePath = "/admin") {
 }
 
 export function useImportCrmLeads(basePath: ApiRoleBasePath = "/admin") {
+    const queryClient = useQueryClient();
     const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
     return useMutation({
-        mutationFn: (payload: { company_id: number | string; pipeline_id: number | string; rows: ImportLeadRow[] }) =>
-            importCrmLeads(payload, token, basePath),
+        mutationFn: (payload: ImportLeadsPayload) => importCrmLeads(payload, token, basePath),
+        // Invalidate even on partial success so the kanban/list reflects imported rows.
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+        },
+    });
+}
+
+export function usePreviewImportCrmLeads(basePath: ApiRoleBasePath = "/admin") {
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: (payload: ImportLeadsPayload) => previewImportCrmLeads(payload, token, basePath),
+    });
+}
+
+export function useCrmLeadsExport(
+    basePath: ApiRoleBasePath = "/admin",
+    options?: { onSuccess?: () => void; onError?: (error: Error) => void }
+) {
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: async (params: ExportLeadsParams) => {
+            const { blob, filename } = await downloadCrmLeadsExport(params, token, basePath);
+            const url = window.URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = filename;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.setTimeout(() => {
+                window.URL.revokeObjectURL(url);
+            }, 500);
+        },
+        onSuccess: () => {
+            options?.onSuccess?.();
+        },
+        onError: (error: Error) => {
+            options?.onError?.(error);
+        },
     });
 }

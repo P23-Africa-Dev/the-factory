@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
-import { Search, Radio, RefreshCcw, MoreHorizontal, LocateFixed } from 'lucide-react';
+import { Search, Eye, EyeOff, Radio, RefreshCcw, MoreHorizontal, LocateFixed } from 'lucide-react';
 import {
   getGoogleMapsPublicApiKey,
   MAPBOX_PUBLIC_TOKEN_ENV,
@@ -43,6 +43,7 @@ import {
   resolvePrivacySafeViewport,
 } from '@/lib/map/default-viewport';
 import { SavedLocationsLayer, type GoogleMapBridge } from '@/components/map/SavedLocationsLayer';
+import { TerritoryLayer } from '@/components/map/TerritoryLayer';
 import { useSavedLocations, useSavedLocationPermissions } from '@/hooks/use-saved-locations';
 import { getSavedLocationLabel } from '@/lib/map/location-types';
 import type { SavedLocation } from '@/lib/api/saved-locations';
@@ -279,6 +280,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const [locationCtx, setLocationCtx] = useState<LocationContext | null>(null);
   const [leftTab, setLeftTab] = useState<'feeds' | 'businesses'>('feeds');
   const [mapMode, setMapMode] = useState<'2d' | '3d'>('2d');
+  const [showBusinessPins, setShowBusinessPins] = useState(true);
   const [poiResults, setPoiResults] = useState<PoiResult[]>([]);
   const [poiBusy, setPoiBusy] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -1405,14 +1407,24 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       </div>
 
 
-      <SavedLocationsLayer
+      {showBusinessPins && (
+        <SavedLocationsLayer
+          provider="mapbox"
+          ready={mapVersion > 0}
+          getMapboxMap={() => mapRef.current}
+          pinMode={pinMode}
+          onPinModeChange={setPinMode}
+          focusLocation={focusLocation}
+          visibleIds={filteredBusinessIds}
+        />
+      )}
+
+      <TerritoryLayer
+        variant="admin"
         provider="mapbox"
         ready={mapVersion > 0}
         getMapboxMap={() => mapRef.current}
-        pinMode={pinMode}
-        onPinModeChange={setPinMode}
-        focusLocation={focusLocation}
-        visibleIds={filteredBusinessIds}
+        toggleClassName="absolute bottom-6 left-4 z-30 flex flex-col-reverse items-start gap-2"
       />
 
       {selectedTask && (() => {
@@ -1502,6 +1514,16 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
       {/* Map controls — bottom-center, clear of the AI FAB at bottom-right */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
+        {/* Toggle business pins */}
+        <button
+          onClick={() => setShowBusinessPins((visible) => !visible)}
+          title={showBusinessPins ? 'Hide business pins' : 'Show business pins'}
+          className="h-10 rounded-full bg-white/95 backdrop-blur shadow-lg border border-slate-200 px-4 flex items-center gap-2 text-[12px] font-semibold text-dash-dark hover:bg-slate-50 active:scale-95 transition-all"
+        >
+          {showBusinessPins ? <EyeOff size={16} /> : <Eye size={16} />}
+          {showBusinessPins ? 'Hide Pins' : 'Show Pins'}
+        </button>
+
         {/* Locate me */}
         <button
           onClick={handleLocateMe}
@@ -1563,6 +1585,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const [focusLocation, setFocusLocation] = useState<SavedLocation | null>(null);
   const [locationCtx, setLocationCtx] = useState<LocationContext | null>(null);
   const [leftTab, setLeftTab] = useState<'feeds' | 'businesses'>('feeds');
+  const [showBusinessPins, setShowBusinessPins] = useState(true);
   const [poiResults, setPoiResults] = useState<PoiResult[]>([]);
   const [poiBusy, setPoiBusy] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -2234,18 +2257,28 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       </div>
 
 
-      <SavedLocationsLayer
+      {showBusinessPins && (
+        <SavedLocationsLayer
+          provider="google"
+          ready={googleReady}
+          getGoogleMap={() =>
+            mapRef.current && googleRef.current
+              ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)
+              : null
+          }
+          pinMode={pinMode}
+          onPinModeChange={setPinMode}
+          focusLocation={focusLocation}
+          visibleIds={filteredBusinessIds}
+        />
+      )}
+
+      <TerritoryLayer
+        variant="admin"
         provider="google"
         ready={googleReady}
-        getGoogleMap={() =>
-          mapRef.current && googleRef.current
-            ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)
-            : null
-        }
-        pinMode={pinMode}
-        onPinModeChange={setPinMode}
-        focusLocation={focusLocation}
-        visibleIds={filteredBusinessIds}
+        getGoogleMap={() => (mapRef.current ? { map: mapRef.current } : null)}
+        toggleClassName="absolute bottom-6 left-4 z-30 flex flex-col-reverse items-start gap-2"
       />
 
       {historyTask && (
@@ -2258,6 +2291,15 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
       {/* Map controls — bottom-center, clear of the AI FAB at bottom-right */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
+        <button
+          onClick={() => setShowBusinessPins((visible) => !visible)}
+          title={showBusinessPins ? 'Hide business pins' : 'Show business pins'}
+          className="h-10 rounded-full bg-white/95 backdrop-blur shadow-lg border border-slate-200 px-4 flex items-center gap-2 text-[12px] font-semibold text-dash-dark hover:bg-slate-50 active:scale-95 transition-all"
+        >
+          {showBusinessPins ? <EyeOff size={16} /> : <Eye size={16} />}
+          {showBusinessPins ? 'Hide Pins' : 'Show Pins'}
+        </button>
+
         <button
           onClick={handleLocateMe}
           disabled={locating}

@@ -6,6 +6,8 @@ namespace App\Http\Controllers\Api\V1\Crm;
 
 use App\Http\Controllers\Concerns\ResolvesCompanyContextId;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Crm\ExportLeadsRequest;
+use App\Http\Requests\Crm\ImportLeadsRequest;
 use App\Http\Requests\Crm\StoreLeadActivityRequest;
 use App\Http\Requests\Crm\StoreLeadNoteRequest;
 use App\Http\Requests\Crm\StoreLeadRequest;
@@ -17,6 +19,7 @@ use App\Models\Lead;
 use App\Services\Crm\LeadService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LeadController extends Controller
 {
@@ -303,21 +306,44 @@ class LeadController extends Controller
         );
     }
 
-    public function import(Request $request): JsonResponse
+    public function import(ImportLeadsRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'company_id' => ['nullable'],
-            'pipeline_id' => ['required', 'integer'],
-            'rows' => ['required', 'array', 'min:1'],
-            'rows.*' => ['array'],
-        ]);
-        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
-
-        $result = $this->leadService->importLeads($request->user(), $validated);
+        $result = $this->leadService->importLeads($request->user(), $request->validated());
 
         return $this->success(
             message: 'CRM lead import completed.',
             data: $result,
+        );
+    }
+
+    public function importPreview(ImportLeadsRequest $request): JsonResponse
+    {
+        $result = $this->leadService->previewImportLeads($request->user(), $request->validated());
+
+        return $this->success(
+            message: 'CRM lead import preview generated.',
+            data: $result,
+        );
+    }
+
+    public function export(ExportLeadsRequest $request): StreamedResponse
+    {
+        $export = $this->leadService->exportLeads($request->user(), $request->validated());
+
+        return response()->streamDownload(
+            static function () use ($export): void {
+                $stream = $export['stream'] ?? null;
+                if (is_callable($stream)) {
+                    $stream();
+                }
+            },
+            $export['filename'],
+            [
+                'Content-Type' => $export['content_type'],
+                'Cache-Control' => 'no-store, no-cache, must-revalidate',
+                'Pragma' => 'no-cache',
+                'X-Content-Type-Options' => 'nosniff',
+            ],
         );
     }
 }

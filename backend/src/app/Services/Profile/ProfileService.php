@@ -6,16 +6,18 @@ namespace App\Services\Profile;
 
 use App\Models\Company;
 use App\Models\User;
+use App\Services\Avatar\AvatarStorageService;
 use App\Services\Company\CompanyContextService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class ProfileService
 {
-    public function __construct(private readonly CompanyContextService $companyContextService) {}
+    public function __construct(
+        private readonly CompanyContextService $companyContextService,
+        private readonly AvatarStorageService $avatarStorage,
+    ) {}
 
     public function show(User $user, ?int $companyId = null): array
     {
@@ -73,28 +75,40 @@ class ProfileService
         $previousAvatar = $user->avatar;
         $nextAvatar = $previousAvatar;
         $nextGender = $user->gender;
+        $uploadedPath = null;
 
-        if (isset($payload['avatar_file']) && $payload['avatar_file'] instanceof UploadedFile) {
-            $nextAvatar = $this->storeCustomAvatar($payload['avatar_file'], (int) $user->id);
-            if (array_key_exists('gender', $payload)) {
-                $nextGender = $payload['gender'];
+        try {
+            if (isset($payload['avatar_file']) && $payload['avatar_file'] instanceof UploadedFile) {
+                $uploadedPath = $this->avatarStorage->storeCustom($payload['avatar_file'], (int) $user->id);
+                $nextAvatar = $uploadedPath;
+                if (array_key_exists('gender', $payload)) {
+                    $nextGender = $payload['gender'];
+                }
+            } elseif (isset($payload['avatar_key']) && is_string($payload['avatar_key'])) {
+                [$resolvedAvatarKey, $resolvedGender] = $this->resolveCatalogAvatarSelection(
+                    avatarKey: $payload['avatar_key'],
+                    preferredGender: $payload['gender'] ?? $user->gender,
+                );
+
+                $nextAvatar = $resolvedAvatarKey;
+                $nextGender = $resolvedGender;
             }
-        } elseif (isset($payload['avatar_key']) && is_string($payload['avatar_key'])) {
-            [$resolvedAvatarKey, $resolvedGender] = $this->resolveCatalogAvatarSelection(
-                avatarKey: $payload['avatar_key'],
-                preferredGender: $payload['gender'] ?? $user->gender,
-            );
 
-            $nextAvatar = $resolvedAvatarKey;
-            $nextGender = $resolvedGender;
+            DB::transaction(function () use ($user, $nextAvatar, $nextGender): void {
+                $user->forceFill([
+                    'avatar' => $nextAvatar,
+                    'gender' => $nextGender,
+                ])->save();
+            });
+        } catch (\Throwable $exception) {
+            if (is_string($uploadedPath) && $uploadedPath !== '') {
+                $this->avatarStorage->deleteIfOrphaned($uploadedPath);
+            }
+
+            throw $exception;
         }
 
-        $user->forceFill([
-            'avatar' => $nextAvatar,
-            'gender' => $nextGender,
-        ])->save();
-
-        $this->cleanupPreviousCustomAvatar($previousAvatar, $nextAvatar);
+        $this->avatarStorage->replaceCustomAvatar($previousAvatar, $nextAvatar);
 
         return $this->buildPayload($user->fresh(), $companyId);
     }
@@ -158,13 +172,13 @@ class ProfileService
     {
         $normalizedAvatarKey = trim(pathinfo($avatarKey, PATHINFO_FILENAME));
 
-        if ($normalizedAvatarKey === '' || $this->isCustomAvatarPath($normalizedAvatarKey)) {
+        if ($normalizedAvatarKey === '' || $this->avatarStorage->isCustomAvatarPath($normalizedAvatarKey)) {
             throw ValidationException::withMessages([
                 'avatar_key' => ['Selected avatar key is invalid.'],
             ]);
         }
 
-        $catalog = $this->avatarCatalog();
+        $catalog = $this->avatarStorage->catalog();
 
         $matchingGenders = [];
         foreach (['male', 'female'] as $gender) {
@@ -195,85 +209,6 @@ class ProfileService
         }
 
         return [$normalizedAvatarKey, $resolvedGender];
-    }
-
-    private function avatarCatalog(): array
-    {
-        $catalog = [
-            'male' => [],
-            'female' => [],
-        ];
-
-        $disk = Storage::disk('public');
-        $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
-
-        foreach (['male', 'female'] as $gender) {
-            foreach ($disk->files("{$basePath}/{$gender}") as $file) {
-                $filename = basename($file);
-                $extension = strtolower((string) pathinfo($filename, PATHINFO_EXTENSION));
-
-                if (! in_array($extension, ['png', 'svg', 'jpg', 'jpeg', 'webp'], true)) {
-                    continue;
-                }
-
-                $key = pathinfo($filename, PATHINFO_FILENAME);
-                $catalog[$gender][$key] = true;
-            }
-        }
-
-        $fallbackCatalog = config('internal_onboarding.avatar_catalog', []);
-        if (! is_array($fallbackCatalog)) {
-            $fallbackCatalog = [];
-        }
-        foreach ($fallbackCatalog as $gender => $avatars) {
-            if (! isset($catalog[$gender]) || ! is_array($avatars)) {
-                continue;
-            }
-
-            foreach ($avatars as $avatarKey => $_svg) {
-                $catalog[$gender][$avatarKey] = true;
-            }
-        }
-
-        return $catalog;
-    }
-
-    private function storeCustomAvatar(UploadedFile $avatarFile, int $userId): string
-    {
-        $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
-        $directory = "{$basePath}/custom";
-        $extension = strtolower($avatarFile->getClientOriginalExtension() ?: $avatarFile->extension() ?: 'png');
-        $filename = sprintf('user_%d_%s.%s', $userId, Str::random(16), $extension);
-
-        return $avatarFile->storeAs($directory, $filename, ['disk' => 'public']);
-    }
-
-    private function cleanupPreviousCustomAvatar(?string $previousAvatar, ?string $nextAvatar): void
-    {
-        if (! is_string($previousAvatar) || trim($previousAvatar) === '') {
-            return;
-        }
-
-        if ($previousAvatar === $nextAvatar) {
-            return;
-        }
-
-        if (! $this->isCustomAvatarPath($previousAvatar)) {
-            return;
-        }
-
-        $disk = Storage::disk('public');
-
-        if ($disk->exists($previousAvatar)) {
-            $disk->delete($previousAvatar);
-        }
-    }
-
-    private function isCustomAvatarPath(string $avatarKey): bool
-    {
-        $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
-
-        return str_starts_with($avatarKey, "{$basePath}/custom/");
     }
 
     private function canEditCountry(string $membershipRole): bool

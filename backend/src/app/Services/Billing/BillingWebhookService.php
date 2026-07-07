@@ -16,6 +16,7 @@ class BillingWebhookService
 {
     public function __construct(
         private readonly CompanySubscriptionService $subscriptionService,
+        private readonly BillingPaymentMethodService $paymentMethodService,
     ) {}
 
     public function handle(WebhookReceived $event): void
@@ -28,6 +29,9 @@ class BillingWebhookService
             'customer.subscription.updated' => $this->handleSubscriptionUpdated($payload['data']['object'] ?? []),
             'customer.subscription.deleted' => $this->handleSubscriptionDeleted($payload['data']['object'] ?? []),
             'invoice.payment_failed' => $this->handlePaymentFailed($payload['data']['object'] ?? []),
+            'customer.updated' => $this->handleCustomerUpdated($payload['data']['object'] ?? []),
+            'payment_method.attached' => $this->handlePaymentMethodChanged($payload['data']['object'] ?? []),
+            'payment_method.detached' => $this->handlePaymentMethodChanged($payload['data']['object'] ?? []),
             default => null,
         };
     }
@@ -45,6 +49,7 @@ class BillingWebhookService
         }
 
         $this->subscriptionService->activateFromCheckoutSession($company, $session);
+        $this->paymentMethodService->syncDefaultPaymentMethodCache($company->fresh());
     }
 
     /**
@@ -120,5 +125,33 @@ class BillingWebhookService
         }
 
         return Company::query()->where('stripe_id', $customerId)->first();
+    }
+
+    /**
+     * @param  array<string, mixed>  $object
+     */
+    private function handleCustomerUpdated(array $object): void
+    {
+        $company = $this->resolveCompanyFromStripeCustomer((string) ($object['id'] ?? ''));
+
+        if (! $company) {
+            return;
+        }
+
+        $this->paymentMethodService->syncDefaultPaymentMethodCache($company);
+    }
+
+    /**
+     * @param  array<string, mixed>  $object
+     */
+    private function handlePaymentMethodChanged(array $object): void
+    {
+        $company = $this->resolveCompanyFromStripeCustomer((string) ($object['customer'] ?? ''));
+
+        if (! $company) {
+            return;
+        }
+
+        $this->paymentMethodService->syncDefaultPaymentMethodCache($company);
     }
 }

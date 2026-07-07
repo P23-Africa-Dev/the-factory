@@ -14,6 +14,14 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'api.thefactory23.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'factory23-storage.lon1.cdn.digitaloceanspaces.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'factory23-storage.lon1.digitaloceanspaces.com',
+      },
     ],
   },
   async headers() {

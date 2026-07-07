@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\Billing\BillingEnforcementSettingService;
 use App\Support\AvatarUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -14,9 +15,10 @@ class UserResource extends JsonResource
             ->where('companies.status', 'active')
             ->orderByPivot('joined_at', 'desc')
             ->orderBy('company_users.created_at', 'desc')
-            ->first(['companies.id', 'companies.company_id', 'companies.name', 'companies.status', 'companies.subscription_status', 'companies.subscription_plan_key', 'companies.assigned_plan_key']);
+            ->first(['companies.id', 'companies.company_id', 'companies.name', 'companies.status', 'companies.is_demo', 'companies.subscription_status', 'companies.subscription_plan_key', 'companies.assigned_plan_key']);
 
-        $billingActive = $activeCompany?->subscriptionStatusEnum()->allowsDashboardAccess() ?? false;
+        $billingActive = $activeCompany?->hasEffectiveSubscriptionAccess() ?? false;
+        $paidSubscription = $activeCompany?->hasPaidSubscription() ?? false;
 
         $selfServeCompleted = $this->hasCompletedOnboarding();
         $enterpriseCompleted = $this->hasCompletedEnterpriseOnboarding();
@@ -29,13 +31,14 @@ class UserResource extends JsonResource
             default => null,
         };
 
-        $avatarUrl = $this->resolveAvatarUrl();
+        $avatarUrl = AvatarUrlResolver::resolveOrDefault($this->avatar, $this->gender);
+        $billingEnforced = app(BillingEnforcementSettingService::class)->isEnabled();
 
         return [
             'id' => $this->id,
             'name' => $this->name,
             'email' => $this->email,
-            'avatar' => $avatarUrl ?? $this->avatar,
+            'avatar' => $avatarUrl,
             'avatar_key' => $this->avatar,
             'email_verified' => $this->isEmailVerified(),
             'onboarding_completed' => $selfServeCompleted || $enterpriseCompleted || $internalCompleted,
@@ -51,20 +54,18 @@ class UserResource extends JsonResource
                 'role' => $activeCompany->pivot?->role,
                 'subscription_status' => $activeCompany->subscription_status,
                 'has_active_subscription' => $billingActive,
-                'billing_enforced' => (bool) config('billing.enforce', true),
+                'has_paid_subscription' => $paidSubscription,
+                'is_demo' => $activeCompany->isDemo(),
+                'billing_enforced' => $billingEnforced,
             ] : null,
             'billing' => $activeCompany ? [
                 'subscription_status' => $activeCompany->subscription_status,
                 'has_active_subscription' => $billingActive,
+                'has_paid_subscription' => $paidSubscription,
                 'assigned_plan_key' => $activeCompany->assigned_plan_key,
-                'billing_enforced' => (bool) config('billing.enforce', true),
+                'billing_enforced' => $billingEnforced,
             ] : null,
             'created_at' => $this->created_at->toIso8601String(),
         ];
-    }
-
-    private function resolveAvatarUrl(): ?string
-    {
-        return AvatarUrlResolver::resolve($this->avatar, $this->gender);
     }
 }

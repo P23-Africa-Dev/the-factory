@@ -73,7 +73,14 @@
                         </td>
 
                         <td>
-                            @if ($suspended)
+                            @if ($user->deleted_at)
+                                <span class="badge-status" style="background:rgba(220,38,38,.12);color:#dc2626">
+                                    <i class="bi bi-trash3"></i>Trashed
+                                </span>
+                                <div style="font-size:.68rem;margin-top:2px;color:var(--text-muted)">
+                                    {{ $user->deleted_at?->diffForHumans() }}
+                                </div>
+                            @elseif ($suspended)
                                 <span class="badge-status badge-suspended">
                                     <i class="bi bi-pause-circle"></i>Suspended
                                 </span>
@@ -105,7 +112,27 @@
                                     </li>
                                     <li><hr class="dropdown-divider my-1"></li>
 
-                                    @if ($user->is_active && !$suspended)
+                                    @if ($user->deleted_at)
+                                        <li>
+                                            <form method="POST" action="{{ route('admin.users.restore', $user->id) }}">
+                                                @csrf
+                                                <button class="dropdown-item" style="color:var(--success)" type="submit">
+                                                    <i class="bi bi-arrow-counterclockwise me-2"></i>Restore
+                                                </button>
+                                            </form>
+                                        </li>
+                                        <li>
+                                            <form method="POST" action="{{ route('admin.users.force-destroy', $user->id) }}"
+                                                onsubmit="return confirm('PERMANENTLY DELETE this user? This cannot be undone.')">
+                                                @csrf @method('DELETE')
+                                                <button class="dropdown-item" style="color:var(--danger)" type="submit">
+                                                    <i class="bi bi-x-octagon me-2"></i>Delete Permanently
+                                                </button>
+                                            </form>
+                                        </li>
+                                    @endif
+
+                                    @if (! $user->deleted_at && $user->is_active && !$suspended)
                                         <li>
                                             <button class="dropdown-item" style="color:var(--warning)"
                                                     data-bs-toggle="modal" data-bs-target="#suspendModal"
@@ -125,7 +152,7 @@
                                         </li>
                                     @endif
 
-                                    @if (!$user->is_active || $suspended)
+                                    @if (! $user->deleted_at && (!$user->is_active || $suspended))
                                         <li>
                                             <form method="POST" action="{{ route('admin.users.reactivate', $user) }}">
                                                 @csrf
@@ -136,15 +163,17 @@
                                         </li>
                                     @endif
 
-                                    <li><hr class="dropdown-divider my-1"></li>
-                                    <li>
-                                        <button class="dropdown-item" style="color:var(--danger)"
-                                                data-bs-toggle="modal" data-bs-target="#deleteModal"
-                                                data-user-id="{{ $user->id }}"
-                                                data-user-name="{{ e($user->name) }}">
-                                            <i class="bi bi-trash3 me-2"></i>Delete
-                                        </button>
-                                    </li>
+                                    @if (! $user->deleted_at)
+                                        <li><hr class="dropdown-divider my-1"></li>
+                                        <li>
+                                            <button class="dropdown-item" style="color:var(--danger)"
+                                                    data-bs-toggle="modal" data-bs-target="#deleteModal"
+                                                    data-user-id="{{ $user->id }}"
+                                                    data-user-name="{{ e($user->name) }}">
+                                                <i class="bi bi-trash3 me-2"></i>Move to Trash
+                                            </button>
+                                        </li>
+                                    @endif
                                 </ul>
                             </div>
                         </td>

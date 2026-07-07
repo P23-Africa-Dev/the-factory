@@ -6,13 +6,15 @@ namespace App\Notifications;
 
 use App\Models\Task;
 use App\Models\TaskReassignment;
+use App\Notifications\Concerns\UsesFactory23MailBranding;
 use Illuminate\Bus\Queueable;
-use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\HtmlString;
 
 class TaskReassignmentRequestedNotification extends Notification
 {
     use Queueable;
+    use UsesFactory23MailBranding;
 
     public function __construct(
         private readonly TaskReassignment $reassignment,
@@ -25,44 +27,49 @@ class TaskReassignmentRequestedNotification extends Notification
         return ['mail'];
     }
 
-    public function toMail(object $notifiable): MailMessage
+    public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
     {
-        $frontendBase = rtrim((string) config('app.frontend_url', config('app.url')), '/');
-        $acceptUrl = $frontendBase . '/tasks/reassignments/' . $this->reassignment->id . '?action=accept';
-        $rejectUrl = $frontendBase . '/tasks/reassignments/' . $this->reassignment->id . '?action=reject';
+        $acceptUrl = $this->factory23FrontendUrl('tasks/reassignments/' . $this->reassignment->id . '?action=accept');
+        $rejectUrl = $this->factory23FrontendUrl('tasks/reassignments/' . $this->reassignment->id . '?action=reject');
 
-        $mail = (new MailMessage)
-            ->mailer('resend')
-            ->subject('Task reassignment request')
-            ->greeting("Hello {$notifiable->name},")
-            ->line('You have received a task reassignment request.')
-            ->line("Task: {$this->task->title}")
-            ->line("Current owner: {$this->currentOwnerName}");
+        $rows = [
+            'Task' => $this->task->title,
+            'Current owner' => $this->currentOwnerName,
+        ];
 
         if ($this->task->project !== null) {
-            $mail->line("Project: {$this->task->project->name}");
+            $rows['Project'] = $this->task->project->name;
         }
 
         if ($this->task->due_at !== null) {
-            $mail->line('Due date: ' . $this->task->due_at->toIso8601String());
+            $rows['Due date'] = $this->task->due_at->toIso8601String();
         }
 
         if (! empty($this->task->location_text)) {
-            $mail->line("Location: {$this->task->location_text}");
+            $rows['Location'] = $this->task->location_text;
         }
 
         if (! empty($this->task->description)) {
-            $mail->line('Task summary: ' . $this->task->description);
+            $rows['Summary'] = $this->task->description;
         }
 
         if (! empty($this->reassignment->reason)) {
-            $mail->line('Reason: ' . $this->reassignment->reason);
+            $rows['Reason'] = $this->reassignment->reason;
         }
 
-        return $mail
-            ->action('Accept Reassignment', $acceptUrl)
-            ->line('If you do not want this task, you can reject the reassignment request.')
-            ->line("Reject: {$rejectUrl}")
-            ->salutation('The Factory Team');
+        $rejectButton = new HtmlString(view('emails.components.secondary-button', [
+            'url' => $rejectUrl,
+            'label' => 'Reject reassignment',
+        ])->render());
+
+        return $this->factory23Mail()
+            ->subject('Task reassignment request — Factory23')
+            ->greeting("Hello {$notifiable->name},")
+            ->line('You have received a task reassignment request.')
+            ->line($this->factory23DetailTable($rows))
+            ->action('Accept reassignment', $acceptUrl)
+            ->line($rejectButton)
+            ->line('If you do not want this task, use the reject option above.')
+            ->salutation($this->factory23Salutation());
     }
 }

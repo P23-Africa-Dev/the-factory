@@ -19,7 +19,7 @@ class InternalUserListResource extends JsonResource
     public function toArray(Request $request): array
     {
         $latestInvitation = $this->whenLoaded('latestInternalInvitation');
-        $avatarUrl = AvatarUrlResolver::resolve($this->avatar, $this->gender);
+        $avatarUrl = AvatarUrlResolver::resolveOrDefault($this->avatar, $this->gender);
         $presence = $this->agent_presence ?? app(AgentPresenceService::class)->emptyPresence();
 
         return [

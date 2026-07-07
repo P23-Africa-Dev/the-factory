@@ -8,9 +8,9 @@ use Illuminate\Http\UploadedFile;
 
 interface AiProviderContract
 {
-    public function generateText(string $systemPrompt, string $userPrompt, array $options = []): ?string;
+    public function generateText(string $systemPrompt, string $userPrompt, array $options = []): ?AiGenerationResult;
 
-    public function transcribeAudio(UploadedFile $audio, string $prompt = '', array $options = []): ?string;
+    public function transcribeAudio(UploadedFile $audio, string $prompt = '', array $options = []): ?AiGenerationResult;
 
     public function isConfigured(): bool;
 }

@@ -17,6 +17,34 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Avatar Filesystem Disk
+    |--------------------------------------------------------------------------
+    |
+    | Dedicated disk for user avatars (catalog + custom uploads). Defaults to
+    | the "avatars" S3-compatible disk so avatar I/O is independent of the
+    | application default filesystem.
+    |
+    */
+
+    'avatar_disk' => env('AVATAR_FILESYSTEM_DISK', 'avatars'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Avatar Public Base URL
+    |--------------------------------------------------------------------------
+    |
+    | Base URL used when building browser-facing avatar links. Prefer the
+    | direct Spaces origin (not the CDN hostname) unless CDN is verified.
+    | Falls back to AWS_URL when unset.
+    |
+    */
+
+    'avatar_public_base_url' => env('AVATAR_PUBLIC_BASE_URL', env('AWS_URL')),
+
+    'drive_disk' => env('DRIVE_FILESYSTEM_DISK', 'drive'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
     |
@@ -63,6 +91,51 @@ return [
             'throw' => false,
             'report' => false,
         ],
+
+        'avatars' => env('APP_ENV') === 'testing'
+            ? [
+                'driver' => 'local',
+                'root' => storage_path('framework/testing/disks/avatars'),
+                'url' => env('AWS_URL', 'https://factory23-storage.lon1.digitaloceanspaces.com'),
+                'visibility' => 'public',
+                'throw' => false,
+                'report' => false,
+            ]
+            : [
+                'driver' => 's3',
+                'key' => env('AWS_ACCESS_KEY_ID'),
+                'secret' => env('AWS_SECRET_ACCESS_KEY'),
+                'region' => env('AWS_DEFAULT_REGION'),
+                'bucket' => env('AWS_BUCKET'),
+                'url' => env('AWS_URL'),
+                'endpoint' => env('AWS_ENDPOINT'),
+                'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+                'visibility' => 'public',
+                'throw' => false,
+                'report' => false,
+            ],
+
+        'drive' => env('APP_ENV') === 'testing'
+            ? [
+                'driver' => 'local',
+                'root' => storage_path('framework/testing/disks/drive'),
+                'visibility' => 'private',
+                'throw' => false,
+                'report' => false,
+            ]
+            : [
+                'driver' => 's3',
+                'key' => env('AWS_ACCESS_KEY_ID'),
+                'secret' => env('AWS_SECRET_ACCESS_KEY'),
+                'region' => env('AWS_DEFAULT_REGION'),
+                'bucket' => env('AWS_BUCKET'),
+                'url' => env('AWS_URL'),
+                'endpoint' => env('AWS_ENDPOINT'),
+                'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+                'visibility' => 'private',
+                'throw' => false,
+                'report' => false,
+            ],
 
     ],
 

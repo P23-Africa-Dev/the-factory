@@ -1,5 +1,6 @@
 import AgentLoginForm from "@/components/forms/agent-login-form";
 import { AUTH_TOKEN_COOKIE } from "@/lib/auth/session";
+import { getServerSessionState } from "@/lib/auth/server-session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -8,7 +9,11 @@ export default async function AgentLoginPage() {
   const token = cookieStore.get(AUTH_TOKEN_COOKIE)?.value;
 
   if (token) {
-    redirect("/agent/dashboard");
+    const session = await getServerSessionState(token);
+
+    if (session.isAuthenticated) {
+      redirect(session.role === "agent" ? "/agent/dashboard" : "/dashboard");
+    }
   }
 
   return (

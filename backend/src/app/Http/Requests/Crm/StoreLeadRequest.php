@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Requests\Crm;
 
 use App\Enums\LeadPriority;
+use App\Http\Requests\Concerns\NormalizesLeadProfessionalFields;
 use App\Http\Requests\Concerns\ResolvesCompanyContextId;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreLeadRequest extends FormRequest
 {
+    use NormalizesLeadProfessionalFields;
     use ResolvesCompanyContextId;
 
     protected function prepareForValidation(): void
@@ -21,6 +23,7 @@ class StoreLeadRequest extends FormRequest
             'status' => $this->input('status', 'newly_lead'),
             'priority' => $this->input('priority', LeadPriority::MEDIUM->value),
             ...$budget,
+            ...$this->normalizeLeadProfessionalFields(),
         ]);
     }
 
@@ -77,6 +80,11 @@ class StoreLeadRequest extends FormRequest
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:40'],
             'location' => ['nullable', 'string', 'max:255'],
+            'company_name' => ['nullable', 'string', 'max:255'],
+            'website' => ['nullable', 'string', 'max:255', 'url'],
+            'position' => ['nullable', 'string', 'max:120'],
+            'profile_urls' => ['nullable', 'array'],
+            'profile_urls.*' => ['nullable', 'string', 'url', 'max:2048'],
             'source' => ['nullable', 'string', 'max:120'],
             'status' => ['required', 'string', 'max:120'],
             'priority' => ['required', 'string', \Illuminate\Validation\Rule::in(LeadPriority::values())],

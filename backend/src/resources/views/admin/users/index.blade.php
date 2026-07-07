@@ -32,12 +32,22 @@
                          color:{{ $tab === 'internal' ? '#fff' : 'var(--text-muted)' }};
                          font-size:.7rem;padding:.25em .6em">{{ $internalCount }}</span>
         </a>
-        <div class="ms-auto d-flex align-items-center pe-3" style="font-size:.75rem;color:var(--text-muted)">
-            @if ($tab === 'owners')
-                <i class="bi bi-info-circle me-1"></i>Self-serve &amp; enterprise account holders
-            @else
-                <i class="bi bi-info-circle me-1"></i>Supervisors &amp; agents created within accounts
-            @endif
+        <div class="ms-auto d-flex align-items-center gap-2 pe-3" style="font-size:.75rem;color:var(--text-muted)">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Trash filter">
+                <a href="{{ route('admin.users.index', array_merge(request()->except('trash', 'page'), ['trash' => ''])) }}"
+                   class="btn {{ empty($trash) ? 'btn-primary' : 'btn-outline-secondary' }}" style="font-size:.72rem">
+                    Active
+                </a>
+                <a href="{{ route('admin.users.index', array_merge(request()->except('page'), ['trash' => 'trashed'])) }}"
+                   class="btn {{ ($trash ?? '') === 'trashed' ? 'btn-danger' : 'btn-outline-danger' }}" style="font-size:.72rem">
+                    <i class="bi bi-trash3"></i> Trashed
+                    <span class="badge bg-light text-dark ms-1">{{ $trashedCount }}</span>
+                </a>
+                <a href="{{ route('admin.users.index', array_merge(request()->except('page'), ['trash' => 'all'])) }}"
+                   class="btn {{ ($trash ?? '') === 'all' ? 'btn-secondary' : 'btn-outline-secondary' }}" style="font-size:.72rem">
+                    All
+                </a>
+            </div>
         </div>
     </div>
 </div>

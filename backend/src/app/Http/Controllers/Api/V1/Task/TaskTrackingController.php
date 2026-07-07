@@ -35,6 +35,7 @@ class TaskTrackingController extends Controller
                 'distance_to_destination_meters' => $result['distance_to_destination_meters'],
                 'distance_remaining_meters' => $result['distance_remaining_meters'],
                 'movement_started' => $result['movement_started'],
+                'demo_simulation_active' => (bool) ($result['demo_simulation_active'] ?? false),
             ],
         );
     }

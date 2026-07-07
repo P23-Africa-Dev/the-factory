@@ -40,16 +40,18 @@ function ActiveTrackingReporter({
   companyId,
   callbacksRef,
   onFlushReady,
+  serverSimulatesMovement,
 }: {
   taskId: number;
   companyId: number;
   callbacksRef: React.MutableRefObject<TrackingCallbacks>;
   onFlushReady: (flush: () => Promise<void>) => void;
+  serverSimulatesMovement: boolean;
 }) {
   const { flush } = useLocationReporter({
     taskId,
     companyId,
-    active: true,
+    active: !serverSimulatesMovement,
     onArrived: () => callbacksRef.current.onArrived?.(),
     onNearDestination: () => callbacksRef.current.onNearDestination?.(),
     onDistanceRemaining: (m) => callbacksRef.current.onDistanceRemaining?.(m),
@@ -64,7 +66,9 @@ function ActiveTrackingReporter({
 
 export function ActiveTrackingProvider({ children }: { children: React.ReactNode }) {
   const activeTrackingTaskId = useTrackingStore((s) => s.activeTrackingTaskId);
+  const serverSimulatesMovement = useTrackingStore((s) => s.serverSimulatesMovement);
   const setActiveTrackingTaskId = useTrackingStore((s) => s.setActiveTrackingTaskId);
+  const setServerSimulatesMovement = useTrackingStore((s) => s.setServerSimulatesMovement);
   const [companyId, setCompanyId] = useState(0);
   const callbacksRef = useRef<TrackingCallbacks>({});
   const flushRef = useRef<(() => Promise<void>) | null>(null);
@@ -84,8 +88,9 @@ export function ActiveTrackingProvider({ children }: { children: React.ReactNode
     }
     callbacksRef.current = {};
     setActiveTrackingTaskId(null);
+    setServerSimulatesMovement(false);
     setCompanyId(0);
-  }, [setActiveTrackingTaskId]);
+  }, [setActiveTrackingTaskId, setServerSimulatesMovement]);
 
   const handleFlushReady = useCallback((flush: () => Promise<void>) => {
     flushRef.current = flush;
@@ -106,6 +111,7 @@ export function ActiveTrackingProvider({ children }: { children: React.ReactNode
           companyId={companyId}
           callbacksRef={callbacksRef}
           onFlushReady={handleFlushReady}
+          serverSimulatesMovement={serverSimulatesMovement}
         />
       )}
       {children}

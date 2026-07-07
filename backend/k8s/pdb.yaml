@@ -1,0 +1,88 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Pod Disruption Budgets — factory23 namespace
+# PDBs ensure K8s maintains minimum availability during:
+#   - kubectl drain (node maintenance/upgrades)
+#   - Voluntary evictions
+# Without PDBs, a node drain could evict ALL replicas simultaneously.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 1. Backend API (2–10 replicas via HPA) — keep at least 1 running during drains ─
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: factory23
+    app.kubernetes.io/component: pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: backend
+
+---
+# 2. Queue Worker (1 replica) — allow full eviction (stateless, jobs retry) ─
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: queue-worker-pdb
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: factory23
+    app.kubernetes.io/component: pdb
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app: queue-worker
+
+---
+# 3. Scheduler (1 replica) — allow full eviction (cron tasks self-recover) ──
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: scheduler-pdb
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: factory23
+    app.kubernetes.io/component: pdb
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app: scheduler
+
+---
+# 4. Realtime WebSocket server (1 replica) — allow full eviction ─────────────
+# Clients auto-reconnect; brief downtime during drain is acceptable.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: realtime-pdb
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: factory23
+    app.kubernetes.io/component: pdb
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app: realtime
+
+---
+# 5. Redis (1 replica) — disallow eviction unless alternative is ready ───────
+# Redis carries sessions and queue data; eviction must be manual/planned.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-pdb
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: factory23
+    app.kubernetes.io/component: pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: redis

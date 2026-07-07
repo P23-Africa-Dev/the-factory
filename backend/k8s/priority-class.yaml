@@ -1,0 +1,27 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PriorityClasses — ensures critical workloads survive resource pressure.
+# High priority: backend, Redis, realtime (user-facing)
+# Low priority:  queue-worker, scheduler (background, can be preempted)
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: factory23-high-priority
+  labels:
+    app.kubernetes.io/name: factory23
+value: 100
+globalDefault: false
+description: "High priority for user-facing workloads: backend API, Redis, realtime server"
+preemptionPolicy: PreemptLowerPriority
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: factory23-low-priority
+  labels:
+    app.kubernetes.io/name: factory23
+value: 50
+globalDefault: false
+description: "Low priority for background workers: queue-worker, scheduler (can be preempted under resource pressure)"
+preemptionPolicy: PreemptLowerPriority

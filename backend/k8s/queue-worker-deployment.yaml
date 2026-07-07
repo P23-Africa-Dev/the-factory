@@ -1,0 +1,88 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Queue Worker Deployment
+# Image: registry.digitalocean.com/con-reg/backend:v2 (same as php-fpm)
+# Queues (from docker-compose): email-sync, email-attachments, default
+# --max-time=3600 means the process exits after 1 hour; K8s restarts it.
+# terminationGracePeriodSeconds=120 matches --timeout=120 so jobs can finish.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: queue-worker
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: queue-worker
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: factory23
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: queue-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: queue-worker
+        app.kubernetes.io/name: queue-worker
+        app.kubernetes.io/component: worker
+    spec:
+      priorityClassName: factory23-low-priority
+      # Allow current job to finish before SIGKILL — matches --timeout=120
+      terminationGracePeriodSeconds: 120
+
+      imagePullSecrets:
+        - name: do-registry
+
+      containers:
+        - name: queue-worker
+          image: registry.digitalocean.com/con-reg/backend:v2
+          imagePullPolicy: IfNotPresent
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              mkdir -p /var/www/html/storage/framework/cache/data \
+                       /var/www/html/storage/framework/sessions \
+                       /var/www/html/storage/framework/views \
+                       /var/www/html/storage/logs
+              php artisan config:clear
+              php artisan config:cache
+              exec php artisan queue:work redis \
+                --queue=email-sync,email-attachments,default \
+                --sleep=1 \
+                --tries=3 \
+                --max-time=3600 \
+                --timeout=120
+
+          envFrom:
+            - configMapRef:
+                name: factory23-config
+            - secretRef:
+                name: factory23-secret
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          # Liveness: verify PHP is functional. No HTTP health endpoint.
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "php -r 'exit(0);'"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 15
+            failureThreshold: 3
+
+          securityContext:
+            allowPrivilegeEscalation: false

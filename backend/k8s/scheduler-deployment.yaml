@@ -1,0 +1,76 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheduler Deployment
+# Image: registry.digitalocean.com/con-reg/backend:v2 (same as php-fpm)
+# MUST be 1 replica — running multiple schedulers causes duplicate job execution.
+# `php artisan schedule:work` is the Laravel 12 native long-running scheduler
+# (introduced in Laravel 10). Replaces the docker-compose shell loop.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler
+  namespace: factory23
+  labels:
+    app.kubernetes.io/name: scheduler
+    app.kubernetes.io/component: scheduler
+    app.kubernetes.io/part-of: factory23
+spec:
+  replicas: 1  # MUST remain 1 — duplicate schedulers cause duplicate job execution
+  selector:
+    matchLabels:
+      app: scheduler
+  template:
+    metadata:
+      labels:
+        app: scheduler
+        app.kubernetes.io/name: scheduler
+        app.kubernetes.io/component: scheduler
+    spec:
+      priorityClassName: factory23-low-priority
+      terminationGracePeriodSeconds: 60
+
+      imagePullSecrets:
+        - name: do-registry
+
+      containers:
+        - name: scheduler
+          image: registry.digitalocean.com/con-reg/backend:v2
+          imagePullPolicy: IfNotPresent
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              mkdir -p /var/www/html/storage/framework/cache/data \
+                       /var/www/html/storage/framework/sessions \
+                       /var/www/html/storage/framework/views \
+                       /var/www/html/storage/logs
+              php artisan config:clear
+              php artisan config:cache
+              exec php artisan schedule:work
+
+          envFrom:
+            - configMapRef:
+                name: factory23-config
+            - secretRef:
+                name: factory23-secret
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "php -r 'exit(0);'"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 15
+            failureThreshold: 3
+
+          securityContext:
+            allowPrivilegeEscalation: false

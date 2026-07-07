@@ -43,7 +43,10 @@ return [
     'google_calendar' => [
         'client_id' => env('GOOGLE_CALENDAR_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CALENDAR_CLIENT_SECRET'),
-        'redirect_uri' => env('GOOGLE_CALENDAR_REDIRECT_URI'),
+        'redirect_uri' => env(
+            'GOOGLE_CALENDAR_REDIRECT_URI',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/calendar/integration/callback',
+        ),
         'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
             'GOOGLE_CALENDAR_SCOPES',
             'openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify',
@@ -58,11 +61,15 @@ return [
     'ai' => [
         'provider' => env('AI_PROVIDER', 'openai'),
         'fallback_provider' => env('AI_FALLBACK_PROVIDER', 'claude'),
-        'default_model' => env('AI_DEFAULT_MODEL', 'gpt-4.1-mini'),
-        'exec_model' => env('AI_EXEC_MODEL', 'gpt-4.1-mini'),
+        'default_model' => env('AI_DEFAULT_MODEL', 'auto'),
+        'exec_model' => env('AI_EXEC_MODEL', 'auto'),
         'analyst_model' => env('AI_ANALYST_MODEL', 'auto'),
         'request_timeout_ms' => (int) env('AI_REQUEST_TIMEOUT_MS', 30000),
         'max_tokens' => (int) env('AI_MAX_TOKENS', 4000),
+        'router_model' => env('AI_ROUTER_MODEL', 'auto'),
+        'provider_skip_ttl_seconds' => (int) env('AI_PROVIDER_SKIP_TTL', 300),
+        'enable_hybrid_router' => filter_var(env('AI_ENABLE_HYBRID_ROUTER', true), FILTER_VALIDATE_BOOL),
+        'enable_read_synthesis' => filter_var(env('AI_ENABLE_READ_SYNTHESIS', true), FILTER_VALIDATE_BOOL),
         'enable_streaming' => filter_var(env('AI_ENABLE_STREAMING', true), FILTER_VALIDATE_BOOL),
         'enable_actions' => filter_var(env('AI_ENABLE_ACTIONS', true), FILTER_VALIDATE_BOOL),
         'strict_confirmation_blocking' => filter_var(env('AI_STRICT_CONFIRMATION_BLOCKING', false), FILTER_VALIDATE_BOOL),
@@ -75,8 +82,9 @@ return [
         'openai' => [
             'api_key' => env('OPENAI_API_KEY'),
             'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
-            'model' => env('OPENAI_MODEL', env('AI_DEFAULT_MODEL', 'gpt-4.1-mini')),
+            'model' => env('OPENAI_MODEL', env('AI_DEFAULT_MODEL', 'auto')),
             'audio_model' => env('OPENAI_AUDIO_MODEL', 'gpt-4o-mini-transcribe'),
+            'vision_model' => env('OPENAI_VISION_MODEL', 'gpt-4o-mini'),
         ],
         'claude' => [
             'api_key' => env('ANTHROPIC_API_KEY'),

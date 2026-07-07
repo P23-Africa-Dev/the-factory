@@ -8,7 +8,7 @@ import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { clearAuthSession, getAuthTokenFromDocument } from "@/lib/auth/session";
 import { logout } from "@/lib/api/auth";
-import { ChevronDown, Menu, X, LogOut, User, Smartphone } from "lucide-react";
+import { ChevronDown, Menu, X, LogOut, User, Smartphone, Settings, HardDrive } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils/sample";
 import LogoutModal from "@/components/ui/logout-modal";
@@ -16,6 +16,7 @@ import { NotificationPanel } from "@/components/notifications/notification-panel
 import { useUnreadCount } from "@/hooks/use-notifications";
 import { DownloadAgentAppModal } from "@/components/pwa/DownloadAgentAppModal";
 import { getAgentInstallUrl, isMobileDevice } from "@/lib/agent-pwa-url";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 // Import local SVG assets
 import DashboardIcon from "@/assets/nav-icons/dashboard.svg";
@@ -28,36 +29,6 @@ import FinanceIcon from "@/assets/nav-icons/finance.svg";
 import NotificationIcon from "@/assets/nav-icons/notification.svg";
 import SettingsIcon from "@/assets/nav-icons/settings.svg";
 import Logo from "@/assets/images/logo.png";
-
-function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
-  if (!rawAvatar) return null;
-  const trimmed = rawAvatar.trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith("/")) return trimmed;
-
-  // Support relative storage paths returned by older payloads.
-  if (trimmed.startsWith("avatar/") || trimmed.startsWith("storage/")) {
-    const apiBase =
-      process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
-    const apiOrigin = apiBase.replace(/\/api\/v1\/?$/, "");
-
-    if (trimmed.startsWith("storage/")) {
-      return `${apiOrigin}/${trimmed}`;
-    }
-
-    return `${apiOrigin}/storage/${trimmed}`;
-  }
-
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return parsed.toString();
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 const navItems = [
   { name: "Dashboard", href: "/dashboard", icon: DashboardIcon },
@@ -244,7 +215,7 @@ export function Navbar() {
           >
             <div className="w-10 h-10 lg:w-11 lg:h-11 rounded-full overflow-hidden border-2 border-white/10 p-0.5 bg-white/10 flex items-center justify-center">
               {(() => {
-                const avatarSrc = getSafeAvatarSrc(user?.avatar) ?? "/avatars/male-avatar.png";
+                const avatarSrc = resolveAvatarSrc(user?.avatar);
                 return (
                   <Image
                     src={avatarSrc}
@@ -280,7 +251,7 @@ export function Navbar() {
                 <div className="px-4 py-3.5 border-b border-white/10 flex items-center gap-3">
                   <div className="w-9 h-9 rounded-full bg-white/10 border border-white/10 flex items-center justify-center shrink-0">
                     {(() => {
-                      const avatarSrc = getSafeAvatarSrc(user?.avatar) ?? "/avatars/male-avatar.png";
+                      const avatarSrc = resolveAvatarSrc(user?.avatar);
                       return (
                         <Image
                           src={avatarSrc}
@@ -312,6 +283,22 @@ export function Navbar() {
                   >
                     <User size={15} />
                     Profile
+                  </Link>
+                  <Link
+                    href={`${basePath}/settings`}
+                    onClick={() => setProfileOpen(false)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/60 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium"
+                  >
+                    <Settings size={15} />
+                    Settings
+                  </Link>
+                  <Link
+                    href={`${basePath}/drive`}
+                    onClick={() => setProfileOpen(false)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/60 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium"
+                  >
+                    <HardDrive size={15} />
+                    Company Drive
                   </Link>
                   <button
                     onClick={() => {
@@ -440,7 +427,7 @@ export function Navbar() {
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-full border border-white/20 bg-white/10 flex items-center justify-center overflow-hidden shrink-0">
                       {(() => {
-                        const avatarSrc = getSafeAvatarSrc(user?.avatar) ?? "/avatars/male-avatar.png";
+                        const avatarSrc = resolveAvatarSrc(user?.avatar);
                         return (
                           <Image
                             src={avatarSrc}
@@ -474,14 +461,18 @@ export function Navbar() {
                       </span>
                     )}
                   </button>
-                  <button className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer">
+                  <Link
+                    href={`${basePath}/settings`}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="flex-1 bg-white/5 p-4 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors"
+                  >
                     <Image
                       src={SettingsIcon}
                       alt="Settings"
                       width={24}
                       height={24}
                     />
-                  </button>
+                  </Link>
                   <button
                     onClick={() => {
                       setIsMobileMenuOpen(false);

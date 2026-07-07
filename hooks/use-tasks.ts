@@ -13,6 +13,8 @@ import {
   updateTaskStatusAdmin,
   createSelfTask,
   uploadTaskProof,
+  updateTask,
+  deleteTask,
   type ListTasksParams,
   type CreateTaskPayload,
   type CreateSelfTaskPayload,
@@ -23,6 +25,7 @@ import {
   type UpdateTaskStatusPayload,
   type TaskApiItem,
   type PaginationData,
+  type UpdateTaskPayload,
 } from "@/lib/api/tasks";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { toast } from "sonner";
@@ -213,6 +216,42 @@ export function useCreateSelfTask(options?: { onSuccess?: (task: TaskApiItem) =>
         return;
       }
       options?.onSuccess?.(res.data.task);
+    },
+  });
+}
+
+export function useUpdateTask(options?: { onSuccess?: (task: TaskApiItem) => void }) {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      payload,
+    }: {
+      taskId: number | string;
+      payload: UpdateTaskPayload;
+    }) => updateTask(taskId, payload, token),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+      options?.onSuccess?.(res.data.task);
+    },
+  });
+}
+
+export function useDeleteTask(options?: { onSuccess?: (deletedTaskId: number) => void }) {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      companyId,
+    }: {
+      taskId: number | string;
+      companyId?: number | string;
+    }) => deleteTask(taskId, { company_id: companyId }, token),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+      options?.onSuccess?.(res.data.deleted_task_id);
     },
   });
 }

@@ -21,6 +21,7 @@ import {
   mapApiPresence,
 } from "@/lib/agent-presence";
 import type { InternalUserListItem } from "@/lib/api/internal-users";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 type Agent = {
   id: string;
@@ -65,7 +66,7 @@ function mapAgent(user: InternalUserListItem): Agent {
     role: internalRole === 'admin' ? 'Admin' : internalRole === 'supervisor' ? 'Supervisor' : 'Field Agent',
     status: labels.badgeLabel,
     time: labels.subtextLabel,
-    avatar: user.avatar_url ?? '/avatars/male-avatar.png',
+    avatar: resolveAvatarSrc(user.avatar_url),
     active: labels.isMapActive,
     isMapActive: labels.isMapActive,
     isSessionOnline: labels.isSessionOnline,

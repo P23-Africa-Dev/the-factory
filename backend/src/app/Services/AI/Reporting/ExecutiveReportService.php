@@ -58,7 +58,7 @@ class ExecutiveReportService
         ]);
     }
 
-    public function markCompleted(int $companyId, int $userId, string $reportId, array $report): void
+    public function markCompleted(int $companyId, int $userId, string $reportId, array $report, ?int $driveFileId = null): void
     {
         $status = $this->statusByIds($companyId, $userId, $reportId);
 
@@ -69,6 +69,17 @@ class ExecutiveReportService
             'updated_at' => now()->toIso8601String(),
             'download_ready' => true,
             'report' => $report,
+            'drive_file_id' => $driveFileId,
+        ]);
+    }
+
+    public function attachDriveFileId(int $companyId, int $userId, string $reportId, int $driveFileId): void
+    {
+        $status = $this->statusByIds($companyId, $userId, $reportId);
+
+        $this->storeStatus($companyId, $userId, $reportId, [
+            ...$status,
+            'drive_file_id' => $driveFileId,
         ]);
     }
 
@@ -97,7 +108,7 @@ class ExecutiveReportService
             : [];
 
         $routing = $this->aiProviderRouter->routingMetadata('report');
-        $narrative = $this->generateExecutiveNarrative($pack, $routing);
+        $narrative = $this->generateExecutiveNarrative($pack, $routing, $companyId, (int) $user->id);
 
         return [
             'title' => 'Weekly Executive Summary',
@@ -154,7 +165,7 @@ class ExecutiveReportService
      * @param  array<string, mixed>  $pack
      * @param  array{provider: string, model: string, purpose: string}  $routing
      */
-    private function generateExecutiveNarrative(array $pack, array $routing): ?string
+    private function generateExecutiveNarrative(array $pack, array $routing, int $companyId, int $userId): ?string
     {
         $systemPrompt = <<<'PROMPT'
 You are ELY, your AI Assistant. Write a concise weekly executive narrative from the provided operational metrics JSON.
@@ -164,14 +175,29 @@ PROMPT;
 
         $userPrompt = "Weekly executive metrics JSON:\n" . json_encode($pack, JSON_UNESCAPED_SLASHES);
 
-        $text = $this->aiProviderRouter->generateForPurpose(
-            purpose: 'report',
+        $result = $this->aiProviderRouter->generateForPurpose(
+            purpose: 'analyst',
             systemPrompt: $systemPrompt,
             userPrompt: $userPrompt,
-            options: ['max_tokens' => 900, 'temperature' => 0.2, 'model' => $routing['model']],
+            options: [
+                'max_tokens' => 900,
+                'temperature' => 0.2,
+                'model' => $routing['model'],
+                'company_id' => $companyId,
+                '_log' => [
+                    'company_id' => $companyId,
+                    'user_id' => $userId,
+                    'intent_type' => 'report',
+                    'tool_name' => 'executive.weekly_summary',
+                    'routing_purpose' => 'report',
+                    'user_prompt' => mb_substr($userPrompt, 0, 10000),
+                ],
+            ],
         );
 
-        return is_string($text) && trim($text) !== '' ? trim($text) : null;
+        return $result instanceof \App\Services\AI\Providers\AiGenerationResult && is_string($result->text) && trim($result->text) !== ''
+            ? trim($result->text)
+            : null;
     }
 
     private function statusByIds(int $companyId, int $userId, string $reportId): array

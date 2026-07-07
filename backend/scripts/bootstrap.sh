@@ -14,7 +14,7 @@ fi
 cp src/.env.example src/.env
 
 # Align Laravel env values with Docker service names
-sed -i 's/^APP_NAME=.*/APP_NAME="Factory API"/' src/.env
+sed -i 's/^APP_NAME=.*/APP_NAME="Factory23"/' src/.env
 sed -i 's|^APP_URL=.*|APP_URL=http://localhost:8080|' src/.env
 sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=mysql/' src/.env
 sed -i 's/^DB_HOST=.*/DB_HOST=mysql/' src/.env

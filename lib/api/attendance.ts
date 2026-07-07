@@ -116,9 +116,11 @@ export type AgentAttendanceHistoryResponse = {
 
 export type ManagementAttendanceRecord = {
   user_id: number;
+  attendance_record_id?: number | null;
   agent_name: string;
   avatar: string | null;
   avatar_url?: string | null;
+  gender?: string | null;
   zone: string | null;
   role: string;
   attendance_date: string;

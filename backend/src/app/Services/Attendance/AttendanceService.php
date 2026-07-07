@@ -346,7 +346,7 @@ class AttendanceService
         return [
             'user_id' => (int) $agent->id,
             'agent_name' => (string) $agent->name,
-            'avatar_url' => AvatarUrlResolver::resolve($agent->avatar, $agent->gender ?? null),
+            'avatar_url' => AvatarUrlResolver::resolveOrDefault($agent->avatar, $agent->gender ?? null),
             'summary' => [
                 'present_days' => $presentDays,
                 'late_days' => $lateDays,
@@ -554,6 +554,7 @@ class AttendanceService
                     'u.id as user_id',
                     'u.name as agent_name',
                     'u.avatar',
+                    'u.gender',
                     'u.assigned_zone',
                     'u.internal_role',
                     'ar.attendance_date',
@@ -579,6 +580,7 @@ class AttendanceService
                     'u.id as user_id',
                     'u.name as agent_name',
                     'u.avatar',
+                    'u.gender',
                     'u.assigned_zone',
                     'u.internal_role',
                     'ar.attendance_date',
@@ -648,13 +650,16 @@ class AttendanceService
 
         $items = collect($paginated->items())->map(static function (object $item) use ($date): array {
             $status = $item->status !== null ? (string) $item->status : 'absent';
-            $avatarUrl = AvatarUrlResolver::resolve($item->avatar, null);
+            $avatarUrl = AvatarUrlResolver::resolveOrDefault($item->avatar, $item->gender ?? null);
             $attendanceDate = $item->attendance_date !== null
                 ? Carbon::parse((string) $item->attendance_date)->toDateString()
                 : $date;
 
             return [
                 'user_id' => (int) $item->user_id,
+                'attendance_record_id' => $item->attendance_record_id !== null
+                    ? (int) $item->attendance_record_id
+                    : null,
                 'agent_name' => (string) $item->agent_name,
                 'avatar' => $item->avatar,
                 'avatar_url' => $avatarUrl,

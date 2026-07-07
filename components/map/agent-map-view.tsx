@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { SavedLocationsLayer, type GoogleMapBridge } from '@/components/map/SavedLocationsLayer';
+import { TerritoryLayer } from '@/components/map/TerritoryLayer';
 import { MapExploreControls } from '@/components/map/map-explore-controls';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { createUserLocationIndicatorElement } from '@/lib/map/user-location-marker';
@@ -558,6 +559,14 @@ function MapboxAgentMapView({
                 />
             )}
 
+            <TerritoryLayer
+                variant="agent"
+                provider="mapbox"
+                ready={mapReady}
+                getMapboxMap={() => mapRef.current}
+                toggleClassName="absolute bottom-28 left-3 z-30 flex flex-col-reverse items-start gap-2"
+            />
+
             {!activeTask && (
                 <MapExploreControls
                     locating={locating}
@@ -940,6 +949,14 @@ function GoogleAgentMapView({
                     pinToolbarClassName={pinToolbarClassName}
                 />
             )}
+
+            <TerritoryLayer
+                variant="agent"
+                provider="google"
+                ready={mapReady}
+                getGoogleMap={() => (mapRef.current ? { map: mapRef.current } : null)}
+                toggleClassName="absolute bottom-28 left-3 z-30 flex flex-col-reverse items-start gap-2"
+            />
 
             {!activeTask && (
                 <MapExploreControls

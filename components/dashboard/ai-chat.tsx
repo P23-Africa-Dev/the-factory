@@ -23,9 +23,16 @@ import { resolveCopilotGeolocationContext } from "@/lib/copilot-geolocation";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useCrmLabels } from "@/hooks/use-crm";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
+import { listLeads } from "@/lib/api/crm";
+import {
+  createUserCalendarConnectUrl,
+  createUserCalendarReconnectUrl,
+  getUserCalendarIntegrationStatus,
+} from "@/lib/api/calendar-integration";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
+import Link from "next/link";
 import {
   ChevronLeft,
   Copy,
@@ -42,6 +49,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 type MessageAction = "liked" | "disliked" | null;
 
@@ -55,6 +63,14 @@ interface Message {
 }
 
 const ACTION_TOOL_PATTERN = /^(?:tasks|meetings|projects|notifications|crm|kpis)\.[a-z_]+$/;
+
+const ARRAY_ACTION_DRAFT_SKIP_KEYS = new Set([
+  "user_ids",
+  "roles",
+  "delivery_types",
+  "recipient_names",
+  "__inference",
+]);
 
 const USER_ASSIGNMENT_FIELD_PATTERN = /(^|_)(user_id|assigned_to_user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/;
 
@@ -89,6 +105,18 @@ interface MeetingAttendeeOptionsState {
   loading: boolean;
   loaded: boolean;
   items: MeetingAttendeeCandidate[];
+}
+
+interface LeadOption {
+  id: number;
+  name: string;
+  email: string | null;
+}
+
+interface LeadOptionsState {
+  loading: boolean;
+  loaded: boolean;
+  items: LeadOption[];
 }
 
 type EditControlType = "text" | "textarea" | "select" | "date" | "datetime-local" | "number";
@@ -176,25 +204,85 @@ const NOTIFICATION_CATEGORY_OPTIONS: EditFieldOption[] = [
   { value: "system", label: "System" },
 ];
 
-function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
-  if (!rawAvatar) return null;
-  const trimmed = rawAvatar.trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith("/")) return trimmed;
-  if (trimmed.startsWith("avatar/") || trimmed.startsWith("storage/")) {
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
-    const apiOrigin = apiBase.replace(/\/api\/v1\/?$/, "");
-    return trimmed.startsWith("storage/") ? `${apiOrigin}/${trimmed}` : `${apiOrigin}/storage/${trimmed}`;
-  }
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString();
-  } catch { }
-  return null;
-}
-
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function parseUserIdsValue(value: unknown): number[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => Number(item))
+      .filter((id) => Number.isFinite(id) && id > 0);
+  }
+
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return [value];
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") {
+      return [];
+    }
+
+    if (trimmed.startsWith("[")) {
+      try {
+        return parseUserIdsValue(JSON.parse(trimmed));
+      } catch {
+        return [];
+      }
+    }
+
+    return trimmed
+      .split(/\s*,\s*/)
+      .map((part) => Number(part))
+      .filter((id) => Number.isFinite(id) && id > 0);
+  }
+
+  return [];
+}
+
+function parseDeliveryTypesValue(value: unknown): string[] {
+  const fallback = ["in_app", "push", "email"];
+
+  if (Array.isArray(value)) {
+    const types = value.map((item) => String(item).trim().toLowerCase()).filter((item) => item !== "");
+    return types.length > 0 ? types : fallback;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") {
+      return fallback;
+    }
+
+    if (trimmed.startsWith("[")) {
+      try {
+        return parseDeliveryTypesValue(JSON.parse(trimmed));
+      } catch {
+        return fallback;
+      }
+    }
+
+    const types = trimmed
+      .split(/\s*,\s*/)
+      .map((part) => part.trim().toLowerCase())
+      .filter((part) => part !== "");
+    return types.length > 0 ? types : fallback;
+  }
+
+  return fallback;
+}
+
+function formatDeliveryTypesLabel(value: unknown): string {
+  const labels: Record<string, string> = {
+    in_app: "In-app",
+    push: "Push",
+    email: "Email",
+  };
+
+  const types = Array.isArray(value) ? value.map((item) => String(item)) : parseDeliveryTypesValue(value);
+  return types.map((type) => labels[type] ?? type).join(", ") || "In-app, Push, Email";
 }
 
 function highlightPlainText(content: string, query: string): string {
@@ -229,7 +317,7 @@ function formatSearchDate(value: string): string {
 export function AIChat({ open, onClose }: AIChatProps) {
   const user = useAuthStore((s) => s.user);
   const firstName = user?.name?.split(" ")[0] ?? "User";
-  const avatarSrc = getSafeAvatarSrc(user?.avatar) ?? "/avatars/male-avatar.png";
+  const avatarSrc = resolveAvatarSrc(user?.avatar);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const isAgent = role === "agent";
   const { data: crmLabels = [] } = useCrmLabels(companyId ?? undefined);
@@ -269,7 +357,9 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
   const [meetingActionDrafts, setMeetingActionDrafts] = useState<Record<string, ElyMeetingDraft>>({});
   const [assigneeOptions, setAssigneeOptions] = useState<Record<string, AssigneeOptionsState>>({});
+  const [leadOptions, setLeadOptions] = useState<Record<string, LeadOptionsState>>({});
   const [meetingAttendeeOptions, setMeetingAttendeeOptions] = useState<Record<string, MeetingAttendeeOptionsState>>({});
+  const pendingEmailConfirmRef = useRef<{ index: number; msg: Message } | null>(null);
   const closeSearchPanel = useCallback(() => {
     setSearchOpen(false);
     setSearchQuery("");
@@ -441,7 +531,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const argKeys = rawArgs ? Object.keys(rawArgs) : [];
       const hasUserAssignmentField = argKeys.some((key) => USER_ASSIGNMENT_FIELD_PATTERN.test(key));
 
-      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "crm.send_email", "kpis.create"].includes(tool) && !hasUserAssignmentField) {
+      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "crm.send_email", "kpis.create", "notifications.send"].includes(tool) && !hasUserAssignmentField) {
         continue;
       }
 
@@ -450,7 +540,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
         continue;
       }
 
-      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "crm.send_email", "kpis.create"].includes(tool) || hasUserAssignmentField) {
+      if (tool === "crm.send_email") {
+        void loadLeadOptions(msg.id);
+        continue;
+      }
+
+      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "kpis.create", "notifications.send"].includes(tool) || hasUserAssignmentField) {
         if (isAgent && tool === "tasks.create") {
           continue;
         }
@@ -585,7 +680,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
         if (key.startsWith("__") || key === "company_id" || key === "meta" || key === "pipeline_id") {
           continue;
         }
+        if (ARRAY_ACTION_DRAFT_SKIP_KEYS.has(key) || Array.isArray(value)) {
+          continue;
+        }
         if (value === null || value === undefined) {
+          continue;
+        }
+        if (typeof value === "object") {
           continue;
         }
         seed[key] = String(value);
@@ -618,6 +719,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
     );
   }
 
+  function sanitizeActionArgsForConfirm(args: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(args).filter(([key]) => !key.startsWith("__") && key !== "recipient_names" && key !== "recipient_labels"),
+    );
+  }
+
   function warningCodesForMessage(msg: Message): string[] {
     const payload = messagePayload(msg);
     if (!payload || !Array.isArray(payload.validation_warning_codes)) {
@@ -641,13 +748,24 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function updateActionDraft(msgId: string, field: string, value: string) {
-    setActionDrafts((prev) => ({
-      ...prev,
-      [msgId]: {
+    setActionDrafts((prev) => {
+      const nextDraft: Record<string, string> = {
         ...(prev[msgId] ?? {}),
         [field]: value,
-      },
-    }));
+      };
+
+      if (field === "lead_id" && value.trim() !== "") {
+        const selectedLead = (leadOptions[msgId]?.items ?? []).find((item) => String(item.id) === value.trim());
+        if (selectedLead?.email) {
+          nextDraft.to_email = selectedLead.email;
+        }
+      }
+
+      return {
+        ...prev,
+        [msgId]: nextDraft,
+      };
+    });
   }
 
   async function loadMeetingAttendeeOptions(msgId: string) {
@@ -693,6 +811,53 @@ export function AIChat({ open, onClose }: AIChatProps) {
       ...prev,
       [msgId]: draft,
     }));
+  }
+
+  async function loadLeadOptions(msgId: string) {
+    const current = leadOptions[msgId];
+    if (current?.loading === true || current?.loaded === true) {
+      return;
+    }
+
+    setLeadOptions((prev) => ({
+      ...prev,
+      [msgId]: {
+        loading: true,
+        loaded: false,
+        items: prev[msgId]?.items ?? [],
+      },
+    }));
+
+    try {
+      const token = getAuthTokenFromDocument();
+      const response = await listLeads(
+        { company_id: companyId ?? undefined, per_page: 100 },
+        token,
+      );
+      const items = (response.data.items ?? []).map((lead) => ({
+        id: lead.id,
+        name: lead.name,
+        email: lead.email ?? null,
+      }));
+
+      setLeadOptions((prev) => ({
+        ...prev,
+        [msgId]: {
+          loading: false,
+          loaded: true,
+          items,
+        },
+      }));
+    } catch {
+      setLeadOptions((prev) => ({
+        ...prev,
+        [msgId]: {
+          loading: false,
+          loaded: true,
+          items: [],
+        },
+      }));
+    }
   }
 
   async function loadAssigneeOptions(msgId: string) {
@@ -821,6 +986,78 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return merged;
     }
 
+    if (tool === "notifications.send") {
+      const merged: Record<string, unknown> = { ...baseArgs };
+
+      for (const field of ["title", "message", "category", "priority", "type"] as const) {
+        if (Object.prototype.hasOwnProperty.call(draft, field)) {
+          merged[field] = draft[field];
+        }
+      }
+
+      const userIdsSource = Object.prototype.hasOwnProperty.call(draft, "user_ids")
+        ? draft.user_ids
+        : baseArgs.user_ids;
+      const userIds = parseUserIdsValue(userIdsSource);
+      if (userIds.length > 0) {
+        merged.user_ids = userIds;
+      } else {
+        delete merged.user_ids;
+      }
+
+      const deliverySource = Object.prototype.hasOwnProperty.call(draft, "delivery_types")
+        ? draft.delivery_types
+        : baseArgs.delivery_types;
+      merged.delivery_types = parseDeliveryTypesValue(deliverySource);
+
+      if (Array.isArray(baseArgs.recipient_names)) {
+        merged.recipient_names = baseArgs.recipient_names;
+      }
+
+      return merged;
+    }
+
+    if (tool === "crm.send_email") {
+      const merged: Record<string, unknown> = { ...baseArgs, ...draft };
+      const leadIdRaw = String(draft.lead_id ?? merged.lead_id ?? "").trim();
+      if (leadIdRaw !== "" && !Number.isNaN(Number(leadIdRaw))) {
+        merged.lead_id = Number(leadIdRaw);
+        const selectedLead = (leadOptions[msg.id]?.items ?? []).find((item) => item.id === Number(leadIdRaw));
+        if (selectedLead) {
+          merged.lead_name = selectedLead.name;
+          merged.lead_email = selectedLead.email;
+        }
+      }
+
+      const toEmail = String(draft.to_email ?? "").trim();
+      if (toEmail !== "") {
+        merged.to_email = toEmail;
+        merged.to = [{
+          email: toEmail,
+          name: typeof merged.lead_name === "string" ? merged.lead_name : null,
+        }];
+      } else if (Array.isArray(merged.to) && merged.to.length > 0) {
+        const first = merged.to[0];
+        if (first && typeof first === "object" && first !== null && typeof (first as Record<string, unknown>).email === "string") {
+          merged.to_email = (first as Record<string, unknown>).email;
+        }
+      } else if (typeof merged.lead_email === "string" && merged.lead_email.trim() !== "") {
+        merged.to_email = merged.lead_email;
+        merged.to = [{ email: merged.lead_email, name: merged.lead_name ?? null }];
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "subject")) {
+        merged.subject = draft.subject;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "body_text")) {
+        merged.body_text = draft.body_text;
+        merged.body_html = `<p>${String(draft.body_text).replace(/\n/g, "<br />")}</p>`;
+      }
+
+      return merged;
+    }
+
     if (Object.keys(draft).length === 0) {
       return baseArgs;
     }
@@ -879,6 +1116,58 @@ export function AIChat({ open, onClose }: AIChatProps) {
     return "";
   }
 
+  function leadSelectOptions(msg: Message): EditFieldOption[] {
+    return (leadOptions[msg.id]?.items ?? []).map((item) => ({
+      value: String(item.id),
+      label: item.email ? `${item.name} (${item.email})` : item.name,
+    }));
+  }
+
+  function leadDisplayName(msg: Message, args: Record<string, unknown>): string {
+    const draftLeadId = String(resolveActionDraft(msg.id).lead_id ?? "").trim();
+    const leadId = draftLeadId !== "" && !Number.isNaN(Number(draftLeadId))
+      ? Number(draftLeadId)
+      : (typeof args.lead_id === "number" ? args.lead_id : null);
+
+    if (leadId !== null) {
+      const matched = (leadOptions[msg.id]?.items ?? []).find((item) => item.id === leadId);
+      if (matched) {
+        return matched.name;
+      }
+    }
+
+    if (typeof args.lead_name === "string" && args.lead_name.trim() !== "") {
+      return args.lead_name.trim();
+    }
+
+    return "";
+  }
+
+  function emailRecipientValue(msg: Message, args: Record<string, unknown>): string {
+    const draftEmail = String(resolveActionDraft(msg.id).to_email ?? "").trim();
+    if (draftEmail !== "") {
+      return draftEmail;
+    }
+
+    const to = Array.isArray(args.to) ? args.to : [];
+    if (to[0] && typeof to[0] === "object" && to[0] !== null) {
+      const email = String((to[0] as Record<string, unknown>).email ?? "").trim();
+      if (email !== "") {
+        return email;
+      }
+    }
+
+    if (typeof args.lead_email === "string" && args.lead_email.trim() !== "") {
+      return args.lead_email.trim();
+    }
+
+    if (typeof args.to_email === "string" && args.to_email.trim() !== "") {
+      return args.to_email.trim();
+    }
+
+    return "";
+  }
+
   function assigneeSelectOptions(msg: Message): EditFieldOption[] {
     return (assigneeOptions[msg.id]?.items ?? []).map((item) => ({
       value: item.email,
@@ -891,6 +1180,29 @@ export function AIChat({ open, onClose }: AIChatProps) {
       value: String(item.id),
       label: item.name,
     }));
+  }
+
+  function notificationRecipientLabel(msg: Message, args: Record<string, unknown>): string {
+    const explicitNames = Array.isArray(args.recipient_names)
+      ? args.recipient_names.map((name) => String(name).trim()).filter((name) => name !== "")
+      : [];
+
+    if (explicitNames.length > 0) {
+      return explicitNames.join(", ");
+    }
+
+    const userIds = parseUserIdsValue(args.user_ids);
+    if (userIds.length === 0) {
+      return "";
+    }
+
+    const options = assigneeOptions[msg.id]?.items ?? [];
+    const names = userIds.map((id) => {
+      const matched = options.find((item) => item.id === id);
+      return matched?.name ?? `User #${String(id)}`;
+    });
+
+    return names.join(", ");
   }
 
   function editFieldsForMessage(msg: Message, args: Record<string, unknown>): EditFieldConfig[] {
@@ -928,11 +1240,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     if (tool === "notifications.send") {
       return [
+        { key: "user_ids", label: "Recipients (user IDs, comma-separated)", control: "text" },
         { key: "title", label: "Title", control: "text" },
         { key: "message", label: "Message", control: "textarea" },
         { key: "category", label: "Category", control: "select", options: NOTIFICATION_CATEGORY_OPTIONS },
         { key: "priority", label: "Priority", control: "select", options: NOTIFICATION_PRIORITY_OPTIONS },
-        { key: "type", label: "Type", control: "text" },
+        { key: "delivery_types", label: "Delivery (in_app, push, email)", control: "text" },
       ];
     }
 
@@ -962,7 +1275,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     if (tool === "crm.send_email") {
       return [
-        { key: "lead_id", label: "Lead ID", control: "number" },
+        { key: "lead_id", label: "Lead", control: "select", options: leadSelectOptions(msg) },
+        { key: "to_email", label: "To", control: "text" },
         { key: "subject", label: "Subject", control: "text" },
         { key: "body_text", label: "Message", control: "textarea" },
       ];
@@ -1056,6 +1370,40 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return assigneeDropdownValue(msg, args);
     }
 
+    if (field.key === "user_ids") {
+      if (Object.prototype.hasOwnProperty.call(draft, "user_ids")) {
+        return String(draft.user_ids ?? "");
+      }
+
+      const userIds = parseUserIdsValue(args.user_ids);
+      return userIds.length > 0 ? userIds.join(", ") : "";
+    }
+
+    if (field.key === "delivery_types") {
+      if (Object.prototype.hasOwnProperty.call(draft, "delivery_types")) {
+        return String(draft.delivery_types ?? "");
+      }
+
+      return parseDeliveryTypesValue(args.delivery_types).join(", ");
+    }
+
+    if (field.key === "to_email") {
+      return emailRecipientValue(msg, args);
+    }
+
+    if (field.key === "lead_id") {
+      const draftLeadId = String(draft.lead_id ?? "").trim();
+      if (draftLeadId !== "") {
+        return draftLeadId;
+      }
+
+      if (typeof args.lead_id === "number") {
+        return String(args.lead_id);
+      }
+
+      return "";
+    }
+
     const raw = args[field.key];
 
     if (field.control === "date") {
@@ -1134,8 +1482,75 @@ export function AIChat({ open, onClose }: AIChatProps) {
       }
 
       if (code === "missing_lead_name") {
-        const name = String(args?.name ?? "").trim().toLowerCase();
+        const name = String(draft.name ?? args?.name ?? "").trim().toLowerCase();
         if (name === "" || name === "new lead") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_kpi_name") {
+        const name = String(draft.name ?? args?.name ?? "").trim();
+        if (name === "" || name.toLowerCase() === "new kpi") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_objective") {
+        const objective = String(draft.objective ?? args?.objective ?? "").trim();
+        if (objective.length < 10) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_target_value") {
+        const target = String(draft.target_value ?? args?.target_value ?? "").trim();
+        if (target === "" || target.toLowerCase() === "to be defined") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_expected_outcome") {
+        const outcome = String(draft.expected_outcome ?? args?.expected_outcome ?? "").trim();
+        if (outcome.length < 10) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "recipients_unresolved") {
+        const userIds = parseUserIdsValue(args?.user_ids);
+        if (userIds.length === 0) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "message_too_generic") {
+        const message = String(args?.message ?? "").trim();
+        if (message.length < 10) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "lead_unresolved") {
+        const draftLeadId = String(draft.lead_id ?? "").trim();
+        const hasLeadId =
+          (typeof args?.lead_id === "number" && args.lead_id > 0)
+          || (draftLeadId !== "" && !Number.isNaN(Number(draftLeadId)));
+        if (!hasLeadId) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "recipient_email_missing") {
+        const recipient = emailRecipientValue(msg, argsForChecks);
+        if (recipient === "") {
           remaining.push(code);
         }
         continue;
@@ -1269,16 +1684,32 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }
 
     if (tool === "crm.send_email") {
-      const to = Array.isArray(args.to) ? args.to : [];
-      const recipient = to[0] && typeof to[0] === "object" && to[0] !== null
-        ? String((to[0] as Record<string, unknown>).email ?? "")
-        : formatPreviewValue("to", args.to);
+      const leadName = leadDisplayName(msg, args);
+      const recipient = emailRecipientValue(msg, args);
+      const inference = parseRecord(args.__inference);
+      const gmailRequired = inference?.gmail_connection_required === true;
 
       return [
-        { key: "lead_id", label: "Lead ID", value: formatPreviewValue("lead_id", args.lead_id) },
-        { key: "to", label: "To", value: recipient },
+        {
+          key: "lead",
+          label: "Lead",
+          value: leadName !== "" ? leadName : "Not provided",
+          warning: warningCodes.includes("lead_unresolved"),
+        },
+        {
+          key: "to",
+          label: "To",
+          value: recipient !== "" ? recipient : "Not provided",
+          warning: warningCodes.includes("recipient_email_missing"),
+        },
         { key: "subject", label: "Subject", value: formatPreviewValue("subject", args.subject) },
         { key: "body_text", label: "Message", value: formatPreviewValue("body_text", args.body_text) },
+        ...(gmailRequired ? [{
+          key: "gmail",
+          label: "Google Email",
+          value: "Connect Google to send this follow-up",
+          warning: true,
+        }] : []),
       ];
     }
 
@@ -1306,6 +1737,33 @@ export function AIChat({ open, onClose }: AIChatProps) {
       ];
     }
 
+    if (tool === "notifications.send") {
+      const recipientLabel = notificationRecipientLabel(msg, args);
+
+      return [
+        {
+          key: "recipients",
+          label: "Recipients",
+          value: recipientLabel !== "" ? recipientLabel : "Needs correction",
+          warning: warningCodes.includes("recipients_unresolved"),
+        },
+        { key: "title", label: "Title", value: formatPreviewValue("title", args.title) },
+        {
+          key: "message",
+          label: "Message",
+          value: formatPreviewValue("message", args.message),
+          warning: warningCodes.includes("message_too_generic"),
+        },
+        { key: "category", label: "Category", value: formatPreviewValue("category", args.category) },
+        { key: "priority", label: "Priority", value: formatPreviewValue("priority", args.priority) },
+        {
+          key: "delivery_types",
+          label: "Delivery",
+          value: formatDeliveryTypesLabel(args.delivery_types),
+        },
+      ];
+    }
+
     return Object.entries(args)
       .filter(([key]) => key !== "company_id")
       .map(([key, value]) => ({
@@ -1316,8 +1774,6 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function findActionContextForConfirm(index: number): string {
-    const parts: string[] = [];
-
     for (let i = index - 1; i >= 0; i -= 1) {
       const candidate = messages[i];
       if (!candidate) {
@@ -1335,15 +1791,15 @@ export function AIChat({ open, onClose }: AIChatProps) {
       if (candidate.role === "user") {
         const content = String(candidate.content ?? "").trim();
         if (content !== "" && !/^\s*confirm\b/i.test(content)) {
-          parts.unshift(content);
+          return content;
         }
       }
     }
 
-    return parts.join("\n");
+    return "";
   }
 
-  function handleConfirmAction(index: number, msg: Message) {
+  function submitConfirmedAction(index: number, msg: Message) {
     const payload = messagePayload(msg);
     if (!payload) return;
 
@@ -1351,7 +1807,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     if (!priorPrompt.trim()) return;
 
     const actionArgs = actionArgsForMessage(msg);
-    const sanitizedArgs = actionArgs ? sanitizeActionArgs(actionArgs) : undefined;
+    const sanitizedArgs = actionArgs ? sanitizeActionArgsForConfirm(actionArgs) : undefined;
     const hasSanitizedArgs = sanitizedArgs ? Object.keys(sanitizedArgs).length > 0 : false;
 
     void sendCopilotMessage({
@@ -1360,6 +1816,102 @@ export function AIChat({ open, onClose }: AIChatProps) {
       actionConfirmed: true,
       actionArgs: hasSanitizedArgs ? sanitizedArgs : undefined,
     });
+  }
+
+  function openGoogleAuthorizationPopup(authorizationUrl: string, popupName: string) {
+    const popup = window.open(authorizationUrl, popupName, "width=560,height=720");
+    if (!popup) {
+      window.location.href = authorizationUrl;
+      return;
+    }
+
+    toast.info("Complete Google sign-in in the popup. Your follow-up will send automatically after connection.");
+  }
+
+  async function ensureGmailReadyForEmail(): Promise<boolean> {
+    if (!companyId) {
+      toast.error("Select a company before sending CRM email.");
+      return false;
+    }
+
+    const token = getAuthTokenFromDocument();
+    if (!token) {
+      toast.error("You must be signed in to connect Google.");
+      return false;
+    }
+
+    const statusResponse = await getUserCalendarIntegrationStatus({ company_id: companyId }, token);
+    const status = statusResponse.data;
+    const gmailReady =
+      status.connected === true
+      && status.gmail_enabled === true
+      && status.requires_gmail_reconnect !== true
+      && status.requires_reauthentication !== true;
+
+    if (gmailReady) {
+      return true;
+    }
+
+    const connectResponse = status.requires_gmail_reconnect === true
+      ? await createUserCalendarReconnectUrl({ company_id: companyId }, token)
+      : await createUserCalendarConnectUrl({ company_id: companyId }, token);
+
+    openGoogleAuthorizationPopup(connectResponse.data.authorization_url, "google-calendar-connect");
+    return false;
+  }
+
+  useEffect(() => {
+    const handleOAuthMessage = (event: MessageEvent) => {
+      const payload = event.data as {
+        type?: string;
+        status?: "success" | "error";
+        message?: string;
+        gmail_enabled?: boolean;
+        requires_gmail_reconnect?: boolean;
+      };
+
+      if (!payload || payload.type !== "google-calendar-oauth") {
+        return;
+      }
+
+      if (payload.status !== "success") {
+        toast.error(payload.message || "Google connection failed.");
+        pendingEmailConfirmRef.current = null;
+        return;
+      }
+
+      const pending = pendingEmailConfirmRef.current;
+      pendingEmailConfirmRef.current = null;
+
+      if (payload.gmail_enabled === true || payload.requires_gmail_reconnect !== true) {
+        toast.success(payload.message || "Google connected. Sending your follow-up email now.");
+      } else {
+        toast.warning("Google connected for calendar only. Reconnect with Gmail permissions to send email.");
+        return;
+      }
+
+      if (pending) {
+        submitConfirmedAction(pending.index, pending.msg);
+      }
+    };
+
+    window.addEventListener("message", handleOAuthMessage);
+    return () => window.removeEventListener("message", handleOAuthMessage);
+  }, [companyId]);
+
+  async function handleConfirmAction(index: number, msg: Message) {
+    const tool = actionToolForMessage(msg);
+
+    if (tool === "crm.send_email") {
+      pendingEmailConfirmRef.current = { index, msg };
+      const ready = await ensureGmailReadyForEmail();
+      if (!ready) {
+        return;
+      }
+      pendingEmailConfirmRef.current = null;
+    }
+
+    submitConfirmedAction(index, msg);
   }
 
   function handleEditActionDetails(index: number) {
@@ -1389,6 +1941,34 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     if (issues.includes("missing_lead_name")) {
       return "Confirmation is blocked until the business name is provided.";
+    }
+
+    if (issues.includes("missing_kpi_name")) {
+      return "Confirmation is blocked until the KPI name is provided.";
+    }
+
+    if (issues.includes("missing_objective")) {
+      return "Confirmation is blocked until the KPI objective is at least 10 characters.";
+    }
+
+    if (issues.includes("missing_target_value")) {
+      return "Confirmation is blocked until a measurable target value is provided.";
+    }
+
+    if (issues.includes("missing_expected_outcome")) {
+      return "Confirmation is blocked until the expected outcome is at least 10 characters.";
+    }
+
+    if (issues.includes("assignee_unresolved")) {
+      return "Confirmation is blocked until an assignee is selected.";
+    }
+
+    if (issues.includes("lead_unresolved")) {
+      return "Confirmation is blocked until a CRM lead is selected.";
+    }
+
+    if (issues.includes("recipient_email_missing")) {
+      return "Confirmation is blocked until a recipient email is provided.";
     }
 
     return "Confirmation is currently blocked until required fields are corrected.";
@@ -2407,6 +2987,14 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     >
                       Download Word
                     </button>
+                    {weeklyReport.drive_file_id != null && (
+                      <Link
+                        href={`/drive?folder=ely_reports&file=${weeklyReport.drive_file_id}`}
+                        className="rounded-full border border-[#3D6A78] bg-[#11303A] px-3 py-1.5 text-[11px] font-semibold text-[#9CC6CA] hover:bg-[#1A3D4D]"
+                      >
+                        Also saved in Drive
+                      </Link>
+                    )}
                   </>
                 )}
                 {weeklyReport?.status === "failed" && weeklyReport.error && (

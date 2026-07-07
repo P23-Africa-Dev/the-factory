@@ -136,7 +136,7 @@ class CompanyLocationService
         if ($hasAddressChange && ! $hasExplicitCoordinates) {
             $addressToGeocode = trim((string) ($data['address'] ?? ''));
 
-            $geocoded = $this->mapboxGeocodingService->geocodeAddress($addressToGeocode);
+            $geocoded = $this->mapboxGeocodingService->geocodeAddress($addressToGeocode, $companyId);
             if ($geocoded === null) {
                 throw ValidationException::withMessages([
                     'address' => ['Unable to geocode this address. Please use a more specific address.'],

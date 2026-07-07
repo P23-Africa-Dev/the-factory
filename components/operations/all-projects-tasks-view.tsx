@@ -9,8 +9,9 @@ import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { TaskBoard } from "@/components/operations/task-board";
 import { TaskDetailModal } from "@/components/operations/task-detail-modal";
 import { CreateTaskModal } from "@/components/operations/create-task-modal";
+import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { TaskBoardSkeleton } from "@/components/operations/skeletons/task-board-skeleton";
-import { useTasks, useUpdateTaskStatusAdmin } from "@/hooks/use-tasks";
+import { useTasks, useUpdateTaskStatusAdmin, useUpdateTask, useDeleteTask } from "@/hooks/use-tasks";
 import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiTaskStatus, TaskApiItem } from "@/lib/api/tasks";
 import { formatTaskLocationLabel, hasTrackableTaskLocation } from "@/lib/tasks/location";
@@ -209,11 +210,25 @@ export function AllProjectsTasksView() {
   const [statusFilter, setStatusFilter] = useState("All");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState<{ item: DndItem; containerId: string } | null>(null);
+  const [editingTask, setEditingTask] = useState<DndItem | null>(null);
+  const [deleteTaskTarget, setDeleteTaskTarget] = useState<DndItem | null>(null);
 
   const { data: tasksData, isPending: loadingTasks } = useTasks(
     companyId ? { company_id: companyId } : {}
   );
   const statusMutation = useUpdateTaskStatusAdmin();
+  const updateTaskMutation = useUpdateTask({
+    onSuccess: () => {
+      toast.success("Task updated successfully.");
+      setEditingTask(null);
+    },
+  });
+  const deleteTaskMutation = useDeleteTask({
+    onSuccess: () => {
+      toast.success("Task deleted successfully.");
+      setDeleteTaskTarget(null);
+    },
+  });
 
   const serverContainers = useMemo(
     () => buildContainers(tasksData?.tasks ?? []),
@@ -485,12 +500,79 @@ export function AllProjectsTasksView() {
           onStatusDrop={handleStatusDrop}
           onDragStateChange={handleDragStateChange}
           onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
+          onTaskEdit={(item) => setEditingTask(item)}
+          onTaskDelete={(item) => setDeleteTaskTarget(item)}
         />
       )}
 
       <CreateTaskModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
+      />
+
+      <CreateTaskModal
+        key={editingTask ? `edit-task-${editingTask.id}` : "edit-task-modal"}
+        isOpen={!!editingTask}
+        onClose={() => setEditingTask(null)}
+        mode="edit"
+        submitLabel="Save Changes"
+        initialValues={
+          editingTask
+            ? {
+                title: editingTask.description,
+                taskType: editingTask.taskType ?? "",
+                description: editingTask.addedDescription ?? "",
+                location: editingTask.location ?? "",
+                address: editingTask.address ?? "",
+                dueDate: editingTask.dueDateIso ? editingTask.dueDateIso.slice(0, 10) : "",
+                requiredActions: editingTask.requiredActions?.join(", ") ?? "",
+                priority: editingTask.priority
+                  ? (editingTask.priority.charAt(0).toUpperCase() + editingTask.priority.slice(1).toLowerCase()) as
+                      | "High"
+                      | "Medium"
+                      | "Low"
+                  : "",
+                minPhotos: editingTask.minPhotosRequired != null ? String(editingTask.minPhotosRequired) : "2",
+                visitVerification: editingTask.visitVerificationRequired ?? false,
+              }
+            : undefined
+        }
+        onSubmitTask={(payload) => {
+          if (!editingTask || !companyId) return;
+          updateTaskMutation.mutate({
+            taskId: editingTask.id,
+            payload: {
+              company_id: companyId,
+              title: payload.title,
+              type: payload.taskType,
+              description: payload.description,
+              location: payload.location,
+              address: payload.address,
+              due_date: payload.dueDate ? new Date(payload.dueDate).toISOString() : undefined,
+              required_actions: payload.requiredActions,
+              priority: payload.priority,
+              minimum_photos_required: payload.minPhotos,
+              visit_verification_required: payload.visitVerification,
+              latitude: payload.latitude,
+              longitude: payload.longitude,
+            },
+          });
+        }}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={!!deleteTaskTarget}
+        onClose={() => setDeleteTaskTarget(null)}
+        title="Delete Task"
+        description="Are you sure you want to delete this task? This action cannot be undone."
+        confirmLabel={deleteTaskMutation.isPending ? "Deleting..." : "Delete"}
+        onConfirm={() => {
+          if (!deleteTaskTarget || !companyId) return;
+          deleteTaskMutation.mutate({
+            taskId: deleteTaskTarget.id,
+            companyId,
+          });
+        }}
       />
 
       <TaskDetailModal
@@ -574,6 +656,7 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     label: assigneeLabel,
     description: apiTask.title,
     location: formatTaskLocationLabel(apiTask.location, apiTask.address),
+    address: apiTask.address ?? undefined,
     latitude: apiTask.latitude ?? null,
     longitude: apiTask.longitude ?? null,
     hasTrackableLocation: hasTrackableTaskLocation(apiTask),
@@ -581,8 +664,14 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     avatar: apiTask.assignee?.avatar_url || undefined,
     category: (apiTask.type || "agent") as DndItem["category"],
     dueDate: apiTask.due_date ? new Date(apiTask.due_date).toLocaleDateString() : undefined,
+    dueDateIso: apiTask.due_date ?? undefined,
     assignedBy: apiTask.creator?.name || `User ID: ${apiTask.created_by_user_id}`,
     addedDescription: apiTask.description,
+    taskType: apiTask.type ?? undefined,
+    requiredActions: apiTask.required_actions ?? undefined,
+    minPhotosRequired: apiTask.minimum_photos_required ?? undefined,
+    visitVerificationRequired: apiTask.visit_verification_required ?? undefined,
+    priority: apiTask.priority ?? undefined,
     statusLabel,
   };
 }
