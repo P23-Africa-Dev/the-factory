@@ -25,6 +25,7 @@ use App\Services\Calendar\MeetingService;
 use App\Services\Kpi\KpiService;
 use App\Services\Notification\NotificationService;
 use App\Services\Company\CompanyContextService;
+use App\Services\Internal\InternalUserOnboardingService;
 use App\Services\Project\ProjectService;
 use App\Services\Task\TaskReassignmentService;
 use App\Services\Task\TaskService;
@@ -46,6 +47,7 @@ class ActionToolRegistry
         private readonly LeadService $leadService,
         private readonly CrmEmailService $crmEmailService,
         private readonly KpiService $kpiService,
+        private readonly InternalUserOnboardingService $internalUserOnboardingService,
         private readonly CompanyContextService $companyContextService,
     ) {}
 
@@ -61,6 +63,7 @@ class ActionToolRegistry
             'crm.create_lead' => $this->createLead($user, $companyId, $args),
             'crm.send_email' => $this->sendLeadEmail($user, $companyId, $args),
             'kpis.create' => $this->createKpi($user, $companyId, $args),
+            'org.users.create' => $this->createOrganizationUser($user, $companyId, $args),
             default => [
                 'tool' => $tool,
                 'summary' => 'Unsupported action tool requested.',
@@ -457,6 +460,50 @@ class ActionToolRegistry
                 'status' => $project->status?->value,
             ],
             'sources' => ['projects.create'],
+        ];
+    }
+
+    private function createOrganizationUser(User $user, int $companyId, array $args): array
+    {
+        $validated = Validator::make($args, [
+            'full_name' => ['required', 'string', 'min:2', 'max:255'],
+            'email' => ['required', 'string', 'email:rfc', 'max:255', Rule::unique('users', 'email')->whereNull('deleted_at')],
+            'role' => ['required', 'string', Rule::in(['admin', 'supervisor', 'agent'])],
+            'phone_number' => ['nullable', 'string', 'regex:/^\+[1-9][0-9]{7,14}$/'],
+            'gender' => ['nullable', 'string', Rule::in(['male', 'female'])],
+            'avatar_key' => ['nullable', 'string', 'max:50'],
+            'assigned_zone' => ['nullable', 'string', 'min:2', 'max:120'],
+            'work_days' => ['required', 'array', 'min:1', 'max:7'],
+            'work_days.*' => ['string', Rule::in(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])],
+            'base_salary' => ['required', 'numeric', 'min:0'],
+            'salary_type' => ['nullable', 'string'],
+            'currency_code' => ['nullable', 'string', 'size:3'],
+            'commission_enabled' => ['nullable', 'boolean'],
+            'supervisor_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'assign_agent_ids' => ['nullable', 'array', 'max:100'],
+            'assign_agent_ids.*' => ['integer', 'exists:users,id'],
+        ])->validate();
+
+        $result = $this->internalUserOnboardingService->createByManager($user, [
+            ...$validated,
+            'company_id' => $companyId,
+        ]);
+
+        /** @var User $created */
+        $created = $result['user'];
+
+        return [
+            'tool' => 'org.users.create',
+            'summary' => "Organization {$created->internal_role} '{$created->name}' was created and invited successfully.",
+            'payload' => [
+                'user_id' => (int) $created->id,
+                'name' => (string) $created->name,
+                'email' => (string) $created->email,
+                'role' => (string) ($created->internal_role ?? ''),
+                'onboarding_status' => (string) ($created->onboarding_status ?? ''),
+                'invite_expires_at' => $result['invite_expires_at']?->toIso8601String(),
+            ],
+            'sources' => ['org.users.create'],
         ];
     }
 }

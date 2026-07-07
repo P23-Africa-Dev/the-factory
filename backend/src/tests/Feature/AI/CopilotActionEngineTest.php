@@ -567,6 +567,83 @@ final class CopilotActionEngineTest extends TestCase
         ]);
     }
 
+    public function test_org_users_create_confirmation_payload_autofills_from_prompt(): void
+    {
+        [$company, $owner] = $this->seedCompanyUser('owner');
+        $company->update([
+            'subscription_status' => 'active',
+            'subscription_plan_key' => 'up_to_50',
+            'subscription_billing_interval' => 'monthly',
+            'subscription_current_period_start' => now(),
+            'subscription_current_period_end' => now()->addMonth(),
+        ]);
+        $supervisor = $this->createCompanyAgent($company, 'John Supervisor', 'john.supervisor@example.com');
+        $company->users()->syncWithoutDetaching([
+            $supervisor->id => ['role' => 'supervisor', 'joined_at' => now()],
+        ]);
+
+        $response = $this
+            ->actingAs($owner)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create me a new agent with name Ella Star, email ella.star@example.com under John Supervisor',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'org.users.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.action_args.full_name', 'Ella Star')
+            ->assertJsonPath('data.response.payload.action_args.email', 'ella.star@example.com')
+            ->assertJsonPath('data.response.payload.action_args.role', 'agent');
+    }
+
+    public function test_management_role_can_execute_org_users_create_action(): void
+    {
+        [$company, $owner] = $this->seedCompanyUser('owner');
+        $company->update([
+            'subscription_status' => 'active',
+            'subscription_plan_key' => 'up_to_50',
+            'subscription_billing_interval' => 'monthly',
+            'subscription_current_period_start' => now(),
+            'subscription_current_period_end' => now()->addMonth(),
+        ]);
+        $supervisor = $this->createCompanyAgent($company, 'Jane Supervisor', 'jane.supervisor@example.com');
+        $company->users()->syncWithoutDetaching([
+            $supervisor->id => ['role' => 'supervisor', 'joined_at' => now()],
+        ]);
+
+        $response = $this
+            ->actingAs($owner)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create new agent',
+                'action_confirmed' => true,
+                'action_args' => [
+                    'full_name' => 'Ella Stark',
+                    'email' => 'ella.stark@example.com',
+                    'role' => 'agent',
+                    'assigned_zone' => 'Island',
+                    'work_days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+                    'base_salary' => 0,
+                    'salary_type' => 'monthly',
+                    'commission_enabled' => false,
+                    'supervisor_user_id' => $supervisor->id,
+                ],
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'org.users.create')
+            ->assertJsonPath('data.response.sources.0', 'org.users.create');
+
+        $this->assertDatabaseHas('users', [
+            'name' => 'Ella Stark',
+            'email' => 'ella.stark@example.com',
+            'internal_role' => 'agent',
+        ]);
+    }
+
     private function createCompanyAgent(Company $company, string $name, ?string $email = null): User
     {
         /** @var User $agent */

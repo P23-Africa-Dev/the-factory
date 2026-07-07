@@ -112,6 +112,7 @@ PROMPT;
             'crm.log_visit' => 'Log a field visit',
             'projects.create' => 'Create a project',
             'notifications.send' => 'Send notification',
+            'org.users.create' => 'Create organization user',
         ];
 
         $lines = [];

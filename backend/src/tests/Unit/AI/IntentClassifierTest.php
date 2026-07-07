@@ -123,6 +123,14 @@ final class IntentClassifierTest extends TestCase
         }
     }
 
+    public function test_classifies_create_org_user_prompt(): void
+    {
+        $intent = (new IntentClassifier())->classify('Create me a new agent with name Ella Star');
+
+        $this->assertSame('action', $intent['type']);
+        $this->assertSame('org.users.create', $intent['tool']);
+    }
+
     public function test_classifies_crm_leads_list_phrases(): void
     {
         $classifier = new IntentClassifier();

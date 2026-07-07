@@ -45,6 +45,7 @@ class CopilotService
         private readonly EmailInferenceService $emailInferenceService,
         private readonly KpiInferenceService $kpiInferenceService,
         private readonly NotificationInferenceService $notificationInferenceService,
+        private readonly InternalUserInferenceService $internalUserInferenceService,
         private readonly NotificationService $notificationService,
         private readonly DemoCompanyService $demoCompanyService,
         private readonly LlmIntentRouter $llmIntentRouter,
@@ -671,8 +672,8 @@ class CopilotService
             return false;
         }
 
-        return preg_match('/\b(create|add|start|open|schedule|book|setup|set\s*up|arrange|plan|send|notify|assign|reassign|transfer|move|update|change|cancel|delete|register|save|define)\b/i', $normalized) === 1
-            && preg_match('/\b(task|project|meeting|notification|alert|lead|crm|business|kpi)\b/i', $normalized) === 1;
+        return preg_match('/\b(create|add|start|open|schedule|book|setup|set\s*up|arrange|plan|send|notify|assign|reassign|transfer|move|update|change|cancel|delete|register|save|define|invite|onboard)\b/i', $normalized) === 1
+            && preg_match('/\b(task|project|meeting|notification|alert|lead|crm|business|kpi|user|member|staff|agent|supervisor|admin)\b/i', $normalized) === 1;
     }
 
     private function resolveReadToolFromMessage(string $message): ?string
@@ -709,6 +710,14 @@ class CopilotService
         int $companyId,
         int $userId,
     ): ?string {
+        $rawNormalized = strtolower(trim($message));
+        if (
+            preg_match('/\bproject\b/i', $rawNormalized) === 1
+            && preg_match('/\b(delete|remove|cancel|archive)\b/i', $rawNormalized) === 1
+        ) {
+            return null;
+        }
+
         $actionableMessage = $this->buildActionableMessage($message, $threadId, $companyId, $userId);
         $intent = $this->intentClassifier->classify($actionableMessage);
         if (($intent['type'] ?? '') === 'action' && is_string($intent['tool'] ?? null)) {
@@ -726,6 +735,10 @@ class CopilotService
 
         if (preg_match('/\btask\b/i', $normalized) && preg_match('/\bfor\b/i', $normalized) === 1) {
             return 'tasks.create';
+        }
+
+        if (preg_match('/\bproject\b/i', $normalized) === 1 && preg_match('/\b(delete|remove|cancel|archive)\b/i', $normalized) === 1) {
+            return null;
         }
 
         if (preg_match('/\bmeeting\b/i', $normalized) && preg_match('/\b(create|schedule|book|setup|set\s*up|arrange|plan|with|at|on|for|\d{1,2}\s*(?:am|pm)|reminder)\b/i', $normalized) === 1) {
@@ -750,6 +763,11 @@ class CopilotService
 
         if (preg_match('/\b(lead|crm)\b/i', $normalized) && preg_match('/\b(create|add|new|register|save)\b/i', $normalized) === 1) {
             return 'crm.create_lead';
+        }
+
+        if (preg_match('/\b(user|member|staff|agent|supervisor|admin)\b/i', $normalized) === 1
+            && preg_match('/\b(create|add|invite|onboard|register|new)\b/i', $normalized) === 1) {
+            return 'org.users.create';
         }
 
         if (preg_match('/\b(email|mail|message)\b/i', $normalized) && preg_match('/\b(send|draft|write|follow[\s-]?up)\b/i', $normalized) === 1) {
@@ -828,6 +846,10 @@ class CopilotService
 
         if (preg_match('/\b(remind|reminder|notify)\b/i', $blob) === 1 && preg_match('/\b(agents?|team|them|these|overdue)\b/i', $blob) === 1) {
             return 'notifications.send';
+        }
+
+        if (preg_match('/\b(user|member|staff|agent|supervisor|admin)\b/i', $blob) === 1 && preg_match('/\b(create|add|invite|onboard)\b/i', $blob) === 1) {
+            return 'org.users.create';
         }
 
         return null;
@@ -1052,6 +1074,11 @@ class CopilotService
                 entities: $entities,
                 conversationSummary: (string) ($context['summary'] ?? ''),
             ),
+            'org.users.create' => $this->internalUserInferenceService->infer(
+                message: $message,
+                companyId: $companyId,
+                entities: $entities,
+            ),
             default => $actionArgs,
         };
     }
@@ -1108,6 +1135,10 @@ class CopilotService
 
         if ($tool === 'notifications.send') {
             return $this->notificationInferenceService->normalizeProvidedArgs($companyId, $actionArgs);
+        }
+
+        if ($tool === 'org.users.create') {
+            return $this->internalUserInferenceService->normalizeProvidedArgs($companyId, $actionArgs);
         }
 
         return $actionArgs;
@@ -1680,6 +1711,10 @@ class CopilotService
             return $this->notificationInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
         }
 
+        if ($tool === 'org.users.create') {
+            return $this->internalUserInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
+        }
+
         return 'ELY prepared an action. Review and click Confirm Action to proceed.';
     }
 
@@ -1714,6 +1749,9 @@ class CopilotService
             'message_too_generic' => 'The reminder message is too generic. Edit it to describe the overdue tasks before confirming.',
             'lead_unresolved' => 'No matching CRM lead was found. Select the correct lead before confirming.',
             'recipient_email_missing' => 'This lead does not have a recipient email yet. Add an email address before confirming.',
+            'missing_full_name' => 'Full name is required to create this organization user.',
+            'missing_email' => 'A valid email address is required to create this organization user.',
+            'missing_supervisor' => 'Agents must be assigned to a supervisor before confirming.',
         ];
 
         return collect($codes)
@@ -1742,6 +1780,10 @@ class CopilotService
 
         if ($tool === 'notifications.send') {
             return $this->notificationInferenceService->warningCodes($args);
+        }
+
+        if ($tool === 'org.users.create') {
+            return $this->internalUserInferenceService->warningCodes($args);
         }
 
         if ($tool === 'crm.send_email') {
@@ -1824,6 +1866,18 @@ class CopilotService
 
         if (in_array('recipient_email_missing', $validationWarningCodes, true)) {
             $blockingCodes[] = 'recipient_email_missing';
+        }
+
+        if (in_array('missing_full_name', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_full_name';
+        }
+
+        if (in_array('missing_email', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_email';
+        }
+
+        if (in_array('missing_supervisor', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_supervisor';
         }
 
         if ((bool) config('services.ai.strict_confirmation_blocking', false)) {

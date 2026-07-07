@@ -51,6 +51,7 @@ class ToolPolicyService
         'crm.create_lead',
         'crm.send_email',
         'kpis.create',
+        'org.users.create',
     ];
 
     private const ACTION_TOOLS_AGENT = [
