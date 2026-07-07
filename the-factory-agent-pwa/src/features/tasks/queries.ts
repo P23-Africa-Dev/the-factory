@@ -7,7 +7,7 @@ import { toast } from '@/lib/toast';
 import { taskApi } from './api';
 import type { TaskListResult } from './api';
 import { taskKeys } from './queryKeys';
-import type { Task, TaskFilters, UpdateTaskStatusPayload } from './types';
+import type { Task, TaskFilters, UpdateTaskStatusPayload, CreateSelfTaskPayload } from './types';
 
 export function flattenTaskPages(data: InfiniteData<TaskListResult> | undefined): Task[] {
   if (!data?.pages.length) return [];
@@ -114,6 +114,16 @@ export function useCompleteTask() {
   });
 }
 
+export function useCreateSelfTask() {
+  return useMutation({
+    mutationFn: (payload: CreateSelfTaskPayload) => taskApi.createSelf(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        toast.info('Offline queue', 'Task creation queued and will sync automatically.');
+      } else {
+        toast.success('Task created successfully');
+      }
 export function useUpdateTask() {
   return useMutation({
     mutationFn: taskApi.update,

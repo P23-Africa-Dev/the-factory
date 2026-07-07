@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import { CreateTaskModal } from '@/features/tasks/components/CreateTaskModal';
 import { ArrowLeft, MapPin, AlertCircle, Pencil, Trash2 } from 'lucide-react';
 
 import {
@@ -339,6 +340,7 @@ export default function TasksPage() {
   // Tasks States
   const [activeFilter, setActiveFilter] = useState<FilterKey>('pending');
   const [taskToDecline, setTaskToDecline] = useState<Task | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [editForm, setEditForm] = useState({ title: '', description: '', location: '', address: '' });
@@ -728,6 +730,23 @@ export default function TasksPage() {
         )}
       </AnimatePresence>
 
+      {/* Floating Action Button for Task Creation */}
+      {activeSubTab === 'tasks' && (
+        <button
+          onClick={() => setIsCreateOpen(true)}
+          className="fixed bottom-28 right-6 z-[100] flex h-14 w-14 items-center justify-center rounded-full bg-[#75ADAF] hover:bg-[#85bec0] text-white shadow-[0px_4px_10px_0px_rgba(117,173,175,0.4)] transition-transform active:scale-95 cursor-pointer focus:outline-none"
+        >
+          <Plus size={24} />
+        </button>
+      )}
+
+      <CreateTaskModal
+        isOpen={isCreateOpen}
+        onClose={() => {
+          setIsCreateOpen(false);
+          refetchTasks();
+        }}
+      />
       <AnimatePresence>
         {taskToEdit && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/65 px-6">

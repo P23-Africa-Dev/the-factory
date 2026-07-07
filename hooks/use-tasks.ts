@@ -211,6 +211,7 @@ export function useCreateSelfTask(options?: { onSuccess?: (task: TaskApiItem) =>
     mutationFn: (payload: CreateSelfTaskPayload) => createSelfTask(payload, token),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+      queryClient.invalidateQueries({ queryKey: ["tracking"] });
       if (res.meta?.queued_offline) {
         toast.info("Task queued offline.");
         return;

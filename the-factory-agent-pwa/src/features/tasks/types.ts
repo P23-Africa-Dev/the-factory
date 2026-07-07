@@ -4,6 +4,7 @@ import type {
   taskStatusSchema,
   updateTaskStatusPayloadSchema,
   taskFiltersSchema,
+  createSelfTaskSchema,
 } from './schema';
 
 export type Task = z.infer<typeof taskSchema>;
@@ -17,3 +18,4 @@ export type UpdateTaskPayload = {
   address?: string;
 };
 export type TaskFilters = z.infer<typeof taskFiltersSchema> | undefined;
+export type CreateSelfTaskPayload = z.infer<typeof createSelfTaskSchema>;
