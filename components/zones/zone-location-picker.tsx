@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getCountries, type CountryOption } from "@/lib/api/enterprise";
 import { useGeographyLgas, useGeographyStates } from "@/hooks/use-geography";
+
+const EMPTY_COUNTRIES: CountryOption[] = [];
 
 type ZoneLocationPickerProps = {
   countryCode: string;
@@ -42,11 +44,15 @@ export function ZoneLocationPicker({
   zoneLevel = "lga",
   onZoneLevelChange,
 }: ZoneLocationPickerProps) {
-  const { data: countries = [] } = useQuery({
+  const countriesQuery = useQuery({
     queryKey: ["countries"],
     queryFn: getCountries,
     staleTime: 1000 * 60 * 60,
   });
+  const countries = useMemo(
+    () => countriesQuery.data ?? EMPTY_COUNTRIES,
+    [countriesQuery.data],
+  );
 
   const countryOptions = useMemo(
     () =>
@@ -67,12 +73,6 @@ export function ZoneLocationPicker({
   const lgasSupported = lgasData?.supported ?? false;
   const stateOptions = statesData?.states ?? [];
   const lgaOptions = lgasData?.lgas ?? [];
-
-  useEffect(() => {
-    if (!stateName && stateOptions.length > 0) {
-      return;
-    }
-  }, [stateName, stateOptions]);
 
   return (
     <div className="space-y-4">
