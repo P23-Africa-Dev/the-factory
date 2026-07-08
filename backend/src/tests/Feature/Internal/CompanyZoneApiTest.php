@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Internal;
 
 use App\Models\Company;
+use App\Models\CompanyZone;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -37,6 +38,51 @@ class CompanyZoneApiTest extends TestCase
             'state_name' => 'Lagos',
             'lga_name' => 'Ikeja',
         ]);
+    }
+
+    public function test_agent_can_list_company_zones_but_cannot_create_zone(): void
+    {
+        [$company, $owner] = $this->seedCompanyOwner();
+
+        $agent = User::factory()->create([
+            'internal_role' => 'agent',
+            'is_active' => true,
+        ]);
+
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'role' => 'agent',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        CompanyZone::query()->create([
+            'company_id' => $company->id,
+            'name' => 'Ikeja, Lagos',
+            'normalized_name' => 'ikeja, lagos',
+            'country_code' => 'NG',
+            'state_name' => 'Lagos',
+            'lga_name' => 'Ikeja',
+            'is_active' => true,
+            'created_by_user_id' => $owner->id,
+        ]);
+
+        $this->actingAs($agent, 'sanctum')
+            ->getJson('/api/v1/internal-users/zones?company_id='.$company->id.'&is_active=1')
+            ->assertOk()
+            ->assertJsonPath('data.0.country_code', 'NG');
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/internal-users/zones', [
+                'company_id' => $company->id,
+                'country_code' => 'NG',
+                'state_name' => 'Lagos',
+                'lga_name' => 'Yaba',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['authorization']);
     }
 
     /**

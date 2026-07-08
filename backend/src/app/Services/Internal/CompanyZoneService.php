@@ -20,10 +20,9 @@ class CompanyZoneService
      * @param  array<string, mixed>  $filters
      * @return Collection<int, CompanyZone>
      */
-    public function listForManager(User $actor, array $filters = []): Collection
+    public function listForCompanyMember(User $actor, array $filters = []): Collection
     {
         $context = $this->accessService->resolveCompanyContext($actor, isset($filters['company_id']) ? (int) $filters['company_id'] : null);
-        $this->accessService->ensureCanManageInternalUsers((string) $context['role']);
         $companyId = (int) $context['company']->id;
 
         $query = CompanyZone::query()
