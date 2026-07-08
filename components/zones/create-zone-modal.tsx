@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -10,6 +10,8 @@ import {
   resolveDefaultCountryCode,
   ZoneLocationPicker,
 } from "@/components/zones/zone-location-picker";
+
+const EMPTY_COUNTRIES: Awaited<ReturnType<typeof getCountries>> = [];
 
 type CreateZoneModalProps = {
   isOpen: boolean;
@@ -32,11 +34,15 @@ export function CreateZoneModal({
   const [zoneLevel, setZoneLevel] = useState<"state" | "lga">("lga");
   const [zoneName, setZoneName] = useState("");
 
-  const { data: countries = [] } = useQuery({
+  const countriesQuery = useQuery({
     queryKey: ["countries"],
     queryFn: getCountries,
     staleTime: 1000 * 60 * 60,
   });
+  const countries = useMemo(
+    () => countriesQuery.data ?? EMPTY_COUNTRIES,
+    [countriesQuery.data]
+  );
 
   const createMutation = useCreateCompanyZone({
     onSuccess: () => {

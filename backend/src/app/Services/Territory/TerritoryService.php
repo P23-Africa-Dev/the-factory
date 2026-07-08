@@ -229,6 +229,7 @@ class TerritoryService
                 'users.name',
                 'users.email',
                 'users.avatar',
+                'users.gender',
                 'users.assigned_zone',
             ])
             ->keyBy('id');
@@ -352,7 +353,7 @@ class TerritoryService
                 'name' => $agent->name,
                 'email' => $agent->email,
                 'avatar' => $agent->avatar,
-                'avatar_url' => AvatarUrlResolver::resolveOrDefault($agent->avatar, $agent->gender),
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($agent->avatar, $agent->gender ?? null),
                 'assigned_zone' => $agent->assigned_zone,
             ] : null,
             'name' => $territory->name ?? $agent?->name,
