@@ -15,7 +15,7 @@ metadata:
     app.kubernetes.io/part-of: factory23
     app.kubernetes.io/version: v2
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: backend
@@ -121,7 +121,7 @@ spec:
 
           resources:
             requests:
-              cpu: "250m"
+              cpu: "120m"
               memory: "256Mi"
             limits:
               cpu: "1000m"
@@ -171,7 +171,7 @@ spec:
 
           resources:
             requests:
-              cpu: "100m"
+              cpu: "40m"
               memory: "64Mi"
             limits:
               cpu: "200m"

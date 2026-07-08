@@ -282,6 +282,18 @@ jobs:
           kubectl rollout status deployment/scheduler \
             -n ${{ env.K8S_NAMESPACE }} --timeout=180s || rollout_failed=1
 
+          # Guardrail: on single-node clusters, ingress can become unschedulable
+          # under CPU pressure. Fail early with diagnostics if no endpoints exist.
+          INGRESS_ENDPOINTS=$(kubectl get endpoints ingress-nginx-controller -n ingress-nginx \
+            -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)
+          if [ -z "$INGRESS_ENDPOINTS" ]; then
+            rollout_failed=1
+            echo "=== ingress-nginx-controller has zero endpoints ==="
+            kubectl get pods -n ingress-nginx -o wide || true
+            kubectl describe svc ingress-nginx-controller -n ingress-nginx || true
+            kubectl describe deployment ingress-nginx-controller -n ingress-nginx || true
+          fi
+
           if [ "$rollout_failed" -ne 0 ]; then
             exit 1
           fi
