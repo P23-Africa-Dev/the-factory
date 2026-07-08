@@ -21,7 +21,7 @@ class CompanyZoneController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $zones = $this->zoneService->listForManager($request->user(), [
+        $zones = $this->zoneService->listForCompanyMember($request->user(), [
             'company_id' => $request->input('company_id'),
             'q' => $request->input('q'),
             'is_active' => $request->has('is_active') ? $request->boolean('is_active') : null,

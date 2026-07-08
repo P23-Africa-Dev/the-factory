@@ -906,6 +906,26 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.lead.priority', 'urgent');
     }
 
+    public function test_agent_can_read_admin_crm_labels_endpoint(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $adminToken = $admin->createToken('admin-create-label-for-agent-read', ['*'])->plainTextToken;
+        $this->withToken($adminToken)
+            ->postJson('/api/v1/crm/labels', [
+                'company_id' => $company->id,
+                'name' => 'Shared Label',
+                'color' => '#1D4ED8',
+            ])
+            ->assertCreated();
+
+        $agentToken = $agent->createToken('agent-read-admin-labels', ['*'])->plainTextToken;
+        $this->withToken($agentToken)
+            ->getJson('/api/v1/admin/crm/labels?company_id='.$company->id)
+            ->assertOk()
+            ->assertJsonPath('success', true);
+    }
+
     public function test_import_leads_with_budget_columns(): void
     {
         [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
