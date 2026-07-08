@@ -22,7 +22,6 @@ class PasswordResetTest extends TestCase
 
         config([
             'app.frontend_url' => 'https://thefactory23.com',
-            'app.agent_pwa_url' => 'https://app.thefactory23.com',
         ]);
     }
 
@@ -247,7 +246,7 @@ class PasswordResetTest extends TestCase
         ])->assertOk()->assertJsonPath('data.redirect_path', '/login');
     }
 
-    public function test_agent_reset_link_uses_agent_pwa_host_when_portal_is_agent(): void
+    public function test_agent_reset_link_uses_web_host_when_portal_is_agent(): void
     {
         Notification::fake();
 
@@ -264,8 +263,9 @@ class PasswordResetTest extends TestCase
         ])->assertOk();
 
         $resetUrl = $this->extractResetUrlFromNotification($user);
-        $this->assertStringContainsString('app.thefactory23.com/reset-password/', $resetUrl);
+        $this->assertStringContainsString('thefactory23.com/reset-password/', $resetUrl);
         $this->assertStringContainsString('portal=agent', $resetUrl);
+        $this->assertStringNotContainsString('app.thefactory23.com', $resetUrl);
     }
 
     public function test_management_reset_link_uses_management_host_when_portal_is_management(): void
