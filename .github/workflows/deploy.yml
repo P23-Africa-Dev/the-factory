@@ -290,14 +290,14 @@ jobs:
         if: always()
         run: |
           kubectl patch hpa backend-hpa -n ${{ env.K8S_NAMESPACE }} --type merge \
-            -p '{"spec":{"minReplicas":2,"maxReplicas":10}}' || true
-          kubectl scale deployment/backend -n ${{ env.K8S_NAMESPACE }} --replicas=2 || true
+            -p '{"spec":{"minReplicas":1,"maxReplicas":10}}' || true
+          kubectl scale deployment/backend -n ${{ env.K8S_NAMESPACE }} --replicas=1 || true
 
       - name: Smoke test — health endpoint
         run: |
-          echo "Waiting for backend pods to be ready..."
-          kubectl wait --for=condition=ready pod -l app=backend \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+          echo "Waiting for backend deployment to be available..."
+          kubectl wait --for=condition=available deployment/backend \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=150s
 
           # In-cluster check — validates the deployed app without depending on
           # public LB/DNS (which can lag or be down during node recovery).
