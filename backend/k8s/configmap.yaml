@@ -47,6 +47,7 @@ data:
 
   # ── Frontend / CORS ───────────────────────────────────────────────────────────
   FRONTEND_URL: "https://thefactory23.com"
+  AGENT_PWA_URL: "https://app.thefactory23.com"
   CORS_ALLOWED_ORIGINS: "https://thefactory23.com,https://www.thefactory23.com,https://app.thefactory23.com,https://the-factory-frontend-git-space-p23-africa.vercel.app,https://the-factory-frontend-git-dev-work-p23-africa.vercel.app,http://localhost:3000,http://localhost:3001"
   SANCTUM_STATEFUL_DOMAINS: "thefactory23.com,www.thefactory23.com,app.thefactory23.com,api.thefactory23.com"
   BILLING_ENFORCE: "false"

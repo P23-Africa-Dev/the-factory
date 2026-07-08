@@ -20,6 +20,9 @@ class PasswordResetService
         private readonly NotificationService $notificationService,
     ) {}
 
+    /**
+     * Tokens are stored hashed in MySQL `password_reset_tokens` via Laravel's users broker.
+     */
     public function sendResetLink(string $email, ?string $portal = null, ?string $ipAddress = null): bool
     {
         $normalizedEmail = strtolower(trim($email));
@@ -27,17 +30,25 @@ class PasswordResetService
         /** @var User|null $user */
         $user = User::query()->where('email', $normalizedEmail)->first();
 
-        if (! $user || ! $user->canAuthenticate() || ! $this->matchesPortal($user, $portal)) {
+        if (! $user || ! $user->canAuthenticate()) {
+            if ($user !== null) {
+                Log::info('Password reset skipped for ineligible account.', [
+                    'email' => $normalizedEmail,
+                    'user_id' => $user->id,
+                    'ip' => $ipAddress,
+                ]);
+            }
+
             return true;
         }
 
-        $effectivePortal = $this->resolvePortal($user);
+        $effectivePortal = $this->resolveRequestedPortal($portal, $user);
 
         /** @var \Illuminate\Auth\Passwords\PasswordBroker $broker */
         $broker = Password::broker('users');
         $token = $broker->createToken($user);
 
-        $frontendBaseUrl = rtrim((string) env('FRONTEND_URL', config('app.frontend_url')), '/');
+        $frontendBaseUrl = $this->resolveFrontendBaseUrl($effectivePortal);
         $query = http_build_query([
             'email' => $user->email,
             'portal' => $effectivePortal,
@@ -58,7 +69,7 @@ class PasswordResetService
                 'message' => 'A password reset link was sent to your email.',
                 'reference_type' => User::class,
                 'reference_id' => (int) $user->id,
-                'action_url' => $effectivePortal === 'agent' ? '/agent/login' : '/login',
+                'action_url' => $this->loginPathForPortal($effectivePortal),
                 'action_route' => 'auth.reset-password',
                 'priority' => NotificationPriority::NORMAL->value,
                 'created_by_user_id' => (int) $user->id,
@@ -72,6 +83,7 @@ class PasswordResetService
                 'email' => $user->email,
                 'user_id' => $user->id,
                 'portal' => $effectivePortal,
+                'reset_url_host' => parse_url($resetUrl, PHP_URL_HOST),
                 'ip' => $ipAddress,
             ]);
         } catch (Throwable $e) {
@@ -97,7 +109,7 @@ class PasswordResetService
         /** @var User|null $user */
         $user = User::query()->where('email', $normalizedEmail)->first();
 
-        if (! $user || ! $user->canAuthenticate() || ! $this->matchesPortal($user, $portal)) {
+        if (! $user || ! $user->canAuthenticate()) {
             return false;
         }
 
@@ -107,15 +119,18 @@ class PasswordResetService
         return $broker->tokenExists($user, $token);
     }
 
-    public function resetPassword(string $email, string $token, string $password, ?string $portal = null): bool
+    /**
+     * @return string|null Effective portal on success, null when reset failed.
+     */
+    public function resetPassword(string $email, string $token, string $password, ?string $portal = null): ?string
     {
         $normalizedEmail = strtolower(trim($email));
 
         /** @var User|null $user */
         $user = User::query()->where('email', $normalizedEmail)->first();
 
-        if (! $user || ! $user->canAuthenticate() || ! $this->matchesPortal($user, $portal)) {
-            return false;
+        if (! $user || ! $user->canAuthenticate()) {
+            return null;
         }
 
         /** @var \Illuminate\Auth\Passwords\PasswordBroker $broker */
@@ -136,10 +151,10 @@ class PasswordResetService
         });
 
         if ($status !== Password::PASSWORD_RESET) {
-            return false;
+            return null;
         }
 
-        $effectivePortal = $this->resolvePortal($user);
+        $effectivePortal = $this->resolveRequestedPortal($portal, $user);
 
         $this->notificationService->notifyUser((int) $user->id, [
             'type' => 'auth.password_reset_completed',
@@ -148,7 +163,7 @@ class PasswordResetService
             'message' => 'Your password has been reset successfully.',
             'reference_type' => User::class,
             'reference_id' => (int) $user->id,
-            'action_url' => $effectivePortal === 'agent' ? '/agent/login' : '/login',
+            'action_url' => $this->loginPathForPortal($effectivePortal),
             'action_route' => 'auth.login',
             'priority' => NotificationPriority::HIGH->value,
             'created_by_user_id' => (int) $user->id,
@@ -158,26 +173,36 @@ class PasswordResetService
             'dedupe_key' => 'auth-password-reset-completed:' . $user->id,
         ]);
 
-        return true;
+        return $effectivePortal;
     }
 
-    private function matchesPortal(User $user, ?string $portal): bool
+    public function loginPathForPortal(string $portal): string
     {
-        if ($portal === null || trim($portal) === '') {
-            return true;
+        return $portal === 'agent' ? '/agent/login' : '/login';
+    }
+
+    private function resolveRequestedPortal(?string $portal, User $user): string
+    {
+        $normalizedPortal = strtolower(trim((string) $portal));
+
+        if (in_array($normalizedPortal, ['agent', 'management'], true)) {
+            return $normalizedPortal;
         }
 
-        $normalizedPortal = strtolower(trim($portal));
-
-        return match ($normalizedPortal) {
-            'agent' => $user->internal_role === 'agent',
-            'management' => $user->internal_role !== 'agent',
-            default => false,
-        };
+        return $this->resolvePortalFromUser($user);
     }
 
-    private function resolvePortal(User $user): string
+    private function resolvePortalFromUser(User $user): string
     {
         return $user->internal_role === 'agent' ? 'agent' : 'management';
+    }
+
+    private function resolveFrontendBaseUrl(string $portal): string
+    {
+        $baseUrl = $portal === 'agent'
+            ? config('app.agent_pwa_url')
+            : config('app.frontend_url');
+
+        return rtrim((string) $baseUrl, '/');
     }
 }
