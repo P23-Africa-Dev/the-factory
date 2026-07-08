@@ -110,6 +110,8 @@ class AttendanceApiTest extends TestCase
             ->postJson('/api/v1/attendance/clock-in', [
                 'company_id' => $company->id,
                 'recorded_at' => '2026-06-01 08:50:00',
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
             ]);
 
         $clockInResponse->assertCreated()
@@ -120,6 +122,8 @@ class AttendanceApiTest extends TestCase
             ->postJson('/api/v1/attendance/clock-out', [
                 'company_id' => $company->id,
                 'recorded_at' => '2026-06-01 16:30:00',
+                'latitude' => 6.5250,
+                'longitude' => 3.3800,
             ]);
 
         $clockOutResponse->assertOk()
@@ -143,6 +147,8 @@ class AttendanceApiTest extends TestCase
             ->postJson('/api/v1/attendance/clock-in', [
                 'company_id' => $company->id,
                 'recorded_at' => '2026-06-01 08:50:00',
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
             ])
             ->assertCreated();
 
@@ -150,6 +156,8 @@ class AttendanceApiTest extends TestCase
             ->postJson('/api/v1/attendance/clock-in', [
                 'company_id' => $company->id,
                 'recorded_at' => '2026-06-01 09:05:00',
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
             ]);
 
         $response->assertStatus(422)
@@ -560,6 +568,103 @@ class AttendanceApiTest extends TestCase
         $response->assertStatus(422)
             ->assertJsonPath('success', false)
             ->assertJsonStructure(['errors' => ['user_id']]);
+    }
+
+    public function test_management_can_fetch_attendance_map_snapshots_for_clocked_in_agents(): void
+    {
+        [$company, $owner,, $agentA, $agentB] = $this->seedCompanyUsers();
+        $this->createAttendanceSetting($company);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentA->id,
+            'attendance_date' => '2026-06-01',
+            'clock_in_at' => '2026-06-01 08:55:00',
+            'clock_out_at' => null,
+            'status' => 'present',
+            'work_duration_minutes' => null,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+            'metadata' => [
+                'clock_in_latitude' => 6.5244,
+                'clock_in_longitude' => 3.3792,
+                'clock_in_address' => 'Lagos Island, Lagos',
+            ],
+        ]);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentB->id,
+            'attendance_date' => '2026-06-01',
+            'clock_in_at' => '2026-06-01 09:20:00',
+            'clock_out_at' => '2026-06-01 17:00:00',
+            'status' => 'late',
+            'work_duration_minutes' => 460,
+            'is_late' => true,
+            'is_auto_clocked_out' => false,
+            'metadata' => [
+                'clock_in_latitude' => 6.6018,
+                'clock_in_longitude' => 3.3515,
+            ],
+        ]);
+
+        $response = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/map-snapshots?company_id=' . $company->id . '&date=2026-06-01');
+
+        $response->assertOk()
+            ->assertJsonPath('data.date', '2026-06-01')
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.user_id', $agentA->id)
+            ->assertJsonPath('data.items.0.latitude', 6.5244)
+            ->assertJsonPath('data.items.0.longitude', 3.3792)
+            ->assertJsonPath('data.items.0.address', 'Lagos Island, Lagos');
+    }
+
+    public function test_agent_can_fetch_own_attendance_map_snapshot(): void
+    {
+        [$company,,, $agent] = $this->seedCompanyUsers();
+        $this->createAttendanceSetting($company);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'attendance_date' => '2026-06-01',
+            'clock_in_at' => '2026-06-01 08:55:00',
+            'clock_out_at' => null,
+            'status' => 'present',
+            'work_duration_minutes' => null,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+            'metadata' => [
+                'clock_in_latitude' => 6.5244,
+                'clock_in_longitude' => 3.3792,
+            ],
+        ]);
+
+        $response = $this->actingAs($agent, 'sanctum')
+            ->getJson('/api/v1/agent/attendance/map-snapshot?company_id=' . $company->id . '&date=2026-06-01');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.user_id', $agent->id);
+    }
+
+    public function test_clock_in_requires_valid_coordinates(): void
+    {
+        [$company,,, $agent] = $this->seedCompanyUsers();
+        $this->createAttendanceSetting($company);
+
+        $response = $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/attendance/clock-in', [
+                'company_id' => $company->id,
+                'recorded_at' => '2026-06-01 08:50:00',
+                'latitude' => 0,
+                'longitude' => 0,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonStructure(['errors' => ['location']]);
     }
 
     private function seedCompanyUsers(): array

@@ -76,6 +76,57 @@ class MapboxGeocodingService
     }
 
     /**
+     * @return array{place_name: string|null}|null
+     */
+    public function reverseGeocodeCoordinates(float $latitude, float $longitude, Company|int|null $company = null): ?array
+    {
+        if ($company !== null && $this->demoCompanyService->isDemo($company)) {
+            return [
+                'place_name' => sprintf('%.4f, %.4f', $latitude, $longitude),
+            ];
+        }
+
+        $token = trim((string) config('services.mapbox.access_token'));
+        if ($token === '') {
+            return null;
+        }
+
+        $url = sprintf(
+            'https://api.mapbox.com/geocoding/v5/mapbox.places/%s,%s.json',
+            rawurlencode((string) $longitude),
+            rawurlencode((string) $latitude),
+        );
+
+        try {
+            $response = Http::timeout(8)->get($url, [
+                'access_token' => $token,
+                'limit' => 1,
+                'types' => 'address,poi,place,locality,neighborhood',
+            ]);
+
+            if (! $response->successful()) {
+                return null;
+            }
+
+            /** @var array{features?: array<int, array{place_name?: string}>} $payload */
+            $payload = $response->json();
+            $feature = $payload['features'][0] ?? null;
+
+            if (! is_array($feature)) {
+                return null;
+            }
+
+            return [
+                'place_name' => isset($feature['place_name']) && is_string($feature['place_name'])
+                    ? trim($feature['place_name'])
+                    : null,
+            ];
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * @return array{latitude: float, longitude: float, place_name: string|null}
      */
     private function demoGeocode(string $address, Company|int $company): array

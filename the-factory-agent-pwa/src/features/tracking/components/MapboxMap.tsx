@@ -10,6 +10,7 @@ import { createMapboxTransformRequest, getMapboxPublicToken } from '@/lib/map/pu
 import { getAgentMapboxStyle } from '@/lib/map/style-mode';
 import {
   createAgentMarkerElement,
+  createClockInMarkerElement,
   createDestinationMarkerElement,
   createSavedLocationMarkerElement,
   updateAgentMarkerElement,
@@ -62,6 +63,13 @@ export type MapboxMapProps = {
   dimmed?: boolean;
   savedLocations?: SavedLocationPin[];
   onSavedLocationClick?: (id: number) => void;
+  clockInPin?: {
+    longitude: number;
+    latitude: number;
+    agentName: string;
+    avatarUrl?: string | null;
+    isLate?: boolean;
+  } | null;
   pinMode?: boolean;
   onMapPin?: (lng: number, lat: number) => void;
 };
@@ -250,6 +258,7 @@ export function MapboxMap({
   dimmed = false,
   savedLocations,
   onSavedLocationClick,
+  clockInPin = null,
   pinMode = false,
   onMapPin,
 }: MapboxMapProps) {
@@ -261,6 +270,7 @@ export function MapboxMap({
   const destMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const destMarkerKindRef = useRef<DestinationMarkerKind | null>(null);
   const savedMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
+  const clockInMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const pinModeRef = useRef(pinMode);
   const onMapPinRef = useRef(onMapPin);
   const onSavedLocationClickRef = useRef(onSavedLocationClick);
@@ -348,7 +358,19 @@ export function MapboxMap({
     radiusMeters,
     arrived,
   });
-  syncPayloadRef.current = {
+  useEffect(() => {
+    syncPayloadRef.current = {
+      mode,
+      effectiveTraveled,
+      effectiveRemaining,
+      agentPosition,
+      destinationPosition,
+      agentMarker,
+      destinationMarkerKind,
+      radiusMeters,
+      arrived,
+    };
+  }, [
     mode,
     effectiveTraveled,
     effectiveRemaining,
@@ -358,7 +380,7 @@ export function MapboxMap({
     destinationMarkerKind,
     radiusMeters,
     arrived,
-  };
+  ]);
 
   // fallbackView is removed
 
@@ -459,6 +481,25 @@ export function MapboxMap({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- savedSig captures pins
   }, [mapReady, savedSig]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    clockInMarkerRef.current?.remove();
+    clockInMarkerRef.current = null;
+
+    if (!clockInPin) return;
+
+    const el = createClockInMarkerElement({
+      agentName: clockInPin.agentName,
+      avatarUrl: clockInPin.avatarUrl,
+      isLate: clockInPin.isLate,
+    });
+    clockInMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+      .setLngLat([clockInPin.longitude, clockInPin.latitude])
+      .addTo(map);
+  }, [clockInPin, mapReady]);
 
   // Click / long-press to drop a pin for creating a saved location.
   useEffect(() => {

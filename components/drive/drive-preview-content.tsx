@@ -15,6 +15,7 @@ export function DrivePreviewContent({ kind, blobUrl, fileName, variant }: DriveP
 
   useEffect(() => {
     if (kind !== "text") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear text preview when switching away from text
       setTextContent(null);
       return;
     }

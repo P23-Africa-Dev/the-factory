@@ -5,6 +5,9 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { SavedLocationsLayer, type GoogleMapBridge } from '@/components/map/SavedLocationsLayer';
 import { TerritoryLayer } from '@/components/map/TerritoryLayer';
+import { ClockedInLayer } from '@/components/map/ClockedInLayer';
+import { useAttendanceMapSnapshots } from '@/hooks/use-attendance-map';
+import { useAttendanceMapStore } from '@/store/attendance-map';
 import { MapExploreControls } from '@/components/map/map-explore-controls';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { createUserLocationIndicatorElement } from '@/lib/map/user-location-marker';
@@ -119,6 +122,9 @@ function MapboxAgentMapView({
     const [locating, setLocating] = useState(false);
 
     useTrackingWebSocket();
+    useAttendanceMapSnapshots({}, { scope: 'agent' });
+    const clockedInItems = useAttendanceMapStore((s) => Object.values(s.items));
+    const ownClockIn = clockedInItems[0] ?? null;
 
     const clearUserLocationMarkers = useCallback(() => {
         userLocationMarkerRef.current?.remove();
@@ -567,6 +573,23 @@ function MapboxAgentMapView({
                 toggleClassName="absolute bottom-28 left-3 z-30 flex flex-col-reverse items-start gap-2"
             />
 
+            {!activeTask && ownClockIn && (
+                <ClockedInLayer
+                    provider="mapbox"
+                    ready={mapReady}
+                    items={[ownClockIn]}
+                    selectedUserId={ownClockIn.user_id}
+                    onSelectUserId={() => {}}
+                    getMapboxMap={() => mapRef.current}
+                />
+            )}
+
+            {!activeTask && ownClockIn && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 rounded-full bg-white/95 px-4 py-2 shadow-lg text-[12px] font-medium text-dash-dark">
+                  You clocked in at {ownClockIn.address ?? `${ownClockIn.latitude.toFixed(4)}, ${ownClockIn.longitude.toFixed(4)}`}
+                </div>
+            )}
+
             {!activeTask && (
                 <MapExploreControls
                     locating={locating}
@@ -616,6 +639,9 @@ function GoogleAgentMapView({
     );
 
     useTrackingWebSocket();
+    useAttendanceMapSnapshots({}, { scope: 'agent' });
+    const clockedInItems = useAttendanceMapStore((s) => Object.values(s.items));
+    const ownClockIn = clockedInItems[0] ?? null;
 
     const clearUserLocationMarkers = useCallback(() => {
         userLocationMarkerRef.current?.setMap(null);
@@ -957,6 +983,27 @@ function GoogleAgentMapView({
                 getGoogleMap={() => (mapRef.current ? { map: mapRef.current } : null)}
                 toggleClassName="absolute bottom-28 left-3 z-30 flex flex-col-reverse items-start gap-2"
             />
+
+            {!activeTask && ownClockIn && (
+                <ClockedInLayer
+                    provider="google"
+                    ready={mapReady}
+                    items={[ownClockIn]}
+                    selectedUserId={ownClockIn.user_id}
+                    onSelectUserId={() => {}}
+                    getGoogleMap={() =>
+                        mapRef.current && googleRef.current
+                            ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)
+                            : null
+                    }
+                />
+            )}
+
+            {!activeTask && ownClockIn && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 rounded-full bg-white/95 px-4 py-2 shadow-lg text-[12px] font-medium text-dash-dark">
+                  You clocked in at {ownClockIn.address ?? `${ownClockIn.latitude.toFixed(4)}, ${ownClockIn.longitude.toFixed(4)}`}
+                </div>
+            )}
 
             {!activeTask && (
                 <MapExploreControls

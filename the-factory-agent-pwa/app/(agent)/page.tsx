@@ -116,6 +116,7 @@ export default function AgentDashboardPage() {
   const { count: unreadCount = 0 } = useUnreadCount();
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load persisted recent destinations on mount
     setRecentLocations(getRecentDestinations());
   }, []);
 

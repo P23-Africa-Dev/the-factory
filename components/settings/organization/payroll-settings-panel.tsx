@@ -30,6 +30,7 @@ export function PayrollSettingsPanel() {
 
   useEffect(() => {
     if (!existingPayroll) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate payroll form from fetched settings
     setSalaryType(existingPayroll.salary_type);
     setCurrency(existingPayroll.currency);
     setBaseSalary(String(existingPayroll.base_salary));

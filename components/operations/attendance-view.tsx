@@ -659,6 +659,15 @@ export function AttendanceView({ basePath }: { basePath: string }) {
             </span>
           </button>
 
+          <Link
+            href="/map?tab=clocked-in"
+            className="flex items-center gap-2 px-5 py-3 bg-white border border-[#D7D7D7] text-dash-dark rounded-xl text-[13px] font-bold hover:bg-gray-50 transition-all shrink-0"
+            style={{ boxShadow: "0px 1px 3px 0px #0000004D" }}
+          >
+            <MapPin size={14} strokeWidth={2} />
+            <span className="hidden sm:inline">Clocked-In Map</span>
+          </Link>
+
           <button
             onClick={() => setShowSettings(true)}
             className="flex items-center gap-2 px-5 py-3 bg-white border border-[#D7D7D7] text-dash-dark rounded-xl text-[13px] font-bold hover:bg-gray-50 transition-all shrink-0 cursor-pointer"

@@ -20,7 +20,7 @@ export function useClockIn() {
       const previous = queryClient.getQueryData<TodayAttendance>(attendanceKeys.today());
       queryClient.setQueryData<TodayAttendance>(attendanceKeys.today(), (old) =>
         old
-          ? { ...old, isClockedIn: true, clockInAt: payload.timestamp, clockOutAt: null }
+          ? { ...old, isClockedIn: true, clockInAt: payload.recorded_at, clockOutAt: null }
           : old,
       );
       return { previous };
@@ -45,7 +45,7 @@ export function useClockOut() {
       await queryClient.cancelQueries({ queryKey: attendanceKeys.today() });
       const previous = queryClient.getQueryData<TodayAttendance>(attendanceKeys.today());
       queryClient.setQueryData<TodayAttendance>(attendanceKeys.today(), (old) =>
-        old ? { ...old, isClockedIn: false, clockOutAt: payload.timestamp } : old,
+        old ? { ...old, isClockedIn: false, clockOutAt: payload.recorded_at } : old,
       );
       return { previous };
     },

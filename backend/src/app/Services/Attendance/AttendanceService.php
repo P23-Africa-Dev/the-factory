@@ -12,11 +12,15 @@ use App\Models\AttendanceSetting;
 use App\Models\PayrollSetting;
 use App\Models\User;
 use App\Support\AvatarUrlResolver;
+use App\Services\Location\MapboxGeocodingService;
 use App\Services\Notification\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class AttendanceService
 {
@@ -25,12 +29,15 @@ class AttendanceService
     public function __construct(
         private readonly AttendanceAccessService $attendanceAccessService,
         private readonly NotificationService $notificationService,
+        private readonly MapboxGeocodingService $mapboxGeocodingService,
     ) {}
 
     public function clockIn(User $user, array $data): AttendanceRecord
     {
         $context = $this->attendanceAccessService->resolve($user, $data['company_id'] ?? null);
         $this->attendanceAccessService->ensureAgent($context);
+
+        $this->ensureValidCoordinates($data);
 
         $setting = $this->requireSetting((int) $context->company->id);
         $clockInAt = isset($data['recorded_at']) ? Carbon::parse((string) $data['recorded_at']) : now();
@@ -73,6 +80,14 @@ class AttendanceService
             ? AttendanceStatus::LATE->value
             : AttendanceStatus::PRESENT->value;
 
+        $latitude = (float) $data['latitude'];
+        $longitude = (float) $data['longitude'];
+        $reverseGeocode = $this->mapboxGeocodingService->reverseGeocodeCoordinates(
+            $latitude,
+            $longitude,
+            $context->company,
+        );
+
         $record = AttendanceRecord::query()->updateOrCreate(
             [
                 'company_id' => (int) $context->company->id,
@@ -84,10 +99,21 @@ class AttendanceService
                 'status' => $status,
                 'is_late' => $status === AttendanceStatus::LATE->value,
                 'metadata' => [
-                    'clock_in_latitude' => $data['latitude'] ?? null,
-                    'clock_in_longitude' => $data['longitude'] ?? null,
+                    'clock_in_latitude' => $latitude,
+                    'clock_in_longitude' => $longitude,
+                    'clock_in_address' => $reverseGeocode['place_name'] ?? null,
+                    'clock_in_accuracy_m' => isset($data['accuracy_m']) ? (float) $data['accuracy_m'] : null,
                 ],
             ],
+        );
+
+        $record = $record->fresh(['user']);
+        $this->publishAttendanceEvent(
+            event: 'attendance.clocked_in',
+            companyId: (int) $context->company->id,
+            userId: (int) $user->id,
+            record: $record,
+            occurredAt: $clockInAt,
         );
 
         $this->notificationService->notifyUser((int) $user->id, [
@@ -116,6 +142,8 @@ class AttendanceService
     {
         $context = $this->attendanceAccessService->resolve($user, $data['company_id'] ?? null);
         $this->attendanceAccessService->ensureAgent($context);
+
+        $this->ensureValidCoordinates($data);
 
         $setting = $this->requireSetting((int) $context->company->id);
         $clockOutAt = isset($data['recorded_at']) ? Carbon::parse((string) $data['recorded_at']) : now();
@@ -155,14 +183,32 @@ class AttendanceService
         $workDurationMinutes = max(0, $record->clock_in_at->diffInMinutes($clockOutAt));
 
         $metadata = $record->metadata ?? [];
-        $metadata['clock_out_latitude'] = $data['latitude'] ?? null;
-        $metadata['clock_out_longitude'] = $data['longitude'] ?? null;
+        $latitude = (float) $data['latitude'];
+        $longitude = (float) $data['longitude'];
+        $reverseGeocode = $this->mapboxGeocodingService->reverseGeocodeCoordinates(
+            $latitude,
+            $longitude,
+            $context->company,
+        );
+        $metadata['clock_out_latitude'] = $latitude;
+        $metadata['clock_out_longitude'] = $longitude;
+        $metadata['clock_out_address'] = $reverseGeocode['place_name'] ?? null;
+        $metadata['clock_out_accuracy_m'] = isset($data['accuracy_m']) ? (float) $data['accuracy_m'] : null;
 
         $record->update([
             'clock_out_at' => $clockOutAt,
             'work_duration_minutes' => $workDurationMinutes,
             'metadata' => $metadata,
         ]);
+
+        $record = $record->fresh(['user']);
+        $this->publishAttendanceEvent(
+            event: 'attendance.clocked_out',
+            companyId: (int) $context->company->id,
+            userId: (int) $user->id,
+            record: $record,
+            occurredAt: $clockOutAt,
+        );
 
         $this->notificationService->notifyUser((int) $user->id, [
             'company_id' => (int) $context->company->id,
@@ -936,5 +982,195 @@ class AttendanceService
             ],
             'dedupe_key' => 'attendance-issue:' . $companyId . ':' . (int) $user->id . ':' . $issue . ':' . now()->toDateString(),
         ]);
+    }
+
+    /**
+     * @return array{date: string, items: list<array<string, mixed>>}
+     */
+    public function mapSnapshotsForManagement(User $user, array $filters): array
+    {
+        $context = $this->attendanceAccessService->resolve($user, $filters['company_id'] ?? null);
+        $this->attendanceAccessService->ensureCanManage($context);
+
+        $date = $this->resolveSnapshotDate($context->company->id, $filters['date'] ?? null);
+        $includeClockedOut = filter_var($filters['include_clocked_out'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+        $items = $this->buildMapSnapshotItems(
+            companyId: (int) $context->company->id,
+            date: $date,
+            includeClockedOut: $includeClockedOut,
+        );
+
+        return [
+            'date' => $date,
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return array{date: string, items: list<array<string, mixed>>}
+     */
+    public function mapSnapshotForAgent(User $user, array $filters): array
+    {
+        $context = $this->attendanceAccessService->resolve($user, $filters['company_id'] ?? null);
+        $this->attendanceAccessService->ensureAgent($context);
+
+        $date = $this->resolveSnapshotDate($context->company->id, $filters['date'] ?? null);
+        $includeClockedOut = filter_var($filters['include_clocked_out'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+        $items = $this->buildMapSnapshotItems(
+            companyId: (int) $context->company->id,
+            date: $date,
+            includeClockedOut: $includeClockedOut,
+            userId: (int) $user->id,
+        );
+
+        return [
+            'date' => $date,
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function buildMapSnapshotItems(int $companyId, string $date, bool $includeClockedOut, ?int $userId = null): array
+    {
+        $query = AttendanceRecord::query()
+            ->with('user')
+            ->where('company_id', $companyId)
+            ->whereDate('attendance_date', $date)
+            ->whereNotNull('clock_in_at');
+
+        if (! $includeClockedOut) {
+            $query->whereNull('clock_out_at');
+        }
+
+        if ($userId !== null) {
+            $query->where('user_id', $userId);
+        }
+
+        return $query
+            ->orderByDesc('clock_in_at')
+            ->get()
+            ->map(fn (AttendanceRecord $record): ?array => $this->formatMapSnapshotItem($record))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function formatMapSnapshotItem(AttendanceRecord $record): ?array
+    {
+        $metadata = is_array($record->metadata) ? $record->metadata : [];
+        $latitude = $metadata['clock_in_latitude'] ?? null;
+        $longitude = $metadata['clock_in_longitude'] ?? null;
+
+        if (! is_numeric($latitude) || ! is_numeric($longitude)) {
+            return null;
+        }
+
+        $latitude = (float) $latitude;
+        $longitude = (float) $longitude;
+
+        if (abs($latitude) < 0.0001 && abs($longitude) < 0.0001) {
+            return null;
+        }
+
+        $agent = $record->user;
+        $status = $record->status?->value ?? 'present';
+
+        return [
+            'user_id' => (int) $record->user_id,
+            'attendance_record_id' => (int) $record->id,
+            'agent_name' => (string) ($agent?->name ?? 'Agent'),
+            'avatar_url' => AvatarUrlResolver::resolveOrDefault($agent?->avatar, $agent?->gender),
+            'clock_in_at' => $record->clock_in_at?->toIso8601String(),
+            'clock_out_at' => $record->clock_out_at?->toIso8601String(),
+            'status' => $status,
+            'is_late' => (bool) $record->is_late,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'address' => isset($metadata['clock_in_address']) && is_string($metadata['clock_in_address'])
+                ? $metadata['clock_in_address']
+                : null,
+            'zone' => $agent?->assigned_zone,
+        ];
+    }
+
+    private function resolveSnapshotDate(int $companyId, mixed $requestedDate): string
+    {
+        if (is_string($requestedDate) && trim($requestedDate) !== '') {
+            return Carbon::parse($requestedDate)->toDateString();
+        }
+
+        $setting = AttendanceSetting::query()->where('company_id', $companyId)->first();
+        $timezone = $setting ? $this->resolveSettingTimezone($setting) : (string) config('app.timezone', 'UTC');
+
+        return now($timezone)->toDateString();
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function ensureValidCoordinates(array $data): void
+    {
+        $latitude = $data['latitude'] ?? null;
+        $longitude = $data['longitude'] ?? null;
+
+        if (! is_numeric($latitude) || ! is_numeric($longitude)) {
+            throw ValidationException::withMessages([
+                'location' => ['A valid GPS location is required to record attendance.'],
+            ]);
+        }
+
+        $latitude = (float) $latitude;
+        $longitude = (float) $longitude;
+
+        if (abs($latitude) < 0.0001 && abs($longitude) < 0.0001) {
+            throw ValidationException::withMessages([
+                'location' => ['A valid GPS location is required to record attendance.'],
+            ]);
+        }
+    }
+
+    private function publishAttendanceEvent(
+        string $event,
+        int $companyId,
+        int $userId,
+        AttendanceRecord $record,
+        Carbon $occurredAt,
+    ): void {
+        $snapshot = $this->formatMapSnapshotItem($record);
+        if ($snapshot === null) {
+            return;
+        }
+
+        $prefix = rtrim((string) config('tracking.redis_channel_prefix', 'factory23.tracking'), '.');
+        $payload = [
+            'event' => $event,
+            'version' => 1,
+            'company_id' => $companyId,
+            'task_id' => null,
+            'tracking_session_id' => null,
+            'user_id' => $userId,
+            'occurred_at' => $occurredAt->toIso8601String(),
+            'data' => $snapshot,
+        ];
+
+        try {
+            Redis::publish("{$prefix}.company.{$companyId}", json_encode($payload, JSON_THROW_ON_ERROR));
+        } catch (Throwable $e) {
+            Log::warning('Failed to publish attendance event to Redis.', [
+                'event' => $event,
+                'company_id' => $companyId,
+                'user_id' => $userId,
+                'attendance_record_id' => $record->id,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 }

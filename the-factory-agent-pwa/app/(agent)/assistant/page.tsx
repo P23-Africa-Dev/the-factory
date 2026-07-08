@@ -134,6 +134,7 @@ export default function AiAssistantPage() {
       const payload = msg.payload as DailyPlanPayload | null | undefined;
       if (!payload?.items?.length) continue;
 
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mark assistant plan toast as shown once
       setNotifiedPlanIds((prev) => new Set(prev).add(msg.id));
       toast.info('Your daily plan is ready', 'Review the plan below and accept to create tasks.');
     }

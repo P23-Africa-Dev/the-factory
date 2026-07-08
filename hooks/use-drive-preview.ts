@@ -23,6 +23,7 @@ export function useDriveFileBlobUrl(fileId?: number, companyId?: number | string
 
   useEffect(() => {
     if (!query.data) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear object URL when preview data unloads
       setObjectUrl(null);
       return;
     }

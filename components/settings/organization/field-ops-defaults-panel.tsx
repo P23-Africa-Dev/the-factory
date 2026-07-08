@@ -26,6 +26,7 @@ export function FieldOpsDefaultsPanel() {
 
   useEffect(() => {
     if (!data) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate form from fetched settings
     setMinPhotos(data.operational_defaults.minimum_photos_required);
     setVisitVerification(data.operational_defaults.visit_verification_required);
   }, [data]);

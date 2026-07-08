@@ -51,6 +51,7 @@ export function CreateZoneModal({
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset zone form when modal opens
     setCountryCode(resolveDefaultCountryCode(defaultCountry, countries));
     setStateName("");
     setLgaName("");
