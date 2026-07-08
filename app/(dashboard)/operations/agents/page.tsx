@@ -79,6 +79,7 @@ function mapAgent(user: InternalUserListItem): Agent {
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
+
 function AgentDetailSidebar({ agent }: { agent: Agent }) {
   const hasLocation = Boolean(
     agent.isMapActive && (agent.location || agent.latitude || agent.longitude),
