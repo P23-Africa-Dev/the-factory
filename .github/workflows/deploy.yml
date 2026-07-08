@@ -297,7 +297,7 @@ jobs:
         run: |
           echo "Waiting for backend pods to be ready..."
           kubectl wait --for=condition=ready pod -l app=backend \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=120s
+            -n ${{ env.K8S_NAMESPACE }} --timeout=300s
 
           # In-cluster check — validates the deployed app without depending on
           # public LB/DNS (which can lag or be down during node recovery).
