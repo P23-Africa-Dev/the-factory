@@ -39,6 +39,22 @@ class AgentTerritoryTest extends TestCase
         $this->assertCount(1, $second->json('data.items'));
     }
 
+    public function test_management_list_does_not_fail_when_agent_gender_is_null(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompany('FAC-TER008', 'Null Gender Ltd');
+        $agent->update(['gender' => null]);
+
+        $response = $this->withToken($admin->createToken('null-gender', ['*'])->plainTextToken)
+            ->getJson('/api/v1/admin/territories?company_id='.$company->id);
+
+        $response->assertOk()
+            ->assertJsonPath('data.items.0.user_id', $agent->id);
+
+        $avatarUrl = $response->json('data.items.0.agent.avatar_url');
+        $this->assertIsString($avatarUrl);
+        $this->assertNotSame('', $avatarUrl);
+    }
+
     public function test_coverage_points_include_task_destinations_and_trail_points(): void
     {
         [$company, $admin, $agent] = $this->seedCompany('FAC-TER002', 'Coverage Ltd');

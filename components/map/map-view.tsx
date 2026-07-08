@@ -300,7 +300,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
   const savedLocationPermissions = useSavedLocationPermissions();
   const { isLoading: clockedInLoading } = useAttendanceMapSnapshots({}, { scope: 'management' });
-  const clockedInItems = useAttendanceMapStore((s) => Object.values(s.items));
+  const clockedInItemMap = useAttendanceMapStore((s) => s.items);
+  const clockedInItems = useMemo(() => Object.values(clockedInItemMap), [clockedInItemMap]);
   const selectedClockedInUserId = useAttendanceMapStore((s) => s.selectedUserId);
   const setSelectedClockedInUserId = useAttendanceMapStore((s) => s.setSelectedUserId);
 
@@ -1660,7 +1661,8 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
   const savedLocationPermissions = useSavedLocationPermissions();
   const { isLoading: clockedInLoading } = useAttendanceMapSnapshots({}, { scope: 'management' });
-  const clockedInItems = useAttendanceMapStore((s) => Object.values(s.items));
+  const clockedInItemMap = useAttendanceMapStore((s) => s.items);
+  const clockedInItems = useMemo(() => Object.values(clockedInItemMap), [clockedInItemMap]);
   const selectedClockedInUserId = useAttendanceMapStore((s) => s.selectedUserId);
   const setSelectedClockedInUserId = useAttendanceMapStore((s) => s.setSelectedUserId);
 
