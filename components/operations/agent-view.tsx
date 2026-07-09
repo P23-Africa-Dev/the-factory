@@ -143,7 +143,7 @@ export function AgentView({ basePath }: { basePath: string }) {
               type="text"
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
-              placeholder="Search by name, email, zone, phone"
+              placeholder="Search by name......"
               className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-[#09232D]/10 transition-all font-sans"
               style={{
                 height: '46px',

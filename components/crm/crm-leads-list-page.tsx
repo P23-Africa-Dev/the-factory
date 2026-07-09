@@ -114,7 +114,7 @@ export function CrmLeadsListPage({
                         type="text"
                         value={search}
                         onChange={(event) => setSearch(event.target.value)}
-                        placeholder="Search by name, email, phone"
+                        placeholder="Search by name......"
                         className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
                     />
                 </div>

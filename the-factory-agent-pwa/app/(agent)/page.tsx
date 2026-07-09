@@ -244,7 +244,7 @@ export default function AgentDashboardPage() {
                 <div className="flex-1 flex items-center bg-white/[0.08] rounded-full px-4 h-12">
                   <input
                     type="text"
-                    placeholder="Search tasks, leads..."
+                    placeholder="Search tasks......"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     autoFocus

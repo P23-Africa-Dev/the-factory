@@ -449,7 +449,7 @@ export function AllTasksView() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search KPIs, agents, categories…"
+              placeholder="Search KPIs......"
               className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-dash-dark/10 transition-all font-sans"
               style={{
                 height: '46px',
