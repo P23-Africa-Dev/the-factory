@@ -648,7 +648,7 @@ export default function AgentDashboardPage() {
         </div>
       )}
       {gateVisible && (
-        <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/50 backdrop-blur-sm">
           <div className="relative w-full max-w-md rounded-t-3xl bg-[#0A1D25] border-t border-white/10 pb-[env(safe-area-inset-bottom,0px)]">
             <LocationPermissionGate
               mode={gateMode}

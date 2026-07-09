@@ -7,6 +7,7 @@ import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
 import { useCreateLead, useCrmPipelines, useCrmLabels } from '@/features/crm';
 import { PwaProfileUrlInputs, isValidUrl, normalizeWebsite, parseProfileUrls } from './PwaProfileUrlInputs';
+import PhoneNumberInput from '@/components/ui/PhoneNumberInput';
 
 interface AddLeadModalProps {
   visible: boolean;
@@ -40,19 +41,8 @@ const INITIAL_FORM: FormState = {
   pipelineId: '',
 };
 
-const COUNTRY_CODES = [
-  { code: "+44", label: "GB (+44)" },
-  { code: "+234", label: "NG (+234)" },
-  { code: "+254", label: "KE (+254)" },
-  { code: "+233", label: "GH (+233)" },
-  { code: "+27", label: "ZA (+27)" },
-  { code: "+1", label: "US (+1)" },
-] as const;
-
 export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps): React.ReactElement | null {
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
-  const [countryCode, setCountryCode] = useState('+44');
-  const [phonePart, setPhonePart] = useState('');
   const [profileUrls, setProfileUrls] = useState<string[]>(['']);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState | 'profileUrls', string>>>({});
 
@@ -63,8 +53,6 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
     onSuccess: () => {
       toast.success('Lead added');
       setForm(INITIAL_FORM);
-      setCountryCode('+234');
-      setPhonePart('');
       setProfileUrls(['']);
       setErrors({});
       onSuccess?.();
@@ -116,7 +104,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
       pipeline_id: pipelineId,
       name: form.name.trim(),
       email: form.email.trim() || null,
-      phone: phonePart.trim() ? (countryCode + phonePart.trim()) : null,
+      phone: form.phone.trim() || null,
       location: form.location.trim() || null,
       company_name: form.companyName.trim() || null,
       website: form.website.trim() ? normalizeWebsite(form.website) : null,
@@ -130,8 +118,6 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
   const handleClose = () => {
     if (isPending) return;
     setForm(INITIAL_FORM);
-    setCountryCode('+234');
-    setPhonePart('');
     setProfileUrls(['']);
     setErrors({});
     onClose();
@@ -196,27 +182,12 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
               {/* Phone */}
               <div className="flex flex-col">
                 <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 font-sans">Phone</label>
-                <div className="flex gap-2 w-full">
-                  <select
-                    value={countryCode}
-                    onChange={(e) => setCountryCode(e.target.value)}
-                    className="h-12 border-1.5 border-white/12 rounded-xl px-3 text-sm text-white bg-[#0A1D25] outline-none transition-colors focus:border-[#75ADAF]"
-                    style={{ backgroundColor: '#0A1D25' }}
-                  >
-                    {COUNTRY_CODES.map((c) => (
-                      <option key={c.code} value={c.code} style={{ backgroundColor: '#0A1D25' }}>
-                        {c.code}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="tel"
-                    placeholder="Enter phone number"
-                    value={phonePart}
-                    onChange={(e) => setPhonePart(e.target.value)}
-                    className="flex-1 h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
-                  />
-                </div>
+                <PhoneNumberInput
+                  value={form.phone}
+                  onChange={(val) => setForm((f) => ({ ...f, phone: val }))}
+                  placeholder="Enter phone number"
+                  defaultCountry="NG"
+                />
               </div>
               {/* Location */}
               <div className="flex flex-col">

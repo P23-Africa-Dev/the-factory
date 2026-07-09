@@ -335,6 +335,10 @@ function ActivityButton({
   taskStatus?: string;
   onStart: () => void;
 }) {
+  if (!hasDestination) {
+    return null;
+  }
+
   if (taskStatus === 'completed' || taskStatus === 'cancelled') {
     return (
       <div className="mx-auto w-[344px] h-[67px] rounded-[60px] bg-[#D1D5D8] flex items-center justify-center">
@@ -396,34 +400,13 @@ function ActivityButton({
       onClick={canStart ? onStart : undefined}
       disabled={!canStart}
       style={canStart ? activeButtonStyle : disabledButtonStyle}
-      className={`mx-auto flex items-center justify-between transition-all duration-200 ${
+      className={`mx-auto flex items-center justify-center transition-all duration-200 ${
         canStart ? 'text-white active:scale-[0.98]' : 'text-[#8F9098] cursor-not-allowed'
       }`}
     >
-      <div className={`relative w-[58px] h-[58px] flex items-center justify-center flex-shrink-0 ${!canStart && 'opacity-50'}`}>
-        <img
-          src="/assets/Ellipse 436.png"
-          alt="Ellipse"
-          className="absolute inset-0 w-[58px] h-[58px] object-contain"
-        />
-        <img
-          src="/assets/navigation-03.png"
-          alt="Arrow"
-          className="relative w-[29px] h-[29px] object-contain"
-        />
-      </div>
-
-      <span className="font-sans font-bold text-sm text-center flex-1">
+      <span className="font-sans font-bold text-sm text-center">
         Start Task
       </span>
-
-      <div className={`pr-3 flex-shrink-0 ${!canStart && 'opacity-50'}`}>
-        <img
-          src="/assets/arrow-right-double.png"
-          alt="Double Arrow"
-          className="w-[24px] h-[24px] object-contain"
-        />
-      </div>
     </button>
   );
 }
