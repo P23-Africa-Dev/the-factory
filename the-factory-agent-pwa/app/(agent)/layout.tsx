@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { useAuth } from '@/features/auth';
+import { usePushSubscription } from '@/features/notifications/hooks/usePushSubscription';
 import { ActiveTrackingProvider } from '@/features/tracking/ActiveTrackingProvider';
 import { useTrackingWebSocket } from '@/hooks/useTrackingWebSocket';
 import { syncEngine } from '@/lib/sync/syncEngine';
@@ -29,6 +30,8 @@ function AgentShellContent({ children }: { children: React.ReactNode }) {
 }
 
 function AgentShell({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  usePushSubscription(user?.id);
   useTrackingWebSocket();
   const { isRestoring } = useRouteRestoration();
 
