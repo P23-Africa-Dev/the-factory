@@ -22,9 +22,9 @@ function AgentShellContent({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <OfflineSyncBanner />
       <div className={`flex flex-col flex-1 ${isHidden ? '' : 'pb-[100px]'}`}>{children}</div>
       {!isHidden && <BottomNavBar />}
+      {!isHidden && <OfflineSyncBanner />}
     </>
   );
 }
