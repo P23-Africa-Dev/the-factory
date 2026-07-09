@@ -1274,7 +1274,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} strokeWidth={2} />
           <input
             type="text"
-            placeholder="Search places, agents, tasks, references"
+            placeholder="Search places......."
             value={searchQuery}
             onChange={(e) => handleSearchQueryChange(e.target.value)}
             className="w-full bg-white rounded-full py-4 pl-14 pr-6 text-[14px] shadow-2xl shadow-black/5 outline-none font-medium text-dash-dark placeholder:text-gray-400"
