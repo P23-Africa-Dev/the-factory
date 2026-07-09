@@ -210,7 +210,7 @@ export default function AgentMapPage() {
 
       <div
         className={`absolute left-3 right-3 z-20 bg-white rounded-[28px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col transition-all duration-300 ${
-          sheetOpen ? 'bottom-4 max-h-[42vh]' : 'bottom-4 max-h-12'
+          sheetOpen ? 'bottom-4 h-[42vh]' : 'bottom-4 h-12'
         }`}
       >
         <button
