@@ -132,3 +132,26 @@ input:-webkit-autofill:active {
 .pwa-phone-input .PhoneInputInput::placeholder {
   color: rgba(255, 255, 255, 0.35);
 }
+
+/* ─── Prevent iOS Auto-Zoom on Form Input Focus ──────────────────────────────
+ * On iOS devices, if a form control (input, select, textarea) has a font-size
+ * smaller than 16px, Safari automatically zooms the viewport on focus.
+ * This pushes fixed elements like bottom navigation off-screen.
+ * Forcing font-size to 16px on mobile viewports resolves this UX block.
+ * ─────────────────────────────────────────────────────────────────────────── */
+@media screen and (max-width: 767px) {
+  input[type="text"],
+  input[type="search"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="time"],
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}

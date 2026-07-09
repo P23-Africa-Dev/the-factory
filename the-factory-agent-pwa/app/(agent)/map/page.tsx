@@ -60,7 +60,7 @@ import { getSavedLocationType } from '@/lib/map/locationTypes';
 import { searchPlacesWithMapbox } from '@/lib/map/geocoding';
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
 import type { SavedLocationPin } from '@/features/tracking/components/MapboxMap';
-import { MapPin, Plus } from 'lucide-react';
+import { MapPin, Plus, Eye, EyeOff } from 'lucide-react';
 
 const MapBottomSheetDynamic = dynamic(
   () => import('@/features/tracking/components/MapBottomSheet').then((m) => m.MapBottomSheet),
@@ -498,7 +498,7 @@ function DestinationSearch({
               value={searchQuery}
               onChange={(e) => onQueryChange(e.target.value)}
               autoFocus
-              className="flex-1 bg-transparent border-none text-[#09232D] text-sm focus:outline-none placeholder-gray-400 font-semibold p-0"
+              className="flex-1 bg-transparent border-none text-[#09232D] text-base focus:outline-none placeholder-gray-400 font-semibold p-0"
             />
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 focus:outline-none">
               <X size={18} />
@@ -607,7 +607,7 @@ function OriginSearch({
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
               autoFocus
-              className="flex-1 bg-transparent border-none text-[#09232D] text-sm focus:outline-none placeholder-gray-400 font-semibold p-0"
+              className="flex-1 bg-transparent border-none text-[#09232D] text-base focus:outline-none placeholder-gray-400 font-semibold p-0"
             />
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 focus:outline-none">
               <X size={18} />
@@ -790,7 +790,7 @@ function AddNoteModal({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={4}
-            className="w-full bg-transparent border-none text-[#09232D] placeholder-gray-400 focus:outline-none resize-none text-sm font-semibold p-0"
+            className="w-full bg-transparent border-none text-[#09232D] placeholder-gray-400 focus:outline-none resize-none text-base font-semibold p-0"
           />
         </div>
 
@@ -896,6 +896,7 @@ function MapContent() {
 
   // Saved organization locations
   const { data: savedLocations = [] } = useSavedLocations();
+  const [showBusinessPins, setShowBusinessPins] = useState(true);
   const { data: attendanceMapSnapshot } = useQuery({
     queryKey: ['attendance-map-snapshot'],
     queryFn: attendanceApi.getMapSnapshot,
@@ -1811,8 +1812,9 @@ function MapContent() {
   // ── Saved locations ──────────────────────────────────────────────────────────
 
   const savedLocationPins = useMemo<SavedLocationPin[]>(
-    () =>
-      savedLocations
+    () => {
+      if (!showBusinessPins) return [];
+      return savedLocations
         .filter((loc) => loc.isActive)
         .map((loc) => ({
           id: loc.id,
@@ -1822,8 +1824,9 @@ function MapContent() {
           latitude: loc.latitude,
           color: getSavedLocationType(loc.type).color,
           selected: loc.id === selectedSavedId,
-        })),
-    [savedLocations, selectedSavedId],
+        }));
+    },
+    [savedLocations, selectedSavedId, showBusinessPins],
   );
 
   const selectedSavedLocation = useMemo<SavedLocation | null>(
@@ -2063,6 +2066,19 @@ function MapContent() {
               Tap the map or long-press to drop a pin
             </div>
           )}
+          <button
+            type="button"
+            onClick={() => setShowBusinessPins((visible) => !visible)}
+            className="pointer-events-auto w-12 h-12 rounded-full bg-white shadow-lg flex items-center justify-center active:scale-95 transition-transform border border-gray-100"
+            aria-label={showBusinessPins ? 'Hide business pins' : 'Show business pins'}
+            title={showBusinessPins ? 'Hide Pins' : 'Show Pins'}
+          >
+            {showBusinessPins ? (
+              <EyeOff size={20} className="text-[#1D7293]" />
+            ) : (
+              <Eye size={20} className="text-[#1D7293]" />
+            )}
+          </button>
           <button
             type="button"
             onClick={handleSaveCurrentLocation}
