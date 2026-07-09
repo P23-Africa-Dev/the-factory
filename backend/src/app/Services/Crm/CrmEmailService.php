@@ -84,7 +84,7 @@ class CrmEmailService
     {
         $context = $this->authorizeLeadAccess($user, $lead, $data['company_id'] ?? null);
         $companyId = (int) $context['company']->id;
-        $connection = $this->requireGmailConnection($companyId, (int) $user->id);
+        $connection = $this->requireUserGmailConnection($companyId, (int) $user->id);
 
         $to = $this->normalizeRecipients($data['to'] ?? []);
         $cc = $this->normalizeRecipients($data['cc'] ?? []);
@@ -189,7 +189,7 @@ class CrmEmailService
     public function sendMessageById(int $messageId, ?string $inReplyToGmailMessageId = null): void
     {
         $message = CrmEmailMessage::query()->with(['thread', 'attachments'])->findOrFail($messageId);
-        $connection = $this->requireGmailConnection((int) $message->company_id, (int) $message->sent_by_user_id);
+        $connection = $this->requireUserGmailConnection((int) $message->company_id, (int) $message->sent_by_user_id);
 
         $extraHeaders = [];
         $replyToGmailMessageId = trim((string) ($inReplyToGmailMessageId ?? ''));
@@ -276,6 +276,12 @@ class CrmEmailService
 
     public function syncLead(int $companyId, int $leadId, ?int $userId = null): void
     {
+        if ($userId === null || $userId <= 0) {
+            throw ValidationException::withMessages([
+                'integration' => ['A connected personal Google account is required to sync lead emails.'],
+            ]);
+        }
+
         $lead = Lead::query()->where('company_id', $companyId)->findOrFail($leadId);
         $email = strtolower(trim((string) ($lead->email ?? '')));
 
@@ -283,7 +289,7 @@ class CrmEmailService
             return;
         }
 
-        $connection = $this->requireGmailConnection($companyId, $userId);
+        $connection = $this->requireUserGmailConnection($companyId, $userId);
         $query = sprintf('from:%s OR to:%s', $email, $email);
         $pageToken = null;
 
@@ -309,48 +315,12 @@ class CrmEmailService
 
     public function syncCompany(int $companyId): void
     {
-        $connection = $this->requireGmailConnection($companyId);
+        $this->syncConnectionHistory($this->requireCompanyGmailConnection($companyId), $companyId);
+    }
 
-        if ($connection->gmail_history_id === null) {
-            $profile = $this->gmailApiService->getProfile($connection);
-            $connection->update([
-                'gmail_history_id' => isset($profile['historyId']) ? (string) $profile['historyId'] : null,
-                'gmail_last_synced_at' => now(),
-            ]);
-
-            return;
-        }
-
-        $history = $this->gmailApiService->listHistory($connection, (string) $connection->gmail_history_id);
-        $messageIds = [];
-
-        foreach ($history['history'] as $entry) {
-            foreach (['messagesAdded', 'messages'] as $key) {
-                $items = is_array($entry[$key] ?? null) ? $entry[$key] : [];
-
-                foreach ($items as $item) {
-                    $message = is_array($item['message'] ?? null) ? $item['message'] : $item;
-                    $id = (string) ($message['id'] ?? '');
-
-                    if ($id !== '') {
-                        $messageIds[] = $id;
-                    }
-                }
-            }
-        }
-
-        $messageIds = array_values(array_unique($messageIds));
-
-        foreach ($messageIds as $gmailMessageId) {
-            $this->upsertGmailMessage($connection, $companyId, $gmailMessageId);
-        }
-
-        $connection->update([
-            'gmail_history_id' => $history['historyId'] ?? $connection->gmail_history_id,
-            'gmail_last_synced_at' => now(),
-        ]);
-
-        $this->cacheService->bumpCompanyVersion($companyId);
+    public function syncUser(int $companyId, int $userId): void
+    {
+        $this->syncConnectionHistory($this->requireUserGmailConnection($companyId, $userId), $companyId);
     }
 
     public function markAsRead(User $user, Lead $lead, CrmEmailMessage $message, ?int $companyId = null): CrmEmailMessage
@@ -360,7 +330,7 @@ class CrmEmailService
         $this->assertMessageBelongsToLead($message, $resolvedCompanyId, (int) $lead->id);
 
         if (! $message->is_read && ! str_starts_with((string) $message->gmail_message_id, 'pending-')) {
-            $connection = $this->requireGmailConnection($resolvedCompanyId, (int) $user->id);
+            $connection = $this->requireUserGmailConnection($resolvedCompanyId, (int) $user->id);
             $this->gmailApiService->markAsRead($connection, (string) $message->gmail_message_id);
         }
 
@@ -377,7 +347,7 @@ class CrmEmailService
         $this->assertMessageBelongsToLead($message, $resolvedCompanyId, (int) $lead->id);
 
         if (! str_starts_with((string) $message->gmail_message_id, 'pending-')) {
-            $connection = $this->requireGmailConnection($resolvedCompanyId, (int) $user->id);
+            $connection = $this->requireUserGmailConnection($resolvedCompanyId, (int) $user->id);
             $this->gmailApiService->trashMessage($connection, (string) $message->gmail_message_id);
         }
 
@@ -519,7 +489,7 @@ class CrmEmailService
     }
 
     private function upsertGmailMessage(
-        CompanyCalendarConnection $connection,
+        CompanyCalendarConnection|UserCalendarConnection $connection,
         int $companyId,
         string $gmailMessageId,
         ?int $forcedLeadId = null,
@@ -733,36 +703,18 @@ class CrmEmailService
             ->update(['message_id' => $message->id]);
     }
 
-    private function requireGmailConnection(int $companyId, ?int $userId = null): CompanyCalendarConnection|UserCalendarConnection
+    private function requireUserGmailConnection(int $companyId, int $userId): UserCalendarConnection
     {
-        if ($userId !== null && $userId > 0) {
-            $userConnection = UserCalendarConnection::query()
-                ->where('company_id', $companyId)
-                ->where('user_id', $userId)
-                ->where('status', 'active')
-                ->whereNull('disconnected_at')
-                ->first();
-
-            if ($userConnection !== null) {
-                if (! GoogleScopeHelper::connectionHasGmailScopes($userConnection)) {
-                    throw ValidationException::withMessages([
-                        'integration' => ['Gmail permissions are missing on your account. Reconnect your Google account to enable email.'],
-                    ]);
-                }
-
-                return $userConnection;
-            }
-        }
-
-        $connection = CompanyCalendarConnection::query()
+        $connection = UserCalendarConnection::query()
             ->where('company_id', $companyId)
+            ->where('user_id', $userId)
             ->where('status', 'active')
             ->whereNull('disconnected_at')
             ->first();
 
         if ($connection === null) {
             throw ValidationException::withMessages([
-                'integration' => ['Google account is not connected. Connect Google Workspace to send and receive emails.'],
+                'integration' => ['Google account is not connected. Connect your Google account to send and receive CRM emails.'],
             ]);
         }
 
@@ -773,6 +725,75 @@ class CrmEmailService
         }
 
         return $connection;
+    }
+
+    private function requireCompanyGmailConnection(int $companyId): CompanyCalendarConnection
+    {
+        $connection = CompanyCalendarConnection::query()
+            ->where('company_id', $companyId)
+            ->where('status', 'active')
+            ->whereNull('disconnected_at')
+            ->first();
+
+        if ($connection === null) {
+            throw ValidationException::withMessages([
+                'integration' => ['No active company Google account is connected for CRM history sync.'],
+            ]);
+        }
+
+        if (! GoogleScopeHelper::connectionHasGmailScopes($connection)) {
+            throw ValidationException::withMessages([
+                'integration' => ['Gmail permissions are missing. Reconnect your Google account to enable email.'],
+            ]);
+        }
+
+        return $connection;
+    }
+
+    private function syncConnectionHistory(
+        CompanyCalendarConnection|UserCalendarConnection $connection,
+        int $companyId,
+    ): void {
+        if ($connection->gmail_history_id === null) {
+            $profile = $this->gmailApiService->getProfile($connection);
+            $connection->update([
+                'gmail_history_id' => isset($profile['historyId']) ? (string) $profile['historyId'] : null,
+                'gmail_last_synced_at' => now(),
+            ]);
+
+            return;
+        }
+
+        $history = $this->gmailApiService->listHistory($connection, (string) $connection->gmail_history_id);
+        $messageIds = [];
+
+        foreach ($history['history'] as $entry) {
+            foreach (['messagesAdded', 'messages'] as $key) {
+                $items = is_array($entry[$key] ?? null) ? $entry[$key] : [];
+
+                foreach ($items as $item) {
+                    $message = is_array($item['message'] ?? null) ? $item['message'] : $item;
+                    $id = (string) ($message['id'] ?? '');
+
+                    if ($id !== '') {
+                        $messageIds[] = $id;
+                    }
+                }
+            }
+        }
+
+        $messageIds = array_values(array_unique($messageIds));
+
+        foreach ($messageIds as $gmailMessageId) {
+            $this->upsertGmailMessage($connection, $companyId, $gmailMessageId);
+        }
+
+        $connection->update([
+            'gmail_history_id' => $history['historyId'] ?? $connection->gmail_history_id,
+            'gmail_last_synced_at' => now(),
+        ]);
+
+        $this->cacheService->bumpCompanyVersion($companyId);
     }
 
     /**

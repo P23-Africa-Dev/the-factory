@@ -52,6 +52,7 @@ class CalendarIntegrationTest extends TestCase
             ->assertJsonStructure([
                 'data' => ['authorization_url', 'expires_in_seconds'],
             ]);
+        $this->assertStringContainsString('prompt=select_account%20consent', (string) $response->json('data.authorization_url'));
 
         $this->assertStringContainsString(
             'https://accounts.google.com/o/oauth2/v2/auth?',
@@ -404,7 +405,7 @@ class CalendarIntegrationTest extends TestCase
         $callbackResponse->assertOk();
         $callbackResponse->assertHeader('Content-Type', 'text/html; charset=UTF-8');
         $callbackResponse->assertSee('google-calendar-oauth', false);
-        $callbackResponse->assertSee('Google Workspace connected successfully for calendar and email. You can close this window.', false);
+        $callbackResponse->assertSee('Google account connected successfully for calendar and email. You can close this window.', false);
     }
 
     public function test_oauth_callback_persists_connection_for_admin(): void
@@ -480,6 +481,17 @@ class CalendarIntegrationTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonPath('success', false)
             ->assertJsonPath('errors.integration.0', 'OAuth state is invalid or has already been used.');
+    }
+
+    public function test_oauth_callback_humanizes_org_internal_error_for_browser_requests(): void
+    {
+        $response = $this->get('/api/v1/calendar/integration/callback?error=org_internal');
+
+        $response->assertStatus(422);
+        $response->assertSee(
+            'This Google OAuth app is currently restricted to one organization. Switch the app to External in Google Cloud Console and retry.',
+            false
+        );
     }
 
     public function test_oauth_callback_rejects_when_user_is_no_longer_calendar_admin(): void

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 return [
     'invite_ttl_hours' => (int) env('INTERNAL_ONBOARDING_INVITE_TTL_HOURS', 72),
-    'frontend_onboarding_url' => env('INTERNAL_ONBOARDING_FRONTEND_URL', 'http://localhost:3000/onboarding/internal'),
+    'frontend_onboarding_url' => env(
+        'INTERNAL_ONBOARDING_FRONTEND_URL',
+        rtrim((string) config('app.frontend_url', 'http://localhost:3000'), '/') . '/onboarding/internal',
+    ),
     'default_currency' => env('INTERNAL_DEFAULT_CURRENCY', 'USD'),
     'avatar_storage_root' => env('INTERNAL_AVATAR_STORAGE_ROOT', 'avatar'),
     'default_avatar_path' => env('INTERNAL_DEFAULT_AVATAR_PATH', 'avatar/default/ghost.svg'),

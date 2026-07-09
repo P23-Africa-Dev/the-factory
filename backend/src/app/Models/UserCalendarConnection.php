@@ -29,6 +29,7 @@ class UserCalendarConnection extends Model
         'connected_at',
         'disconnected_at',
         'gmail_last_synced_at',
+        'gmail_history_id',
         'gmail_watch_expiration',
     ];
 

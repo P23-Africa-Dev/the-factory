@@ -146,7 +146,7 @@ export default function Home() {
         <div className="flex-1 lg:max-w-[58%] bg-white flex flex-col justify-between p-6 sm:p-10 lg:p-16 min-h-screen lg:min-h-0">
           {/* Navigation Bar */}
           <header className="flex items-center gap-6 sm:gap-12 w-full">
-            <Link href="/" className="flex items-center shrink-0">
+            <Link href="/" className="flex items-center gap-3 shrink-0">
               <Image
                 src={Logo}
                 alt="Factory 23 Logo"
@@ -155,6 +155,9 @@ export default function Home() {
                 className="object-contain"
                 priority
               />
+              <span className="text-lg sm:text-xl font-bold tracking-tight text-[#0B252C]">
+                Factory 23
+              </span>
             </Link>
 
             <nav className="hidden sm:flex items-center gap-8">
