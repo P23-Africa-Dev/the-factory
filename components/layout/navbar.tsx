@@ -64,6 +64,7 @@ export function Navbar() {
   const clearUser = useAuthStore((s) => s.clearUser);
   const isAgent = user?.active_company?.role === 'agent';
   const basePath = isAgent ? '/agent' : '';
+  const workforceLabel = isAgent ? "Attendance" : "Workforce";
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const { data: unreadData } = useUnreadCount(companyId ?? undefined);
   const unreadCount = unreadData?.unread_count ?? 0;
@@ -152,10 +153,14 @@ export function Navbar() {
                       : "opacity-60 group-hover:opacity-100",
                   )}
                 />
-                <span>{isAgent && item.name === "Payroll" ? "Payroll" : item.name}</span>
-                {item.hasDropdown && (
+                <span>
+                  {item.name === "Workforce"
+                    ? workforceLabel
+                    : item.name}
+                </span>
+                {/* {item.hasDropdown && (
                   <ChevronDown size={14} className="opacity-40" />
-                )}
+                )} */}
 
                 {isActive && (
                   <motion.div
@@ -398,7 +403,13 @@ export function Navbar() {
                         height={22}
                         className={isActive ? "opacity-100" : "opacity-40"}
                       />
-                      <span className="text-lg font-bold">{isAgent && item.name === "Payroll" ? "Finance" : item.name}</span>
+                      <span className="text-lg font-bold">
+                        {item.name === "Workforce"
+                          ? workforceLabel
+                          : isAgent && item.name === "Payroll"
+                            ? "Finance"
+                            : item.name}
+                      </span>
                       {item.hasDropdown && (
                         <ChevronDown
                           size={16}

@@ -324,7 +324,7 @@ export default function AllAgentsPage() {
               type="text"
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
-              placeholder="Search by name, zone or phone..."
+              placeholder="Search by name......"
               className="w-full bg-white border border-gray-100 rounded-full py-3.5 pl-12 pr-5 text-[13px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
             />
           </div>
