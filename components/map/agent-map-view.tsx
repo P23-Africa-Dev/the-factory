@@ -123,7 +123,8 @@ function MapboxAgentMapView({
 
     useTrackingWebSocket();
     useAttendanceMapSnapshots({}, { scope: 'agent' });
-    const clockedInItems = useAttendanceMapStore((s) => Object.values(s.items));
+    const clockedInItemMap = useAttendanceMapStore((s) => s.items);
+    const clockedInItems = useMemo(() => Object.values(clockedInItemMap), [clockedInItemMap]);
     const ownClockIn = clockedInItems[0] ?? null;
 
     const clearUserLocationMarkers = useCallback(() => {
@@ -640,7 +641,8 @@ function GoogleAgentMapView({
 
     useTrackingWebSocket();
     useAttendanceMapSnapshots({}, { scope: 'agent' });
-    const clockedInItems = useAttendanceMapStore((s) => Object.values(s.items));
+    const clockedInItemMap = useAttendanceMapStore((s) => s.items);
+    const clockedInItems = useMemo(() => Object.values(clockedInItemMap), [clockedInItemMap]);
     const ownClockIn = clockedInItems[0] ?? null;
 
     const clearUserLocationMarkers = useCallback(() => {
