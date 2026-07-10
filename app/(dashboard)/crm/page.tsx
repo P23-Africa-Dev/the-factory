@@ -138,13 +138,13 @@ function LeadCard({
       {...attributes}
       {...listeners}
       onClick={() => router.push(`${basePath}/leads/${item.id}`)}
-      className={`group bg-white rounded-[20px] p-4 shadow-[0px_2px_8px_rgba(0,0,0,0.06)] border border-gray-100 cursor-grab select-none mb-3 transition-all duration-200
+      className={`group bg-white rounded-[20px] p-4 shadow-[0px_2px_8px_rgba(0,0,0,0.06)] border border-gray-100 cursor-grab select-none mb-3 transition-all duration-200 overflow-hidden min-w-0
         ${isDragging && !isDragOverlay ? "opacity-40 scale-95" : ""}
         ${isDragOverlay ? "shadow-2xl scale-105 cursor-grabbing" : "hover:shadow-md"}
       `}
     >
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-[#0B1215] font-bold text-[14px] leading-tight min-w-0 flex-1">{item.label}</p>
+      <div className="flex items-start justify-between gap-2 min-w-0">
+        <p className="text-[#0B1215] font-bold text-[14px] leading-tight min-w-0 flex-1 truncate">{item.label}</p>
         {(onEditClick || onDeleteClick) && !isDragOverlay && (
           <div className="flex items-center shrink-0 -mt-1 -mr-1">
             {onEditClick && (
@@ -178,20 +178,22 @@ function LeadCard({
           </div>
         )}
       </div>
-      <p className="text-[#9CA3AF] text-[12px] mt-0.5">{item.description}</p>
+      <p className="text-[#9CA3AF] text-[12px] mt-0.5 truncate" title={item.description}>
+        {item.description}
+      </p>
 
-      <div className="flex items-center justify-between mt-3">
-        <span className="text-[#0B1215] font-bold text-[13px]">
+      <div className="flex items-center justify-between gap-2 mt-3 min-w-0">
+        <span className="text-[#0B1215] font-bold text-[13px] truncate shrink-0">
           {amount}
         </span>
-        <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-3 py-0.5 rounded-full capitalize">
+        <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-3 py-0.5 rounded-full capitalize shrink-0">
           {item.priority ?? "medium"}
         </span>
       </div>
 
-      <div className="flex items-center justify-between mt-2">
-        <span className="text-[#9CA3AF] text-[11px]">{item.assignedBy ?? "Unassigned"}</span>
-        <span className="text-[#9CA3AF] text-[11px]">{item.time}</span>
+      <div className="flex items-center justify-between gap-2 mt-2 min-w-0">
+        <span className="text-[#9CA3AF] text-[11px] truncate min-w-0">{item.assignedBy ?? "Unassigned"}</span>
+        <span className="text-[#9CA3AF] text-[11px] shrink-0">{item.time}</span>
       </div>
 
       {onMoveToStage && stages && currentStageId && (
@@ -255,7 +257,7 @@ function LeadColumn({
 
   return (
     <div
-      className={`flex flex-col w-full md:w-55 shrink-0 md:shrink-0 ${activeTabId ? (id === activeTabId ? "flex" : "hidden md:flex") : ""
+      className={`flex flex-col w-full md:w-55 shrink-0 md:shrink-0 min-w-0 overflow-hidden ${activeTabId ? (id === activeTabId ? "flex" : "hidden md:flex") : ""
         }`}
     >
       {/* Header */}

@@ -139,7 +139,7 @@ function LeadCard({
             style={style}
             {...attributes}
             {...listeners}
-            className={`bg-white rounded-[32px] p-6 shadow-[0px_4px_16px_rgba(0,0,0,0.04)] border border-gray-100/60 mb-4 transition-all relative group ${disabled ? "cursor-default" : "cursor-grab"
+            className={`bg-white rounded-[32px] p-6 shadow-[0px_4px_16px_rgba(0,0,0,0.04)] border border-gray-100/60 mb-4 transition-all relative group overflow-hidden min-w-0 ${disabled ? "cursor-default" : "cursor-grab"
                 } ${isDragging ? "opacity-50 shadow-xl" : ""}`}
         >
             <div className="flex justify-between items-start gap-2">
@@ -232,7 +232,7 @@ function LeadColumn({
     const { setNodeRef: setDropRef } = useDroppable({ id: container.id });
 
     return (
-        <div className="flex flex-col w-[320px] shrink-0 relative mb-4">
+        <div className="flex flex-col w-[320px] shrink-0 relative mb-4 min-w-0 overflow-hidden">
             {/* Colored background layer (Header) */}
             <div
                 className="absolute top-0 left-0 right-0 h-[120px] rounded-t-[40px]"
