@@ -89,6 +89,9 @@ export type AgentMapViewProps = {
     focusLocation?: SavedLocation | null;
     pinToolbarClassName?: string;
     mapControlsClassName?: string;
+    showPinsToggle?: boolean;
+    onTogglePins?: () => void;
+    pinsToggleLabel?: string;
 };
 
 function MapboxAgentMapView({
@@ -97,6 +100,9 @@ function MapboxAgentMapView({
     focusLocation = null,
     pinToolbarClassName,
     mapControlsClassName,
+    showPinsToggle = false,
+    onTogglePins,
+    pinsToggleLabel = "Hide Pins",
 }: AgentMapViewProps & { providerState: EffectiveMapProviderState }) {
     const mapContainer = useRef<HTMLDivElement>(null);
     const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -571,7 +577,7 @@ function MapboxAgentMapView({
                 provider="mapbox"
                 ready={mapReady}
                 getMapboxMap={() => mapRef.current}
-                toggleClassName="absolute bottom-28 left-3 z-30 flex flex-col-reverse items-start gap-2"
+                toggleClassName="absolute bottom-6 left-4 z-30 flex flex-col-reverse items-start gap-2"
             />
 
             {!activeTask && ownClockIn && (
@@ -598,6 +604,9 @@ function MapboxAgentMapView({
                     onLocateMe={handleLocateMe}
                     onMapModeChange={handleMapModeChange}
                     className={mapControlsClassName}
+                    showPinsToggle={showPinsToggle}
+                    onTogglePins={onTogglePins}
+                    pinsToggleLabel={pinsToggleLabel}
                 />
             )}
 
@@ -616,6 +625,9 @@ function GoogleAgentMapView({
     focusLocation = null,
     pinToolbarClassName,
     mapControlsClassName,
+    showPinsToggle = false,
+    onTogglePins,
+    pinsToggleLabel = "Hide Pins",
 }: AgentMapViewProps & { providerState: EffectiveMapProviderState }) {
     const mapContainer = useRef<HTMLDivElement>(null);
     const googleRef = useRef<GoogleMapsNamespaceLike | null>(null);
@@ -983,7 +995,7 @@ function GoogleAgentMapView({
                 provider="google"
                 ready={mapReady}
                 getGoogleMap={() => (mapRef.current ? { map: mapRef.current } : null)}
-                toggleClassName="absolute bottom-28 left-3 z-30 flex flex-col-reverse items-start gap-2"
+                toggleClassName="absolute bottom-6 left-4 z-30 flex flex-col-reverse items-start gap-2"
             />
 
             {!activeTask && ownClockIn && (
@@ -1014,6 +1026,9 @@ function GoogleAgentMapView({
                     onLocateMe={handleLocateMe}
                     onMapModeChange={handleMapModeChange}
                     className={mapControlsClassName}
+                    showPinsToggle={showPinsToggle}
+                    onTogglePins={onTogglePins}
+                    pinsToggleLabel={pinsToggleLabel}
                 />
             )}
 
@@ -1029,8 +1044,11 @@ function GoogleAgentMapView({
 export function AgentMapView({
     showSavedLocations = true,
     focusLocation = null,
-    pinToolbarClassName = "bottom-[45vh] right-4 md:right-10 z-30",
+    pinToolbarClassName = "bottom-32 right-4 md:right-10 z-20",
     mapControlsClassName = "absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2",
+    showPinsToggle = false,
+    onTogglePins,
+    pinsToggleLabel = "Hide Pins",
 }: AgentMapViewProps = {}) {
     const providerState = useEffectiveMapProvider();
 
@@ -1042,6 +1060,9 @@ export function AgentMapView({
                 focusLocation={focusLocation}
                 pinToolbarClassName={pinToolbarClassName}
                 mapControlsClassName={mapControlsClassName}
+                showPinsToggle={showPinsToggle}
+                onTogglePins={onTogglePins}
+                pinsToggleLabel={pinsToggleLabel}
             />
         );
     }
@@ -1053,6 +1074,9 @@ export function AgentMapView({
             focusLocation={focusLocation}
             pinToolbarClassName={pinToolbarClassName}
             mapControlsClassName={mapControlsClassName}
+            showPinsToggle={showPinsToggle}
+            onTogglePins={onTogglePins}
+            pinsToggleLabel={pinsToggleLabel}
         />
     );
 }

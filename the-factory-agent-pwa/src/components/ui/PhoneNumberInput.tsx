@@ -26,8 +26,8 @@ function ChevronDown({ open }: { open: boolean }) {
 function SearchIcon() {
   return (
     <svg width={13} height={13} viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-      <circle cx="5.5" cy="5.5" r="4" stroke="#9CA3AF" strokeWidth="1.4" />
-      <path d="M8.5 8.5L11 11" stroke="#9CA3AF" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="5.5" cy="5.5" r="4" stroke="rgba(255,255,255,0.4)" strokeWidth="1.4" />
+      <path d="M8.5 8.5L11 11" stroke="rgba(255,255,255,0.4)" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }
@@ -35,7 +35,7 @@ function SearchIcon() {
 function CheckIcon() {
   return (
     <svg width={13} height={13} viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M2.5 6.5L5 9L10.5 4" stroke="#0B1215" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M2.5 6.5L5 9L10.5 4" stroke="#75ADAF" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -146,25 +146,25 @@ function SearchableCountrySelect({
             width: pos.width,
             zIndex: 99999,
           }}
-          className="overflow-hidden flex flex-col bg-white border border-gray-200 rounded-2xl shadow-[0px_8px_32px_rgba(0,0,0,0.14)]"
+          className="overflow-hidden flex flex-col bg-[#0D242E] border border-white/10 rounded-2xl shadow-[0px_8px_32px_rgba(0,0,0,0.4)]"
           onPointerDown={(e) => e.stopPropagation()}
         >
           {/* Search */}
-          <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-gray-100">
+          <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-white/10">
             <SearchIcon />
             <input
               ref={searchRef}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search country or dial code..."
-              className="flex-1 text-[12px] text-gray-700 placeholder:text-gray-400 outline-none bg-transparent"
+              className="flex-1 text-[12px] text-white placeholder:text-white/35 outline-none bg-transparent font-sans"
               style={{ fontFamily: 'inherit' }}
             />
           </div>
           {/* List */}
           <div className="overflow-y-auto" style={{ maxHeight: 260 }}>
             {filteredOptions.length === 0 ? (
-              <p className="text-center text-[12px] py-8 text-gray-400">No results</p>
+              <p className="text-center text-[12px] py-8 text-white/45">No results</p>
             ) : (
               filteredOptions.map((opt) => {
                 const active = opt.value === value;
@@ -179,18 +179,18 @@ function SearchableCountrySelect({
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={() => pick(opt)}
                     className={`w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-[12px] text-left transition-colors cursor-pointer ${
-                      active ? 'bg-gray-50 text-[#0B1215] font-semibold' : 'text-gray-700 hover:bg-gray-50'
+                      active ? 'bg-[#75ADAF]/10 text-white font-semibold' : 'text-white/80 hover:bg-white/5'
                     }`}
                     style={{ fontFamily: 'inherit' }}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="shrink-0 w-5 h-3.5 flex items-center justify-center overflow-hidden rounded-sm border border-gray-100">
+                      <span className="shrink-0 w-5 h-3.5 flex items-center justify-center overflow-hidden rounded-sm border border-white/10 bg-white/5">
                         <FlagIcon country={opt.value} label={opt.label} />
                       </span>
                       <span className="truncate">{opt.label}</span>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {callCode && <span className="text-[11px] text-gray-400 font-normal">{callCode}</span>}
+                      {callCode && <span className="text-[11px] text-white/45 font-normal">{callCode}</span>}
                       {active && <CheckIcon />}
                     </div>
                   </button>

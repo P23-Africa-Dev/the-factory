@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, ChevronUp, ClipboardList, Eye, EyeOff, Radio, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, ClipboardList, Radio, X } from 'lucide-react';
 import { AgentMapView } from '@/components/map/agent-map-view';
 import { BusinessListPanel } from '@/components/map/BusinessListPanel';
 import { LocationSearchInput } from '@/components/map/LocationSearchInput';
@@ -112,16 +112,9 @@ export default function AgentMapPage() {
       <AgentMapView
         showSavedLocations={showPinnedBusinesses}
         focusLocation={focusLocation}
-        pinToolbarClassName={
-          sheetOpen
-            ? 'bottom-[45vh] right-4 md:right-10 z-30'
-            : 'bottom-28 right-4 md:right-10 z-30'
-        }
-        mapControlsClassName={
-          sheetOpen
-            ? 'absolute bottom-[calc(42vh+1rem)] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2'
-            : 'absolute bottom-24 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2'
-        }
+        showPinsToggle
+        onTogglePins={() => setShowPinnedBusinesses((visible) => !visible)}
+        pinsToggleLabel={showPinnedBusinesses ? 'Hide Pins' : 'Show Pins'}
       />
 
       {activeTask && isTracking && (
@@ -164,79 +157,74 @@ export default function AgentMapPage() {
       )}
 
       {!isTracking && (
-        <div className="absolute top-3 left-3 right-3 z-10 flex flex-col gap-2 pointer-events-none">
-          <div className="pointer-events-auto">
-            <LocationSearchInput
-              activeLocation={locationCtx}
-              onLocationSelect={setLocationCtx}
-              className="w-full max-w-md"
-            />
+        <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-8 z-20 flex flex-col gap-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col items-start gap-2">
+              <button
+                onClick={() => router.push('/agent/tasks')}
+                className="flex items-center gap-2 px-4 py-2.5 bg-[#0A192F] text-white rounded-full text-[12px] font-bold shadow-lg hover:opacity-90 transition-all"
+              >
+                <ClipboardList size={14} className="text-white/80" />
+                My Tasks
+              </button>
+              <button
+                onClick={handleViewActiveTracking}
+                disabled={resuming || !companyId}
+                className="flex items-center gap-2 px-4 py-2.5 bg-[#7EB5AE] text-white rounded-full text-[12px] font-bold shadow-lg hover:opacity-90 transition-all disabled:opacity-50"
+              >
+                {resuming ? (
+                  <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Radio size={14} />
+                )}
+                {resuming ? 'Loading…' : 'Active Tracking'}
+              </button>
+            </div>
+
+            <div className="ml-auto w-full max-w-md flex justify-end">
+              <LocationSearchInput
+                activeLocation={locationCtx}
+                onLocationSelect={setLocationCtx}
+                className="w-full bg-transparent shadow-none border-0 p-0"
+              />
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 pointer-events-auto">
-            <button
-              onClick={() => router.push('/agent/tasks')}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white/95 backdrop-blur rounded-full text-[12px] font-bold text-dash-dark shadow-lg border border-slate-100 hover:bg-white transition-all"
-            >
-              <ClipboardList size={14} className="text-[#7EB5AE]" />
-              My Tasks
-            </button>
-            <button
-              onClick={handleViewActiveTracking}
-              disabled={resuming || !companyId}
-              className="flex items-center gap-2 px-4 py-2.5 bg-[#7EB5AE] text-white rounded-full text-[12px] font-bold shadow-lg hover:opacity-90 transition-all disabled:opacity-50"
-            >
-              {resuming ? (
-                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <Radio size={14} />
+
+          <div className="w-full max-w-[300px]">
+            <div className="bg-white rounded-[28px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col">
+              <button
+                type="button"
+                onClick={() => setSheetOpen((open) => !open)}
+                className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0"
+              >
+                <span className="text-[13px] font-bold text-dash-dark">
+                  Pinned Locations ({filteredLocations.length})
+                </span>
+                {sheetOpen ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronUp size={16} className="text-gray-400" />}
+              </button>
+              {sheetOpen && (
+                <div className="min-h-0 max-h-[42vh] overflow-y-auto overscroll-contain">
+                  <BusinessListPanel
+                    activeLocation={locationCtx}
+                    pois={[]}
+                    poiBusy={false}
+                    savedLocations={filteredLocations}
+                    savedLocationsLoading={savedLocationsLoading}
+                    onPoiClick={() => {}}
+                    onSavedClick={handleSavedLocationClick}
+                  />
+                </div>
               )}
-              {resuming ? 'Loading…' : 'Active Tracking'}
-            </button>
-            <button
-              onClick={() => setShowPinnedBusinesses((visible) => !visible)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white/95 backdrop-blur rounded-full text-[12px] font-bold text-dash-dark shadow-lg border border-slate-100 hover:bg-white transition-all"
-            >
-              {showPinnedBusinesses ? <EyeOff size={14} className="text-[#7EB5AE]" /> : <Eye size={14} className="text-[#7EB5AE]" />}
-              {showPinnedBusinesses ? 'Hide Pins' : 'Show Pins'}
-            </button>
+            </div>
           </div>
+
           {resumeError && (
-            <p className="text-[11px] text-red-500 bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow pointer-events-auto max-w-md">
+            <p className="text-[11px] text-red-500 bg-white/95 backdrop-blur rounded-xl px-4 py-2 shadow max-w-[300px]">
               {resumeError}
             </p>
           )}
         </div>
       )}
-
-      <div
-        className={`absolute left-3 right-3 z-20 bg-white rounded-[28px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col transition-all duration-300 ${
-          sheetOpen ? 'bottom-4 h-[42vh]' : 'bottom-4 h-12'
-        }`}
-      >
-        <button
-          type="button"
-          onClick={() => setSheetOpen((open) => !open)}
-          className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0"
-        >
-          <span className="text-[13px] font-bold text-dash-dark">
-            Pinned Locations ({filteredLocations.length})
-          </span>
-          {sheetOpen ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronUp size={16} className="text-gray-400" />}
-        </button>
-        {sheetOpen && (
-          <div className="min-h-0 flex-1 overflow-hidden">
-            <BusinessListPanel
-              activeLocation={locationCtx}
-              pois={[]}
-              poiBusy={false}
-              savedLocations={filteredLocations}
-              savedLocationsLoading={savedLocationsLoading}
-              onPoiClick={() => {}}
-              onSavedClick={handleSavedLocationClick}
-            />
-          </div>
-        )}
-      </div>
     </div>
   );
 }
