@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import mapboxgl from 'mapbox-gl';
-import { Search, Eye, EyeOff, Radio, RefreshCcw, MoreHorizontal, LocateFixed } from 'lucide-react';
+import { Search, Eye, EyeOff, Radio, RefreshCcw, MoreHorizontal, LocateFixed, X } from 'lucide-react';
 import {
   getGoogleMapsPublicApiKey,
   MAPBOX_PUBLIC_TOKEN_ENV,
@@ -273,6 +273,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const directionRoutesRef = useRef<Map<number, [number, number][]>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [leftSearchQuery, setLeftSearchQuery] = useState('');
   const [appearance, setAppearance] = useState<MapAppearance>(() => resolveMapAppearance());
   const [placeResults, setPlaceResults] = useState<Array<{ id: string; name: string; center: [number, number]; bbox: [number, number, number, number] | null }>>([]);
   const [searchBusy, setSearchBusy] = useState(false);
@@ -363,6 +364,43 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       )
       .slice(0, 6);
   }, [searchQuery, savedLocations]);
+
+  const leftSearchResults = useMemo(() => {
+    const needle = leftSearchQuery.trim().toLowerCase();
+    if (!needle) return null;
+
+    if (leftTab === 'feeds') {
+      return tasks
+        .filter(
+          (task) =>
+            task.agentName.toLowerCase().includes(needle) ||
+            (task.taskTitle ?? '').toLowerCase().includes(needle) ||
+            (task.projectName ?? '').toLowerCase().includes(needle) ||
+            (task.taskAddress ?? '').toLowerCase().includes(needle) ||
+            String(task.taskId).includes(needle)
+        )
+        .slice(0, 8);
+    }
+
+    if (leftTab === 'clocked-in') {
+      return clockedInItems
+        .filter((item) => item.agent_name.toLowerCase().includes(needle))
+        .slice(0, 8);
+    }
+
+    if (leftTab === 'businesses') {
+      return savedLocations
+        .filter(
+          (loc) =>
+            loc.name.toLowerCase().includes(needle) ||
+            getSavedLocationLabel(loc.type).toLowerCase().includes(needle) ||
+            (loc.address ?? '').toLowerCase().includes(needle)
+        )
+        .slice(0, 8);
+    }
+
+    return null;
+  }, [leftSearchQuery, leftTab, tasks, clockedInItems, savedLocations]);
 
   const handleSearchQueryChange = useCallback((value: string) => {
     setSearchQuery(value);
@@ -1274,7 +1312,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} strokeWidth={2} />
           <input
             type="text"
-            placeholder="Search places......."
+            placeholder="Search by places…"
             value={searchQuery}
             onChange={(e) => handleSearchQueryChange(e.target.value)}
             className="w-full bg-white rounded-full py-4 pl-14 pr-6 text-[14px] shadow-2xl shadow-black/5 outline-none font-medium text-dash-dark placeholder:text-gray-400"
@@ -1335,33 +1373,50 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         )}
       </div>
 
-      {/* Left panel — location search + tabs (Search Feeds / Businesses) */}
+      {/* Left panel — agent/business search + tabs */}
       <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-auto md:w-[340px] z-20 bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
-        {/* Location filter */}
+        {/* Dynamic search filter */}
         <div className="px-4 pt-4 pb-2 shrink-0">
-          <LocationSearchInput
-            activeLocation={locationCtx}
-            onLocationSelect={handleLocationSelect}
-            className="w-full"
-          />
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={15} strokeWidth={2} />
+            <input
+              type="text"
+              placeholder={
+                leftTab === 'feeds' ? 'Search by agents…' :
+                leftTab === 'clocked-in' ? 'Search by clocked in agents…' :
+                'Search by business…'
+              }
+              value={leftSearchQuery}
+              onChange={(e) => setLeftSearchQuery(e.target.value)}
+              className="w-full bg-white rounded-full py-3 pl-10 pr-10 text-[13px] shadow-2xl shadow-black/10 outline-none font-medium text-dash-dark placeholder:text-gray-400 border border-slate-100"
+            />
+            {leftSearchQuery.length > 0 ? (
+              <button
+                onClick={() => setLeftSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors"
+              >
+                <X size={10} className="text-slate-500" />
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {/* Tab bar */}
         <div className="flex border-b border-slate-100 shrink-0 mx-4">
           <button
-            onClick={() => setLeftTab('feeds')}
+            onClick={() => { setLeftTab('feeds'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'feeds' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Live Feeds
           </button>
           <button
-            onClick={() => setLeftTab('clocked-in')}
+            onClick={() => { setLeftTab('clocked-in'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'clocked-in' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Clocked In ({clockedInItems.length})
           </button>
           <button
-            onClick={() => setLeftTab('businesses')}
+            onClick={() => { setLeftTab('businesses'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'businesses' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Businesses {locationCtx ? `(${filteredBusinesses.length})` : ''}
@@ -1370,18 +1425,18 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
         {leftTab === 'feeds' ? (
           <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-2">
-            {isInitialHydrating && filteredTasks.length === 0 ? (
+            {isInitialHydrating && (leftSearchResults === null ? filteredTasks : (leftSearchResults as typeof tasks)).length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-2">
                 <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
                 <p className="text-[12px] text-gray-400">Loading feeds…</p>
               </div>
-            ) : filteredTasks.length === 0 ? (
+            ) : (leftSearchResults === null ? filteredTasks : (leftSearchResults as typeof tasks)).length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-2">
                 <Radio size={24} className="text-gray-200" />
-                <p className="text-[12px] text-gray-400">No feeds available</p>
+                <p className="text-[12px] text-gray-400">{leftSearchQuery ? 'No agents found' : 'No feeds available'}</p>
               </div>
             ) : (
-              filteredTasks.map((task) => {
+              (leftSearchResults === null ? filteredTasks : (leftSearchResults as typeof tasks)).map((task) => {
                 const isSelected = selectedTaskId === task.taskId;
                 const operationalStatus = resolveOperationalStatusFromTask(task, nowMs, STALE_MS);
                 const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
@@ -1436,7 +1491,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           </div>
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel
-            items={clockedInItems}
+            items={leftSearchResults && Array.isArray(leftSearchResults) ? (leftSearchResults as typeof clockedInItems) : clockedInItems}
             isLoading={clockedInLoading}
             selectedUserId={highlightedClockedInUserId}
             onSelect={handleClockedInSelect}
@@ -1446,7 +1501,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             activeLocation={locationCtx}
             pois={poiResults}
             poiBusy={poiBusy}
-            savedLocations={savedLocations}
+            savedLocations={leftSearchResults && Array.isArray(leftSearchResults) ? (leftSearchResults as typeof savedLocations) : savedLocations}
             savedLocationsLoading={savedLocationsLoading}
             onPoiClick={(p) => {
               mapRef.current?.flyTo({ center: [p.lng, p.lat], zoom: 17, speed: 1.2 });
@@ -1643,6 +1698,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const markerPositionRef = useRef<Map<number, [number, number]>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [leftSearchQuery, setLeftSearchQuery] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [historyTask, setHistoryTask] = useState<{ id: number; title: string } | null>(null);
   const [isInitialHydrating, setIsInitialHydrating] = useState(false);
@@ -2155,6 +2211,43 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     );
   });
 
+  const leftSearchResults = useMemo(() => {
+    const needle = leftSearchQuery.trim().toLowerCase();
+    if (!needle) return null;
+
+    if (leftTab === 'feeds') {
+      return tasks
+        .filter(
+          (task) =>
+            task.agentName.toLowerCase().includes(needle) ||
+            (task.taskTitle ?? '').toLowerCase().includes(needle) ||
+            (task.projectName ?? '').toLowerCase().includes(needle) ||
+            (task.taskAddress ?? '').toLowerCase().includes(needle) ||
+            String(task.taskId).includes(needle)
+        )
+        .slice(0, 8);
+    }
+
+    if (leftTab === 'clocked-in') {
+      return clockedInItems
+        .filter((item) => item.agent_name.toLowerCase().includes(needle))
+        .slice(0, 8);
+    }
+
+    if (leftTab === 'businesses') {
+      return savedLocations
+        .filter(
+          (loc) =>
+            loc.name.toLowerCase().includes(needle) ||
+            getSavedLocationLabel(loc.type).toLowerCase().includes(needle) ||
+            (loc.address ?? '').toLowerCase().includes(needle)
+        )
+        .slice(0, 8);
+    }
+
+    return null;
+  }, [leftSearchQuery, leftTab, tasks, clockedInItems, savedLocations]);
+
   if (!googleApiKey) {
     if (compact) {
       return (
@@ -2222,7 +2315,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} strokeWidth={2} />
           <input
             type="text"
-            placeholder="Search for Location"
+            placeholder="Search by places…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-white rounded-full py-4 pl-14 pr-6 text-[14px] shadow-2xl shadow-black/5 outline-none font-medium text-dash-dark placeholder:text-gray-400"
@@ -2248,33 +2341,50 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         )}
       </div>
 
-      {/* Left panel — location search + tabs (Search Feeds / Businesses) */}
+      {/* Left panel — agent/business search + tabs */}
       <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-auto md:w-[340px] z-20 bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
-        {/* Location filter */}
+        {/* Dynamic search filter */}
         <div className="px-4 pt-4 pb-2 shrink-0">
-          <LocationSearchInput
-            activeLocation={locationCtx}
-            onLocationSelect={handleLocationSelect}
-            className="w-full"
-          />
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={15} strokeWidth={2} />
+            <input
+              type="text"
+              placeholder={
+                leftTab === 'feeds' ? 'Search by agents…' :
+                leftTab === 'clocked-in' ? 'Search by clocked in agents…' :
+                'Search by business…'
+              }
+              value={leftSearchQuery}
+              onChange={(e) => setLeftSearchQuery(e.target.value)}
+              className="w-full bg-white rounded-full py-3 pl-10 pr-10 text-[13px] shadow-2xl shadow-black/10 outline-none font-medium text-dash-dark placeholder:text-gray-400 border border-slate-100"
+            />
+            {leftSearchQuery.length > 0 ? (
+              <button
+                onClick={() => setLeftSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors"
+              >
+                <X size={10} className="text-slate-500" />
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {/* Tab bar */}
         <div className="flex border-b border-slate-100 shrink-0 mx-4">
           <button
-            onClick={() => setLeftTab('feeds')}
+            onClick={() => { setLeftTab('feeds'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'feeds' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Live Feeds
           </button>
           <button
-            onClick={() => setLeftTab('clocked-in')}
+            onClick={() => { setLeftTab('clocked-in'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'clocked-in' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Clocked In ({clockedInItems.length})
           </button>
           <button
-            onClick={() => setLeftTab('businesses')}
+            onClick={() => { setLeftTab('businesses'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'businesses' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Businesses {locationCtx ? `(${filteredBusinesses.length})` : ''}
@@ -2283,18 +2393,18 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
         {leftTab === 'feeds' ? (
           <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-2">
-            {isInitialHydrating && filteredTasks.length === 0 ? (
+            {isInitialHydrating && (leftSearchResults === null ? filteredTasks : (leftSearchResults as typeof tasks)).length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-2">
                 <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
                 <p className="text-[12px] text-gray-400">Loading feeds…</p>
               </div>
-            ) : filteredTasks.length === 0 ? (
+            ) : (leftSearchResults === null ? filteredTasks : (leftSearchResults as typeof tasks)).length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-2">
                 <Radio size={24} className="text-gray-200" />
-                <p className="text-[12px] text-gray-400">No feeds available</p>
+                <p className="text-[12px] text-gray-400">{leftSearchQuery ? 'No agents found' : 'No feeds available'}</p>
               </div>
             ) : (
-              filteredTasks.map((task) => {
+              (leftSearchResults === null ? filteredTasks : (leftSearchResults as typeof tasks)).map((task) => {
                 const isSelected = selectedTaskId === task.taskId;
                 return (
                   <button
@@ -2332,7 +2442,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           </div>
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel
-            items={clockedInItems}
+            items={leftSearchResults && Array.isArray(leftSearchResults) ? (leftSearchResults as typeof clockedInItems) : clockedInItems}
             isLoading={clockedInLoading}
             selectedUserId={highlightedClockedInUserId}
             onSelect={handleClockedInSelect}
@@ -2342,7 +2452,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             activeLocation={locationCtx}
             pois={poiResults}
             poiBusy={poiBusy}
-            savedLocations={savedLocations}
+            savedLocations={leftSearchResults && Array.isArray(leftSearchResults) ? (leftSearchResults as typeof savedLocations) : savedLocations}
             savedLocationsLoading={savedLocationsLoading}
             onPoiClick={(p) => {
               mapRef.current?.panTo({ lat: p.lat, lng: p.lng });
