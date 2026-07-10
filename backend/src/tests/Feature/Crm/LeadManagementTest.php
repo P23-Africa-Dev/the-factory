@@ -642,6 +642,136 @@ class LeadManagementTest extends TestCase
         ]);
     }
 
+    public function test_admin_can_delete_unused_crm_pipeline(): void
+    {
+        [$company, $admin] = $this->seedCompanyUsers();
+
+        $token = $admin->createToken('admin-delete-unused-pipeline', ['*'])->plainTextToken;
+
+        $createPipeline = $this->withToken($token)
+            ->postJson('/api/v1/crm/pipelines', [
+                'company_id' => $company->id,
+                'name' => 'Temporary Pipeline',
+            ]);
+
+        $createPipeline->assertCreated();
+        $pipelineId = (int) $createPipeline->json('data.pipeline.id');
+
+        $deleteResponse = $this->withToken($token)
+            ->postJson('/api/v1/crm/pipelines/' . $pipelineId . '/delete', [
+                'company_id' => $company->id,
+            ]);
+
+        $deleteResponse->assertOk()
+            ->assertJsonPath('data.deleted_pipeline_id', $pipelineId)
+            ->assertJsonPath('data.reassigned_leads_count', 0);
+
+        $this->assertDatabaseMissing('lead_pipelines', [
+            'id' => $pipelineId,
+            'company_id' => $company->id,
+        ]);
+    }
+
+    public function test_admin_must_confirm_before_deleting_in_use_crm_pipeline_and_force_delete_reassigns_leads(): void
+    {
+        [$company, $admin, $agent, $defaultPipelineId] = $this->seedCompanyUsers();
+
+        $token = $admin->createToken('admin-delete-used-pipeline', ['*'])->plainTextToken;
+
+        $createPipeline = $this->withToken($token)
+            ->postJson('/api/v1/crm/pipelines', [
+                'company_id' => $company->id,
+                'name' => 'Pipeline With Leads',
+            ]);
+
+        $createPipeline->assertCreated();
+        $pipelineId = (int) $createPipeline->json('data.pipeline.id');
+
+        $lead = Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Pipeline In Use Lead',
+            'status' => 'newly_lead',
+            'priority' => 'high',
+        ]);
+
+        $withoutForceResponse = $this->withToken($token)
+            ->postJson('/api/v1/crm/pipelines/' . $pipelineId . '/delete', [
+                'company_id' => $company->id,
+            ]);
+
+        $withoutForceResponse->assertUnprocessable()
+            ->assertJsonValidationErrors(['pipeline', 'pipeline_usage_count'])
+            ->assertJsonPath('errors.pipeline_usage_count.0', '1');
+
+        $forceResponse = $this->withToken($token)
+            ->postJson('/api/v1/crm/pipelines/' . $pipelineId . '/delete', [
+                'company_id' => $company->id,
+                'force' => true,
+            ]);
+
+        $forceResponse->assertOk()
+            ->assertJsonPath('data.deleted_pipeline_id', $pipelineId)
+            ->assertJsonPath('data.reassigned_leads_count', 1)
+            ->assertJsonPath('data.reassigned_to_pipeline_id', $defaultPipelineId);
+
+        $lead->refresh();
+        $this->assertSame($defaultPipelineId, (int) $lead->pipeline_id);
+
+        $this->assertDatabaseMissing('lead_pipelines', [
+            'id' => $pipelineId,
+            'company_id' => $company->id,
+        ]);
+    }
+
+    public function test_admin_cannot_delete_default_crm_pipeline(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+
+        $token = $admin->createToken('admin-delete-default-pipeline', ['*'])->plainTextToken;
+
+        LeadPipeline::query()->where('id', $pipelineId)->update(['is_default' => true]);
+
+        $this->withToken($token)
+            ->postJson('/api/v1/crm/pipelines/' . $pipelineId . '/delete', [
+                'company_id' => $company->id,
+                'force' => true,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['pipeline']);
+    }
+
+    public function test_agent_cannot_delete_crm_pipeline(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $agent->forceFill(['internal_role' => 'agent'])->save();
+
+        $pipeline = LeadPipeline::query()->create([
+            'company_id' => $company->id,
+            'name' => 'Agent Delete Target',
+            'currency_code' => 'USD',
+            'sort_order' => 1,
+            'is_default' => false,
+        ]);
+
+        $agentToken = $agent->createToken('agent-delete-pipeline', ['*'])->plainTextToken;
+
+        $this->withToken($agentToken)
+            ->postJson('/api/v1/crm/pipelines/' . $pipeline->id . '/delete', [
+                'company_id' => $company->id,
+                'force' => true,
+            ])
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('lead_pipelines', [
+            'id' => $pipeline->id,
+            'company_id' => $company->id,
+        ]);
+    }
+
     public function test_agent_cannot_delete_crm_label(): void
     {
         [$company, $admin, $agent] = $this->seedCompanyUsers();

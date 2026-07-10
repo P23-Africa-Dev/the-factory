@@ -227,6 +227,22 @@ class LeadController extends Controller
         );
     }
 
+    public function deletePipeline(Request $request, int $pipeline): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'force' => ['sometimes', 'boolean'],
+        ]);
+        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+
+        $result = $this->leadService->deletePipeline($request->user(), $pipeline, $validated);
+
+        return $this->success(
+            message: 'CRM pipeline deleted successfully.',
+            data: $result,
+        );
+    }
+
     public function labels(Request $request): JsonResponse
     {
         $companyId = $this->resolveCompanyContextId($request->input('company_id'));

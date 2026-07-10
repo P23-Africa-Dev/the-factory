@@ -146,7 +146,7 @@ export function CrmLeadsListPage({
                             {leads.map((lead) => (
                                 <tr key={lead.id} className="bg-[#F9FAFB] border border-gray-100">
                                     <td className="px-4 py-3 text-[13px] text-[#101828] font-semibold">{lead.name}</td>
-                                    <td className="px-4 py-3 text-[12px] text-[#475467]">{lead.email ?? "-"}</td>
+                                    <td className="px-4 py-3 text-[12px] text-[#475467] max-w-[220px] truncate" title={lead.email ?? undefined}>{lead.email ?? "-"}</td>
                                     <td className="px-4 py-3 text-[12px] text-[#475467]">{lead.phone ?? "-"}</td>
                                     <td className="px-4 py-3">
                                         <LeadStatusCell lead={lead} readOnly={readOnly} onUpdate={handleStatusUpdate} />

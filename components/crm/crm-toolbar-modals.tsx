@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { X, ChevronUp, ChevronDown } from "lucide-react";
+import { X, ChevronUp, ChevronDown, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiRequestError } from "@/lib/api/onboarding";
 import type { ApiRoleBasePath, CrmLabel, CrmPipeline } from "@/lib/api/crm";
@@ -10,10 +10,12 @@ import {
     useCreateCrmLabel,
     useCreateCrmPipeline,
     useDeleteCrmLabel,
+    useDeleteCrmPipeline,
     useReorderCrmLabels,
     useUpdateCrmLabel,
     useUpdateCrmPipeline,
 } from "@/hooks/use-crm";
+import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 
 type BaseModalProps = {
     companyId: number | string;
@@ -52,9 +54,11 @@ export function PipelineManagerModal({
 }) {
     const [newPipelineName, setNewPipelineName] = useState("");
     const [editing, setEditing] = useState<Record<number, string>>({});
+    const [pipelinePendingDelete, setPipelinePendingDelete] = useState<CrmPipeline | null>(null);
 
     const createPipeline = useCreateCrmPipeline(apiBasePath);
     const updatePipeline = useUpdateCrmPipeline(apiBasePath);
+    const deletePipeline = useDeleteCrmPipeline(apiBasePath);
 
     const saveNew = async () => {
         if (!newPipelineName.trim()) return;
@@ -78,50 +82,111 @@ export function PipelineManagerModal({
         }
     };
 
-    return (
-        <ModalShell title="All Pipelines" onClose={onClose}>
-            <div className="space-y-3 mb-5">
-                {pipelines.map((pipeline) => {
-                    const isActive = selectedPipelineId === pipeline.id;
-                    return (
-                        <div key={pipeline.id} className={`rounded-xl border p-3 ${isActive ? "border-dash-dark bg-gray-50" : "border-gray-200"}`}>
-                            <div className="flex items-center gap-2">
-                                <input
-                                    value={editing[pipeline.id] ?? pipeline.name}
-                                    onChange={(e) => setEditing((prev) => ({ ...prev, [pipeline.id]: e.target.value }))}
-                                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
-                                />
-                                <button
-                                    onClick={() => saveEdit(pipeline.id)}
-                                    className="px-3 py-2 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-600"
-                                >
-                                    Save
-                                </button>
-                                <button
-                                    onClick={() => onSelectPipeline(pipeline.id)}
-                                    className={`px-3 py-2 rounded-lg text-[12px] font-semibold ${isActive ? "bg-dash-dark text-white" : "bg-white border border-gray-200 text-gray-600"}`}
-                                >
-                                    {isActive ? "Active" : "Select"}
-                                </button>
-                            </div>
-                            <p className="text-[11px] text-gray-400 mt-1">Currency: {pipeline.currency_code || "USD"}</p>
-                        </div>
-                    );
-                })}
-            </div>
+    const confirmDeletePipeline = async () => {
+        if (!pipelinePendingDelete) return;
+        const pipeline = pipelinePendingDelete;
+        setPipelinePendingDelete(null);
 
-            <div className="border-t border-gray-100 pt-4 flex items-center gap-2">
-                <input
-                    value={newPipelineName}
-                    onChange={(e) => setNewPipelineName(e.target.value)}
-                    placeholder="Create new pipeline"
-                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
-                />
-                <button onClick={saveNew} className="px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold">
-                    Create
-                </button>
-            </div>
-        </ModalShell>
+        try {
+            const result = await deletePipeline.mutateAsync({
+                pipelineId: pipeline.id,
+                payload: { company_id: companyId, force: true },
+            });
+
+            const movedCount = result.data?.reassigned_leads_count ?? 0;
+            if (movedCount > 0) {
+                toast.success(
+                    `${pipeline.name} deleted. ${movedCount} leads were moved to ${result.data.reassigned_to_pipeline_name ?? "another pipeline"}.`
+                );
+            } else {
+                toast.success("Pipeline deleted");
+            }
+
+            if (selectedPipelineId === pipeline.id) {
+                const fallback = pipelines.find((item) => item.id !== pipeline.id);
+                if (fallback) {
+                    onSelectPipeline(fallback.id);
+                }
+            }
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to delete pipeline");
+        }
+    };
+
+    return (
+        <>
+            <ModalShell title="All Pipelines" onClose={onClose}>
+                <div className="space-y-3 mb-5">
+                    {pipelines.map((pipeline) => {
+                        const isActive = selectedPipelineId === pipeline.id;
+                        const canDelete = !pipeline.is_default;
+                        return (
+                            <div
+                                key={pipeline.id}
+                                className={`group relative rounded-xl border p-3 ${isActive ? "border-dash-dark bg-gray-50" : "border-gray-200"}`}
+                            >
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <input
+                                        value={editing[pipeline.id] ?? pipeline.name}
+                                        onChange={(e) => setEditing((prev) => ({ ...prev, [pipeline.id]: e.target.value }))}
+                                        className="flex-1 min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                                    />
+                                    <button
+                                        onClick={() => saveEdit(pipeline.id)}
+                                        className="px-3 py-2 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-600 shrink-0"
+                                    >
+                                        Update
+                                    </button>
+                                    <button
+                                        onClick={() => onSelectPipeline(pipeline.id)}
+                                        className={`px-3 py-2 rounded-lg text-[12px] font-semibold shrink-0 ${isActive ? "bg-dash-dark text-white" : "bg-white border border-gray-200 text-gray-600"}`}
+                                    >
+                                        {isActive ? "Active" : "Select"}
+                                    </button>
+                                    {canDelete && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setPipelinePendingDelete(pipeline)}
+                                            className="p-2 rounded-lg border border-transparent text-gray-400 hover:text-red-500 hover:bg-red-50 hover:border-red-100 opacity-0 group-hover:opacity-100 focus:opacity-100 max-md:opacity-100 transition-opacity shrink-0"
+                                            title="Delete pipeline"
+                                            aria-label={`Delete ${pipeline.name}`}
+                                        >
+                                            <Trash2 size={15} />
+                                        </button>
+                                    )}
+                                </div>
+                                <p className="text-[11px] text-gray-400 mt-1">Currency: {pipeline.currency_code || "USD"}</p>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                <div className="border-t border-gray-100 pt-4 flex items-center gap-2">
+                    <input
+                        value={newPipelineName}
+                        onChange={(e) => setNewPipelineName(e.target.value)}
+                        placeholder="Create new pipeline"
+                        className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                    />
+                    <button onClick={saveNew} className="px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold">
+                        Create
+                    </button>
+                </div>
+            </ModalShell>
+
+            <ConfirmDeleteModal
+                isOpen={pipelinePendingDelete !== null}
+                onClose={() => setPipelinePendingDelete(null)}
+                onConfirm={confirmDeletePipeline}
+                title="Delete pipeline?"
+                description={
+                    pipelinePendingDelete
+                        ? `Are you sure you want to delete "${pipelinePendingDelete.name}"? Leads in this pipeline will be moved to another pipeline. This action cannot be undone.`
+                        : "Are you sure you want to delete this pipeline?"
+                }
+                confirmLabel="Delete"
+            />
+        </>
     );
 }
 
@@ -267,4 +332,3 @@ export function LabelManagerModal({ companyId, apiBasePath, labels, onClose }: B
         </ModalShell>
     );
 }
-
