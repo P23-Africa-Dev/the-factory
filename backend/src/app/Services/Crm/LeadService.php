@@ -667,6 +667,83 @@ class LeadService
         return $pipeline->fresh();
     }
 
+    /**
+     * @return array{deleted_pipeline_id:int,reassigned_leads_count:int,reassigned_to_pipeline_id:int|null,reassigned_to_pipeline_name:string|null}
+     */
+    public function deletePipeline(User $user, int $pipelineId, array $payload): array
+    {
+        $context = $this->companyContextService->resolve($user, $payload['company_id'] ?? null);
+        $this->ensureCanManage((string) $context['role']);
+        $companyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($companyId);
+
+        $pipeline = LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->findOrFail($pipelineId);
+
+        if ($pipeline->is_default) {
+            throw ValidationException::withMessages([
+                'pipeline' => ['The default pipeline cannot be deleted.'],
+            ]);
+        }
+
+        if ($pipeline->system_key === MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY) {
+            throw ValidationException::withMessages([
+                'pipeline' => ['System pipelines cannot be deleted.'],
+            ]);
+        }
+
+        $assignedCount = Lead::query()
+            ->where('company_id', $companyId)
+            ->where('pipeline_id', $pipeline->id)
+            ->count();
+
+        $fallbackPipeline = LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->where('id', '!=', $pipeline->id)
+            ->where(function ($query): void {
+                $query->whereNull('system_key')
+                    ->orWhere('system_key', '!=', MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY);
+            })
+            ->orderByDesc('is_default')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->first();
+
+        if ($fallbackPipeline === null) {
+            throw ValidationException::withMessages([
+                'pipeline' => ['This pipeline cannot be deleted because no fallback pipeline is available.'],
+            ]);
+        }
+
+        $forceDelete = (bool) ($payload['force'] ?? false);
+
+        if ($assignedCount > 0 && ! $forceDelete) {
+            throw ValidationException::withMessages([
+                'pipeline' => ["This pipeline currently has {$assignedCount} leads. Confirm deletion to continue."],
+                'pipeline_usage_count' => [(string) $assignedCount],
+            ]);
+        }
+
+        DB::transaction(function () use ($companyId, $pipeline, $assignedCount, $fallbackPipeline): void {
+            if ($assignedCount > 0) {
+                Lead::query()
+                    ->where('company_id', $companyId)
+                    ->where('pipeline_id', $pipeline->id)
+                    ->update(['pipeline_id' => $fallbackPipeline->id]);
+            }
+
+            $pipeline->delete();
+        });
+
+        return [
+            'deleted_pipeline_id' => (int) $pipeline->id,
+            'reassigned_leads_count' => (int) $assignedCount,
+            'reassigned_to_pipeline_id' => $assignedCount > 0 ? (int) $fallbackPipeline->id : null,
+            'reassigned_to_pipeline_name' => $assignedCount > 0 ? $fallbackPipeline->name : null,
+        ];
+    }
+
     public function listLabels(User $user, ?int $companyId = null): Collection
     {
         $context = $this->companyContextService->resolve($user, $companyId);

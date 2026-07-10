@@ -521,6 +521,9 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::patch('/pipelines/{pipeline}', [LeadController::class, 'updatePipeline'])
                     ->middleware('throttle:api')
                     ->name('pipelines.update');
+                Route::post('/pipelines/{pipeline}/delete', [LeadController::class, 'deletePipeline'])
+                    ->middleware('throttle:api')
+                    ->name('pipelines.delete');
                 Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
                 Route::post('/labels', [LeadController::class, 'storeLabel'])
                     ->middleware('throttle:api')
@@ -944,6 +947,9 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::patch('/pipelines/{pipeline}', [LeadController::class, 'updatePipeline'])
             ->middleware('throttle:api')
             ->name('pipelines.update');
+        Route::post('/pipelines/{pipeline}/delete', [LeadController::class, 'deletePipeline'])
+            ->middleware(['access.role:management', 'throttle:api'])
+            ->name('pipelines.delete');
         Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
         Route::post('/labels', [LeadController::class, 'storeLabel'])
             ->middleware('throttle:api')

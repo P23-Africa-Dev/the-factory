@@ -515,6 +515,32 @@ export function updateCrmPipeline(
     });
 }
 
+export function deleteCrmPipeline(
+    pipelineId: number | string,
+    payload: { company_id?: number | string; force?: boolean },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<
+    ApiEnvelope<{
+        deleted_pipeline_id: number;
+        reassigned_leads_count: number;
+        reassigned_to_pipeline_id?: number | null;
+        reassigned_to_pipeline_name?: string | null;
+    }>
+> {
+    return apiRequest<{
+        deleted_pipeline_id: number;
+        reassigned_leads_count: number;
+        reassigned_to_pipeline_id?: number | null;
+        reassigned_to_pipeline_name?: string | null;
+    }>({
+        method: "POST",
+        path: withBase(basePath, `/crm/pipelines/${pipelineId}/delete`),
+        body: payload,
+        token,
+    });
+}
+
 export function listCrmLabels(
     params: Pick<ListLeadsParams, "company_id">,
     token: string,

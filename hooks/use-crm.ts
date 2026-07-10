@@ -8,6 +8,7 @@ import {
     createCrmLabel,
     deleteCrmLabel,
     createCrmPipeline,
+    deleteCrmPipeline,
     createLead,
     deleteLead,
     downloadCrmLeadsExport,
@@ -328,6 +329,24 @@ export function useUpdateCrmPipeline(basePath: ApiRoleBasePath = "/admin") {
             pipelineId: number | string;
             payload: { company_id?: number | string; name?: string; sort_order?: number };
         }) => updateCrmPipeline(pipelineId, payload, token, basePath),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+        },
+    });
+}
+
+export function useDeleteCrmPipeline(basePath: ApiRoleBasePath = "/admin") {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({
+            pipelineId,
+            payload,
+        }: {
+            pipelineId: number | string;
+            payload: { company_id?: number | string; force?: boolean };
+        }) => deleteCrmPipeline(pipelineId, payload, token, basePath),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
         },
