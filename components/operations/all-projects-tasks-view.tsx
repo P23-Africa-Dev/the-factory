@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Search, SlidersHorizontal, BookmarkPlus, User } from "lucide-react";
 import { arrayMove } from "@dnd-kit/sortable";
 import { toast } from "sonner";
@@ -15,6 +16,7 @@ import { useTasks, useUpdateTaskStatusAdmin, useUpdateTask, useDeleteTask } from
 import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiTaskStatus, TaskApiItem } from "@/lib/api/tasks";
 import { formatTaskLocationLabel, hasTrackableTaskLocation } from "@/lib/tasks/location";
+import { buildTaskMapUrl } from "@/lib/tasks/map-navigation";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import Arrow57Deg from "@/assets/images/arrow-57deg.png";
@@ -196,6 +198,7 @@ function statusToContainerId(s: string): string | null {
 }
 
 export function AllProjectsTasksView() {
+  const router = useRouter();
   const authUser = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(authUser);
   const canManageTaskStatuses =
@@ -502,6 +505,14 @@ export function AllProjectsTasksView() {
           onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
           onTaskEdit={(item) => setEditingTask(item)}
           onTaskDelete={(item) => setDeleteTaskTarget(item)}
+          onViewMap={(item) => {
+            const url = buildTaskMapUrl(item, role);
+            if (!url) {
+              toast.error("This task has no map coordinates yet.");
+              return;
+            }
+            router.push(url);
+          }}
         />
       )}
 

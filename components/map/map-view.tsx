@@ -62,6 +62,13 @@ import {
   isBboxTooLarge,
   type PoiResult,
 } from '@/lib/map/overpass-search';
+import { parseTaskMapParams } from '@/lib/tasks/map-navigation';
+import {
+  createSearchSessionToken,
+  retrievePlace,
+  suggestPlaces,
+  type PlaceSuggestion,
+} from '@/lib/utils/place-search';
 
 type MapLeftTab = 'feeds' | 'clocked-in' | 'businesses';
 const STALE_MS = 2 * 60_000;
@@ -258,6 +265,12 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab');
   const initialAgentId = Number.parseInt(searchParams.get('agent') ?? '', 10);
+  const taskFocus = useMemo(
+    () => parseTaskMapParams(new URLSearchParams(searchParams.toString())),
+    [searchParams],
+  );
+  const taskFocusMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const taskFocusSelectedRef = useRef(false);
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const mapLoadedRef = useRef(false);
@@ -274,8 +287,10 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
   const [searchQuery, setSearchQuery] = useState('');
   const [appearance, setAppearance] = useState<MapAppearance>(() => resolveMapAppearance());
-  const [placeResults, setPlaceResults] = useState<Array<{ id: string; name: string; center: [number, number]; bbox: [number, number, number, number] | null }>>([]);
+  const [placeResults, setPlaceResults] = useState<PlaceSuggestion[]>([]);
   const [searchBusy, setSearchBusy] = useState(false);
+  const [placeResolving, setPlaceResolving] = useState(false);
+  const searchSessionTokenRef = useRef<string>(createSearchSessionToken());
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [historyTask, setHistoryTask] = useState<{ id: number; title: string } | null>(null);
   // Bumped every 30s to re-evaluate stale status and sync markers
@@ -388,6 +403,25 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       map.flyTo({ center: ctx.center, zoom: 13, speed: 1.2 });
     }
   }, [setLeftTab, setLocationCtx]);
+
+  const handlePlaceResultSelect = useCallback(async (suggestion: PlaceSuggestion) => {
+    setPlaceResolving(true);
+    const place = await retrievePlace(suggestion.mapboxId, searchSessionTokenRef.current, { token });
+    setPlaceResolving(false);
+    // Retrieval closes the Search Box session; rotate to a fresh one.
+    searchSessionTokenRef.current = createSearchSessionToken();
+
+    if (!place) return;
+
+    handleLocationSelect({
+      name: place.name,
+      center: [place.lng, place.lat],
+      bbox: place.bbox,
+      radiusKm: 5,
+    });
+    setSearchQuery('');
+    setPlaceResults([]);
+  }, [handleLocationSelect, setPlaceResolving, setPlaceResults, setSearchQuery, token]);
 
   const showHoverPopup = useCallback((position: [number, number], html: string) => {
     const map = mapRef.current;
@@ -543,36 +577,23 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       return;
     }
 
+    let cancelled = false;
+
     const timer = setTimeout(() => {
-      let cancelled = false;
       setSearchBusy(true);
 
-      fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&autocomplete=true&limit=6&types=country,region,place,locality,neighborhood,address,poi`
-      )
-        .then(async (res) => {
-          if (!res.ok) {
-            return [] as Array<{ id: string; name: string; center: [number, number] }>;
-          }
+      // Bias suggestions toward the current map view so nearby businesses rank first.
+      const center = mapRef.current?.getCenter();
+      const proximity: [number, number] | undefined = center
+        ? [center.lng, center.lat]
+        : undefined;
 
-          const json = await res.json();
-          const features = Array.isArray(json?.features) ? json.features : [];
-
-          return features
-            .filter((feature: unknown): feature is { id: string; place_name: string; center: [number, number]; bbox?: number[] } => {
-              if (!feature || typeof feature !== 'object') return false;
-              const candidate = feature as { center?: unknown };
-              return Array.isArray(candidate.center) && candidate.center.length === 2;
-            })
-            .map((feature: { id: string; place_name: string; center: [number, number]; bbox?: number[] }) => ({
-              id: feature.id,
-              name: feature.place_name,
-              center: [feature.center[0], feature.center[1]] as [number, number],
-              bbox: Array.isArray(feature.bbox) && feature.bbox.length === 4
-                ? feature.bbox as [number, number, number, number]
-                : null,
-            }));
-        })
+      suggestPlaces(query, {
+        sessionToken: searchSessionTokenRef.current,
+        proximity,
+        limit: 6,
+        token,
+      })
         .then((results) => {
           if (cancelled) return;
           setPlaceResults(results);
@@ -584,13 +605,10 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         .finally(() => {
           if (!cancelled) setSearchBusy(false);
         });
-
-      return () => {
-        cancelled = true;
-      };
     }, SEARCH_DEBOUNCE_MS);
 
     return () => {
+      cancelled = true;
       clearTimeout(timer);
     };
   }, [compact, searchQuery, token]);
@@ -603,6 +621,51 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     const [lng, lat] = task.lastPosition;
     mapRef.current.flyTo({ center: [lng, lat], zoom: 15.5, speed: 1.2 });
   }, [selectedTaskId, mapVersion]);
+
+  // ── Task focus from URL (?taskId&lat&lng): select the live task if it is
+  // being tracked, otherwise pin + fly to the task's static destination. ──────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current || !taskFocus) return;
+
+    const liveTask = liveTasks[taskFocus.taskId];
+    if (liveTask && hasUsableTaskPosition(liveTask)) {
+      // Upgrade the static pin to the live tracked task once it is available.
+      taskFocusMarkerRef.current?.remove();
+      taskFocusMarkerRef.current = null;
+      if (!taskFocusSelectedRef.current) {
+        taskFocusSelectedRef.current = true;
+        setSelectedTaskId(taskFocus.taskId);
+      }
+      return;
+    }
+
+    const lngLat: [number, number] = [taskFocus.lng, taskFocus.lat];
+    if (!taskFocusMarkerRef.current) {
+      const marker = new mapboxgl.Marker({
+        element: createStaticMarkerElement('destination'),
+        anchor: 'center',
+      }).setLngLat(lngLat);
+
+      if (taskFocus.title || taskFocus.address) {
+        const popup = new mapboxgl.Popup({ offset: 18, closeButton: false });
+        const title = taskFocus.title ?? 'Task destination';
+        const address = taskFocus.address
+          ? `<p style="font-size:11px;color:#64748b;margin:3px 0 0;">${taskFocus.address}</p>`
+          : '';
+        popup.setHTML(
+          `<div style="padding:6px 8px;font-family:ui-sans-serif,system-ui,sans-serif">` +
+          `<p style="font-weight:700;font-size:12px;color:#0f172a;margin:0;">${title}</p>${address}</div>`
+        );
+        marker.setPopup(popup);
+      }
+
+      marker.addTo(map);
+      marker.togglePopup();
+      taskFocusMarkerRef.current = marker;
+      map.flyTo({ center: lngLat, zoom: 15.5, speed: 1.4 });
+    }
+  }, [taskFocus, liveTasks, mapVersion]);
 
   // Handle Popup & Pulse Marker for Selected Task
   useEffect(() => {
@@ -750,6 +813,9 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       locateMePinRef.current = null;
       if (hoverPopupRef.current) hoverPopupRef.current.remove();
       hoverPopupRef.current = null;
+      if (taskFocusMarkerRef.current) taskFocusMarkerRef.current.remove();
+      taskFocusMarkerRef.current = null;
+      taskFocusSelectedRef.current = false;
       directionRoutesRef.current.clear();
       clearDirectionsCache();
 
@@ -760,7 +826,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapLoadedRef.current || hasActiveTaskPositions) {
+    // Skip the own-location default when the URL asks to focus a task.
+    if (!map || !mapLoadedRef.current || hasActiveTaskPositions || taskFocus) {
       return;
     }
 
@@ -805,7 +872,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     return () => {
       cancelled = true;
     };
-  }, [compact, hasActiveTaskPositions, mapVersion]);
+  }, [compact, hasActiveTaskPositions, mapVersion, taskFocus]);
 
   useEffect(() => {
     if (hasActiveTaskPositions) {
@@ -1315,20 +1382,20 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
             {placeResults.map((result) => (
               <button
-                key={result.id}
-                className="w-full text-left px-3 py-2 rounded-xl text-[12px] text-slate-700 hover:bg-slate-100"
-                onClick={() => {
-                  handleLocationSelect({
-                    name: result.name,
-                    center: result.center,
-                    bbox: result.bbox,
-                    radiusKm: 5,
-                  });
-                  setSearchQuery('');
-                  setPlaceResults([]);
-                }}
+                key={result.mapboxId}
+                disabled={placeResolving}
+                className="w-full text-left px-3 py-2 rounded-xl text-[12px] text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                onClick={() => handlePlaceResultSelect(result)}
               >
-                {result.name}
+                <span className="font-semibold">{result.name}</span>
+                {result.category && (
+                  <span className="ml-2 text-[10px] font-medium text-dash-teal capitalize">
+                    {result.category.replace(/_/g, ' ')}
+                  </span>
+                )}
+                {result.placeFormatted && result.placeFormatted !== result.name && (
+                  <span className="block text-[11px] text-slate-400 truncate">{result.placeFormatted}</span>
+                )}
               </button>
             ))}
           </div>
@@ -1631,6 +1698,12 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab');
   const initialAgentId = Number.parseInt(searchParams.get('agent') ?? '', 10);
+  const taskFocus = useMemo(
+    () => parseTaskMapParams(new URLSearchParams(searchParams.toString())),
+    [searchParams],
+  );
+  const taskFocusMarkerRef = useRef<GoogleMarkerLike | null>(null);
+  const taskFocusSelectedRef = useRef(false);
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<GoogleMapLike | null>(null);
   const googleRef = useRef<GoogleMapsNamespaceLike | null>(null);
@@ -1903,6 +1976,9 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       agentMarkersRef.current.forEach((marker) => marker.setMap(null));
       userLocationMarkerRef.current?.setMap(null);
       locateMePinRef.current?.setMap(null);
+      taskFocusMarkerRef.current?.setMap(null);
+      taskFocusMarkerRef.current = null;
+      taskFocusSelectedRef.current = false;
 
       routeLinesRef.current.clear();
       destinationMarkersRef.current.clear();
@@ -1926,8 +2002,47 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     }
   }, [selectedTaskId]);
 
+  // ── Task focus from URL (?taskId&lat&lng): select the live task if it is
+  // being tracked, otherwise pin + pan to the task's static destination. ──────
   useEffect(() => {
-    if (!mapRef.current || hasActiveTaskPositions) {
+    const map = mapRef.current;
+    const google = googleRef.current;
+    if (!map || !google || !googleReady || !taskFocus) return;
+
+    const liveTask = liveTasks[taskFocus.taskId];
+    if (liveTask && hasUsableTaskPosition(liveTask)) {
+      taskFocusMarkerRef.current?.setMap(null);
+      taskFocusMarkerRef.current = null;
+      if (!taskFocusSelectedRef.current) {
+        taskFocusSelectedRef.current = true;
+        setSelectedTaskId(taskFocus.taskId);
+      }
+      return;
+    }
+
+    if (!taskFocusMarkerRef.current) {
+      const position = { lat: taskFocus.lat, lng: taskFocus.lng };
+      taskFocusMarkerRef.current = new google.maps.Marker({
+        map,
+        position,
+        title: taskFocus.title ?? 'Task destination',
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 9,
+          fillColor: '#DC2626',
+          fillOpacity: 1,
+          strokeColor: '#FFFFFF',
+          strokeWeight: 3,
+        },
+      });
+      map.panTo(position);
+      map.setZoom(15);
+    }
+  }, [taskFocus, liveTasks, googleReady]);
+
+  useEffect(() => {
+    // Skip the own-location default when the URL asks to focus a task.
+    if (!mapRef.current || hasActiveTaskPositions || taskFocus) {
       return;
     }
 
@@ -1976,7 +2091,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     return () => {
       cancelled = true;
     };
-  }, [compact, hasActiveTaskPositions]);
+  }, [compact, hasActiveTaskPositions, taskFocus]);
 
   useEffect(() => {
     if (hasActiveTaskPositions) {

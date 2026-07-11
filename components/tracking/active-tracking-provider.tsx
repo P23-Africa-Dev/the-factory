@@ -66,7 +66,14 @@ export function ActiveTrackingProvider({
   const stopTracking = useCallback(() => {
     cleanupRef.current?.();
     cleanupRef.current = null;
-  }, []);
+    // Also tear down directly in case tracking was activated outside of
+    // startTracking (e.g. the store was hydrated/set by another flow), so the
+    // Cancel button always works regardless of how tracking began.
+    if (locationBuffer.isActive()) {
+      locationBuffer.stop();
+    }
+    setActiveTrackingTask(null);
+  }, [setActiveTrackingTask]);
 
   // Clean up on unmount (e.g., logout / layout unmount)
   React.useEffect(() => {

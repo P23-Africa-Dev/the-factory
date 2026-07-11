@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useCallback, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, ChevronUp, ClipboardList, Radio, X } from 'lucide-react';
 import { AgentMapView } from '@/components/map/agent-map-view';
 import { BusinessListPanel } from '@/components/map/BusinessListPanel';
@@ -16,18 +16,24 @@ import { useSavedLocations } from '@/hooks/use-saved-locations';
 import type { AgentLocationSnapshotItem } from '@/types/tracking';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { isInsideLocationContext, type LocationContext } from '@/lib/map/location-search';
+import { parseTaskMapParams } from '@/lib/tasks/map-navigation';
 
-export default function AgentMapPage() {
+function AgentMapPageContent() {
   const router = useRouter();
-  const { isTracking, activeTaskId } = useActiveTracking();
+  const searchParams = useSearchParams();
+  const { isTracking, activeTaskId, startTracking, stopTracking } = useActiveTracking();
   const liveTasks = useTrackingStore((s) => s.liveTasks);
-  const setActiveTrackingTask = useTrackingStore((s) => s.setActiveTrackingTask);
   const hydrateFromRoute = useTrackingStore((s) => s.hydrateFromRoute);
   const hydrateFromSnapshots = useTrackingStore((s) => s.hydrateFromSnapshots);
   const activeTask = activeTaskId ? liveTasks[activeTaskId] : null;
 
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+
+  const taskFocus = useMemo(
+    () => parseTaskMapParams(new URLSearchParams(searchParams.toString())),
+    [searchParams],
+  );
 
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
@@ -64,7 +70,13 @@ export default function AgentMapPage() {
         return;
       }
 
-      const task = inProgressTasks[0];
+      // Prefer the task that is already being tracked on this device, then a
+      // task targeted via URL params, and only then the first in-progress task.
+      const preferredTaskId = activeTaskId ?? taskFocus?.taskId ?? null;
+      const task =
+        (preferredTaskId
+          ? inProgressTasks.find((item) => Number(item.id) === preferredTaskId)
+          : undefined) ?? inProgressTasks[0];
       const taskId = Number(task.id);
 
       const [routeRes, snapshotRes] = await Promise.allSettled([
@@ -85,7 +97,9 @@ export default function AgentMapPage() {
         );
       }
 
-      setActiveTrackingTask(taskId);
+      // Resume through the provider (not the raw store setter) so the GPS
+      // buffer restarts and Cancel/Stop can reliably tear everything down.
+      startTracking(taskId, companyId, token, { onError: () => { } });
       setViewMode(true);
       setSheetOpen(false);
     } catch {
@@ -93,14 +107,22 @@ export default function AgentMapPage() {
     } finally {
       setResuming(false);
     }
-  }, [companyId, user, hydrateFromRoute, hydrateFromSnapshots, setActiveTrackingTask]);
+  }, [
+    companyId,
+    user,
+    activeTaskId,
+    taskFocus,
+    hydrateFromRoute,
+    hydrateFromSnapshots,
+    startTracking,
+  ]);
 
   const handleExitView = useCallback(() => {
-    setActiveTrackingTask(null);
+    stopTracking();
     setViewMode(false);
     setResumeError(null);
     setSheetOpen(true);
-  }, [setActiveTrackingTask]);
+  }, [stopTracking]);
 
   const handleSavedLocationClick = useCallback((location: SavedLocation) => {
     setFocusLocation(location);
@@ -112,6 +134,7 @@ export default function AgentMapPage() {
       <AgentMapView
         showSavedLocations={showPinnedBusinesses}
         focusLocation={focusLocation}
+        taskFocus={taskFocus}
         showPinsToggle
         onTogglePins={() => setShowPinnedBusinesses((visible) => !visible)}
         pinsToggleLabel={showPinnedBusinesses ? 'Hide Pins' : 'Show Pins'}
@@ -141,7 +164,7 @@ export default function AgentMapPage() {
             <button
               onClick={handleExitView}
               className="w-7 h-7 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors shrink-0"
-              title="Exit view"
+              title="Stop tracking and exit view"
             >
               <X size={14} className="text-gray-500" />
             </button>
@@ -226,5 +249,13 @@ export default function AgentMapPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AgentMapPage() {
+  return (
+    <Suspense fallback={<div className="relative" style={{ height: 'calc(100vh - 64px)' }} />}>
+      <AgentMapPageContent />
+    </Suspense>
   );
 }

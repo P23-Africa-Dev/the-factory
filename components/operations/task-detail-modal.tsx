@@ -34,6 +34,8 @@ import type { GeoReading } from '@/types/tracking';
 import { useEffectiveMapProvider } from '@/hooks/use-effective-map-provider';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 import { formatTaskLocationLabel, hasTrackableTaskLocation } from '@/lib/tasks/location';
+import { buildTaskMapUrl } from '@/lib/tasks/map-navigation';
+import { useTrackingStore } from '@/store/tracking';
 
 type TaskGoogleMaps = {
   maps: {
@@ -393,6 +395,29 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
         },
         token
       );
+      // Seed the tracking store from the fresh start response so the map shows
+      // the task's current destination (reflects any location edits made by
+      // admins/supervisors), instead of relying on possibly-stale cached data.
+      useTrackingStore.getState().seedFromTaskStart({
+        taskId,
+        trackingSessionId: res.data.tracking.id,
+        userId: currentUserId,
+        agentName: authUser?.name,
+        agentAvatarUrl: authUser?.avatar ?? undefined,
+        taskTitle: res.data.task.title,
+        taskAddress: res.data.task.address ?? res.data.task.location ?? undefined,
+        destination:
+          typeof res.data.task.latitude === 'number' &&
+          typeof res.data.task.longitude === 'number'
+            ? {
+              lat: res.data.task.latitude,
+              lng: res.data.task.longitude,
+              radiusM: res.data.tracking.destination?.radius_meters ?? 75,
+            }
+            : undefined,
+        position: [reading.longitude, reading.latitude],
+        occurredAt: reading.recordedAt,
+      });
       startTracking(taskId, companyId as number, token, {
         onArrived: () => toast.success("You've arrived at the destination!"),
         onError: () => { },
@@ -584,7 +609,20 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                 </p>
                 {hasTrackableLocation ? (
                   <button
-                    onClick={() => router.push(fullMapPath)}
+                    onClick={() =>
+                      router.push(
+                        buildTaskMapUrl(
+                          {
+                            id: taskId,
+                            latitude,
+                            longitude,
+                            location: locationText,
+                            address: detailQuery.data?.address ?? task.address,
+                          },
+                          role,
+                        ) ?? fullMapPath,
+                      )
+                    }
                     className="px-4 py-1.5 bg-dash-teal/15 text-[#3A8C88] rounded-full text-[12px] font-semibold hover:bg-dash-teal/25 transition-colors"
                   >
                     View on Full Map

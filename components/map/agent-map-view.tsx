@@ -37,6 +37,7 @@ import {
 } from '@/lib/map/default-viewport';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 import { getMapboxNavigationStyle, resolveMapAppearance } from '@/lib/map/style-mode';
+import type { TaskMapFocus } from '@/lib/tasks/map-navigation';
 
 const MARKER_ANIMATION_MS = 700;
 
@@ -87,6 +88,7 @@ function getDestinationMarkerKind(status: 'in_progress' | 'near_destination' | '
 export type AgentMapViewProps = {
     showSavedLocations?: boolean;
     focusLocation?: SavedLocation | null;
+    taskFocus?: TaskMapFocus | null;
     pinToolbarClassName?: string;
     mapControlsClassName?: string;
     showPinsToggle?: boolean;
@@ -98,6 +100,7 @@ function MapboxAgentMapView({
     providerState,
     showSavedLocations = true,
     focusLocation = null,
+    taskFocus = null,
     pinToolbarClassName,
     mapControlsClassName,
     showPinsToggle = false,
@@ -117,6 +120,7 @@ function MapboxAgentMapView({
     const lastFitTaskIdRef = useRef<number | null>(null);
     const userLocationMarkerRef = useRef<mapboxgl.Marker | null>(null);
     const locateMePinRef = useRef<mapboxgl.Marker | null>(null);
+    const taskFocusMarkerRef = useRef<mapboxgl.Marker | null>(null);
     const { activeTaskId } = useActiveTracking();
     const activeTask = useTrackingStore((s) =>
         activeTaskId ? s.liveTasks[activeTaskId] ?? null : null
@@ -297,6 +301,8 @@ function MapboxAgentMapView({
             agentMarkerRef.current?.remove();
             originMarkerRef.current?.remove();
             destinationMarkerRef.current?.remove();
+            taskFocusMarkerRef.current?.remove();
+            taskFocusMarkerRef.current = null;
             clearUserLocationMarkers();
             map.remove();
             mapRef.current = null;
@@ -313,7 +319,9 @@ function MapboxAgentMapView({
 
     useEffect(() => {
         const map = mapRef.current;
-        if (!map || !mapLoadedRef.current || activeTask) return;
+        // Skip the own-location default when the map was asked to focus on a
+        // specific task destination (e.g. via a "View on Map" link).
+        if (!map || !mapLoadedRef.current || activeTask || taskFocus) return;
 
         let cancelled = false;
 
@@ -348,13 +356,56 @@ function MapboxAgentMapView({
         return () => {
             cancelled = true;
         };
-    }, [activeTask, mapReady]);
+    }, [activeTask, mapReady, taskFocus]);
 
     useEffect(() => {
         if (activeTask) {
             clearUserLocationMarkers();
         }
     }, [activeTask, clearUserLocationMarkers]);
+
+    // ── Task focus: pin + fly to a task destination passed via URL ──────────────
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || !mapLoadedRef.current) return;
+
+        // Live tracking view takes precedence over the static focus pin.
+        if (!taskFocus || activeTask) {
+            taskFocusMarkerRef.current?.remove();
+            taskFocusMarkerRef.current = null;
+            return;
+        }
+
+        const lngLat: [number, number] = [taskFocus.lng, taskFocus.lat];
+
+        if (!taskFocusMarkerRef.current) {
+            const marker = new mapboxgl.Marker({
+                element: createStaticMarkerElement('destination'),
+                anchor: 'center',
+            }).setLngLat(lngLat);
+
+            if (taskFocus.title || taskFocus.address) {
+                const popup = new mapboxgl.Popup({ offset: 18, closeButton: false });
+                const title = taskFocus.title ?? 'Task destination';
+                const address = taskFocus.address
+                    ? `<p style="font-size:11px;color:#64748b;margin:3px 0 0;">${taskFocus.address}</p>`
+                    : '';
+                popup.setHTML(
+                    `<div style="padding:6px 8px;font-family:ui-sans-serif,system-ui,sans-serif">` +
+                    `<p style="font-weight:700;font-size:12px;color:#0f172a;margin:0;">${title}</p>${address}</div>`
+                );
+                marker.setPopup(popup);
+            }
+
+            marker.addTo(map);
+            marker.togglePopup();
+            taskFocusMarkerRef.current = marker;
+        } else {
+            taskFocusMarkerRef.current.setLngLat(lngLat);
+        }
+
+        map.flyTo({ center: lngLat, zoom: 15.5, duration: 1200 });
+    }, [taskFocus, activeTask, mapReady]);
 
     useEffect(() => {
         const map = mapRef.current;
@@ -623,6 +674,7 @@ function GoogleAgentMapView({
     providerState,
     showSavedLocations = true,
     focusLocation = null,
+    taskFocus = null,
     pinToolbarClassName,
     mapControlsClassName,
     showPinsToggle = false,
@@ -641,6 +693,7 @@ function GoogleAgentMapView({
     const lastFitTaskIdRef = useRef<number | null>(null);
     const userLocationMarkerRef = useRef<GoogleMarkerLike | null>(null);
     const locateMePinRef = useRef<GoogleMarkerLike | null>(null);
+    const taskFocusMarkerRef = useRef<GoogleMarkerLike | null>(null);
     const googleApiKey = useMemo(() => getGoogleMapsPublicApiKey(), []);
     const [mapReady, setMapReady] = useState(false);
     const [pinMode, setPinMode] = useState(false);
@@ -742,6 +795,8 @@ function GoogleAgentMapView({
             cancelled = true;
             clearOverlays();
             clearUserLocationMarkers();
+            taskFocusMarkerRef.current?.setMap(null);
+            taskFocusMarkerRef.current = null;
             mapRef.current = null;
             googleRef.current = null;
             setMapReady(false);
@@ -754,7 +809,8 @@ function GoogleAgentMapView({
         const map = mapRef.current;
         const google = googleRef.current;
 
-        if (!map || !google || !mapReady || activeTask) return;
+        // Skip the own-location default when a task destination focus is set.
+        if (!map || !google || !mapReady || activeTask || taskFocus) return;
 
         let cancelled = false;
 
@@ -796,13 +852,49 @@ function GoogleAgentMapView({
         return () => {
             cancelled = true;
         };
-    }, [activeTask, mapReady]);
+    }, [activeTask, mapReady, taskFocus]);
 
     useEffect(() => {
         if (activeTask) {
             clearUserLocationMarkers();
         }
     }, [activeTask, clearUserLocationMarkers]);
+
+    // ── Task focus: pin + pan to a task destination passed via URL ──────────────
+    useEffect(() => {
+        const map = mapRef.current;
+        const google = googleRef.current;
+        if (!map || !google || !mapReady) return;
+
+        if (!taskFocus || activeTask) {
+            taskFocusMarkerRef.current?.setMap(null);
+            taskFocusMarkerRef.current = null;
+            return;
+        }
+
+        const position = { lat: taskFocus.lat, lng: taskFocus.lng };
+
+        if (!taskFocusMarkerRef.current) {
+            taskFocusMarkerRef.current = new google.maps.Marker({
+                map,
+                position,
+                title: taskFocus.title ?? 'Task destination',
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 9,
+                    fillColor: '#DC2626',
+                    fillOpacity: 1,
+                    strokeColor: '#FFFFFF',
+                    strokeWeight: 3,
+                },
+            });
+        } else {
+            taskFocusMarkerRef.current.setPosition(position);
+        }
+
+        map.panTo(position);
+        map.setZoom(15);
+    }, [taskFocus, activeTask, mapReady]);
 
     useEffect(() => {
         const map = mapRef.current;
@@ -1044,6 +1136,7 @@ function GoogleAgentMapView({
 export function AgentMapView({
     showSavedLocations = true,
     focusLocation = null,
+    taskFocus = null,
     pinToolbarClassName = "bottom-32 right-4 md:right-10 z-20",
     mapControlsClassName = "absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2",
     showPinsToggle = false,
@@ -1058,6 +1151,7 @@ export function AgentMapView({
                 providerState={providerState}
                 showSavedLocations={showSavedLocations}
                 focusLocation={focusLocation}
+                taskFocus={taskFocus}
                 pinToolbarClassName={pinToolbarClassName}
                 mapControlsClassName={mapControlsClassName}
                 showPinsToggle={showPinsToggle}
@@ -1072,6 +1166,7 @@ export function AgentMapView({
             providerState={providerState}
             showSavedLocations={showSavedLocations}
             focusLocation={focusLocation}
+            taskFocus={taskFocus}
             pinToolbarClassName={pinToolbarClassName}
             mapControlsClassName={mapControlsClassName}
             showPinsToggle={showPinsToggle}
