@@ -45,7 +45,7 @@ class AgentLocationSnapshotService
 
         return AgentLocationSnapshot::query()
             ->with([
-                'agent:id,name,email,avatar,internal_role',
+                'agent:id,name,email,avatar,gender,internal_role',
                 'task:id,title,status,latitude,longitude,address_full,location_text,due_at',
                 'trackingSession:id,task_id,start_latitude,start_longitude,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
             ])
@@ -64,7 +64,7 @@ class AgentLocationSnapshotService
 
         $query = AgentLocationSnapshot::query()
             ->with([
-                'agent:id,name,email,avatar,internal_role',
+                'agent:id,name,email,avatar,gender,internal_role',
                 'task:id,title,status,latitude,longitude,address_full,location_text,due_at',
                 'trackingSession:id,task_id,start_latitude,start_longitude,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
             ])
@@ -128,7 +128,7 @@ class AgentLocationSnapshotService
 
         $snapshot = AgentLocationSnapshot::query()
             ->with([
-                'agent:id,name,email,avatar,internal_role',
+                'agent:id,name,email,avatar,gender,internal_role',
                 'task:id,title,status,latitude,longitude,address_full,location_text,due_at',
                 'trackingSession:id,task_id,start_latitude,start_longitude,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
             ])

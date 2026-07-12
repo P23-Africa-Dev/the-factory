@@ -66,6 +66,20 @@ function normalizeProximityState(
   return undefined;
 }
 
+/** Stable key for detecting agent identity swaps on a task marker. */
+export function trackingAgentIdentityKey(task: Pick<LiveTaskState, "userId" | "agentAvatarUrl">): string {
+  return `${task.userId}:${task.agentAvatarUrl ?? ""}`;
+}
+
+function mergeAgentAvatarUrl(
+  params: { userId: number; agentAvatarUrl?: string },
+  prev: LiveTaskState | undefined,
+): string | undefined {
+  if (params.agentAvatarUrl) return params.agentAvatarUrl;
+  if (prev && prev.userId === params.userId) return prev.agentAvatarUrl;
+  return undefined;
+}
+
 function buildFromEnvelope(
   prev: LiveTaskState | undefined,
   envelope: TrackingEnvelope
@@ -274,6 +288,33 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
         };
       }
 
+      if (type === "tracking.task.reassigned") {
+        const toUserId = payload.data?.to_user_id;
+        const fromUserId = payload.data?.from_user_id;
+        const agentChanged =
+          typeof toUserId === "number" &&
+          toUserId > 0 &&
+          prev?.userId !== toUserId;
+
+        return {
+          liveTasks: {
+            ...s.liveTasks,
+            [taskId]: {
+              ...updated,
+              userId: typeof toUserId === "number" && toUserId > 0 ? toUserId : updated.userId,
+              ...(agentChanged
+                ? {
+                  agentName: prev?.userId === fromUserId ? "" : updated.agentName,
+                  agentAvatarUrl: undefined,
+                  polyline: [],
+                }
+                : {}),
+              lastEventAt: payload.occurred_at,
+            },
+          },
+        };
+      }
+
       return { liveTasks: { ...s.liveTasks, [taskId]: updated } };
     });
   },
@@ -287,8 +328,9 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
       const entry: LiveTaskState = {
         taskId,
         trackingSessionId: prev?.trackingSessionId ?? 0,
-        userId: prev?.userId ?? 0,
+        userId: task.assignee?.id ?? prev?.userId ?? 0,
         agentName: task.assignee?.name ?? prev?.agentName ?? "",
+        agentAvatarUrl: task.assignee?.avatar_url ?? prev?.agentAvatarUrl,
         taskTitle: task.title,
         projectName: task.project?.name ?? prev?.projectName,
         taskAddress: task.address ?? task.location,
@@ -436,6 +478,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
       const prev = s.liveTasks[params.taskId];
       const occurredAt = params.occurredAt ?? new Date().toISOString();
       const lastPosition = params.position ?? prev?.lastPosition ?? [0, 0];
+      const agentChanged = !!prev && prev.userId !== params.userId;
 
       return {
         liveTasks: {
@@ -445,7 +488,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             trackingSessionId: params.trackingSessionId,
             userId: params.userId,
             agentName: params.agentName ?? prev?.agentName ?? "",
-            agentAvatarUrl: params.agentAvatarUrl ?? prev?.agentAvatarUrl,
+            agentAvatarUrl: mergeAgentAvatarUrl(params, prev),
             taskTitle: params.taskTitle ?? prev?.taskTitle ?? `Task #${params.taskId}`,
             projectName: prev?.projectName,
             taskAddress: params.taskAddress ?? prev?.taskAddress,
@@ -455,13 +498,14 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
                 : prev?.status ?? "in_progress",
             destination: params.destination ?? prev?.destination,
             lastPosition,
-            polyline:
-              prev?.polyline && prev.polyline.length > 0
+            polyline: agentChanged
+              ? [lastPosition]
+              : prev?.polyline && prev.polyline.length > 0
                 ? prev.polyline
                 : [lastPosition],
             trackingStartedAt: prev?.trackingStartedAt ?? occurredAt,
             lastEventAt: occurredAt,
-            arrivedAt: prev?.arrivedAt,
+            arrivedAt: agentChanged ? undefined : prev?.arrivedAt,
           },
         },
       };

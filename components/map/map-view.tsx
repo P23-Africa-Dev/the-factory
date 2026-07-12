@@ -267,6 +267,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const originMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
   const destinationMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
   const agentMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
+  const agentMarkerUserIdRef = useRef<Map<number, number>>(new Map());
   const markerAnimationsRef = useRef<Map<number, number>>(new Map());
   const markerPositionRef = useRef<Map<number, [number, number]>>(new Map());
   const popupRef = useRef<mapboxgl.Popup | null>(null);
@@ -1036,7 +1037,26 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         }
       }
 
-      const existingAgentMarker = agentMarkersRef.current.get(task.taskId);
+      let existingAgentMarker = agentMarkersRef.current.get(task.taskId);
+      const trackedUserId = agentMarkerUserIdRef.current.get(task.taskId);
+      if (
+        existingAgentMarker &&
+        trackedUserId != null &&
+        task.userId > 0 &&
+        trackedUserId !== task.userId
+      ) {
+        existingAgentMarker.remove();
+        agentMarkersRef.current.delete(task.taskId);
+        markerPositionRef.current.delete(task.taskId);
+        agentMarkerUserIdRef.current.delete(task.taskId);
+        const frameId = markerAnimationsRef.current.get(task.taskId);
+        if (frameId) {
+          cancelAnimationFrame(frameId);
+          markerAnimationsRef.current.delete(task.taskId);
+        }
+        existingAgentMarker = undefined;
+      }
+
       if (!existingAgentMarker) {
         const el = createAgentMarkerElement({
           name: task.agentName,
@@ -1073,6 +1093,9 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           .addTo(map);
         agentMarkersRef.current.set(task.taskId, marker);
         markerPositionRef.current.set(task.taskId, task.lastPosition);
+        if (task.userId > 0) {
+          agentMarkerUserIdRef.current.set(task.taskId, task.userId);
+        }
         updateAgentMarkerHeading(el, stale ? null : resolveHeading(task.headingDegrees ?? null, trail));
       } else {
         updateAgentMarkerElement(existingAgentMarker.getElement(), {
@@ -1136,6 +1159,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         marker.remove();
         agentMarkersRef.current.delete(id);
         markerPositionRef.current.delete(id);
+        agentMarkerUserIdRef.current.delete(id);
         const frameId = markerAnimationsRef.current.get(id);
         if (frameId) {
           cancelAnimationFrame(frameId);

@@ -380,32 +380,45 @@ export function updateAgentMarkerElement(
         generic.style.justifyContent = "center";
     };
 
-    if (!input.avatarUrl) {
+    const requestedUrl = input.avatarUrl?.trim() ?? "";
+
+    const showLoadedImage = () => {
+        img.style.display = "block";
+        initials.style.display = "none";
+        generic.style.display = "none";
+        root.dataset.loadedAvatarUrl = requestedUrl;
+    };
+
+    if (!requestedUrl) {
         img.removeAttribute("src");
+        delete root.dataset.loadedAvatarUrl;
         applyFallback();
         return;
     }
 
     img.alt = `${input.name || "Agent"} avatar`;
-    img.onerror = () => {
-        applyFallback();
-    };
-    img.onload = () => {
-        img.style.display = "block";
-        initials.style.display = "none";
-        generic.style.display = "none";
-    };
+    img.referrerPolicy = "no-referrer";
 
-    if (img.getAttribute("src") !== input.avatarUrl) {
-        img.setAttribute("src", input.avatarUrl);
-    }
+    const loadedUrl = root.dataset.loadedAvatarUrl ?? "";
 
-    if (img.complete && img.naturalWidth > 0) {
-        img.style.display = "block";
-        initials.style.display = "none";
-        generic.style.display = "none";
+    if (loadedUrl === requestedUrl && img.complete && img.naturalWidth > 0) {
+        showLoadedImage();
         return;
     }
 
+    // Show initials while the new URL loads (or after a failed load via onerror).
     applyFallback();
+
+    img.onerror = () => {
+        delete root.dataset.loadedAvatarUrl;
+        applyFallback();
+    };
+    img.onload = showLoadedImage;
+
+    if (loadedUrl !== requestedUrl) {
+        img.removeAttribute("src");
+        delete root.dataset.loadedAvatarUrl;
+    }
+
+    img.setAttribute("src", requestedUrl);
 }

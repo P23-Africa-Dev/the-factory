@@ -4,7 +4,8 @@ export type TrackingEventType =
   | "tracking.location.updated"
   | "tracking.task.arrived"
   | "tracking.task.completed"
-  | "tracking.agent.location.updated";
+  | "tracking.agent.location.updated"
+  | "tracking.task.reassigned";
 
 export type OperationalTrackingStatus =
   | "available"
@@ -96,6 +97,10 @@ export interface TrackingEnvelope {
         internal_role?: string | null;
         avatar_url?: string | null;
       };
+      reassignment_id?: number;
+      from_user_id?: number;
+      to_user_id?: number;
+      reassignment_status?: string;
       location?: {
         latitude?: number;
         longitude?: number;

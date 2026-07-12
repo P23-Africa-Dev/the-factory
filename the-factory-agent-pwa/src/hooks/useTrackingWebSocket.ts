@@ -13,6 +13,23 @@ const MAX_BACKOFF_MS = 30_000;
 const WS_DISCONNECT_POLL_THRESHOLD_MS = 30_000;
 const POLL_INTERVAL_MS = 25_000;
 
+function readAgentFields(data: Record<string, unknown>): {
+  agentId?: number;
+  agentName?: string;
+  agentAvatar?: string | null;
+} {
+  const agent = data.agent as
+    | { id?: number; name?: string; avatar_url?: string | null }
+    | undefined;
+  if (!agent) return {};
+
+  return {
+    ...(typeof agent.id === 'number' ? { agentId: agent.id } : {}),
+    ...(typeof agent.name === 'string' ? { agentName: agent.name } : {}),
+    ...(agent.avatar_url != null ? { agentAvatar: agent.avatar_url } : {}),
+  };
+}
+
 export const useTrackingWebSocket = (): void => {
   const setUnreadCount = useNotificationStore((s) => s.setUnreadCount);
   const setPendingNotification = useNotificationStore((s) => s.setPendingNotification);
@@ -98,6 +115,7 @@ export const useTrackingWebSocket = (): void => {
               data.longitude != null && data.latitude != null
                 ? [data.longitude as number, data.latitude as number]
                 : null,
+            ...readAgentFields(data),
           });
           break;
 
@@ -112,6 +130,7 @@ export const useTrackingWebSocket = (): void => {
           upsertTask(taskId, {
             lastPosition: point,
             lastUpdatedAt: occurredAt,
+            ...readAgentFields(data),
             ...(data.heading_degrees != null
               ? { lastHeadingDegrees: data.heading_degrees as number }
               : {}),
@@ -120,6 +139,17 @@ export const useTrackingWebSocket = (): void => {
           if (data.arrived) {
             markArrived(taskId, occurredAt);
           }
+          break;
+        }
+
+        case 'tracking.task.reassigned': {
+          if (taskId == null) break;
+          const toUserId = data.to_user_id as number | undefined;
+          upsertTask(taskId, {
+            ...(typeof toUserId === 'number' ? { agentId: toUserId } : {}),
+            agentAvatar: null,
+            lastUpdatedAt: occurredAt,
+          });
           break;
         }
 

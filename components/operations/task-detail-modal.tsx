@@ -401,9 +401,9 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
       useTrackingStore.getState().seedFromTaskStart({
         taskId,
         trackingSessionId: res.data.tracking.id,
-        userId: currentUserId,
-        agentName: authUser?.name,
-        agentAvatarUrl: authUser?.avatar ?? undefined,
+        userId: assignee?.id ?? currentUserId,
+        agentName: assigneeName,
+        agentAvatarUrl: assigneeAvatar ?? undefined,
         taskTitle: res.data.task.title,
         taskAddress: res.data.task.address ?? res.data.task.location ?? undefined,
         destination:

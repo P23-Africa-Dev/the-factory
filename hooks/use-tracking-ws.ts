@@ -315,7 +315,8 @@ export function useTrackingWebSocket() {
         msg.type === "tracking.location.updated" ||
         msg.type === "tracking.agent.location.updated" ||
         msg.type === "tracking.task.arrived" ||
-        msg.type === "tracking.task.completed"
+        msg.type === "tracking.task.completed" ||
+        msg.type === "tracking.task.reassigned"
       ) {
         console.log(LOG, "📍 Tracking event", {
           type: msg.type,
