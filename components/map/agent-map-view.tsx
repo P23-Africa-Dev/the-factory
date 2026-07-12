@@ -30,9 +30,16 @@ import {
     resolveVisualTaskState,
     sanitizePolyline,
     updateAgentMarkerElement,
+    updateAgentMarkerHeading,
 } from '@/lib/tracking/map-visualization';
 import { fetchDirectionsRoute, clearDirectionsCache } from '@/lib/tracking/directions';
+import {
+    MAX_PREDICTION_MS,
+    projectPosition,
+    resolveHeading,
+} from '@/lib/tracking/dead-reckoning';
 import { useInitialMapViewport } from '@/hooks/use-initial-map-viewport';
+import { TrackingConnectionStatus } from '@/components/tracking/TrackingConnectionStatus';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 import { getMapboxNavigationStyle, resolveMapAppearance } from '@/lib/map/style-mode';
 import type { TaskMapFocus } from '@/lib/tasks/map-navigation';
@@ -275,38 +282,63 @@ function MapboxAgentMapView({
         mapRef.current?.easeTo({ pitch: 55, bearing: -20, duration: 800 });
     }, [mapMode]);
 
-    const animateAgentMarker = useCallback((marker: mapboxgl.Marker, target: [number, number]) => {
+    const animateAgentMarker = useCallback((
+        marker: mapboxgl.Marker,
+        target: [number, number],
+        motion?: { speedMps?: number | null; headingDegrees?: number | null },
+    ) => {
         const from = markerPositionRef.current ?? [marker.getLngLat().lng, marker.getLngLat().lat] as [number, number];
-        if (areSamePoint(from, target)) {
-            marker.setLngLat(target);
-            markerPositionRef.current = target;
-            return;
-        }
 
         if (markerAnimationRef.current) {
             cancelAnimationFrame(markerAnimationRef.current);
             markerAnimationRef.current = null;
         }
 
+        const skipCatchUp = areSamePoint(from, target);
+        const speedMps = motion?.speedMps ?? null;
+        const headingDegrees = motion?.headingDegrees ?? null;
+        const canPredict =
+            typeof speedMps === 'number' && speedMps > 0.5 &&
+            typeof headingDegrees === 'number' && Number.isFinite(headingDegrees);
+
+        if (skipCatchUp && !canPredict) {
+            marker.setLngLat(target);
+            markerPositionRef.current = target;
+            return;
+        }
+
         const startedAt = performance.now();
+        // Ease to the new fix, then dead-reckon along speed/heading so the
+        // agent's own marker keeps moving until the next fix re-anchors it.
         const step = (now: number) => {
-            const progress = Math.min((now - startedAt) / MARKER_ANIMATION_MS, 1);
-            const eased = progress < 0.5
-                ? 2 * progress * progress
-                : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+            const elapsed = now - startedAt;
 
-            marker.setLngLat([
-                from[0] + (target[0] - from[0]) * eased,
-                from[1] + (target[1] - from[1]) * eased,
-            ]);
+            if (!skipCatchUp && elapsed < MARKER_ANIMATION_MS) {
+                const progress = elapsed / MARKER_ANIMATION_MS;
+                const eased = progress < 0.5
+                    ? 2 * progress * progress
+                    : 1 - Math.pow(-2 * progress + 2, 2) / 2;
 
-            if (progress < 1) {
+                marker.setLngLat([
+                    from[0] + (target[0] - from[0]) * eased,
+                    from[1] + (target[1] - from[1]) * eased,
+                ]);
                 markerAnimationRef.current = requestAnimationFrame(step);
                 return;
             }
 
-            markerPositionRef.current = target;
-            markerAnimationRef.current = null;
+            if (!canPredict || elapsed > MAX_PREDICTION_MS) {
+                marker.setLngLat(target);
+                markerPositionRef.current = target;
+                markerAnimationRef.current = null;
+                return;
+            }
+
+            const predictSeconds = (elapsed - (skipCatchUp ? 0 : MARKER_ANIMATION_MS)) / 1000;
+            const predicted = projectPosition(target, speedMps, headingDegrees, predictSeconds);
+            marker.setLngLat(predicted);
+            markerPositionRef.current = predicted;
+            markerAnimationRef.current = requestAnimationFrame(step);
         };
 
         markerAnimationRef.current = requestAnimationFrame(step);
@@ -543,6 +575,7 @@ function MapboxAgentMapView({
             originMarkerRef.current.setLngLat(originPoint);
         }
 
+        const agentHeading = resolveHeading(activeTask.headingDegrees ?? null, trail);
         if (!agentMarkerRef.current) {
             const agentElement = createAgentMarkerElement({
                 name: activeTask.agentName,
@@ -554,6 +587,7 @@ function MapboxAgentMapView({
                 .setLngLat(activeTask.lastPosition)
                 .addTo(map);
             markerPositionRef.current = activeTask.lastPosition;
+            updateAgentMarkerHeading(agentElement, agentHeading);
         } else {
             updateAgentMarkerElement(agentMarkerRef.current.getElement(), {
                 name: activeTask.agentName,
@@ -561,7 +595,11 @@ function MapboxAgentMapView({
                 visualState,
                 stale: false,
             });
-            animateAgentMarker(agentMarkerRef.current, activeTask.lastPosition);
+            updateAgentMarkerHeading(agentMarkerRef.current.getElement(), agentHeading);
+            animateAgentMarker(agentMarkerRef.current, activeTask.lastPosition, {
+                speedMps: activeTask.speedMps,
+                headingDegrees: agentHeading,
+            });
         }
 
         if (activeTask.destination) {
@@ -674,6 +712,7 @@ function MapboxAgentMapView({
     return (
         <div className="relative w-full" style={{ height: 'calc(100vh - 64px)' }}>
             <div ref={mapContainer} className="w-full h-full" />
+            <TrackingConnectionStatus />
             {isResolvingInitialViewport && (
                 <div
                     className="absolute inset-0 z-10 flex items-center justify-center bg-[#e8ecef]"
@@ -1157,6 +1196,7 @@ function GoogleAgentMapView({
     return (
         <div className="relative w-full" style={{ height: 'calc(100vh - 64px)' }}>
             <div ref={mapContainer} className="w-full h-full" />
+            <TrackingConnectionStatus />
             {isResolvingInitialViewport && (
                 <div
                     className="absolute inset-0 z-10 flex items-center justify-center bg-[#e8ecef]"

@@ -147,6 +147,11 @@ function buildFromEnvelope(
       payload.data?.speed_mps ??
       prev?.speedMps ??
       null,
+    headingDegrees:
+      payload.data?.location?.heading_degrees ??
+      payload.data?.heading_degrees ??
+      prev?.headingDegrees ??
+      null,
     etaSeconds: payload.data?.eta_seconds ?? prev?.etaSeconds ?? null,
     routeDeviationMeters:
       payload.data?.route_deviation_meters ??
@@ -412,6 +417,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             prev?.distanceRemainingMeters ??
             null,
           speedMps: item.location.speed_mps ?? prev?.speedMps ?? null,
+          headingDegrees: item.location.heading_degrees ?? prev?.headingDegrees ?? null,
           etaSeconds: item.location.eta_seconds ?? prev?.etaSeconds ?? null,
           routeDeviationMeters:
             item.location.route_deviation_meters ?? prev?.routeDeviationMeters ?? null,
@@ -466,11 +472,21 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
     set((s) => {
       const prev = s.liveTasks[taskId];
       if (!prev) return s;
-      const polyline = [...prev.polyline, point].slice(-MAX_POLYLINE_PTS);
+      const last = prev.polyline[prev.polyline.length - 1];
+      const isDuplicate = !!last && last[0] === point[0] && last[1] === point[1];
+      const polyline = isDuplicate
+        ? prev.polyline
+        : [...prev.polyline, point].slice(-MAX_POLYLINE_PTS);
       return {
         liveTasks: {
           ...s.liveTasks,
-          [taskId]: { ...prev, polyline, lastPosition: point },
+          [taskId]: {
+            ...prev,
+            polyline,
+            lastPosition: point,
+            // Keep staleness detection happy while WS echo is in flight.
+            lastEventAt: new Date().toISOString(),
+          },
         },
       };
     });

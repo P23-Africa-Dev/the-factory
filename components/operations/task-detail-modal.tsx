@@ -420,7 +420,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
       });
       startTracking(taskId, companyId as number, token, {
         onArrived: () => toast.success("You've arrived at the destination!"),
-        onError: () => { },
+        // onError/onStopped fall back to the provider's visible toasts.
       });
       if (res.data.arrived) {
         toast.success("Task started — you're already at the destination!");

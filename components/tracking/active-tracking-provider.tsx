@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useCallback, useRef } from "react";
+import { toast } from "sonner";
 import { useTrackingStore } from "@/store/tracking";
 import * as locationBuffer from "@/lib/tracking/location-buffer";
 
@@ -9,7 +10,11 @@ interface ActiveTrackingContextValue {
     taskId: number,
     companyId: number | string,
     token: string,
-    callbacks?: { onArrived?: () => void; onError?: (err: unknown) => void }
+    callbacks?: {
+      onArrived?: () => void;
+      onError?: (err: unknown) => void;
+      onStopped?: (message: string) => void;
+    }
   ) => void;
   stopTracking: () => void;
   isTracking: boolean;
@@ -41,16 +46,39 @@ export function ActiveTrackingProvider({
       taskId: number,
       companyId: number | string,
       token: string,
-      callbacks?: { onArrived?: () => void; onError?: (err: unknown) => void }
+      callbacks?: {
+        onArrived?: () => void;
+        onError?: (err: unknown) => void;
+        onStopped?: (message: string) => void;
+      }
     ) => {
       // Stop any existing session before starting a new one
       if (locationBuffer.isActive()) {
         locationBuffer.stop();
       }
 
+      // Throttle repeat error toasts so a flaky network doesn't spam the UI.
+      let lastErrorToastAt = 0;
+
       locationBuffer.start(taskId, companyId, token, {
         onArrived: callbacks?.onArrived,
-        onError: callbacks?.onError,
+        onError:
+          callbacks?.onError ??
+          ((err) => {
+            const now = Date.now();
+            if (now - lastErrorToastAt < 60_000) return;
+            lastErrorToastAt = now;
+            const message =
+              (err as { message?: string })?.message ??
+              "Location update failed — retrying in the background.";
+            toast.error("Tracking issue", { description: message });
+          }),
+        onStopped:
+          callbacks?.onStopped ??
+          ((message) => {
+            setActiveTrackingTask(null);
+            toast.error("Tracking stopped", { description: message });
+          }),
       });
 
       setActiveTrackingTask(taskId);

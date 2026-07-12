@@ -26,9 +26,15 @@ import {
   resolveVisualTaskState,
   sanitizePolyline,
   updateAgentMarkerElement,
+  updateAgentMarkerHeading,
   VISUAL_PALETTE,
   type VisualTaskState,
 } from '@/lib/tracking/map-visualization';
+import {
+  MAX_PREDICTION_MS,
+  projectPosition,
+  resolveHeading,
+} from '@/lib/tracking/dead-reckoning';
 import { fetchDirectionsRoute, clearDirectionsCache } from '@/lib/tracking/directions';
 import {
   getMapboxNavigationStyle,
@@ -40,6 +46,7 @@ import {
   resolveOperationalStatusFromTask,
 } from '@/lib/tracking/operational-status';
 import { useInitialMapViewport } from '@/hooks/use-initial-map-viewport';
+import { TrackingConnectionStatus } from '@/components/tracking/TrackingConnectionStatus';
 import { SavedLocationsLayer, type GoogleMapBridge } from '@/components/map/SavedLocationsLayer';
 import { TerritoryLayer } from '@/components/map/TerritoryLayer';
 import { useSavedLocations, useSavedLocationPermissions } from '@/hooks/use-saved-locations';
@@ -113,6 +120,10 @@ type GoogleMapsNamespaceLike = {
     LatLngBounds: new () => GoogleLatLngBoundsLike;
     SymbolPath: {
       CIRCLE: unknown;
+    };
+    event: {
+      addListener: (target: unknown, event: string, handler: () => void) => unknown;
+      removeListener: (listener: unknown) => void;
     };
   };
 };
@@ -271,6 +282,10 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const [placeResolving, setPlaceResolving] = useState(false);
   const searchSessionTokenRef = useRef<string>(createSearchSessionToken());
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  // Camera follow mode: keeps tracking the selected agent until the user pans away.
+  const [isFollowing, setIsFollowing] = useState(false);
+  const isFollowingRef = useRef(false);
+  const suppressFollowBreakRef = useRef(false);
   const [historyTask, setHistoryTask] = useState<{ id: number; title: string } | null>(null);
   // Bumped every 30s to re-evaluate stale status and sync markers
   const [tick, setTick] = useState(0);
@@ -508,15 +523,14 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     );
   }, [locating, setLocating]);
 
-  const animateMarkerTo = useCallback((taskId: number, marker: mapboxgl.Marker, target: [number, number]) => {
+  const animateMarkerTo = useCallback((
+    taskId: number,
+    marker: mapboxgl.Marker,
+    target: [number, number],
+    motion?: { speedMps?: number | null; headingDegrees?: number | null },
+  ) => {
     const cached = markerPositionRef.current.get(taskId);
     const current = cached ?? [marker.getLngLat().lng, marker.getLngLat().lat] as [number, number];
-
-    if (areSamePoint(current, target)) {
-      marker.setLngLat(target);
-      markerPositionRef.current.set(taskId, target);
-      return;
-    }
 
     const existingFrame = markerAnimationsRef.current.get(taskId);
     if (existingFrame) {
@@ -525,25 +539,46 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     }
 
     const startedAt = performance.now();
+    const catchUpFrom: [number, number] = current;
+    const skipCatchUp = areSamePoint(current, target);
+    const speedMps = motion?.speedMps ?? null;
+    const headingDegrees = motion?.headingDegrees ?? null;
+    const canPredict =
+      typeof speedMps === 'number' && speedMps > 0.5 &&
+      typeof headingDegrees === 'number' && Number.isFinite(headingDegrees);
 
+    // Phase 1: ease from the current rendered position to the new fix.
+    // Phase 2: dead-reckon forward along speed/heading so movement stays
+    // continuous until the next fix re-anchors the marker.
     const step = (frameNow: number) => {
-      const progress = Math.min((frameNow - startedAt) / MARKER_ANIMATION_MS, 1);
-      const eased = progress < 0.5
-        ? 2 * progress * progress
-        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+      const elapsed = frameNow - startedAt;
 
-      const nextLng = current[0] + (target[0] - current[0]) * eased;
-      const nextLat = current[1] + (target[1] - current[1]) * eased;
-      marker.setLngLat([nextLng, nextLat]);
+      if (!skipCatchUp && elapsed < MARKER_ANIMATION_MS) {
+        const progress = elapsed / MARKER_ANIMATION_MS;
+        const eased = progress < 0.5
+          ? 2 * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
 
-      if (progress < 1) {
-        const id = requestAnimationFrame(step);
-        markerAnimationsRef.current.set(taskId, id);
+        marker.setLngLat([
+          catchUpFrom[0] + (target[0] - catchUpFrom[0]) * eased,
+          catchUpFrom[1] + (target[1] - catchUpFrom[1]) * eased,
+        ]);
+        markerAnimationsRef.current.set(taskId, requestAnimationFrame(step));
         return;
       }
 
-      markerAnimationsRef.current.delete(taskId);
-      markerPositionRef.current.set(taskId, target);
+      if (!canPredict || elapsed > MAX_PREDICTION_MS) {
+        marker.setLngLat(target);
+        markerPositionRef.current.set(taskId, target);
+        markerAnimationsRef.current.delete(taskId);
+        return;
+      }
+
+      const predictSeconds = (elapsed - (skipCatchUp ? 0 : MARKER_ANIMATION_MS)) / 1000;
+      const predicted = projectPosition(target, speedMps, headingDegrees, predictSeconds);
+      marker.setLngLat(predicted);
+      markerPositionRef.current.set(taskId, predicted);
+      markerAnimationsRef.current.set(taskId, requestAnimationFrame(step));
     };
 
     const firstFrame = requestAnimationFrame(step);
@@ -605,14 +640,62 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     };
   }, [compact, searchQuery, token]);
 
-  // Fly to agent when sidebar selection changes (refs only in effects).
+  // Fly to agent when sidebar selection changes and enter follow mode
+  // (refs only in effects).
   useEffect(() => {
-    if (selectedTaskId == null || !mapRef.current) return;
+    isFollowingRef.current = isFollowing;
+  }, [isFollowing]);
+
+  useEffect(() => {
+    if (selectedTaskId == null || !mapRef.current) {
+      setIsFollowing(false);
+      return;
+    }
     const task = useTrackingStore.getState().liveTasks[selectedTaskId];
     if (!task) return;
     const [lng, lat] = task.lastPosition;
+    suppressFollowBreakRef.current = true;
     mapRef.current.flyTo({ center: [lng, lat], zoom: 15.5, speed: 1.2 });
+    mapRef.current.once('moveend', () => {
+      suppressFollowBreakRef.current = false;
+    });
+    setIsFollowing(true);
   }, [selectedTaskId, mapVersion]);
+
+  // While following, keep the camera glued to the selected agent's live position.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isFollowing || !selectedTask) return;
+    const [lng, lat] = selectedTask.lastPosition;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat) || (lng === 0 && lat === 0)) return;
+    suppressFollowBreakRef.current = true;
+    map.easeTo({ center: [lng, lat], duration: 900, essential: true });
+    map.once('moveend', () => {
+      suppressFollowBreakRef.current = false;
+    });
+  }, [isFollowing, selectedTask, selectedTask?.lastPosition?.[0], selectedTask?.lastPosition?.[1]]);
+
+  // Break follow mode the moment the user pans/zooms/rotates manually.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || mapVersion === 0) return;
+
+    const breakFollow = () => {
+      if (suppressFollowBreakRef.current) return;
+      if (isFollowingRef.current) setIsFollowing(false);
+    };
+
+    map.on('dragstart', breakFollow);
+    map.on('wheel', breakFollow);
+    map.on('pitchstart', breakFollow);
+    map.on('rotatestart', breakFollow);
+    return () => {
+      map.off('dragstart', breakFollow);
+      map.off('wheel', breakFollow);
+      map.off('pitchstart', breakFollow);
+      map.off('rotatestart', breakFollow);
+    };
+  }, [mapVersion]);
 
   // ── Task focus from URL (?taskId&lat&lng): select the live task if it is
   // being tracked, otherwise pin + fly to the task's static destination. ──────
@@ -990,6 +1073,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           .addTo(map);
         agentMarkersRef.current.set(task.taskId, marker);
         markerPositionRef.current.set(task.taskId, task.lastPosition);
+        updateAgentMarkerHeading(el, stale ? null : resolveHeading(task.headingDegrees ?? null, trail));
       } else {
         updateAgentMarkerElement(existingAgentMarker.getElement(), {
           name: task.agentName,
@@ -1001,7 +1085,12 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         existingAgentMarker.getElement().dataset.avatarUrl = task.agentAvatarUrl ?? '';
         existingAgentMarker.getElement().dataset.location = task.taskAddress || task.taskTitle || 'No location details';
         existingAgentMarker.getElement().dataset.statusLabel = getStatusLabel(task.status);
-        animateMarkerTo(task.taskId, existingAgentMarker, task.lastPosition);
+        const heading = resolveHeading(task.headingDegrees ?? null, trail);
+        updateAgentMarkerHeading(existingAgentMarker.getElement(), stale ? null : heading);
+        animateMarkerTo(task.taskId, existingAgentMarker, task.lastPosition, {
+          speedMps: stale ? null : task.speedMps,
+          headingDegrees: stale ? null : heading,
+        });
       }
     });
 
@@ -1190,6 +1279,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       <div className="hidden" aria-hidden="true">
         <HydrationBridge onHydrationChange={setIsInitialHydrating} />
       </div>
+
+      <TrackingConnectionStatus />
 
       {/* Map canvas */}
       <div ref={mapContainer} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
@@ -1520,6 +1611,32 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
               <p className="text-[11px] text-slate-500">
                 Last GPS Update: {new Date(selectedTask.lastEventAt).toLocaleString()}
               </p>
+
+              <button
+                onClick={() => {
+                  if (isFollowing) {
+                    setIsFollowing(false);
+                    return;
+                  }
+                  const map = mapRef.current;
+                  const [lng, lat] = selectedTask.lastPosition;
+                  if (map && Number.isFinite(lng) && Number.isFinite(lat)) {
+                    suppressFollowBreakRef.current = true;
+                    map.flyTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), 15.5), speed: 1.4 });
+                    map.once('moveend', () => {
+                      suppressFollowBreakRef.current = false;
+                    });
+                  }
+                  setIsFollowing(true);
+                }}
+                className={`w-full flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-[12px] font-semibold transition-colors ${isFollowing
+                  ? 'bg-dash-teal/10 text-dash-teal hover:bg-dash-teal/20'
+                  : 'bg-[#0A192F] text-white hover:bg-[#132B4A]'
+                  }`}
+              >
+                <LocateFixed size={14} />
+                {isFollowing ? 'Following — tap to stop' : 'Follow agent'}
+              </button>
             </div>
           </div>
         );
@@ -1623,6 +1740,10 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  // Camera follow mode: keeps tracking the selected agent until the user pans away.
+  const [isFollowing, setIsFollowing] = useState(false);
+  const isFollowingRef = useRef(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [historyTask, setHistoryTask] = useState<{ id: number; title: string } | null>(null);
   const [isInitialHydrating, setIsInitialHydrating] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
@@ -1675,14 +1796,13 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   // Smoothly tween a Google agent marker between GPS fixes (rAF lerp) so
   // movement reads as continuous instead of teleporting on each update.
   const animateGoogleMarkerTo = useCallback(
-    (taskId: number, marker: GoogleMarkerLike, target: [number, number]) => {
+    (
+      taskId: number,
+      marker: GoogleMarkerLike,
+      target: [number, number],
+      motion?: { speedMps?: number | null; headingDegrees?: number | null },
+    ) => {
       const current = markerPositionRef.current.get(taskId) ?? target;
-
-      if (areSamePoint(current, target)) {
-        marker.setPosition({ lat: target[1], lng: target[0] });
-        markerPositionRef.current.set(taskId, target);
-        return;
-      }
 
       const existingFrame = markerAnimationsRef.current.get(taskId);
       if (existingFrame) {
@@ -1690,24 +1810,50 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         markerAnimationsRef.current.delete(taskId);
       }
 
+      const skipCatchUp = areSamePoint(current, target);
+      const speedMps = motion?.speedMps ?? null;
+      const headingDegrees = motion?.headingDegrees ?? null;
+      const canPredict =
+        typeof speedMps === 'number' && speedMps > 0.5 &&
+        typeof headingDegrees === 'number' && Number.isFinite(headingDegrees);
+
+      if (skipCatchUp && !canPredict) {
+        marker.setPosition({ lat: target[1], lng: target[0] });
+        markerPositionRef.current.set(taskId, target);
+        return;
+      }
+
       const startedAt = performance.now();
+      // Ease to the new fix, then dead-reckon along speed/heading so movement
+      // stays continuous until the next fix re-anchors the marker.
       const step = (frameNow: number) => {
-        const progress = Math.min((frameNow - startedAt) / MARKER_ANIMATION_MS, 1);
-        const eased =
-          progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+        const elapsed = frameNow - startedAt;
 
-        marker.setPosition({
-          lat: current[1] + (target[1] - current[1]) * eased,
-          lng: current[0] + (target[0] - current[0]) * eased,
-        });
+        if (!skipCatchUp && elapsed < MARKER_ANIMATION_MS) {
+          const progress = elapsed / MARKER_ANIMATION_MS;
+          const eased =
+            progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
 
-        if (progress < 1) {
+          marker.setPosition({
+            lat: current[1] + (target[1] - current[1]) * eased,
+            lng: current[0] + (target[0] - current[0]) * eased,
+          });
           markerAnimationsRef.current.set(taskId, requestAnimationFrame(step));
           return;
         }
 
-        markerAnimationsRef.current.delete(taskId);
-        markerPositionRef.current.set(taskId, target);
+        if (!canPredict || elapsed > MAX_PREDICTION_MS) {
+          marker.setPosition({ lat: target[1], lng: target[0] });
+          markerPositionRef.current.set(taskId, target);
+          markerAnimationsRef.current.delete(taskId);
+          return;
+        }
+
+        const predictSeconds = (elapsed - (skipCatchUp ? 0 : MARKER_ANIMATION_MS)) / 1000;
+        const predicted = projectPosition(target, speedMps, headingDegrees, predictSeconds);
+        marker.setPosition({ lat: predicted[1], lng: predicted[0] });
+        markerPositionRef.current.set(taskId, predicted);
+        markerAnimationsRef.current.set(taskId, requestAnimationFrame(step));
       };
 
       markerAnimationsRef.current.set(taskId, requestAnimationFrame(step));
@@ -1915,8 +2061,21 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     };
   }, [compact, googleApiKey, initialViewport, initialViewportIsUserLocation]);
 
+  // Re-evaluate stale status labels periodically.
   useEffect(() => {
-    if (selectedTaskId == null || !mapRef.current) return;
+    const iv = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(iv);
+  }, []);
+
+  useEffect(() => {
+    isFollowingRef.current = isFollowing;
+  }, [isFollowing]);
+
+  useEffect(() => {
+    if (selectedTaskId == null || !mapRef.current) {
+      setIsFollowing(false);
+      return;
+    }
 
     const task = useTrackingStore.getState().liveTasks[selectedTaskId];
     if (!task) return;
@@ -1925,7 +2084,32 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     if (typeof mapRef.current.getZoom === 'function' && mapRef.current.getZoom() < 15) {
       mapRef.current.setZoom(15);
     }
+    setIsFollowing(true);
   }, [selectedTaskId]);
+
+  // While following, keep the camera glued to the selected agent's live position.
+  const followedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isFollowing || !followedTask) return;
+    const [lng, lat] = followedTask.lastPosition;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat) || (lng === 0 && lat === 0)) return;
+    map.panTo({ lat, lng });
+  }, [isFollowing, followedTask, followedTask?.lastPosition?.[0], followedTask?.lastPosition?.[1]]);
+
+  // Break follow mode when the user drags the map manually.
+  useEffect(() => {
+    const map = mapRef.current;
+    const google = googleRef.current;
+    if (!map || !google || !googleReady) return;
+
+    const listener = google.maps.event.addListener(map, 'dragstart', () => {
+      if (isFollowingRef.current) setIsFollowing(false);
+    });
+    return () => {
+      google.maps.event.removeListener(listener);
+    };
+  }, [googleReady]);
 
   // ── Task focus from URL (?taskId&lat&lng): select the live task if it is
   // being tracked, otherwise pin + pan to the task's static destination. ──────
@@ -2043,7 +2227,10 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         agentMarkersRef.current.set(task.taskId, marker);
         markerPositionRef.current.set(task.taskId, current);
       } else {
-        animateGoogleMarkerTo(task.taskId, existingAgentMarker, current);
+        animateGoogleMarkerTo(task.taskId, existingAgentMarker, current, {
+          speedMps: stale ? null : task.speedMps,
+          headingDegrees: stale ? null : resolveHeading(task.headingDegrees ?? null, trail),
+        });
         existingAgentMarker.setLabel({
           text: initials,
           color: '#FFFFFF',
@@ -2202,6 +2389,8 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         <HydrationBridge onHydrationChange={setIsInitialHydrating} />
       </div>
 
+      <TrackingConnectionStatus />
+
       <div ref={mapContainer} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
       {isResolvingInitialViewport && (
         <div
@@ -2295,6 +2484,8 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             ) : (
               filteredTasks.map((task) => {
                 const isSelected = selectedTaskId === task.taskId;
+                const operationalStatus = resolveOperationalStatusFromTask(task, nowMs, STALE_MS);
+                const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
                 return (
                   <button
                     key={task.taskId}
@@ -2310,17 +2501,33 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
                       allowInitialsFallback={false}
                     />
                     <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p
+                          className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
+                            }`}
+                        >
+                          {task.agentName || 'Company Name'}
+                        </p>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${isSelected ? 'bg-white/15 text-white border border-white/20' : statusMeta.badgeClassName
+                            }`}
+                        >
+                          {statusMeta.label}
+                        </span>
+                      </div>
                       <p
-                        className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
-                          }`}
-                      >
-                        {task.agentName || 'Company Name'}
-                      </p>
-                      <p
-                        className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-gray-400' : 'text-gray-500'
+                        className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-gray-300' : 'text-gray-500'
                           }`}
                       >
                         {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
+                      </p>
+                      {(task.projectName ?? '').length > 0 && (
+                        <p className={`text-[10px] mt-1 truncate ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                          Project {task.projectName}
+                        </p>
+                      )}
+                      <p className={`text-[10px] mt-1 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                        ETA {formatEta(task.etaSeconds)} | Speed {formatSpeed(task.speedMps)} | Left {formatMetricDistance(task.distanceRemainingMeters)}
                       </p>
                     </div>
                     <MoreHorizontal size={20} className={isSelected ? 'text-white/50' : 'text-gray-400'} />
@@ -2405,6 +2612,30 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
       {/* Map controls — bottom-center, clear of the AI FAB at bottom-right */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
+        {followedTask && (
+          <button
+            onClick={() => {
+              if (isFollowing) {
+                setIsFollowing(false);
+                return;
+              }
+              const map = mapRef.current;
+              const [lng, lat] = followedTask.lastPosition;
+              if (map && Number.isFinite(lng) && Number.isFinite(lat)) {
+                map.panTo({ lat, lng });
+                if (map.getZoom() < 15) map.setZoom(15);
+              }
+              setIsFollowing(true);
+            }}
+            className={`h-10 rounded-full backdrop-blur shadow-lg border px-4 flex items-center gap-2 text-[12px] font-semibold active:scale-95 transition-all ${isFollowing
+              ? 'bg-[#0A192F] text-white border-[#0A192F]'
+              : 'bg-white/95 text-dash-dark border-slate-200 hover:bg-slate-50'
+              }`}
+          >
+            <LocateFixed size={16} />
+            {isFollowing ? `Following ${followedTask.agentName || 'agent'} — Stop` : 'Follow agent'}
+          </button>
+        )}
         <button
           onClick={() => setShowBusinessPins((visible) => !visible)}
           title={showBusinessPins ? 'Hide business pins' : 'Show business pins'}

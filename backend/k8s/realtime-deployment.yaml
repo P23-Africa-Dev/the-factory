@@ -83,11 +83,13 @@ spec:
                 configMapKeyRef:
                   name: factory23-config
                   key: TRACKING_WS_REDIS_DB
+            # Wildcard-leading subscribe pattern (relay does PSUBSCRIBE
+            # "<prefix>.company.*"). Laravel's default Redis connection applies
+            # a key prefix ("factory23-database-") to PUBLISH channel names, so
+            # the leading * tolerates both prefixed (legacy) and exact channel
+            # names published via the unprefixed 'pubsub' connection.
             - name: TASK_TRACKING_REDIS_CHANNEL_PREFIX
-              valueFrom:
-                configMapKeyRef:
-                  name: factory23-config
-                  key: TASK_TRACKING_REDIS_CHANNEL_PREFIX
+              value: "*factory23.tracking"
             - name: TRACKING_WS_AUTH_API_BASE_URL
               valueFrom:
                 configMapKeyRef:

@@ -1503,7 +1503,10 @@ class TaskTrackingService
 
         try {
             foreach ($channels as $channel) {
-                Redis::publish($channel, json_encode($payload, JSON_THROW_ON_ERROR));
+                // Use the unprefixed pubsub connection so the channel name is
+                // published exactly as built (the default connection's key
+                // prefix would otherwise rewrite it and break the WS relay).
+                Redis::connection('pubsub')->publish($channel, json_encode($payload, JSON_THROW_ON_ERROR));
             }
         } catch (Throwable $e) {
             Log::warning('Failed to publish tracking event to Redis.', [

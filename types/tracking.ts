@@ -37,6 +37,7 @@ export interface LiveTaskState {
   distanceRemainingMeters?: number | null;
   movementStarted?: boolean;
   speedMps?: number | null;
+  headingDegrees?: number | null;
   etaSeconds?: number | null;
   routeDeviationMeters?: number | null;
 }

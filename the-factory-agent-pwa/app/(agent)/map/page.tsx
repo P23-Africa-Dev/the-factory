@@ -60,6 +60,7 @@ import { getSavedLocationType } from '@/lib/map/locationTypes';
 import { searchPlacesWithMapbox } from '@/lib/map/geocoding';
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
 import type { SavedLocationPin } from '@/features/tracking/components/MapboxMap';
+import { TrackingConnectionStatus } from '@/features/tracking/components/TrackingConnectionStatus';
 import { MapPin, Plus, Eye, EyeOff } from 'lucide-react';
 
 const MapBottomSheetDynamic = dynamic(
@@ -1992,6 +1993,8 @@ function MapContent() {
           onMapPin={handleMapPin}
         />
       </div>
+
+      <TrackingConnectionStatus className="absolute left-1/2 -translate-x-1/2 z-[16] pointer-events-none top-[calc(env(safe-area-inset-top,16px)+8px)]" />
 
       {(isRouteLoading || isLaunchingRide || isStarting || trackingStatus === 'connecting') && (
         <div className="absolute inset-x-0 top-1/2 z-[15] flex justify-center pointer-events-none px-6">

@@ -107,7 +107,8 @@ function AgentMapPageContent() {
         );
       }
 
-      startTracking(taskId, companyId, token, { onError: () => { } });
+      // Error/stop feedback surfaces via the tracking provider's default toasts.
+      startTracking(taskId, companyId, token);
       setViewMode(true);
       setSheetOpen(false);
     } catch {
