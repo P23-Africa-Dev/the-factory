@@ -10,6 +10,23 @@ import type { TaskApiItem } from "@/lib/api/tasks";
 const MAX_POLYLINE_PTS = 2000;
 const COMPLETED_LINGER_MS = 5_000;
 
+/**
+ * Returns the newer of two ISO timestamps. Live tracking freshness must be
+ * monotonic: neither a delayed WS event nor the periodic REST snapshot poll
+ * (which can serialize the same instant with a different timezone offset, or
+ * carry an older persisted point) may drag `lastEventAt` backwards, otherwise
+ * the active/stale decision oscillates and the feed card flickers on/off.
+ */
+function newerIso(candidate: string | undefined, current: string | undefined): string {
+  if (!candidate) return current ?? new Date().toISOString();
+  if (!current) return candidate;
+  const c = new Date(candidate).getTime();
+  const p = new Date(current).getTime();
+  if (!Number.isFinite(c)) return current;
+  if (!Number.isFinite(p)) return candidate;
+  return c >= p ? candidate : current;
+}
+
 type WsStatus = "idle" | "connecting" | "connected" | "reconnecting" | "error";
 
 interface TrackingStore {
@@ -137,7 +154,8 @@ function buildFromEnvelope(
     trackingStartedAt:
       prev?.trackingStartedAt ??
       (envelope.type === "tracking.task.started" ? payload.occurred_at : base.trackingStartedAt),
-    lastEventAt: payload.occurred_at,
+    lastEventAt: newerIso(payload.occurred_at, prev?.lastEventAt),
+    lastReceivedAt: Date.now(),
     ...(hasDestination
       ? {
         destination: {
@@ -313,7 +331,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
                   polyline: [],
                 }
                 : {}),
-              lastEventAt: payload.occurred_at,
+              lastEventAt: newerIso(payload.occurred_at, prev?.lastEventAt),
             },
           },
         };
@@ -357,12 +375,14 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
         polyline: polyline.slice(-MAX_POLYLINE_PTS),
         trackingStartedAt:
           prev?.trackingStartedAt ?? route.start?.recorded_at ?? route.arrival?.recorded_at,
-        lastEventAt:
+        lastEventAt: newerIso(
           route.end?.recorded_at ??
-          route.arrival?.recorded_at ??
-          route.near?.recorded_at ??
-          route.start?.recorded_at ??
-          new Date().toISOString(),
+            route.arrival?.recorded_at ??
+            route.near?.recorded_at ??
+            route.start?.recorded_at ??
+            undefined,
+          prev?.lastEventAt,
+        ),
         nearDetectedAt: route.near?.recorded_at ?? prev?.nearDetectedAt,
         arrivedAt: route.arrival?.recorded_at,
         distanceToDestinationMeters:
@@ -380,6 +400,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
           route.proximity?.route_deviation_meters ?? prev?.routeDeviationMeters ?? null,
         operationalStatus:
           route.proximity?.operational_status ?? prev?.operationalStatus,
+        lastReceivedAt: prev?.lastReceivedAt,
       };
 
       return { liveTasks: { ...s.liveTasks, [taskId]: entry } };
@@ -440,12 +461,14 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             item.status.last_seen_at ??
             item.updated_at ??
             undefined,
-          lastEventAt:
+          lastEventAt: newerIso(
             item.location.recorded_at ??
-            item.status.last_seen_at ??
-            item.updated_at ??
-            prev?.lastEventAt ??
-            new Date().toISOString(),
+              item.status.last_seen_at ??
+              item.updated_at ??
+              undefined,
+            prev?.lastEventAt,
+          ),
+          lastReceivedAt: prev?.lastReceivedAt,
           nearDetectedAt:
             item.status.proximity_state === "near_destination" && !item.location.arrived
               ? prev?.nearDetectedAt ?? item.location.recorded_at ?? item.updated_at ?? undefined

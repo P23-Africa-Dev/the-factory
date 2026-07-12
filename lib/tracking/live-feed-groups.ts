@@ -8,9 +8,23 @@ export function hasUsableTaskPosition(task: LiveTaskState): boolean {
   return task.lastPosition[0] !== 0 || task.lastPosition[1] !== 0;
 }
 
-function isTaskStale(lastEventAt: string, nowMs: number, staleMs: number): boolean {
-  if (!lastEventAt || !nowMs) return false;
-  return nowMs - new Date(lastEventAt).getTime() > staleMs;
+/**
+ * Milliseconds since we last heard from this agent. Prefers the client-stamped
+ * `lastReceivedAt` (set the moment a WS event / snapshot arrives) because the
+ * server/device `lastEventAt` can carry a skewed timezone offset that makes a
+ * live agent look ~1h stale. Falls back to `lastEventAt` when no receive stamp.
+ */
+export function taskAgeMs(task: LiveTaskState, nowMs: number): number {
+  if (typeof task.lastReceivedAt === "number" && task.lastReceivedAt > 0) {
+    return nowMs - task.lastReceivedAt;
+  }
+  if (!task.lastEventAt) return 0;
+  return nowMs - new Date(task.lastEventAt).getTime();
+}
+
+function isTaskStale(task: LiveTaskState, nowMs: number, staleMs: number): boolean {
+  if (!nowMs) return false;
+  return taskAgeMs(task, nowMs) > staleMs;
 }
 
 /**
@@ -27,11 +41,15 @@ export function isActivelyOnTask(
   if (task.status === "completed") return false;
   if (task.trackingSessionId <= 0) return false;
 
-  if (task.isOnline === false) return false;
-  if (isTaskStale(task.lastEventAt, nowMs, staleMs)) return false;
+  // Freshness is judged by the client's own clock against the event time, which
+  // is internally consistent. The backend `is_online` / `operational_status`
+  // "offline" flags are derived from server-vs-device time and misfire under
+  // clock skew (a live, actively-tracking agent then looks offline), so they
+  // must NOT gate activity here.
+  if (isTaskStale(task, nowMs, staleMs)) return false;
 
   const operationalStatus = resolveOperationalStatusFromTask(task, nowMs, staleMs);
-  return operationalStatus !== "offline" && operationalStatus !== "completed";
+  return operationalStatus !== "completed";
 }
 
 export function isHistoryFeedTask(

@@ -69,13 +69,25 @@ describe("live-feed-groups", () => {
     expect(isActivelyOnTask(noSession, NOW, TRACKING_STALE_MS)).toBe(false);
   });
 
-  it("routes backend-offline tasks to history", () => {
-    const offline = task({
+  it("keeps a fresh task active even when backend flags say offline (clock skew)", () => {
+    // Under agent/server clock skew the backend can stamp a live event as
+    // offline. The client must trust its own freshness (recent lastEventAt).
+    const skewed = task({
       taskId: 6,
       operationalStatus: "offline",
       isOnline: false,
     });
-    expect(isActivelyOnTask(offline, NOW, TRACKING_STALE_MS)).toBe(false);
+    expect(isActivelyOnTask(skewed, NOW, TRACKING_STALE_MS)).toBe(true);
+  });
+
+  it("routes genuinely stale tasks to history regardless of flags", () => {
+    const stale = task({
+      taskId: 7,
+      operationalStatus: "offline",
+      isOnline: false,
+      lastEventAt: "2026-07-12T11:50:00.000Z",
+    });
+    expect(isActivelyOnTask(stale, NOW, TRACKING_STALE_MS)).toBe(false);
   });
 
   it("splitLiveFeedTasks sorts by lastEventAt desc", () => {

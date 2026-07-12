@@ -31,7 +31,8 @@ export interface LiveTaskState {
   lastPosition: [number, number]; // [lng, lat] — Mapbox convention
   polyline: [number, number][]; // capped at 2000 pts
   trackingStartedAt?: string;
-  lastEventAt: string; // ISO — used for staleness check
+  lastEventAt: string; // ISO — event/device time (may carry skewed timezone)
+  lastReceivedAt?: number; // client epoch ms when this update was received — skew-proof staleness basis
   nearDetectedAt?: string;
   arrivedAt?: string;
   distanceToDestinationMeters?: number | null;

@@ -22,6 +22,13 @@ class AgentLocationSnapshotService
             ? Carbon::parse((string) $payload['recorded_at'])
             : now();
 
+        // `last_seen_at` answers "when did the server last hear from this agent"
+        // and drives the is_online / operational_status freshness signal. It must
+        // use server receive time, not the device-supplied recorded_at, otherwise
+        // clock skew between the agent device and the server makes live events look
+        // stale (is_online=false) and the agent never appears as actively tracking.
+        $seenAt = now();
+
         AgentLocationSnapshot::query()->updateOrCreate(
             [
                 'company_id' => (int) $payload['company_id'],
@@ -39,7 +46,7 @@ class AgentLocationSnapshotService
                 'task_status' => $payload['task_status'] !== null ? (string) $payload['task_status'] : null,
                 'arrived' => (bool) ($payload['arrived'] ?? false),
                 'recorded_at' => $recordedAt,
-                'last_seen_at' => $recordedAt,
+                'last_seen_at' => $seenAt,
             ],
         );
 
