@@ -60,6 +60,9 @@ import {
   isBboxTooLarge,
   type PoiResult,
 } from '@/lib/map/overpass-search';
+import { GooglePoiMapLayer } from '@/components/map/GooglePoiMapLayer';
+import { PoiDetailCard } from '@/components/map/PoiDetailCard';
+import { useGooglePoiViewport } from '@/hooks/use-google-poi-viewport';
 import { fetchPlacesInArea } from '@/lib/map/poi-search';
 import { parseTaskMapParams } from '@/lib/tasks/map-navigation';
 import {
@@ -73,29 +76,6 @@ type MapLeftTab = 'feeds' | 'clocked-in' | 'businesses';
 const STALE_MS = 2 * 60_000;
 const MARKER_ANIMATION_MS = 700;
 const SEARCH_DEBOUNCE_MS = 280;
-
-// ── POI pin helpers (module-level, no component deps) ────────────────────────
-
-function buildPinSvg(color: string): string {
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="38" viewBox="0 0 28 38">` +
-    `<path d="M14 2C7.37 2 2 7.37 2 14c0 9.04 12 22 12 22S26 23.04 26 14C26 7.37 20.63 2 14 2z" ` +
-    `fill="${color}" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>` +
-    `<circle cx="14" cy="14" r="5.5" fill="white" opacity="0.92"/>` +
-    `</svg>`
-  );
-}
-
-function loadPinImage(map: mapboxgl.Map, color: string): Promise<void> {
-  const id = `poi-pin-${color.replace('#', '')}`;
-  if (map.hasImage(id)) return Promise.resolve();
-  return new Promise((resolve) => {
-    const img = new Image(28, 38);
-    img.onload = () => { if (!map.hasImage(id)) map.addImage(id, img); resolve(); };
-    img.onerror = () => resolve();
-    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildPinSvg(color))}`;
-  });
-}
 
 type GoogleLatLng = { lat: number; lng: number };
 
@@ -307,10 +287,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   );
   const [mapMode, setMapMode] = useState<'2d' | '3d'>('2d');
   const [showBusinessPins, setShowBusinessPins] = useState(true);
-  const [poiResults, setPoiResults] = useState<PoiResult[]>([]);
-  const [poiBusy, setPoiBusy] = useState(false);
+  const [showGooglePois, setShowGooglePois] = useState(true);
   const [locating, setLocating] = useState(false);
-  const poiTooltipRef = useRef<mapboxgl.Popup | null>(null);
   const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
   const savedLocationPermissions = useSavedLocationPermissions();
   const { isLoading: clockedInLoading } = useAttendanceMapSnapshots({}, { scope: 'management' });
@@ -349,6 +327,27 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   );
   const selectedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
   const token = getMapboxPublicToken();
+  const mapInstance = mapVersion > 0 ? mapRef.current : null;
+  const {
+    pois: viewportPois,
+    busy: poiBusy,
+    zoomTooLow: poiZoomTooLow,
+    selectedPoi,
+    setSelectedPoi,
+  } = useGooglePoiViewport(mapInstance, mapVersion > 0, showGooglePois);
+
+  const displayedPois = useMemo(() => {
+    if (!locationCtx) return viewportPois;
+    return viewportPois.filter((poi) =>
+      isInsideLocationContext({ latitude: poi.lat, longitude: poi.lng }, locationCtx),
+    );
+  }, [viewportPois, locationCtx]);
+
+  const handlePoiSelect = useCallback((poi: PoiResult) => {
+    setSelectedPoi(poi);
+    mapRef.current?.flyTo({ center: [poi.lng, poi.lat], zoom: Math.max(mapRef.current?.getZoom() ?? 15, 16), speed: 1.2 });
+  }, [setSelectedPoi]);
+
   const internalSearchResults = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
     if (!needle) return [] as LiveTaskState[];
@@ -452,41 +451,6 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     },
     [hideHoverPopup, showHoverPopup]
   );
-
-  const handlePoiEnter = useCallback((e: mapboxgl.MapLayerMouseEvent) => {
-    const map = mapRef.current;
-    if (!map) return;
-    map.getCanvas().style.cursor = 'pointer';
-    const feat = e.features?.[0];
-    if (!feat) return;
-    const coords = (feat.geometry as { type: string; coordinates: number[] }).coordinates as [number, number];
-    const p = feat.properties as Record<string, string>;
-    poiTooltipRef.current?.remove();
-    poiTooltipRef.current = new mapboxgl.Popup({
-      offset: [0, -40],
-      closeButton: false,
-      closeOnClick: false,
-      anchor: 'bottom',
-      className: 'poi-tooltip',
-    })
-      .setLngLat(coords)
-      .setHTML(
-        '<div style="padding:8px 10px;min-width:150px;max-width:230px;font-family:ui-sans-serif,system-ui,sans-serif">' +
-        `<p style="font-weight:700;font-size:13px;color:#0f172a;margin:0;line-height:1.35">${p.name}</p>` +
-        `<p style="font-size:11px;color:${p.color};margin:3px 0 0;font-weight:600">${p.category}</p>` +
-        (p.address ? `<p style="font-size:11px;color:#64748b;margin:4px 0 0;line-height:1.4">${p.address}</p>` : '') +
-        (p.phone ? `<p style="font-size:10px;color:#94a3b8;margin:3px 0 0">📞 ${p.phone}</p>` : '') +
-        '</div>'
-      )
-      .addTo(map);
-  }, []);
-
-  const handlePoiLeave = useCallback(() => {
-    const map = mapRef.current;
-    if (map) map.getCanvas().style.cursor = '';
-    poiTooltipRef.current?.remove();
-    poiTooltipRef.current = null;
-  }, []);
 
   const handleLocateMe = useCallback(() => {
     if (!navigator.geolocation || locating) return;
@@ -1173,94 +1137,6 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   // ── Filtered sidebar list ────────────────────────────────────────────────────
   const filteredTasks = searchQuery.trim().length > 0 ? internalSearchResults : tasks;
 
-  // ── Fetch businesses when a location is selected (Google primary, Mapbox fallback) ─
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPoiResults([]);
-    if (!locationCtx) return;
-
-    if (locationCtx.bbox && isBboxTooLarge(locationCtx.bbox)) return;
-
-    let cancelled = false;
-    setPoiBusy(true);
-
-    fetchPlacesInArea(locationCtx)
-      .then((results) => {
-      if (!cancelled) { setPoiResults(results); setPoiBusy(false); }
-    }).catch(() => { if (!cancelled) setPoiBusy(false); });
-
-    return () => { cancelled = true; setPoiBusy(false); };
-  }, [locationCtx]);
-
-  // ── Render POI markers on the Mapbox map (GeoJSON layer — hover-stable) ──────
-  useEffect(() => {
-    let active = true;
-    const map = mapRef.current;
-
-    const cleanupLayers = () => {
-      poiTooltipRef.current?.remove();
-      poiTooltipRef.current = null;
-      if (!map) return;
-      try {
-        if (map.getLayer('poi-pins')) map.removeLayer('poi-pins');
-        if (map.getSource('poi-data')) map.removeSource('poi-data');
-      } catch { /* map may have been destroyed */ }
-    };
-
-    cleanupLayers();
-
-    if (!map || mapVersion === 0 || poiResults.length === 0) return cleanupLayers;
-
-    (async () => {
-      // Load a pin SVG image into the map for every unique category colour
-      const uniqueColors = [...new Set(poiResults.map((p) => p.categoryColor))];
-      await Promise.all(uniqueColors.map((c) => loadPinImage(map, c)));
-      if (!active) return;
-
-      map.addSource('poi-data', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: poiResults.map((poi) => ({
-            type: 'Feature',
-            geometry: { type: 'Point', coordinates: [poi.lng, poi.lat] },
-            properties: {
-              name: poi.name,
-              category: poi.categoryLabel,
-              color: poi.categoryColor,
-              address: poi.address ?? '',
-              phone: poi.phone ?? '',
-            },
-          })),
-        },
-      });
-
-      map.addLayer({
-        id: 'poi-pins',
-        type: 'symbol',
-        source: 'poi-data',
-        layout: {
-          // image id = "poi-pin-" + hex without #, e.g. "poi-pin-EA580C"
-          'icon-image': ['concat', 'poi-pin-', ['slice', ['get', 'color'], 1]],
-          'icon-size': 1,
-          'icon-anchor': 'bottom',
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
-        },
-      });
-
-      map.on('mouseenter', 'poi-pins', handlePoiEnter);
-      map.on('mouseleave', 'poi-pins', handlePoiLeave);
-    })();
-
-    return () => {
-      active = false;
-      map.off('mouseenter', 'poi-pins', handlePoiEnter);
-      map.off('mouseleave', 'poi-pins', handlePoiLeave);
-      cleanupLayers();
-    };
-  }, [poiResults, mapVersion, handlePoiEnter, handlePoiLeave]);
-
   // ── No token fallback ────────────────────────────────────────────────────────
   if (!token) {
     if (compact) {
@@ -1510,13 +1386,12 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         ) : (
           <BusinessListPanel
             activeLocation={locationCtx}
-            pois={poiResults}
+            pois={displayedPois}
             poiBusy={poiBusy}
+            poiZoomTooLow={poiZoomTooLow}
             savedLocations={savedLocations}
             savedLocationsLoading={savedLocationsLoading}
-            onPoiClick={(p) => {
-              mapRef.current?.flyTo({ center: [p.lng, p.lat], zoom: 17, speed: 1.2 });
-            }}
+            onPoiClick={handlePoiSelect}
             onSavedClick={(b) => {
               mapRef.current?.flyTo({ center: [b.longitude, b.latitude], zoom: 17, speed: 1.2 });
             }}
@@ -1536,6 +1411,23 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           visibleIds={filteredBusinessIds}
         />
       )}
+
+      <GooglePoiMapLayer
+        map={mapInstance}
+        mapReady={mapVersion > 0}
+        pois={viewportPois}
+        visible={showGooglePois}
+        selectedPoiId={selectedPoi?.id ?? null}
+        onPoiClick={handlePoiSelect}
+      />
+
+      <PoiDetailCard
+        poi={selectedPoi}
+        onClose={() => setSelectedPoi(null)}
+        onCenter={(poi) => {
+          mapRef.current?.flyTo({ center: [poi.lng, poi.lat], zoom: 17, speed: 1.2 });
+        }}
+      />
 
       {(leftTab === 'clocked-in' || compact) && clockedInItems.length > 0 && (
         <ClockedInLayer
@@ -1643,10 +1535,19 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
       {/* Map controls — bottom-center, clear of the AI FAB at bottom-right */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
-        {/* Toggle business pins */}
+        <button
+          onClick={() => setShowGooglePois((visible) => !visible)}
+          title={showGooglePois ? 'Hide Google Places' : 'Show Google Places'}
+          className="h-10 rounded-full bg-white/95 backdrop-blur shadow-lg border border-slate-200 px-4 flex items-center gap-2 text-[12px] font-semibold text-dash-dark hover:bg-slate-50 active:scale-95 transition-all"
+        >
+          {showGooglePois ? <EyeOff size={16} /> : <Eye size={16} />}
+          {showGooglePois ? 'Hide Places' : 'Show Places'}
+        </button>
+
+        {/* Toggle saved business pins */}
         <button
           onClick={() => setShowBusinessPins((visible) => !visible)}
-          title={showBusinessPins ? 'Hide business pins' : 'Show business pins'}
+          title={showBusinessPins ? 'Hide pinned locations' : 'Show pinned locations'}
           className="h-10 rounded-full bg-white/95 backdrop-blur shadow-lg border border-slate-200 px-4 flex items-center gap-2 text-[12px] font-semibold text-dash-dark hover:bg-slate-50 active:scale-95 transition-all"
         >
           {showBusinessPins ? <EyeOff size={16} /> : <Eye size={16} />}

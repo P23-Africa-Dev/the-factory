@@ -15,6 +15,7 @@ type Props = {
   activeLocation: LocationContext | null;
   pois: PoiResult[];
   poiBusy: boolean;
+  poiZoomTooLow?: boolean;
   savedLocations: SavedLocation[];
   savedLocationsLoading: boolean;
   onPoiClick: (p: PoiResult) => void;
@@ -25,26 +26,28 @@ export function BusinessListPanel({
   activeLocation,
   pois = [],
   poiBusy = false,
+  poiZoomTooLow = false,
   savedLocations = [],
   savedLocationsLoading = false,
   onPoiClick,
   onSavedClick,
 }: Props) {
   const isSearching = activeLocation !== null;
+  const showPoiList =
+    isSearching || pois.length > 0 || poiBusy || poiZoomTooLow;
   const bboxTooLarge =
     isSearching && activeLocation.bbox ? isBboxTooLarge(activeLocation.bbox) : false;
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* Header */}
       <div className="px-5 pt-3 pb-2 shrink-0">
-        {isSearching ? (
+        {showPoiList ? (
           <div className="flex items-center gap-2 min-w-0">
             <MapPin size={13} className="text-dash-teal shrink-0" />
             <p className="text-[13px] font-bold text-dash-dark truncate flex-1">
-              {activeLocation.name}
+              {isSearching ? activeLocation.name : 'Businesses in view'}
             </p>
-            {!poiBusy && !bboxTooLarge && pois.length > 0 && (
+            {!poiBusy && !bboxTooLarge && !poiZoomTooLow && pois.length > 0 && (
               <span className="shrink-0 text-[10px] font-bold text-white bg-dash-teal px-2 py-0.5 rounded-full">
                 {pois.length}
               </span>
@@ -53,26 +56,33 @@ export function BusinessListPanel({
         ) : (
           <p className="text-[13px] font-bold text-dash-dark">Pinned Locations</p>
         )}
-        {isSearching && !poiBusy && !bboxTooLarge && (
-          <p className="text-[11px] text-slate-400 mt-0.5 pl-5">Real businesses in this area</p>
+        {showPoiList && !poiBusy && !bboxTooLarge && !poiZoomTooLow && (
+          <p className="text-[11px] text-slate-400 mt-0.5 pl-5">
+            {isSearching ? 'Businesses in this area' : 'Pan and zoom the map to discover more'}
+          </p>
         )}
       </div>
 
-      {/* List */}
       <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-1 min-h-0">
-        {isSearching ? (
+        {showPoiList ? (
           bboxTooLarge ? (
             <Empty
               icon={<MapPin size={26} className="text-slate-300" />}
               message={BBOX_TOO_LARGE_MSG}
+            />
+          ) : poiZoomTooLow ? (
+            <Empty
+              icon={<Building2 size={26} className="text-slate-300" />}
+              message="Zoom in to discover businesses"
+              hint="Pan the map and zoom to level 12 or higher"
             />
           ) : poiBusy ? (
             <Spinner message="Finding businesses…" />
           ) : pois.length === 0 ? (
             <Empty
               icon={<Building2 size={26} className="text-slate-300" />}
-              message="No businesses found in this area"
-              hint="Try a more specific neighbourhood or street"
+              message="No businesses found in this view"
+              hint="Try panning to a busier area or zooming in further"
             />
           ) : (
             pois.map((poi) => (
@@ -85,7 +95,7 @@ export function BusinessListPanel({
           <Empty
             icon={<MapPin size={26} className="text-slate-300" />}
             message="No pinned locations yet"
-            hint="Search a location above to explore real businesses"
+            hint="Zoom in on the map to explore Google businesses nearby"
           />
         ) : (
           savedLocations.map((b) => (

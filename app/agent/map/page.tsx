@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, ChevronUp, ClipboardList, Radio, X } from 'lucide-react';
 import { AgentMapView } from '@/components/map/agent-map-view';
@@ -16,8 +16,7 @@ import { useSavedLocations } from '@/hooks/use-saved-locations';
 import type { AgentLocationSnapshotItem } from '@/types/tracking';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { isInsideLocationContext, type LocationContext } from '@/lib/map/location-search';
-import { isBboxTooLarge, type PoiResult } from '@/lib/map/overpass-search';
-import { fetchPlacesInArea } from '@/lib/map/poi-search';
+import type { PoiResult } from '@/lib/map/overpass-search';
 import { parseTaskMapParams } from '@/lib/tasks/map-navigation';
 
 function AgentMapPageContent() {
@@ -43,8 +42,10 @@ function AgentMapPageContent() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [locationCtx, setLocationCtx] = useState<LocationContext | null>(null);
   const [focusLocation, setFocusLocation] = useState<SavedLocation | null>(null);
-  const [poiResults, setPoiResults] = useState<PoiResult[]>([]);
+  const [viewportPois, setViewportPois] = useState<PoiResult[]>([]);
   const [poiBusy, setPoiBusy] = useState(false);
+  const [poiZoomTooLow, setPoiZoomTooLow] = useState(false);
+  const [focusPoiId, setFocusPoiId] = useState<string | null>(null);
   const [showPinnedBusinesses, setShowPinnedBusinesses] = useState(true);
 
   const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
@@ -53,6 +54,13 @@ function AgentMapPageContent() {
     if (!locationCtx) return savedLocations;
     return savedLocations.filter((location) => isInsideLocationContext(location, locationCtx));
   }, [savedLocations, locationCtx]);
+
+  const displayedPois = useMemo(() => {
+    if (!locationCtx) return viewportPois;
+    return viewportPois.filter((poi) =>
+      isInsideLocationContext({ latitude: poi.lat, longitude: poi.lng }, locationCtx),
+    );
+  }, [viewportPois, locationCtx]);
 
   const handleViewActiveTracking = useCallback(async () => {
     if (!companyId || !user?.id) return;
@@ -74,8 +82,6 @@ function AgentMapPageContent() {
         return;
       }
 
-      // Prefer the task that is already being tracked on this device, then a
-      // task targeted via URL params, and only then the first in-progress task.
       const preferredTaskId = activeTaskId ?? taskFocus?.taskId ?? null;
       const task =
         (preferredTaskId
@@ -101,8 +107,6 @@ function AgentMapPageContent() {
         );
       }
 
-      // Resume through the provider (not the raw store setter) so the GPS
-      // buffer restarts and Cancel/Stop can reliably tear everything down.
       startTracking(taskId, companyId, token, { onError: () => { } });
       setViewMode(true);
       setSheetOpen(false);
@@ -133,32 +137,8 @@ function AgentMapPageContent() {
     setSheetOpen(false);
   }, []);
 
-  useEffect(() => {
-    setPoiResults([]);
-    if (!locationCtx) return;
-    if (locationCtx.bbox && isBboxTooLarge(locationCtx.bbox)) return;
-
-    let cancelled = false;
-    setPoiBusy(true);
-
-    fetchPlacesInArea(locationCtx)
-      .then((results) => {
-        if (!cancelled) {
-          setPoiResults(results);
-          setPoiBusy(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setPoiBusy(false);
-      });
-
-    return () => {
-      cancelled = true;
-      setPoiBusy(false);
-    };
-  }, [locationCtx]);
-
   const handlePoiClick = useCallback((poi: PoiResult) => {
+    setFocusPoiId(poi.id);
     setFocusLocation({
       id: -1,
       name: poi.name,
@@ -184,6 +164,11 @@ function AgentMapPageContent() {
         showPinsToggle
         onTogglePins={() => setShowPinnedBusinesses((visible) => !visible)}
         pinsToggleLabel={showPinnedBusinesses ? 'Hide Pins' : 'Show Pins'}
+        focusPoiId={focusPoiId}
+        onPoisChange={setViewportPois}
+        onPoiBusyChange={setPoiBusy}
+        onPoiZoomTooLowChange={setPoiZoomTooLow}
+        onGooglePoiSelect={(poi) => setFocusPoiId(poi?.id ?? null)}
       />
 
       {activeTask && isTracking && (
@@ -267,7 +252,9 @@ function AgentMapPageContent() {
                 className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0"
               >
                 <span className="text-[13px] font-bold text-dash-dark">
-                  Pinned Locations ({filteredLocations.length})
+                  {locationCtx || displayedPois.length > 0
+                    ? `Businesses (${displayedPois.length})`
+                    : `Pinned Locations (${filteredLocations.length})`}
                 </span>
                 {sheetOpen ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronUp size={16} className="text-gray-400" />}
               </button>
@@ -275,8 +262,9 @@ function AgentMapPageContent() {
                 <div className="min-h-0 max-h-[42vh] overflow-y-auto overscroll-contain">
                   <BusinessListPanel
                     activeLocation={locationCtx}
-                    pois={poiResults}
+                    pois={displayedPois}
                     poiBusy={poiBusy}
+                    poiZoomTooLow={poiZoomTooLow}
                     savedLocations={filteredLocations}
                     savedLocationsLoading={savedLocationsLoading}
                     onPoiClick={handlePoiClick}

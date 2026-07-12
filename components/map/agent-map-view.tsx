@@ -8,6 +8,7 @@ import { TerritoryLayer } from '@/components/map/TerritoryLayer';
 import { ClockedInLayer } from '@/components/map/ClockedInLayer';
 import { useAttendanceMapSnapshots } from '@/hooks/use-attendance-map';
 import { useAttendanceMapStore } from '@/store/attendance-map';
+import { Eye, EyeOff } from 'lucide-react';
 import { MapExploreControls } from '@/components/map/map-explore-controls';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { createUserLocationIndicatorElement } from '@/lib/map/user-location-marker';
@@ -38,6 +39,10 @@ import {
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 import { getMapboxNavigationStyle, resolveMapAppearance } from '@/lib/map/style-mode';
 import type { TaskMapFocus } from '@/lib/tasks/map-navigation';
+import { GooglePoiMapLayer } from '@/components/map/GooglePoiMapLayer';
+import { PoiDetailCard } from '@/components/map/PoiDetailCard';
+import { useGooglePoiViewport } from '@/hooks/use-google-poi-viewport';
+import type { PoiResult } from '@/lib/map/overpass-search';
 
 const MARKER_ANIMATION_MS = 700;
 
@@ -94,6 +99,12 @@ export type AgentMapViewProps = {
     showPinsToggle?: boolean;
     onTogglePins?: () => void;
     pinsToggleLabel?: string;
+    showGooglePois?: boolean;
+    focusPoiId?: string | null;
+    onPoisChange?: (pois: PoiResult[]) => void;
+    onPoiBusyChange?: (busy: boolean) => void;
+    onPoiZoomTooLowChange?: (zoomTooLow: boolean) => void;
+    onGooglePoiSelect?: (poi: PoiResult | null) => void;
 };
 
 function MapboxAgentMapView({
@@ -106,6 +117,12 @@ function MapboxAgentMapView({
     showPinsToggle = false,
     onTogglePins,
     pinsToggleLabel = "Hide Pins",
+    showGooglePois: showGooglePoisProp = true,
+    focusPoiId = null,
+    onPoisChange,
+    onPoiBusyChange,
+    onPoiZoomTooLowChange,
+    onGooglePoiSelect,
 }: AgentMapViewProps & { providerState: EffectiveMapProviderState }) {
     const mapContainer = useRef<HTMLDivElement>(null);
     const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -130,6 +147,48 @@ function MapboxAgentMapView({
     const [pinMode, setPinMode] = useState(false);
     const [mapMode, setMapMode] = useState<'2d' | '3d'>('2d');
     const [locating, setLocating] = useState(false);
+    const [showGooglePois, setShowGooglePois] = useState(showGooglePoisProp);
+
+    const mapInstance = mapReady ? mapRef.current : null;
+    const {
+        pois: viewportPois,
+        busy: poiBusy,
+        zoomTooLow: poiZoomTooLow,
+        selectedPoi,
+        setSelectedPoi,
+    } = useGooglePoiViewport(mapInstance, mapReady, showGooglePois && !activeTask);
+
+    const handlePoiSelect = useCallback((poi: PoiResult) => {
+        setSelectedPoi(poi);
+        onGooglePoiSelect?.(poi);
+        mapRef.current?.flyTo({
+            center: [poi.lng, poi.lat],
+            zoom: Math.max(mapRef.current?.getZoom() ?? 15, 16),
+            speed: 1.2,
+        });
+    }, [onGooglePoiSelect, setSelectedPoi]);
+
+    useEffect(() => {
+        onPoisChange?.(viewportPois);
+    }, [onPoisChange, viewportPois]);
+
+    useEffect(() => {
+        onPoiBusyChange?.(poiBusy);
+    }, [onPoiBusyChange, poiBusy]);
+
+    useEffect(() => {
+        onPoiZoomTooLowChange?.(poiZoomTooLow);
+    }, [onPoiZoomTooLowChange, poiZoomTooLow]);
+
+    useEffect(() => {
+        if (!focusPoiId) return;
+        const poi = viewportPois.find((item) => item.id === focusPoiId);
+        if (poi) setSelectedPoi(poi);
+    }, [focusPoiId, viewportPois, setSelectedPoi]);
+
+    useEffect(() => {
+        setShowGooglePois(showGooglePoisProp);
+    }, [showGooglePoisProp]);
 
     useTrackingWebSocket();
     useAttendanceMapSnapshots({}, { scope: 'agent' });
@@ -649,16 +708,53 @@ function MapboxAgentMapView({
             )}
 
             {!activeTask && (
-                <MapExploreControls
-                    locating={locating}
-                    mapMode={mapMode}
-                    onLocateMe={handleLocateMe}
-                    onMapModeChange={handleMapModeChange}
-                    className={mapControlsClassName}
-                    showPinsToggle={showPinsToggle}
-                    onTogglePins={onTogglePins}
-                    pinsToggleLabel={pinsToggleLabel}
-                />
+                <>
+                    <GooglePoiMapLayer
+                        map={mapInstance}
+                        mapReady={mapReady}
+                        pois={viewportPois}
+                        visible={showGooglePois}
+                        selectedPoiId={selectedPoi?.id ?? null}
+                        onPoiClick={handlePoiSelect}
+                    />
+
+                    <PoiDetailCard
+                        poi={selectedPoi}
+                        onClose={() => {
+                            setSelectedPoi(null);
+                            onGooglePoiSelect?.(null);
+                        }}
+                        onCenter={(poi) => {
+                            mapRef.current?.flyTo({ center: [poi.lng, poi.lat], zoom: 17, speed: 1.2 });
+                        }}
+                        className="absolute bottom-24 left-4 z-30 w-[min(92vw,320px)] rounded-2xl border border-slate-200 bg-white/95 backdrop-blur shadow-2xl overflow-hidden"
+                    />
+                </>
+            )}
+
+            {!activeTask && (
+                <div className={`${mapControlsClassName ?? 'absolute bottom-6 left-1/2 -translate-x-1/2 z-30'} flex items-center gap-2`}>
+                    <button
+                        type="button"
+                        onClick={() => setShowGooglePois((visible) => !visible)}
+                        title={showGooglePois ? 'Hide Google Places' : 'Show Google Places'}
+                        className="h-10 rounded-full bg-white/95 backdrop-blur shadow-lg border border-slate-200 px-4 flex items-center gap-2 text-[12px] font-semibold text-dash-dark hover:bg-slate-50 active:scale-95 transition-all"
+                    >
+                        {showGooglePois ? <EyeOff size={16} /> : <Eye size={16} />}
+                        {showGooglePois ? 'Hide Places' : 'Show Places'}
+                    </button>
+
+                    <MapExploreControls
+                        locating={locating}
+                        mapMode={mapMode}
+                        onLocateMe={handleLocateMe}
+                        onMapModeChange={handleMapModeChange}
+                        className="flex items-center gap-2"
+                        showPinsToggle={showPinsToggle}
+                        onTogglePins={onTogglePins}
+                        pinsToggleLabel={pinsToggleLabel}
+                    />
+                </div>
             )}
 
             {providerState.fallbackReason === 'missing_google_api_key' && providerState.requestedProvider === 'google' && (
@@ -1142,6 +1238,12 @@ export function AgentMapView({
     showPinsToggle = false,
     onTogglePins,
     pinsToggleLabel = "Hide Pins",
+    showGooglePois = true,
+    focusPoiId = null,
+    onPoisChange,
+    onPoiBusyChange,
+    onPoiZoomTooLowChange,
+    onGooglePoiSelect,
 }: AgentMapViewProps = {}) {
     const providerState = useEffectiveMapProvider();
 
@@ -1172,6 +1274,12 @@ export function AgentMapView({
             showPinsToggle={showPinsToggle}
             onTogglePins={onTogglePins}
             pinsToggleLabel={pinsToggleLabel}
+            showGooglePois={showGooglePois}
+            focusPoiId={focusPoiId}
+            onPoisChange={onPoisChange}
+            onPoiBusyChange={onPoiBusyChange}
+            onPoiZoomTooLowChange={onPoiZoomTooLowChange}
+            onGooglePoiSelect={onGooglePoiSelect}
         />
     );
 }
