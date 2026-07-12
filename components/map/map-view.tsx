@@ -325,7 +325,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     () => tasks.some((task) => hasUsableTaskPosition(task)),
     [tasks]
   );
-  const preferUserLocation = !hasActiveTaskPositions && !taskFocus;
+  const preferUserLocation = !taskFocus;
   const {
     viewport: initialViewport,
     isResolving: isResolvingInitialViewport,
@@ -1718,7 +1718,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     () => tasks.some((task) => hasUsableTaskPosition(task)),
     [tasks]
   );
-  const preferUserLocation = !hasActiveTaskPositions && !taskFocus;
+  const preferUserLocation = !taskFocus;
   const {
     viewport: initialViewport,
     isResolving: isResolvingInitialViewport,

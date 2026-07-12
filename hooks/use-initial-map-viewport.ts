@@ -51,7 +51,7 @@ export function useInitialMapViewport(options: {
     setViewport(null);
     setIsUserLocation(false);
 
-    resolvePrivacySafeViewport().then((resolved) => {
+    resolvePrivacySafeViewport({ preferFreshGps: true }).then((resolved) => {
       if (cancelled) {
         return;
       }

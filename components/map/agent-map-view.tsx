@@ -144,7 +144,7 @@ function MapboxAgentMapView({
     const activeTask = useTrackingStore((s) =>
         activeTaskId ? s.liveTasks[activeTaskId] ?? null : null
     );
-    const preferUserLocation = !activeTask && !taskFocus;
+    const preferUserLocation = !taskFocus;
     const {
         viewport: initialViewport,
         isResolving: isResolvingInitialViewport,
@@ -823,7 +823,7 @@ function GoogleAgentMapView({
     const activeTask = useTrackingStore((s) =>
         activeTaskId ? s.liveTasks[activeTaskId] ?? null : null
     );
-    const preferUserLocation = !activeTask && !taskFocus;
+    const preferUserLocation = !taskFocus;
     const {
         viewport: initialViewport,
         isResolving: isResolvingInitialViewport,
