@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, ChevronUp, ClipboardList, Radio, X } from 'lucide-react';
 import { AgentMapView } from '@/components/map/agent-map-view';
@@ -16,6 +16,8 @@ import { useSavedLocations } from '@/hooks/use-saved-locations';
 import type { AgentLocationSnapshotItem } from '@/types/tracking';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { isInsideLocationContext, type LocationContext } from '@/lib/map/location-search';
+import { isBboxTooLarge, type PoiResult } from '@/lib/map/overpass-search';
+import { fetchPlacesInArea } from '@/lib/map/poi-search';
 import { parseTaskMapParams } from '@/lib/tasks/map-navigation';
 
 function AgentMapPageContent() {
@@ -41,6 +43,8 @@ function AgentMapPageContent() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [locationCtx, setLocationCtx] = useState<LocationContext | null>(null);
   const [focusLocation, setFocusLocation] = useState<SavedLocation | null>(null);
+  const [poiResults, setPoiResults] = useState<PoiResult[]>([]);
+  const [poiBusy, setPoiBusy] = useState(false);
   const [showPinnedBusinesses, setShowPinnedBusinesses] = useState(true);
 
   const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
@@ -126,6 +130,48 @@ function AgentMapPageContent() {
 
   const handleSavedLocationClick = useCallback((location: SavedLocation) => {
     setFocusLocation(location);
+    setSheetOpen(false);
+  }, []);
+
+  useEffect(() => {
+    setPoiResults([]);
+    if (!locationCtx) return;
+    if (locationCtx.bbox && isBboxTooLarge(locationCtx.bbox)) return;
+
+    let cancelled = false;
+    setPoiBusy(true);
+
+    fetchPlacesInArea(locationCtx)
+      .then((results) => {
+        if (!cancelled) {
+          setPoiResults(results);
+          setPoiBusy(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPoiBusy(false);
+      });
+
+    return () => {
+      cancelled = true;
+      setPoiBusy(false);
+    };
+  }, [locationCtx]);
+
+  const handlePoiClick = useCallback((poi: PoiResult) => {
+    setFocusLocation({
+      id: -1,
+      name: poi.name,
+      type: poi.category,
+      description: poi.categoryLabel,
+      address: poi.address ?? null,
+      latitude: poi.lat,
+      longitude: poi.lng,
+      contact_number: poi.phone ?? null,
+      email: null,
+      is_active: true,
+      meta: null,
+    });
     setSheetOpen(false);
   }, []);
 
@@ -229,11 +275,11 @@ function AgentMapPageContent() {
                 <div className="min-h-0 max-h-[42vh] overflow-y-auto overscroll-contain">
                   <BusinessListPanel
                     activeLocation={locationCtx}
-                    pois={[]}
-                    poiBusy={false}
+                    pois={poiResults}
+                    poiBusy={poiBusy}
                     savedLocations={filteredLocations}
                     savedLocationsLoading={savedLocationsLoading}
-                    onPoiClick={() => {}}
+                    onPoiClick={handlePoiClick}
                     onSavedClick={handleSavedLocationClick}
                   />
                 </div>

@@ -57,11 +57,10 @@ import { useAttendanceMapStore } from '@/store/attendance-map';
 import type { AttendanceMapSnapshotItem } from '@/lib/api/attendance';
 import { isInsideLocationContext, type LocationContext } from '@/lib/map/location-search';
 import {
-  fetchBusinessesInBbox,
-  fetchBusinessesNearPoint,
   isBboxTooLarge,
   type PoiResult,
 } from '@/lib/map/overpass-search';
+import { fetchPlacesInArea } from '@/lib/map/poi-search';
 import { parseTaskMapParams } from '@/lib/tasks/map-navigation';
 import {
   createSearchSessionToken,
@@ -406,7 +405,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
   const handlePlaceResultSelect = useCallback(async (suggestion: PlaceSuggestion) => {
     setPlaceResolving(true);
-    const place = await retrievePlace(suggestion.mapboxId, searchSessionTokenRef.current, { token });
+    const place = await retrievePlace(suggestion, { token });
     setPlaceResolving(false);
     // Retrieval closes the Search Box session; rotate to a fresh one.
     searchSessionTokenRef.current = createSearchSessionToken();
@@ -573,7 +572,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   useEffect(() => {
     const query = searchQuery.trim();
 
-    if (!query || query.length < 3 || !token || compact) {
+    if (!query || query.length < 3 || compact) {
       return;
     }
 
@@ -1174,7 +1173,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   // ── Filtered sidebar list ────────────────────────────────────────────────────
   const filteredTasks = searchQuery.trim().length > 0 ? internalSearchResults : tasks;
 
-  // ── Fetch real-world businesses from OpenStreetMap when a location is selected ─
+  // ── Fetch businesses when a location is selected (Google primary, Mapbox fallback) ─
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPoiResults([]);
@@ -1185,11 +1184,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     let cancelled = false;
     setPoiBusy(true);
 
-    const fetch = locationCtx.bbox
-      ? fetchBusinessesInBbox(locationCtx.bbox)
-      : fetchBusinessesNearPoint(locationCtx.center[1], locationCtx.center[0]);
-
-    fetch.then((results) => {
+    fetchPlacesInArea(locationCtx)
+      .then((results) => {
       if (!cancelled) { setPoiResults(results); setPoiBusy(false); }
     }).catch(() => { if (!cancelled) setPoiBusy(false); });
 
@@ -1382,7 +1378,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
             {placeResults.map((result) => (
               <button
-                key={result.mapboxId}
+                key={`${result.provider}-${result.id}`}
                 disabled={placeResolving}
                 className="w-full text-left px-3 py-2 rounded-xl text-[12px] text-slate-700 hover:bg-slate-100 disabled:opacity-60"
                 onClick={() => handlePlaceResultSelect(result)}
@@ -1392,6 +1388,9 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
                   <span className="ml-2 text-[10px] font-medium text-dash-teal capitalize">
                     {result.category.replace(/_/g, ' ')}
                   </span>
+                )}
+                {result.provider === 'google' && (
+                  <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Google</span>
                 )}
                 {result.placeFormatted && result.placeFormatted !== result.name && (
                   <span className="block text-[11px] text-slate-400 truncate">{result.placeFormatted}</span>
@@ -1872,7 +1871,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     );
   }, [locating, setLocating]);
 
-  // ── Fetch real-world businesses when a location is selected ──────────────────
+  // ── Fetch businesses when a location is selected (Google primary, Mapbox fallback) ─
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPoiResults([]);
@@ -1882,11 +1881,8 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     let cancelled = false;
     setPoiBusy(true);
 
-    const req = locationCtx.bbox
-      ? fetchBusinessesInBbox(locationCtx.bbox)
-      : fetchBusinessesNearPoint(locationCtx.center[1], locationCtx.center[0]);
-
-    req.then((results) => {
+    fetchPlacesInArea(locationCtx)
+      .then((results) => {
       if (!cancelled) { setPoiResults(results); setPoiBusy(false); }
     }).catch(() => { if (!cancelled) setPoiBusy(false); });
 

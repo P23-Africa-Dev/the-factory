@@ -72,7 +72,7 @@ export function BusinessListPanel({
             <Empty
               icon={<Building2 size={26} className="text-slate-300" />}
               message="No businesses found in this area"
-              hint="OpenStreetMap may not have full coverage here yet"
+              hint="Try a more specific neighbourhood or street"
             />
           ) : (
             pois.map((poi) => (

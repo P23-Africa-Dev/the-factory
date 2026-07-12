@@ -63,7 +63,7 @@ export function LocationSearchInput({ activeLocation, onLocationSelect, classNam
 
   async function handleSelect(suggestion: PlaceSuggestion) {
     setResolving(true);
-    const place = await retrievePlace(suggestion.mapboxId, sessionTokenRef.current);
+    const place = await retrievePlace(suggestion);
     setResolving(false);
     // Retrieval ends the search session; start a fresh one for the next search.
     sessionTokenRef.current = createSearchSessionToken();
@@ -138,7 +138,7 @@ export function LocationSearchInput({ activeLocation, onLocationSelect, classNam
               )}
               {suggestions.map((s) => (
                 <button
-                  key={s.mapboxId}
+                  key={`${s.provider}-${s.id}`}
                   disabled={resolving}
                   className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-60"
                   onClick={() => handleSelect(s)}
@@ -149,6 +149,9 @@ export function LocationSearchInput({ activeLocation, onLocationSelect, classNam
                       <span className="ml-2 text-[10px] font-medium text-dash-teal capitalize">
                         {s.category.replace(/_/g, ' ')}
                       </span>
+                    )}
+                    {s.provider === 'google' && (
+                      <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Google</span>
                     )}
                   </p>
                   {s.placeFormatted && s.placeFormatted !== s.name && (
