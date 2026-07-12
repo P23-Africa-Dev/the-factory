@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import mapboxgl from 'mapbox-gl';
-import { Search, Eye, EyeOff, Radio, RefreshCcw, MoreHorizontal, LocateFixed } from 'lucide-react';
+import { Search, Eye, EyeOff, RefreshCcw, LocateFixed } from 'lucide-react';
 import {
   getGoogleMapsPublicApiKey,
   MAPBOX_PUBLIC_TOKEN_ENV,
@@ -45,6 +45,15 @@ import {
   OPERATIONAL_STATUS_META,
   resolveOperationalStatusFromTask,
 } from '@/lib/tracking/operational-status';
+import {
+  hasUsableTaskPosition,
+  resolveMapTasks,
+  resolveTrajectoryTaskIds,
+  splitLiveFeedTasks,
+  TRACKING_STALE_MS,
+} from '@/lib/tracking/live-feed-groups';
+import { LiveFeedsPanel } from '@/components/map/live-feeds-panel';
+import { AgentAvatar } from '@/components/map/agent-avatar';
 import { useInitialMapViewport } from '@/hooks/use-initial-map-viewport';
 import { TrackingConnectionStatus } from '@/components/tracking/TrackingConnectionStatus';
 import { SavedLocationsLayer, type GoogleMapBridge } from '@/components/map/SavedLocationsLayer';
@@ -80,7 +89,7 @@ import {
 } from '@/lib/utils/place-search';
 
 type MapLeftTab = 'feeds' | 'clocked-in' | 'businesses';
-const STALE_MS = 2 * 60_000;
+const STALE_MS = TRACKING_STALE_MS;
 const MARKER_ANIMATION_MS = 700;
 const SEARCH_DEBOUNCE_MS = 280;
 
@@ -247,10 +256,6 @@ interface MapViewProps {
   compact?: boolean;
 }
 
-function hasUsableTaskPosition(task: LiveTaskState): boolean {
-  return task.lastPosition[0] !== 0 || task.lastPosition[1] !== 0;
-}
-
 export function MapboxMapView({ compact = false, providerState }: MapViewProps & { providerState: EffectiveMapProviderState }) {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab');
@@ -283,6 +288,9 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const [placeResolving, setPlaceResolving] = useState(false);
   const searchSessionTokenRef = useRef<string>(createSearchSessionToken());
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [followAllActive, setFollowAllActive] = useState(false);
+  const [showHistoryFeeds, setShowHistoryFeeds] = useState(false);
+  const followAllLastFitRef = useRef(0);
   // Camera follow mode: keeps tracking the selected agent until the user pans away.
   const [isFollowing, setIsFollowing] = useState(false);
   const isFollowingRef = useRef(false);
@@ -337,6 +345,18 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const liveTasks = useTrackingStore((s) => s.liveTasks);
 
   const tasks = useMemo(() => Object.values(liveTasks), [liveTasks]);
+  const feedGroups = useMemo(
+    () => splitLiveFeedTasks(tasks, nowMs, STALE_MS),
+    [tasks, nowMs],
+  );
+  const mapTasks = useMemo(
+    () => resolveMapTasks(feedGroups.active, feedGroups.history, selectedTaskId),
+    [feedGroups.active, feedGroups.history, selectedTaskId],
+  );
+  const trajectoryTaskIds = useMemo(
+    () => resolveTrajectoryTaskIds(feedGroups.active, selectedTaskId, followAllActive),
+    [feedGroups.active, selectedTaskId, followAllActive],
+  );
   const hasActiveTaskPositions = useMemo(
     () => tasks.some((task) => hasUsableTaskPosition(task)),
     [tasks]
@@ -370,21 +390,29 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     mapRef.current?.flyTo({ center: [poi.lng, poi.lat], zoom: Math.max(mapRef.current?.getZoom() ?? 15, 16), speed: 1.2 });
   }, [setSelectedPoi]);
 
-  const internalSearchResults = useMemo(() => {
-    const needle = searchQuery.trim().toLowerCase();
-    if (!needle) return [] as LiveTaskState[];
+  const handleSelectTask = useCallback((taskId: number) => {
+    setSelectedTaskId(taskId);
+    const task = useTrackingStore.getState().liveTasks[taskId];
+    const map = mapRef.current;
+    if (!task || !map) return;
+    const [lng, lat] = task.lastPosition;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+    suppressFollowBreakRef.current = true;
+    map.flyTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), 15.5), speed: 1.2 });
+    map.once('moveend', () => {
+      suppressFollowBreakRef.current = false;
+    });
+  }, []);
 
-    return tasks
-      .filter(
-        (task) =>
-          task.agentName.toLowerCase().includes(needle) ||
-          (task.taskTitle ?? '').toLowerCase().includes(needle) ||
-          (task.projectName ?? '').toLowerCase().includes(needle) ||
-          (task.taskAddress ?? '').toLowerCase().includes(needle) ||
-          String(task.taskId).includes(needle)
-      )
-      .slice(0, 8);
-  }, [searchQuery, tasks]);
+  const handleToggleFollowAll = useCallback(() => {
+    setFollowAllActive((prev) => {
+      if (!prev) {
+        setIsFollowing(false);
+        followAllLastFitRef.current = 0;
+      }
+      return !prev;
+    });
+  }, []);
 
   const savedLocationMatches = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
@@ -641,32 +669,15 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     };
   }, [compact, searchQuery, token]);
 
-  // Fly to agent when sidebar selection changes and enter follow mode
-  // (refs only in effects).
+  // Keep follow ref in sync (refs only in effects).
   useEffect(() => {
     isFollowingRef.current = isFollowing;
   }, [isFollowing]);
 
-  useEffect(() => {
-    if (selectedTaskId == null || !mapRef.current) {
-      setIsFollowing(false);
-      return;
-    }
-    const task = useTrackingStore.getState().liveTasks[selectedTaskId];
-    if (!task) return;
-    const [lng, lat] = task.lastPosition;
-    suppressFollowBreakRef.current = true;
-    mapRef.current.flyTo({ center: [lng, lat], zoom: 15.5, speed: 1.2 });
-    mapRef.current.once('moveend', () => {
-      suppressFollowBreakRef.current = false;
-    });
-    setIsFollowing(true);
-  }, [selectedTaskId, mapVersion]);
-
-  // While following, keep the camera glued to the selected agent's live position.
+  // While following a single agent, keep the camera glued to their live position.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !isFollowing || !selectedTask) return;
+    if (!map || !isFollowing || followAllActive || !selectedTask) return;
     const [lng, lat] = selectedTask.lastPosition;
     if (!Number.isFinite(lng) || !Number.isFinite(lat) || (lng === 0 && lat === 0)) return;
     suppressFollowBreakRef.current = true;
@@ -674,7 +685,32 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     map.once('moveend', () => {
       suppressFollowBreakRef.current = false;
     });
-  }, [isFollowing, selectedTask, selectedTask?.lastPosition?.[0], selectedTask?.lastPosition?.[1]]);
+  }, [isFollowing, followAllActive, selectedTask, selectedTask?.lastPosition?.[0], selectedTask?.lastPosition?.[1]]);
+
+  // Follow-all: fit bounds to every actively tracking agent (throttled).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !followAllActive || feedGroups.active.length === 0) return;
+
+    const now = Date.now();
+    if (now - followAllLastFitRef.current < 2000) return;
+    followAllLastFitRef.current = now;
+
+    const bounds = new mapboxgl.LngLatBounds();
+    for (const task of feedGroups.active) {
+      bounds.extend(task.lastPosition);
+    }
+    suppressFollowBreakRef.current = true;
+    map.fitBounds(bounds, { padding: 80, maxZoom: 15, duration: 900 });
+    map.once('moveend', () => {
+      suppressFollowBreakRef.current = false;
+    });
+  }, [
+    followAllActive,
+    feedGroups.active,
+    feedGroups.active.map((t) => t.lastPosition.join(',')).join('|'),
+    mapVersion,
+  ]);
 
   // Break follow mode the moment the user pans/zooms/rotates manually.
   useEffect(() => {
@@ -684,6 +720,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     const breakFollow = () => {
       if (suppressFollowBreakRef.current) return;
       if (isFollowingRef.current) setIsFollowing(false);
+      setFollowAllActive(false);
     };
 
     map.on('dragstart', breakFollow);
@@ -921,7 +958,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     if (!map || !mapLoadedRef.current) return;
 
     const now = nowMs || Date.now();
-    const allTrackedTasks = tasks.filter((t) => hasUsableTaskPosition(t));
+    const allTrackedTasks = mapTasks.filter((t) => hasUsableTaskPosition(t));
     const bounds = map.getBounds();
     const maxRenderedMarkers = allTrackedTasks.length > 120 ? 120 : 400;
     const validTasks = allTrackedTasks
@@ -947,8 +984,9 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       const visualState = resolveVisualTaskState(task.status, stale, derivedOperationalStatus);
       const trail = sanitizePolyline(buildTaskTrail(task));
       const currentPoint = task.lastPosition;
+      const showTrajectory = trajectoryTaskIds.has(task.taskId);
 
-      if (trail.length >= 2) {
+      if (showTrajectory && trail.length >= 2) {
         routeFeatures.push({
           type: 'Feature',
           geometry: { type: 'LineString', coordinates: trail },
@@ -961,15 +999,20 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
       const originPoint = trail[0] ?? currentPoint;
       const existingOriginMarker = originMarkersRef.current.get(task.taskId);
-      if (!existingOriginMarker) {
-        const el = createStaticMarkerElement('origin');
-        el.title = `Origin - ${task.agentName || `Task ${task.taskId}`}`;
-        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-          .setLngLat(originPoint)
-          .addTo(map);
-        originMarkersRef.current.set(task.taskId, marker);
-      } else {
-        existingOriginMarker.setLngLat(originPoint);
+      if (showTrajectory) {
+        if (!existingOriginMarker) {
+          const el = createStaticMarkerElement('origin');
+          el.title = `Origin - ${task.agentName || `Task ${task.taskId}`}`;
+          const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+            .setLngLat(originPoint)
+            .addTo(map);
+          originMarkersRef.current.set(task.taskId, marker);
+        } else {
+          existingOriginMarker.setLngLat(originPoint);
+        }
+      } else if (existingOriginMarker) {
+        existingOriginMarker.remove();
+        originMarkersRef.current.delete(task.taskId);
       }
 
       if (task.destination) {
@@ -1081,10 +1124,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         );
         if (!compact) {
           el.addEventListener('click', () => {
-            setSelectedTaskId(task.taskId);
-            const latest = useTrackingStore.getState().liveTasks[task.taskId];
-            if (!latest) return;
-            map.flyTo({ center: latest.lastPosition, zoom: 15.5, speed: 1.2 });
+            handleSelectTask(task.taskId);
           });
         }
 
@@ -1126,7 +1166,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     // Also render cached forward routes
     const forwardFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     directionRoutesRef.current.forEach((coords, taskId) => {
-      if (validIds.has(taskId) && coords.length >= 2) {
+      if (validIds.has(taskId) && trajectoryTaskIds.has(taskId) && coords.length >= 2) {
         forwardFeatures.push({
           type: 'Feature',
           geometry: { type: 'LineString', coordinates: coords },
@@ -1167,14 +1207,15 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         }
       }
     });
-  }, [tasks, tick, compact, mapVersion, nowMs, animateMarkerTo, selectedTaskId, bindHoverPopup]);
+  }, [mapTasks, trajectoryTaskIds, tick, compact, mapVersion, nowMs, animateMarkerTo, selectedTaskId, bindHoverPopup, handleSelectTask]);
 
   // ── Fetch Mapbox Directions routes for tasks with destinations ───────────────
   useEffect(() => {
     if (!token || !mapLoadedRef.current) return;
 
-    const tasksWithDest = tasks.filter(
+    const tasksWithDest = mapTasks.filter(
       (t) =>
+        trajectoryTaskIds.has(t.taskId) &&
         t.destination &&
         (t.lastPosition[0] !== 0 || t.lastPosition[1] !== 0) &&
         t.status !== 'completed'
@@ -1232,10 +1273,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
     fetchAll();
     return () => { cancelled = true; };
-  }, [tasks, token, mapVersion]);
-
-  // ── Filtered sidebar list ────────────────────────────────────────────────────
-  const filteredTasks = searchQuery.trim().length > 0 ? internalSearchResults : tasks;
+  }, [mapTasks, trajectoryTaskIds, token, mapVersion]);
 
   // ── No token fallback ────────────────────────────────────────────────────────
   if (!token) {
@@ -1425,71 +1463,18 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         </div>
 
         {leftTab === 'feeds' ? (
-          <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-2">
-            {isInitialHydrating && filteredTasks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 gap-2">
-                <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
-                <p className="text-[12px] text-gray-400">Loading feeds…</p>
-              </div>
-            ) : filteredTasks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 gap-2">
-                <Radio size={24} className="text-gray-200" />
-                <p className="text-[12px] text-gray-400">No feeds available</p>
-              </div>
-            ) : (
-              filteredTasks.map((task) => {
-                const isSelected = selectedTaskId === task.taskId;
-                const operationalStatus = resolveOperationalStatusFromTask(task, nowMs, STALE_MS);
-                const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
-                return (
-                  <button
-                    key={task.taskId}
-                    onClick={() => setSelectedTaskId(task.taskId)}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 text-left transition-all rounded-[20px] ${isSelected ? 'bg-[#0A192F]' : 'bg-[#F8FAFC] hover:bg-gray-100'
-                      }`}
-                  >
-                    <AgentAvatar
-                      key={`${task.taskId}-${task.agentAvatarUrl ?? ""}`}
-                      name={task.agentName}
-                      avatarUrl={task.agentAvatarUrl}
-                      sizeClassName="w-12 h-12"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p
-                          className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
-                            }`}
-                        >
-                          {task.agentName || 'Company Name'}
-                        </p>
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${isSelected ? 'bg-white/15 text-white border border-white/20' : statusMeta.badgeClassName
-                            }`}
-                        >
-                          {statusMeta.label}
-                        </span>
-                      </div>
-                      <p
-                        className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-gray-300' : 'text-gray-500'
-                          }`}
-                      >
-                        {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
-                      </p>
-                      {(task.projectName ?? '').length > 0 && (
-                        <p className={`text-[10px] mt-1 truncate ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
-                          Project {task.projectName}
-                        </p>
-                      )}
-                      <p className={`text-[10px] mt-1 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
-                        ETA {formatEta(task.etaSeconds)} | Speed {formatSpeed(task.speedMps)} | Left {formatMetricDistance(task.distanceRemainingMeters)}
-                      </p>
-                    </div>
-                    <MoreHorizontal size={20} className={isSelected ? 'text-white/50' : 'text-gray-400'} />
-                  </button>
-                );
-              })
-            )}
-          </div>
+          <LiveFeedsPanel
+            tasks={tasks}
+            nowMs={nowMs}
+            selectedTaskId={selectedTaskId}
+            isInitialHydrating={isInitialHydrating}
+            followAllActive={followAllActive}
+            showHistory={showHistoryFeeds}
+            searchQuery={searchQuery}
+            onToggleHistory={() => setShowHistoryFeeds((prev) => !prev)}
+            onToggleFollowAll={handleToggleFollowAll}
+            onSelectTask={handleSelectTask}
+          />
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel
             items={clockedInItems}
@@ -1642,6 +1627,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
                     setIsFollowing(false);
                     return;
                   }
+                  setFollowAllActive(false);
                   const map = mapRef.current;
                   const [lng, lat] = selectedTask.lastPosition;
                   if (map && Number.isFinite(lng) && Number.isFinite(lat)) {
@@ -1764,9 +1750,13 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [followAllActive, setFollowAllActive] = useState(false);
+  const [showHistoryFeeds, setShowHistoryFeeds] = useState(false);
+  const followAllLastFitRef = useRef(0);
   // Camera follow mode: keeps tracking the selected agent until the user pans away.
   const [isFollowing, setIsFollowing] = useState(false);
   const isFollowingRef = useRef(false);
+  const suppressFollowBreakRef = useRef(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [historyTask, setHistoryTask] = useState<{ id: number; title: string } | null>(null);
   const [isInitialHydrating, setIsInitialHydrating] = useState(false);
@@ -1816,6 +1806,39 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
   const liveTasks = useTrackingStore((s) => s.liveTasks);
   const tasks = useMemo(() => Object.values(liveTasks), [liveTasks]);
+  const feedGroups = useMemo(
+    () => splitLiveFeedTasks(tasks, nowMs, STALE_MS),
+    [tasks, nowMs],
+  );
+  const mapTasks = useMemo(
+    () => resolveMapTasks(feedGroups.active, feedGroups.history, selectedTaskId),
+    [feedGroups.active, feedGroups.history, selectedTaskId],
+  );
+  const trajectoryTaskIds = useMemo(
+    () => resolveTrajectoryTaskIds(feedGroups.active, selectedTaskId, followAllActive),
+    [feedGroups.active, selectedTaskId, followAllActive],
+  );
+
+  const handleSelectTask = useCallback((taskId: number) => {
+    setSelectedTaskId(taskId);
+    const task = useTrackingStore.getState().liveTasks[taskId];
+    const map = mapRef.current;
+    if (!task || !map) return;
+    const [lng, lat] = task.lastPosition;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+    map.panTo({ lat, lng });
+    if (map.getZoom() < 15.5) map.setZoom(15.5);
+  }, []);
+
+  const handleToggleFollowAll = useCallback(() => {
+    setFollowAllActive((prev) => {
+      if (!prev) {
+        setIsFollowing(false);
+        followAllLastFitRef.current = 0;
+      }
+      return !prev;
+    });
+  }, []);
 
   // Smoothly tween a Google agent marker between GPS fixes (rAF lerp) so
   // movement reads as continuous instead of teleporting on each update.
@@ -2095,31 +2118,37 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     isFollowingRef.current = isFollowing;
   }, [isFollowing]);
 
-  useEffect(() => {
-    if (selectedTaskId == null || !mapRef.current) {
-      setIsFollowing(false);
-      return;
-    }
-
-    const task = useTrackingStore.getState().liveTasks[selectedTaskId];
-    if (!task) return;
-
-    mapRef.current.panTo({ lat: task.lastPosition[1], lng: task.lastPosition[0] });
-    if (typeof mapRef.current.getZoom === 'function' && mapRef.current.getZoom() < 15) {
-      mapRef.current.setZoom(15);
-    }
-    setIsFollowing(true);
-  }, [selectedTaskId]);
-
-  // While following, keep the camera glued to the selected agent's live position.
+  // While following a single agent, keep the camera glued to their live position.
   const followedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !isFollowing || !followedTask) return;
+    if (!map || !isFollowing || followAllActive || !followedTask) return;
     const [lng, lat] = followedTask.lastPosition;
     if (!Number.isFinite(lng) || !Number.isFinite(lat) || (lng === 0 && lat === 0)) return;
     map.panTo({ lat, lng });
-  }, [isFollowing, followedTask, followedTask?.lastPosition?.[0], followedTask?.lastPosition?.[1]]);
+  }, [isFollowing, followAllActive, followedTask, followedTask?.lastPosition?.[0], followedTask?.lastPosition?.[1]]);
+
+  // Follow-all: fit bounds to every actively tracking agent (throttled).
+  useEffect(() => {
+    const map = mapRef.current;
+    const google = googleRef.current;
+    if (!map || !google || !followAllActive || feedGroups.active.length === 0) return;
+
+    const now = Date.now();
+    if (now - followAllLastFitRef.current < 2000) return;
+    followAllLastFitRef.current = now;
+
+    const bounds = new google.maps.LatLngBounds();
+    for (const task of feedGroups.active) {
+      bounds.extend({ lat: task.lastPosition[1], lng: task.lastPosition[0] });
+    }
+    map.fitBounds(bounds, 80);
+  }, [
+    followAllActive,
+    feedGroups.active,
+    feedGroups.active.map((t) => t.lastPosition.join(',')).join('|'),
+    googleReady,
+  ]);
 
   // Break follow mode when the user drags the map manually.
   useEffect(() => {
@@ -2129,6 +2158,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
     const listener = google.maps.event.addListener(map, 'dragstart', () => {
       if (isFollowingRef.current) setIsFollowing(false);
+      setFollowAllActive(false);
     });
     return () => {
       google.maps.event.removeListener(listener);
@@ -2187,7 +2217,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     if (!map || !google) return;
 
     const now = Date.now();
-    const validTasks = tasks.filter((task) => hasUsableTaskPosition(task));
+    const validTasks = mapTasks.filter((task) => hasUsableTaskPosition(task));
     const validIds = new Set(validTasks.map((task) => task.taskId));
     const destinationIds = new Set<number>();
 
@@ -2195,9 +2225,10 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       const stale = isTaskStale(task.lastEventAt, now);
       const visualState = getVisualState(task, stale);
       const trail = sanitizePolyline(buildTaskTrail(task));
+      const showTrajectory = trajectoryTaskIds.has(task.taskId);
 
       const routeLine = routeLinesRef.current.get(task.taskId);
-      if (trail.length >= 2) {
+      if (showTrajectory && trail.length >= 2) {
         if (!routeLine) {
           const line = new google.maps.Polyline({
             map,
@@ -2210,6 +2241,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           routeLinesRef.current.set(task.taskId, line);
         } else {
           routeLine.setOptions({ strokeColor: VISUAL_PALETTE[visualState].trail });
+          routeLine.setMap(map);
           routeLine.setPath(trail.map((point) => ({ lat: point[1], lng: point[0] })));
         }
       } else if (routeLine) {
@@ -2243,8 +2275,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
         if (!compact) {
           marker.addListener('click', () => {
-            setSelectedTaskId(task.taskId);
-            map.panTo({ lat: current[1], lng: current[0] });
+            handleSelectTask(task.taskId);
           });
         }
 
@@ -2339,19 +2370,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         markerPositionRef.current.delete(id);
       }
     });
-  }, [compact, tasks, animateGoogleMarkerTo]);
-
-  const filteredTasks = tasks.filter((task) => {
-    const needle = searchQuery.toLowerCase();
-
-    return (
-      task.agentName.toLowerCase().includes(needle) ||
-      (task.taskTitle ?? '').toLowerCase().includes(needle) ||
-      (task.projectName ?? '').toLowerCase().includes(needle) ||
-      (task.taskAddress ?? '').toLowerCase().includes(needle) ||
-      String(task.taskId).includes(needle)
-    );
-  });
+  }, [compact, mapTasks, trajectoryTaskIds, animateGoogleMarkerTo, handleSelectTask]);
 
   if (!googleApiKey) {
     if (compact) {
@@ -2494,72 +2513,18 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         </div>
 
         {leftTab === 'feeds' ? (
-          <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-2">
-            {isInitialHydrating && filteredTasks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 gap-2">
-                <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
-                <p className="text-[12px] text-gray-400">Loading feeds…</p>
-              </div>
-            ) : filteredTasks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 gap-2">
-                <Radio size={24} className="text-gray-200" />
-                <p className="text-[12px] text-gray-400">No feeds available</p>
-              </div>
-            ) : (
-              filteredTasks.map((task) => {
-                const isSelected = selectedTaskId === task.taskId;
-                const operationalStatus = resolveOperationalStatusFromTask(task, nowMs, STALE_MS);
-                const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
-                return (
-                  <button
-                    key={task.taskId}
-                    onClick={() => setSelectedTaskId(task.taskId)}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 text-left transition-all rounded-[20px] ${isSelected ? 'bg-[#0A192F]' : 'bg-[#F8FAFC] hover:bg-gray-100'
-                      }`}
-                  >
-                    <AgentAvatar
-                      key={`${task.taskId}-${task.agentAvatarUrl ?? ''}`}
-                      name={task.agentName}
-                      avatarUrl={task.agentAvatarUrl}
-                      sizeClassName="w-12 h-12"
-                      allowInitialsFallback={false}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p
-                          className={`text-[14px] font-bold truncate ${isSelected ? 'text-white' : 'text-dash-dark'
-                            }`}
-                        >
-                          {task.agentName || 'Company Name'}
-                        </p>
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${isSelected ? 'bg-white/15 text-white border border-white/20' : statusMeta.badgeClassName
-                            }`}
-                        >
-                          {statusMeta.label}
-                        </span>
-                      </div>
-                      <p
-                        className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-gray-300' : 'text-gray-500'
-                          }`}
-                      >
-                        {task.taskAddress ?? task.taskTitle ?? `Task #${task.taskId}`}
-                      </p>
-                      {(task.projectName ?? '').length > 0 && (
-                        <p className={`text-[10px] mt-1 truncate ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
-                          Project {task.projectName}
-                        </p>
-                      )}
-                      <p className={`text-[10px] mt-1 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
-                        ETA {formatEta(task.etaSeconds)} | Speed {formatSpeed(task.speedMps)} | Left {formatMetricDistance(task.distanceRemainingMeters)}
-                      </p>
-                    </div>
-                    <MoreHorizontal size={20} className={isSelected ? 'text-white/50' : 'text-gray-400'} />
-                  </button>
-                );
-              })
-            )}
-          </div>
+          <LiveFeedsPanel
+            tasks={tasks}
+            nowMs={nowMs}
+            selectedTaskId={selectedTaskId}
+            isInitialHydrating={isInitialHydrating}
+            followAllActive={followAllActive}
+            showHistory={showHistoryFeeds}
+            searchQuery={searchQuery}
+            onToggleHistory={() => setShowHistoryFeeds((prev) => !prev)}
+            onToggleFollowAll={handleToggleFollowAll}
+            onSelectTask={handleSelectTask}
+          />
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel
             items={clockedInItems}
@@ -2643,6 +2608,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
                 setIsFollowing(false);
                 return;
               }
+              setFollowAllActive(false);
               const map = mapRef.current;
               const [lng, lat] = followedTask.lastPosition;
               if (map && Number.isFinite(lng) && Number.isFinite(lat)) {
@@ -2710,42 +2676,4 @@ function HydrationBridge({
   }, [isInitialHydrating, onHydrationChange]);
 
   return null;
-}
-
-function AgentAvatar({
-  name,
-  avatarUrl,
-  sizeClassName,
-  initialsClassName = 'text-[12px]',
-  allowInitialsFallback = true,
-}: {
-  name: string;
-  avatarUrl?: string;
-  sizeClassName: string;
-  initialsClassName?: string;
-  allowInitialsFallback?: boolean;
-}) {
-  const [imageFailed, setImageFailed] = useState(false);
-
-  const initials = getAgentInitials(name);
-  const showImage = !!avatarUrl && !imageFailed;
-
-  return (
-    <div className={`${sizeClassName} rounded-full overflow-hidden shrink-0 border-2 border-white shadow-sm bg-gray-100 flex items-center justify-center`}>
-      {showImage ? (
-        <img
-          src={avatarUrl}
-          className="w-full h-full object-cover"
-          alt={name || 'Agent'}
-          onError={() => setImageFailed(true)}
-        />
-      ) : initials && allowInitialsFallback ? (
-        <span className={`${initialsClassName} font-bold text-gray-500`}>
-          {initials}
-        </span>
-      ) : (
-        <span aria-hidden="true" className="block w-full h-full bg-transparent" />
-      )}
-    </div>
-  );
 }

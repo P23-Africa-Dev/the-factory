@@ -41,6 +41,8 @@ export interface LiveTaskState {
   headingDegrees?: number | null;
   etaSeconds?: number | null;
   routeDeviationMeters?: number | null;
+  /** From snapshot API / WS — authoritative online signal from backend. */
+  isOnline?: boolean;
 }
 
 export interface TrackingEnvelope {
@@ -68,6 +70,7 @@ export interface TrackingEnvelope {
       route_deviation_meters?: number | null;
       movement_started?: boolean;
       operational_status?: OperationalTrackingStatus;
+      is_online?: boolean;
       task_status?: string;
       arrival_recorded_at?: string;
       near_recorded_at?: string;

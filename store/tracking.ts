@@ -176,6 +176,10 @@ function buildFromEnvelope(
       payload.data?.status?.operational_status ??
       payload.data?.operational_status ??
       prev?.operationalStatus,
+    isOnline:
+      payload.data?.status?.is_online ??
+      payload.data?.is_online ??
+      prev?.isOnline,
     movementStarted: payload.data?.movement_started ?? prev?.movementStarted,
     nearDetectedAt:
       payload.data?.near_recorded_at ??
@@ -465,7 +469,11 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             item.location.route_deviation_meters ?? prev?.routeDeviationMeters ?? null,
           operationalStatus:
             item.status.operational_status ?? prev?.operationalStatus,
-          movementStarted: prev?.movementStarted,
+          isOnline: item.status.is_online ?? prev?.isOnline,
+          movementStarted:
+            item.status.operational_status === "en_route" ||
+            item.status.proximity_state === "in_progress" ||
+            prev?.movementStarted,
         };
       }
 
@@ -505,6 +513,9 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
                 : [lastPosition],
             trackingStartedAt: prev?.trackingStartedAt ?? occurredAt,
             lastEventAt: occurredAt,
+            isOnline: true,
+            movementStarted: true,
+            operationalStatus: prev?.operationalStatus ?? "en_route",
             arrivedAt: agentChanged ? undefined : prev?.arrivedAt,
           },
         },
