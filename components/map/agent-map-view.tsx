@@ -8,7 +8,7 @@ import { TerritoryLayer } from '@/components/map/TerritoryLayer';
 import { ClockedInLayer } from '@/components/map/ClockedInLayer';
 import { useAttendanceMapSnapshots } from '@/hooks/use-attendance-map';
 import { useAttendanceMapStore } from '@/store/attendance-map';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, LocateFixed } from 'lucide-react';
 import { MapExploreControls } from '@/components/map/map-explore-controls';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { createUserLocationIndicatorElement } from '@/lib/map/user-location-marker';
@@ -32,10 +32,7 @@ import {
     updateAgentMarkerElement,
 } from '@/lib/tracking/map-visualization';
 import { fetchDirectionsRoute, clearDirectionsCache } from '@/lib/tracking/directions';
-import {
-    getCountryFallbackViewport,
-    resolvePrivacySafeViewport,
-} from '@/lib/map/default-viewport';
+import { useInitialMapViewport } from '@/hooks/use-initial-map-viewport';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 import { getMapboxNavigationStyle, resolveMapAppearance } from '@/lib/map/style-mode';
 import type { TaskMapFocus } from '@/lib/tasks/map-navigation';
@@ -147,6 +144,12 @@ function MapboxAgentMapView({
     const activeTask = useTrackingStore((s) =>
         activeTaskId ? s.liveTasks[activeTaskId] ?? null : null
     );
+    const preferUserLocation = !activeTask && !taskFocus;
+    const {
+        viewport: initialViewport,
+        isResolving: isResolvingInitialViewport,
+        isUserLocation: initialViewportIsUserLocation,
+    } = useInitialMapViewport({ preferUserLocation, taskFocus });
     const token = getMapboxPublicToken();
     const [mapReady, setMapReady] = useState(false);
     const [pinMode, setPinMode] = useState(false);
@@ -310,9 +313,8 @@ function MapboxAgentMapView({
     }, []);
 
     useEffect(() => {
-        if (!mapContainer.current || mapRef.current || !token) return;
+        if (!mapContainer.current || mapRef.current || !token || !initialViewport) return;
         mapboxgl.accessToken = token;
-        const initialViewport = getCountryFallbackViewport();
 
         const map = new mapboxgl.Map({
             container: mapContainer.current,
@@ -380,6 +382,15 @@ function MapboxAgentMapView({
                 },
             });
 
+            if (initialViewportIsUserLocation) {
+                userLocationMarkerRef.current = new mapboxgl.Marker({
+                    element: createUserLocationIndicatorElement(),
+                    anchor: 'center',
+                })
+                    .setLngLat(initialViewport.center)
+                    .addTo(map);
+            }
+
             mapLoadedRef.current = true;
             setMapReady(true);
 
@@ -409,48 +420,7 @@ function MapboxAgentMapView({
             lastFitTaskIdRef.current = null;
             clearDirectionsCache();
         };
-    }, [token, clearUserLocationMarkers]);
-
-    useEffect(() => {
-        const map = mapRef.current;
-        // Skip the own-location default when the map was asked to focus on a
-        // specific task destination (e.g. via a "View on Map" link).
-        if (!map || !mapLoadedRef.current || activeTask || taskFocus) return;
-
-        let cancelled = false;
-
-        resolvePrivacySafeViewport().then((viewport) => {
-            if (cancelled || !mapRef.current || useTrackingStore.getState().activeTrackingTaskId) {
-                return;
-            }
-
-            mapRef.current.easeTo({
-                center: viewport.center,
-                zoom: viewport.zoom,
-                duration: 900,
-            });
-
-            if (viewport.granularity === 'gps') {
-                if (!userLocationMarkerRef.current) {
-                    userLocationMarkerRef.current = new mapboxgl.Marker({
-                        element: createUserLocationIndicatorElement(),
-                        anchor: 'center',
-                    })
-                        .setLngLat(viewport.center)
-                        .addTo(mapRef.current);
-                } else {
-                    userLocationMarkerRef.current.setLngLat(viewport.center);
-                }
-            } else {
-                userLocationMarkerRef.current?.remove();
-                userLocationMarkerRef.current = null;
-            }
-        });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [activeTask, mapReady, taskFocus]);
+    }, [token, clearUserLocationMarkers, initialViewport, initialViewportIsUserLocation]);
 
     useEffect(() => {
         if (activeTask) {
@@ -704,6 +674,18 @@ function MapboxAgentMapView({
     return (
         <div className="relative w-full" style={{ height: 'calc(100vh - 64px)' }}>
             <div ref={mapContainer} className="w-full h-full" />
+            {isResolvingInitialViewport && (
+                <div
+                    className="absolute inset-0 z-10 flex items-center justify-center bg-[#e8ecef]"
+                    aria-live="polite"
+                    aria-busy="true"
+                >
+                    <div className="text-center space-y-3">
+                        <LocateFixed className="mx-auto text-slate-400 animate-pulse" size={28} />
+                        <p className="text-sm font-medium text-slate-500">Finding your location...</p>
+                    </div>
+                </div>
+            )}
 
             {showSavedLocations && (
                 <SavedLocationsLayer
@@ -841,6 +823,12 @@ function GoogleAgentMapView({
     const activeTask = useTrackingStore((s) =>
         activeTaskId ? s.liveTasks[activeTaskId] ?? null : null
     );
+    const preferUserLocation = !activeTask && !taskFocus;
+    const {
+        viewport: initialViewport,
+        isResolving: isResolvingInitialViewport,
+        isUserLocation: initialViewportIsUserLocation,
+    } = useInitialMapViewport({ preferUserLocation, taskFocus });
 
     useTrackingWebSocket();
     useAttendanceMapSnapshots({}, { scope: 'agent' });
@@ -901,7 +889,7 @@ function GoogleAgentMapView({
     }, []);
 
     useEffect(() => {
-        if (!mapContainer.current || mapRef.current || !googleApiKey) return;
+        if (!mapContainer.current || mapRef.current || !googleApiKey || !initialViewport) return;
 
         let cancelled = false;
 
@@ -913,8 +901,6 @@ function GoogleAgentMapView({
 
                 googleRef.current = googleMaps;
 
-                const initialViewport = getCountryFallbackViewport();
-
                 mapRef.current = new googleMaps.maps.Map(mapContainer.current, {
                     center: { lat: initialViewport.center[1], lng: initialViewport.center[0] },
                     zoom: initialViewport.zoom,
@@ -923,6 +909,23 @@ function GoogleAgentMapView({
                     mapTypeControl: false,
                     streetViewControl: false,
                 });
+
+                if (initialViewportIsUserLocation) {
+                    userLocationMarkerRef.current = new googleMaps.maps.Marker({
+                        map: mapRef.current,
+                        position: { lat: initialViewport.center[1], lng: initialViewport.center[0] },
+                        title: 'Your current location',
+                        icon: {
+                            path: googleMaps.maps.SymbolPath.CIRCLE,
+                            scale: 8,
+                            fillColor: '#2563EB',
+                            fillOpacity: 1,
+                            strokeColor: '#FFFFFF',
+                            strokeWeight: 3,
+                        },
+                    });
+                }
+
                 setMapReady(true);
             })
             .catch(() => {
@@ -941,56 +944,7 @@ function GoogleAgentMapView({
             hasInitialFitRef.current = false;
             lastFitTaskIdRef.current = null;
         };
-    }, [clearOverlays, clearUserLocationMarkers, googleApiKey]);
-
-    useEffect(() => {
-        const map = mapRef.current;
-        const google = googleRef.current;
-
-        // Skip the own-location default when a task destination focus is set.
-        if (!map || !google || !mapReady || activeTask || taskFocus) return;
-
-        let cancelled = false;
-
-        resolvePrivacySafeViewport().then((viewport) => {
-            if (cancelled || !mapRef.current || useTrackingStore.getState().activeTrackingTaskId) {
-                return;
-            }
-
-            mapRef.current.setCenter({ lat: viewport.center[1], lng: viewport.center[0] });
-            mapRef.current.setZoom(viewport.zoom);
-
-            if (viewport.granularity === 'gps') {
-                if (!userLocationMarkerRef.current) {
-                    userLocationMarkerRef.current = new google.maps.Marker({
-                        map: mapRef.current,
-                        position: { lat: viewport.center[1], lng: viewport.center[0] },
-                        title: 'Your current location',
-                        icon: {
-                            path: google.maps.SymbolPath.CIRCLE,
-                            scale: 8,
-                            fillColor: '#2563EB',
-                            fillOpacity: 1,
-                            strokeColor: '#FFFFFF',
-                            strokeWeight: 3,
-                        },
-                    });
-                } else {
-                    userLocationMarkerRef.current.setPosition({
-                        lat: viewport.center[1],
-                        lng: viewport.center[0],
-                    });
-                }
-            } else {
-                userLocationMarkerRef.current?.setMap(null);
-                userLocationMarkerRef.current = null;
-            }
-        });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [activeTask, mapReady, taskFocus]);
+    }, [clearOverlays, clearUserLocationMarkers, googleApiKey, initialViewport, initialViewportIsUserLocation]);
 
     useEffect(() => {
         if (activeTask) {
@@ -1203,6 +1157,18 @@ function GoogleAgentMapView({
     return (
         <div className="relative w-full" style={{ height: 'calc(100vh - 64px)' }}>
             <div ref={mapContainer} className="w-full h-full" />
+            {isResolvingInitialViewport && (
+                <div
+                    className="absolute inset-0 z-10 flex items-center justify-center bg-[#e8ecef]"
+                    aria-live="polite"
+                    aria-busy="true"
+                >
+                    <div className="text-center space-y-3">
+                        <LocateFixed className="mx-auto text-slate-400 animate-pulse" size={28} />
+                        <p className="text-sm font-medium text-slate-500">Finding your location...</p>
+                    </div>
+                </div>
+            )}
 
             {showSavedLocations && (
                 <SavedLocationsLayer

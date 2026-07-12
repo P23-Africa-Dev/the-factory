@@ -39,10 +39,7 @@ import {
   OPERATIONAL_STATUS_META,
   resolveOperationalStatusFromTask,
 } from '@/lib/tracking/operational-status';
-import {
-  getCountryFallbackViewport,
-  resolvePrivacySafeViewport,
-} from '@/lib/map/default-viewport';
+import { useInitialMapViewport } from '@/hooks/use-initial-map-viewport';
 import { SavedLocationsLayer, type GoogleMapBridge } from '@/components/map/SavedLocationsLayer';
 import { TerritoryLayer } from '@/components/map/TerritoryLayer';
 import { useSavedLocations, useSavedLocationPermissions } from '@/hooks/use-saved-locations';
@@ -328,6 +325,12 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     () => tasks.some((task) => hasUsableTaskPosition(task)),
     [tasks]
   );
+  const preferUserLocation = !hasActiveTaskPositions && !taskFocus;
+  const {
+    viewport: initialViewport,
+    isResolving: isResolvingInitialViewport,
+    isUserLocation: initialViewportIsUserLocation,
+  } = useInitialMapViewport({ preferUserLocation, taskFocus });
   const selectedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
   const token = getMapboxPublicToken();
   const mapInstance = mapVersion > 0 ? mapRef.current : null;
@@ -704,9 +707,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
   // ── Init map ─────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapContainer.current || mapRef.current || !token) return;
+    if (!mapContainer.current || mapRef.current || !token || !initialViewport) return;
     mapboxgl.accessToken = token;
-    const initialViewport = getCountryFallbackViewport();
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
@@ -775,6 +777,15 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         },
       });
 
+      if (initialViewportIsUserLocation) {
+        userLocationMarkerRef.current = new mapboxgl.Marker({
+          element: createUserLocationIndicatorElement(),
+          anchor: 'center',
+        })
+          .setLngLat(initialViewport.center)
+          .addTo(map);
+      }
+
       mapLoadedRef.current = true;
       setMapVersion((v) => v + 1);
     });
@@ -811,57 +822,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       map.remove();
       mapRef.current = null;
     };
-  }, [token, compact, appearance]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    // Skip the own-location default when the URL asks to focus a task.
-    if (!map || !mapLoadedRef.current || hasActiveTaskPositions || taskFocus) {
-      return;
-    }
-
-    let cancelled = false;
-
-    resolvePrivacySafeViewport().then((viewport) => {
-      if (cancelled || !mapRef.current) {
-        return;
-      }
-
-      const stillIdle = Object.values(useTrackingStore.getState().liveTasks).every(
-        (task) => !hasUsableTaskPosition(task)
-      );
-
-      if (!stillIdle) {
-        return;
-      }
-
-      mapRef.current.easeTo({
-        center: viewport.center,
-        zoom: compact ? Math.max(viewport.zoom - 0.6, 5.4) : viewport.zoom,
-        duration: 900,
-      });
-
-      if (viewport.granularity === 'gps') {
-        if (!userLocationMarkerRef.current) {
-          userLocationMarkerRef.current = new mapboxgl.Marker({
-            element: createUserLocationIndicatorElement(),
-            anchor: 'center',
-          })
-            .setLngLat(viewport.center)
-            .addTo(mapRef.current);
-        } else {
-          userLocationMarkerRef.current.setLngLat(viewport.center);
-        }
-      } else {
-        userLocationMarkerRef.current?.remove();
-        userLocationMarkerRef.current = null;
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [compact, hasActiveTaskPositions, mapVersion, taskFocus]);
+  }, [token, compact, appearance, initialViewport, initialViewportIsUserLocation]);
 
   useEffect(() => {
     if (hasActiveTaskPositions) {
@@ -1232,6 +1193,18 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
       {/* Map canvas */}
       <div ref={mapContainer} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+      {isResolvingInitialViewport && (
+        <div
+          className="absolute inset-0 z-10 flex items-center justify-center bg-[#e8ecef]"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div className="text-center space-y-3">
+            <LocateFixed className="mx-auto text-slate-400 animate-pulse" size={28} />
+            <p className="text-sm font-medium text-slate-500">Finding your location...</p>
+          </div>
+        </div>
+      )}
 
       {/* Search — top, full-width on mobile / top-right on desktop */}
       <div className="absolute top-4 left-4 right-4 md:top-8 md:right-8 md:left-auto md:w-[450px] z-20">
@@ -1745,6 +1718,12 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     () => tasks.some((task) => hasUsableTaskPosition(task)),
     [tasks]
   );
+  const preferUserLocation = !hasActiveTaskPositions && !taskFocus;
+  const {
+    viewport: initialViewport,
+    isResolving: isResolvingInitialViewport,
+    isUserLocation: initialViewportIsUserLocation,
+  } = useInitialMapViewport({ preferUserLocation, taskFocus });
   const googleApiKey = useMemo(() => getGoogleMapsPublicApiKey(), []);
 
   const savedLocationMatches = useMemo(() => {
@@ -1861,7 +1840,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   }, [poiResults, googleReady]);
 
   useEffect(() => {
-    if (!mapContainer.current || mapRef.current || !googleApiKey) {
+    if (!mapContainer.current || mapRef.current || !googleApiKey || !initialViewport) {
       return;
     }
 
@@ -1876,7 +1855,6 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         }
 
         googleRef.current = googleMaps;
-        const initialViewport = getCountryFallbackViewport();
         mapRef.current = new googleMaps.maps.Map(mapContainer.current, {
           center: { lat: initialViewport.center[1], lng: initialViewport.center[0] },
           zoom: compact ? Math.max(initialViewport.zoom, 5.4) : initialViewport.zoom,
@@ -1887,6 +1865,23 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           mapTypeControl: false,
           gestureHandling: compact ? 'none' : 'auto',
         });
+
+        if (initialViewportIsUserLocation) {
+          userLocationMarkerRef.current = new googleMaps.maps.Marker({
+            map: mapRef.current,
+            position: { lat: initialViewport.center[1], lng: initialViewport.center[0] },
+            title: 'Your current location',
+            icon: {
+              path: googleMaps.maps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: '#2563EB',
+              fillOpacity: 1,
+              strokeColor: '#FFFFFF',
+              strokeWeight: 3,
+            },
+          });
+        }
+
         setGoogleReady(true);
       })
       .catch(() => {
@@ -1918,7 +1913,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       mapRef.current = null;
       googleRef.current = null;
     };
-  }, [compact, googleApiKey]);
+  }, [compact, googleApiKey, initialViewport, initialViewportIsUserLocation]);
 
   useEffect(() => {
     if (selectedTaskId == null || !mapRef.current) return;
@@ -1969,59 +1964,6 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       map.setZoom(15);
     }
   }, [taskFocus, liveTasks, googleReady]);
-
-  useEffect(() => {
-    // Skip the own-location default when the URL asks to focus a task.
-    if (!mapRef.current || hasActiveTaskPositions || taskFocus) {
-      return;
-    }
-
-    let cancelled = false;
-
-    resolvePrivacySafeViewport().then((viewport) => {
-      if (cancelled || !mapRef.current) {
-        return;
-      }
-
-      const stillIdle = Object.values(useTrackingStore.getState().liveTasks).every(
-        (task) => !hasUsableTaskPosition(task)
-      );
-
-      if (!stillIdle) {
-        return;
-      }
-
-      mapRef.current.setCenter({ lat: viewport.center[1], lng: viewport.center[0] });
-      mapRef.current.setZoom(compact ? Math.max(viewport.zoom - 0.6, 5.4) : viewport.zoom);
-
-      if (viewport.granularity === 'gps' && googleRef.current) {
-        if (!userLocationMarkerRef.current) {
-          userLocationMarkerRef.current = new googleRef.current.maps.Marker({
-            map: mapRef.current,
-            position: { lat: viewport.center[1], lng: viewport.center[0] },
-            title: 'Your current location',
-            icon: {
-              path: googleRef.current.maps.SymbolPath.CIRCLE,
-              scale: 8,
-              fillColor: '#2563EB',
-              fillOpacity: 1,
-              strokeColor: '#FFFFFF',
-              strokeWeight: 3,
-            },
-          });
-        } else {
-          userLocationMarkerRef.current.setPosition({ lat: viewport.center[1], lng: viewport.center[0] });
-        }
-      } else {
-        userLocationMarkerRef.current?.setMap(null);
-        userLocationMarkerRef.current = null;
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [compact, hasActiveTaskPositions, taskFocus]);
 
   useEffect(() => {
     if (hasActiveTaskPositions) {
@@ -2261,6 +2203,18 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       </div>
 
       <div ref={mapContainer} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+      {isResolvingInitialViewport && (
+        <div
+          className="absolute inset-0 z-10 flex items-center justify-center bg-[#e8ecef]"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div className="text-center space-y-3">
+            <LocateFixed className="mx-auto text-slate-400 animate-pulse" size={28} />
+            <p className="text-sm font-medium text-slate-500">Finding your location...</p>
+          </div>
+        </div>
+      )}
 
       <div className="absolute top-4 left-4 right-4 md:top-8 md:right-8 md:left-auto md:w-[450px] z-20">
         <div className="relative">
