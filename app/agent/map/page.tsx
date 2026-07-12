@@ -132,6 +132,11 @@ function AgentMapPageContent() {
     setSheetOpen(true);
   }, [stopTracking]);
 
+  const handleLocationSelect = useCallback((ctx: LocationContext | null) => {
+    setLocationCtx(ctx);
+    setFocusPoiId(ctx?.placeId ?? null);
+  }, []);
+
   const handleSavedLocationClick = useCallback((location: SavedLocation) => {
     setFocusLocation(location);
     setSheetOpen(false);
@@ -165,6 +170,7 @@ function AgentMapPageContent() {
         onTogglePins={() => setShowPinnedBusinesses((visible) => !visible)}
         pinsToggleLabel={showPinnedBusinesses ? 'Hide Pins' : 'Show Pins'}
         focusPoiId={focusPoiId}
+        searchFocus={locationCtx}
         onPoisChange={setViewportPois}
         onPoiBusyChange={setPoiBusy}
         onPoiZoomTooLowChange={setPoiZoomTooLow}
@@ -238,7 +244,7 @@ function AgentMapPageContent() {
             <div className="ml-auto w-full max-w-md flex justify-end">
               <LocationSearchInput
                 activeLocation={locationCtx}
-                onLocationSelect={setLocationCtx}
+                onLocationSelect={handleLocationSelect}
                 className="w-full bg-transparent shadow-none border-0 p-0"
               />
             </div>

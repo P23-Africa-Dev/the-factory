@@ -1,30 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import type { PoiResult } from "@/lib/map/overpass-search";
+import { buildCategoryDotSvg } from "@/lib/map/poi-display";
 
-function buildPinSvg(color: string): string {
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="38" viewBox="0 0 28 38">` +
-    `<path d="M14 2C7.37 2 2 7.37 2 14c0 9.04 12 22 12 22S26 23.04 26 14C26 7.37 20.63 2 14 2z" ` +
-    `fill="${color}" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>` +
-    `<circle cx="14" cy="14" r="5.5" fill="white" opacity="0.92"/>` +
-    `</svg>`
-  );
-}
+const POI_DOT_PREFIX = "poi-dot-";
+const POI_LAYER_ID = "poi-markers";
 
-function loadPinImage(map: mapboxgl.Map, color: string): Promise<void> {
-  const id = `poi-pin-${color.replace("#", "")}`;
+function loadDotImage(map: mapboxgl.Map, color: string): Promise<void> {
+  const id = `${POI_DOT_PREFIX}${color.replace("#", "")}`;
   if (map.hasImage(id)) return Promise.resolve();
   return new Promise((resolve) => {
-    const img = new Image(28, 38);
+    const img = new Image(12, 12);
     img.onload = () => {
       if (!map.hasImage(id)) map.addImage(id, img);
       resolve();
     };
     img.onerror = () => resolve();
-    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildPinSvg(color))}`;
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildCategoryDotSvg(color))}`;
   });
 }
 
@@ -34,6 +28,7 @@ type Props = {
   pois: PoiResult[];
   visible: boolean;
   selectedPoiId?: string | null;
+  excludePlaceId?: string | null;
   onPoiClick: (poi: PoiResult) => void;
 };
 
@@ -43,14 +38,20 @@ export function GooglePoiMapLayer({
   pois,
   visible,
   selectedPoiId,
+  excludePlaceId,
   onPoiClick,
 }: Props) {
   const poiByIdRef = useRef<Map<string, PoiResult>>(new Map());
   const tooltipRef = useRef<mapboxgl.Popup | null>(null);
 
+  const visiblePois = useMemo(
+    () => pois.filter((poi) => poi.id !== excludePlaceId),
+    [pois, excludePlaceId],
+  );
+
   useEffect(() => {
-    poiByIdRef.current = new Map(pois.map((poi) => [poi.id, poi]));
-  }, [pois]);
+    poiByIdRef.current = new Map(visiblePois.map((poi) => [poi.id, poi]));
+  }, [visiblePois]);
 
   const handleEnter = useCallback(
     (e: mapboxgl.MapLayerMouseEvent) => {
@@ -62,8 +63,17 @@ export function GooglePoiMapLayer({
         .coordinates as [number, number];
       const p = feat.properties as Record<string, string>;
       tooltipRef.current?.remove();
+
+      const lines = [
+        p.category ? `<p style="font-size:11px;color:${p.color ?? "#64748b"};margin:0;font-weight:600">${p.category}</p>` : "",
+        p.address ? `<p style="font-size:11px;color:#64748b;margin:4px 0 0;line-height:1.4">${p.address}</p>` : "",
+        p.phone ? `<p style="font-size:10px;color:#94a3b8;margin:3px 0 0">${p.phone}</p>` : "",
+      ].filter(Boolean);
+
+      if (lines.length === 0) return;
+
       tooltipRef.current = new mapboxgl.Popup({
-        offset: [0, -40],
+        offset: [0, -8],
         closeButton: false,
         closeOnClick: false,
         anchor: "bottom",
@@ -71,16 +81,7 @@ export function GooglePoiMapLayer({
       })
         .setLngLat(coords)
         .setHTML(
-          '<div style="padding:8px 10px;min-width:150px;max-width:230px;font-family:ui-sans-serif,system-ui,sans-serif">' +
-            `<p style="font-weight:700;font-size:13px;color:#0f172a;margin:0;line-height:1.35">${p.name ?? ""}</p>` +
-            `<p style="font-size:11px;color:${p.color ?? "#64748b"};margin:3px 0 0;font-weight:600">${p.category ?? ""}</p>` +
-            (p.address
-              ? `<p style="font-size:11px;color:#64748b;margin:4px 0 0;line-height:1.4">${p.address}</p>`
-              : "") +
-            (p.phone
-              ? `<p style="font-size:10px;color:#94a3b8;margin:3px 0 0">📞 ${p.phone}</p>`
-              : "") +
-            "</div>",
+          `<div style="padding:8px 10px;min-width:120px;max-width:220px;font-family:ui-sans-serif,system-ui,sans-serif">${lines.join("")}</div>`,
         )
         .addTo(map);
     },
@@ -113,10 +114,10 @@ export function GooglePoiMapLayer({
       tooltipRef.current = null;
       if (!map) return;
       try {
-        map.off("mouseenter", "poi-pins", handleEnter);
-        map.off("mouseleave", "poi-pins", handleLeave);
-        map.off("click", "poi-pins", handleClick);
-        if (map.getLayer("poi-pins")) map.removeLayer("poi-pins");
+        map.off("mouseenter", POI_LAYER_ID, handleEnter);
+        map.off("mouseleave", POI_LAYER_ID, handleLeave);
+        map.off("click", POI_LAYER_ID, handleClick);
+        if (map.getLayer(POI_LAYER_ID)) map.removeLayer(POI_LAYER_ID);
         if (map.getSource("poi-data")) map.removeSource("poi-data");
       } catch {
         /* map may have been destroyed */
@@ -125,20 +126,20 @@ export function GooglePoiMapLayer({
 
     cleanup();
 
-    if (!map || !mapReady || !visible || pois.length === 0) {
+    if (!map || !mapReady || !visible || visiblePois.length === 0) {
       return cleanup;
     }
 
     (async () => {
-      const uniqueColors = [...new Set(pois.map((p) => p.categoryColor))];
-      await Promise.all(uniqueColors.map((c) => loadPinImage(map, c)));
+      const uniqueColors = [...new Set(visiblePois.map((p) => p.categoryColor))];
+      await Promise.all(uniqueColors.map((c) => loadDotImage(map, c)));
       if (!active) return;
 
       map.addSource("poi-data", {
         type: "geojson",
         data: {
           type: "FeatureCollection",
-          features: pois.map((poi) => ({
+          features: visiblePois.map((poi) => ({
             type: "Feature",
             geometry: { type: "Point", coordinates: [poi.lng, poi.lat] },
             properties: {
@@ -148,7 +149,6 @@ export function GooglePoiMapLayer({
               color: poi.categoryColor,
               address: poi.address ?? "",
               phone: poi.phone ?? "",
-              openingHours: poi.openingHours ?? "",
               selected: selectedPoiId === poi.id ? "1" : "0",
             },
           })),
@@ -156,21 +156,51 @@ export function GooglePoiMapLayer({
       });
 
       map.addLayer({
-        id: "poi-pins",
+        id: POI_LAYER_ID,
         type: "symbol",
         source: "poi-data",
+        minzoom: 12,
         layout: {
-          "icon-image": ["concat", "poi-pin-", ["slice", ["get", "color"], 1]],
-          "icon-size": ["case", ["==", ["get", "selected"], "1"], 1.2, 1],
-          "icon-anchor": "bottom",
-          "icon-allow-overlap": true,
-          "icon-ignore-placement": true,
+          "icon-image": ["concat", POI_DOT_PREFIX, ["slice", ["get", "color"], 1]],
+          "icon-size": [
+            "case",
+            ["==", ["get", "selected"], "1"],
+            1.15,
+            1,
+          ],
+          "icon-anchor": "center",
+          "icon-allow-overlap": false,
+          "icon-ignore-placement": false,
+          "text-field": ["get", "name"],
+          "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+          "text-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            12,
+            0,
+            14,
+            11,
+            16,
+            12,
+          ],
+          "text-offset": [0.9, 0],
+          "text-anchor": "left",
+          "text-optional": true,
+          "text-allow-overlap": false,
+          "text-ignore-placement": false,
+          "text-max-width": 10,
+        },
+        paint: {
+          "text-color": "#1f2937",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.5,
         },
       });
 
-      map.on("mouseenter", "poi-pins", handleEnter);
-      map.on("mouseleave", "poi-pins", handleLeave);
-      map.on("click", "poi-pins", handleClick);
+      map.on("mouseenter", POI_LAYER_ID, handleEnter);
+      map.on("mouseleave", POI_LAYER_ID, handleLeave);
+      map.on("click", POI_LAYER_ID, handleClick);
     })();
 
     return () => {
@@ -181,7 +211,7 @@ export function GooglePoiMapLayer({
     map,
     mapReady,
     visible,
-    pois,
+    visiblePois,
     selectedPoiId,
     handleEnter,
     handleLeave,

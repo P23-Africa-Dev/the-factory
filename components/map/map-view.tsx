@@ -61,7 +61,9 @@ import {
   type PoiResult,
 } from '@/lib/map/overpass-search';
 import { GooglePoiMapLayer } from '@/components/map/GooglePoiMapLayer';
+import { SearchFocusLayer } from '@/components/map/SearchFocusLayer';
 import { PoiDetailCard } from '@/components/map/PoiDetailCard';
+import { resolvePoiForSearchSelection, inferIsBusiness } from '@/lib/map/poi-display';
 import { useGooglePoiViewport } from '@/hooks/use-google-poi-viewport';
 import { fetchPlacesInArea } from '@/lib/map/poi-search';
 import { parseTaskMapParams } from '@/lib/tasks/map-navigation';
@@ -70,6 +72,7 @@ import {
   retrievePlace,
   suggestPlaces,
   type PlaceSuggestion,
+  type RetrievedPlace,
 } from '@/lib/utils/place-search';
 
 type MapLeftTab = 'feeds' | 'clocked-in' | 'businesses';
@@ -386,10 +389,29 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     }
   }, [setPlaceResults, setSearchBusy, setSearchQuery]);
 
-  const handleLocationSelect = useCallback((ctx: LocationContext | null) => {
+  const handleLocationSelect = useCallback((
+    ctx: LocationContext | null,
+    options?: { place?: RetrievedPlace; suggestion?: PlaceSuggestion },
+  ) => {
     setLocationCtx(ctx);
-    if (ctx) setLeftTab('businesses');
-    if (!ctx) return;
+    if (!ctx) {
+      setSelectedPoi(null);
+      return;
+    }
+    setLeftTab('businesses');
+
+    if (ctx.isBusiness) {
+      const poi = resolvePoiForSearchSelection(
+        ctx,
+        viewportPois,
+        options?.place ?? null,
+        options?.suggestion ?? null,
+      );
+      if (poi) setSelectedPoi(poi);
+    } else {
+      setSelectedPoi(null);
+    }
+
     const map = mapRef.current;
     if (!map) return;
     if (ctx.bbox) {
@@ -398,9 +420,9 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         { padding: 60, duration: 1200 }
       );
     } else {
-      map.flyTo({ center: ctx.center, zoom: 13, speed: 1.2 });
+      map.flyTo({ center: ctx.center, zoom: Math.max(map.getZoom(), 15), speed: 1.2 });
     }
-  }, [setLeftTab, setLocationCtx]);
+  }, [setLeftTab, setLocationCtx, setSelectedPoi, viewportPois]);
 
   const handlePlaceResultSelect = useCallback(async (suggestion: PlaceSuggestion) => {
     setPlaceResolving(true);
@@ -416,7 +438,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       center: [place.lng, place.lat],
       bbox: place.bbox,
       radiusKm: 5,
-    });
+      placeId: suggestion.id,
+      address: place.address,
+      category: suggestion.category,
+      isBusiness: inferIsBusiness(suggestion),
+    }, { place, suggestion });
     setSearchQuery('');
     setPlaceResults([]);
   }, [handleLocationSelect, setPlaceResolving, setPlaceResults, setSearchQuery, token]);
@@ -1418,7 +1444,14 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         pois={viewportPois}
         visible={showGooglePois}
         selectedPoiId={selectedPoi?.id ?? null}
+        excludePlaceId={locationCtx?.placeId ?? null}
         onPoiClick={handlePoiSelect}
+      />
+
+      <SearchFocusLayer
+        map={mapInstance}
+        mapReady={mapVersion > 0}
+        focus={locationCtx}
       />
 
       <PoiDetailCard

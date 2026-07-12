@@ -21,6 +21,7 @@ export type PlaceSuggestion = {
 };
 
 export type RetrievedPlace = {
+  placeId: string;
   name: string;
   address: string;
   lat: number;
@@ -194,6 +195,7 @@ async function retrievePlaceGoogle(
     if (typeof payload.lat !== "number" || typeof payload.lng !== "number") return null;
 
     return {
+      placeId,
       name: payload.name?.trim() || "Location",
       address: payload.address?.trim() || "",
       lat: payload.lat,
@@ -248,6 +250,7 @@ async function retrievePlaceMapbox(
     const rawBbox = props.bbox;
 
     return {
+      placeId: mapboxId,
       name: props.name?.trim() || "Location",
       address: props.full_address?.trim() || props.place_formatted?.trim() || "",
       lat,

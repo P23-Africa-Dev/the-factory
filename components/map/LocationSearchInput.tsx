@@ -9,6 +9,7 @@ import {
   type PlaceSuggestion,
 } from '@/lib/utils/place-search';
 import type { LocationContext } from '@/lib/map/location-search';
+import { inferIsBusiness } from '@/lib/map/poi-display';
 
 const DEBOUNCE_MS = 300;
 
@@ -75,6 +76,10 @@ export function LocationSearchInput({ activeLocation, onLocationSelect, classNam
       center: [place.lng, place.lat],
       bbox: place.bbox,
       radiusKm: 5,
+      placeId: suggestion.id,
+      address: place.address,
+      category: suggestion.category,
+      isBusiness: inferIsBusiness(suggestion),
     });
     setQuery('');
     setSuggestions([]);

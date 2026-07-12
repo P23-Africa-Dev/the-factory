@@ -40,9 +40,12 @@ import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 import { getMapboxNavigationStyle, resolveMapAppearance } from '@/lib/map/style-mode';
 import type { TaskMapFocus } from '@/lib/tasks/map-navigation';
 import { GooglePoiMapLayer } from '@/components/map/GooglePoiMapLayer';
+import { SearchFocusLayer } from '@/components/map/SearchFocusLayer';
 import { PoiDetailCard } from '@/components/map/PoiDetailCard';
 import { useGooglePoiViewport } from '@/hooks/use-google-poi-viewport';
 import type { PoiResult } from '@/lib/map/overpass-search';
+import type { LocationContext } from '@/lib/map/location-search';
+import { resolvePoiForSearchSelection } from '@/lib/map/poi-display';
 
 const MARKER_ANIMATION_MS = 700;
 
@@ -105,6 +108,7 @@ export type AgentMapViewProps = {
     onPoiBusyChange?: (busy: boolean) => void;
     onPoiZoomTooLowChange?: (zoomTooLow: boolean) => void;
     onGooglePoiSelect?: (poi: PoiResult | null) => void;
+    searchFocus?: LocationContext | null;
 };
 
 function MapboxAgentMapView({
@@ -123,6 +127,7 @@ function MapboxAgentMapView({
     onPoiBusyChange,
     onPoiZoomTooLowChange,
     onGooglePoiSelect,
+    searchFocus = null,
 }: AgentMapViewProps & { providerState: EffectiveMapProviderState }) {
     const mapContainer = useRef<HTMLDivElement>(null);
     const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -185,6 +190,36 @@ function MapboxAgentMapView({
         const poi = viewportPois.find((item) => item.id === focusPoiId);
         if (poi) setSelectedPoi(poi);
     }, [focusPoiId, viewportPois, setSelectedPoi]);
+
+    useEffect(() => {
+        if (!searchFocus?.isBusiness) {
+            if (searchFocus && !searchFocus.isBusiness) {
+                setSelectedPoi(null);
+            }
+            return;
+        }
+        const poi = resolvePoiForSearchSelection(searchFocus, viewportPois);
+        if (poi) setSelectedPoi(poi);
+    }, [searchFocus, viewportPois, setSelectedPoi]);
+
+    useEffect(() => {
+        if (!searchFocus) return;
+
+        const map = mapRef.current;
+        if (!map) return;
+        if (searchFocus.bbox) {
+            map.fitBounds(
+                [[searchFocus.bbox[0], searchFocus.bbox[1]], [searchFocus.bbox[2], searchFocus.bbox[3]]],
+                { padding: 60, duration: 1200 },
+            );
+        } else {
+            map.flyTo({
+                center: searchFocus.center,
+                zoom: Math.max(map.getZoom(), 15),
+                speed: 1.2,
+            });
+        }
+    }, [searchFocus]);
 
     useEffect(() => {
         setShowGooglePois(showGooglePoisProp);
@@ -715,7 +750,14 @@ function MapboxAgentMapView({
                         pois={viewportPois}
                         visible={showGooglePois}
                         selectedPoiId={selectedPoi?.id ?? null}
+                        excludePlaceId={searchFocus?.placeId ?? null}
                         onPoiClick={handlePoiSelect}
+                    />
+
+                    <SearchFocusLayer
+                        map={mapInstance}
+                        mapReady={mapReady}
+                        focus={searchFocus}
                     />
 
                     <PoiDetailCard
@@ -1244,6 +1286,7 @@ export function AgentMapView({
     onPoiBusyChange,
     onPoiZoomTooLowChange,
     onGooglePoiSelect,
+    searchFocus = null,
 }: AgentMapViewProps = {}) {
     const providerState = useEffectiveMapProvider();
 
@@ -1280,6 +1323,7 @@ export function AgentMapView({
             onPoiBusyChange={onPoiBusyChange}
             onPoiZoomTooLowChange={onPoiZoomTooLowChange}
             onGooglePoiSelect={onGooglePoiSelect}
+            searchFocus={searchFocus}
         />
     );
 }
