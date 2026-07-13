@@ -83,7 +83,55 @@ spec:
                 configMapKeyRef:
                   name: factory23-config
                   key: TRACKING_WS_REDIS_DB
-            # Wildcard-leading subscribe pattern (relay does PSUBSCRIBE
+01:31:06.797 Running build in Washington, D.C., USA (East) – iad1
+01:31:06.798 Build machine configuration: 2 cores, 8 GB
+01:31:06.901 Cloning github.com/P23-Africa-Dev/the-factory (Branch: main, Commit: b872ed3)
+01:31:08.265 Cloning completed: 1.364s
+01:31:08.585 Restored build cache from previous deployment (B5dkkXkDYFTn8d2NzEXZsmnA2JvU)
+01:31:08.822 Running "vercel build"
+01:31:08.839 Vercel CLI 55.0.0
+01:31:09.365 Installing dependencies...
+01:31:11.326 
+01:31:11.326 changed 2 packages in 2s
+01:31:11.327 
+01:31:11.327 153 packages are looking for funding
+01:31:11.327   run `npm fund` for details
+01:31:11.359 Detected Next.js version: 16.2.1
+01:31:11.364 Running "npm run build"
+01:31:11.635 
+01:31:11.635 > the-factory-agent-pwa@0.1.0 build
+01:31:11.635 > node run-with-env.js build
+01:31:11.636 
+01:31:11.672 [run-with-env] Warning: no .env files found — env vars may be missing
+01:31:12.472   Applying modifyConfig from Vercel
+01:31:12.491 ▲ Next.js 16.2.1 (Turbopack)
+01:31:12.491 
+01:31:12.501 ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+01:31:12.529   Creating an optimized production build ...
+01:31:31.391 ✓ Compiled successfully in 18.5s
+01:31:31.397   Running TypeScript ...
+01:31:40.846 Failed to type check.
+01:31:40.846 
+01:31:40.848 ./src/features/tracking/hydrateRoute.ts:36:59
+01:31:40.848 Type error: Argument of type '[number, number] | null' is not assignable to parameter of type '[number, number] | undefined'.
+01:31:40.848   Type 'null' is not assignable to type '[number, number] | undefined'.
+01:31:40.849 
+01:31:40.849   34 |     : prev?.lastPosition;
+01:31:40.849   35 |
+01:31:40.849 > 36 |   const polyline = shouldKeepLivePolyline(prev?.polyline, lastPosition)
+01:31:40.850      |                                                           ^
+01:31:40.850   37 |     ? prev!.polyline!
+01:31:40.850   38 |     : lastPosition
+01:31:40.851   39 |       ? [lastPosition]
+01:31:40.899 Next.js build worker exited with code: 1 and signal: null
+01:31:40.941 npm error Lifecycle script `build` failed with error:
+01:31:40.942 npm error code 1
+01:31:40.942 npm error path /vercel/path0/the-factory-agent-pwa
+01:31:40.942 npm error workspace the-factory-agent-pwa@0.1.0
+01:31:40.942 npm error location /vercel/path0/the-factory-agent-pwa
+01:31:40.943 npm error command failed
+01:31:40.943 npm error command sh -c node run-with-env.js build
+01:31:40.966 Error: Command "npm run build" exited with 1            # Wildcard-leading subscribe pattern (relay does PSUBSCRIBE
             # "<prefix>.company.*"). Laravel's default Redis connection applies
             # a key prefix ("factory23-database-") to PUBLISH channel names, so
             # the leading * tolerates both prefixed (legacy) and exact channel

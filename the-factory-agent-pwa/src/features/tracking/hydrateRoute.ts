@@ -33,7 +33,7 @@ export function hydrateLiveTaskFromRoute(taskId: number, route: TaskRoute): void
     ? ([lastPoint.longitude, lastPoint.latitude] as [number, number])
     : prev?.lastPosition;
 
-  const polyline = shouldKeepLivePolyline(prev?.polyline, lastPosition)
+  const polyline = shouldKeepLivePolyline(prev?.polyline, lastPosition ?? undefined)
     ? prev!.polyline!
     : lastPosition
       ? [lastPosition]
