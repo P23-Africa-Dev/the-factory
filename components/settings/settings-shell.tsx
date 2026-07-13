@@ -18,6 +18,7 @@ import { OrgProfilePanel } from "@/components/settings/organization/org-profile-
 import { ZonesSettingsPanel } from "@/components/settings/organization/zones-settings-panel";
 import { CrmSettingsPanel } from "@/components/settings/organization/crm-settings-panel";
 import { AttendanceSettingsPanel } from "@/components/settings/organization/attendance-settings-panel";
+import { UserManagementPanel } from "@/components/settings/organization/user-management-panel";
 import { PayrollSettingsPanel } from "@/components/settings/organization/payroll-settings-panel";
 import { MeetingsIntegrationsPanel } from "@/components/settings/organization/meetings-integrations-panel";
 import { FieldOpsDefaultsPanel } from "@/components/settings/organization/field-ops-defaults-panel";
@@ -48,6 +49,8 @@ function SectionContent({ sectionId }: { sectionId: SettingsSectionId }) {
       return <CrmSettingsPanel />;
     case "workforce":
       return <AttendanceSettingsPanel />;
+    case "user-management":
+      return <UserManagementPanel />;
     case "payroll":
       return <PayrollSettingsPanel />;
     case "meetings":

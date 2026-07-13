@@ -38,6 +38,9 @@ class CompanySettingsController extends Controller
             'operational_defaults.visit_verification_required' => ['sometimes', 'boolean'],
             'meeting_defaults' => ['sometimes', 'array'],
             'meeting_defaults.default_reminder_minutes' => ['sometimes', 'integer', Rule::in([5, 10, 15, 30, 60])],
+            'user_management' => ['sometimes', 'array'],
+            'user_management.supervisor_can_suspend_agents' => ['sometimes', 'boolean'],
+            'user_management.supervisor_can_delete_agents' => ['sometimes', 'boolean'],
         ]);
 
         $companyId = isset($validated['company_id']) ? (int) $validated['company_id'] : null;

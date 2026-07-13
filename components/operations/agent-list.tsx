@@ -16,9 +16,13 @@ export type AgentItem = {
   zoneIds?: number[];
   phone: string;
   role: string;
+  internalRole?: string;
+  supervisorUserId?: number | null;
   status: string;
   time: string;
   avatar: string;
+  isSuspended?: boolean;
+  suspendedUntil?: string | null;
   /** @deprecated Use isMapActive for map-live styling */
   active: boolean;
   isMapActive: boolean;

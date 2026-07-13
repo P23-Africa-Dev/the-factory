@@ -7,13 +7,18 @@ namespace App\Http\Controllers\Api\V1\Internal;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Internal\AssignSupervisorRequest;
 use App\Http\Requests\Internal\CreateInternalUserRequest;
+use App\Http\Requests\Internal\FetchInternalUserAuditLogsRequest;
 use App\Http\Requests\Internal\FetchInternalUsersRequest;
+use App\Http\Requests\Internal\InternalUserLifecycleRequest;
 use App\Http\Requests\Internal\ResendInternalInviteRequest;
+use App\Http\Requests\Internal\SuspendInternalUserRequest;
 use App\Http\Requests\Internal\UpdateInternalUserRequest;
+use App\Http\Resources\InternalUserAuditLogResource;
 use App\Http\Resources\InternalUserListResource;
 use App\Http\Resources\InternalUserResource;
 use App\Models\User;
 use App\Services\Internal\InternalUserFetchService;
+use App\Services\Internal\InternalUserLifecycleService;
 use App\Services\Internal\InternalUserOnboardingService;
 use App\Services\Internal\InternalUserAccessService;
 use App\Services\Workforce\AgentPresenceService;
@@ -25,6 +30,7 @@ class InternalUserController extends Controller
         private readonly InternalUserOnboardingService $service,
         private readonly InternalUserFetchService $fetchService,
         private readonly InternalUserAccessService $accessService,
+        private readonly InternalUserLifecycleService $lifecycleService,
     ) {}
 
     public function index(FetchInternalUsersRequest $request): JsonResponse
@@ -166,6 +172,81 @@ class InternalUserController extends Controller
         return $this->success(
             message: 'Supervisor assigned successfully.',
             data: ['user' => new InternalUserResource($updatedAgent)],
+        );
+    }
+
+    public function auditLogs(FetchInternalUserAuditLogsRequest $request): JsonResponse
+    {
+        $companyId = $request->validated('company_id');
+
+        $paginated = $this->lifecycleService->paginateAuditLogs(
+            actor: $request->user(),
+            filters: $request->validated(),
+            companyId: $companyId !== null ? (int) $companyId : null,
+        );
+
+        return $this->success(
+            message: 'User management audit logs retrieved successfully.',
+            data: [
+                'items' => InternalUserAuditLogResource::collection($paginated->items()),
+                'pagination' => [
+                    'next_page_url' => $paginated->nextPageUrl(),
+                    'prev_page_url' => $paginated->previousPageUrl(),
+                    'per_page' => $paginated->perPage(),
+                    'current_page' => $paginated->currentPage(),
+                    'last_page' => $paginated->lastPage(),
+                    'total' => $paginated->total(),
+                ],
+            ],
+        );
+    }
+
+    public function suspend(SuspendInternalUserRequest $request, User $user): JsonResponse
+    {
+        $companyId = $request->validated('company_id');
+
+        $updated = $this->lifecycleService->suspend(
+            actor: $request->user(),
+            target: $user,
+            data: $request->validated(),
+            companyId: $companyId !== null ? (int) $companyId : null,
+        );
+
+        return $this->success(
+            message: 'User suspended successfully.',
+            data: ['user' => new InternalUserResource($updated)],
+        );
+    }
+
+    public function reactivate(InternalUserLifecycleRequest $request, User $user): JsonResponse
+    {
+        $companyId = $request->validated('company_id');
+
+        $updated = $this->lifecycleService->reactivate(
+            actor: $request->user(),
+            target: $user,
+            companyId: $companyId !== null ? (int) $companyId : null,
+        );
+
+        return $this->success(
+            message: 'User reactivated successfully.',
+            data: ['user' => new InternalUserResource($updated)],
+        );
+    }
+
+    public function destroy(InternalUserLifecycleRequest $request, User $user): JsonResponse
+    {
+        $companyId = $request->validated('company_id');
+
+        $this->lifecycleService->delete(
+            actor: $request->user(),
+            target: $user,
+            companyId: $companyId !== null ? (int) $companyId : null,
+        );
+
+        return $this->success(
+            message: 'User deleted successfully.',
+            data: null,
         );
     }
 }
