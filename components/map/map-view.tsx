@@ -143,6 +143,13 @@ function getStatusLabel(status: LiveTaskState['status']): string {
   return 'On field';
 }
 
+function getPresentStatusLabel(status: LiveTaskState['status']): string {
+  if (status === 'near_destination') return 'Near Destination';
+  if (status === 'arrived') return 'Arrived On Site';
+  if (status === 'completed') return 'Completed';
+  return 'Presently On Field';
+}
+
 function formatMetricDistance(meters: number | null | undefined): string {
   if (meters == null || Number.isNaN(meters)) return '--';
   if (meters < 1000) return `${Math.round(meters)} m`;
@@ -205,6 +212,52 @@ function buildDestinationPopupHtml(params: { title: string; location: string; st
       <div style="font-size:14px; font-weight:700; color:#0F172A; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${title}</div>
       <div style="margin-top:5px; font-size:12px; line-height:1.45; color:#475569; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${location}</div>
       <div style="margin-top:6px; font-size:11px; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; color:#DC2626;">${statusLabel}</div>
+    </div>
+  `;
+}
+
+function buildSelectedAgentPopupHtml(params: { name: string; avatarUrl?: string; location: string; statusLabel: string }): string {
+  const name = escapeHtml(params.name || 'Agent');
+  const location = escapeHtml(params.location || 'No location details');
+  const statusLabel = escapeHtml(params.statusLabel || 'Presently On Field');
+  const initials = escapeHtml(getAgentInitials(params.name) ?? '');
+  const avatarUrl = params.avatarUrl ? escapeHtml(params.avatarUrl) : '';
+
+  return `
+    <div style="width:220px; padding:16px 18px 18px; border-radius:22px; background:#ffffff; border:1px solid rgba(148,163,184,0.14); box-shadow:0 22px 54px rgba(15,23,42,0.20); font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <a href="/operations/agents" style="font-size:11.5px; font-weight:700; color:#0F172A; text-decoration:underline; text-underline-offset:2px;">View Full Profile</a>
+        <span style="color:#94A3B8; display:flex; align-items:center; justify-content:center; width:20px; height:20px;">
+          <svg width="15" height="15" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>
+        </span>
+      </div>
+
+      <div style="margin-top:10px; display:flex; justify-content:center;">
+        <div style="width:92px; height:92px; border-radius:9999px; padding:3px; background:linear-gradient(135deg, rgba(45,212,191,0.45), rgba(148,163,184,0.2));">
+          <div style="width:100%; height:100%; border-radius:9999px; overflow:hidden; background:#E2E8F0; display:flex; align-items:center; justify-content:center;">
+            ${avatarUrl ? `<img src="${avatarUrl}" alt="${name} avatar" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
+            <div style="width:100%; height:100%; display:${avatarUrl ? 'none' : 'flex'}; align-items:center; justify-content:center; font-size:24px; font-weight:800; color:#0F172A; background:linear-gradient(135deg, #E2E8F0, #F8FAFC);">${initials || '•'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px; text-align:center;">
+        <div style="font-size:16px; font-weight:800; color:#0F172A; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
+        <div style="margin-top:2px; font-size:12.5px; color:#64748B; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${location}</div>
+      </div>
+
+      <div style="margin-top:10px; display:flex; justify-content:center;">
+        <span style="display:inline-block; padding:5px 14px; border-radius:9999px; background:#E4F9EE; color:#15803D; font-size:12px; font-weight:700;">${statusLabel}</span>
+      </div>
+
+      <!--
+      <div style="margin-top:16px; display:flex; align-items:center; justify-content:center; gap:8px;">
+        <span style="width:32px; height:32px; border-radius:9px; border:1.5px dashed #7DB4F5; display:flex; align-items:center; justify-content:center; flex:0 0 auto;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        </span>
+        <span style="font-size:13.5px; font-weight:700; color:#0F172A;">Send a message</span>
+      </div>
+      -->
     </div>
   `;
 }
@@ -679,11 +732,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       }).addTo(map);
     }
 
-    const popupHtml = buildAgentPopupHtml({
+    const popupHtml = buildSelectedAgentPopupHtml({
       name: agentName,
       avatarUrl: agentAvatarUrl,
       location: taskAddress || taskTitle || 'No location details',
-      statusLabel: getStatusLabel(selectedTask.status),
+      statusLabel: getPresentStatusLabel(selectedTask.status),
     });
     popupRef.current.setLngLat(lastPosition).setHTML(popupHtml);
   }, [selectedTask, mapVersion]);
