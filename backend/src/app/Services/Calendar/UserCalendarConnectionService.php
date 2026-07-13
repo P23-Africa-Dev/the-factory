@@ -77,7 +77,7 @@ class UserCalendarConnectionService
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
 
-        return $this->oauthService->buildAuthorizationUrl($resolvedCompanyId, (int) $user->id, 'user');
+        return $this->oauthService->buildAuthorizationUrl($resolvedCompanyId, (int) $user->id, 'user', true);
     }
 
     public function disconnect(User $user, ?int $companyId = null): array

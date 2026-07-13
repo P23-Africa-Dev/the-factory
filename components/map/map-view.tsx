@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import mapboxgl from 'mapbox-gl';
-import { Search, Eye, EyeOff, Radio, RefreshCcw, MoreHorizontal, LocateFixed } from 'lucide-react';
+import { Search, Eye, EyeOff, Radio, RefreshCcw, MoreHorizontal, LocateFixed, X } from 'lucide-react';
 import {
   getGoogleMapsPublicApiKey,
   MAPBOX_PUBLIC_TOKEN_ENV,
@@ -143,6 +143,13 @@ function getStatusLabel(status: LiveTaskState['status']): string {
   return 'On field';
 }
 
+function getPresentStatusLabel(status: LiveTaskState['status']): string {
+  if (status === 'near_destination') return 'Near Destination';
+  if (status === 'arrived') return 'Arrived On Site';
+  if (status === 'completed') return 'Completed';
+  return 'Presently On Field';
+}
+
 function formatMetricDistance(meters: number | null | undefined): string {
   if (meters == null || Number.isNaN(meters)) return '--';
   if (meters < 1000) return `${Math.round(meters)} m`;
@@ -205,6 +212,52 @@ function buildDestinationPopupHtml(params: { title: string; location: string; st
       <div style="font-size:14px; font-weight:700; color:#0F172A; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${title}</div>
       <div style="margin-top:5px; font-size:12px; line-height:1.45; color:#475569; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${location}</div>
       <div style="margin-top:6px; font-size:11px; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; color:#DC2626;">${statusLabel}</div>
+    </div>
+  `;
+}
+
+function buildSelectedAgentPopupHtml(params: { name: string; avatarUrl?: string; location: string; statusLabel: string }): string {
+  const name = escapeHtml(params.name || 'Agent');
+  const location = escapeHtml(params.location || 'No location details');
+  const statusLabel = escapeHtml(params.statusLabel || 'Presently On Field');
+  const initials = escapeHtml(getAgentInitials(params.name) ?? '');
+  const avatarUrl = params.avatarUrl ? escapeHtml(params.avatarUrl) : '';
+
+  return `
+    <div style="width:220px; padding:16px 18px 18px; border-radius:22px; background:#ffffff; border:1px solid rgba(148,163,184,0.14); box-shadow:0 22px 54px rgba(15,23,42,0.20); font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <a href="/operations/agents" style="font-size:11.5px; font-weight:700; color:#0F172A; text-decoration:underline; text-underline-offset:2px;">View Full Profile</a>
+        <span style="color:#94A3B8; display:flex; align-items:center; justify-content:center; width:20px; height:20px;">
+          <svg width="15" height="15" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>
+        </span>
+      </div>
+
+      <div style="margin-top:10px; display:flex; justify-content:center;">
+        <div style="width:92px; height:92px; border-radius:9999px; padding:3px; background:linear-gradient(135deg, rgba(45,212,191,0.45), rgba(148,163,184,0.2));">
+          <div style="width:100%; height:100%; border-radius:9999px; overflow:hidden; background:#E2E8F0; display:flex; align-items:center; justify-content:center;">
+            ${avatarUrl ? `<img src="${avatarUrl}" alt="${name} avatar" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
+            <div style="width:100%; height:100%; display:${avatarUrl ? 'none' : 'flex'}; align-items:center; justify-content:center; font-size:24px; font-weight:800; color:#0F172A; background:linear-gradient(135deg, #E2E8F0, #F8FAFC);">${initials || '•'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px; text-align:center;">
+        <div style="font-size:16px; font-weight:800; color:#0F172A; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
+        <div style="margin-top:2px; font-size:12.5px; color:#64748B; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${location}</div>
+      </div>
+
+      <div style="margin-top:10px; display:flex; justify-content:center;">
+        <span style="display:inline-block; padding:5px 14px; border-radius:9999px; background:#E4F9EE; color:#15803D; font-size:12px; font-weight:700;">${statusLabel}</span>
+      </div>
+
+      <!--
+      <div style="margin-top:16px; display:flex; align-items:center; justify-content:center; gap:8px;">
+        <span style="width:32px; height:32px; border-radius:9px; border:1.5px dashed #7DB4F5; display:flex; align-items:center; justify-content:center; flex:0 0 auto;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        </span>
+        <span style="font-size:13.5px; font-weight:700; color:#0F172A;">Send a message</span>
+      </div>
+      -->
     </div>
   `;
 }
@@ -273,6 +326,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const directionRoutesRef = useRef<Map<number, [number, number][]>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [leftSearchQuery, setLeftSearchQuery] = useState('');
   const [appearance, setAppearance] = useState<MapAppearance>(() => resolveMapAppearance());
   const [placeResults, setPlaceResults] = useState<Array<{ id: string; name: string; center: [number, number]; bbox: [number, number, number, number] | null }>>([]);
   const [searchBusy, setSearchBusy] = useState(false);
@@ -363,6 +417,43 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       )
       .slice(0, 6);
   }, [searchQuery, savedLocations]);
+
+  const leftSearchResults = useMemo(() => {
+    const needle = leftSearchQuery.trim().toLowerCase();
+    if (!needle) return null;
+
+    if (leftTab === 'feeds') {
+      return tasks
+        .filter(
+          (task) =>
+            task.agentName.toLowerCase().includes(needle) ||
+            (task.taskTitle ?? '').toLowerCase().includes(needle) ||
+            (task.projectName ?? '').toLowerCase().includes(needle) ||
+            (task.taskAddress ?? '').toLowerCase().includes(needle) ||
+            String(task.taskId).includes(needle)
+        )
+        .slice(0, 8);
+    }
+
+    if (leftTab === 'clocked-in') {
+      return clockedInItems
+        .filter((item) => item.agent_name.toLowerCase().includes(needle))
+        .slice(0, 8);
+    }
+
+    if (leftTab === 'businesses') {
+      return savedLocations
+        .filter(
+          (loc) =>
+            loc.name.toLowerCase().includes(needle) ||
+            getSavedLocationLabel(loc.type).toLowerCase().includes(needle) ||
+            (loc.address ?? '').toLowerCase().includes(needle)
+        )
+        .slice(0, 8);
+    }
+
+    return null;
+  }, [leftSearchQuery, leftTab, tasks, clockedInItems, savedLocations]);
 
   const handleSearchQueryChange = useCallback((value: string) => {
     setSearchQuery(value);
@@ -641,11 +732,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       }).addTo(map);
     }
 
-    const popupHtml = buildAgentPopupHtml({
+    const popupHtml = buildSelectedAgentPopupHtml({
       name: agentName,
       avatarUrl: agentAvatarUrl,
       location: taskAddress || taskTitle || 'No location details',
-      statusLabel: getStatusLabel(selectedTask.status),
+      statusLabel: getPresentStatusLabel(selectedTask.status),
     });
     popupRef.current.setLngLat(lastPosition).setHTML(popupHtml);
   }, [selectedTask, mapVersion]);
@@ -1274,7 +1365,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} strokeWidth={2} />
           <input
             type="text"
-            placeholder="Search places......."
+            placeholder="Search by places…"
             value={searchQuery}
             onChange={(e) => handleSearchQueryChange(e.target.value)}
             className="w-full bg-white rounded-full py-4 pl-14 pr-6 text-[14px] shadow-2xl shadow-black/5 outline-none font-medium text-dash-dark placeholder:text-gray-400"
@@ -1335,33 +1426,50 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         )}
       </div>
 
-      {/* Left panel — location search + tabs (Search Feeds / Businesses) */}
+      {/* Left panel — agent/business search + tabs */}
       <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-auto md:w-[340px] z-20 bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
-        {/* Location filter */}
+        {/* Dynamic search filter */}
         <div className="px-4 pt-4 pb-2 shrink-0">
-          <LocationSearchInput
-            activeLocation={locationCtx}
-            onLocationSelect={handleLocationSelect}
-            className="w-full"
-          />
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={15} strokeWidth={2} />
+            <input
+              type="text"
+              placeholder={
+                leftTab === 'feeds' ? 'Search by agents…' :
+                leftTab === 'clocked-in' ? 'Search by clocked in agents…' :
+                'Search by business…'
+              }
+              value={leftSearchQuery}
+              onChange={(e) => setLeftSearchQuery(e.target.value)}
+              className="w-full bg-white rounded-full py-3 pl-10 pr-10 text-[13px] shadow-2xl shadow-black/10 outline-none font-medium text-dash-dark placeholder:text-gray-400 border border-slate-100"
+            />
+            {leftSearchQuery.length > 0 ? (
+              <button
+                onClick={() => setLeftSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors"
+              >
+                <X size={10} className="text-slate-500" />
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {/* Tab bar */}
         <div className="flex border-b border-slate-100 shrink-0 mx-4">
           <button
-            onClick={() => setLeftTab('feeds')}
+            onClick={() => { setLeftTab('feeds'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'feeds' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Live Feeds
           </button>
           <button
-            onClick={() => setLeftTab('clocked-in')}
+            onClick={() => { setLeftTab('clocked-in'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'clocked-in' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Clocked In ({clockedInItems.length})
           </button>
           <button
-            onClick={() => setLeftTab('businesses')}
+            onClick={() => { setLeftTab('businesses'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'businesses' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Businesses {locationCtx ? `(${filteredBusinesses.length})` : ''}
@@ -1370,18 +1478,18 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
         {leftTab === 'feeds' ? (
           <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-2">
-            {isInitialHydrating && filteredTasks.length === 0 ? (
+            {isInitialHydrating && (leftSearchResults === null ? filteredTasks : (leftSearchResults as typeof tasks)).length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-2">
                 <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
                 <p className="text-[12px] text-gray-400">Loading feeds…</p>
               </div>
-            ) : filteredTasks.length === 0 ? (
+            ) : (leftSearchResults === null ? filteredTasks : (leftSearchResults as typeof tasks)).length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-2">
                 <Radio size={24} className="text-gray-200" />
-                <p className="text-[12px] text-gray-400">No feeds available</p>
+                <p className="text-[12px] text-gray-400">{leftSearchQuery ? 'No agents found' : 'No feeds available'}</p>
               </div>
             ) : (
-              filteredTasks.map((task) => {
+              (leftSearchResults === null ? filteredTasks : (leftSearchResults as typeof tasks)).map((task) => {
                 const isSelected = selectedTaskId === task.taskId;
                 const operationalStatus = resolveOperationalStatusFromTask(task, nowMs, STALE_MS);
                 const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
@@ -1436,7 +1544,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           </div>
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel
-            items={clockedInItems}
+            items={leftSearchResults && Array.isArray(leftSearchResults) ? (leftSearchResults as typeof clockedInItems) : clockedInItems}
             isLoading={clockedInLoading}
             selectedUserId={highlightedClockedInUserId}
             onSelect={handleClockedInSelect}
@@ -1446,7 +1554,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             activeLocation={locationCtx}
             pois={poiResults}
             poiBusy={poiBusy}
-            savedLocations={savedLocations}
+            savedLocations={leftSearchResults && Array.isArray(leftSearchResults) ? (leftSearchResults as typeof savedLocations) : savedLocations}
             savedLocationsLoading={savedLocationsLoading}
             onPoiClick={(p) => {
               mapRef.current?.flyTo({ center: [p.lng, p.lat], zoom: 17, speed: 1.2 });
@@ -1643,6 +1751,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const markerPositionRef = useRef<Map<number, [number, number]>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [leftSearchQuery, setLeftSearchQuery] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [historyTask, setHistoryTask] = useState<{ id: number; title: string } | null>(null);
   const [isInitialHydrating, setIsInitialHydrating] = useState(false);
@@ -2155,6 +2264,43 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     );
   });
 
+  const leftSearchResults = useMemo(() => {
+    const needle = leftSearchQuery.trim().toLowerCase();
+    if (!needle) return null;
+
+    if (leftTab === 'feeds') {
+      return tasks
+        .filter(
+          (task) =>
+            task.agentName.toLowerCase().includes(needle) ||
+            (task.taskTitle ?? '').toLowerCase().includes(needle) ||
+            (task.projectName ?? '').toLowerCase().includes(needle) ||
+            (task.taskAddress ?? '').toLowerCase().includes(needle) ||
+            String(task.taskId).includes(needle)
+        )
+        .slice(0, 8);
+    }
+
+    if (leftTab === 'clocked-in') {
+      return clockedInItems
+        .filter((item) => item.agent_name.toLowerCase().includes(needle))
+        .slice(0, 8);
+    }
+
+    if (leftTab === 'businesses') {
+      return savedLocations
+        .filter(
+          (loc) =>
+            loc.name.toLowerCase().includes(needle) ||
+            getSavedLocationLabel(loc.type).toLowerCase().includes(needle) ||
+            (loc.address ?? '').toLowerCase().includes(needle)
+        )
+        .slice(0, 8);
+    }
+
+    return null;
+  }, [leftSearchQuery, leftTab, tasks, clockedInItems, savedLocations]);
+
   if (!googleApiKey) {
     if (compact) {
       return (
@@ -2222,7 +2368,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} strokeWidth={2} />
           <input
             type="text"
-            placeholder="Search for Location"
+            placeholder="Search by places…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-white rounded-full py-4 pl-14 pr-6 text-[14px] shadow-2xl shadow-black/5 outline-none font-medium text-dash-dark placeholder:text-gray-400"
@@ -2248,33 +2394,50 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         )}
       </div>
 
-      {/* Left panel — location search + tabs (Search Feeds / Businesses) */}
+      {/* Left panel — agent/business search + tabs */}
       <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-auto md:w-[340px] z-20 bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
-        {/* Location filter */}
+        {/* Dynamic search filter */}
         <div className="px-4 pt-4 pb-2 shrink-0">
-          <LocationSearchInput
-            activeLocation={locationCtx}
-            onLocationSelect={handleLocationSelect}
-            className="w-full"
-          />
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={15} strokeWidth={2} />
+            <input
+              type="text"
+              placeholder={
+                leftTab === 'feeds' ? 'Search by agents…' :
+                leftTab === 'clocked-in' ? 'Search by clocked in agents…' :
+                'Search by business…'
+              }
+              value={leftSearchQuery}
+              onChange={(e) => setLeftSearchQuery(e.target.value)}
+              className="w-full bg-white rounded-full py-3 pl-10 pr-10 text-[13px] shadow-2xl shadow-black/10 outline-none font-medium text-dash-dark placeholder:text-gray-400 border border-slate-100"
+            />
+            {leftSearchQuery.length > 0 ? (
+              <button
+                onClick={() => setLeftSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors"
+              >
+                <X size={10} className="text-slate-500" />
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {/* Tab bar */}
         <div className="flex border-b border-slate-100 shrink-0 mx-4">
           <button
-            onClick={() => setLeftTab('feeds')}
+            onClick={() => { setLeftTab('feeds'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'feeds' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Live Feeds
           </button>
           <button
-            onClick={() => setLeftTab('clocked-in')}
+            onClick={() => { setLeftTab('clocked-in'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'clocked-in' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Clocked In ({clockedInItems.length})
           </button>
           <button
-            onClick={() => setLeftTab('businesses')}
+            onClick={() => { setLeftTab('businesses'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'businesses' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Businesses {locationCtx ? `(${filteredBusinesses.length})` : ''}
@@ -2283,18 +2446,18 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
         {leftTab === 'feeds' ? (
           <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-2">
-            {isInitialHydrating && filteredTasks.length === 0 ? (
+            {isInitialHydrating && (leftSearchResults === null ? filteredTasks : (leftSearchResults as typeof tasks)).length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-2">
                 <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
                 <p className="text-[12px] text-gray-400">Loading feeds…</p>
               </div>
-            ) : filteredTasks.length === 0 ? (
+            ) : (leftSearchResults === null ? filteredTasks : (leftSearchResults as typeof tasks)).length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-2">
                 <Radio size={24} className="text-gray-200" />
-                <p className="text-[12px] text-gray-400">No feeds available</p>
+                <p className="text-[12px] text-gray-400">{leftSearchQuery ? 'No agents found' : 'No feeds available'}</p>
               </div>
             ) : (
-              filteredTasks.map((task) => {
+              (leftSearchResults === null ? filteredTasks : (leftSearchResults as typeof tasks)).map((task) => {
                 const isSelected = selectedTaskId === task.taskId;
                 return (
                   <button
@@ -2332,7 +2495,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           </div>
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel
-            items={clockedInItems}
+            items={leftSearchResults && Array.isArray(leftSearchResults) ? (leftSearchResults as typeof clockedInItems) : clockedInItems}
             isLoading={clockedInLoading}
             selectedUserId={highlightedClockedInUserId}
             onSelect={handleClockedInSelect}
@@ -2342,7 +2505,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             activeLocation={locationCtx}
             pois={poiResults}
             poiBusy={poiBusy}
-            savedLocations={savedLocations}
+            savedLocations={leftSearchResults && Array.isArray(leftSearchResults) ? (leftSearchResults as typeof savedLocations) : savedLocations}
             savedLocationsLoading={savedLocationsLoading}
             onPoiClick={(p) => {
               mapRef.current?.panTo({ lat: p.lat, lng: p.lng });

@@ -258,7 +258,7 @@ export function EmailConnectionBanner({ companyId }: EmailConnectionBannerProps)
                     <p className="text-[11px] text-amber-800/80">
                         {status?.requires_gmail_reconnect
                             ? "Reconnect and approve Gmail permissions to send and receive CRM emails."
-                            : "Connect Google to sync calendar and CRM email."}
+                            : "Connect your Google account to sync calendar and CRM email."}
                     </p>
                     {status?.last_error_message && (
                         <p className="mt-1 text-[10px] text-amber-700 font-medium">
@@ -277,7 +277,7 @@ export function EmailConnectionBanner({ companyId }: EmailConnectionBannerProps)
                             className="inline-flex items-center justify-center gap-2 rounded-[10px] bg-[#0B1215] px-4 py-2 text-[12px] font-semibold text-white hover:opacity-90 disabled:opacity-60"
                         >
                             <Link2 size={14} />
-                            {connectMutation.isPending ? "Opening..." : "Connect Google"}
+                            {connectMutation.isPending ? "Opening..." : "Connect Google Account"}
                         </button>
                     )}
                     <button

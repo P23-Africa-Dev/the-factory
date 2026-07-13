@@ -12,6 +12,7 @@ use App\Models\CrmEmailMessage;
 use App\Models\Lead;
 use App\Models\LeadPipeline;
 use App\Models\User;
+use App\Models\UserCalendarConnection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,7 @@ class CrmEmailTest extends TestCase
 
         [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
         $this->seedGmailConnection($company, $admin);
+        $this->seedUserGmailConnection($company, $admin, 'admin@gmail.com');
 
         $lead = Lead::create([
             'company_id' => $company->id,
@@ -65,6 +67,7 @@ class CrmEmailTest extends TestCase
     {
         [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
         $this->seedGmailConnection($company, $admin);
+        $this->seedUserGmailConnection($company, $agent, 'agent@gmail.com');
 
         $lead = Lead::create([
             'company_id' => $company->id,
@@ -108,6 +111,36 @@ class CrmEmailTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('success', true);
+    }
+
+    public function test_send_email_requires_personal_google_connection_even_if_company_connection_exists(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+        $this->seedGmailConnection($company, $admin);
+
+        $lead = Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Needs Personal Gmail',
+            'email' => 'lead@example.com',
+            'status' => 'new',
+            'priority' => 'medium',
+        ]);
+
+        $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/admin/crm/leads/' . $lead->id . '/emails/send', [
+                'company_id' => $company->id,
+                'to' => [['email' => 'lead@example.com']],
+                'subject' => 'Follow up',
+                'body_text' => 'Checking in.',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath(
+                'errors.integration.0',
+                'Google account is not connected. Connect your Google account to send and receive CRM emails.',
+            );
     }
 
     public function test_calendar_status_includes_gmail_flags(): void
@@ -178,6 +211,27 @@ class CrmEmailTest extends TestCase
             'organizer_google_user_id' => 'google-user',
             'access_token_encrypted' => 'access-token',
             'refresh_token_encrypted' => 'refresh-token',
+            'token_expires_at' => now()->addHour(),
+            'scopes' => [
+                'https://www.googleapis.com/auth/gmail.readonly',
+                'https://www.googleapis.com/auth/gmail.send',
+                'https://www.googleapis.com/auth/gmail.modify',
+            ],
+            'status' => 'active',
+            'connected_at' => now(),
+        ]);
+    }
+
+    private function seedUserGmailConnection(Company $company, User $user, string $email): void
+    {
+        UserCalendarConnection::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $user->id,
+            'organizer_email' => $email,
+            'organizer_name' => 'User Mailbox',
+            'organizer_google_user_id' => 'google-user-' . $user->id,
+            'access_token_encrypted' => 'user-access-token',
+            'refresh_token_encrypted' => 'user-refresh-token',
             'token_expires_at' => now()->addHour(),
             'scopes' => [
                 'https://www.googleapis.com/auth/gmail.readonly',

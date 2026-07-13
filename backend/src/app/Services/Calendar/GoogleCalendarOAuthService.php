@@ -14,7 +14,12 @@ use Illuminate\Validation\ValidationException;
 
 class GoogleCalendarOAuthService
 {
-    public function buildAuthorizationUrl(int $companyId, int $userId, string $connectionType = 'company'): array
+    public function buildAuthorizationUrl(
+        int $companyId,
+        int $userId,
+        string $connectionType = 'company',
+        bool $forceAccountPicker = false,
+    ): array
     {
         $clientId = trim((string) config('services.google_calendar.client_id'));
         $redirectUri = trim((string) config('services.google_calendar.redirect_uri'));
@@ -49,7 +54,7 @@ class GoogleCalendarOAuthService
             'scope' => implode(' ', $this->scopes()),
             'access_type' => 'offline',
             'include_granted_scopes' => 'true',
-            'prompt' => 'consent',
+            'prompt' => $forceAccountPicker ? 'select_account consent' : 'consent',
             'state' => $state,
         ], '', '&', PHP_QUERY_RFC3986);
 

@@ -91,17 +91,18 @@ class CalendarIntegrationController extends Controller
     {
         $authenticated = $request->expectsJson() || $request->wantsJson();
         $error = trim((string) $request->query('error', ''));
+        $errorDescription = trim((string) $request->query('error_description', ''));
 
         if ($error !== '') {
             if ($authenticated) {
                 throw ValidationException::withMessages([
-                    'integration' => ['Google returned an OAuth error: ' . $error . '. Please retry connection.'],
+                    'integration' => [$this->humanizeOAuthError($error, $errorDescription)],
                 ]);
             }
 
             return $this->browserCallbackResponse(
                 success: false,
-                message: 'Google returned an OAuth error: ' . $error . '. Please retry connection.',
+                message: $this->humanizeOAuthError($error, $errorDescription),
                 status: 422,
             );
         }
@@ -159,7 +160,7 @@ class CalendarIntegrationController extends Controller
         if ($gmailEnabled) {
             return $this->browserCallbackResponse(
                 success: true,
-                message: 'Google Workspace connected successfully for calendar and email. You can close this window.',
+                message: 'Google account connected successfully for calendar and email. You can close this window.',
                 status: 200,
                 extra: ['gmail_enabled' => true],
             );
@@ -232,5 +233,20 @@ HTML;
             $status,
             ['Content-Type' => 'text/html; charset=UTF-8'],
         );
+    }
+
+    private function humanizeOAuthError(string $error, string $errorDescription = ''): string
+    {
+        $normalized = strtolower(trim($error));
+        $description = trim($errorDescription);
+
+        return match ($normalized) {
+            'org_internal' => 'This Google OAuth app is currently restricted to one organization. Switch the app to External in Google Cloud Console and retry.',
+            'access_denied' => 'Google permissions were not granted. Reconnect and approve all requested Gmail permissions.',
+            'admin_policy_enforced' => 'Your Google Workspace admin blocked this app or requested scopes. Contact your admin to allow access.',
+            default => $description !== ''
+                ? 'Google OAuth error: ' . $description
+                : 'Google OAuth error: ' . ($normalized !== '' ? $normalized : 'unknown_error') . '. Please retry connection.',
+        };
     }
 }

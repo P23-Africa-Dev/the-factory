@@ -24,6 +24,7 @@ use App\Services\Notification\NotificationService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use App\Services\AI\AiLoggingService;
+use App\Services\AI\Support\LocalDateTimeContext;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -52,6 +53,7 @@ class CopilotService
         private readonly ReadToolSynthesisService $readToolSynthesisService,
         private readonly CrmLeadReadArgsResolver $crmLeadReadArgsResolver,
         private readonly ReadToolArgsResolver $readToolArgsResolver,
+        private readonly LocalDateTimeContext $localDateTimeContext,
     ) {}
 
     public function chat(
@@ -349,6 +351,8 @@ class CopilotService
                 userId: (int) $user->id,
                 threadId: $threadId,
                 message: $message,
+                clientTimezone: $clientTimezone,
+                companyCountry: $companyCountry,
             );
             $assistantText = $generalResponse['text'];
         }
@@ -478,9 +482,12 @@ class CopilotService
         int $userId,
         ?string $threadId,
         string $message,
+        ?string $clientTimezone = null,
+        ?string $companyCountry = null,
     ): array {
         $normalized = strtolower(trim($message));
         $resolvedCompanyName = trim($companyName) !== '' ? $companyName : 'your active organization';
+        $resolvedTimezone = $this->localDateTimeContext->resolveTimezone($clientTimezone, $companyCountry);
         $promptContext = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
         $contextEntities = is_array($promptContext['entities'] ?? null) ? $promptContext['entities'] : [];
 
@@ -529,13 +536,21 @@ class CopilotService
             return ['text' => ElySystemPrompt::intro() . ' I can help with CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.', 'result' => null];
         }
 
+        if ($this->localDateTimeContext->looksLikeDateTimeQuestion($message)) {
+            return [
+                'text' => $this->localDateTimeContext->answer($resolvedTimezone, $resolvedCompanyName),
+                'result' => null,
+            ];
+        }
+
         $systemPrompt = ElySystemPrompt::core() . "\n\n" . ElySystemPrompt::fewShotExamples();
         $userPrompt = sprintf(
-            "Company name: %s\nTenant scope ID (internal, do not mention): %d\nUser name: %s\nRole: %s\nConversation summary:\n%s\nRecent conversation:\n%s\nKnown entities: %s\nQuestion: %s",
+            "Company name: %s\nTenant scope ID (internal, do not mention): %d\nUser name: %s\nRole: %s\n%s\nConversation summary:\n%s\nRecent conversation:\n%s\nKnown entities: %s\nQuestion: %s",
             $this->redactSensitiveText($resolvedCompanyName),
             $companyId,
             $this->redactSensitiveText($user->name),
             $role,
+            $this->localDateTimeContext->promptLine($resolvedTimezone),
             (string) ($promptContext['summary'] ?? ''),
             $this->formatRecentMessagesForPrompt($promptContext['recent_messages'] ?? []),
             json_encode($contextEntities),

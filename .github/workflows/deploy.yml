@@ -282,6 +282,18 @@ jobs:
           kubectl rollout status deployment/scheduler \
             -n ${{ env.K8S_NAMESPACE }} --timeout=180s || rollout_failed=1
 
+          # Guardrail: on single-node clusters, ingress can become unschedulable
+          # under CPU pressure. Fail early with diagnostics if no endpoints exist.
+          INGRESS_ENDPOINTS=$(kubectl get endpoints ingress-nginx-controller -n ingress-nginx \
+            -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)
+          if [ -z "$INGRESS_ENDPOINTS" ]; then
+            rollout_failed=1
+            echo "=== ingress-nginx-controller has zero endpoints ==="
+            kubectl get pods -n ingress-nginx -o wide || true
+            kubectl describe svc ingress-nginx-controller -n ingress-nginx || true
+            kubectl describe deployment ingress-nginx-controller -n ingress-nginx || true
+          fi
+
           if [ "$rollout_failed" -ne 0 ]; then
             exit 1
           fi
@@ -290,14 +302,14 @@ jobs:
         if: always()
         run: |
           kubectl patch hpa backend-hpa -n ${{ env.K8S_NAMESPACE }} --type merge \
-            -p '{"spec":{"minReplicas":2,"maxReplicas":10}}' || true
-          kubectl scale deployment/backend -n ${{ env.K8S_NAMESPACE }} --replicas=2 || true
+            -p '{"spec":{"minReplicas":1,"maxReplicas":10}}' || true
+          kubectl scale deployment/backend -n ${{ env.K8S_NAMESPACE }} --replicas=1 || true
 
       - name: Smoke test — health endpoint
         run: |
-          echo "Waiting for backend pods to be ready..."
-          kubectl wait --for=condition=ready pod -l app=backend \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=120s
+          echo "Waiting for backend deployment to be available..."
+          kubectl wait --for=condition=available deployment/backend \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=150s
 
           # In-cluster check — validates the deployed app without depending on
           # public LB/DNS (which can lag or be down during node recovery).
