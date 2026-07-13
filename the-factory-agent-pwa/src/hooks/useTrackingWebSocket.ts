@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useTrackingStore } from '@/store/tracking';
 import { useNotificationStore } from '@/store/notifications';
 import { trackingApi } from '@/features/tracking/api';
+import { hydrateLiveTaskFromRoute } from '@/features/tracking/hydrateRoute';
 import { appStore, getActiveCompanyId } from '@/lib/storage/stores';
 import { queryClient } from '@/lib/queryClient';
 import { env } from '@/constants/env';
@@ -72,24 +73,13 @@ export const useTrackingWebSocket = (): void => {
       for (const taskId of activeTaskIds) {
         try {
           const route = await trackingApi.getTaskRoute(taskId, companyId);
-          const lastPoint = route.points.length > 0 ? route.points[route.points.length - 1] : null;
-          upsertTask(taskId, {
-            polyline: route.polyline,
-            lastPosition: lastPoint
-              ? [lastPoint.longitude, lastPoint.latitude]
-              : undefined,
-            destination: {
-              latitude: route.destination.latitude,
-              longitude: route.destination.longitude,
-              radiusMeters: route.destination.radius_meters,
-            },
-          });
+          hydrateLiveTaskFromRoute(taskId, route);
         } catch {
           // Silent — polling is best-effort fallback
         }
       }
     }, POLL_INTERVAL_MS);
-  }, [upsertTask]);
+  }, []);
 
   const handleEvent = useCallback(
     (message: Record<string, unknown>) => {

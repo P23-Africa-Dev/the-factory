@@ -868,6 +868,8 @@ function MapContent() {
   const startRideInFlightRef = useRef(false);
   const nearAlertShownRef = useRef(false);
   const [distanceRemainingM, setDistanceRemainingM] = useState<number | null>(null);
+  /** Baseline distance at navigation start — progress is measured from here, not from a stale route origin. */
+  const [initialDistanceRemainingM, setInitialDistanceRemainingM] = useState<number | null>(null);
   const [routesByMode, setRoutesByMode] = useState<Partial<Record<TransportMode, DirectionsResult>>>({});
   const transportModeRef = useRef<TransportMode>(transportMode);
   useEffect(() => {
@@ -997,10 +999,6 @@ function MapContent() {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate arrival from persisted route
       setHasArrived(true);
     }
-    // Restore route trail immediately so resume is not blank while directions load.
-    if (taskRoute.polyline.length >= 2) {
-      setPlannedRoute((prev) => (prev.length >= 2 ? prev : taskRoute.polyline));
-    }
     // Seed distance/ETA from last known agent position vs destination.
     const lastPoint =
       taskRoute.points.length > 0 ? taskRoute.points[taskRoute.points.length - 1] : null;
@@ -1008,14 +1006,6 @@ function MapContent() {
       const dist = haversineMeters(
         lastPoint.latitude,
         lastPoint.longitude,
-        taskRoute.destination.latitude,
-        taskRoute.destination.longitude,
-      );
-      setDistanceRemainingM((prev) => (prev == null ? dist : prev));
-    } else if (taskRoute.start && taskRoute.destination) {
-      const dist = haversineMeters(
-        taskRoute.start.latitude,
-        taskRoute.start.longitude,
         taskRoute.destination.latitude,
         taskRoute.destination.longitude,
       );
@@ -1029,6 +1019,12 @@ function MapContent() {
       setHasArrived(true);
     }
   }, [liveTask?.status, liveTask?.arrivedAt]);
+
+  useEffect(() => {
+    if (phase !== 'activity_started') return;
+    if (distanceRemainingM == null) return;
+    setInitialDistanceRemainingM((prev) => prev ?? distanceRemainingM);
+  }, [phase, distanceRemainingM]);
 
   useEffect(() => {
     if (!isFromTrackingScreen || !trackingTaskId) return;
@@ -1487,6 +1483,7 @@ function MapContent() {
     startRideInFlightRef.current = true;
     setIsLaunchingRide(true);
     setTrackingStatus('connecting');
+    setInitialDistanceRemainingM(null);
     nearAlertShownRef.current = false;
 
     const markTrackingLive = () => {
@@ -2129,7 +2126,7 @@ function MapContent() {
               destinationName={selectedDestination?.name ?? 'Destination'}
               etaMinutes={etaByMode[transportMode]}
               distanceRemainingM={distanceRemainingM}
-              totalDistanceM={totalRouteDistanceM}
+              totalDistanceM={initialDistanceRemainingM ?? totalRouteDistanceM}
               trackingStatus={rideTrackingStatus}
               lastUpdatedAt={liveTask?.lastUpdatedAt ?? null}
               hasArrived={hasArrived}

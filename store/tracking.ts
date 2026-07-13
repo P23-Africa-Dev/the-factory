@@ -6,6 +6,7 @@ import type {
   AgentLocationSnapshotItem,
 } from "@/types/tracking";
 import type { TaskApiItem } from "@/lib/api/tasks";
+import { resolveLivePolylineForHydrate } from "@/lib/tracking/live-polyline";
 
 const MAX_POLYLINE_PTS = 2000;
 const COMPLETED_LINGER_MS = 5_000;
@@ -347,6 +348,9 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
       const polyline = (route.polyline ?? []) as [number, number][];
       const lastPt = polyline[polyline.length - 1] as [number, number] | undefined;
 
+      const anchor = lastPt ?? prev?.lastPosition;
+      const livePolyline = resolveLivePolylineForHydrate(prev?.polyline, anchor);
+
       const entry: LiveTaskState = {
         taskId,
         trackingSessionId: prev?.trackingSessionId ?? 0,
@@ -372,7 +376,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
           }
           : undefined,
         lastPosition: lastPt ?? prev?.lastPosition ?? [0, 0],
-        polyline: polyline.slice(-MAX_POLYLINE_PTS),
+        polyline: livePolyline.slice(-MAX_POLYLINE_PTS),
         trackingStartedAt:
           prev?.trackingStartedAt ?? route.start?.recorded_at ?? route.arrival?.recorded_at,
         lastEventAt: newerIso(
