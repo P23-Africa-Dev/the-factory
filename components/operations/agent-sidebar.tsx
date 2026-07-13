@@ -10,7 +10,7 @@ import { useCompanyZones } from '@/hooks/use-internal-users';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { SearchableSelect } from '@/components/ui/searchable-select';
-import { UserLifecycleActions } from '@/components/operations/user-lifecycle-actions';
+import { UserLifecycleActions, DeleteUserIconButton } from '@/components/operations/user-lifecycle-actions';
 import { useUserManagementPermissions } from '@/hooks/use-user-management-permissions';
 
 interface AgentSidebarProps {
@@ -298,6 +298,14 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
               />
             </svg>
             )}
+            <DeleteUserIconButton
+              userId={agentId}
+              userName={agent.name}
+              companyId={companyId ?? undefined}
+              internalRole={agent.internalRole ?? agent.role}
+              supervisorUserId={agent.supervisorUserId}
+              isSuspended={agent.isSuspended}
+            />
           </div>
         </div>
       </div>

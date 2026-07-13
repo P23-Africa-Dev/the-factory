@@ -22,7 +22,7 @@ import {
 } from "@/lib/agent-presence";
 import type { InternalUserListItem } from "@/lib/api/internal-users";
 import { resolveAvatarSrc } from "@/lib/avatar";
-import { UserLifecycleActions } from "@/components/operations/user-lifecycle-actions";
+import { UserLifecycleActions, DeleteUserIconButton } from "@/components/operations/user-lifecycle-actions";
 
 type Agent = {
   id: string;
@@ -171,6 +171,14 @@ function AgentDetailSidebar({ agent, companyId }: { agent: Agent; companyId?: nu
             <path d="M16.6154 9.06299C20.7865 9.06299 24.1679 12.4443 24.1679 16.6154C24.1679 20.7866 20.7865 24.1679 16.6154 24.1679C12.4443 24.1679 9.06299 20.7866 9.06299 16.6154M14.281 9.43069C13.5189 9.67812 12.81 10.0434 12.1758 10.5051M10.5051 12.1757C10.0433 12.8101 9.678 13.5192 9.43057 14.2814" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
             <path d="M16.6157 13.5945V19.6364M19.6367 16.6154H13.5947" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
+          <DeleteUserIconButton
+            userId={agent.id}
+            userName={agent.name}
+            companyId={companyId}
+            internalRole={agent.internalRole}
+            supervisorUserId={agent.supervisorUserId}
+            isSuspended={agent.isSuspended}
+          />
         </div>
       </div>
 
@@ -513,13 +521,13 @@ export default function AllAgentsPage() {
           </OpsTableContainer>
 
           {/* Sidebar */}
-          {/* {selectedAgent ? (
+          {selectedAgent ? (
             <AgentDetailSidebar agent={selectedAgent} companyId={companyId ?? undefined} />
           ) : (
             <div className="flex items-center justify-center w-full xl:w-90 xl:shrink-0 h-40 text-gray-400 text-[13px]">
               Select an agent to view details
             </div>
-          )} */}
+          )}
         </div>
       </div>
 

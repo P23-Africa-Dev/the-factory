@@ -12,7 +12,8 @@ export function useUserManagementPermissions(target?: {
   isSuspended?: boolean;
 }) {
   const user = useAuthStore((s) => s.user);
-  const { role, apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const { role: companyRole, apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const role = companyRole ?? user?.access_role ?? null;
   const actorId = user?.id != null ? Number(user.id) : null;
 
   const { data: settings } = useQuery({
