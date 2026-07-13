@@ -36,14 +36,19 @@ export function UserManagementPanel() {
   }, [settings]);
 
   const updateMutation = useMutation({
-    mutationFn: () =>
-      updateCompanySettings({
+    mutationFn: () => {
+      if (companyId == null) {
+        throw new Error("No active company found.");
+      }
+
+      return updateCompanySettings({
         company_id: companyId,
         user_management: {
           supervisor_can_suspend_agents: suspendAgents,
           supervisor_can_delete_agents: deleteAgents,
         },
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["company-settings", companyId] });
       queryClient.invalidateQueries({ queryKey: ["internal-user-audit-logs"] });
@@ -119,7 +124,7 @@ export function UserManagementPanel() {
             <button
               type="button"
               onClick={() => updateMutation.mutate()}
-              disabled={updateMutation.isPending}
+              disabled={updateMutation.isPending || companyId == null}
               className="inline-flex items-center gap-2 rounded-xl bg-dash-dark px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
             >
               {updateMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
