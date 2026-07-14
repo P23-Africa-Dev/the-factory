@@ -230,40 +230,40 @@ function buildSelectedAgentPopupHtml(params: { name: string; avatarUrl?: string;
   const avatarUrl = params.avatarUrl ? escapeHtml(params.avatarUrl) : '';
 
   return `
-    <div style="width:220px; padding:16px 18px 18px; border-radius:22px; background:#ffffff; border:1px solid rgba(148,163,184,0.14); box-shadow:0 22px 54px rgba(15,23,42,0.20); font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+    <div style="width:300px; padding:38px 46px 30px; border-radius:32px; background:#ffffff; border:1px solid rgba(226,232,240,0.88); box-shadow:0 24px 54px rgba(15,23,42,0.24); font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
       <div style="display:flex; align-items:center; justify-content:space-between;">
-        <a href="/operations/agents" style="font-size:11.5px; font-weight:700; color:#0F172A; text-decoration:underline; text-underline-offset:2px;">View Full Profile</a>
-        <span style="color:#94A3B8; display:flex; align-items:center; justify-content:center; width:20px; height:20px;">
-          <svg width="15" height="15" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>
+        <a href="/operations/agents" style="font-size:18px; line-height:1; font-weight:700; color:#1F2933; text-decoration:underline; text-underline-offset:3px; letter-spacing:-0.01em;">View Full Profile</a>
+        <span style="color:#0F2530; display:flex; align-items:center; justify-content:center; width:26px; height:26px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="19" r="1.7" fill="currentColor"/></svg>
         </span>
       </div>
 
-      <div style="margin-top:10px; display:flex; justify-content:center;">
-        <div style="width:92px; height:92px; border-radius:9999px; padding:3px; background:linear-gradient(135deg, rgba(45,212,191,0.45), rgba(148,163,184,0.2));">
-          <div style="width:100%; height:100%; border-radius:9999px; overflow:hidden; background:#E2E8F0; display:flex; align-items:center; justify-content:center;">
+      <div style="margin-top:32px; display:flex; justify-content:center;">
+        <div style="width:152px; height:152px; border-radius:9999px; padding:5px; background:linear-gradient(180deg, rgba(207,218,218,0.75), rgba(83,128,128,0.95));">
+          <div style="width:100%; height:100%; border-radius:9999px; overflow:hidden; background:#F1FAF7; display:flex; align-items:center; justify-content:center;">
             ${avatarUrl ? `<img src="${avatarUrl}" alt="${name} avatar" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
-            <div style="width:100%; height:100%; display:${avatarUrl ? 'none' : 'flex'}; align-items:center; justify-content:center; font-size:24px; font-weight:800; color:#0F172A; background:linear-gradient(135deg, #E2E8F0, #F8FAFC);">${initials || '•'}</div>
+            <div style="width:100%; height:100%; display:${avatarUrl ? 'none' : 'flex'}; align-items:center; justify-content:center; font-size:42px; font-weight:800; color:#10232D; background:linear-gradient(135deg, #E2E8F0, #F8FAFC);">${initials || '•'}</div>
           </div>
         </div>
       </div>
 
-      <div style="margin-top:10px; text-align:center;">
-        <div style="font-size:16px; font-weight:800; color:#0F172A; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
-        <div style="margin-top:2px; font-size:12.5px; color:#64748B; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${location}</div>
+      <div style="margin-top:24px; text-align:center;">
+        <div style="font-size:26px; font-weight:800; color:#112631; line-height:1.12; letter-spacing:-0.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
+        <div style="margin-top:3px; font-size:19px; color:#112631; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${location}</div>
       </div>
 
-      <div style="margin-top:10px; display:flex; justify-content:center;">
-        <span style="display:inline-block; padding:5px 14px; border-radius:9999px; background:#E4F9EE; color:#15803D; font-size:12px; font-weight:700;">${statusLabel}</span>
+      <div style="margin-top:18px; display:flex; justify-content:center;">
+        <span style="display:inline-flex; min-width:190px; min-height:50px; align-items:center; justify-content:center; padding:0 22px; border-radius:17px; background:#6FE0B0; color:#0B2B31; font-size:20px; line-height:1; font-weight:500;">${statusLabel}</span>
       </div>
 
-      <!--
-      <div style="margin-top:16px; display:flex; align-items:center; justify-content:center; gap:8px;">
-        <span style="width:32px; height:32px; border-radius:9px; border:1.5px dashed #7DB4F5; display:flex; align-items:center; justify-content:center; flex:0 0 auto;">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+      <div style="margin-top:32px; display:flex; align-items:center; gap:12px;">
+        <span style="width:58px; height:58px; border:3px solid #0E93F5; display:flex; align-items:center; justify-content:center; flex:0 0 auto; background:#F8FBFF;">
+          <span style="width:42px; height:42px; border-radius:9px; border:1.5px dashed #94BDE4; display:flex; align-items:center; justify-content:center;">
+            <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#102631" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>
+          </span>
         </span>
-        <span style="font-size:13.5px; font-weight:700; color:#0F172A;">Send a message</span>
+        <span style="font-size:20px; font-weight:400; color:#112631; line-height:1;">Send a message</span>
       </div>
-      -->
     </div>
   `;
 }
