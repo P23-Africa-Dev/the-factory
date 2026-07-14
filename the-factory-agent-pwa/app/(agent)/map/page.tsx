@@ -57,7 +57,12 @@ import {
   type CreateSavedLocationInput,
 } from '@/features/locations';
 import { getSavedLocationType } from '@/lib/map/locationTypes';
-import { searchPlacesWithMapbox } from '@/lib/map/geocoding';
+import {
+  suggestPlaces,
+  retrievePlace,
+  createSearchSessionToken,
+  type PlaceSuggestion,
+} from '@/lib/map/place-search';
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
 import type { SavedLocationPin } from '@/features/tracking/components/MapboxMap';
 import { TrackingConnectionStatus } from '@/features/tracking/components/TrackingConnectionStatus';
@@ -448,16 +453,22 @@ function DestinationSearch({
   results,
   taskResults,
   onSelect,
+  onSelectSuggestion,
   onClose,
+  isResolving,
 }: {
   searchQuery: string;
   onQueryChange: (q: string) => void;
   results: RecentDestination[];
   taskResults: RecentDestination[];
   onSelect: (dest: RecentDestination) => void;
+  onSelectSuggestion: (suggestion: PlaceSuggestion) => void;
   onClose: () => void;
+  isResolving?: boolean;
+  suggestions?: PlaceSuggestion[];
 }) {
   const showTasks = taskResults.length > 0 && !searchQuery.trim();
+  const hasSuggestions = results.length > 0;
 
   return (
     <div className="fixed inset-0 bg-[#051014]/75 z-50 overflow-y-auto flex flex-col font-sans">
@@ -478,15 +489,20 @@ function DestinationSearch({
             <LocationIcon />
             <input
               type="text"
-              placeholder="Search destination..."
+              placeholder="Search places…"
               value={searchQuery}
               onChange={(e) => onQueryChange(e.target.value)}
               autoFocus
-              className="flex-1 bg-transparent border-none text-[#09232D] text-base focus:outline-none placeholder-gray-400 font-semibold p-0"
+              disabled={isResolving}
+              className="flex-1 bg-transparent border-none text-[#09232D] text-base focus:outline-none placeholder-gray-400 font-semibold p-0 disabled:opacity-60"
             />
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 focus:outline-none">
-              <X size={18} />
-            </button>
+            {isResolving ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#1D7293] border-t-transparent flex-shrink-0" />
+            ) : (
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 focus:outline-none">
+                <X size={18} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -518,33 +534,56 @@ function DestinationSearch({
               </div>
             </div>
           )}
-          {results.length > 0 ? (
+          {hasSuggestions ? (
             <div>
               <div className="px-4 pt-4 pb-2 text-white font-bold text-sm tracking-wider uppercase opacity-40">
                 {searchQuery.trim() ? 'Places' : 'Recent'}
               </div>
               <div className="divide-y divide-white/5">
-                {results.map((item, index) => (
-                  <div
-                    key={index}
-                    onClick={() => onSelect(item)}
-                    className="flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-white/[0.04] transition-colors active:opacity-70"
-                  >
-                    <div className="w-9 h-9 rounded-full bg-[#09232D] flex items-center justify-center flex-shrink-0 border border-white/5">
-                      <img
-                        src="/assets/clock-arrow-up.png"
-                        alt="Recent"
-                        className="w-4.5 h-4.5 object-contain"
-                      />
+                {results.map((item, index) => {
+                  // Distinguish between PlaceSuggestion (from search) and RecentDestination
+                  const isSuggestion = 'id' in item && 'provider' in item;
+                  return (
+                    <div
+                      key={isSuggestion ? (item as unknown as PlaceSuggestion).id : index}
+                      onClick={() =>
+                        isSuggestion
+                          ? onSelectSuggestion(item as unknown as PlaceSuggestion)
+                          : onSelect(item)
+                      }
+                      className={`flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-white/[0.04] transition-colors active:opacity-70 ${
+                        isResolving ? 'opacity-50 pointer-events-none' : ''
+                      }`}
+                    >
+                      <div className="w-9 h-9 rounded-full bg-[#09232D] flex items-center justify-center flex-shrink-0 border border-white/5">
+                        <img
+                          src="/assets/clock-arrow-up.png"
+                          alt="Recent"
+                          className="w-4.5 h-4.5 object-contain"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0 leading-tight">
+                        <p className="text-sm font-semibold text-white truncate">
+                          {item.name}
+                          {isSuggestion && (item as unknown as PlaceSuggestion).category && (
+                            <span className="ml-2 text-[10px] font-medium text-[#75ADAF] capitalize">
+                              {(item as unknown as PlaceSuggestion).category!.replace(/_/g, ' ')}
+                            </span>
+                          )}
+                        </p>
+                        {('placeFormatted' in item
+                          ? (item as unknown as PlaceSuggestion).placeFormatted
+                          : item.address) && (
+                          <p className="text-[10px] text-gray-400 truncate mt-1">
+                            {'placeFormatted' in item
+                              ? (item as unknown as PlaceSuggestion).placeFormatted
+                              : item.address}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0 leading-tight">
-                      <p className="text-sm font-semibold text-white truncate">{item.name}</p>
-                      {item.address && (
-                        <p className="text-[10px] text-gray-400 truncate mt-1">{item.address}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ) : !showTasks ? (
@@ -558,6 +597,7 @@ function DestinationSearch({
   );
 }
 
+
 // ─── OriginSearch ─────────────────────────────────────────────────────────────
 
 function OriginSearch({
@@ -565,17 +605,19 @@ function OriginSearch({
   onQueryChange,
   results,
   destination,
-  onSelect,
+  onSelectSuggestion,
   onUseMyLocation,
   onClose,
+  isResolving,
 }: {
   query: string;
   onQueryChange: (q: string) => void;
-  results: GeocodedPlace[];
+  results: PlaceSuggestion[];
   destination: SelectedDestination | null;
-  onSelect: (place: GeocodedPlace) => void;
+  onSelectSuggestion: (suggestion: PlaceSuggestion) => void;
   onUseMyLocation: () => void;
   onClose: () => void;
+  isResolving?: boolean;
 }) {
   return (
     <div className="fixed inset-0 bg-[#051014]/75 z-50 overflow-y-auto flex flex-col font-sans">
@@ -591,11 +633,16 @@ function OriginSearch({
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
               autoFocus
-              className="flex-1 bg-transparent border-none text-[#09232D] text-base focus:outline-none placeholder-gray-400 font-semibold p-0"
+              disabled={isResolving}
+              className="flex-1 bg-transparent border-none text-[#09232D] text-base focus:outline-none placeholder-gray-400 font-semibold p-0 disabled:opacity-60"
             />
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 focus:outline-none">
-              <X size={18} />
-            </button>
+            {isResolving ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#1D7293] border-t-transparent flex-shrink-0" />
+            ) : (
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 focus:outline-none">
+                <X size={18} />
+              </button>
+            )}
           </div>
 
           <div className="h-[1px] bg-gray-100 my-2.5" />
@@ -624,18 +671,29 @@ function OriginSearch({
           </div>
           {results.length > 0 ? (
             <div className="divide-y divide-white/5">
-              {results.map((item, index) => (
+              {results.map((item) => (
                 <div
-                  key={index}
-                  onClick={() => onSelect(item)}
-                  className="flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-white/[0.04] transition-colors active:opacity-70"
+                  key={item.id}
+                  onClick={() => !isResolving && onSelectSuggestion(item)}
+                  className={`flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-white/[0.04] transition-colors active:opacity-70 ${
+                    isResolving ? 'opacity-50 pointer-events-none' : ''
+                  }`}
                 >
                   <div className="w-9 h-9 rounded-full bg-[#09232D] flex items-center justify-center flex-shrink-0 border border-white/5">
                     <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
                   </div>
                   <div className="flex-1 min-w-0 leading-tight">
-                    <p className="text-sm font-semibold text-white truncate">{item.name}</p>
-                    <p className="text-[10px] text-gray-400 truncate mt-1">{item.address}</p>
+                    <p className="text-sm font-semibold text-white truncate">
+                      {item.name}
+                      {item.category && (
+                        <span className="ml-2 text-[10px] font-medium text-[#75ADAF] capitalize">
+                          {item.category.replace(/_/g, ' ')}
+                        </span>
+                      )}
+                    </p>
+                    {item.placeFormatted && item.placeFormatted !== item.name && (
+                      <p className="text-[10px] text-gray-400 truncate mt-1">{item.placeFormatted}</p>
+                    )}
                   </div>
                 </div>
               ))}
@@ -650,6 +708,7 @@ function OriginSearch({
     </div>
   );
 }
+
 
 // ─── AddNoteModal ─────────────────────────────────────────────────────────────
 
@@ -852,14 +911,19 @@ function MapContent() {
   const [isDestSearchOpen, setIsDestSearchOpen] = useState(false);
   const [isOriginSearchOpen, setIsOriginSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [geoDestResults, setGeoDestResults] = useState<RecentDestination[]>([]);
+  const [geoDestResults, setGeoDestResults] = useState<PlaceSuggestion[]>([]);
+  const [isDestResolving, setIsDestResolving] = useState(false);
   const [originQuery, setOriginQuery] = useState('');
-  const [originGeoResults, setOriginGeoResults] = useState<GeocodedPlace[]>([]);
+  const [originGeoResults, setOriginGeoResults] = useState<PlaceSuggestion[]>([]);
+  const [isOriginResolving, setIsOriginResolving] = useState(false);
   const [customOrigin, setCustomOrigin] = useState<GeocodedPlace | null>(null);
   const [recentDestinations, setRecentDestinations] = useState<RecentDestination[]>([]);
   const [hasArrived, setHasArrived] = useState(false);
   const [plannedRoute, setPlannedRoute] = useState<[number, number][]>([]);
   const [isRouteLoading, setIsRouteLoading] = useState(false);
+  // Shared session tokens — rotate after each retrieval (Mapbox billing model)
+  const destSessionTokenRef = useRef(createSearchSessionToken());
+  const originSessionTokenRef = useRef(createSearchSessionToken());
   const [isLaunchingRide, setIsLaunchingRide] = useState(false);
   const [trackingStatus, setTrackingStatus] = useState<TrackingStatus>(
     isFromTrackingScreen ? 'live' : 'idle',
@@ -1153,11 +1217,46 @@ function MapContent() {
       return;
     }
     try {
-      const places = await searchPlacesWithMapbox(query, { limit: 5 });
-      setGeoDestResults(places);
+      const proximity: [number, number] | undefined = lastPosition
+        ? [lastPosition.coords.longitude, lastPosition.coords.latitude]
+        : undefined;
+      const suggestions = await suggestPlaces(query, {
+        sessionToken: destSessionTokenRef.current,
+        proximity,
+        limit: 6,
+      });
+      setGeoDestResults(suggestions);
     } catch {
       setGeoDestResults([]);
     }
+  }, [lastPosition]);
+
+  const handleDestSuggestionSelect = useCallback(async (suggestion: PlaceSuggestion): Promise<void> => {
+    setIsDestResolving(true);
+    const place = await retrievePlace(suggestion);
+    setIsDestResolving(false);
+    // Rotate session token after retrieval (Mapbox billing model)
+    destSessionTokenRef.current = createSearchSessionToken();
+    if (!place) return;
+
+    const newDest: RecentDestination = {
+      name: place.name,
+      address: place.address || undefined,
+      latitude: place.lat,
+      longitude: place.lng,
+    };
+    setSelectedDestination({
+      name: place.name,
+      address: place.address || undefined,
+      latitude: place.lat,
+      longitude: place.lng,
+      taskId: 0,
+    });
+    saveRecentDestination(newDest);
+    setRecentDestinations(getRecentDestinations());
+    setSearchQuery('');
+    setGeoDestResults([]);
+    setIsDestSearchOpen(false);
   }, []);
 
   const searchOriginPlaces = useCallback(async (query: string): Promise<void> => {
@@ -1166,11 +1265,37 @@ function MapContent() {
       return;
     }
     try {
-      const places = await searchPlacesWithMapbox(query, { limit: 5 });
-      setOriginGeoResults(places);
+      const proximity: [number, number] | undefined = lastPosition
+        ? [lastPosition.coords.longitude, lastPosition.coords.latitude]
+        : undefined;
+      const suggestions = await suggestPlaces(query, {
+        sessionToken: originSessionTokenRef.current,
+        proximity,
+        limit: 6,
+      });
+      setOriginGeoResults(suggestions);
     } catch {
       setOriginGeoResults([]);
     }
+  }, [lastPosition]);
+
+  const handleOriginSuggestionSelect = useCallback(async (suggestion: PlaceSuggestion): Promise<void> => {
+    setIsOriginResolving(true);
+    const place = await retrievePlace(suggestion);
+    setIsOriginResolving(false);
+    // Rotate session token after retrieval
+    originSessionTokenRef.current = createSearchSessionToken();
+    if (!place) return;
+
+    setCustomOrigin({
+      name: place.name,
+      address: place.address || '',
+      latitude: place.lat,
+      longitude: place.lng,
+    });
+    setOriginQuery('');
+    setOriginGeoResults([]);
+    setIsOriginSearchOpen(false);
   }, []);
 
   // Boot GPS for map preview. We deliberately do NOT force a permission prompt
@@ -1328,9 +1453,9 @@ function MapContent() {
     [tasks],
   );
 
-  const searchResults = useMemo((): RecentDestination[] => {
+  const searchResults = useMemo((): (RecentDestination | PlaceSuggestion)[] => {
     const seen = new Set<string>();
-    const combined: RecentDestination[] = [];
+    const combined: (RecentDestination | PlaceSuggestion)[] = [];
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -1426,12 +1551,9 @@ function MapContent() {
     setGeoDestResults([]);
   }, [tasks]);
 
-  const handleSelectOrigin = useCallback((place: GeocodedPlace) => {
-    setCustomOrigin(place);
-    setIsOriginSearchOpen(false);
-    setOriginQuery('');
-    setOriginGeoResults([]);
-  }, []);
+  const handleSelectOrigin = useCallback(async (suggestion: PlaceSuggestion): Promise<void> => {
+    await handleOriginSuggestionSelect(suggestion);
+  }, [handleOriginSuggestionSelect]);
 
   const handleUseMyLocation = useCallback(() => {
     setCustomOrigin(null);
@@ -2090,14 +2212,16 @@ function MapContent() {
         <DestinationSearch
           searchQuery={searchQuery}
           onQueryChange={handleDestQueryChange}
-          results={searchResults}
+          results={searchResults as RecentDestination[]}
           taskResults={taskDestOptions}
           onSelect={handleSelectDestination}
+          onSelectSuggestion={handleDestSuggestionSelect}
           onClose={() => {
             setIsDestSearchOpen(false);
             setSearchQuery('');
             setGeoDestResults([]);
           }}
+          isResolving={isDestResolving}
         />
       )}
 
@@ -2108,13 +2232,14 @@ function MapContent() {
           onQueryChange={handleOriginQueryChange}
           results={originGeoResults}
           destination={selectedDestination}
-          onSelect={handleSelectOrigin}
+          onSelectSuggestion={handleSelectOrigin}
           onUseMyLocation={handleUseMyLocation}
           onClose={() => {
             setIsOriginSearchOpen(false);
             setOriginQuery('');
             setOriginGeoResults([]);
           }}
+          isResolving={isOriginResolving}
         />
       )}
 
