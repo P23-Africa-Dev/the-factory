@@ -35,4 +35,14 @@ final class ElySystemPrompt
     {
         return trim((string) config('ely.few_shot_examples'));
     }
+
+    public static function productKnowledge(): string
+    {
+        return trim((string) config('ely.product_knowledge'));
+    }
+
+    public static function productOverview(): string
+    {
+        return trim((string) config('ely.product_overview'));
+    }
 }

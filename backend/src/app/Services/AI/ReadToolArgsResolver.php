@@ -21,6 +21,7 @@ class ReadToolArgsResolver
         'crm.follow_up_summary',
         'tracking.active_agents',
         'projects.at_risk_summary',
+        'drive.files',
     ];
 
     public function __construct(

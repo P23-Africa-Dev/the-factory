@@ -103,6 +103,7 @@ PROMPT;
             'tracking.active_agents' => 'Active agents / where is agent',
             'projects.at_risk_summary' => 'Projects at risk',
             'org.users' => 'List organization users',
+            'drive.files' => 'Find company drive files or answer questions from a document the user can access',
             'tasks.create' => 'Create a task',
             'tasks.reassign' => 'Reassign a task',
             'meetings.schedule' => 'Schedule a meeting',

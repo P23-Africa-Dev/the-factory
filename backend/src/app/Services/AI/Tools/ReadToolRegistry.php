@@ -20,8 +20,10 @@ use App\Services\Company\CompanyContextService;
 use App\Services\Crm\CrmEmailService;
 use App\Services\Crm\LeadService;
 use App\Services\AI\Crm\CrmIntelligenceService;
+use App\Services\AI\Support\DriveFileContentReader;
 use App\Services\AI\Support\ReadListPresenter;
 use App\Services\Dashboard\DashboardAggregateService;
+use App\Services\Drive\CompanyDriveService;
 use App\Support\UserDisplayNameResolver;
 use App\Services\Tracking\AgentLocationSnapshotService;
 use Illuminate\Contracts\Pagination\Paginator;
@@ -45,6 +47,8 @@ class ReadToolRegistry
         private readonly TeamPerformanceService $teamPerformanceService,
         private readonly UserDisplayNameResolver $userDisplayNameResolver,
         private readonly ReadListPresenter $readListPresenter,
+        private readonly CompanyDriveService $companyDriveService,
+        private readonly DriveFileContentReader $driveFileContentReader,
     ) {}
 
     public function execute(string $tool, User $user, int $companyId, array $args = []): array
@@ -66,6 +70,7 @@ class ReadToolRegistry
             'crm.draft_email' => $this->draftEmail($user, $companyId, $args),
             'kpi.team_performance' => $this->teamPerformanceService->analyze($user, $companyId, $args),
             'org.users' => $this->organizationUsers($user, $companyId, $args),
+            'drive.files' => $this->driveFiles($user, $companyId, $args),
             default => [
                 'tool' => $tool,
                 'summary' => 'Unsupported read tool requested.',
@@ -947,5 +952,262 @@ class ReadToolRegistry
             ],
             'sources' => ['crm.draft_email'],
         ];
+    }
+
+    private function driveFiles(User $user, int $companyId, array $args): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+
+        $message = trim((string) ($args['message'] ?? ''));
+        $limit = max(1, min(
+            $this->readListPresenter->maxExpandedLimit('drive.files'),
+            (int) ($args['limit'] ?? $this->readListPresenter->previewLimit()),
+        ));
+        $countOnly = ($args['count_only'] ?? false) === true;
+        $search = $this->extractDriveSearchTerm($message);
+
+        $result = $this->companyDriveService->listFiles(
+            user: $user,
+            folderId: null,
+            search: $search,
+            perPage: $limit,
+            page: 1,
+            companyId: $resolvedCompanyId,
+        );
+
+        $rawItems = is_array($result['items'] ?? null) ? $result['items'] : [];
+        $total = (int) ($result['pagination']['total'] ?? count($rawItems));
+
+        $items = array_map(fn (array $file): array => $this->mapDriveFileItem($file), $rawItems);
+
+        $payload = $this->readListPresenter->enrichPayload($items, $total);
+        if ($countOnly) {
+            $payload['count_only'] = true;
+        }
+        if (is_string($search) && $search !== '') {
+            $payload['search'] = $search;
+        }
+
+        $contentQuestion = ! $countOnly
+            && $this->looksLikeFileContentQuestion($message)
+            && $rawItems !== [];
+
+        if ($contentQuestion) {
+            $topFile = $rawItems[0];
+            $fileId = (int) ($topFile['id'] ?? 0);
+            $fileName = (string) ($topFile['original_name'] ?? '');
+            $payload['file_name'] = $fileName;
+
+            if ($fileId > 0) {
+                $text = $this->driveFileContentReader->readAccessibleText($user, $fileId, $resolvedCompanyId);
+
+                if (is_string($text) && trim($text) !== '') {
+                    $payload['file_content'] = $text;
+                    $payload['answered_from_file'] = true;
+                } else {
+                    $payload['file_content_unavailable'] = true;
+                }
+            }
+        }
+
+        $summary = $this->formatDriveFilesSummary($items, $payload, $search, $countOnly, $contentQuestion);
+
+        return [
+            'tool' => 'drive.files',
+            'summary' => $summary,
+            'payload' => $payload,
+            'sources' => ['drive.files'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $file
+     * @return array<string, mixed>
+     */
+    private function mapDriveFileItem(array $file): array
+    {
+        $folder = is_array($file['folder'] ?? null) ? $file['folder'] : null;
+        $name = (string) ($file['original_name'] ?? 'file');
+
+        return [
+            'id' => (int) ($file['id'] ?? 0),
+            'name' => $name,
+            'folder' => $folder !== null ? (string) ($folder['name'] ?? '') : null,
+            'type' => $this->driveFileTypeLabel($name, is_string($file['mime_type'] ?? null) ? (string) $file['mime_type'] : null),
+            'size' => $this->formatDriveBytes((int) ($file['size_bytes'] ?? 0)),
+            'source' => (string) ($file['source'] ?? 'manual'),
+            'uploaded_at' => is_string($file['created_at'] ?? null) ? (string) $file['created_at'] : null,
+        ];
+    }
+
+    private function driveFileTypeLabel(string $name, ?string $mimeType): string
+    {
+        $extension = strtolower((string) pathinfo($name, PATHINFO_EXTENSION));
+        if ($extension !== '') {
+            return $extension;
+        }
+
+        return is_string($mimeType) && $mimeType !== '' ? $mimeType : 'file';
+    }
+
+    private function formatDriveBytes(int $bytes): string
+    {
+        if ($bytes <= 0) {
+            return '0 B';
+        }
+
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $power = (int) min(count($units) - 1, floor(log($bytes, 1024)));
+        $value = $bytes / (1024 ** $power);
+
+        return sprintf($power === 0 ? '%d %s' : '%.1f %s', $value, $units[$power]);
+    }
+
+    private function extractDriveSearchTerm(string $message): ?string
+    {
+        $message = trim($message);
+        if ($message === '') {
+            return null;
+        }
+
+        if (preg_match('/"([^"]{2,})"|\'([^\']{2,})\'/u', $message, $matches) === 1) {
+            $phrase = trim($matches[1] !== '' ? $matches[1] : (string) ($matches[2] ?? ''));
+            if ($phrase !== '') {
+                return $phrase;
+            }
+        }
+
+        $normalized = strtolower($message);
+        $normalized = preg_replace('/[^\p{L}\p{N}\s._-]/u', ' ', $normalized) ?? $normalized;
+
+        $stopWords = [
+            'what', 'whats', 'which', 'who', 'where', 'when', 'why', 'how', 'many', 'much',
+            'is', 'are', 'was', 'were', 'be', 'been', 'do', 'does', 'did', 'the', 'a', 'an',
+            'my', 'our', 'your', 'their', 'me', 'i', 'we', 'us', 'you', 'they', 'it', 'this', 'that',
+            'in', 'on', 'of', 'for', 'to', 'from', 'with', 'about', 'and', 'or', 'any', 'all', 'some',
+            'show', 'list', 'find', 'get', 'give', 'open', 'view', 'see', 'display', 'pull', 'fetch',
+            'read', 'search', 'look', 'have', 'has', 'had', 'there', 'available', 'please', 'can',
+            'file', 'files', 'document', 'documents', 'doc', 'docs', 'drive', 'folder', 'folders',
+            'company', 'organization', 'organisation', 'org', 'say', 'says', 'said', 'tell', 'summarize',
+            'summarise', 'summary', 'content', 'contents', 'inside', 'explain', 'describe', 'according',
+            'detail', 'details', 'mention', 'mentions', 'state', 'states', 'uploaded', 'stored',
+        ];
+
+        $tokens = array_values(array_filter(
+            preg_split('/\s+/', trim($normalized)) ?: [],
+            static fn (string $token): bool => $token !== ''
+                && mb_strlen($token) >= 2
+                && ! in_array($token, $stopWords, true),
+        ));
+
+        if ($tokens === []) {
+            return null;
+        }
+
+        usort($tokens, static fn (string $a, string $b): int => mb_strlen($b) <=> mb_strlen($a));
+
+        return $tokens[0];
+    }
+
+    private function looksLikeFileContentQuestion(string $message): bool
+    {
+        $normalized = strtolower(trim($message));
+        if ($normalized === '') {
+            return false;
+        }
+
+        $isBrowseIntent = preg_match('/\b(list|show|browse|how\s+many|what|which)\b[^?]*\b(files?|documents?|folders?|drive)\b/i', $normalized) === 1;
+        $hasContentVerb = preg_match('/\b(summar(?:y|ize|ise)|according\s+to|contents?|inside|explain|describe|read|says?|said|state[sd]?|mention[sd]?|breakdown|detail(?:s)?)\b/i', $normalized) === 1;
+
+        if ($isBrowseIntent && ! $hasContentVerb) {
+            return false;
+        }
+
+        if ($hasContentVerb) {
+            return true;
+        }
+
+        if (preg_match('/\bwhat(?:\'s| is| does| do)?\b.{0,40}\b(report|document|file|pdf|sheet|spreadsheet|doc|policy|manual|memo|proposal|contract|agreement|invoice|plan)\b/i', $normalized) === 1) {
+            return true;
+        }
+
+        return preg_match('/\b(in|from)\s+the\b.{0,40}\b(report|document|file|pdf|sheet|spreadsheet|doc|policy|manual|memo|proposal|contract|agreement|invoice|plan)\b/i', $normalized) === 1;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     * @param  array<string, mixed>  $payload
+     */
+    private function formatDriveFilesSummary(
+        array $items,
+        array $payload,
+        ?string $search,
+        bool $countOnly,
+        bool $contentQuestion,
+    ): string {
+        $fileName = is_string($payload['file_name'] ?? null) ? trim((string) $payload['file_name']) : '';
+
+        if ($contentQuestion) {
+            if (($payload['answered_from_file'] ?? false) === true && $fileName !== '') {
+                return sprintf('I reviewed "%s" from your drive to answer your question.', $fileName);
+            }
+
+            if (($payload['file_content_unavailable'] ?? false) === true) {
+                return $fileName !== ''
+                    ? sprintf('I found "%s" but could not read its contents (it may be a scanned image or an unsupported format). You can open or download it from Company Drive.', $fileName)
+                    : 'I could not read the contents of that file. You can open or download it from Company Drive.';
+            }
+
+            if ($items === []) {
+                return $search !== null && $search !== ''
+                    ? sprintf('I could not find a drive file matching "%s" that you have access to. Please tell me the exact file name.', $search)
+                    : 'I could not identify which file you mean. Please tell me the exact file name.';
+            }
+        }
+
+        $total = (int) ($payload['total'] ?? count($items));
+        $truncated = ($payload['truncated'] ?? false) === true;
+        $remainingCount = (int) ($payload['remaining_count'] ?? 0);
+
+        $header = $this->readListPresenter->formatListHeader(
+            resourceLabel: 'file(s)',
+            shownCount: count($items),
+            scopeTotal: $total,
+            filterLabel: $search !== '' ? $search : null,
+            truncated: $truncated,
+            remainingCount: $remainingCount,
+        );
+
+        if ($countOnly || $items === []) {
+            return rtrim($header, ':') . '.';
+        }
+
+        $lines = collect($items)
+            ->values()
+            ->map(static function (array $file, int $index): string {
+                $name = (string) ($file['name'] ?? 'file');
+                $folder = is_string($file['folder'] ?? null) && trim((string) $file['folder']) !== ''
+                    ? (string) $file['folder']
+                    : null;
+                $size = is_string($file['size'] ?? null) ? (string) $file['size'] : '';
+
+                $meta = array_values(array_filter([
+                    $folder !== null ? 'in ' . $folder : null,
+                    $size !== '' ? $size : null,
+                ], static fn (?string $part): bool => $part !== null && $part !== ''));
+
+                return sprintf(
+                    '%d. %s%s',
+                    $index + 1,
+                    $name,
+                    $meta !== [] ? ' (' . implode(', ', $meta) . ')' : '',
+                );
+            })
+            ->all();
+
+        $footer = $truncated ? "\nWould you like me to list all of them?" : '';
+
+        return $header . "\n" . implode("\n", $lines) . $footer;
     }
 }
