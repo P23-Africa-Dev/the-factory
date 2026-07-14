@@ -206,7 +206,33 @@ Adopting the high‑value trio (traffic‑aware ETA + snap‑to‑roads trails +
 
 ---
 
-## 10. Appendix — Reference Price Tables (USD per 1,000 calls)
+## 10. Implemented Cost-Control Changes (Engineering)
+
+The following optimisations are now live in the codebase. They preserve the admin Google/Mapbox map toggle exactly as-is and do not remove any user-facing feature.
+
+- **Nearby Search: 3 calls → 1 per refresh.** All POI categories are requested in a single call ([app/api/places/nearby/route.ts](app/api/places/nearby/route.ts)). Reversible via `PLACES_NEARBY_BATCH_MODE=split`.
+- **Nearby Search: Enterprise → Pro tier.** Phone + opening-hours fields removed from the bulk field mask ([lib/utils/google-places.ts](lib/utils/google-places.ts)). Phone/hours now load lazily only when a user taps a pin (`googlePoiDetails` + [app/api/places/poi-details/route.ts](app/api/places/poi-details/route.ts)).
+- **Place Details: Pro → Essentials tier.** `displayName` dropped from the mask; the name is reused from the autocomplete suggestion ([lib/utils/place-search.ts](lib/utils/place-search.ts), PWA equivalents).
+- **Client tile cache + movement gating.** POIs are cached per map tile with a TTL, and the map only re-fetches after real movement or a zoom change ([hooks/use-google-poi-viewport.ts](hooks/use-google-poi-viewport.ts), tuning in [lib/map/poi-viewport.ts](lib/map/poi-viewport.ts)). Min zoom raised 12 → 13; debounce 700 ms → 900 ms.
+- **Shared server cache + rate limit + daily budget breaker** on all Places routes ([lib/server/places-guard.ts](lib/server/places-guard.ts)).
+- **Mobile app search debounced** (300 ms + 3-char minimum) so it no longer bills one Autocomplete call per keystroke.
+- **Dedicated Places key supported and documented** so Places quotas never throttle the map toggle ([lib/config/public-env.ts](lib/config/public-env.ts)).
+
+**Tuning knobs (env, no redeploy of logic needed):** `PLACES_NEARBY_BATCH_MODE`, `PLACES_CACHE_TTL_MS`, `PLACES_RATE_MAX_PER_WINDOW`, `PLACES_RATE_WINDOW_MS`, `PLACES_DAILY_CALL_BUDGET`. To move from the **Balanced** tier to the **Minimal** tier, raise `POI_MIN_ZOOM` to 14 and the debounce/threshold/TTL constants in [lib/map/poi-viewport.ts](lib/map/poi-viewport.ts).
+
+## 11. Operations Checklist (Google Cloud Console)
+
+These steps are done in the Google Cloud Console (no code) and complete the cost-control programme:
+
+1. **Create a dedicated, Places-only API key**, set it as `GOOGLE_PLACES_API_KEY`, and restrict it (API restriction: Places API New; application restriction: server IPs). Keep `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (Maps-JS / map toggle) as a separate, referrer-restricted key.
+2. **Set per-SKU daily quota caps** (APIs & Services → Places API → Quotas): cap Nearby Search, Place Details, and Autocomplete requests/day as a hard ceiling.
+3. **Set a billing budget + email alerts** (Billing → Budgets & alerts), e.g. thresholds at 50/80/100% of the monthly target.
+4. **Optionally set** `PLACES_DAILY_CALL_BUDGET` as an in-app circuit breaker for a second layer of protection.
+5. **Review monthly**: pull the actual per-SKU breakdown (Billing → Reports, group by SKU) and update the volume assumptions in Section 6.
+
+---
+
+## 12. Appendix — Reference Price Tables (USD per 1,000 calls)
 
 Columns are Google's automatic volume‑discount tiers by monthly call count.
 
@@ -216,11 +242,11 @@ Columns are Google's automatic volume‑discount tiers by monthly call count.
 |---|---:|---:|---:|---:|---:|---:|
 | Autocomplete Requests | 10,000 | $2.83 | $2.27 | $1.70 | $0.85 | $0.21 |
 | Autocomplete Session Usage (13th+ call in a session) | Unlimited | $0 | $0 | $0 | $0 | $0 |
-| Place Details Essentials | 10,000 | $5.00 | $4.00 | $3.00 | $1.50 | $0.38 |
-| Place Details **Pro** *(current)* | 5,000 | $17.00 | $13.60 | $10.20 | $5.10 | $1.28 |
-| Place Details Enterprise | 1,000 | $20.00 | $16.00 | $12.00 | $6.00 | $1.51 |
-| Nearby Search Pro | 5,000 | $32.00 | $25.60 | $19.20 | $9.60 | $2.40 |
-| Nearby Search **Enterprise** *(current)* | 1,000 | $35.00 | $28.00 | $21.00 | $10.50 | $2.63 |
+| Place Details **Essentials** *(current after optimisation)* | 10,000 | $5.00 | $4.00 | $3.00 | $1.50 | $0.38 |
+| Place Details Pro *(was current before optimisation)* | 5,000 | $17.00 | $13.60 | $10.20 | $5.10 | $1.28 |
+| Place Details Enterprise (lazy pin-click enrichment only) | 1,000 | $20.00 | $16.00 | $12.00 | $6.00 | $1.51 |
+| Nearby Search **Pro** *(current after optimisation)* | 5,000 | $32.00 | $25.60 | $19.20 | $9.60 | $2.40 |
+| Nearby Search Enterprise *(was current before optimisation)* | 1,000 | $35.00 | $28.00 | $21.00 | $10.50 | $2.63 |
 | Text Search Pro | 5,000 | $32.00 | $25.60 | $19.20 | $9.60 | $2.40 |
 | Place Photos | 1,000 | $7.00 | $5.60 | $4.20 | $2.10 | $0.53 |
 

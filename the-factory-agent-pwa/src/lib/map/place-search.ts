@@ -92,6 +92,7 @@ async function suggestPlacesGoogle(
 async function retrievePlaceGoogle(
   placeId: string,
   sessionToken: string,
+  fallbackName?: string,
 ): Promise<RetrievedPlace | null> {
   try {
     const params = new URLSearchParams({ placeId, sessionToken });
@@ -109,7 +110,9 @@ async function retrievePlaceGoogle(
     if (typeof payload.lat !== 'number' || typeof payload.lng !== 'number') return null;
 
     return {
-      name: payload.name?.trim() || 'Location',
+      // Prefer the autocomplete suggestion name so Place Details stays on the
+      // cheaper Essentials SKU (no displayName field requested).
+      name: fallbackName?.trim() || payload.name?.trim() || 'Location',
       address: payload.address?.trim() || '',
       lat: payload.lat,
       lng: payload.lng,
@@ -275,7 +278,7 @@ export async function retrievePlace(
   options?: { token?: string },
 ): Promise<RetrievedPlace | null> {
   if (suggestion.provider === 'google') {
-    return retrievePlaceGoogle(suggestion.id, suggestion.sessionToken);
+    return retrievePlaceGoogle(suggestion.id, suggestion.sessionToken, suggestion.name);
   }
   return retrievePlaceMapbox(suggestion.id, suggestion.sessionToken, options);
 }

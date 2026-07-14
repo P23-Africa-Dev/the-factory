@@ -196,8 +196,11 @@ export async function googlePlaceDetails(
       high?: { latitude?: number; longitude?: number };
     };
   }>(apiKey, `/places/${encodedId}?sessionToken=${encodeURIComponent(sessionToken)}`, {
+    // Cost control: displayName is a Pro-tier field. The name is already known
+    // from the autocomplete suggestion, so we omit it to keep this request on
+    // Place Details Essentials ($5/1k) instead of Pro ($17/1k).
     method: "GET",
-    fieldMask: "id,displayName,formattedAddress,location,types,viewport",
+    fieldMask: "id,formattedAddress,location,types,viewport",
   });
 
   if (!payload?.location) return null;

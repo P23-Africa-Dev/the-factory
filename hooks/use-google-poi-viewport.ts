@@ -5,11 +5,17 @@ import type mapboxgl from "mapbox-gl";
 import type { PoiResult } from "@/lib/map/overpass-search";
 import {
   canFetchPoisForViewport,
+  distanceMeters,
   fetchPlacesInViewport,
+  POI_MIN_ZOOM,
+  POI_MOVE_THRESHOLD_M,
+  POI_REFRESH_DEBOUNCE_MS,
+  POI_TILE_CACHE_TTL_MS,
+  poiTileKey,
   type ViewportBounds,
 } from "@/lib/map/poi-viewport";
 
-const DEBOUNCE_MS = 700;
+type PoiTile = { pois: PoiResult[]; ts: number };
 
 function readViewportBounds(map: mapboxgl.Map): ViewportBounds | null {
   const bounds = map.getBounds();
@@ -35,6 +41,9 @@ export function useGooglePoiViewport(
 
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Per-instance client cache: revisiting a recently-seen tile costs nothing.
+  const cacheRef = useRef<Map<string, PoiTile>>(new Map());
+  const lastFetchRef = useRef<{ lat: number; lng: number; zoomBucket: number } | null>(null);
 
   const refresh = useCallback(async () => {
     if (!map || !mapReady || !enabled) {
@@ -53,12 +62,42 @@ export function useGooglePoiViewport(
       abortRef.current = null;
       setPois([]);
       setBusy(false);
-      setZoomTooLow(zoom < 12);
+      setZoomTooLow(zoom < POI_MIN_ZOOM);
       setError(null);
       return;
     }
 
     setZoomTooLow(false);
+
+    const centerLat = (bounds.north + bounds.south) / 2;
+    const centerLng = (bounds.east + bounds.west) / 2;
+    const zoomBucket = Math.floor(zoom);
+    const tileKey = poiTileKey(centerLat, centerLng, zoom);
+    const now = Date.now();
+
+    // 1) Client cache hit — serve instantly, no Google call, no cost.
+    const cached = cacheRef.current.get(tileKey);
+    if (cached && now - cached.ts < POI_TILE_CACHE_TTL_MS) {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      setPois(cached.pois);
+      setBusy(false);
+      setError(null);
+      lastFetchRef.current = { lat: centerLat, lng: centerLng, zoomBucket };
+      return;
+    }
+
+    // 2) Tiny nudge (same zoom, moved less than the threshold) — keep current pins.
+    const last = lastFetchRef.current;
+    if (
+      last &&
+      last.zoomBucket === zoomBucket &&
+      distanceMeters(last.lat, last.lng, centerLat, centerLng) < POI_MOVE_THRESHOLD_M
+    ) {
+      return;
+    }
+
+    // 3) Cache miss + real movement — one billed Nearby Search.
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -70,6 +109,8 @@ export function useGooglePoiViewport(
       const results = await fetchPlacesInViewport(bounds, zoom, controller.signal);
       if (controller.signal.aborted) return;
       setPois(results);
+      cacheRef.current.set(tileKey, { pois: results, ts: Date.now() });
+      lastFetchRef.current = { lat: centerLat, lng: centerLng, zoomBucket };
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setError("Failed to load places");
@@ -84,6 +125,7 @@ export function useGooglePoiViewport(
       setPois([]);
       setBusy(false);
       setZoomTooLow(false);
+      lastFetchRef.current = null;
       return;
     }
 
@@ -91,7 +133,7 @@ export function useGooglePoiViewport(
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         void refresh();
-      }, DEBOUNCE_MS);
+      }, POI_REFRESH_DEBOUNCE_MS);
     };
 
     scheduleRefresh();
@@ -106,6 +148,32 @@ export function useGooglePoiViewport(
 
   const selectPoi = useCallback((poi: PoiResult | null) => {
     setSelectedPoi(poi);
+    // Lazily enrich with phone + opening hours only when a pin is opened, so
+    // those Enterprise-tier fields are billed per click instead of per pin.
+    if (!poi || (poi.phone && poi.openingHours)) return;
+    void (async () => {
+      try {
+        const params = new URLSearchParams({ placeId: poi.id });
+        const res = await fetch(`/api/places/poi-details?${params.toString()}`);
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          phone?: string | null;
+          openingHours?: string | null;
+        };
+        const phone = data.phone ?? undefined;
+        const openingHours = data.openingHours ?? undefined;
+        if (!phone && !openingHours) return;
+        const merge = (p: PoiResult): PoiResult => ({
+          ...p,
+          phone: p.phone ?? phone,
+          openingHours: p.openingHours ?? openingHours,
+        });
+        setSelectedPoi((prev) => (prev && prev.id === poi.id ? merge(prev) : prev));
+        setPois((prev) => prev.map((p) => (p.id === poi.id ? merge(p) : p)));
+      } catch {
+        // best-effort enrichment; ignore failures
+      }
+    })();
   }, []);
 
   return {

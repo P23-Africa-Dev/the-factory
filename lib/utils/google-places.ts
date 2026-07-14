@@ -211,8 +211,11 @@ export async function googlePlaceDetails(
       high?: { latitude?: number; longitude?: number };
     };
   }>(apiKey, `/places/${encodedId}?sessionToken=${encodeURIComponent(sessionToken)}`, {
+    // Cost control: displayName is a Pro-tier field. The place name is already
+    // known from the autocomplete suggestion, so we omit it here to keep this
+    // request on Place Details Essentials ($5/1k) instead of Pro ($17/1k).
     method: "GET",
-    fieldMask: "id,displayName,formattedAddress,location,types,viewport",
+    fieldMask: "id,formattedAddress,location,types,viewport",
   });
 
   if (!payload?.location) return null;
@@ -250,6 +253,39 @@ export async function googlePlaceDetails(
   };
 }
 
+export type GooglePoiDetails = {
+  phone?: string;
+  openingHours?: string;
+};
+
+/**
+ * Lazy, on-demand enrichment for a single POI (phone + opening hours).
+ * Called only when a user opens a POI card/popup, so the Enterprise-tier
+ * phone/hours fields are billed per click instead of per pin per refresh.
+ */
+export async function googlePoiDetails(
+  apiKey: string,
+  placeId: string,
+): Promise<GooglePoiDetails | null> {
+  if (!apiKey || !placeId) return null;
+
+  const encodedId = encodeURIComponent(placeId.replace(/^places\//, ""));
+  const payload = await googleFetch<{
+    internationalPhoneNumber?: string;
+    regularOpeningHours?: { weekdayDescriptions?: string[] };
+  }>(apiKey, `/places/${encodedId}`, {
+    method: "GET",
+    fieldMask: "internationalPhoneNumber,regularOpeningHours",
+  });
+
+  if (!payload) return null;
+
+  return {
+    phone: payload.internationalPhoneNumber?.trim() || undefined,
+    openingHours: payload.regularOpeningHours?.weekdayDescriptions?.[0]?.trim() || undefined,
+  };
+}
+
 export async function googleSearchNearby(
   apiKey: string,
   center: { lat: number; lng: number },
@@ -274,8 +310,12 @@ export async function googleSearchNearby(
     }>;
   }>(apiKey, "/places:searchNearby", {
     method: "POST",
+    // Cost control: phone + opening hours are Enterprise-tier fields. Requesting
+    // them for every pin on every refresh forced the whole call to Nearby Search
+    // Enterprise ($35/1k). The mask below stays within Nearby Search Pro ($32/1k);
+    // phone/hours are fetched lazily on pin click via googlePoiDetails().
     fieldMask:
-      "places.id,places.displayName,places.formattedAddress,places.location,places.types,places.internationalPhoneNumber,places.regularOpeningHours",
+      "places.id,places.displayName,places.formattedAddress,places.location,places.types",
     body: {
       includedTypes,
       maxResultCount: cappedCount,

@@ -924,6 +924,10 @@ function MapContent() {
   // Shared session tokens — rotate after each retrieval (Mapbox billing model)
   const destSessionTokenRef = useRef(createSearchSessionToken());
   const originSessionTokenRef = useRef(createSearchSessionToken());
+  // Debounce place-search so we bill one Autocomplete request per typing pause,
+  // not one per keystroke.
+  const destSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const originSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isLaunchingRide, setIsLaunchingRide] = useState(false);
   const [trackingStatus, setTrackingStatus] = useState<TrackingStatus>(
     isFromTrackingScreen ? 'live' : 'idle',
@@ -1579,15 +1583,39 @@ function MapContent() {
     void handleUseMyLocation();
   }, [handleUseMyLocation]);
 
+  const SEARCH_DEBOUNCE_MS = 300;
+  const SEARCH_MIN_CHARS = 3;
+
   const handleDestQueryChange = useCallback((q: string) => {
     setSearchQuery(q);
-    searchGeoDestPlaces(q);
+    if (destSearchDebounceRef.current) clearTimeout(destSearchDebounceRef.current);
+    if (q.trim().length < SEARCH_MIN_CHARS) {
+      setGeoDestResults([]);
+      return;
+    }
+    destSearchDebounceRef.current = setTimeout(() => {
+      void searchGeoDestPlaces(q);
+    }, SEARCH_DEBOUNCE_MS);
   }, [searchGeoDestPlaces]);
 
   const handleOriginQueryChange = useCallback((q: string) => {
     setOriginQuery(q);
-    searchOriginPlaces(q);
+    if (originSearchDebounceRef.current) clearTimeout(originSearchDebounceRef.current);
+    if (q.trim().length < SEARCH_MIN_CHARS) {
+      setOriginGeoResults([]);
+      return;
+    }
+    originSearchDebounceRef.current = setTimeout(() => {
+      void searchOriginPlaces(q);
+    }, SEARCH_DEBOUNCE_MS);
   }, [searchOriginPlaces]);
+
+  useEffect(() => {
+    return () => {
+      if (destSearchDebounceRef.current) clearTimeout(destSearchDebounceRef.current);
+      if (originSearchDebounceRef.current) clearTimeout(originSearchDebounceRef.current);
+    };
+  }, []);
 
   const runStartSession = useCallback(async (permissionRetry = false) => {
     if (!selectedDestination?.taskId) return null;
