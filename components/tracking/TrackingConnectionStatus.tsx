@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { WifiOff, RefreshCcw } from 'lucide-react';
 import { useTrackingStore } from '@/store/tracking';
 
@@ -11,26 +10,12 @@ import { useTrackingStore } from '@/store/tracking';
  */
 export function TrackingConnectionStatus({ className }: { className?: string }) {
     const wsStatus = useTrackingStore((s) => s.wsStatus);
-    // Avoid flashing the banner during the initial connect handshake.
-    const [showConnecting, setShowConnecting] = useState(false);
-
-    useEffect(() => {
-        if (wsStatus !== 'connecting') {
-            setShowConnecting(false);
-            return;
-        }
-        const timer = setTimeout(() => setShowConnecting(true), 4000);
-        return () => clearTimeout(timer);
-    }, [wsStatus]);
-
-    const degraded =
-        wsStatus === 'reconnecting' ||
-        wsStatus === 'error' ||
-        (wsStatus === 'connecting' && showConnecting);
+    const degraded = wsStatus === 'connecting' || wsStatus === 'reconnecting' || wsStatus === 'error';
 
     if (!degraded) return null;
 
     const isError = wsStatus === 'error';
+    const isConnecting = wsStatus === 'connecting';
 
     return (
         <div
@@ -46,7 +31,7 @@ export function TrackingConnectionStatus({ className }: { className?: string }) 
                     isError
                         ? 'bg-red-600/95 text-white'
                         : 'bg-amber-500/95 text-white'
-                }`}
+                } ${isConnecting ? 'opacity-0 [animation:tracking-connecting-reveal_0s_linear_4s_forwards]' : ''}`}
             >
                 {isError ? (
                     <WifiOff size={14} strokeWidth={2.5} />
@@ -57,6 +42,9 @@ export function TrackingConnectionStatus({ className }: { className?: string }) 
                     ? 'Live tracking unavailable — retrying...'
                     : 'Reconnecting to live tracking...'}
             </div>
+            {isConnecting ? (
+                <style>{'@keyframes tracking-connecting-reveal { to { opacity: 1; } }'}</style>
+            ) : null}
         </div>
     );
 }

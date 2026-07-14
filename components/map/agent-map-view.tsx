@@ -159,12 +159,11 @@ function MapboxAgentMapView({
     } = useInitialMapViewport({ preferUserLocation, taskFocus });
     const token = getMapboxPublicToken();
     const [mapReady, setMapReady] = useState(false);
+    const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
     const [pinMode, setPinMode] = useState(false);
     const [mapMode, setMapMode] = useState<'2d' | '3d'>('2d');
     const [locating, setLocating] = useState(false);
     const [showGooglePois, setShowGooglePois] = useState(showGooglePoisProp);
-
-    const mapInstance = mapReady ? mapRef.current : null;
     const {
         pois: viewportPois,
         busy: poiBusy,
@@ -230,10 +229,6 @@ function MapboxAgentMapView({
             });
         }
     }, [searchFocus]);
-
-    useEffect(() => {
-        setShowGooglePois(showGooglePoisProp);
-    }, [showGooglePoisProp]);
 
     useTrackingWebSocket();
     useAttendanceMapSnapshots({}, { scope: 'agent' });
@@ -425,6 +420,7 @@ function MapboxAgentMapView({
 
             mapLoadedRef.current = true;
             setMapReady(true);
+            setMapInstance(map);
 
         });
 
@@ -443,6 +439,7 @@ function MapboxAgentMapView({
             clearUserLocationMarkers();
             map.remove();
             mapRef.current = null;
+            setMapInstance(null);
             agentMarkerRef.current = null;
             originMarkerRef.current = null;
             destinationMarkerRef.current = null;

@@ -35,12 +35,12 @@ export function useGooglePoiViewport(
 
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isInteractive = map != null && mapReady && enabled;
 
   const refresh = useCallback(async () => {
-    if (!map || !mapReady || !enabled) {
-      setPois([]);
-      setBusy(false);
-      setZoomTooLow(false);
+    if (!isInteractive || !map) {
+      abortRef.current?.abort();
+      abortRef.current = null;
       return;
     }
 
@@ -77,13 +77,10 @@ export function useGooglePoiViewport(
     } finally {
       if (!controller.signal.aborted) setBusy(false);
     }
-  }, [enabled, map, mapReady]);
+  }, [isInteractive, map]);
 
   useEffect(() => {
-    if (!map || !mapReady || !enabled) {
-      setPois([]);
-      setBusy(false);
-      setZoomTooLow(false);
+    if (!isInteractive || !map) {
       return;
     }
 
@@ -102,18 +99,18 @@ export function useGooglePoiViewport(
       map.off("moveend", scheduleRefresh);
       abortRef.current?.abort();
     };
-  }, [enabled, map, mapReady, refresh]);
+  }, [isInteractive, map, refresh]);
 
   const selectPoi = useCallback((poi: PoiResult | null) => {
     setSelectedPoi(poi);
   }, []);
 
   return {
-    pois,
-    busy,
-    error,
-    zoomTooLow,
-    selectedPoi,
+    pois: isInteractive ? pois : [],
+    busy: isInteractive ? busy : false,
+    error: isInteractive ? error : null,
+    zoomTooLow: isInteractive ? zoomTooLow : false,
+    selectedPoi: isInteractive ? selectedPoi : null,
     setSelectedPoi: selectPoi,
     refresh,
   };
