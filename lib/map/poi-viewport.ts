@@ -4,6 +4,8 @@ import type { LocationContext } from "@/lib/map/location-search";
 
 export const POI_MIN_ZOOM = 12;
 export const POI_MAX_RADIUS_M = 3000;
+const GOOGLE_NEARBY_RETRY_AFTER_MS = 30_000;
+let googleNearbyUnavailableUntil = 0;
 
 export type ViewportBounds = {
   west: number;
@@ -55,6 +57,8 @@ async function fetchGoogleNearbyForViewport(
   circle: ViewportSearchCircle,
   signal?: AbortSignal,
 ): Promise<PoiResult[]> {
+  if (Date.now() < googleNearbyUnavailableUntil) return [];
+
   try {
     const response = await fetch("/api/places/nearby", {
       method: "POST",
@@ -68,7 +72,12 @@ async function fetchGoogleNearbyForViewport(
       signal,
     });
 
-    if (response.status === 503 || !response.ok) return [];
+    if (response.status === 503) {
+      googleNearbyUnavailableUntil = Date.now() + GOOGLE_NEARBY_RETRY_AFTER_MS;
+      return [];
+    }
+
+    if (!response.ok) return [];
 
     const payload = (await response.json()) as {
       enabled?: boolean;
@@ -101,5 +110,5 @@ export async function fetchPlacesInViewport(
     radiusKm: circle.radiusM / 1000,
   };
 
-  return fetchPlacesInArea(ctx);
+  return fetchPlacesInArea(ctx, { skipGoogleNearby: true });
 }

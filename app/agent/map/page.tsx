@@ -38,7 +38,6 @@ function AgentMapPageContent() {
 
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [locationCtx, setLocationCtx] = useState<LocationContext | null>(null);
   const [focusLocation, setFocusLocation] = useState<SavedLocation | null>(null);
@@ -47,6 +46,8 @@ function AgentMapPageContent() {
   const [poiZoomTooLow, setPoiZoomTooLow] = useState(false);
   const [focusPoiId, setFocusPoiId] = useState<string | null>(null);
   const [showPinnedBusinesses, setShowPinnedBusinesses] = useState(true);
+
+  const viewMode = isTracking && activeTask != null;
 
   const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
 
@@ -109,7 +110,6 @@ function AgentMapPageContent() {
 
       // Error/stop feedback surfaces via the tracking provider's default toasts.
       startTracking(taskId, companyId, token);
-      setViewMode(true);
       setSheetOpen(false);
     } catch {
       setResumeError('Failed to load tracking data. Please try again.');
@@ -128,7 +128,6 @@ function AgentMapPageContent() {
 
   const handleExitView = useCallback(() => {
     stopTracking();
-    setViewMode(false);
     setResumeError(null);
     setSheetOpen(true);
   }, [stopTracking]);
