@@ -230,39 +230,30 @@ function buildSelectedAgentPopupHtml(params: { name: string; avatarUrl?: string;
   const avatarUrl = params.avatarUrl ? escapeHtml(params.avatarUrl) : '';
 
   return `
-    <div style="width:300px; padding:38px 46px 30px; border-radius:32px; background:#ffffff; border:1px solid rgba(226,232,240,0.88); box-shadow:0 24px 54px rgba(15,23,42,0.24); font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+    <div style="width:140px; padding:15px 13px; border-radius:16px; background:#ffffff; border:0.5px solid rgba(226,232,240,0.88); box-shadow:0 12px 27px rgba(15,23,42,0.24); font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
       <div style="display:flex; align-items:center; justify-content:space-between;">
-        <a href="/operations/agents" style="font-size:18px; line-height:1; font-weight:700; color:#1F2933; text-decoration:underline; text-underline-offset:3px; letter-spacing:-0.01em;">View Full Profile</a>
-        <span style="color:#0F2530; display:flex; align-items:center; justify-content:center; width:26px; height:26px;">
-          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="19" r="1.7" fill="currentColor"/></svg>
+        <a href="/operations/agents" style="font-size:8px; line-height:1; font-weight:700; color:#1F2933; text-decoration:underline; text-underline-offset:1.5px; letter-spacing:-0.01em;">View Full Profile</a>
+        <span style="color:#0F2530; display:flex; align-items:center; justify-content:center; width:13px; height:13px;">
+          <svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="0.85" fill="currentColor"/><circle cx="12" cy="12" r="0.85" fill="currentColor"/><circle cx="12" cy="19" r="0.85" fill="currentColor"/></svg>
         </span>
       </div>
 
-      <div style="margin-top:32px; display:flex; justify-content:center;">
-        <div style="width:152px; height:152px; border-radius:9999px; padding:5px; background:linear-gradient(180deg, rgba(207,218,218,0.75), rgba(83,128,128,0.95));">
+      <div style="margin-top:5px; display:flex; justify-content:center;">
+        <div style="width:50px; height:50px; border-radius:9999px; padding:2.5px; background:linear-gradient(180deg, rgba(207,218,218,0.75), rgba(83,128,128,0.95));">
           <div style="width:100%; height:100%; border-radius:9999px; overflow:hidden; background:#F1FAF7; display:flex; align-items:center; justify-content:center;">
             ${avatarUrl ? `<img src="${avatarUrl}" alt="${name} avatar" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
-            <div style="width:100%; height:100%; display:${avatarUrl ? 'none' : 'flex'}; align-items:center; justify-content:center; font-size:42px; font-weight:800; color:#10232D; background:linear-gradient(135deg, #E2E8F0, #F8FAFC);">${initials || '•'}</div>
+            <div style="width:100%; height:100%; display:${avatarUrl ? 'none' : 'flex'}; align-items:center; justify-content:center; font-size:21px; font-weight:800; color:#10232D; background:linear-gradient(135deg, #E2E8F0, #F8FAFC);">${initials || '•'}</div>
           </div>
         </div>
       </div>
 
-      <div style="margin-top:24px; text-align:center;">
-        <div style="font-size:26px; font-weight:800; color:#112631; line-height:1.12; letter-spacing:-0.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
-        <div style="margin-top:3px; font-size:19px; color:#112631; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${location}</div>
+      <div style="margin-top:12px; text-align:center;">
+        <div style="font-size:13px; font-weight:800; color:#112631; line-height:1.12; letter-spacing:-0.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
+        <div style="margin-top:1.5px; font-size:9.5px; color:#112631; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${location}</div>
       </div>
 
-      <div style="margin-top:18px; display:flex; justify-content:center;">
-        <span style="display:inline-flex; min-width:190px; min-height:50px; align-items:center; justify-content:center; padding:0 22px; border-radius:17px; background:#6FE0B0; color:#0B2B31; font-size:20px; line-height:1; font-weight:500;">${statusLabel}</span>
-      </div>
-
-      <div style="margin-top:32px; display:flex; align-items:center; gap:12px;">
-        <span style="width:58px; height:58px; border:3px solid #0E93F5; display:flex; align-items:center; justify-content:center; flex:0 0 auto; background:#F8FBFF;">
-          <span style="width:42px; height:42px; border-radius:9px; border:1.5px dashed #94BDE4; display:flex; align-items:center; justify-content:center;">
-            <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#102631" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>
-          </span>
-        </span>
-        <span style="font-size:20px; font-weight:400; color:#112631; line-height:1;">Send a message</span>
+      <div style="margin-top:9px; display:flex; justify-content:center;">
+        <span style="display:inline-flex; min-width:95px; min-height:25px; align-items:center; justify-content:center; padding:0 11px; border-radius:8.5px; background:#6FE0B0; color:#0B2B31; font-size:6px; line-height:1; font-weight:500;">${statusLabel}</span>
       </div>
     </div>
   `;
@@ -1403,7 +1394,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           ready={mapVersion > 0}
           getMapboxMap={() => mapRef.current}
           pinMode={false}
-          onPinModeChange={() => {}}
+          onPinModeChange={() => { }}
           readOnly
         />
 
@@ -1530,8 +1521,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
               type="text"
               placeholder={
                 leftTab === 'feeds' ? 'Search by agents…' :
-                leftTab === 'clocked-in' ? 'Search by clocked in agents…' :
-                'Search by business…'
+                  leftTab === 'clocked-in' ? 'Search by clocked in agents…' :
+                    'Search by business…'
               }
               value={leftSearchQuery}
               onChange={(e) => setLeftSearchQuery(e.target.value)}
@@ -1679,7 +1670,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
                 className="shrink-0 w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
               >
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M1 1L11 11M11 1L1 11" stroke="#64748b" strokeWidth="1.8" strokeLinecap="round"/>
+                  <path d="M1 1L11 11M11 1L1 11" stroke="#64748b" strokeWidth="1.8" strokeLinecap="round" />
                 </svg>
               </button>
             </div>
@@ -2098,8 +2089,8 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
     fetchPlacesInArea(locationCtx)
       .then((results) => {
-      if (!cancelled) { setPoiResults(results); setPoiBusy(false); }
-    }).catch(() => { if (!cancelled) setPoiBusy(false); });
+        if (!cancelled) { setPoiResults(results); setPoiBusy(false); }
+      }).catch(() => { if (!cancelled) setPoiBusy(false); });
 
     return () => { cancelled = true; setPoiBusy(false); };
   }, [locationCtx]);
@@ -2559,7 +2550,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
               : null
           }
           pinMode={false}
-          onPinModeChange={() => {}}
+          onPinModeChange={() => { }}
           readOnly
         />
 
@@ -2635,8 +2626,8 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
               type="text"
               placeholder={
                 leftTab === 'feeds' ? 'Search by agents…' :
-                leftTab === 'clocked-in' ? 'Search by clocked in agents…' :
-                'Search by business…'
+                  leftTab === 'clocked-in' ? 'Search by clocked in agents…' :
+                    'Search by business…'
               }
               value={leftSearchQuery}
               onChange={(e) => setLeftSearchQuery(e.target.value)}
