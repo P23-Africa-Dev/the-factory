@@ -1,6 +1,7 @@
 export const MAPBOX_PUBLIC_TOKEN_ENV = 'NEXT_PUBLIC_MAPBOX_TOKEN';
 export const MAPBOX_ALLOWED_HOSTS_ENV = 'NEXT_PUBLIC_MAPBOX_ALLOWED_HOSTS';
 export const GOOGLE_MAPS_PUBLIC_API_KEY_ENV = 'NEXT_PUBLIC_GOOGLE_MAPS_API_KEY';
+export const GOOGLE_PLACES_API_KEY_ENV = 'GOOGLE_PLACES_API_KEY';
 export const MAP_PROVIDER_ENV = 'NEXT_PUBLIC_MAP_PROVIDER';
 export const TRACKING_WS_URL_ENV = 'NEXT_PUBLIC_TRACKING_WS_URL';
 
@@ -10,6 +11,19 @@ export function getMapboxPublicToken(): string {
 
 export function getGoogleMapsPublicApiKey(): string {
     return process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ?? '';
+}
+
+/** Server-side key for Places API proxy; falls back to public Maps key in dev. */
+export function getGooglePlacesServerKey(): string {
+    return (
+        process.env.GOOGLE_PLACES_API_KEY?.trim() ||
+        process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ||
+        ''
+    );
+}
+
+export function isGooglePlacesEnabled(): boolean {
+    return getGooglePlacesServerKey().length > 0;
 }
 
 export function getDefaultMapProvider(): 'mapbox' | 'google' {

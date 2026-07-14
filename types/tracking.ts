@@ -4,7 +4,8 @@ export type TrackingEventType =
   | "tracking.location.updated"
   | "tracking.task.arrived"
   | "tracking.task.completed"
-  | "tracking.agent.location.updated";
+  | "tracking.agent.location.updated"
+  | "tracking.task.reassigned";
 
 export type OperationalTrackingStatus =
   | "available"
@@ -30,15 +31,19 @@ export interface LiveTaskState {
   lastPosition: [number, number]; // [lng, lat] — Mapbox convention
   polyline: [number, number][]; // capped at 2000 pts
   trackingStartedAt?: string;
-  lastEventAt: string; // ISO — used for staleness check
+  lastEventAt: string; // ISO — event/device time (may carry skewed timezone)
+  lastReceivedAt?: number; // client epoch ms when this update was received — skew-proof staleness basis
   nearDetectedAt?: string;
   arrivedAt?: string;
   distanceToDestinationMeters?: number | null;
   distanceRemainingMeters?: number | null;
   movementStarted?: boolean;
   speedMps?: number | null;
+  headingDegrees?: number | null;
   etaSeconds?: number | null;
   routeDeviationMeters?: number | null;
+  /** From snapshot API / WS — authoritative online signal from backend. */
+  isOnline?: boolean;
 }
 
 export interface TrackingEnvelope {
@@ -66,6 +71,7 @@ export interface TrackingEnvelope {
       route_deviation_meters?: number | null;
       movement_started?: boolean;
       operational_status?: OperationalTrackingStatus;
+      is_online?: boolean;
       task_status?: string;
       arrival_recorded_at?: string;
       near_recorded_at?: string;
@@ -95,6 +101,10 @@ export interface TrackingEnvelope {
         internal_role?: string | null;
         avatar_url?: string | null;
       };
+      reassignment_id?: number;
+      from_user_id?: number;
+      to_user_id?: number;
+      reassignment_status?: string;
       location?: {
         latitude?: number;
         longitude?: number;

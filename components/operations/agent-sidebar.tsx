@@ -10,6 +10,8 @@ import { useCompanyZones } from '@/hooks/use-internal-users';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { UserLifecycleActions, DeleteUserIconButton } from '@/components/operations/user-lifecycle-actions';
+import { useUserManagementPermissions } from '@/hooks/use-user-management-permissions';
 
 interface AgentSidebarProps {
   agent: AgentItem | null;
@@ -37,6 +39,15 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const updateMutation = useUpdateInternalUser();
   const { data: zones = [] } = useCompanyZones(companyId ?? undefined);
+  const permissions = useUserManagementPermissions({
+    internalRole: agent.internalRole ?? agent.role,
+    supervisorUserId: agent.supervisorUserId,
+    isSuspended: agent.isSuspended,
+  });
+
+  const roleOptions = permissions.role === 'owner' || permissions.role === 'admin'
+    ? ROLE_OPTIONS
+    : ROLE_OPTIONS.filter((option) => option.value === 'agent');
 
   // Reset local state when a new agent is selected
   const agentId = agent.id;
@@ -155,16 +166,18 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
               </div>
 
               {/* Role */}
-              <div>
-                <p className="text-[11px] font-bold text-dash-dark mb-1">Role</p>
-                <SearchableSelect
-                  value={role}
-                  onChange={setRole}
-                  options={ROLE_OPTIONS}
-                  placeholder="Select role"
-                  className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark"
-                />
-              </div>
+              {(permissions.role === 'owner' || permissions.role === 'admin') && (
+                <div>
+                  <p className="text-[11px] font-bold text-dash-dark mb-1">Role</p>
+                  <SearchableSelect
+                    value={role}
+                    onChange={setRole}
+                    options={roleOptions}
+                    placeholder="Select role"
+                    className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark"
+                  />
+                </div>
+              )}
 
               {/* Actions */}
               <div className="flex gap-2 pt-1">
@@ -204,6 +217,23 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
                 <p className="text-[13px] font-bold text-dash-dark mb-0.5">Role</p>
                 <p className="text-[12px] text-gray-400">{agent.role}</p>
               </div>
+              {agent.isSuspended && (
+                <div>
+                  <p className="text-[13px] font-bold text-dash-dark mb-0.5">Status</p>
+                  <p className="text-[12px] text-amber-700">
+                    Suspended{agent.suspendedUntil ? ` until ${new Date(agent.suspendedUntil).toLocaleDateString()}` : ''}
+                  </p>
+                </div>
+              )}
+              <UserLifecycleActions
+                userId={agentId}
+                userName={agent.name}
+                companyId={companyId ?? undefined}
+                internalRole={agent.internalRole ?? agent.role}
+                supervisorUserId={agent.supervisorUserId}
+                isSuspended={agent.isSuspended}
+                suspendedUntil={agent.suspendedUntil}
+              />
             </>
           )}
         </div>
@@ -248,6 +278,7 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
             </svg>
 
             {/* Edit — toggles inline form */}
+            {permissions.canEdit && (
             <svg
               onClick={() => (editing ? handleCancel() : handleEdit())}
               className="cursor-pointer"
@@ -266,6 +297,15 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
                 strokeLinejoin="round"
               />
             </svg>
+            )}
+            <DeleteUserIconButton
+              userId={agentId}
+              userName={agent.name}
+              companyId={companyId ?? undefined}
+              internalRole={agent.internalRole ?? agent.role}
+              supervisorUserId={agent.supervisorUserId}
+              isSuspended={agent.isSuspended}
+            />
           </div>
         </div>
       </div>

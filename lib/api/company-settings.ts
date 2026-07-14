@@ -12,6 +12,11 @@ export type MeetingDefaults = {
   default_reminder_minutes: number;
 };
 
+export type UserManagementSettings = {
+  supervisor_can_suspend_agents: boolean;
+  supervisor_can_delete_agents: boolean;
+};
+
 export type CompanySettings = {
   company_id: number;
   company_name: string;
@@ -21,6 +26,7 @@ export type CompanySettings = {
   use_case: string | null;
   operational_defaults: OperationalDefaults;
   meeting_defaults: MeetingDefaults;
+  user_management: UserManagementSettings;
   can_edit: boolean;
   viewer_role: string | null;
 };
@@ -29,6 +35,7 @@ export type UpdateCompanySettingsPayload = {
   company_id?: number | string;
   operational_defaults?: Partial<OperationalDefaults>;
   meeting_defaults?: Partial<MeetingDefaults>;
+  user_management?: Partial<UserManagementSettings>;
 };
 
 function authToken(): string | undefined {

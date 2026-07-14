@@ -135,3 +135,5 @@ data:
   RATE_LIMIT_AUTH_FORGOT_PASSWORD: "15"
 
   INTERNAL_ONBOARDING_FRONTEND_URL: "https://thefactory23.com/onboarding/internal"
+
+  NEXT_PUBLIC_ENABLE_OVERPASS_POI_FALLBACK: "true"

@@ -6,9 +6,27 @@ import type {
   AgentLocationSnapshotItem,
 } from "@/types/tracking";
 import type { TaskApiItem } from "@/lib/api/tasks";
+import { resolveLivePolylineForHydrate } from "@/lib/tracking/live-polyline";
 
 const MAX_POLYLINE_PTS = 2000;
 const COMPLETED_LINGER_MS = 5_000;
+
+/**
+ * Returns the newer of two ISO timestamps. Live tracking freshness must be
+ * monotonic: neither a delayed WS event nor the periodic REST snapshot poll
+ * (which can serialize the same instant with a different timezone offset, or
+ * carry an older persisted point) may drag `lastEventAt` backwards, otherwise
+ * the active/stale decision oscillates and the feed card flickers on/off.
+ */
+function newerIso(candidate: string | undefined, current: string | undefined): string {
+  if (!candidate) return current ?? new Date().toISOString();
+  if (!current) return candidate;
+  const c = new Date(candidate).getTime();
+  const p = new Date(current).getTime();
+  if (!Number.isFinite(c)) return current;
+  if (!Number.isFinite(p)) return candidate;
+  return c >= p ? candidate : current;
+}
 
 type WsStatus = "idle" | "connecting" | "connected" | "reconnecting" | "error";
 
@@ -63,6 +81,20 @@ function normalizeProximityState(
   if (value === "arrived") return "arrived";
   if (value === "near_destination") return "near_destination";
   if (value === "in_progress") return "in_progress";
+  return undefined;
+}
+
+/** Stable key for detecting agent identity swaps on a task marker. */
+export function trackingAgentIdentityKey(task: Pick<LiveTaskState, "userId" | "agentAvatarUrl">): string {
+  return `${task.userId}:${task.agentAvatarUrl ?? ""}`;
+}
+
+function mergeAgentAvatarUrl(
+  params: { userId: number; agentAvatarUrl?: string },
+  prev: LiveTaskState | undefined,
+): string | undefined {
+  if (params.agentAvatarUrl) return params.agentAvatarUrl;
+  if (prev && prev.userId === params.userId) return prev.agentAvatarUrl;
   return undefined;
 }
 
@@ -123,7 +155,8 @@ function buildFromEnvelope(
     trackingStartedAt:
       prev?.trackingStartedAt ??
       (envelope.type === "tracking.task.started" ? payload.occurred_at : base.trackingStartedAt),
-    lastEventAt: payload.occurred_at,
+    lastEventAt: newerIso(payload.occurred_at, prev?.lastEventAt),
+    lastReceivedAt: Date.now(),
     ...(hasDestination
       ? {
         destination: {
@@ -147,6 +180,11 @@ function buildFromEnvelope(
       payload.data?.speed_mps ??
       prev?.speedMps ??
       null,
+    headingDegrees:
+      payload.data?.location?.heading_degrees ??
+      payload.data?.heading_degrees ??
+      prev?.headingDegrees ??
+      null,
     etaSeconds: payload.data?.eta_seconds ?? prev?.etaSeconds ?? null,
     routeDeviationMeters:
       payload.data?.route_deviation_meters ??
@@ -157,6 +195,10 @@ function buildFromEnvelope(
       payload.data?.status?.operational_status ??
       payload.data?.operational_status ??
       prev?.operationalStatus,
+    isOnline:
+      payload.data?.status?.is_online ??
+      payload.data?.is_online ??
+      prev?.isOnline,
     movementStarted: payload.data?.movement_started ?? prev?.movementStarted,
     nearDetectedAt:
       payload.data?.near_recorded_at ??
@@ -269,6 +311,33 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
         };
       }
 
+      if (type === "tracking.task.reassigned") {
+        const toUserId = payload.data?.to_user_id;
+        const fromUserId = payload.data?.from_user_id;
+        const agentChanged =
+          typeof toUserId === "number" &&
+          toUserId > 0 &&
+          prev?.userId !== toUserId;
+
+        return {
+          liveTasks: {
+            ...s.liveTasks,
+            [taskId]: {
+              ...updated,
+              userId: typeof toUserId === "number" && toUserId > 0 ? toUserId : updated.userId,
+              ...(agentChanged
+                ? {
+                  agentName: prev?.userId === fromUserId ? "" : updated.agentName,
+                  agentAvatarUrl: undefined,
+                  polyline: [],
+                }
+                : {}),
+              lastEventAt: newerIso(payload.occurred_at, prev?.lastEventAt),
+            },
+          },
+        };
+      }
+
       return { liveTasks: { ...s.liveTasks, [taskId]: updated } };
     });
   },
@@ -279,11 +348,15 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
       const polyline = (route.polyline ?? []) as [number, number][];
       const lastPt = polyline[polyline.length - 1] as [number, number] | undefined;
 
+      const anchor = lastPt ?? prev?.lastPosition;
+      const livePolyline = resolveLivePolylineForHydrate(prev?.polyline, anchor);
+
       const entry: LiveTaskState = {
         taskId,
         trackingSessionId: prev?.trackingSessionId ?? 0,
-        userId: prev?.userId ?? 0,
+        userId: task.assignee?.id ?? prev?.userId ?? 0,
         agentName: task.assignee?.name ?? prev?.agentName ?? "",
+        agentAvatarUrl: task.assignee?.avatar_url ?? prev?.agentAvatarUrl,
         taskTitle: task.title,
         projectName: task.project?.name ?? prev?.projectName,
         taskAddress: task.address ?? task.location,
@@ -303,15 +376,17 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
           }
           : undefined,
         lastPosition: lastPt ?? prev?.lastPosition ?? [0, 0],
-        polyline: polyline.slice(-MAX_POLYLINE_PTS),
+        polyline: livePolyline.slice(-MAX_POLYLINE_PTS),
         trackingStartedAt:
           prev?.trackingStartedAt ?? route.start?.recorded_at ?? route.arrival?.recorded_at,
-        lastEventAt:
+        lastEventAt: newerIso(
           route.end?.recorded_at ??
-          route.arrival?.recorded_at ??
-          route.near?.recorded_at ??
-          route.start?.recorded_at ??
-          new Date().toISOString(),
+            route.arrival?.recorded_at ??
+            route.near?.recorded_at ??
+            route.start?.recorded_at ??
+            undefined,
+          prev?.lastEventAt,
+        ),
         nearDetectedAt: route.near?.recorded_at ?? prev?.nearDetectedAt,
         arrivedAt: route.arrival?.recorded_at,
         distanceToDestinationMeters:
@@ -329,6 +404,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
           route.proximity?.route_deviation_meters ?? prev?.routeDeviationMeters ?? null,
         operationalStatus:
           route.proximity?.operational_status ?? prev?.operationalStatus,
+        lastReceivedAt: prev?.lastReceivedAt,
       };
 
       return { liveTasks: { ...s.liveTasks, [taskId]: entry } };
@@ -389,12 +465,14 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             item.status.last_seen_at ??
             item.updated_at ??
             undefined,
-          lastEventAt:
+          lastEventAt: newerIso(
             item.location.recorded_at ??
-            item.status.last_seen_at ??
-            item.updated_at ??
-            prev?.lastEventAt ??
-            new Date().toISOString(),
+              item.status.last_seen_at ??
+              item.updated_at ??
+              undefined,
+            prev?.lastEventAt,
+          ),
+          lastReceivedAt: prev?.lastReceivedAt,
           nearDetectedAt:
             item.status.proximity_state === "near_destination" && !item.location.arrived
               ? prev?.nearDetectedAt ?? item.location.recorded_at ?? item.updated_at ?? undefined
@@ -412,12 +490,17 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             prev?.distanceRemainingMeters ??
             null,
           speedMps: item.location.speed_mps ?? prev?.speedMps ?? null,
+          headingDegrees: item.location.heading_degrees ?? prev?.headingDegrees ?? null,
           etaSeconds: item.location.eta_seconds ?? prev?.etaSeconds ?? null,
           routeDeviationMeters:
             item.location.route_deviation_meters ?? prev?.routeDeviationMeters ?? null,
           operationalStatus:
             item.status.operational_status ?? prev?.operationalStatus,
-          movementStarted: prev?.movementStarted,
+          isOnline: item.status.is_online ?? prev?.isOnline,
+          movementStarted:
+            item.status.operational_status === "en_route" ||
+            item.status.proximity_state === "in_progress" ||
+            prev?.movementStarted,
         };
       }
 
@@ -430,6 +513,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
       const prev = s.liveTasks[params.taskId];
       const occurredAt = params.occurredAt ?? new Date().toISOString();
       const lastPosition = params.position ?? prev?.lastPosition ?? [0, 0];
+      const agentChanged = !!prev && prev.userId !== params.userId;
 
       return {
         liveTasks: {
@@ -439,7 +523,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             trackingSessionId: params.trackingSessionId,
             userId: params.userId,
             agentName: params.agentName ?? prev?.agentName ?? "",
-            agentAvatarUrl: params.agentAvatarUrl ?? prev?.agentAvatarUrl,
+            agentAvatarUrl: mergeAgentAvatarUrl(params, prev),
             taskTitle: params.taskTitle ?? prev?.taskTitle ?? `Task #${params.taskId}`,
             projectName: prev?.projectName,
             taskAddress: params.taskAddress ?? prev?.taskAddress,
@@ -449,13 +533,17 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
                 : prev?.status ?? "in_progress",
             destination: params.destination ?? prev?.destination,
             lastPosition,
-            polyline:
-              prev?.polyline && prev.polyline.length > 0
+            polyline: agentChanged
+              ? [lastPosition]
+              : prev?.polyline && prev.polyline.length > 0
                 ? prev.polyline
                 : [lastPosition],
             trackingStartedAt: prev?.trackingStartedAt ?? occurredAt,
             lastEventAt: occurredAt,
-            arrivedAt: prev?.arrivedAt,
+            isOnline: true,
+            movementStarted: true,
+            operationalStatus: prev?.operationalStatus ?? "en_route",
+            arrivedAt: agentChanged ? undefined : prev?.arrivedAt,
           },
         },
       };
@@ -466,11 +554,21 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
     set((s) => {
       const prev = s.liveTasks[taskId];
       if (!prev) return s;
-      const polyline = [...prev.polyline, point].slice(-MAX_POLYLINE_PTS);
+      const last = prev.polyline[prev.polyline.length - 1];
+      const isDuplicate = !!last && last[0] === point[0] && last[1] === point[1];
+      const polyline = isDuplicate
+        ? prev.polyline
+        : [...prev.polyline, point].slice(-MAX_POLYLINE_PTS);
       return {
         liveTasks: {
           ...s.liveTasks,
-          [taskId]: { ...prev, polyline, lastPosition: point },
+          [taskId]: {
+            ...prev,
+            polyline,
+            lastPosition: point,
+            // Keep staleness detection happy while WS echo is in flight.
+            lastEventAt: new Date().toISOString(),
+          },
         },
       };
     });

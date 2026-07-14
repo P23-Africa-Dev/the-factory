@@ -166,32 +166,46 @@ export function updateAgentMarkerElement(
     initials.style.height = '100%';
   };
 
-  const shouldUseInitials = input.preferInitials || !input.avatarUrl;
+  const shouldUseInitials = input.preferInitials || !input.avatarUrl?.trim();
+  const requestedUrl = input.avatarUrl?.trim() ?? '';
 
-  if (shouldUseInitials) {
+  const showLoadedImage = () => {
+    img.style.display = 'block';
+    initials.style.display = 'none';
+    root.dataset.loadedAvatarUrl = requestedUrl;
+  };
+
+  if (shouldUseInitials || !requestedUrl) {
     img.removeAttribute('src');
+    delete root.dataset.loadedAvatarUrl;
     applyFallback();
     return;
   }
 
   img.alt = `${input.displayName || 'Agent'} avatar`;
-  img.onerror = () => applyFallback();
-  img.onload = () => {
-    img.style.display = 'block';
-    initials.style.display = 'none';
-  };
+  img.referrerPolicy = 'no-referrer';
 
-  if (img.getAttribute('src') !== input.avatarUrl) {
-    img.setAttribute('src', input.avatarUrl!);
-  }
+  const loadedUrl = root.dataset.loadedAvatarUrl ?? '';
 
-  if (img.complete && img.naturalWidth > 0) {
-    img.style.display = 'block';
-    initials.style.display = 'none';
+  if (loadedUrl === requestedUrl && img.complete && img.naturalWidth > 0) {
+    showLoadedImage();
     return;
   }
 
   applyFallback();
+
+  img.onerror = () => {
+    delete root.dataset.loadedAvatarUrl;
+    applyFallback();
+  };
+  img.onload = showLoadedImage;
+
+  if (loadedUrl !== requestedUrl) {
+    img.removeAttribute('src');
+    delete root.dataset.loadedAvatarUrl;
+  }
+
+  img.setAttribute('src', requestedUrl);
 }
 
 export function createClockInMarkerElement(input: {

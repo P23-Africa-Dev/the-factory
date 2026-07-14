@@ -50,13 +50,24 @@ export function resolveOperationalStatusFromTask(
   nowMs: number,
   staleMs: number,
 ): OperationalTrackingStatus {
-  if (task.operationalStatus) {
-    return task.operationalStatus;
+  // Freshness is decided by the client's own clock against the event time,
+  // which is internally consistent. The backend `operational_status` "offline"
+  // (and `is_online`) are derived from server-vs-device time and misfire under
+  // clock skew — a live, actively-reporting agent then shows as offline. So we
+  // only declare "offline" when the client itself sees the task as stale.
+  const lastSeenAge =
+    typeof task.lastReceivedAt === "number" && task.lastReceivedAt > 0
+      ? nowMs - task.lastReceivedAt
+      : nowMs - new Date(task.lastEventAt).getTime();
+  const clientStale = Number.isFinite(lastSeenAge) && lastSeenAge > staleMs;
+
+  if (clientStale) {
+    return "offline";
   }
 
-  const lastSeenAge = nowMs - new Date(task.lastEventAt).getTime();
-  if (Number.isFinite(lastSeenAge) && lastSeenAge > staleMs) {
-    return "offline";
+  // Trust real, non-clock backend statuses when present.
+  if (task.operationalStatus && task.operationalStatus !== "offline") {
+    return task.operationalStatus;
   }
 
   if (task.status === "completed") {
@@ -71,13 +82,7 @@ export function resolveOperationalStatusFromTask(
     return "near_destination";
   }
 
-  if (task.etaSeconds != null && task.etaSeconds >= 1800) {
-    return "delayed";
-  }
-
-  if (task.movementStarted) {
-    return "en_route";
-  }
-
-  return "available";
+  // Fresh and actively tracking → online. Represent as en route (the online
+  // indicator) rather than the skew-derived offline flag.
+  return "en_route";
 }

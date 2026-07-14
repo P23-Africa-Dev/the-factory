@@ -15,6 +15,7 @@ export type SettingsSectionId =
   | "zones"
   | "crm"
   | "workforce"
+  | "user-management"
   | "payroll"
   | "meetings"
   | "field-ops"
@@ -32,6 +33,7 @@ export type SettingsSectionDef = {
 
 const MANAGEMENT_ROLES = new Set(["owner", "admin", "supervisor"]);
 const BILLING_MANAGE_ROLES = new Set(["owner", "admin"]);
+const USER_MANAGEMENT_ROLES = new Set(["owner", "admin"]);
 
 function canEditOrg(role: string | null | undefined): boolean {
   return role === "owner" || role === "admin" || role === "supervisor";
@@ -110,6 +112,14 @@ export function useSettingsAccess() {
         description: "Working hours and clock-in rules",
         canView: isManagement,
         canEdit: canEditOrg(role),
+      },
+      {
+        id: "user-management",
+        label: "User Management",
+        scope: "organization",
+        description: "Supervisor privileges and audit log",
+        canView: role != null && USER_MANAGEMENT_ROLES.has(role),
+        canEdit: role != null && USER_MANAGEMENT_ROLES.has(role),
       },
       {
         id: "payroll",

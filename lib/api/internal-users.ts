@@ -51,6 +51,10 @@ export type InternalUserListItem = {
   avatar_url?: string | null;
   onboarding_status?: "active" | "pending_onboarding" | "inactive";
   is_active?: boolean;
+  is_suspended?: boolean;
+  suspended_until?: string | null;
+  deleted_at?: string | null;
+  supervisor_user_id?: number | null;
   internal_onboarding_completed_at?: string | null;
   invite_sent_at?: string | null;
   invite_expires_at?: string | null;
@@ -318,6 +322,104 @@ export function deleteCompanyZone(
   return apiRequest<{ deleted_zone_id: number }>({
     method: "DELETE",
     path: `/internal-users/zones/${zoneId}${query}`,
+    token,
+  });
+}
+
+export type SuspendInternalUserPayload = {
+  company_id?: number | string;
+  suspend_type: "duration" | "date" | "permanent";
+  suspend_days?: number;
+  suspend_until?: string;
+};
+
+export type InternalUserLifecyclePayload = {
+  company_id?: number | string;
+};
+
+export type InternalUserAuditLogItem = {
+  id: number;
+  action: string;
+  metadata?: Record<string, unknown> | null;
+  created_at?: string | null;
+  actor?: {
+    id?: number;
+    name?: string;
+    email?: string;
+  };
+  target?: {
+    id?: number;
+    name?: string;
+    email?: string;
+    internal_role?: string | null;
+  };
+};
+
+export type PaginatedAuditLogsData = {
+  items: InternalUserAuditLogItem[];
+  pagination: {
+    next_page_url: string | null;
+    prev_page_url: string | null;
+    per_page: number;
+    current_page?: number;
+    last_page?: number;
+    total?: number;
+  };
+};
+
+export function suspendInternalUser(
+  userId: number | string,
+  payload: SuspendInternalUserPayload,
+  token: string,
+): Promise<ApiEnvelope<InternalUserSimpleData>> {
+  return apiRequest<InternalUserSimpleData>({
+    method: "POST",
+    path: `/internal-users/${userId}/suspend`,
+    body: payload,
+    token,
+  });
+}
+
+export function reactivateInternalUser(
+  userId: number | string,
+  payload: InternalUserLifecyclePayload,
+  token: string,
+): Promise<ApiEnvelope<InternalUserSimpleData>> {
+  return apiRequest<InternalUserSimpleData>({
+    method: "POST",
+    path: `/internal-users/${userId}/reactivate`,
+    body: payload,
+    token,
+  });
+}
+
+export function deleteInternalUser(
+  userId: number | string,
+  payload: InternalUserLifecyclePayload,
+  token: string,
+): Promise<ApiEnvelope<null>> {
+  const query = buildQuery({ company_id: payload.company_id });
+
+  return apiRequest<null>({
+    method: "DELETE",
+    path: `/internal-users/${userId}${query}`,
+    token,
+  });
+}
+
+export function listInternalUserAuditLogs(
+  params: { company_id?: number | string; per_page?: number; page?: number },
+  token: string,
+): Promise<ApiEnvelope<PaginatedAuditLogsData>> {
+  const query = buildQuery({
+    company_id: params.company_id,
+    per_page: params.per_page,
+    page: params.page,
+  });
+
+  return apiRequest<PaginatedAuditLogsData>({
+    method: "GET",
+    path: `/internal-users/audit-logs${query}`,
     token,
   });
 }
