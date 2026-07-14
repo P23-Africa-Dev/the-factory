@@ -54,6 +54,37 @@ final class CopilotDriveFilesTest extends TestCase
         $this->assertContains('quarterly-plan.txt', $names);
     }
 
+    public function test_generic_list_phrasings_do_not_leak_filler_words_as_filters(): void
+    {
+        [$company, $owner] = $this->seedCompany();
+        $folderId = $this->elyFolderId($owner, $company);
+
+        $this->uploadFile($owner, $company, $folderId, 'alpha-report.txt', 'Alpha.');
+        $this->uploadFile($owner, $company, $folderId, 'beta-notes.txt', 'Beta.');
+        $this->uploadFile($owner, $company, $folderId, 'gamma-plan.txt', 'Gamma.');
+
+        foreach (['List out the 3 documents in my drive', 'List the documents in my drive'] as $message) {
+            $response = $this
+                ->actingAs($owner)
+                ->postJson('/api/v1/copilot/chat', [
+                    'company_id' => $company->id,
+                    'message' => $message,
+                ]);
+
+            $response
+                ->assertOk()
+                ->assertJsonPath('data.response.tool', 'drive.files');
+
+            $payload = $response->json('data.response.payload');
+            $this->assertArrayNotHasKey('search', is_array($payload) ? $payload : ['search' => true], "Filler filter leaked for: {$message}");
+
+            $names = collect($response->json('data.response.payload.items'))->pluck('name')->all();
+            $this->assertContains('alpha-report.txt', $names, "Missing file for: {$message}");
+            $this->assertContains('beta-notes.txt', $names, "Missing file for: {$message}");
+            $this->assertContains('gamma-plan.txt', $names, "Missing file for: {$message}");
+        }
+    }
+
     public function test_management_can_ask_a_question_answered_from_file_contents(): void
     {
         [$company, $owner] = $this->seedCompany();

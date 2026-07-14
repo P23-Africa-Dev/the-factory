@@ -1082,22 +1082,40 @@ class ReadToolRegistry
         $normalized = preg_replace('/[^\p{L}\p{N}\s._-]/u', ' ', $normalized) ?? $normalized;
 
         $stopWords = [
-            'what', 'whats', 'which', 'who', 'where', 'when', 'why', 'how', 'many', 'much',
-            'is', 'are', 'was', 'were', 'be', 'been', 'do', 'does', 'did', 'the', 'a', 'an',
-            'my', 'our', 'your', 'their', 'me', 'i', 'we', 'us', 'you', 'they', 'it', 'this', 'that',
-            'in', 'on', 'of', 'for', 'to', 'from', 'with', 'about', 'and', 'or', 'any', 'all', 'some',
-            'show', 'list', 'find', 'get', 'give', 'open', 'view', 'see', 'display', 'pull', 'fetch',
-            'read', 'search', 'look', 'have', 'has', 'had', 'there', 'available', 'please', 'can',
+            // question / interrogatives
+            'what', 'whats', 'which', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how', 'many', 'much',
+            // verbs / auxiliaries
+            'is', 'are', 'am', 'was', 'were', 'be', 'been', 'being', 'do', 'does', 'did', 'done',
+            'have', 'has', 'had', 'will', 'shall', 'would', 'should', 'could', 'can', 'may', 'might', 'must',
+            // articles / conjunctions / prepositions
+            'the', 'a', 'an', 'in', 'on', 'of', 'for', 'to', 'from', 'with', 'about', 'and', 'or', 'but',
+            'at', 'by', 'as', 'into', 'onto', 'over', 'under', 'out', 'up', 'down', 'off',
+            // pronouns / determiners
+            'my', 'our', 'your', 'their', 'his', 'her', 'its', 'me', 'i', 'we', 'us', 'you', 'they', 'them',
+            'it', 'this', 'that', 'these', 'those', 'here', 'there', 'any', 'all', 'some', 'each', 'both',
+            'every', 'no', 'none', 'one', 'ones', 'other', 'another', 'same', 'such',
+            // command / request verbs
+            'show', 'list', 'find', 'get', 'give', 'gimme', 'open', 'view', 'see', 'display', 'pull',
+            'fetch', 'read', 'search', 'look', 'bring', 'load', 'retrieve', 'return', 'provide', 'present',
+            // fillers / politeness
+            'please', 'kindly', 'just', 'also', 'too', 'now', 'then', 'well', 'ok', 'okay', 'want', 'wanna',
+            'need', 'like', 'again', 'more', 'few', 'several', 'lot', 'lots', 'available', 'currently',
+            'everything', 'anything', 'something', 'them', 'stuff',
+            // drive / file domain nouns (not distinguishing keywords)
             'file', 'files', 'document', 'documents', 'doc', 'docs', 'drive', 'folder', 'folders',
-            'company', 'organization', 'organisation', 'org', 'say', 'says', 'said', 'tell', 'summarize',
-            'summarise', 'summary', 'content', 'contents', 'inside', 'explain', 'describe', 'according',
-            'detail', 'details', 'mention', 'mentions', 'state', 'states', 'uploaded', 'stored',
+            'item', 'items', 'entry', 'entries', 'thing', 'things', 'attachment', 'attachments',
+            'company', 'organization', 'organisation', 'org', 'team', 'shared',
+            // content-question verbs (not filenames)
+            'say', 'says', 'said', 'tell', 'summarize', 'summarise', 'summary', 'content', 'contents',
+            'inside', 'explain', 'describe', 'according', 'regarding', 'detail', 'details', 'mention',
+            'mentions', 'state', 'states', 'uploaded', 'stored', 'contain', 'contains', 'containing',
         ];
 
         $tokens = array_values(array_filter(
             preg_split('/\s+/', trim($normalized)) ?: [],
             static fn (string $token): bool => $token !== ''
                 && mb_strlen($token) >= 2
+                && preg_match('/^\d{1,3}$/', $token) !== 1
                 && ! in_array($token, $stopWords, true),
         ));
 
