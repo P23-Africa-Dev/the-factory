@@ -33,6 +33,7 @@ class InternalUserOnboardingService
         private readonly NotificationService $notificationService,
         private readonly \App\Services\Billing\CompanySeatLimitService $seatLimitService,
         private readonly AvatarStorageService $avatarStorage,
+        private readonly InternalUserAuditLogger $auditLogger,
     ) {}
 
     public function createByManager(User $creator, array $data): array
@@ -303,26 +304,42 @@ class InternalUserOnboardingService
     {
         ['company' => $company, 'role' => $actorRole] = $this->accessService->resolveCompanyContext($actor, $data['company_id'] ?? null);
         $this->accessService->ensureCanManageInternalUsers($actorRole);
+        $this->accessService->ensureCanActOnTarget(
+            $actor,
+            $actorRole,
+            $target,
+            InternalUserAccessService::ACTION_EDIT,
+            $company,
+        );
 
         $this->ensureUserInCompanyWithRole((int) $company->id, (int) $target->id, ['admin', 'supervisor', 'agent']);
 
-        return DB::transaction(function () use ($company, $target, $data): User {
+        if (isset($data['role'])) {
+            $this->accessService->ensureCanChangeRole($actorRole, (string) $data['role']);
+        }
+
+        return DB::transaction(function () use ($actor, $company, $target, $data, $actorRole): User {
             $updates = [];
+            $changed = [];
 
             if (isset($data['full_name'])) {
                 $updates['name'] = $data['full_name'];
+                $changed['full_name'] = $data['full_name'];
             }
 
             if (isset($data['role'])) {
                 $updates['internal_role'] = $data['role'];
+                $changed['role'] = $data['role'];
             }
 
             if (array_key_exists('assigned_zone', $data)) {
                 $updates['assigned_zone'] = $data['assigned_zone'] ?? null;
+                $changed['assigned_zone'] = $data['assigned_zone'] ?? null;
             }
 
             if (array_key_exists('phone_number', $data)) {
                 $updates['phone_number'] = $data['phone_number'] ?? null;
+                $changed['phone_number'] = $data['phone_number'] ?? null;
             }
 
             if ($updates !== []) {
@@ -341,6 +358,7 @@ class InternalUserOnboardingService
                 $target->update([
                     'assigned_zone' => $this->resolveLegacyAssignedZoneLabel($assignedZoneIds, array_key_exists('assigned_zone', $data) ? (string) ($data['assigned_zone'] ?? '') : $target->assigned_zone),
                 ]);
+                $changed['assigned_zone_ids'] = $assignedZoneIds;
             }
 
             if (isset($data['role'])) {
@@ -351,6 +369,19 @@ class InternalUserOnboardingService
                 };
 
                 $company->users()->updateExistingPivot($target->id, ['role' => $pivotRole]);
+            }
+
+            if ($changed !== []) {
+                $this->auditLogger->log(
+                    companyId: (int) $company->id,
+                    actorUserId: (int) $actor->id,
+                    targetUserId: (int) $target->id,
+                    action: 'updated',
+                    metadata: [
+                        'changes' => $changed,
+                        'actor_role' => $actorRole,
+                    ],
+                );
             }
 
             return $target->fresh();

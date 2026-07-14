@@ -22,6 +22,7 @@ import {
 } from "@/lib/agent-presence";
 import type { InternalUserListItem } from "@/lib/api/internal-users";
 import { resolveAvatarSrc } from "@/lib/avatar";
+import { UserLifecycleActions, DeleteUserIconButton } from "@/components/operations/user-lifecycle-actions";
 
 type Agent = {
   id: string;
@@ -31,12 +32,16 @@ type Agent = {
   zoneIds: number[];
   phone: string;
   role: string;
+  internalRole: 'admin' | 'agent' | 'supervisor';
+  supervisorUserId?: number | null;
   status: string;
   time: string;
   avatar: string;
   active: boolean;
   isMapActive: boolean;
   isSessionOnline: boolean;
+  isSuspended?: boolean;
+  suspendedUntil?: string | null;
   location?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -66,8 +71,12 @@ function mapAgent(user: InternalUserListItem): Agent {
     zoneIds: user.assigned_zone_ids ?? [],
     phone: user.phone_number ?? '—',
     role: internalRole === 'admin' ? 'Admin' : internalRole === 'supervisor' ? 'Supervisor' : 'Field Agent',
+    internalRole,
+    supervisorUserId: user.supervisor_user_id ?? null,
     status: labels.badgeLabel,
     time: labels.subtextLabel,
+    isSuspended: user.is_suspended ?? false,
+    suspendedUntil: user.suspended_until ?? null,
     avatar: resolveAvatarSrc(user.avatar_url),
     active: labels.isMapActive,
     isMapActive: labels.isMapActive,
@@ -80,7 +89,7 @@ function mapAgent(user: InternalUserListItem): Agent {
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
-function AgentDetailSidebar({ agent }: { agent: Agent }) {
+function AgentDetailSidebar({ agent, companyId }: { agent: Agent; companyId?: number | string }) {
   const hasLocation = Boolean(
     agent.isMapActive && (agent.location || agent.latitude || agent.longitude),
   );
@@ -108,6 +117,24 @@ function AgentDetailSidebar({ agent }: { agent: Agent }) {
                 <p className="text-[13px] font-bold text-dash-dark mb-0.5">Role</p>
                 <p className="text-[13px] text-gray-400">{agent.role}</p>
               </div>
+              {agent.isSuspended && (
+                <div>
+                  <p className="text-[13px] font-bold text-dash-dark mb-0.5">Status</p>
+                  <p className="text-[13px] text-amber-700">
+                    Suspended{agent.suspendedUntil ? ` until ${new Date(agent.suspendedUntil).toLocaleDateString()}` : ''}
+                  </p>
+                </div>
+              )}
+              <UserLifecycleActions
+                userId={agent.id}
+                userName={agent.name}
+                companyId={companyId}
+                internalRole={agent.internalRole}
+                supervisorUserId={agent.supervisorUserId}
+                isSuspended={agent.isSuspended}
+                suspendedUntil={agent.suspendedUntil}
+                compact
+              />
             </div>
             <div className="shrink-0 w-36">
               <div className="w-36 h-36 rounded-3xl overflow-hidden shadow-lg bg-[#C9A84C]">
@@ -144,6 +171,14 @@ function AgentDetailSidebar({ agent }: { agent: Agent }) {
             <path d="M16.6154 9.06299C20.7865 9.06299 24.1679 12.4443 24.1679 16.6154C24.1679 20.7866 20.7865 24.1679 16.6154 24.1679C12.4443 24.1679 9.06299 20.7866 9.06299 16.6154M14.281 9.43069C13.5189 9.67812 12.81 10.0434 12.1758 10.5051M10.5051 12.1757C10.0433 12.8101 9.678 13.5192 9.43057 14.2814" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
             <path d="M16.6157 13.5945V19.6364M19.6367 16.6154H13.5947" stroke="#2F5E71" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
+          <DeleteUserIconButton
+            userId={agent.id}
+            userName={agent.name}
+            companyId={companyId}
+            internalRole={agent.internalRole}
+            supervisorUserId={agent.supervisorUserId}
+            isSuspended={agent.isSuspended}
+          />
         </div>
       </div>
 
@@ -486,13 +521,13 @@ export default function AllAgentsPage() {
           </OpsTableContainer>
 
           {/* Sidebar */}
-          {/* {selectedAgent ? (
-            <AgentDetailSidebar agent={selectedAgent} />
+          {selectedAgent ? (
+            <AgentDetailSidebar agent={selectedAgent} companyId={companyId ?? undefined} />
           ) : (
             <div className="flex items-center justify-center w-full xl:w-90 xl:shrink-0 h-40 text-gray-400 text-[13px]">
               Select an agent to view details
             </div>
-          )} */}
+          )}
         </div>
       </div>
 

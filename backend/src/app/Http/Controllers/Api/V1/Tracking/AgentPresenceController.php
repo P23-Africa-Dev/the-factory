@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\V1\Tracking;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tracking\AgentPresenceHeartbeatRequest;
 use App\Models\AgentLocationSnapshot;
+use App\Models\TaskTrackingSession;
 use App\Services\Company\CompanyContextService;
 use App\Services\Tracking\AgentLocationSnapshotService;
 use App\Services\Workforce\AgentPresenceService;
@@ -52,6 +53,22 @@ class AgentPresenceController extends Controller
                 data: [
                     'snapshot_id' => $existing->id,
                     'last_seen_at' => $existing->last_seen_at->toIso8601String(),
+                ],
+            );
+        }
+
+        $hasActiveTrackingSession = TaskTrackingSession::query()
+            ->where('company_id', $companyId)
+            ->where('started_by_user_id', (int) $actor->id)
+            ->whereNull('end_recorded_at')
+            ->exists();
+
+        if ($hasActiveTrackingSession) {
+            return $this->success(
+                message: 'Agent has an open tracking session; map presence heartbeat skipped.',
+                data: [
+                    'snapshot_id' => $existing?->id,
+                    'last_seen_at' => $existing?->last_seen_at?->toIso8601String(),
                 ],
             );
         }

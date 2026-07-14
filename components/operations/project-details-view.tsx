@@ -16,6 +16,7 @@ import { useTasks, useUpdateTaskStatusAdmin } from "@/hooks/use-tasks";
 import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiTaskStatus, TaskApiItem } from "@/lib/api/tasks";
 import { formatTaskLocationLabel, hasTrackableTaskLocation } from "@/lib/tasks/location";
+import { buildTaskMapUrl } from "@/lib/tasks/map-navigation";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 
@@ -378,6 +379,14 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
               onStatusDrop={handleStatusDrop}
               onDragStateChange={handleDragStateChange}
               onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
+              onViewMap={(item) => {
+                const url = buildTaskMapUrl(item, role);
+                if (!url) {
+                  toast.error("This task has no map coordinates yet.");
+                  return;
+                }
+                router.push(url);
+              }}
             />
           )}
         </div>

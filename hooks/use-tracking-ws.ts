@@ -18,7 +18,7 @@ const STALE_THRESHOLD_MS = 30_000;
 const LOG = "[tracking-ws]";
 
 function isManagementRole(role: string | null | undefined): boolean {
-  if (!role) return true;
+  if (!role) return false;
   const normalized = role.toLowerCase();
   return ["owner", "admin", "management", "manager", "supervisor"].includes(
     normalized
@@ -98,6 +98,7 @@ export function useTrackingWebSocket() {
         {
           company_id: companyId,
           include_offline: true,
+          stale_after_seconds: 300,
           limit: 300,
         },
         token
@@ -315,7 +316,8 @@ export function useTrackingWebSocket() {
         msg.type === "tracking.location.updated" ||
         msg.type === "tracking.agent.location.updated" ||
         msg.type === "tracking.task.arrived" ||
-        msg.type === "tracking.task.completed"
+        msg.type === "tracking.task.completed" ||
+        msg.type === "tracking.task.reassigned"
       ) {
         console.log(LOG, "📍 Tracking event", {
           type: msg.type,
@@ -450,6 +452,18 @@ export function useTrackingWebSocket() {
   useEffect(() => {
     connectRef.current = connect;
   }, [connect]);
+
+  // Management dashboards: keep snapshot read-model fresh even when WS is slow/blocked.
+  useEffect(() => {
+    if (!token || !companyId || !isManagementRole(companyRole)) return;
+
+    const refresh = () => {
+      void hydrateLocationSnapshots();
+    };
+
+    const intervalId = setInterval(refresh, POLL_INTERVAL_MS);
+    return () => clearInterval(intervalId);
+  }, [token, companyId, companyRole, hydrateLocationSnapshots]);
 
   useEffect(() => {
     mountedRef.current = true;

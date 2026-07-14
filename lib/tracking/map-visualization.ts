@@ -288,15 +288,52 @@ export function createAgentMarkerElement(input: {
     generic.textContent = "#";
     generic.style.display = "none";
 
+    // Direction-of-travel arrow: a ring-mounted chevron rotated to the agent's
+    // bearing. Hidden until a heading is known.
+    const heading = document.createElement("span");
+    heading.dataset.part = "heading";
+    heading.style.position = "absolute";
+    heading.style.inset = "-12px";
+    heading.style.borderRadius = "9999px";
+    heading.style.pointerEvents = "none";
+    heading.style.opacity = "0";
+    heading.style.transition = "transform 300ms ease-out, opacity 200ms ease-out";
+    heading.style.display = "flex";
+    heading.style.alignItems = "flex-start";
+    heading.style.justifyContent = "center";
+    heading.innerHTML = `
+        <svg width="16" height="10" viewBox="0 0 16 10" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 1px 2px rgba(15,23,42,0.35));">
+            <path d="M8 0L15.5 10H0.5L8 0Z" fill="#0EA5E9"/>
+        </svg>
+    `;
+
     shell.appendChild(img);
     shell.appendChild(initials);
     shell.appendChild(generic);
+    root.appendChild(heading);
     root.appendChild(halo);
     root.appendChild(shell);
 
     updateAgentMarkerElement(root, input);
 
     return root;
+}
+
+/**
+ * Rotate the direction arrow around an agent marker to the given compass
+ * bearing (degrees, 0 = north). Pass null to hide the arrow (e.g. stationary).
+ */
+export function updateAgentMarkerHeading(root: HTMLElement, bearingDegrees: number | null) {
+    const arrow = root.querySelector<HTMLElement>("[data-part='heading']");
+    if (!arrow) return;
+
+    if (bearingDegrees == null || !Number.isFinite(bearingDegrees)) {
+        arrow.style.opacity = "0";
+        return;
+    }
+
+    arrow.style.opacity = "1";
+    arrow.style.transform = `rotate(${bearingDegrees}deg)`;
 }
 
 export function updateAgentMarkerElement(
@@ -327,6 +364,11 @@ export function updateAgentMarkerElement(
     halo.style.background = palette.markerHalo;
     halo.style.opacity = input.stale ? "0.45" : "1";
 
+    const headingArrow = root.querySelector<SVGPathElement>("[data-part='heading'] path");
+    if (headingArrow) {
+        headingArrow.setAttribute("fill", palette.markerBorder);
+    }
+
     const initialsLabel = getAgentInitials(input.name);
     initials.textContent = initialsLabel ?? "";
 
@@ -338,32 +380,45 @@ export function updateAgentMarkerElement(
         generic.style.justifyContent = "center";
     };
 
-    if (!input.avatarUrl) {
+    const requestedUrl = input.avatarUrl?.trim() ?? "";
+
+    const showLoadedImage = () => {
+        img.style.display = "block";
+        initials.style.display = "none";
+        generic.style.display = "none";
+        root.dataset.loadedAvatarUrl = requestedUrl;
+    };
+
+    if (!requestedUrl) {
         img.removeAttribute("src");
+        delete root.dataset.loadedAvatarUrl;
         applyFallback();
         return;
     }
 
     img.alt = `${input.name || "Agent"} avatar`;
-    img.onerror = () => {
-        applyFallback();
-    };
-    img.onload = () => {
-        img.style.display = "block";
-        initials.style.display = "none";
-        generic.style.display = "none";
-    };
+    img.referrerPolicy = "no-referrer";
 
-    if (img.getAttribute("src") !== input.avatarUrl) {
-        img.setAttribute("src", input.avatarUrl);
-    }
+    const loadedUrl = root.dataset.loadedAvatarUrl ?? "";
 
-    if (img.complete && img.naturalWidth > 0) {
-        img.style.display = "block";
-        initials.style.display = "none";
-        generic.style.display = "none";
+    if (loadedUrl === requestedUrl && img.complete && img.naturalWidth > 0) {
+        showLoadedImage();
         return;
     }
 
+    // Show initials while the new URL loads (or after a failed load via onerror).
     applyFallback();
+
+    img.onerror = () => {
+        delete root.dataset.loadedAvatarUrl;
+        applyFallback();
+    };
+    img.onload = showLoadedImage;
+
+    if (loadedUrl !== requestedUrl) {
+        img.removeAttribute("src");
+        delete root.dataset.loadedAvatarUrl;
+    }
+
+    img.setAttribute("src", requestedUrl);
 }

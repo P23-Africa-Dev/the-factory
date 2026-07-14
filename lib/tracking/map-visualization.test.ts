@@ -96,10 +96,45 @@ describe("map-visualization", () => {
 
         expect(img.style.display).toBe("block");
         expect(initials.style.display).toBe("none");
+        expect(marker.dataset.loadedAvatarUrl).toBe("https://example.com/avatar.png");
 
         img.dispatchEvent(new Event("error"));
 
         expect(img.style.display).toBe("none");
         expect(initials.style.display).toBe("flex");
+        expect(marker.dataset.loadedAvatarUrl).toBeUndefined();
+    });
+
+    it("resets cached avatar when url changes to prevent stale image reuse", () => {
+        const marker = createAgentMarkerElement({
+            name: "Agent One",
+            avatarUrl: "https://example.com/user-a.png",
+            visualState: "in_progress",
+            stale: false,
+        });
+
+        const img = marker.querySelector("[data-part='avatar']") as HTMLImageElement;
+        const initials = marker.querySelector("[data-part='initials']") as HTMLElement;
+
+        img.dispatchEvent(new Event("load"));
+        expect(marker.dataset.loadedAvatarUrl).toBe("https://example.com/user-a.png");
+
+        updateAgentMarkerElement(marker, {
+            name: "Agent Two",
+            avatarUrl: "https://example.com/user-b.png",
+            visualState: "in_progress",
+            stale: false,
+        });
+
+        expect(img.getAttribute("src")).toBe("https://example.com/user-b.png");
+        expect(img.style.display).toBe("none");
+        expect(initials.style.display).toBe("flex");
+        expect(marker.dataset.loadedAvatarUrl).toBeUndefined();
+
+        img.dispatchEvent(new Event("load"));
+
+        expect(img.style.display).toBe("block");
+        expect(initials.style.display).toBe("none");
+        expect(marker.dataset.loadedAvatarUrl).toBe("https://example.com/user-b.png");
     });
 });

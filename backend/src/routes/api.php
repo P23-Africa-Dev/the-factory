@@ -480,6 +480,10 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                     ->middleware('throttle:api')
                     ->name('onboarding-status');
 
+                Route::get('/audit-logs', [InternalUserController::class, 'auditLogs'])
+                    ->middleware('throttle:api')
+                    ->name('audit-logs');
+
                 Route::post('/', [InternalUserController::class, 'store'])
                     ->middleware('throttle:api')
                     ->name('store');
@@ -495,6 +499,18 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::patch('/{user}/supervisor', [InternalUserController::class, 'assignSupervisor'])
                     ->middleware('throttle:api')
                     ->name('supervisor.assign');
+
+                Route::post('/{user}/suspend', [InternalUserController::class, 'suspend'])
+                    ->middleware('throttle:api')
+                    ->name('suspend');
+
+                Route::post('/{user}/reactivate', [InternalUserController::class, 'reactivate'])
+                    ->middleware('throttle:api')
+                    ->name('reactivate');
+
+                Route::delete('/{user}', [InternalUserController::class, 'destroy'])
+                    ->middleware('throttle:api')
+                    ->name('destroy');
             });
 
             Route::prefix('crm')->name('crm.')->group(function (): void {
@@ -906,6 +922,10 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
             ->middleware('throttle:api')
             ->name('onboarding-status');
 
+        Route::get('/audit-logs', [InternalUserController::class, 'auditLogs'])
+            ->middleware('throttle:api')
+            ->name('audit-logs');
+
         Route::post('/', [InternalUserController::class, 'store'])
             ->middleware('throttle:api')
             ->name('store');
@@ -921,6 +941,18 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::patch('/{user}/supervisor', [InternalUserController::class, 'assignSupervisor'])
             ->middleware('throttle:api')
             ->name('supervisor.assign');
+
+        Route::post('/{user}/suspend', [InternalUserController::class, 'suspend'])
+            ->middleware('throttle:api')
+            ->name('suspend');
+
+        Route::post('/{user}/reactivate', [InternalUserController::class, 'reactivate'])
+            ->middleware('throttle:api')
+            ->name('reactivate');
+
+        Route::delete('/{user}', [InternalUserController::class, 'destroy'])
+            ->middleware('throttle:api')
+            ->name('destroy');
     });
 
     Route::prefix('crm')->name('crm.')->group(function (): void {

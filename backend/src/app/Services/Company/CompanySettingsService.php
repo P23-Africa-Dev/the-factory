@@ -7,6 +7,7 @@ namespace App\Services\Company;
 use App\Enums\CompanyUserRole;
 use App\Models\Company;
 use App\Models\User;
+use App\Services\Internal\InternalUserAuditLogger;
 use Illuminate\Validation\ValidationException;
 
 class CompanySettingsService
@@ -46,6 +47,32 @@ class CompanySettingsService
             );
         }
 
+        if (isset($data['user_management']) && is_array($data['user_management'])) {
+            if (! in_array($role, [CompanyUserRole::OWNER->value, CompanyUserRole::ADMIN->value], true)) {
+                throw ValidationException::withMessages([
+                    'authorization' => ['Only owners and admins can update user management settings.'],
+                ]);
+            }
+
+            $previous = $settings['user_management'] ?? [];
+            $settings['user_management'] = array_merge(
+                $previous,
+                $this->sanitizeUserManagementSettings($data['user_management']),
+            );
+
+            if ($settings['user_management'] !== $previous) {
+                app(InternalUserAuditLogger::class)->log(
+                    companyId: (int) $company->id,
+                    actorUserId: (int) $user->id,
+                    targetUserId: (int) $user->id,
+                    action: 'privilege_updated',
+                    metadata: [
+                        'user_management' => $settings['user_management'],
+                    ],
+                );
+            }
+        }
+
         $company->forceFill(['settings' => $settings])->save();
 
         return $this->payload($company->fresh(), $role);
@@ -76,6 +103,10 @@ class CompanySettingsService
             ],
             'meeting_defaults' => $settings['meeting_defaults'] ?? [
                 'default_reminder_minutes' => 15,
+            ],
+            'user_management' => $settings['user_management'] ?? [
+                'supervisor_can_suspend_agents' => false,
+                'supervisor_can_delete_agents' => false,
             ],
             'can_edit' => $canEdit,
             'viewer_role' => $role,
@@ -113,6 +144,25 @@ class CompanySettingsService
             $allowed = [5, 10, 15, 30, 60];
             $minutes = (int) $defaults['default_reminder_minutes'];
             $result['default_reminder_minutes'] = in_array($minutes, $allowed, true) ? $minutes : 15;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     * @return array<string, bool>
+     */
+    private function sanitizeUserManagementSettings(array $settings): array
+    {
+        $result = [];
+
+        if (array_key_exists('supervisor_can_suspend_agents', $settings)) {
+            $result['supervisor_can_suspend_agents'] = (bool) $settings['supervisor_can_suspend_agents'];
+        }
+
+        if (array_key_exists('supervisor_can_delete_agents', $settings)) {
+            $result['supervisor_can_delete_agents'] = (bool) $settings['supervisor_can_delete_agents'];
         }
 
         return $result;

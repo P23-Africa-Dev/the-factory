@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useCallback, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, ChevronUp, ClipboardList, Radio, X } from 'lucide-react';
 import { AgentMapView } from '@/components/map/agent-map-view';
 import { BusinessListPanel } from '@/components/map/BusinessListPanel';
@@ -16,12 +16,14 @@ import { useSavedLocations } from '@/hooks/use-saved-locations';
 import type { AgentLocationSnapshotItem } from '@/types/tracking';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { isInsideLocationContext, type LocationContext } from '@/lib/map/location-search';
+import type { PoiResult } from '@/lib/map/overpass-search';
+import { parseTaskMapParams } from '@/lib/tasks/map-navigation';
 
-export default function AgentMapPage() {
+function AgentMapPageContent() {
   const router = useRouter();
-  const { isTracking, activeTaskId } = useActiveTracking();
+  const searchParams = useSearchParams();
+  const { isTracking, activeTaskId, startTracking, stopTracking } = useActiveTracking();
   const liveTasks = useTrackingStore((s) => s.liveTasks);
-  const setActiveTrackingTask = useTrackingStore((s) => s.setActiveTrackingTask);
   const hydrateFromRoute = useTrackingStore((s) => s.hydrateFromRoute);
   const hydrateFromSnapshots = useTrackingStore((s) => s.hydrateFromSnapshots);
   const activeTask = activeTaskId ? liveTasks[activeTaskId] : null;
@@ -29,12 +31,21 @@ export default function AgentMapPage() {
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
 
+  const taskFocus = useMemo(
+    () => parseTaskMapParams(new URLSearchParams(searchParams.toString())),
+    [searchParams],
+  );
+
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [locationCtx, setLocationCtx] = useState<LocationContext | null>(null);
   const [focusLocation, setFocusLocation] = useState<SavedLocation | null>(null);
+  const [viewportPois, setViewportPois] = useState<PoiResult[]>([]);
+  const [poiBusy, setPoiBusy] = useState(false);
+  const [poiZoomTooLow, setPoiZoomTooLow] = useState(false);
+  const [focusPoiId, setFocusPoiId] = useState<string | null>(null);
   const [showPinnedBusinesses, setShowPinnedBusinesses] = useState(true);
 
   const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
@@ -43,6 +54,13 @@ export default function AgentMapPage() {
     if (!locationCtx) return savedLocations;
     return savedLocations.filter((location) => isInsideLocationContext(location, locationCtx));
   }, [savedLocations, locationCtx]);
+
+  const displayedPois = useMemo(() => {
+    if (!locationCtx) return viewportPois;
+    return viewportPois.filter((poi) =>
+      isInsideLocationContext({ latitude: poi.lat, longitude: poi.lng }, locationCtx),
+    );
+  }, [viewportPois, locationCtx]);
 
   const handleViewActiveTracking = useCallback(async () => {
     if (!companyId || !user?.id) return;
@@ -64,7 +82,11 @@ export default function AgentMapPage() {
         return;
       }
 
-      const task = inProgressTasks[0];
+      const preferredTaskId = activeTaskId ?? taskFocus?.taskId ?? null;
+      const task =
+        (preferredTaskId
+          ? inProgressTasks.find((item) => Number(item.id) === preferredTaskId)
+          : undefined) ?? inProgressTasks[0];
       const taskId = Number(task.id);
 
       const [routeRes, snapshotRes] = await Promise.allSettled([
@@ -85,7 +107,8 @@ export default function AgentMapPage() {
         );
       }
 
-      setActiveTrackingTask(taskId);
+      // Error/stop feedback surfaces via the tracking provider's default toasts.
+      startTracking(taskId, companyId, token);
       setViewMode(true);
       setSheetOpen(false);
     } catch {
@@ -93,17 +116,48 @@ export default function AgentMapPage() {
     } finally {
       setResuming(false);
     }
-  }, [companyId, user, hydrateFromRoute, hydrateFromSnapshots, setActiveTrackingTask]);
+  }, [
+    companyId,
+    user,
+    activeTaskId,
+    taskFocus,
+    hydrateFromRoute,
+    hydrateFromSnapshots,
+    startTracking,
+  ]);
 
   const handleExitView = useCallback(() => {
-    setActiveTrackingTask(null);
+    stopTracking();
     setViewMode(false);
     setResumeError(null);
     setSheetOpen(true);
-  }, [setActiveTrackingTask]);
+  }, [stopTracking]);
+
+  const handleLocationSelect = useCallback((ctx: LocationContext | null) => {
+    setLocationCtx(ctx);
+    setFocusPoiId(ctx?.placeId ?? null);
+  }, []);
 
   const handleSavedLocationClick = useCallback((location: SavedLocation) => {
     setFocusLocation(location);
+    setSheetOpen(false);
+  }, []);
+
+  const handlePoiClick = useCallback((poi: PoiResult) => {
+    setFocusPoiId(poi.id);
+    setFocusLocation({
+      id: -1,
+      name: poi.name,
+      type: poi.category,
+      description: poi.categoryLabel,
+      address: poi.address ?? null,
+      latitude: poi.lat,
+      longitude: poi.lng,
+      contact_number: poi.phone ?? null,
+      email: null,
+      is_active: true,
+      meta: null,
+    });
     setSheetOpen(false);
   }, []);
 
@@ -112,9 +166,16 @@ export default function AgentMapPage() {
       <AgentMapView
         showSavedLocations={showPinnedBusinesses}
         focusLocation={focusLocation}
+        taskFocus={taskFocus}
         showPinsToggle
         onTogglePins={() => setShowPinnedBusinesses((visible) => !visible)}
         pinsToggleLabel={showPinnedBusinesses ? 'Hide Pins' : 'Show Pins'}
+        focusPoiId={focusPoiId}
+        searchFocus={locationCtx}
+        onPoisChange={setViewportPois}
+        onPoiBusyChange={setPoiBusy}
+        onPoiZoomTooLowChange={setPoiZoomTooLow}
+        onGooglePoiSelect={(poi) => setFocusPoiId(poi?.id ?? null)}
       />
 
       {activeTask && isTracking && (
@@ -141,7 +202,7 @@ export default function AgentMapPage() {
             <button
               onClick={handleExitView}
               className="w-7 h-7 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors shrink-0"
-              title="Exit view"
+              title="Stop tracking and exit view"
             >
               <X size={14} className="text-gray-500" />
             </button>
@@ -184,7 +245,7 @@ export default function AgentMapPage() {
             <div className="ml-auto w-full max-w-md flex justify-end">
               <LocationSearchInput
                 activeLocation={locationCtx}
-                onLocationSelect={setLocationCtx}
+                onLocationSelect={handleLocationSelect}
                 className="w-full bg-transparent shadow-none border-0 p-0"
               />
             </div>
@@ -198,7 +259,9 @@ export default function AgentMapPage() {
                 className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0"
               >
                 <span className="text-[13px] font-bold text-dash-dark">
-                  Pinned Locations ({filteredLocations.length})
+                  {locationCtx || displayedPois.length > 0
+                    ? `Businesses (${displayedPois.length})`
+                    : `Pinned Locations (${filteredLocations.length})`}
                 </span>
                 {sheetOpen ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronUp size={16} className="text-gray-400" />}
               </button>
@@ -206,11 +269,12 @@ export default function AgentMapPage() {
                 <div className="min-h-0 max-h-[42vh] overflow-y-auto overscroll-contain">
                   <BusinessListPanel
                     activeLocation={locationCtx}
-                    pois={[]}
-                    poiBusy={false}
+                    pois={displayedPois}
+                    poiBusy={poiBusy}
+                    poiZoomTooLow={poiZoomTooLow}
                     savedLocations={filteredLocations}
                     savedLocationsLoading={savedLocationsLoading}
-                    onPoiClick={() => {}}
+                    onPoiClick={handlePoiClick}
                     onSavedClick={handleSavedLocationClick}
                   />
                 </div>
@@ -226,5 +290,13 @@ export default function AgentMapPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AgentMapPage() {
+  return (
+    <Suspense fallback={<div className="relative" style={{ height: 'calc(100vh - 64px)' }} />}>
+      <AgentMapPageContent />
+    </Suspense>
   );
 }

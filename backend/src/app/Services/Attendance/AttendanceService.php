@@ -1161,7 +1161,7 @@ class AttendanceService
         ];
 
         try {
-            Redis::publish("{$prefix}.company.{$companyId}", json_encode($payload, JSON_THROW_ON_ERROR));
+            Redis::connection('pubsub')->publish("{$prefix}.company.{$companyId}", json_encode($payload, JSON_THROW_ON_ERROR));
         } catch (Throwable $e) {
             Log::warning('Failed to publish attendance event to Redis.', [
                 'event' => $event,
