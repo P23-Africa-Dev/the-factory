@@ -87,6 +87,10 @@ class EnsureCompanyHasActiveSubscription
             return true;
         }
 
+        if ($request->is('api/v1/map-credits*')) {
+            return true;
+        }
+
         if ($request->is('api/v1/user/me')) {
             return true;
         }

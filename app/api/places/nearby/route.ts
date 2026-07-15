@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getGooglePlacesServerKey } from "@/lib/config/public-env";
 import { googleNearbyPlaceToPoiResult, googleSearchNearby } from "@/lib/utils/google-places";
 import { clientIdFromRequest, guardPlacesRequest } from "@/lib/server/places-guard";
+import { consumeMapCredit, creditMeta } from "@/lib/server/map-credit-gate";
 
 /** Shared cache key: adjacent viewports and other users in the same ~110m cell reuse one billed call. */
 function nearbyCacheKey(lat: number, lng: number, radius: number): string {
@@ -89,6 +90,11 @@ export async function POST(request: Request) {
   if (guard.blocked && guard.response) return guard.response;
   if (guard.cached) return NextResponse.json(guard.cached);
 
+  const credit = await consumeMapCredit(request, "nearby", "dashboard");
+  if (credit.blocked) {
+    return NextResponse.json({ enabled: true, places: [], credits: creditMeta(credit) });
+  }
+
   const seen = new Set<string>();
   const places = [];
 
@@ -106,5 +112,5 @@ export async function POST(request: Request) {
   const payload = { enabled: true, places };
   guard.store(payload);
 
-  return NextResponse.json(payload);
+  return NextResponse.json({ ...payload, credits: creditMeta(credit) });
 }

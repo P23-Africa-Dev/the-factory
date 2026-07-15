@@ -1,6 +1,7 @@
 import { isBboxTooLarge, type PoiResult } from "@/lib/map/overpass-search";
 import { fetchPlacesInArea } from "@/lib/map/poi-search";
 import type { LocationContext } from "@/lib/map/location-search";
+import { ingestCreditMeta } from "@/store/map-credits";
 
 // ── POI cost-control tuning (Balanced tier defaults) ─────────────────────────
 // Switch to the Minimal tier by using the commented values (higher zoom, longer
@@ -99,7 +100,10 @@ async function fetchGoogleNearbyForViewport(
     const payload = (await response.json()) as {
       enabled?: boolean;
       places?: PoiResult[];
+      credits?: unknown;
     };
+
+    ingestCreditMeta(payload.credits);
 
     if (payload.enabled === false) return [];
     return payload.places ?? [];

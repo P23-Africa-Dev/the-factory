@@ -53,3 +53,6 @@ Schedule::command('ai:health-check')->everyTenMinutes();
 Schedule::command('crm:sync-gmail')->everyTenMinutes();
 
 Schedule::command('billing:process-subscriptions')->dailyAt('01:00');
+
+// Reset monthly plan-allocated map credits when a company's credit cycle ends.
+Schedule::command('credits:reset-cycles')->dailyAt('00:15');

@@ -719,6 +719,10 @@
                     class="nav-link {{ request()->routeIs('admin.billing.*') ? 'active' : '' }}">
                     <i class="bi bi-credit-card-2-front"></i><span class="nav-link-text">Billing</span>
                 </a>
+                <a href="{{ route('admin.map-credits.index') }}"
+                    class="nav-link {{ request()->routeIs('admin.map-credits.*') ? 'active' : '' }}">
+                    <i class="bi bi-geo-alt"></i><span class="nav-link-text">Map Credits</span>
+                </a>
             @endif
             @if (auth('admin')->user()?->canAccessAbility('manage_database'))
                 <a href="{{ route('admin.database.index') }}"

@@ -51,6 +51,7 @@ use App\Http\Controllers\Api\V1\Kpi\AdminKpiStatusController;
 use App\Http\Controllers\Api\V1\Kpi\KpiController;
 use App\Http\Controllers\Api\V1\Kpi\KpiStatusController;
 use App\Http\Controllers\Api\V1\Map\MapProviderController;
+use App\Http\Controllers\Api\V1\MapCredit\MapCreditController;
 use App\Http\Controllers\Api\V1\Notification\NotificationController;
 use App\Http\Controllers\Api\V1\Notification\NotificationPreferenceController;
 use App\Http\Controllers\Api\V1\Notification\PushSubscriptionController;
@@ -197,6 +198,15 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::post('/payment-methods/setup', BillingPaymentMethodSetupController::class)->name('payment-methods.setup');
         Route::post('/payment-methods/{paymentMethodId}/default', BillingPaymentMethodDefaultController::class)->name('payment-methods.default');
         Route::delete('/payment-methods/{paymentMethodId}', BillingPaymentMethodDetachController::class)->name('payment-methods.detach');
+    });
+
+    Route::prefix('map-credits')->name('map-credits.')->group(function (): void {
+        Route::get('/', [MapCreditController::class, 'show'])->name('show');
+        Route::post('/consume', [MapCreditController::class, 'consume'])
+            ->middleware('throttle:api')
+            ->name('consume');
+        Route::get('/transactions', [MapCreditController::class, 'transactions'])->name('transactions');
+        Route::post('/topup/checkout', [MapCreditController::class, 'topupCheckout'])->name('topup.checkout');
     });
 
     Route::prefix('company')->name('company.')->group(function (): void {

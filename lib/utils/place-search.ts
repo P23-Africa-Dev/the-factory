@@ -1,4 +1,5 @@
 import { getMapboxPublicToken } from "@/lib/config/public-env";
+import { ingestCreditMeta } from "@/store/map-credits";
 
 /**
  * Unified place search: Google Places API (New) via server proxy first,
@@ -62,6 +63,7 @@ async function suggestPlacesGoogle(
 
     const payload = (await response.json()) as {
       enabled?: boolean;
+      credits?: unknown;
       suggestions?: Array<{
         placeId?: string;
         name?: string;
@@ -69,6 +71,8 @@ async function suggestPlacesGoogle(
         category?: string | null;
       }>;
     };
+
+    ingestCreditMeta(payload.credits);
 
     if (!response.ok || payload.enabled === false) return [];
 
@@ -191,7 +195,10 @@ async function retrievePlaceGoogle(
       lat?: number;
       lng?: number;
       bbox?: [number, number, number, number] | null;
+      credits?: unknown;
     };
+
+    ingestCreditMeta(payload.credits);
 
     if (typeof payload.lat !== "number" || typeof payload.lng !== "number") return null;
 

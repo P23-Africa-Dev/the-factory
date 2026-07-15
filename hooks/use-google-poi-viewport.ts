@@ -14,6 +14,7 @@ import {
   poiTileKey,
   type ViewportBounds,
 } from "@/lib/map/poi-viewport";
+import { ingestCreditMeta } from "@/store/map-credits";
 
 type PoiTile = { pois: PoiResult[]; ts: number };
 
@@ -159,7 +160,9 @@ export function useGooglePoiViewport(
         const data = (await res.json()) as {
           phone?: string | null;
           openingHours?: string | null;
+          credits?: unknown;
         };
+        ingestCreditMeta(data.credits);
         const phone = data.phone ?? undefined;
         const openingHours = data.openingHours ?? undefined;
         if (!phone && !openingHours) return;

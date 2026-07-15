@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { googleAutocomplete } from "@/lib/map/google-places";
+import { consumeMapCredit } from "@/lib/server/map-credit-gate";
 
 export async function POST(request: Request) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ?? "";
@@ -40,6 +41,13 @@ export async function POST(request: Request) {
       : undefined;
 
   const limit = Math.min(Math.max(body.limit ?? 6, 1), 10);
+
+  const credit = await consumeMapCredit(request, "autocomplete");
+  if (credit.blocked) {
+    // Out of credits — return empty so the client falls back to Mapbox.
+    return NextResponse.json({ enabled: true, suggestions: [] });
+  }
+
   const results = await googleAutocomplete(apiKey, input, sessionToken, locationBias, limit);
 
   return NextResponse.json({

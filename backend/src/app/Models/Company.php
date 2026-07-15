@@ -251,4 +251,14 @@ class Company extends Model
     {
         return $this->hasMany(SubscriptionReminderLog::class);
     }
+
+    public function mapCredit(): HasOne
+    {
+        return $this->hasOne(CompanyMapCredit::class);
+    }
+
+    public function mapCreditTransactions(): HasMany
+    {
+        return $this->hasMany(MapCreditTransaction::class);
+    }
 }

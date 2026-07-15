@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { googlePlaceDetails } from "@/lib/map/google-places";
+import { consumeMapCredit } from "@/lib/server/map-credit-gate";
 
 export async function GET(request: Request) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ?? "";
@@ -16,6 +17,11 @@ export async function GET(request: Request) {
   }
   if (!sessionToken) {
     return NextResponse.json({ error: "sessionToken is required" }, { status: 400 });
+  }
+
+  const credit = await consumeMapCredit(request, "details");
+  if (credit.blocked) {
+    return NextResponse.json({ enabled: true, blocked: true });
   }
 
   const details = await googlePlaceDetails(apiKey, placeId, sessionToken);

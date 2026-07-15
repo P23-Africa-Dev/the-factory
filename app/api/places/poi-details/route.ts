@@ -5,6 +5,7 @@ import {
   clientIdFromRequest,
   guardPlacesRequest,
 } from "@/lib/server/places-guard";
+import { consumeMapCredit, creditMeta } from "@/lib/server/map-credit-gate";
 
 // On-demand POI enrichment (phone + opening hours). Billed per pin click, not
 // per pin per viewport refresh, so the Enterprise-tier fields cost far less.
@@ -28,6 +29,11 @@ export async function GET(request: Request) {
   if (guard.blocked && guard.response) return guard.response;
   if (guard.cached) return NextResponse.json(guard.cached);
 
+  const credit = await consumeMapCredit(request, "poi-details", "dashboard");
+  if (credit.blocked) {
+    return NextResponse.json({ enabled: true, phone: null, openingHours: null, credits: creditMeta(credit) });
+  }
+
   const details = await googlePoiDetails(apiKey, placeId);
   const payload = {
     enabled: true,
@@ -36,5 +42,5 @@ export async function GET(request: Request) {
   };
   guard.store(payload);
 
-  return NextResponse.json(payload);
+  return NextResponse.json({ ...payload, credits: creditMeta(credit) });
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getGooglePlacesServerKey } from "@/lib/config/public-env";
 import { googlePlaceDetails } from "@/lib/utils/google-places";
 import { clientIdFromRequest, guardPlacesRequest } from "@/lib/server/places-guard";
+import { consumeMapCredit, creditMeta } from "@/lib/server/map-credit-gate";
 
 export async function GET(request: Request) {
   const apiKey = getGooglePlacesServerKey();
@@ -28,6 +29,11 @@ export async function GET(request: Request) {
   if (guard.blocked && guard.response) return guard.response;
   if (guard.cached) return NextResponse.json(guard.cached);
 
+  const credit = await consumeMapCredit(request, "details", "dashboard");
+  if (credit.blocked) {
+    return NextResponse.json({ enabled: true, blocked: true, credits: creditMeta(credit) });
+  }
+
   const details = await googlePlaceDetails(apiKey, placeId, sessionToken);
   if (!details) {
     return NextResponse.json({ error: "Place not found" }, { status: 404 });
@@ -43,5 +49,5 @@ export async function GET(request: Request) {
   };
   guard.store(payload);
 
-  return NextResponse.json(payload);
+  return NextResponse.json({ ...payload, credits: creditMeta(credit) });
 }

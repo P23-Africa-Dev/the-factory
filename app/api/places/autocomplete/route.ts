@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getGooglePlacesServerKey } from "@/lib/config/public-env";
 import { googleAutocomplete } from "@/lib/utils/google-places";
 import { clientIdFromRequest, guardPlacesRequest } from "@/lib/server/places-guard";
+import { consumeMapCredit, creditMeta } from "@/lib/server/map-credit-gate";
 
 const AUTOCOMPLETE_CACHE_TTL_MS = 60_000;
 
@@ -56,6 +57,11 @@ export async function POST(request: Request) {
   if (guard.blocked && guard.response) return guard.response;
   if (guard.cached) return NextResponse.json(guard.cached);
 
+  const credit = await consumeMapCredit(request, "autocomplete", "dashboard");
+  if (credit.blocked) {
+    return NextResponse.json({ enabled: true, suggestions: [], credits: creditMeta(credit) });
+  }
+
   const results = await googleAutocomplete(apiKey, input, sessionToken, locationBias, limit);
   const payload = {
     enabled: true,
@@ -68,5 +74,5 @@ export async function POST(request: Request) {
   };
   guard.store(payload, AUTOCOMPLETE_CACHE_TTL_MS);
 
-  return NextResponse.json(payload);
+  return NextResponse.json({ ...payload, credits: creditMeta(credit) });
 }
