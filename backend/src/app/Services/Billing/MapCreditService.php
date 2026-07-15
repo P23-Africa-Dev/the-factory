@@ -10,6 +10,7 @@ use App\Models\Company;
 use App\Models\CompanyMapCredit;
 use App\Models\MapCreditSku;
 use App\Models\MapCreditTransaction;
+use App\Services\Map\MapPoiDisplaySettingService;
 use App\Support\Billing\BillingPlanCatalog;
 use Illuminate\Support\Facades\DB;
 
@@ -32,8 +33,12 @@ class MapCreditService
         'autocomplete' => 0.283,
     ];
 
+    /** SKUs that only power the automatic business-pin display on the map. */
+    private const POI_DISPLAY_SKUS = ['nearby', 'poi-details'];
+
     public function __construct(
         private readonly CreditAllocationSettingService $settings,
+        private readonly MapPoiDisplaySettingService $poiDisplay,
     ) {}
 
     public function creditsPerUsd(): float
@@ -102,6 +107,20 @@ class MapCreditService
         $units = max(0.0, $units);
         $cost = round($this->skuCost($sku) * $units, 4);
         $metered = $this->isMeteredFor($company);
+
+        // Business-pin display master switch (super-admin, per-org override).
+        // Blocks the map POI SKUs BEFORE any metering so no Google call is made
+        // and no credits are charged — even for unmetered/demo orgs. The search
+        // box (autocomplete/details) uses other SKUs and is unaffected.
+        if (in_array($sku, self::POI_DISPLAY_SKUS, true)
+            && ! $this->poiDisplay->isEnabledForCompany($company)) {
+            $record = $this->ensureRecord($company);
+
+            return array_merge(
+                $this->consumeResult($record, allowed: false, blocked: true, metered: $metered),
+                ['reason' => 'poi_display_disabled'],
+            );
+        }
 
         return DB::transaction(function () use ($company, $sku, $cost, $metered, $source, $units): array {
             $record = $this->lockRecord($company);

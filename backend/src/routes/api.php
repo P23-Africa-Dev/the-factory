@@ -50,6 +50,7 @@ use App\Http\Controllers\Api\V1\Internal\InternalUserController;
 use App\Http\Controllers\Api\V1\Kpi\AdminKpiStatusController;
 use App\Http\Controllers\Api\V1\Kpi\KpiController;
 use App\Http\Controllers\Api\V1\Kpi\KpiStatusController;
+use App\Http\Controllers\Api\V1\Map\MapPoiDisplayController;
 use App\Http\Controllers\Api\V1\Map\MapProviderController;
 use App\Http\Controllers\Api\V1\MapCredit\MapCreditController;
 use App\Http\Controllers\Api\V1\Notification\NotificationController;
@@ -199,6 +200,8 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
         Route::post('/payment-methods/{paymentMethodId}/default', BillingPaymentMethodDefaultController::class)->name('payment-methods.default');
         Route::delete('/payment-methods/{paymentMethodId}', BillingPaymentMethodDetachController::class)->name('payment-methods.detach');
     });
+
+    Route::get('/map/poi-display', MapPoiDisplayController::class)->name('map.poi-display');
 
     Route::prefix('map-credits')->name('map-credits.')->group(function (): void {
         Route::get('/', [MapCreditController::class, 'show'])->name('show');

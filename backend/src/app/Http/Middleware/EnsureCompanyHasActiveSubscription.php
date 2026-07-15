@@ -91,6 +91,10 @@ class EnsureCompanyHasActiveSubscription
             return true;
         }
 
+        if ($request->is('api/v1/map/poi-display*')) {
+            return true;
+        }
+
         if ($request->is('api/v1/user/me')) {
             return true;
         }
