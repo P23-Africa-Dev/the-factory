@@ -24,6 +24,21 @@ function includedCredits(plan: BillingPlan): number {
   return Math.round(dollars * (DEFAULT_ALLOCATION_PERCENT / 100) * DEFAULT_CREDITS_PER_USD);
 }
 
+// Desktop price-cell styling: the price for the currently selected interval is
+// emphasized (bold + accent pill) while the other interval is dimmed, so the
+// Monthly/Annual toggle visibly changes each plan row.
+function priceCellClasses(isActive: boolean, isHovered: boolean): string {
+  const base = "inline-block px-3 py-1 rounded-lg transition-all duration-150";
+  if (isActive) {
+    return `${base} font-bold text-[17px] ${
+      isHovered ? "bg-white/15 text-white" : "bg-[#9BDD7C]/20 text-[#0B252C]"
+    }`;
+  }
+  return `${base} font-normal text-[14px] ${
+    isHovered ? "text-white/40" : "text-[#0B252C]/35"
+  }`;
+}
+
 function SubscribePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -215,12 +230,22 @@ function SubscribePageInner() {
                   <h3 className="text-[26px] font-bold text-[#0B252C] leading-none mb-1">Team Size</h3>
                   <p className="text-[13px] text-[#4A5F64]">Includes monthly map credits for Google search.</p>
                 </div>
-                <div className="col-span-2 text-center">
+                <div className={`col-span-2 text-center transition-all ${interval === "monthly" ? "" : "opacity-40"}`}>
                   <span className="text-[15px] text-[#0B252C] font-semibold">Monthly</span>
+                  <span
+                    className={`block h-0.5 w-8 mx-auto mt-1 rounded-full transition-all ${
+                      interval === "monthly" ? "bg-[#9BDD7C]" : "bg-transparent"
+                    }`}
+                  />
                 </div>
-                <div className="col-span-2 text-center">
+                <div className={`col-span-2 text-center transition-all ${interval === "annual" ? "" : "opacity-40"}`}>
                   <span className="text-[15px] text-[#0B252C] font-semibold block leading-tight">Annual</span>
                   <span className="text-[12px] text-[#4A5F64] block leading-tight">(2 months free)</span>
+                  <span
+                    className={`block h-0.5 w-8 mx-auto mt-1 rounded-full transition-all ${
+                      interval === "annual" ? "bg-[#9BDD7C]" : "bg-transparent"
+                    }`}
+                  />
                 </div>
                 <div className="col-span-3 text-right" />
               </div>
@@ -262,13 +287,13 @@ function SubscribePageInner() {
                               ≈ {includedCredits(plan).toLocaleString()} map credits/mo
                             </span>
                           </div>
-                          <div className="col-span-2 text-center">
-                            <span className={`text-[16px] font-medium tracking-wide ${isHovered ? "text-white" : "text-[#0B252C]/90"}`}>
+                          <div className="col-span-2 flex justify-center">
+                            <span className={priceCellClasses(interval === "monthly", isHovered)}>
                               {plan.monthly_amount_display}
                             </span>
                           </div>
-                          <div className="col-span-2 text-center">
-                            <span className={`text-[16px] font-medium tracking-wide ${isHovered ? "text-white" : "text-[#0B252C]/90"}`}>
+                          <div className="col-span-2 flex justify-center">
+                            <span className={priceCellClasses(interval === "annual", isHovered)}>
                               {plan.annual_amount_display}
                             </span>
                           </div>
@@ -327,14 +352,36 @@ function SubscribePageInner() {
                         </span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4 py-2 border-t border-b border-black/10">
-                      <div>
+                    <div className="grid grid-cols-2 gap-3 py-1">
+                      <div
+                        className={`rounded-xl p-3 transition-all ${
+                          interval === "monthly" ? "bg-[#9BDD7C]/15 ring-1 ring-[#9BDD7C]" : "opacity-45"
+                        }`}
+                      >
                         <span className="text-[11px] uppercase tracking-wider opacity-60 block">Monthly</span>
                         <span className="text-xl font-extrabold">{plan.monthly_amount_display}</span>
+                        <span
+                          className={`text-[10px] font-semibold text-emerald-700 block mt-0.5 ${
+                            interval === "monthly" ? "" : "invisible"
+                          }`}
+                        >
+                          Selected
+                        </span>
                       </div>
-                      <div>
+                      <div
+                        className={`rounded-xl p-3 transition-all ${
+                          interval === "annual" ? "bg-[#9BDD7C]/15 ring-1 ring-[#9BDD7C]" : "opacity-45"
+                        }`}
+                      >
                         <span className="text-[11px] uppercase tracking-wider opacity-60 block">Annual</span>
                         <span className="text-xl font-extrabold">{plan.annual_amount_display}</span>
+                        <span
+                          className={`text-[10px] font-semibold text-emerald-700 block mt-0.5 ${
+                            interval === "annual" ? "" : "invisible"
+                          }`}
+                        >
+                          Selected
+                        </span>
                       </div>
                     </div>
                     <button
