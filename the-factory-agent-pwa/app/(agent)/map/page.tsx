@@ -266,7 +266,7 @@ function RouteInfoSheet({
     <div className="px-5 pb-3 text-[#09232D]">
       <div className="flex items-center justify-between mb-4">
         <h4 className="font-sans font-bold text-base text-[#09232D]">
-          {isRouteLoading ? 'Calculating route…' : MODE_LABELS[transportMode]}
+          {MODE_LABELS[transportMode]}
         </h4>
         <div className="flex gap-2">
           <button
@@ -296,12 +296,7 @@ function RouteInfoSheet({
 
       <div className="h-[1px] bg-gray-200 mb-3" />
 
-      {isRouteLoading && (
-        <div className="flex items-center gap-2 mb-3 text-sm text-[#1D7293] font-semibold">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#1D7293] border-t-transparent" />
-          <span>Loading route preview…</span>
-        </div>
-      )}
+
 
       <div className="flex justify-around items-center">
         {MODES.map(({ mode, icon }) => (
@@ -2143,20 +2138,16 @@ function MapContent() {
 
       <TrackingConnectionStatus className="absolute left-1/2 -translate-x-1/2 z-[16] pointer-events-none top-[calc(env(safe-area-inset-top,16px)+8px)]" />
 
-      {(isRouteLoading || isLaunchingRide || isStarting || trackingStatus === 'connecting') && (
+      {(isLaunchingRide || isStarting || trackingStatus === 'connecting') && (
         <div className="absolute inset-x-0 top-1/2 z-[15] flex justify-center pointer-events-none px-6">
           <div className="bg-[#09232D]/90 text-white rounded-2xl px-5 py-4 shadow-xl flex items-center gap-3 max-w-sm w-full border border-white/10">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#75ADAF] border-t-transparent flex-shrink-0" />
             <div className="min-w-0">
               <p className="font-sans font-bold text-sm truncate">
-                {isLaunchingRide || isStarting || trackingStatus === 'connecting'
-                  ? 'Starting your ride…'
-                  : 'Calculating route…'}
+                Starting your ride…
               </p>
               <p className="font-sans text-xs text-white/70 truncate">
-                {isLaunchingRide || isStarting || trackingStatus === 'connecting'
-                  ? 'Connecting GPS tracking and task session'
-                  : 'Fetching directions from Mapbox'}
+                Connecting GPS tracking and task session
               </p>
             </div>
           </div>
@@ -2363,7 +2354,7 @@ function MapContent() {
 
       {/* Location permission gate for the Start flow */}
       {permGate && (
-        <div className="absolute inset-0 z-[120] bg-[#0A1D25]/95 backdrop-blur-sm">
+        <div className="absolute inset-0 z-[99999] bg-[#0A1D25]/95 backdrop-blur-sm">
           <LocationPermissionGate
             mode={permGate}
             isBusy={isLaunchingRide || resumePermBusy}
