@@ -279,24 +279,24 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
 
             {/* Edit — toggles inline form */}
             {permissions.canEdit && (
-            <svg
-              onClick={() => (editing ? handleCancel() : handleEdit())}
-              className="cursor-pointer"
-              width="33" height="33" viewBox="0 0 33 33" fill="none" xmlns="http://www.w3.org/2000/svg"
-            >
-              <circle
-                cx="16.2378" cy="16.2378" r="15.9878"
-                fill={editing ? '#09232D' : '#EAEAEA'}
-                stroke="#DFDFDF"
-                strokeWidth="0.5"
-              />
-              <path
-                d="M19.5 10.5L22.5 13.5M10.5 22.5H13.5L21.5 14.5L18.5 11.5L10.5 19.5V22.5Z"
-                stroke={editing ? '#ffffff' : '#2F5E71'}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+              <svg
+                onClick={() => (editing ? handleCancel() : handleEdit())}
+                className="cursor-pointer"
+                width="33" height="33" viewBox="0 0 33 33" fill="none" xmlns="http://www.w3.org/2000/svg"
+              >
+                <circle
+                  cx="16.2378" cy="16.2378" r="15.9878"
+                  fill={editing ? '#09232D' : '#EAEAEA'}
+                  stroke="#DFDFDF"
+                  strokeWidth="0.5"
+                />
+                <path
+                  d="M19.5 10.5L22.5 13.5M10.5 22.5H13.5L21.5 14.5L18.5 11.5L10.5 19.5V22.5Z"
+                  stroke={editing ? '#ffffff' : '#2F5E71'}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             )}
             <DeleteUserIconButton
               userId={agentId}
@@ -316,7 +316,7 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
 export function AgentLiveDetails({ agent }: { agent: AgentItem }) {
   const hasLocation = Boolean(
     agent.isMapActive &&
-      (agent.location || agent.latitude || agent.longitude),
+    (agent.location || agent.latitude || agent.longitude),
   );
   const locationLabel = agent.presence?.activeTaskTitle
     ? `Active at ${agent.presence.activeTaskTitle}`
@@ -432,11 +432,10 @@ export function AgentLiveDetails({ agent }: { agent: AgentItem }) {
       <div className="mt-6">
         {hasLocation && (
           <button
-            className={`px-6 py-2.5 rounded-full text-[12px] font-bold transition-all inline-flex items-center gap-2 cursor-pointer ${
-              agent.isMapActive
-                ? 'bg-[#9333EA] text-white hover:bg-[#7E22CE]'
-                : 'bg-gray-600 text-white hover:bg-gray-500'
-            }`}
+            className={`px-6 py-2.5 rounded-full text-[12px] font-bold transition-all inline-flex items-center gap-2 cursor-pointer ${agent.isMapActive
+              ? 'bg-[#9333EA] text-white hover:bg-[#7E22CE]'
+              : 'bg-gray-600 text-white hover:bg-gray-500'
+              }`}
           >
             {agent.isMapActive ? 'Active (View on Map)' : 'Offline'}
             {agent.isMapActive && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
