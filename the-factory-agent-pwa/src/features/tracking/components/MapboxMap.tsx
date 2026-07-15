@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { AlertCircle, RefreshCw, Map as MapIcon } from 'lucide-react';
+import { AlertCircle, RefreshCw, Map as MapIcon, Navigation } from 'lucide-react';
 
 import { env } from '@/constants/env';
 import { createMapboxTransformRequest, getMapboxPublicToken } from '@/lib/map/public-env';
@@ -281,6 +281,8 @@ export function MapboxMap({
   const wasNavigationRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState(false);
+  const [isManual, setIsManual] = useState(false);
+  const isManualRef = useRef(false);
 
   // Smoothly tween the agent marker between GPS fixes (rAF lerp) so movement
   // reads as continuous instead of teleporting on each update.
@@ -403,6 +405,18 @@ export function MapboxMap({
         attributionControl: false,
         transformRequest: createMapboxTransformRequest(),
       });
+
+      const handleManualMove = () => {
+        if (!isManualRef.current) {
+          isManualRef.current = true;
+          setIsManual(true);
+        }
+      };
+
+      map.on('dragstart', handleManualMove);
+      map.on('zoomstart', handleManualMove);
+      map.on('pitchstart', handleManualMove);
+      map.on('rotatestart', handleManualMove);
 
       map.on('error', (e) => {
         console.warn('Mapbox error:', e);
@@ -663,30 +677,34 @@ export function MapboxMap({
               ? smoothBearingDegrees(mapBearingRef.current, rawBearing)
               : mapBearingRef.current;
 
-          if (!enteredNavigationRef.current) {
-            enteredNavigationRef.current = true;
-            mapBearingRef.current = targetBearing;
-            map.easeTo({
-              center: agentPos,
-              zoom: NAV_ZOOM,
-              bearing: targetBearing,
-              pitch: NAV_PITCH,
-              padding: NAV_CAMERA_PADDING,
-              duration: 900,
-            });
-          } else {
-            mapBearingRef.current = targetBearing;
-            map.easeTo({
-              center: agentPos,
-              zoom: NAV_ZOOM,
-              bearing: targetBearing,
-              pitch: NAV_PITCH,
-              padding: NAV_CAMERA_PADDING,
-              duration,
-            });
+          if (!isManualRef.current) {
+            if (!enteredNavigationRef.current) {
+              enteredNavigationRef.current = true;
+              mapBearingRef.current = targetBearing;
+              map.easeTo({
+                center: agentPos,
+                zoom: NAV_ZOOM,
+                bearing: targetBearing,
+                pitch: NAV_PITCH,
+                padding: NAV_CAMERA_PADDING,
+                duration: 900,
+              });
+            } else {
+              mapBearingRef.current = targetBearing;
+              map.easeTo({
+                center: agentPos,
+                zoom: NAV_ZOOM,
+                bearing: targetBearing,
+                pitch: NAV_PITCH,
+                padding: NAV_CAMERA_PADDING,
+                duration,
+              });
+            }
           }
         } else if (remaining.length <= 1) {
-          map.easeTo({ center: agentPos, zoom, duration });
+          if (!isManualRef.current) {
+            map.easeTo({ center: agentPos, zoom, duration });
+          }
         }
       } else if (agentMarkerRef.current) {
         if (markerAnimationRef.current !== null) {
@@ -829,6 +847,40 @@ export function MapboxMap({
     <div className="relative w-full h-full agent-mapbox-surface">
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" />
       {dimmed && <div className="absolute inset-0 bg-black/45 pointer-events-none" />}
+      {isManual && (
+        <button
+          onClick={() => {
+            isManualRef.current = false;
+            setIsManual(false);
+            const map = mapRef.current;
+            const agentPos = syncPayloadRef.current.agentPosition;
+            if (map && agentPos) {
+              if (syncPayloadRef.current.mode === 'navigation') {
+                const bearing = syncPayloadRef.current.agentMarker?.headingDegrees ?? map.getBearing();
+                map.easeTo({
+                  center: agentPos,
+                  zoom: NAV_ZOOM,
+                  bearing,
+                  pitch: NAV_PITCH,
+                  padding: NAV_CAMERA_PADDING,
+                  duration: 800,
+                });
+              } else {
+                map.easeTo({
+                  center: agentPos,
+                  zoom: 15,
+                  duration: 800,
+                });
+              }
+            }
+          }}
+          className="absolute right-4 bottom-[240px] z-20 w-11 h-11 rounded-full bg-white shadow-lg border border-gray-100 flex items-center justify-center active:scale-95 transition-all text-[#1D7293]"
+          aria-label="Recenter map"
+          title="Recenter"
+        >
+          <Navigation size={20} className="transform rotate-45 text-[#1D7293]" />
+        </button>
+      )}
     </div>
   );
 }
