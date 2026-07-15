@@ -236,13 +236,17 @@ function SubscribePageInner() {
                   data?.plans.map((plan) => {
                     const isHovered = hoveredKey === plan.key;
                     const isPending = isAnyPending && pendingPlanKey === plan.key;
+                    const isAvailable =
+                      interval === "monthly"
+                        ? plan.monthly_available ?? true
+                        : plan.annual_available ?? true;
                     return (
                       <div
                         key={plan.key}
                         onMouseEnter={() => setHoveredKey(plan.key)}
                         onMouseLeave={() => setHoveredKey(null)}
-                        className="relative group cursor-pointer"
-                        onClick={() => !isAnyPending && checkoutMutation.mutate(plan)}
+                        className={`relative group ${isAvailable ? "cursor-pointer" : "cursor-not-allowed"}`}
+                        onClick={() => isAvailable && !isAnyPending && checkoutMutation.mutate(plan)}
                       >
                         <div
                           className={`absolute inset-y-0 left-[-16px] lg:left-[-24px] right-[-16px] md:right-[-48px] lg:right-[-80px] rounded-[16px] transition-all duration-150 z-0 ${
@@ -271,19 +275,23 @@ function SubscribePageInner() {
                           <div className="col-span-3 text-right">
                             <button
                               type="button"
-                              disabled={isAnyPending}
+                              disabled={isAnyPending || !isAvailable}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                checkoutMutation.mutate(plan);
+                                if (isAvailable) {
+                                  checkoutMutation.mutate(plan);
+                                }
                               }}
-                              className={`px-6 py-2.5 text-[14px] font-medium rounded-lg transition-all cursor-pointer shadow-sm inline-flex items-center justify-center gap-2 disabled:cursor-not-allowed ${
-                                isHovered
-                                  ? "bg-gradient-to-r from-[#A7E88A] to-[#92D774] text-[#0B252C]"
-                                  : "bg-[#F4F7F6] text-[#A0AAB0] hover:bg-gray-200"
+                              className={`px-6 py-2.5 text-[14px] font-medium rounded-lg transition-all shadow-sm inline-flex items-center justify-center gap-2 disabled:cursor-not-allowed ${
+                                !isAvailable
+                                  ? "bg-[#F4F7F6] text-[#A0AAB0]"
+                                  : isHovered
+                                    ? "bg-gradient-to-r from-[#A7E88A] to-[#92D774] text-[#0B252C] cursor-pointer"
+                                    : "bg-[#F4F7F6] text-[#A0AAB0] hover:bg-gray-200 cursor-pointer"
                               }`}
                             >
                               {isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                              {isPending ? "Redirecting…" : "Choose plan"}
+                              {!isAvailable ? "Unavailable" : isPending ? "Redirecting…" : "Choose plan"}
                             </button>
                           </div>
                         </div>
@@ -305,6 +313,10 @@ function SubscribePageInner() {
               </div>
               {data?.plans.map((plan) => {
                 const isPending = isAnyPending && pendingPlanKey === plan.key;
+                const isAvailable =
+                  interval === "monthly"
+                    ? plan.monthly_available ?? true
+                    : plan.annual_available ?? true;
                 return (
                   <div key={plan.key} className="w-full rounded-2xl border border-white/10 bg-white p-5 flex flex-col gap-4 text-[#0B252C]">
                     <div className="flex justify-between items-center">
@@ -327,12 +339,20 @@ function SubscribePageInner() {
                     </div>
                     <button
                       type="button"
-                      disabled={isAnyPending}
-                      onClick={() => checkoutMutation.mutate(plan)}
-                      className="w-full py-3 text-sm font-bold rounded-[10px] transition-all cursor-pointer shadow-sm bg-[#9BDD7C] text-[#0B252C] inline-flex items-center justify-center gap-2 disabled:opacity-60"
+                      disabled={isAnyPending || !isAvailable}
+                      onClick={() => isAvailable && checkoutMutation.mutate(plan)}
+                      className={`w-full py-3 text-sm font-bold rounded-[10px] transition-all shadow-sm inline-flex items-center justify-center gap-2 ${
+                        isAvailable
+                          ? "cursor-pointer bg-[#9BDD7C] text-[#0B252C] disabled:opacity-60"
+                          : "cursor-not-allowed bg-[#F4F7F6] text-[#A0AAB0]"
+                      }`}
                     >
                       {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                      {isPending ? "Redirecting…" : `Choose ${interval} plan`}
+                      {!isAvailable
+                        ? "Unavailable"
+                        : isPending
+                          ? "Redirecting…"
+                          : `Choose ${interval} plan`}
                     </button>
                   </div>
                 );
