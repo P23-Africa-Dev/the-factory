@@ -294,7 +294,7 @@ export default function AiAssistantPage() {
         />
 
         {/* Header */}
-        <div className="relative z-10 flex items-center justify-between px-5 pt-6 pb-3 h-20 border-b border-white/10">
+        <div className="relative z-10 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top,0px)+24px)] pb-3 border-b border-white/10">
           <div className="flex items-center gap-3.5">
             <img
               src={avatarSrc}
