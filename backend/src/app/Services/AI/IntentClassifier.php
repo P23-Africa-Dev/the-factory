@@ -142,6 +142,17 @@ class IntentClassifier
                 '/\b(organi[sz]ation|company)\s+users?\b/i',
                 '/\blist\s+(all\s+)?(users?|members?|agents?)\b/i',
             ],
+            'drive.files' => [
+                '/\bcompany\s+drive\b/i',
+                '/\b(company|organi[sz]ation|org|shared|our|team)\s+(files?|documents?|drive)\b/i',
+                '/\b(files?|documents?)\s+(in|on|from|inside)\s+(the\s+)?(drive|company|folder)\b/i',
+                '/\b(list|show|find|get|open|view|search|browse|display|pull|fetch)\b.{0,40}\b(files?|documents?|pdf|spreadsheet|folder)\b/i',
+                '/\b(what|which)\s+(files?|documents?)\b/i',
+                '/\bdo\s+(i|we)\s+have\b.{0,40}\b(files?|documents?|report|policy|manual)\b/i',
+                '/\b(summar(?:y|ize|ise)|according\s+to|contents?|read|open)\b.{0,40}\b(file|document|report|pdf|sheet|spreadsheet|doc|policy|manual|memo|proposal|contract|invoice)\b/i',
+                '/\bwhat\s+does\s+the\b.{0,40}\b(report|document|file|pdf|sheet|spreadsheet|policy|manual|memo|proposal|contract|invoice)\b/i',
+                '/\b(in|from)\s+the\b.{0,30}\b(report|document|file|pdf|sheet|policy|manual|memo|proposal|contract)\b.{0,20}\b(say|says|state|mention|about|regarding)\b/i',
+            ],
             'tasks.overdue' => [
                 '/\boverdue\s+tasks?\b/i',
                 '/\bdue\s+today\b/i',

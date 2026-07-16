@@ -185,15 +185,15 @@ class AfricanDemoCompanySeeder extends Seeder
         $index = 0;
 
         foreach ($roster as [$first, $last, $companyRole, $internalRole, $gender, $zone]) {
-            $localPart = Str::lower($first.'.'.$last);
+            $localPart = Str::lower($first . '.' . $last);
             $isInternal = $internalRole !== null;
-            $email = $localPart.'@'.self::DEMO_DOMAIN;
+            $email = $localPart . '@' . self::DEMO_DOMAIN;
             $avatarKey = $avatarStorage->stableCatalogKeyForGender($gender, $email);
 
             $user = User::query()->updateOrCreate(
                 ['email' => $email],
                 [
-                    'name' => $first.' '.$last,
+                    'name' => $first . ' ' . $last,
                     'password' => $password,
                     'email_verified_at' => $joinBase->addDays($index),
                     'onboarding_completed_at' => $joinBase->addDays($index),
@@ -250,7 +250,7 @@ class AfricanDemoCompanySeeder extends Seeder
         foreach ($roster as $i => [$first, $last, $companyRole]) {
             $rows[] = [
                 'company_id' => $this->company->id,
-                'user_id' => $this->people[Str::lower($first.'.'.$last)]->id,
+                'user_id' => $this->people[Str::lower($first . '.' . $last)]->id,
                 'role' => $companyRole,
                 'joined_at' => $joinedAt->addDays($i),
                 'created_at' => $joinedAt->addDays($i),
@@ -409,7 +409,7 @@ class AfricanDemoCompanySeeder extends Seeder
                 'latitude' => $lat,
                 'longitude' => $lng,
                 'contact_number' => sprintf('+1 202 %03d %04d', 400 + $i * 7, 2200 + $i * 31),
-                'email' => 'sites+'.Str::slug($name).'@'.self::DEMO_DOMAIN,
+                'email' => 'sites+' . Str::slug($name) . '@' . self::DEMO_DOMAIN,
                 'is_active' => true,
             ]);
         }
@@ -483,8 +483,8 @@ class AfricanDemoCompanySeeder extends Seeder
                 'project_id' => $project->id,
                 'uploaded_by_user_id' => $this->supervisors[$managerIdx]->id,
                 'disk' => 'public',
-                'file_path' => 'project-files/demo/'.Str::slug($name).'-brief.pdf',
-                'original_name' => $name.' — Brief.pdf',
+                'file_path' => 'project-files/demo/' . Str::slug($name) . '-brief.pdf',
+                'original_name' => $name . ' — Brief.pdf',
                 'mime_type' => 'application/pdf',
                 'size_bytes' => 240000 + $i * 13500,
                 'metadata' => ['pages' => 6 + $i, 'source' => 'demo-seed'],
@@ -743,10 +743,20 @@ class AfricanDemoCompanySeeder extends Seeder
     {
         // Spread agents across the four demo cities, with a denser cluster in each core business district.
         $spots = [
-            [6.4285, 3.4218], [6.4472, 3.4728], [6.6018, 3.3515], [6.5074, 3.3719],
-            [5.6058, -0.1719], [5.5603, -0.1824], [5.6386, -0.1496], [5.5718, -0.1870],
-            [-26.1076, 28.0567], [-26.1457, 28.0413], [-25.9954, 28.1261],
-            [-1.2676, 36.8108], [-1.2921, 36.8219], [-1.2929, 36.7838],
+            [6.4285, 3.4218],
+            [6.4472, 3.4728],
+            [6.6018, 3.3515],
+            [6.5074, 3.3719],
+            [5.6058, -0.1719],
+            [5.5603, -0.1824],
+            [5.6386, -0.1496],
+            [5.5718, -0.1870],
+            [-26.1076, 28.0567],
+            [-26.1457, 28.0413],
+            [-25.9954, 28.1261],
+            [-1.2676, 36.8108],
+            [-1.2921, 36.8219],
+            [-1.2929, 36.7838],
         ];
 
         $activeTasks = Task::query()
@@ -819,9 +829,16 @@ class AfricanDemoCompanySeeder extends Seeder
         ]);
 
         $labels = [
-            ['Hot', '#DC2626'], ['Warm', '#F59E0B'], ['Cold', '#64748B'], ['VIP', '#7C3AED'],
-            ['Follow-up', '#2563EB'], ['New Build', '#0891B2'], ['Renewal', '#16A34A'],
-            ['Upsell', '#DB2777'], ['Contract', '#4F46E5'], ['Partner', '#059669'],
+            ['Hot', '#DC2626'],
+            ['Warm', '#F59E0B'],
+            ['Cold', '#64748B'],
+            ['VIP', '#7C3AED'],
+            ['Follow-up', '#2563EB'],
+            ['New Build', '#0891B2'],
+            ['Renewal', '#16A34A'],
+            ['Upsell', '#DB2777'],
+            ['Contract', '#4F46E5'],
+            ['Partner', '#059669'],
         ];
         foreach ($labels as $i => [$name, $color]) {
             LeadLabel::query()->create([
@@ -879,9 +896,9 @@ class AfricanDemoCompanySeeder extends Seeder
                 'created_by_user_id' => $i % 3 === 0 ? $this->owner()->id : $this->supervisors[$i % 2]->id,
                 'assigned_to_user_id' => $assignee->id,
                 'name' => $contact,
-                'email' => Str::slug($contact, '.').'@'.Str::slug($companyName).'.africa',
+                'email' => Str::slug($contact, '.') . '@' . Str::slug($companyName) . '.africa',
                 'phone' => sprintf('+1 303 %03d %04d', 700 + $i * 9, 1100 + $i * 53),
-                'location' => $location?->address ?? ($companyName.', Africa'),
+                'location' => $location?->address ?? ($companyName . ', Africa'),
                 'source' => $source,
                 'status' => $status,
                 'priority' => $priority,
@@ -894,7 +911,7 @@ class AfricanDemoCompanySeeder extends Seeder
                     'proposal_sent' => 'Chase proposal feedback',
                     default => null,
                 },
-                'last_interaction' => 'Call with '.$contact,
+                'last_interaction' => 'Call with ' . $contact,
                 'last_interaction_at' => $createdAt->addDays(3),
                 'converted_at' => $status === 'won' ? $createdAt->addDays(21) : null,
                 'meta' => ['company' => $companyName, 'source_detail' => $source],
@@ -942,7 +959,7 @@ class AfricanDemoCompanySeeder extends Seeder
             $activities = [
                 ['call', 'Discovery call', 'Initial 20-minute call to understand site coverage needs.', 1],
                 ['email', 'Sent introduction pack', 'Shared the Factory23 Africa Demo services overview and pricing bands.', 2],
-                ['status_change', 'Stage updated', 'Moved to '.str_replace('_', ' ', $lead->status).' after review.', 5],
+                ['status_change', 'Stage updated', 'Moved to ' . str_replace('_', ' ', $lead->status) . ' after review.', 5],
             ];
             foreach ($activities as [$type, $title, $description, $offset]) {
                 LeadActivity::query()->create([
@@ -968,12 +985,12 @@ class AfricanDemoCompanySeeder extends Seeder
 
         foreach (array_slice($leads, 0, 12) as $i => $lead) {
             $threadStart = $this->now->subDays(30 - $i * 2);
-            $subject = 'Factory23 Africa Demo — proposal for '.($lead->meta['company'] ?? $lead->name);
+            $subject = 'Factory23 Africa Demo — proposal for ' . ($lead->meta['company'] ?? $lead->name);
 
             $thread = CrmEmailThread::query()->create([
                 'company_id' => $this->company->id,
                 'lead_id' => $lead->id,
-                'gmail_thread_id' => 'africa-demo-thread-'.str_pad((string) ($i + 1), 4, '0', STR_PAD_LEFT),
+                'gmail_thread_id' => 'africa-demo-thread-' . str_pad((string) ($i + 1), 4, '0', STR_PAD_LEFT),
                 'subject' => $subject,
                 'snippet' => 'Thanks for the walkthrough — attaching our regional coverage proposal for your African sites…',
                 'last_message_at' => $threadStart->addDays(1),
@@ -986,7 +1003,7 @@ class AfricanDemoCompanySeeder extends Seeder
                 'company_id' => $this->company->id,
                 'thread_id' => $thread->id,
                 'lead_id' => $lead->id,
-                'gmail_message_id' => 'africa-demo-msg-'.($i * 2 + 1),
+                'gmail_message_id' => 'africa-demo-msg-' . ($i * 2 + 1),
                 'gmail_thread_id' => $thread->gmail_thread_id,
                 'direction' => 'sent',
                 'status' => 'sent',
@@ -1006,14 +1023,14 @@ class AfricanDemoCompanySeeder extends Seeder
                 'company_id' => $this->company->id,
                 'thread_id' => $thread->id,
                 'lead_id' => $lead->id,
-                'gmail_message_id' => 'africa-demo-msg-'.($i * 2 + 2),
+                'gmail_message_id' => 'africa-demo-msg-' . ($i * 2 + 2),
                 'gmail_thread_id' => $thread->gmail_thread_id,
                 'direction' => 'received',
                 'status' => 'delivered',
                 'from_name' => $lead->name,
                 'from_email' => (string) $lead->email,
                 'to_recipients' => [['email' => $owner->email, 'name' => $owner->name]],
-                'subject' => 'Re: '.$subject,
+                'subject' => 'Re: ' . $subject,
                 'body_text' => "Thanks Chidi — this looks promising. Can we review the SLA terms on a call this week?\n\n{$lead->name}",
                 'body_html' => "<p>Thanks Chidi — this looks promising. Can we review the SLA terms on a call this week?</p><p>{$lead->name}</p>",
                 'is_read' => $i % 3 !== 0,
@@ -1025,11 +1042,11 @@ class AfricanDemoCompanySeeder extends Seeder
                     'company_id' => $this->company->id,
                     'message_id' => $outbound->id,
                     'uploaded_by_user_id' => $owner->id,
-                    'filename' => 'africa-proposal-'.Str::slug($lead->name).'.pdf',
+                    'filename' => 'africa-proposal-' . Str::slug($lead->name) . '.pdf',
                     'mime_type' => 'application/pdf',
                     'size_bytes' => 384000 + $i * 21000,
                     'storage_disk' => 'local',
-                    'storage_path' => 'crm-attachments/africa-demo/proposal-'.($i + 1).'.pdf',
+                    'storage_path' => 'crm-attachments/africa-demo/proposal-' . ($i + 1) . '.pdf',
                     'sync_status' => 'uploaded',
                 ]);
             }
@@ -1138,7 +1155,7 @@ class AfricanDemoCompanySeeder extends Seeder
                 'remind_at' => $startAt->subMinutes(30),
                 'status' => $dayOffset < 0 ? 'sent' : 'pending',
                 'sent_at' => $dayOffset < 0 ? $startAt->subMinutes(30) : null,
-                'dedupe_key' => 'africa-demo-meeting-reminder-'.$meeting->id.'-'.$owner->id,
+                'dedupe_key' => 'africa-demo-meeting-reminder-' . $meeting->id . '-' . $owner->id,
             ]);
         }
     }
@@ -1316,7 +1333,7 @@ class AfricanDemoCompanySeeder extends Seeder
                 'is_in_app_visible' => true,
                 'is_read' => $read,
                 'read_at' => $read ? $createdAt->addHours(1) : null,
-                'dedupe_key' => 'africa-demo-notification-'.$i,
+                'dedupe_key' => 'africa-demo-notification-' . $i,
                 'created_at' => $createdAt,
                 'updated_at' => $createdAt,
             ]);
@@ -1341,7 +1358,7 @@ class AfricanDemoCompanySeeder extends Seeder
     private function seedPushSubscriptions(): void
     {
         foreach ($this->agents as $i => $agent) {
-            $token = 'africa-demo-device-'.Str::lower(Str::random(32));
+            $token = 'africa-demo-device-' . Str::lower(Str::random(32));
             PushSubscription::query()->create([
                 'user_id' => $agent->id,
                 'company_id' => $this->company->id,
@@ -1409,7 +1426,7 @@ class AfricanDemoCompanySeeder extends Seeder
                 AiLog::query()->create([
                     'company_id' => $this->company->id,
                     'user_id' => $sessionUser->id,
-                    'session_id' => 'africa-demo-session-'.($i + 1),
+                    'session_id' => 'africa-demo-session-' . ($i + 1),
                     'provider' => $r === 0 ? 'anthropic' : 'openai',
                     'model' => $r === 0 ? 'claude-sonnet-5' : 'gpt-4o-mini',
                     'user_prompt' => $prompt,

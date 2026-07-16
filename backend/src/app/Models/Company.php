@@ -45,6 +45,7 @@ class Company extends Model
         'pm_exp_month',
         'pm_exp_year',
         'settings',
+        'map_poi_display_enabled',
     ];
 
     protected function casts(): array
@@ -53,6 +54,7 @@ class Company extends Model
             'is_demo' => 'boolean',
             'demo_config' => 'array',
             'settings' => 'array',
+            'map_poi_display_enabled' => 'boolean',
             'activated_at' => 'datetime',
             'subscription_current_period_start' => 'datetime',
             'subscription_current_period_end' => 'datetime',
@@ -250,5 +252,15 @@ class Company extends Model
     public function reminderLogs(): HasMany
     {
         return $this->hasMany(SubscriptionReminderLog::class);
+    }
+
+    public function mapCredit(): HasOne
+    {
+        return $this->hasOne(CompanyMapCredit::class);
+    }
+
+    public function mapCreditTransactions(): HasMany
+    {
+        return $this->hasMany(MapCreditTransaction::class);
     }
 }

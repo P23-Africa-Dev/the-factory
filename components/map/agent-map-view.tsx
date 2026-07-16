@@ -47,6 +47,7 @@ import { GooglePoiMapLayer } from '@/components/map/GooglePoiMapLayer';
 import { SearchFocusLayer } from '@/components/map/SearchFocusLayer';
 import { PoiDetailCard } from '@/components/map/PoiDetailCard';
 import { useGooglePoiViewport } from '@/hooks/use-google-poi-viewport';
+import { useMapPoiDisplay } from '@/hooks/use-map-poi-display';
 import type { PoiResult } from '@/lib/map/overpass-search';
 import type { LocationContext } from '@/lib/map/location-search';
 import { resolvePoiForSearchSelection } from '@/lib/map/poi-display';
@@ -159,18 +160,21 @@ function MapboxAgentMapView({
     } = useInitialMapViewport({ preferUserLocation, taskFocus });
     const token = getMapboxPublicToken();
     const [mapReady, setMapReady] = useState(false);
-    const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
     const [pinMode, setPinMode] = useState(false);
     const [mapMode, setMapMode] = useState<'2d' | '3d'>('2d');
     const [locating, setLocating] = useState(false);
     const [showGooglePois, setShowGooglePois] = useState(showGooglePoisProp);
+
+    const mapInstance = mapReady ? mapRef.current : null;
+    // Super-admin master toggle (per-org override) for Google business pins.
+    const { enabled: poiDisplayAllowed } = useMapPoiDisplay();
     const {
         pois: viewportPois,
         busy: poiBusy,
         zoomTooLow: poiZoomTooLow,
         selectedPoi,
         setSelectedPoi,
-    } = useGooglePoiViewport(mapInstance, mapReady, showGooglePois && !activeTask);
+    } = useGooglePoiViewport(mapInstance, mapReady, showGooglePois && !activeTask && poiDisplayAllowed);
 
     const handlePoiSelect = useCallback((poi: PoiResult) => {
         setSelectedPoi(poi);
@@ -766,7 +770,7 @@ function MapboxAgentMapView({
                         map={mapInstance}
                         mapReady={mapReady}
                         pois={viewportPois}
-                        visible={showGooglePois}
+                        visible={showGooglePois && poiDisplayAllowed}
                         selectedPoiId={selectedPoi?.id ?? null}
                         excludePlaceId={searchFocus?.placeId ?? null}
                         onPoiClick={handlePoiSelect}
@@ -794,15 +798,17 @@ function MapboxAgentMapView({
 
             {!activeTask && (
                 <div className={`${mapControlsClassName ?? 'absolute bottom-6 left-1/2 -translate-x-1/2 z-30'} flex items-center gap-2`}>
-                    <button
-                        type="button"
-                        onClick={() => setShowGooglePois((visible) => !visible)}
-                        title={showGooglePois ? 'Hide Google Places' : 'Show Google Places'}
-                        className="h-10 rounded-full bg-white/95 backdrop-blur shadow-lg border border-slate-200 px-4 flex items-center gap-2 text-[12px] font-semibold text-dash-dark hover:bg-slate-50 active:scale-95 transition-all"
-                    >
-                        {showGooglePois ? <EyeOff size={16} /> : <Eye size={16} />}
-                        {showGooglePois ? 'Hide Places' : 'Show Places'}
-                    </button>
+                    {poiDisplayAllowed && (
+                        <button
+                            type="button"
+                            onClick={() => setShowGooglePois((visible) => !visible)}
+                            title={showGooglePois ? 'Hide Google Places' : 'Show Google Places'}
+                            className="h-10 rounded-full bg-white/95 backdrop-blur shadow-lg border border-slate-200 px-4 flex items-center gap-2 text-[12px] font-semibold text-dash-dark hover:bg-slate-50 active:scale-95 transition-all"
+                        >
+                            {showGooglePois ? <EyeOff size={16} /> : <Eye size={16} />}
+                            {showGooglePois ? 'Hide Places' : 'Show Places'}
+                        </button>
+                    )}
 
                     <MapExploreControls
                         locating={locating}

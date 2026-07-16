@@ -20,6 +20,7 @@ class ToolPolicyService
         'meetings.today',
         'dashboard.overview',
         'planning.daily',
+        'drive.files',
     ];
 
     private const READ_TOOLS_MANAGEMENT = [
@@ -39,6 +40,7 @@ class ToolPolicyService
         'planning.daily',
         'kpi.team_performance',
         'org.users',
+        'drive.files',
     ];
 
     private const ACTION_TOOLS_MANAGEMENT = [

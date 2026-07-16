@@ -532,10 +532,6 @@ class CopilotService
             ];
         }
 
-        if (str_contains($normalized, 'this software') || str_contains($normalized, 'what is factory23') || str_contains($normalized, 'what does this do')) {
-            return ['text' => ElySystemPrompt::intro() . ' I can help with CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.', 'result' => null];
-        }
-
         if ($this->localDateTimeContext->looksLikeDateTimeQuestion($message)) {
             return [
                 'text' => $this->localDateTimeContext->answer($resolvedTimezone, $resolvedCompanyName),
@@ -543,7 +539,13 @@ class CopilotService
             ];
         }
 
-        $systemPrompt = ElySystemPrompt::core() . "\n\n" . ElySystemPrompt::fewShotExamples();
+        if ($this->looksLikeProductQuestion($normalized)) {
+            return ['text' => ElySystemPrompt::productOverview(), 'result' => null];
+        }
+
+        $systemPrompt = ElySystemPrompt::core()
+            . "\n\n" . ElySystemPrompt::productKnowledge()
+            . "\n\n" . ElySystemPrompt::fewShotExamples();
         $userPrompt = sprintf(
             "Company name: %s\nTenant scope ID (internal, do not mention): %d\nUser name: %s\nRole: %s\n%s\nConversation summary:\n%s\nRecent conversation:\n%s\nKnown entities: %s\nQuestion: %s",
             $this->redactSensitiveText($resolvedCompanyName),
@@ -590,6 +592,36 @@ class CopilotService
         }
 
         return ['text' => $this->degradedModeMessage(), 'result' => null];
+    }
+
+    private function looksLikeProductQuestion(string $normalizedMessage): bool
+    {
+        $normalized = trim($normalizedMessage);
+        if ($normalized === '') {
+            return false;
+        }
+
+        if (preg_match('/\bfactory\s*23\b/i', $normalized) === 1
+            && preg_match('/\b(what|which|tell|about|explain|describe|features?|do|does|used?|use|purpose|capabilit)/i', $normalized) === 1
+        ) {
+            return true;
+        }
+
+        if (preg_match('/\b(what|which|tell me about|explain|describe|about)\b.{0,40}\bthis\s+(software|platform|app|application|system|tool|product|service)\b/i', $normalized) === 1) {
+            return true;
+        }
+
+        if (preg_match('/\bwhat\s+(?:can|does|do)\s+(?:this|the)\s+(?:software|platform|app|application|system|tool)\b/i', $normalized) === 1) {
+            return true;
+        }
+
+        if (preg_match('/\b(what|which)\s+(features?|modules?|capabilities)\b/i', $normalized) === 1
+            && preg_match('/\b(this|factory\s*23|the (?:software|platform|app|system|product)|available|are there|do (?:we|you) have)\b/i', $normalized) === 1
+        ) {
+            return true;
+        }
+
+        return false;
     }
 
     private function degradedModeMessage(): string
@@ -725,6 +757,17 @@ class CopilotService
             && preg_match('/\b(list|show|get|who|under|organization|organisation|company|members?)\b/i', $normalized) === 1
         ) {
             return 'org.users';
+        }
+
+        if (
+            preg_match('/\bcompany\s+drive\b/i', $normalized) === 1
+            || (
+                preg_match('/\b(files?|documents?|drive)\b/i', $normalized) === 1
+                && preg_match('/\b(list|show|find|get|open|view|search|browse|display|pull|fetch|what|which|do\s+i|do\s+we|have|summar|according|contents?|read|inside|say|says|explain|describe)\b/i', $normalized) === 1
+            )
+            || preg_match('/\b(what\s+does|according\s+to|summar(?:y|ize|ise)|contents?\s+of|read\s+the)\b.{0,40}\b(report|document|pdf|sheet|spreadsheet|policy|manual|memo|proposal|contract|invoice)\b/i', $normalized) === 1
+        ) {
+            return 'drive.files';
         }
 
         return null;
@@ -2135,6 +2178,10 @@ class CopilotService
 
         if ($tool === 'crm.top_leads') {
             return array_merge($args, $this->crmLeadReadArgsResolver->resolveFilters($message));
+        }
+
+        if ($tool === 'drive.files') {
+            return array_merge($args, ['message' => $message]);
         }
 
         return $args;

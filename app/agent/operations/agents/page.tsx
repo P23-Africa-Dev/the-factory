@@ -232,12 +232,12 @@ function AgentRow({ agent, isSelected, onClick }: { agent: Agent; isSelected: bo
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AllAgentsPage() {
-  const [search, setSearch]           = useState('');
-  const [zoneFilter, setZoneFilter]   = useState('All Zones');
-  const [roleFilter, setRoleFilter]   = useState('All Roles');
+  const [search, setSearch] = useState('');
+  const [zoneFilter, setZoneFilter] = useState('All Zones');
+  const [roleFilter, setRoleFilter] = useState('All Roles');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'offline'>('all');
   const [showFilters, setShowFilters] = useState(false);
-  const [page, setPage]               = useState(1);
+  const [page, setPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const user = useAuthStore((s) => s.user);
@@ -286,8 +286,8 @@ export default function AllAgentsPage() {
 
   const handleSearch = (val: string) => { setSearch(val); setPage(1); };
   const handleFilter = (key: 'zone' | 'role' | 'status', val: string) => {
-    if (key === 'zone')   setZoneFilter(val);
-    if (key === 'role')   setRoleFilter(val);
+    if (key === 'zone') setZoneFilter(val);
+    if (key === 'role') setRoleFilter(val);
     if (key === 'status') setStatusFilter(val as 'all' | 'active' | 'offline');
     setPage(1);
   };
@@ -330,9 +330,8 @@ export default function AllAgentsPage() {
           </div>
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3.5 rounded-full text-[13px] font-bold transition-all shadow-sm border ${
-              showFilters ? 'bg-dash-dark text-white border-dash-dark' : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'
-            }`}
+            className={`flex items-center gap-2 px-5 py-3.5 rounded-full text-[13px] font-bold transition-all shadow-sm border ${showFilters ? 'bg-dash-dark text-white border-dash-dark' : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'
+              }`}
           >
             <SlidersHorizontal size={14} />
             <span>Filter</span>
@@ -418,9 +417,8 @@ export default function AllAgentsPage() {
               <div className="flex gap-1">
                 {(['all', 'active', 'offline'] as const).map((s) => (
                   <button key={s} onClick={() => handleFilter('status', s)}
-                    className={`px-4 py-2 rounded-full text-[12px] font-bold capitalize transition-all ${
-                      statusFilter === s ? 'bg-dash-dark text-white' : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
-                    }`}>
+                    className={`px-4 py-2 rounded-full text-[12px] font-bold capitalize transition-all ${statusFilter === s ? 'bg-dash-dark text-white' : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
+                      }`}>
                     {s === 'all' ? 'All' : s === 'active' ? 'Online' : 'Offline'}
                   </button>
                 ))}

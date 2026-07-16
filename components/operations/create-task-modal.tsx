@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useRef, useState } from "react";
 import {
   X,
   MapPin,
@@ -22,7 +22,8 @@ import type { DndItem, TaskCategory } from "@/types/operations";
 import type { ApiTaskPriority } from "@/lib/api/tasks";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { geocodeAddressWithMapbox, searchPlacesWithMapbox, type GeocodedPlaceSuggestion } from "@/lib/utils/geocoding";
+import { PlaceAutocompleteField } from "@/components/map/PlaceAutocompleteField";
+import type { RetrievedPlace } from "@/lib/utils/place-search";
 
 type StatusType = "pending" | "in-progress" | "completed";
 
@@ -195,10 +196,6 @@ export function CreateTaskModal({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [geocoding, setGeocoding] = useState(false);
-  const [placeSuggestions, setPlaceSuggestions] = useState<GeocodedPlaceSuggestion[]>([]);
-  const [activePlaceField, setActivePlaceField] = useState<"location" | "address" | null>(null);
-  const placeSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const set = <K extends keyof typeof form>(key: K, val: (typeof form)[K]) => {
     setForm((p) => {
@@ -212,49 +209,14 @@ export function CreateTaskModal({
     setErrors((p) => ({ ...p, [key]: "" }));
   };
 
-  const applyPlaceSuggestion = useCallback((place: GeocodedPlaceSuggestion) => {
-    setForm((p) => ({ ...p, location: place.name, address: place.address }));
+  const applyRetrievedPlace = (place: RetrievedPlace) => {
+    setForm((p) => ({
+      ...p,
+      location: place.name,
+      address: place.address || place.name,
+    }));
     setCoords({ lat: place.lat, lng: place.lng });
-    setPlaceSuggestions([]);
-    setActivePlaceField(null);
-    setGeocoding(false);
-  }, []);
-
-  const searchPlaces = useCallback((query: string, field: "location" | "address") => {
-    if (placeSearchTimerRef.current) clearTimeout(placeSearchTimerRef.current);
-    if (query.trim().length < 2) {
-      setPlaceSuggestions([]);
-      setActivePlaceField(null);
-      return;
-    }
-    setActivePlaceField(field);
-    placeSearchTimerRef.current = setTimeout(() => {
-      void searchPlacesWithMapbox(query).then((results) => {
-        setPlaceSuggestions(results);
-      });
-    }, 300);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (placeSearchTimerRef.current) clearTimeout(placeSearchTimerRef.current);
-    };
-  }, []);
-
-  const geocodeAddress = useCallback(async (address: string) => {
-    if (!address.trim()) return;
-    setGeocoding(true);
-    try {
-      const geocoded = await geocodeAddressWithMapbox(address);
-      if (geocoded) {
-        setCoords(geocoded);
-      }
-    } catch {
-      // geocoding failure is non-fatal
-    } finally {
-      setGeocoding(false);
-    }
-  }, []);
+  };
 
   const validate = () => {
     const errs: Record<string, string> = {};
@@ -498,41 +460,16 @@ export function CreateTaskModal({
           <div className="relative">
             <FieldLabel>Location (optional)</FieldLabel>
             <InputWrap icon={<MapPin size={13} />}>
-              <input
-                type="text"
-                placeholder="e.g. Lekki Phase 1"
+              <PlaceAutocompleteField
                 value={form.location}
-                onChange={(e) => {
-                  set("location", e.target.value);
-                  searchPlaces(e.target.value, "location");
-                }}
-                onFocus={() => {
-                  if (form.location.trim().length >= 2) searchPlaces(form.location, "location");
-                }}
-                className={`${INPUT_CLS(errors.location)} pl-9 pr-4`}
+                onChange={(next) => set("location", next)}
+                onPlaceSelect={applyRetrievedPlace}
+                placeholder="e.g. Lekki Phase 1"
+                inputClassName={`${INPUT_CLS(errors.location)} pl-9 pr-4`}
               />
             </InputWrap>
             {errors.location && (
               <p className="text-red-400 text-[11px] mt-1">{errors.location}</p>
-            )}
-            {activePlaceField === "location" && placeSuggestions.length > 0 && (
-              <ul className="absolute z-20 left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
-                {placeSuggestions.map((place) => (
-                  <li key={`${place.lat}-${place.lng}-${place.address}`}>
-                    <button
-                      type="button"
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        applyPlaceSuggestion(place);
-                      }}
-                    >
-                      <span className="font-medium text-[#0B1215]">{place.name}</span>
-                      <span className="block text-[11px] text-gray-500 truncate">{place.address}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
             )}
           </div>
 
@@ -545,54 +482,30 @@ export function CreateTaskModal({
             </FieldLabel>
             <InputWrap
               icon={
-                geocoding ? (
-                  <Loader2 size={13} className="animate-spin text-dash-teal" />
-                ) : coords ? (
+                coords ? (
                   <CheckCheck size={13} className="text-green-500" />
                 ) : (
                   <Navigation size={13} />
                 )
               }
             >
-              <input
-                type="text"
-                placeholder="e.g. Admiralty Way, Lekki Phase 1, Lagos"
+              <PlaceAutocompleteField
                 value={form.address}
-                onChange={(e) => {
-                  set("address", e.target.value);
-                  searchPlaces(e.target.value, "address");
-                }}
-                onFocus={() => {
-                  if (form.address.trim().length >= 2) searchPlaces(form.address, "address");
-                }}
-                onBlur={(e) => geocodeAddress(e.target.value)}
-                className={`${INPUT_CLS()} pl-9 pr-4`}
+                onChange={(next) => set("address", next)}
+                onPlaceSelect={applyRetrievedPlace}
+                placeholder="e.g. Admiralty Way, Lekki Phase 1, Lagos"
+                inputClassName={`${INPUT_CLS()} pl-9 pr-4`}
               />
             </InputWrap>
-            {activePlaceField === "address" && placeSuggestions.length > 0 && (
-              <ul className="absolute z-20 left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
-                {placeSuggestions.map((place) => (
-                  <li key={`${place.lat}-${place.lng}-${place.address}`}>
-                    <button
-                      type="button"
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        applyPlaceSuggestion(place);
-                      }}
-                    >
-                      <span className="font-medium text-[#0B1215]">{place.name}</span>
-                      <span className="block text-[11px] text-gray-500 truncate">{place.address}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {coords && (
+            {coords ? (
               <p className="text-[10px] text-green-600 mt-1 font-medium">
                 GPS locked: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
               </p>
-            )}
+            ) : (form.address.trim().length >= 2 || form.location.trim().length >= 2) ? (
+              <p className="text-[10px] text-amber-700 mt-1">
+                Pick a suggestion to lock map coordinates for arrival detection.
+              </p>
+            ) : null}
           </div>
 
           {/* Due Date + Priority */}

@@ -78,6 +78,7 @@ import { SearchFocusLayer } from '@/components/map/SearchFocusLayer';
 import { PoiDetailCard } from '@/components/map/PoiDetailCard';
 import { resolvePoiForSearchSelection, inferIsBusiness } from '@/lib/map/poi-display';
 import { useGooglePoiViewport } from '@/hooks/use-google-poi-viewport';
+import { useMapPoiDisplay } from '@/hooks/use-map-poi-display';
 import { fetchPlacesInArea } from '@/lib/map/poi-search';
 import { parseTaskMapParams } from '@/lib/tasks/map-navigation';
 import {
@@ -417,13 +418,16 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   } = useInitialMapViewport({ preferUserLocation, taskFocus });
   const selectedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
   const token = getMapboxPublicToken();
+  const mapInstance = mapVersion > 0 ? mapRef.current : null;
+  // Super-admin master toggle (per-org override) for Google business pins.
+  const { enabled: poiDisplayAllowed } = useMapPoiDisplay();
   const {
     pois: viewportPois,
     busy: poiBusy,
     zoomTooLow: poiZoomTooLow,
     selectedPoi,
     setSelectedPoi,
-  } = useGooglePoiViewport(mapInstance, mapVersion > 0, showGooglePois);
+  } = useGooglePoiViewport(mapInstance, mapVersion > 0, showGooglePois && poiDisplayAllowed);
 
   const displayedPois = useMemo(() => {
     if (!locationCtx) return viewportPois;
@@ -1666,7 +1670,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         map={mapInstance}
         mapReady={mapVersion > 0}
         pois={viewportPois}
-        visible={showGooglePois}
+        visible={showGooglePois && poiDisplayAllowed}
         selectedPoiId={selectedPoi?.id ?? null}
         excludePlaceId={locationCtx?.placeId ?? null}
         onPoiClick={handlePoiSelect}
@@ -1803,14 +1807,16 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
       {/* Map controls — bottom-center, clear of the AI FAB at bottom-right */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
-        <button
-          onClick={() => setShowGooglePois((visible) => !visible)}
-          title={showGooglePois ? 'Hide Google Places' : 'Show Google Places'}
-          className="h-10 rounded-full bg-white/95 backdrop-blur shadow-lg border border-slate-200 px-4 flex items-center gap-2 text-[12px] font-semibold text-dash-dark hover:bg-slate-50 active:scale-95 transition-all"
-        >
-          {showGooglePois ? <EyeOff size={16} /> : <Eye size={16} />}
-          {showGooglePois ? 'Hide Places' : 'Show Places'}
-        </button>
+        {poiDisplayAllowed && (
+          <button
+            onClick={() => setShowGooglePois((visible) => !visible)}
+            title={showGooglePois ? 'Hide Google Places' : 'Show Google Places'}
+            className="h-10 rounded-full bg-white/95 backdrop-blur shadow-lg border border-slate-200 px-4 flex items-center gap-2 text-[12px] font-semibold text-dash-dark hover:bg-slate-50 active:scale-95 transition-all"
+          >
+            {showGooglePois ? <EyeOff size={16} /> : <Eye size={16} />}
+            {showGooglePois ? 'Hide Places' : 'Show Places'}
+          </button>
+        )}
 
         {/* Toggle saved business pins */}
         <button
@@ -1907,6 +1913,8 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const [poiResults, setPoiResults] = useState<PoiResult[]>([]);
   const [poiBusy, setPoiBusy] = useState(false);
   const [locating, setLocating] = useState(false);
+  // Super-admin master toggle (per-org override) for Google business pins.
+  const { enabled: poiDisplayAllowed } = useMapPoiDisplay();
   const googlePoiMarkersRef = useRef<{ setMap: (m: unknown) => void }[]>([]);
   const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
   const savedLocationPermissions = useSavedLocationPermissions();
@@ -2135,6 +2143,9 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPoiResults([]);
     if (!locationCtx) return;
+    // Business-pin display disabled (super-admin master/per-org): skip the
+    // billed area search entirely.
+    if (!poiDisplayAllowed) return;
     if (locationCtx.bbox && isBboxTooLarge(locationCtx.bbox)) return;
 
     let cancelled = false;
@@ -2146,7 +2157,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       }).catch(() => { if (!cancelled) setPoiBusy(false); });
 
     return () => { cancelled = true; setPoiBusy(false); };
-  }, [locationCtx]);
+  }, [locationCtx, poiDisplayAllowed]);
 
   // ── Render POI markers on Google Maps ────────────────────────────────────────
   useEffect(() => {

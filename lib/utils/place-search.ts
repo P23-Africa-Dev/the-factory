@@ -1,4 +1,5 @@
 import { getMapboxPublicToken } from "@/lib/config/public-env";
+import { ingestCreditMeta } from "@/store/map-credits";
 
 /**
  * Unified place search: Google Places API (New) via server proxy first,
@@ -62,6 +63,7 @@ async function suggestPlacesGoogle(
 
     const payload = (await response.json()) as {
       enabled?: boolean;
+      credits?: unknown;
       suggestions?: Array<{
         placeId?: string;
         name?: string;
@@ -69,6 +71,8 @@ async function suggestPlacesGoogle(
         category?: string | null;
       }>;
     };
+
+    ingestCreditMeta(payload.credits);
 
     if (!response.ok || payload.enabled === false) return [];
 
@@ -175,6 +179,7 @@ export async function suggestPlaces(
 async function retrievePlaceGoogle(
   placeId: string,
   sessionToken: string,
+  fallbackName?: string,
 ): Promise<RetrievedPlace | null> {
   try {
     const params = new URLSearchParams({
@@ -190,13 +195,18 @@ async function retrievePlaceGoogle(
       lat?: number;
       lng?: number;
       bbox?: [number, number, number, number] | null;
+      credits?: unknown;
     };
+
+    ingestCreditMeta(payload.credits);
 
     if (typeof payload.lat !== "number" || typeof payload.lng !== "number") return null;
 
     return {
       placeId,
-      name: payload.name?.trim() || "Location",
+      // Prefer the name already returned by autocomplete so Place Details can stay
+      // on the cheaper Essentials SKU (no displayName field requested).
+      name: fallbackName?.trim() || payload.name?.trim() || "Location",
       address: payload.address?.trim() || "",
       lat: payload.lat,
       lng: payload.lng,
@@ -271,7 +281,7 @@ export async function retrievePlace(
   options?: { token?: string },
 ): Promise<RetrievedPlace | null> {
   if (suggestion.provider === "google") {
-    return retrievePlaceGoogle(suggestion.id, suggestion.sessionToken);
+    return retrievePlaceGoogle(suggestion.id, suggestion.sessionToken, suggestion.name);
   }
   return retrievePlaceMapbox(suggestion.id, suggestion.sessionToken, options);
 }

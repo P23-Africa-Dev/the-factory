@@ -17,6 +17,7 @@ import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { flattenApiError, isTrackingAlreadyActiveError } from '@/lib/api/errors';
 import { toast } from '@/lib/toast';
+import { notifyTrackingNearDestination } from '@/lib/notifications/trackingAlerts';
 
 function resolveCompanyId(taskCompanyId: number | null | undefined): number {
   return taskCompanyId ?? getActiveCompanyId() ?? 0;
@@ -62,6 +63,9 @@ export default function TrackingPage() {
       startTracking(taskId, companyId, {
         onArrived: () => {
           useTrackingStore.getState().markArrived(taskId, new Date().toISOString());
+        },
+        onNearDestination: () => {
+          void notifyTrackingNearDestination(taskId);
         },
       });
       useTrackingStore.getState().setActiveTrackingTaskId(taskId);

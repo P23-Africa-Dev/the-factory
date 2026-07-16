@@ -10,6 +10,8 @@ import React, {
 import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { useLocationReporter } from './hooks/useLocationReporter';
+import { isNativeAndroid } from './native/capacitorPlatform';
+import { stopNativeBackgroundWatch } from './native/nativeBackgroundGeolocation';
 
 type TrackingCallbacks = {
   onArrived?: () => void;
@@ -85,6 +87,9 @@ export function ActiveTrackingProvider({ children }: { children: React.ReactNode
   const stopTracking = useCallback(async () => {
     if (flushRef.current) {
       await flushRef.current();
+    }
+    if (isNativeAndroid()) {
+      await stopNativeBackgroundWatch();
     }
     callbacksRef.current = {};
     setActiveTrackingTaskId(null);

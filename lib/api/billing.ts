@@ -11,6 +11,8 @@ export type BillingPlan = {
   annual_amount: number;
   monthly_amount_display: string;
   annual_amount_display: string;
+  monthly_available?: boolean;
+  annual_available?: boolean;
 };
 
 export type BillingStatus = {

@@ -45,3 +45,12 @@ next-env.d.ts
 # cursor / agent debug logs
 .cursor/
 debug-*.log
+
+# Capacitor / Android build outputs (source project is committed)
+android/.gradle/
+android/**/build/
+android/app/build/
+*.apk
+*.aab
+*.keystore
+*.jks

@@ -12,6 +12,7 @@ import {
   retrievePlaceByMapboxId,
   suggestPlaces,
 } from "@/lib/utils/place-search";
+import { ingestCreditMeta } from "@/store/map-credits";
 
 const MAPBOX_POI_QUERIES = ["supermarket", "restaurant", "bank", "pharmacy", "hotel", "hospital"];
 const GOOGLE_NEARBY_RETRY_AFTER_MS = 30_000;
@@ -64,7 +65,10 @@ async function fetchGoogleNearby(ctx: LocationContext): Promise<PoiResult[]> {
     const payload = (await response.json()) as {
       enabled?: boolean;
       places?: PoiResult[];
+      credits?: unknown;
     };
+
+    ingestCreditMeta(payload.credits);
 
     if (payload.enabled === false) return [];
     return payload.places ?? [];

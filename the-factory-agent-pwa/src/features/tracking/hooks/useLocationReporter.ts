@@ -9,6 +9,11 @@ import { useGeolocation, type LocationObject } from './useGeolocation';
 import type { LocationQueueItem } from '../types';
 import { toast } from '@/lib/toast';
 import { isDocumentHidden, notifyTrackingStopped } from '@/lib/notifications/trackingAlerts';
+import { isNativeAndroid } from '../native/capacitorPlatform';
+import {
+  buildLiveTrackingTitle,
+  updateNativeBackgroundNotification,
+} from '../native/nativeBackgroundGeolocation';
 
 interface LocationReporterOptions {
   taskId: number;
@@ -118,7 +123,15 @@ export const useLocationReporter = ({
       distance_remaining_meters?: number | null;
     }) => {
       if (response.distance_remaining_meters !== undefined) {
-        onDistanceRef.current?.(response.distance_remaining_meters ?? null);
+        const meters = response.distance_remaining_meters ?? null;
+        onDistanceRef.current?.(meters);
+        if (isNativeAndroid() && meters != null) {
+          const live = useTrackingStore.getState().liveTaskMap[taskId];
+          void updateNativeBackgroundNotification({
+            title: buildLiveTrackingTitle(live?.taskTitle ?? null),
+            distanceMeters: meters,
+          });
+        }
       }
       if (response.near_destination) {
         onNearRef.current?.();
@@ -204,9 +217,8 @@ export const useLocationReporter = ({
         useTrackingStore.getState().setActiveTrackingTaskId(null);
         const msg =
           apiErr?.message || 'You can only track tasks currently assigned to you.';
-        if (isDocumentHidden()) {
-          void notifyTrackingStopped(taskId, msg);
-        } else {
+        void notifyTrackingStopped(taskId, msg);
+        if (!isDocumentHidden()) {
           toast.error('Tracking Stopped', msg);
         }
       } else {
@@ -231,7 +243,9 @@ export const useLocationReporter = ({
     }
 
     needsImmediateFlushRef.current = true;
-    startWatching(enqueue);
+    void startWatching(enqueue).catch((err) => {
+      console.error('[tracking] failed to start location watch', err);
+    });
     flushIntervalRef.current = setInterval(() => {
       void flush();
     }, FLUSH_INTERVAL_MS);

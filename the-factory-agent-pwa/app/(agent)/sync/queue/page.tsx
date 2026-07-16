@@ -84,7 +84,7 @@ export default function AgentSyncQueuePage() {
   };
 
   return (
-    <div className="px-4 py-6 text-white">
+    <div className="px-4 pt-[calc(env(safe-area-inset-top,0px)+24px)] pb-6 text-white">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold">Offline Sync Queue</h1>

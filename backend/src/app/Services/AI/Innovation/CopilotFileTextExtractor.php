@@ -20,6 +20,16 @@ final class CopilotFileTextExtractor
             return null;
         }
 
+        return $this->extractFromPath($path, $extension);
+    }
+
+    public function extractFromPath(string $path, string $extension): ?string
+    {
+        if ($path === '' || ! is_file($path)) {
+            return null;
+        }
+
+        $extension = strtolower(trim($extension));
         $isSpreadsheet = in_array($extension, ['xlsx', 'xls', 'csv'], true);
 
         $text = match ($extension) {

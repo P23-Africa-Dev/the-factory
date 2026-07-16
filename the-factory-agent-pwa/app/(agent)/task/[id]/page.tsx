@@ -126,7 +126,7 @@ export default function TaskDetailPage() {
 
   return (
     <div className="flex flex-col flex-1 bg-[#0A1D25] min-h-screen">
-      <header className="flex items-center gap-3 px-5 py-4 mt-2">
+      <header className="flex items-center gap-3 px-5 pt-[calc(env(safe-area-inset-top,0px)+16px)] pb-4 mt-2">
         <button
           onClick={() => router.back()}
           className="flex h-10 w-10 items-center justify-center text-white"

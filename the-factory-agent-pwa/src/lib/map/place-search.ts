@@ -12,8 +12,27 @@
  */
 
 import { getMapboxPublicToken } from '@/lib/map/public-env';
+import { appStore, getActiveCompanyId } from '@/lib/storage/stores';
 
 const SEARCHBOX_BASE = 'https://api.mapbox.com/search/searchbox/v1';
+
+/**
+ * Auth headers so the Places proxy can meter Google usage against the agent's
+ * organization credits. The PWA stores its token in localStorage (separate
+ * origin), so it must be forwarded explicitly.
+ */
+function creditAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  try {
+    const token = appStore.getString('auth_token');
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const companyId = getActiveCompanyId();
+    if (companyId != null) headers['X-Company-Id'] = String(companyId);
+  } catch {
+    // Non-fatal — request proceeds unmetered.
+  }
+  return headers;
+}
 
 export type PlaceSuggestion = {
   provider: 'google' | 'mapbox';
@@ -55,7 +74,7 @@ async function suggestPlacesGoogle(
   try {
     const response = await fetch('/api/places/autocomplete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...creditAuthHeaders() },
       body: JSON.stringify({
         input: query,
         sessionToken: options.sessionToken,
@@ -69,10 +88,14 @@ async function suggestPlacesGoogle(
 
     const payload = (await response.json()) as {
       enabled?: boolean;
+      credits?: { blocked?: boolean };
       suggestions?: Array<{ placeId?: string; name?: string; placeFormatted?: string; category?: string | null }>;
     };
 
     if (!response.ok || payload.enabled === false) return [];
+
+    // Credits exhausted — empty list triggers Mapbox fallback in suggestPlaces.
+    if (payload.credits?.blocked) return [];
 
     return (payload.suggestions ?? [])
       .filter((item) => item.placeId && item.name)
@@ -92,10 +115,13 @@ async function suggestPlacesGoogle(
 async function retrievePlaceGoogle(
   placeId: string,
   sessionToken: string,
+  fallbackName?: string,
 ): Promise<RetrievedPlace | null> {
   try {
     const params = new URLSearchParams({ placeId, sessionToken });
-    const response = await fetch(`/api/places/details?${params.toString()}`);
+    const response = await fetch(`/api/places/details?${params.toString()}`, {
+      headers: creditAuthHeaders(),
+    });
     if (response.status === 503 || !response.ok) return null;
 
     const payload = (await response.json()) as {
@@ -109,7 +135,9 @@ async function retrievePlaceGoogle(
     if (typeof payload.lat !== 'number' || typeof payload.lng !== 'number') return null;
 
     return {
-      name: payload.name?.trim() || 'Location',
+      // Prefer the autocomplete suggestion name so Place Details stays on the
+      // cheaper Essentials SKU (no displayName field requested).
+      name: fallbackName?.trim() || payload.name?.trim() || 'Location',
       address: payload.address?.trim() || '',
       lat: payload.lat,
       lng: payload.lng,
@@ -275,7 +303,7 @@ export async function retrievePlace(
   options?: { token?: string },
 ): Promise<RetrievedPlace | null> {
   if (suggestion.provider === 'google') {
-    return retrievePlaceGoogle(suggestion.id, suggestion.sessionToken);
+    return retrievePlaceGoogle(suggestion.id, suggestion.sessionToken, suggestion.name);
   }
   return retrievePlaceMapbox(suggestion.id, suggestion.sessionToken, options);
 }

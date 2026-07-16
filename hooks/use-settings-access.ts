@@ -20,7 +20,8 @@ export type SettingsSectionId =
   | "meetings"
   | "field-ops"
   | "drive"
-  | "billing";
+  | "billing"
+  | "map-credits";
 
 export type SettingsSectionDef = {
   id: SettingsSectionId;
@@ -158,6 +159,14 @@ export function useSettingsAccess() {
         label: "Billing",
         scope: "billing",
         description: "Plan, seats, and payment methods",
+        canView: isManagement,
+        canEdit: canManageBilling,
+      },
+      {
+        id: "map-credits",
+        label: "Map Credits",
+        scope: "billing",
+        description: "Google Maps usage credits and top-ups",
         canView: isManagement,
         canEdit: canManageBilling,
       },

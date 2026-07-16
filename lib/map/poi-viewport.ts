@@ -1,11 +1,26 @@
 import { isBboxTooLarge, type PoiResult } from "@/lib/map/overpass-search";
 import { fetchPlacesInArea } from "@/lib/map/poi-search";
 import type { LocationContext } from "@/lib/map/location-search";
+import { ingestCreditMeta } from "@/store/map-credits";
 
-export const POI_MIN_ZOOM = 12;
+// ── POI cost-control tuning (Balanced tier defaults) ─────────────────────────
+// Switch to the Minimal tier by using the commented values (higher zoom, longer
+// debounce/TTL, wider movement threshold) — no other code changes required.
+//   Balanced: MIN_ZOOM 13 | DEBOUNCE 900 | THRESHOLD 350m | TTL 5m
+//   Minimal : MIN_ZOOM 14 | DEBOUNCE 1200 | THRESHOLD 500m | TTL 10m
+export const POI_MIN_ZOOM = 13;
 export const POI_MAX_RADIUS_M = 3000;
 const GOOGLE_NEARBY_RETRY_AFTER_MS = 30_000;
 let googleNearbyUnavailableUntil = 0;
+
+/** Debounce before a settled pan/zoom triggers a fetch. */
+export const POI_REFRESH_DEBOUNCE_MS = 900;
+/** Skip refetching until the viewport center moves at least this far (metres). */
+export const POI_MOVE_THRESHOLD_M = 350;
+/** How long a fetched tile of POIs stays reusable from the client cache. */
+export const POI_TILE_CACHE_TTL_MS = 5 * 60 * 1000;
+/** Grid size (degrees) used to key the client tile cache (~440m at the equator). */
+export const POI_TILE_GRID_DEG = 0.004;
 
 export type ViewportBounds = {
   west: number;
@@ -53,6 +68,18 @@ export function canFetchPoisForViewport(zoom: number, bounds: ViewportBounds): b
   return !isBboxTooLarge(boundsToArray(bounds));
 }
 
+/** Snap a viewport center to a coarse grid + zoom bucket for cache reuse across nearby pans. */
+export function poiTileKey(lat: number, lng: number, zoom: number): string {
+  const gridLat = Math.round(lat / POI_TILE_GRID_DEG);
+  const gridLng = Math.round(lng / POI_TILE_GRID_DEG);
+  return `${gridLat}:${gridLng}:${Math.floor(zoom)}`;
+}
+
+/** Great-circle distance in metres (re-exported helper for movement gating). */
+export function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  return haversineM(lat1, lng1, lat2, lng2);
+}
+
 async function fetchGoogleNearbyForViewport(
   circle: ViewportSearchCircle,
   signal?: AbortSignal,
@@ -82,7 +109,10 @@ async function fetchGoogleNearbyForViewport(
     const payload = (await response.json()) as {
       enabled?: boolean;
       places?: PoiResult[];
+      credits?: unknown;
     };
+
+    ingestCreditMeta(payload.credits);
 
     if (payload.enabled === false) return [];
     return payload.places ?? [];

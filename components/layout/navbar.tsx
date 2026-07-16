@@ -17,6 +17,7 @@ import { useUnreadCount } from "@/hooks/use-notifications";
 import { DownloadAgentAppModal } from "@/components/pwa/DownloadAgentAppModal";
 import { getAgentInstallUrl, isMobileDevice } from "@/lib/agent-pwa-url";
 import { resolveAvatarSrc } from "@/lib/avatar";
+import { MapCreditBadge } from "@/components/map-credits/map-credit-badge";
 
 // Import local SVG assets
 import DashboardIcon from "@/assets/nav-icons/dashboard.svg";
@@ -177,6 +178,7 @@ export function Navbar() {
       {/* Right Side Actions */}
       <div className="flex items-center gap-4 lg:gap-8">
         <div className="hidden sm:flex items-center gap-3 lg:gap-5 text-white/60">
+          <MapCreditBadge />
           <button
             onClick={() => setNotifOpen(true)}
             className="hover:text-white transition-all cursor-pointer relative p-1"

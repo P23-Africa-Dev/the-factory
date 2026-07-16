@@ -1,3 +1,10 @@
+import { isNativeAndroid } from '@/features/tracking/native/capacitorPlatform';
+import {
+  attachNativeNotificationClickHandler,
+  ensureNativeLocalNotificationPermission,
+  notifyNative,
+} from '@/features/tracking/native/nativeLocalNotifications';
+
 export type TrackingAlertPayload = {
   title: string;
   body: string;
@@ -9,7 +16,15 @@ export function isDocumentHidden(): boolean {
   return typeof document !== 'undefined' && document.visibilityState === 'hidden';
 }
 
-export async function requestTrackingNotificationPermission(): Promise<NotificationPermission | 'unsupported'> {
+export async function requestTrackingNotificationPermission(): Promise<
+  NotificationPermission | 'unsupported'
+> {
+  if (isNativeAndroid()) {
+    const ok = await ensureNativeLocalNotificationPermission();
+    attachNativeNotificationClickHandler();
+    return ok ? 'granted' : 'denied';
+  }
+
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return 'unsupported';
   }
@@ -63,8 +78,17 @@ function showViaNotificationApi(payload: TrackingAlertPayload): boolean {
   }
 }
 
-/** Show a device notification when the PWA is not visible (user is in Google Maps, etc.). */
+/**
+ * Show a device notification.
+ * - Android APK: Capacitor LocalNotifications (works while backgrounded).
+ * - PWA/browser: only when document is hidden (Maps handoff, etc.).
+ */
 export async function showTrackingAlert(payload: TrackingAlertPayload): Promise<void> {
+  if (isNativeAndroid()) {
+    await notifyNative(payload);
+    return;
+  }
+
   if (!isDocumentHidden()) return;
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
@@ -75,11 +99,23 @@ export async function showTrackingAlert(payload: TrackingAlertPayload): Promise<
   }
 }
 
+/** Force a device alert even if the document is visible (native always; web if permitted). */
+export async function showDeviceAlert(payload: TrackingAlertPayload): Promise<void> {
+  if (isNativeAndroid()) {
+    await notifyNative(payload);
+    return;
+  }
+  if (typeof window === 'undefined' || !('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  const shown = await showViaServiceWorker(payload);
+  if (!shown) showViaNotificationApi(payload);
+}
+
 export async function notifyTrackingArrived(taskId: number): Promise<void> {
   await showTrackingAlert({
-    title: 'Destination reached',
-    body: 'Open the app to complete your task.',
-    tag: 'tracking-arrived',
+    title: "You've arrived",
+    body: 'Confirm visit to complete the task.',
+    tag: `tracking-arrived-${taskId}`,
     url: buildMapTaskUrl(taskId),
   });
 }
@@ -87,8 +123,8 @@ export async function notifyTrackingArrived(taskId: number): Promise<void> {
 export async function notifyTrackingNearDestination(taskId: number): Promise<void> {
   await showTrackingAlert({
     title: 'Almost there',
-    body: 'You are near the destination. Prepare to complete the task in the app.',
-    tag: 'tracking-near',
+    body: "You're near the destination. Prepare to complete the task.",
+    tag: `tracking-near-${taskId}`,
     url: buildMapTaskUrl(taskId),
   });
 }
@@ -97,7 +133,7 @@ export async function notifyTrackingStopped(taskId: number, message: string): Pr
   await showTrackingAlert({
     title: 'Tracking stopped',
     body: message || 'Open the app for details.',
-    tag: 'tracking-stopped',
+    tag: `tracking-stopped-${taskId}`,
     url: buildMapTaskUrl(taskId),
   });
 }

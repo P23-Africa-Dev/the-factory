@@ -10,6 +10,9 @@ use App\Http\Controllers\Admin\Billing\AdminPaymentLinkController;
 use App\Http\Controllers\Admin\Billing\BillingPlanController;
 use App\Http\Controllers\Admin\Billing\CompanyDemoController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\Map\MapPoiDisplayController as AdminMapPoiDisplayController;
+use App\Http\Controllers\Admin\MapCredit\MapCreditController as AdminMapCreditController;
+use App\Http\Controllers\Admin\MapCredit\MapCreditSkuController as AdminMapCreditSkuController;
 use App\Http\Controllers\Admin\Database\DatabaseLockController;
 use App\Http\Controllers\Admin\Database\DatabaseManagerController;
 use App\Http\Controllers\Admin\Enterprise\DemoRequestController;
@@ -127,6 +130,29 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
 
             Route::post('/companies/{company}/demo', [CompanyDemoController::class, 'update'])
                 ->name('companies.demo.update');
+        });
+
+        // ── Map Credits (Google API usage & allocation) ────────
+        Route::prefix('map-credits')->name('map-credits.')->middleware('admin.permission:manage_billing')->group(function (): void {
+            Route::get('/', [AdminMapCreditController::class, 'index'])->name('index');
+            Route::post('/settings', [AdminMapCreditController::class, 'updateSettings'])->name('settings.update');
+            Route::get('/companies/{company}', [AdminMapCreditController::class, 'show'])->name('companies.show');
+            Route::post('/companies/{company}/adjust', [AdminMapCreditController::class, 'adjust'])->name('companies.adjust');
+
+            Route::prefix('skus')->name('skus.')->group(function (): void {
+                Route::get('/create', [AdminMapCreditSkuController::class, 'create'])->name('create');
+                Route::post('/', [AdminMapCreditSkuController::class, 'store'])->name('store');
+                Route::get('/{sku}/edit', [AdminMapCreditSkuController::class, 'edit'])->name('edit');
+                Route::patch('/{sku}', [AdminMapCreditSkuController::class, 'update'])->name('update');
+                Route::delete('/{sku}', [AdminMapCreditSkuController::class, 'destroy'])->name('destroy');
+            });
+        });
+
+        // ── Map Display (Google business pins on the map) ──────
+        Route::prefix('map-display')->name('map-display.')->middleware('admin.permission:manage_billing')->group(function (): void {
+            Route::get('/', [AdminMapPoiDisplayController::class, 'index'])->name('index');
+            Route::post('/global', [AdminMapPoiDisplayController::class, 'updateGlobal'])->name('global.update');
+            Route::post('/companies/{company}', [AdminMapPoiDisplayController::class, 'updateCompany'])->name('companies.update');
         });
     });
 });

@@ -17,6 +17,7 @@ class BillingWebhookService
     public function __construct(
         private readonly CompanySubscriptionService $subscriptionService,
         private readonly BillingPaymentMethodService $paymentMethodService,
+        private readonly MapCreditService $mapCredits,
     ) {}
 
     public function handle(WebhookReceived $event): void
@@ -28,6 +29,7 @@ class BillingWebhookService
             'checkout.session.completed' => $this->handleCheckoutCompleted($payload['data']['object'] ?? []),
             'customer.subscription.updated' => $this->handleSubscriptionUpdated($payload['data']['object'] ?? []),
             'customer.subscription.deleted' => $this->handleSubscriptionDeleted($payload['data']['object'] ?? []),
+            'invoice.payment_succeeded' => $this->handleInvoicePaymentSucceeded($payload['data']['object'] ?? []),
             'invoice.payment_failed' => $this->handlePaymentFailed($payload['data']['object'] ?? []),
             'customer.updated' => $this->handleCustomerUpdated($payload['data']['object'] ?? []),
             'payment_method.attached' => $this->handlePaymentMethodChanged($payload['data']['object'] ?? []),
@@ -42,6 +44,15 @@ class BillingWebhookService
     private function handleCheckoutCompleted(array $object): void
     {
         $session = Session::constructFrom($object);
+
+        // One-off credit top-up (Checkout mode=payment) rather than a subscription.
+        $metadataType = (string) ($session->metadata['type'] ?? '');
+        if (($session->mode ?? '') === 'payment' || $metadataType === 'credit_topup') {
+            $this->handleCreditTopupCompleted($session);
+
+            return;
+        }
+
         $company = $this->resolveCompanyFromSession($session);
 
         if (! $company) {
@@ -50,6 +61,53 @@ class BillingWebhookService
 
         $this->subscriptionService->activateFromCheckoutSession($company, $session);
         $this->paymentMethodService->syncDefaultPaymentMethodCache($company->fresh());
+    }
+
+    private function handleCreditTopupCompleted(Session $session): void
+    {
+        if (($session->payment_status ?? '') !== 'paid') {
+            return;
+        }
+
+        $company = $this->resolveCompanyFromSession($session);
+
+        if (! $company) {
+            return;
+        }
+
+        $credits = (float) ($session->metadata['credits'] ?? 0);
+
+        if ($credits <= 0) {
+            return;
+        }
+
+        $this->mapCredits->addTopup($company, $credits, [
+            'checkout_session_id' => (string) ($session->id ?? ''),
+            'amount_usd' => isset($session->metadata['amount_usd']) ? (float) $session->metadata['amount_usd'] : null,
+        ], 'webhook');
+    }
+
+    /**
+     * @param  array<string, mixed>  $object
+     */
+    private function handleInvoicePaymentSucceeded(array $object): void
+    {
+        // Only recurring renewals refresh the plan credit allowance; the first
+        // invoice (subscription_create) is already handled at activation.
+        $subscriptionId = (string) ($object['subscription'] ?? '');
+        $billingReason = (string) ($object['billing_reason'] ?? '');
+
+        if ($subscriptionId === '' || ! in_array($billingReason, ['subscription_cycle', 'subscription_update'], true)) {
+            return;
+        }
+
+        $company = $this->resolveCompanyFromStripeCustomer((string) ($object['customer'] ?? ''));
+
+        if (! $company || ! $company->hasPaidSubscription()) {
+            return;
+        }
+
+        $this->mapCredits->resetPlanCredits($company, 'webhook');
     }
 
     /**

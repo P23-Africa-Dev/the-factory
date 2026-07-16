@@ -24,6 +24,7 @@ import { MeetingsIntegrationsPanel } from "@/components/settings/organization/me
 import { FieldOpsDefaultsPanel } from "@/components/settings/organization/field-ops-defaults-panel";
 import { DriveSettingsPanel } from "@/components/settings/organization/drive-settings-panel";
 import { BillingSettingsPanel } from "@/components/settings/billing/billing-settings-panel";
+import { MapCreditsPanel } from "@/components/settings/organization/map-credits-panel";
 
 const SCOPE_LABELS: Record<SettingsScope, string> = {
   personal: "Personal",
@@ -61,6 +62,8 @@ function SectionContent({ sectionId }: { sectionId: SettingsSectionId }) {
       return <DriveSettingsPanel />;
     case "billing":
       return <BillingSettingsPanel />;
+    case "map-credits":
+      return <MapCreditsPanel />;
     default:
       return null;
   }

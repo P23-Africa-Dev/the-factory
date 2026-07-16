@@ -11,9 +11,14 @@ import { AttendanceCard } from '@/features/attendance';
 import { NotificationPanel, useUnreadCount } from '@/features/notifications';
 import { MeetingWidget, CreateMeetingModal, ViewMeetingsModal, useMeetingList } from '@/features/meetings';
 import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
-import { searchPlacesWithMapbox } from '@/lib/map/geocoding';
+import {
+  createSearchSessionToken,
+  retrievePlace,
+  suggestPlaces,
+} from '@/lib/map/place-search';
 import { LocationPermissionGate, useLocationPermissionBootstrap } from '@/features/tracking';
 import { useGeolocation } from '@/features/tracking';
+import { toast } from '@/lib/toast';
 
 export default function AgentDashboardPage() {
   const router = useRouter();
@@ -23,8 +28,15 @@ export default function AgentDashboardPage() {
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [locationQuery, setLocationQuery] = useState('');
   const [locationResults, setLocationResults] = useState<
-    Array<{ name: string; address: string; latitude: number; longitude: number }>
+    Array<{
+      suggestionId: string;
+      provider: 'google' | 'mapbox';
+      name: string;
+      address: string;
+      sessionToken: string;
+    }>
   >([]);
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
@@ -167,30 +179,88 @@ export default function AgentDashboardPage() {
     };
   }, []);
 
-  const searchMapboxPlaces = useCallback(async (query: string) => {
+  const placeSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const placeSearchSessionRef = useRef(createSearchSessionToken());
+
+  const searchPlaces = useCallback(async (query: string) => {
     if (!query.trim()) {
       setLocationResults([]);
+      setIsSearchingPlaces(false);
       return;
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      toast.error("You're offline — place search needs a connection.");
+      setLocationResults([]);
+      setIsSearchingPlaces(false);
+      return;
+    }
+
+    setIsSearchingPlaces(true);
     try {
-      const places = await searchPlacesWithMapbox(query, { limit: 5 });
+      const suggestions = await suggestPlaces(query, {
+        sessionToken: placeSearchSessionRef.current,
+        limit: 5,
+      });
+
       setLocationResults(
-        places.map((place) => ({
-          name: place.name,
-          address: place.address,
-          longitude: place.longitude,
-          latitude: place.latitude,
+        suggestions.map((suggestion) => ({
+          suggestionId: suggestion.id,
+          provider: suggestion.provider,
+          name: suggestion.name,
+          address: suggestion.placeFormatted || suggestion.name,
+          sessionToken: suggestion.sessionToken,
         })),
       );
+
+      if (query.trim().length >= 2 && suggestions.length === 0) {
+        toast.error('No places found — try a fuller address.');
+      } else if (suggestions.length > 0 && suggestions.every((s) => s.provider === 'mapbox')) {
+        toast.info('Google search paused or unavailable. Showing Mapbox results.');
+      }
     } catch {
-      // Geocoding is non-critical — silent failure is acceptable
+      toast.error('Place search failed. Please try again.');
+      setLocationResults([]);
+    } finally {
+      setIsSearchingPlaces(false);
     }
   }, []);
 
   const handleLocationQueryChange = (text: string) => {
     setLocationQuery(text);
-    searchMapboxPlaces(text);
+    if (placeSearchTimerRef.current) clearTimeout(placeSearchTimerRef.current);
+    if (!text.trim()) {
+      setLocationResults([]);
+      setIsSearchingPlaces(false);
+      placeSearchSessionRef.current = createSearchSessionToken();
+      return;
+    }
+    placeSearchTimerRef.current = setTimeout(() => {
+      void searchPlaces(text);
+    }, 300);
+  };
+
+  const handleSelectPlaceSuggestion = async (item: (typeof locationResults)[number]) => {
+    const place = await retrievePlace({
+      id: item.suggestionId,
+      provider: item.provider,
+      name: item.name,
+      placeFormatted: item.address,
+      category: null,
+      sessionToken: item.sessionToken,
+    });
+
+    if (!place) {
+      toast.error("Couldn't load that place. Pick another suggestion.");
+      return;
+    }
+
+    handleSelectLocation({
+      name: place.name,
+      address: place.address || place.name,
+      latitude: place.lat,
+      longitude: place.lng,
+    });
   };
 
   // Weekly calendar strip mapping
@@ -236,7 +306,7 @@ export default function AgentDashboardPage() {
         </div>
 
         {/* Scroll Content container */}
-        <div className="relative z-10 flex flex-col flex-1 px-5 pt-6 pb-[290px]">
+        <div className="relative z-10 flex flex-col flex-1 px-5 pt-[calc(env(safe-area-inset-top,0px)+24px)] pb-[290px]">
           {/* Header */}
           <div className="relative flex items-center justify-between mb-4 h-16">
             {isSearching ? (
@@ -554,6 +624,12 @@ export default function AgentDashboardPage() {
                         ))}
                       </div>
                     )
+                  ) : isSearchingPlaces ? (
+                    <div className="flex items-center justify-center py-6 select-none">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                        Searching…
+                      </span>
+                    </div>
                   ) : locationResults.length === 0 ? (
                     <div className="flex items-center justify-center py-6 select-none">
                       <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
@@ -562,17 +638,12 @@ export default function AgentDashboardPage() {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-3.5">
-                      {locationResults.map((item, index) => (
+                      {locationResults.map((item) => (
                         <div
-                          key={index}
-                          onClick={() =>
-                            handleSelectLocation({
-                              name: item.name,
-                              address: item.address,
-                              latitude: item.latitude,
-                              longitude: item.longitude,
-                            })
-                          }
+                          key={`${item.provider}-${item.suggestionId}`}
+                          onClick={() => {
+                            void handleSelectPlaceSuggestion(item);
+                          }}
                           className="flex items-center cursor-pointer active:opacity-75 transition-opacity"
                         >
                           <img

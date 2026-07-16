@@ -1,6 +1,7 @@
 import { Navbar } from "@/components/layout/navbar";
 import { AdminGuard } from "@/components/auth/admin-guard";
 import { FloatingAIButton } from "@/components/layout/floating-ai-button";
+import { LowCreditWatcher } from "@/components/map-credits/low-credit-watcher";
 import { AUTH_TOKEN_COOKIE } from "@/lib/auth/session";
 import { getServerSessionState } from "@/lib/auth/server-session";
 import { cookies } from "next/headers";
@@ -39,6 +40,7 @@ export default async function DashboardLayout({
         <AdminGuard>{children}</AdminGuard>
       </main>
       <FloatingAIButton />
+      <LowCreditWatcher />
     </div>
   );
 }

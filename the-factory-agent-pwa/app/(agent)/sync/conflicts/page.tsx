@@ -42,7 +42,7 @@ export default function SyncConflictsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0A1D25] text-white px-5 py-6">
+    <div className="min-h-screen bg-[#0A1D25] text-white px-5 pt-[calc(env(safe-area-inset-top,0px)+24px)] pb-6">
       <h1 className="text-xl font-semibold">Sync Conflicts</h1>
       <p className="mt-2 text-xs text-white/70">
         Resolve changes made offline that conflict with newer server updates.

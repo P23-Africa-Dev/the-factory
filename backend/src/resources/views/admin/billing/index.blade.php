@@ -21,6 +21,25 @@
         </a>
     </div>
 
+    @if (($stats['misconfigured_active_plans'] ?? 0) > 0)
+        <div class="alert d-flex align-items-start gap-2 mb-4"
+            style="background:rgba(245,158,11,.08);color:#92400e;border:1px solid rgba(245,158,11,.25);border-radius:.5rem">
+            <i class="bi bi-exclamation-triangle-fill mt-1" style="font-size:1.05rem"></i>
+            <div>
+                <div class="fw-semibold">
+                    {{ $stats['misconfigured_active_plans'] }}
+                    active {{ \Illuminate\Support\Str::plural('plan', $stats['misconfigured_active_plans']) }}
+                    {{ $stats['misconfigured_active_plans'] === 1 ? 'is' : 'are' }} missing a Stripe price ID.
+                </div>
+                <div style="font-size:.82rem">
+                    Customers cannot check out on a plan without both a monthly and annual Stripe price ID.
+                    <a href="{{ route('admin.billing.plans.index') }}" class="fw-semibold text-decoration-none"
+                        style="color:#92400e">Add the missing price IDs</a> to make these plans purchasable.
+                </div>
+            </div>
+        </div>
+    @endif
+
     <div class="row g-3 mb-4">
         <div class="col-6 col-lg-3">
             <div class="stat-card p-3">
@@ -132,6 +151,13 @@
                                             <span class="badge-status badge-approved">Active</span>
                                         @else
                                             <span class="badge-status badge-inactive">Inactive</span>
+                                        @endif
+                                        @if (empty($plan['monthly_price_id']) || empty($plan['annual_price_id']))
+                                            <span class="badge-status d-inline-flex align-items-center gap-1 mt-1"
+                                                style="background:rgba(245,158,11,.12);color:#b45309"
+                                                title="This plan is missing a Stripe price ID and cannot be purchased.">
+                                                <i class="bi bi-exclamation-triangle"></i>Missing price ID
+                                            </span>
                                         @endif
                                     </td>
                                 </tr>

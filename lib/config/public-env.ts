@@ -13,13 +13,29 @@ export function getGoogleMapsPublicApiKey(): string {
     return process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ?? '';
 }
 
-/** Server-side key for Places API proxy; falls back to public Maps key in dev. */
+/**
+ * Server-side key for the Places API proxy.
+ *
+ * Cost control: prefer a DEDICATED Places-only key (GOOGLE_PLACES_API_KEY) so
+ * Places quotas/caps/billing stay isolated from the Maps-JS map toggle
+ * (NEXT_PUBLIC_GOOGLE_MAPS_API_KEY). Falls back to the public Maps key only for
+ * local dev convenience.
+ */
 export function getGooglePlacesServerKey(): string {
     return (
         process.env.GOOGLE_PLACES_API_KEY?.trim() ||
         process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ||
         ''
     );
+}
+
+/**
+ * True when a dedicated Places-only key is configured (recommended for prod).
+ * When false, the proxy is sharing the Maps-JS key, so Places quota caps could
+ * also affect the map toggle — set GOOGLE_PLACES_API_KEY to separate them.
+ */
+export function isGooglePlacesUsingDedicatedKey(): boolean {
+    return (process.env.GOOGLE_PLACES_API_KEY?.trim().length ?? 0) > 0;
 }
 
 export function isGooglePlacesEnabled(): boolean {
