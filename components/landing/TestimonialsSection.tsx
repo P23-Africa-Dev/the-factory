@@ -60,6 +60,31 @@ const testimonials = [
 export default function TestimonialsSection() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+
+  const minSwipeDistance = 50;
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    if (isLeftSwipe) {
+      handleNext();
+    } else if (isRightSwipe) {
+      handlePrev();
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -117,13 +142,18 @@ export default function TestimonialsSection() {
           <button
             onClick={handlePrev}
             aria-label="Previous testimonial"
-            className="absolute left-[-16px] lg:left-[-24px] z-20 w-12 h-12 rounded-full bg-white flex items-center justify-center border border-gray-100 shadow-md hover:bg-gray-50 hover:shadow-lg transition-all active:scale-95 cursor-pointer"
+            className="absolute left-[-16px] lg:left-[-24px] z-20 w-12 h-12 rounded-full bg-white hidden lg:flex items-center justify-center border border-gray-100 shadow-md hover:bg-gray-50 hover:shadow-lg transition-all active:scale-95 cursor-pointer"
           >
             <ChevronLeft className="w-5 h-5 text-[#0B252C] stroke-[2.5]" />
           </button>
 
           {/* Carousel Inner Container */}
-          <div className="w-full overflow-hidden px-2 py-4">
+          <div 
+            className="w-full overflow-hidden px-2 py-4 cursor-grab active:cursor-grabbing"
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+          >
             <div
               className="flex transition-transform duration-500 ease-in-out"
               style={{ transform: `translateX(-${translatePercent}%)` }}
@@ -131,10 +161,10 @@ export default function TestimonialsSection() {
               {testimonials.map((item, idx) => (
                 <div
                   key={idx}
-                  className="w-full lg:w-1/3 shrink-0 px-3 sm:px-4 flex"
+                  className="w-full lg:w-1/3 shrink-0 px-3 sm:px-4 flex justify-center"
                 >
                   <div
-                    className={`w-full rounded-2xl border p-8 flex flex-col justify-between transition-all duration-300 hover:shadow-md ${item.bgColor} ${item.borderColor} ${item.shadow || ""}`}
+                    className={`w-full max-w-xl mx-auto lg:max-w-none rounded-2xl border p-8 flex flex-col justify-between transition-all duration-300 hover:shadow-md ${item.bgColor} ${item.borderColor} ${item.shadow || ""}`}
                   >
                     <p className="text-[15px] sm:text-base text-[#4A5F64] leading-relaxed italic mb-8">
                       &ldquo;{item.quote}&rdquo;
@@ -169,7 +199,7 @@ export default function TestimonialsSection() {
           <button
             onClick={handleNext}
             aria-label="Next testimonial"
-            className="absolute right-[-16px] lg:right-[-24px] z-20 w-12 h-12 rounded-full bg-white flex items-center justify-center border border-gray-100 shadow-md hover:bg-gray-50 hover:shadow-lg transition-all active:scale-95 cursor-pointer"
+            className="absolute right-[-16px] lg:right-[-24px] z-20 w-12 h-12 rounded-full bg-white hidden lg:flex items-center justify-center border border-gray-100 shadow-md hover:bg-gray-50 hover:shadow-lg transition-all active:scale-95 cursor-pointer"
           >
             <ChevronRight className="w-5 h-5 text-[#0B252C] stroke-[2.5]" />
           </button>

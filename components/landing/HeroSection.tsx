@@ -12,11 +12,11 @@ export default function HeroSection({ onDownloadAgentApp }: HeroSectionProps) {
   return (
     <div className="flex-1 w-full flex flex-col lg:flex-row bg-white">
       {/* Main Content Pane (White Background) */}
-      <div className="flex-grow lg:max-w-[58%] bg-white flex flex-col justify-between p-6 sm:p-10 lg:p-16 min-h-screen lg:min-h-0">
+      <div className="flex-grow lg:max-w-[58%] bg-white flex flex-col justify-between p-6 sm:p-10 lg:p-16 py-8 sm:py-12 lg:py-16 lg:min-h-[calc(100vh-100px)]">
         <div className="hidden lg:block h-12" />
 
         {/* Hero Content */}
-        <main id="about" className="my-auto py-12 lg:py-0 flex flex-col justify-center max-w-xl">
+        <main id="about" className="my-auto py-6 lg:py-0 flex flex-col justify-center max-w-xl">
           {/* Feature Badge */}
           <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white p-1 pr-4 self-start mb-8 shadow-sm">
             <span className="rounded-full bg-[#82C341] px-3 py-1.5 text-[11px] font-semibold text-white tracking-wide uppercase">
@@ -60,9 +60,9 @@ export default function HeroSection({ onDownloadAgentApp }: HeroSectionProps) {
       </div>
 
       {/* Right Column Pane (Dark Teal Background) */}
-      <div className="w-full lg:w-[42%] bg-[#0B252C] flex flex-col justify-between p-6 sm:p-10 lg:p-16 relative overflow-hidden min-h-[500px] lg:min-h-screen">
+      <div className="hidden lg:flex lg:w-[42%] bg-[#0B252C] flex-col justify-between p-6 sm:p-10 lg:p-16 py-12 sm:py-16 lg:py-16 relative overflow-hidden min-h-[320px] lg:min-h-[calc(100vh-100px)]">
         {/* Right Section Header Buttons */}
-        <div className="flex items-center justify-end gap-4 w-full z-10">
+        <div className="hidden md:flex items-center justify-end gap-4 w-full z-10">
           <Link
             href="/login"
             className="px-6 h-12 border border-white/30 text-white text-xs font-semibold rounded-full flex items-center justify-center gap-2 hover:border-white/60 hover:bg-white/5 active:scale-[0.98] transition-all"
@@ -78,8 +78,8 @@ export default function HeroSection({ onDownloadAgentApp }: HeroSectionProps) {
         </div>
 
         {/* Vector Line Art Illustration */}
-        <div className="flex-1 flex items-center justify-center z-10 py-12 lg:py-0">
-          <HeroIllustration className="w-56 h-auto md:w-64 lg:w-[280px]" />
+        <div className="flex-1 flex items-center justify-center z-10 py-6 lg:py-0">
+          <HeroIllustration className="w-48 h-auto sm:w-56 md:w-64 lg:w-[280px]" />
         </div>
         
         {/* Bottom Spacer */}

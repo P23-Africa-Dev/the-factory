@@ -45,11 +45,12 @@ export default function Home() {
       {/* Features & Stats grid */}
       <FeaturesSection />
 
+      {/* Pricing packages matrix */}
+      <PricingSection />
+      
       {/* Testimonials Quotes carousel */}
       <TestimonialsSection />
 
-      {/* Pricing packages matrix */}
-      <PricingSection />
 
       {/* Footer */}
       <div id="p23-africa">

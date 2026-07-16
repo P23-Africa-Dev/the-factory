@@ -18,7 +18,7 @@ export default function FeaturesSection() {
         </div>
 
         {/* Top row — 3 feature cards */}
-        <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-5">
+        <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-5">
 
           {/* Card 1 — See your team in real time */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-7 flex flex-col gap-5 hover:shadow-md transition-shadow">
@@ -62,7 +62,7 @@ export default function FeaturesSection() {
         </div>
 
         {/* Bottom row — 1 feature card + stats */}
-        <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-5">
+        <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-5">
 
           {/* Card 4 — Automate your outreach */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-7 flex flex-col gap-5 hover:shadow-md transition-shadow">
@@ -78,7 +78,7 @@ export default function FeaturesSection() {
           </div>
 
           {/* Stats block — spans the remaining 2 columns */}
-          <div className="sm:col-span-2 flex flex-row items-center justify-center sm:justify-start gap-16 sm:gap-24 px-4 sm:px-10">
+          <div className="md:col-span-2 flex flex-row items-center justify-center sm:justify-start gap-16 sm:gap-24 px-4 sm:px-10">
             <div>
               <div className="text-5xl lg:text-6xl font-extrabold text-[#0B252C] tracking-tight">
                 25k +
