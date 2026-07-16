@@ -26,6 +26,8 @@ const config: CapacitorConfig = {
     url: serverUrl,
     cleartext: allowCleartext,
     androidScheme: 'https',
+    // Local fallback when the phone cannot reach the remote PWA (offline / DNS).
+    errorPath: 'error.html',
   },
   plugins: {
     // Native HTTP so location flushes survive Android's ~5min WebView throttle.
