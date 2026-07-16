@@ -11,24 +11,16 @@ type ErrorCallback = (message: string) => void;
 export type NativeWatchOptions = {
   /** Notification title — e.g. "Live tracking · Acme Site" */
   title?: string;
-  /** Notification body — e.g. distance remaining */
+  /** Notification body — stable copy for the FGS notification */
   message?: string;
 };
 
 const DEFAULT_TITLE = 'Factory 23 — Live tracking';
-const DEFAULT_MESSAGE = 'Live tracking active — your location is shared with your team.';
-
-const DISTANCE_UPDATE_MIN_M = 100;
-const DISTANCE_UPDATE_MIN_MS = 60_000;
+const DEFAULT_MESSAGE = 'Tap to open map · Location shared with your team';
 
 let watcherId: string | null = null;
 let onUpdateCb: LocationCallback | null = null;
 let onErrorCb: ErrorCallback | null = null;
-let currentTitle = DEFAULT_TITLE;
-let currentMessage = DEFAULT_MESSAGE;
-let lastNotifiedDistanceM: number | null = null;
-let lastNotificationUpdateAt = 0;
-let restartInFlight: Promise<void> | null = null;
 
 function toLocationObject(raw: {
   latitude: number;
@@ -88,14 +80,10 @@ export function buildLiveTrackingMessage(distanceMeters?: number | null): string
       ? formatDistanceRemaining(distanceMeters)
       : '';
   if (dist) return `${dist} · Tap to open map · Location shared with your team`;
-  return 'Tap to open map · Location shared with your team';
+  return DEFAULT_MESSAGE;
 }
 
 async function addWatcherInternal(title: string, message: string): Promise<void> {
-  currentTitle = title;
-  currentMessage = message;
-  lastNotificationUpdateAt = Date.now();
-
   watcherId = await BackgroundGeolocation.addWatcher(
     {
       backgroundMessage: message,
@@ -133,70 +121,27 @@ export async function startNativeBackgroundWatch(
 
   onUpdateCb = onUpdate;
   onErrorCb = onError ?? null;
-  lastNotifiedDistanceM = null;
 
   if (watcherId) {
     await stopNativeBackgroundWatch({ keepCallbacks: true });
   }
 
   const title = options?.title?.trim() || DEFAULT_TITLE;
+  // Freeze body at start — never restart the FGS just to refresh distance copy.
   const message = options?.message?.trim() || DEFAULT_MESSAGE;
   await addWatcherInternal(title, message);
 }
 
 /**
- * Throttled FGS text refresh when distance remaining changes meaningfully.
- * Restarts the watcher only when title/body actually change (avoids flicker).
+ * Kept for call-site compatibility. Does NOT restart the FGS watcher.
+ * Restarting removeWatcher/addWatcher was clearing the ongoing notification mid-session.
  */
-export async function updateNativeBackgroundNotification(options: {
+export async function updateNativeBackgroundNotification(_options: {
   title?: string;
   message?: string;
   distanceMeters?: number | null;
 }): Promise<void> {
-  if (!isNativeAndroid() || !watcherId || !onUpdateCb) return;
-
-  const title = options.title?.trim() || currentTitle;
-  let message = options.message?.trim() || currentMessage;
-
-  if (typeof options.distanceMeters === 'number' && Number.isFinite(options.distanceMeters)) {
-    const now = Date.now();
-    const prev = lastNotifiedDistanceM;
-    const delta =
-      prev == null ? Number.POSITIVE_INFINITY : Math.abs(prev - options.distanceMeters);
-    const timeOk = now - lastNotificationUpdateAt >= DISTANCE_UPDATE_MIN_MS;
-    const distOk = delta >= DISTANCE_UPDATE_MIN_M;
-    if (!distOk && !timeOk && prev != null) {
-      return;
-    }
-    lastNotifiedDistanceM = options.distanceMeters;
-    message = buildLiveTrackingMessage(options.distanceMeters);
-  }
-
-  if (title === currentTitle && message === currentMessage) return;
-
-  if (restartInFlight) {
-    await restartInFlight;
-    if (title === currentTitle && message === currentMessage) return;
-  }
-
-  restartInFlight = (async () => {
-    const id = watcherId;
-    if (id) {
-      watcherId = null;
-      try {
-        await BackgroundGeolocation.removeWatcher({ id });
-      } catch {
-        // ignore
-      }
-    }
-    await addWatcherInternal(title, message);
-  })();
-
-  try {
-    await restartInFlight;
-  } finally {
-    restartInFlight = null;
-  }
+  // Intentionally a no-op: notification copy is set once at start and stays until stop.
 }
 
 export async function stopNativeBackgroundWatch(opts?: {
@@ -215,9 +160,6 @@ export async function stopNativeBackgroundWatch(opts?: {
     onUpdateCb = null;
     onErrorCb = null;
   }
-  lastNotifiedDistanceM = null;
-  currentTitle = DEFAULT_TITLE;
-  currentMessage = DEFAULT_MESSAGE;
   try {
     await BackgroundGeolocation.removeWatcher({ id });
   } catch {

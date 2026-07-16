@@ -10,10 +10,7 @@ import type { LocationQueueItem } from '../types';
 import { toast } from '@/lib/toast';
 import { isDocumentHidden, notifyTrackingStopped } from '@/lib/notifications/trackingAlerts';
 import { isNativeAndroid } from '../native/capacitorPlatform';
-import {
-  buildLiveTrackingTitle,
-  updateNativeBackgroundNotification,
-} from '../native/nativeBackgroundGeolocation';
+import { isNativeBackgroundWatching } from '../native/nativeBackgroundGeolocation';
 
 interface LocationReporterOptions {
   taskId: number;
@@ -42,15 +39,32 @@ export const useLocationReporter = ({
   const isUnauthorizedRef = useRef(false);
   const needsImmediateFlushRef = useRef(false);
   const flushRef = useRef<(() => Promise<void>) | null>(null);
+  const enqueueRef = useRef<(loc: LocationObject) => Promise<void>>(async () => {});
+  const startWatchingRef = useRef(startWatching);
+  const stopWatchingRef = useRef(stopWatching);
   const onArrivedRef = useRef(onArrived);
   const onNearRef = useRef(onNearDestination);
   const onDistanceRef = useRef(onDistanceRemaining);
+  const taskIdRef = useRef(taskId);
+  const companyIdRef = useRef(companyId);
+  const activeRef = useRef(active);
 
   useEffect(() => {
     onArrivedRef.current = onArrived;
     onNearRef.current = onNearDestination;
     onDistanceRef.current = onDistanceRemaining;
   }, [onArrived, onNearDestination, onDistanceRemaining]);
+
+  useEffect(() => {
+    startWatchingRef.current = startWatching;
+    stopWatchingRef.current = stopWatching;
+  }, [startWatching, stopWatching]);
+
+  useEffect(() => {
+    taskIdRef.current = taskId;
+    companyIdRef.current = companyId;
+    activeRef.current = active;
+  }, [taskId, companyId, active]);
 
   const buildQueueItem = useCallback(
     (loc: LocationObject): LocationQueueItem => ({
@@ -109,8 +123,12 @@ export const useLocationReporter = ({
         console.warn('[LocationReporter] Failed to store checkpoint in db:', err);
       }
     },
-    [buildQueueItem],
+    [buildQueueItem, taskId],
   );
+
+  useEffect(() => {
+    enqueueRef.current = enqueue;
+  }, [enqueue]);
 
   useEffect(() => {
     isUnauthorizedRef.current = false;
@@ -124,14 +142,8 @@ export const useLocationReporter = ({
     }) => {
       if (response.distance_remaining_meters !== undefined) {
         const meters = response.distance_remaining_meters ?? null;
+        // Distance stays in-app UI only — never restart FGS to refresh notification text.
         onDistanceRef.current?.(meters);
-        if (isNativeAndroid() && meters != null) {
-          const live = useTrackingStore.getState().liveTaskMap[taskId];
-          void updateNativeBackgroundNotification({
-            title: buildLiveTrackingTitle(live?.taskTitle ?? null),
-            distanceMeters: meters,
-          });
-        }
       }
       if (response.near_destination) {
         onNearRef.current?.();
@@ -151,10 +163,12 @@ export const useLocationReporter = ({
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
     const batch = memoryQueue.current.slice(0, MAX_BATCH_SIZE);
+    const currentTaskId = taskIdRef.current;
+    const currentCompanyId = companyIdRef.current;
 
     try {
-      const response = await trackingApi.recordLocation(taskId, {
-        companyId,
+      const response = await trackingApi.recordLocation(currentTaskId, {
+        companyId: currentCompanyId,
         points: batch.map((p) => ({
           latitude: p.latitude,
           longitude: p.longitude,
@@ -169,7 +183,7 @@ export const useLocationReporter = ({
 
       const db = await getDb();
       const tx = db.transaction('locationQueue', 'readwrite');
-      const pending = await tx.store.index('by-taskId').getAll(taskId);
+      const pending = await tx.store.index('by-taskId').getAll(currentTaskId);
       const unsynced = pending.filter((p) => p.synced === 0);
       const syncedTimestamps = new Set(batch.map((b) => b.recordedAt));
       for (const row of unsynced) {
@@ -197,7 +211,7 @@ export const useLocationReporter = ({
         try {
           const db = await getDb();
           const tx = db.transaction('locationQueue', 'readwrite');
-          const pending = await tx.store.index('by-taskId').getAll(taskId);
+          const pending = await tx.store.index('by-taskId').getAll(currentTaskId);
           const unsynced = pending.filter((p) => p.synced === 0);
           for (const row of unsynced) {
             if (row.id != null) {
@@ -217,7 +231,7 @@ export const useLocationReporter = ({
         useTrackingStore.getState().setActiveTrackingTaskId(null);
         const msg =
           apiErr?.message || 'You can only track tasks currently assigned to you.';
-        void notifyTrackingStopped(taskId, msg);
+        void notifyTrackingStopped(currentTaskId, msg);
         if (!isDocumentHidden()) {
           toast.error('Tracking Stopped', msg);
         }
@@ -225,15 +239,16 @@ export const useLocationReporter = ({
         console.error('[LocationReporter] Geolocation sync error:', error);
       }
     }
-  }, [taskId, companyId, applyProximityResponse]);
+  }, [applyProximityResponse]);
 
   useEffect(() => {
     flushRef.current = flush;
   }, [flush]);
 
+  // Watch lifecycle depends only on `active` so FGS is not torn down on flush/enqueue churn.
   useEffect(() => {
     if (!active) {
-      stopWatching();
+      stopWatchingRef.current();
       needsImmediateFlushRef.current = false;
       if (flushIntervalRef.current) {
         clearInterval(flushIntervalRef.current);
@@ -243,29 +258,53 @@ export const useLocationReporter = ({
     }
 
     needsImmediateFlushRef.current = true;
-    void startWatching(enqueue).catch((err) => {
+    void startWatchingRef.current((loc) => enqueueRef.current(loc)).catch((err) => {
       console.error('[tracking] failed to start location watch', err);
     });
+
     flushIntervalRef.current = setInterval(() => {
-      void flush();
+      void flushRef.current?.();
     }, FLUSH_INTERVAL_MS);
 
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') void flush();
+      if (document.visibilityState !== 'visible') return;
+      void flushRef.current?.();
+
+      // Re-arm FGS if tracking is still active but the native watcher was lost.
+      if (
+        isNativeAndroid() &&
+        activeRef.current &&
+        useTrackingStore.getState().activeTrackingTaskId != null &&
+        !isNativeBackgroundWatching()
+      ) {
+        void startWatchingRef.current((loc) => enqueueRef.current(loc)).catch((err) => {
+          console.error('[tracking] failed to re-arm location watch', err);
+        });
+      }
     };
-    const handleOnline = () => void flush();
+    const handleOnline = () => void flushRef.current?.();
 
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('online', handleOnline);
 
     return () => {
-      stopWatching();
-      if (flushIntervalRef.current) clearInterval(flushIntervalRef.current);
+      // Do not stopWatching here — only when `active` becomes false (above) or provider stops.
+      if (flushIntervalRef.current) {
+        clearInterval(flushIntervalRef.current);
+        flushIntervalRef.current = null;
+      }
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('online', handleOnline);
-      void flush();
+      void flushRef.current?.();
     };
-  }, [active, enqueue, flush, startWatching, stopWatching]);
+  }, [active]);
+
+  // True unmount of the reporter (tracking ended / provider cleared) — ensure FGS stops.
+  useEffect(() => {
+    return () => {
+      stopWatchingRef.current();
+    };
+  }, []);
 
   return { flush };
 };

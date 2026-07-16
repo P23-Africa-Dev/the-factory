@@ -9,8 +9,9 @@
     <string name="capacitor_background_geolocation_notification_channel_name">
         Live tracking
     </string>
+    <!-- Must be a monochrome notification/status icon — launcher mipmaps make the FGS notif flaky. -->
     <string name="capacitor_background_geolocation_notification_icon">
-        mipmap/ic_launcher
+        drawable/ic_stat_live_tracking
     </string>
     <string name="capacitor_background_geolocation_notification_color">
         #75ADAF
