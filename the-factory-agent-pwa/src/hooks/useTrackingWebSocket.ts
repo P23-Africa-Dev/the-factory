@@ -127,8 +127,12 @@ export const useTrackingWebSocket = (): void => {
               : {}),
             ...(data.speed_mps != null ? { lastSpeedMps: data.speed_mps as number } : {}),
           });
-          if (data.arrived) {
+          if (data.arrived && data.proximity_state !== 'completed' && data.task_status !== 'completed') {
             markArrived(taskId, occurredAt);
+          }
+          if (data.proximity_state === 'completed' || data.task_status === 'completed') {
+            markCompleted(taskId);
+            setTimeout(() => removeTask(taskId), 5_000);
           }
           break;
         }

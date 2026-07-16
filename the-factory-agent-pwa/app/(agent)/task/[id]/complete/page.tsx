@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Camera, ShieldAlert } from 'lucide-react';
+import { Camera, CheckCircle2, ShieldAlert } from 'lucide-react';
 
 import {
   useTask,
@@ -14,6 +14,8 @@ import {
   useActiveTracking,
   buildCompleteFormData,
   useTrackingNavigation,
+  resolveCompletionRequirements,
+  validateCompletionRequirements,
 } from '@/features/tracking';
 import { useTrackingStore } from '@/store/tracking';
 import { getDb } from '@/lib/db/client';
@@ -34,36 +36,68 @@ export default function TaskCompletePage() {
   const { stopTracking } = useActiveTracking();
 
   const [locationPermissionBlocked, setLocationPermissionBlocked] = useState(false);
-
-  const liveTask = useTrackingStore((s) => s.liveTaskMap[taskId]);
-  const hasArrived =
-    liveTask?.status === 'arrived' || liveTask?.arrivedAt != null;
-
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const companyId = getActiveCompanyId() ?? 0;
+  const liveTask = useTrackingStore((s) => s.liveTaskMap[taskId]);
+  const hasArrived =
+    liveTask?.status === 'arrived' ||
+    liveTask?.status === 'completed' ||
+    liveTask?.arrivedAt != null;
+
+  const companyId = getActiveCompanyId() ?? task?.companyId ?? 0;
+  const requirements = useMemo(() => resolveCompletionRequirements(task), [task]);
+  const validation = useMemo(
+    () =>
+      validateCompletionRequirements({
+        photosCount: photos.length,
+        notes: note,
+        requirements,
+      }),
+    [photos.length, note, requirements],
+  );
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      setPreviewUri(URL.createObjectURL(file));
-    }
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    setPhotos((prev) => [...prev, ...files]);
+    setPreviews((prev) => [...prev, ...files.map((f) => URL.createObjectURL(f))]);
+    e.target.value = '';
   };
 
   const triggerPicker = () => {
     fileInputRef.current?.click();
   };
 
+  const removePhotoAt = (index: number) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
+    setPreviews((prev) => {
+      const next = [...prev];
+      const [removed] = next.splice(index, 1);
+      if (removed) URL.revokeObjectURL(removed);
+      return next;
+    });
+  };
+
   const handleComplete = async () => {
     setSubmitAttempted(true);
-    if (!task || !selectedFile) return;
+    if (!task) return;
 
     if (!hasArrived) {
       toast.error('Not arrived yet', 'You must reach the destination before completing this task.');
+      return;
+    }
+
+    const check = validateCompletionRequirements({
+      photosCount: photos.length,
+      notes: note,
+      requirements,
+    });
+    if (!check.ok) {
+      toast.error('Requirements incomplete', check.photoError ?? check.notesError ?? 'Complete all requirements.');
       return;
     }
 
@@ -71,17 +105,19 @@ export default function TaskCompletePage() {
 
     try {
       const db = await getDb();
-      await db.add('proofQueue', {
-        taskId: taskIdNum,
-        fileBlob: selectedFile,
-        fileName: `proof_${task.id}_${Date.now()}.jpg`,
-        mimeType: selectedFile.type || 'image/jpeg',
-        uploaded: 0,
-        createdAt: new Date().toISOString(),
-        attempts: 0,
-        nextAttemptAt: new Date().toISOString(),
-        lastError: null,
-      });
+      for (const file of photos) {
+        await db.add('proofQueue', {
+          taskId: taskIdNum,
+          fileBlob: file,
+          fileName: `proof_${task.id}_${Date.now()}.jpg`,
+          mimeType: file.type || 'image/jpeg',
+          uploaded: 0,
+          createdAt: new Date().toISOString(),
+          attempts: 0,
+          nextAttemptAt: new Date().toISOString(),
+          lastError: null,
+        });
+      }
     } catch (dbErr) {
       console.warn('[complete] proof_queue insert failed (non-fatal):', dbErr);
     }
@@ -115,8 +151,8 @@ export default function TaskCompletePage() {
 
     const formData = buildCompleteFormData({
       companyId,
-      files: [selectedFile],
-      notes: '',
+      files: photos,
+      notes: note.trim() || undefined,
       position,
     });
 
@@ -143,8 +179,7 @@ export default function TaskCompletePage() {
     );
   }
 
-  const photoMissing = submitAttempted && !selectedFile;
-  const canSubmit = Boolean(selectedFile) && hasArrived && !isPending;
+  const canSubmit = hasArrived && !isPending;
 
   return (
     <div className="flex flex-col flex-1 bg-[#0A1D25] min-h-screen">
@@ -155,9 +190,9 @@ export default function TaskCompletePage() {
         )}
       </header>
 
-      <div className="flex-1 px-6 pb-8 overflow-y-auto">
+      <div className="flex-1 px-6 pb-8 overflow-y-auto space-y-5">
         {!hasArrived && (
-          <div className="bg-[#F5A623]/10 border-l-[3px] border-[#F5A623] rounded-xl p-3.5 mb-5">
+          <div className="bg-[#F5A623]/10 border-l-[3px] border-[#F5A623] rounded-xl p-3.5">
             <p className="font-sans text-xs text-white leading-relaxed mb-3">
               You must arrive at the destination before submitting proof of completion.
             </p>
@@ -171,7 +206,7 @@ export default function TaskCompletePage() {
         )}
 
         {locationPermissionBlocked && (
-          <div className="bg-[#FD6046]/10 border-l-[3px] border-[#FD6046] rounded-xl p-3.5 mb-5">
+          <div className="bg-[#FD6046]/10 border-l-[3px] border-[#FD6046] rounded-xl p-3.5">
             <p className="font-sans text-xs text-white leading-relaxed">
               Location access is required to record your completion position. Enable location in your
               device settings, then try again.
@@ -179,12 +214,61 @@ export default function TaskCompletePage() {
           </div>
         )}
 
-        <div className="mb-7">
+        {requirements.requiredActions.length > 0 && (
+          <div className="rounded-xl border border-[#75ADAF]/30 bg-[#75ADAF]/10 p-3.5 space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[#75ADAF]">
+              Required actions
+            </p>
+            <ul className="space-y-1.5">
+              {requirements.requiredActions.map((action) => (
+                <li key={action} className="flex items-start gap-2 text-xs text-white/85">
+                  <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[#75ADAF]" />
+                  <span>{action}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {requirements.visitVerificationRequired && (
+          <p className="text-[11px] text-amber-200/90 bg-amber-500/10 border border-amber-400/20 rounded-xl px-3 py-2">
+            Visit verification is required — your current location will be attached with the proofs.
+          </p>
+        )}
+
+        <div>
           <h4 className="text-xs font-bold text-[#75ADAF] mb-1 uppercase tracking-wider font-sans">
-            Proof Photo <span className="text-[#FD6046]">*</span>
+            Completion note{requirements.notesRequired ? ' *' : ''}
           </h4>
+          <textarea
+            placeholder={
+              requirements.notesRequired
+                ? 'Describe how you completed the required actions…'
+                : 'Optional note for your team…'
+            }
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={4}
+            className="w-full rounded-2xl border border-white/12 bg-[#0B3343]/50 px-4 py-3 text-sm text-white placeholder:text-white/35 focus:outline-none focus:border-[#75ADAF]"
+          />
+          {submitAttempted && validation.notesError && (
+            <p className="text-[#FD6046] text-[11px] mt-2 font-sans font-medium">
+              {validation.notesError}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <h4 className="text-xs font-bold text-[#75ADAF] uppercase tracking-wider font-sans">
+              Proof photos * (min {requirements.minPhotos})
+            </h4>
+            <span className="text-[11px] text-[#8F9098]">
+              {photos.length}/{requirements.minPhotos}
+            </span>
+          </div>
           <p className="text-xs text-[#8F9098] leading-relaxed mb-4 font-sans">
-            Take a photo at the task location as proof of visit.
+            Take photos at the task location as proof of visit.
           </p>
 
           <input
@@ -192,42 +276,54 @@ export default function TaskCompletePage() {
             type="file"
             accept="image/*"
             capture="environment"
+            multiple
             onChange={handleFileChange}
             className="hidden"
           />
 
-          <div
-            onClick={triggerPicker}
-            className={`w-full min-h-[180px] rounded-2xl border-1.5 border-dashed border-white/12 bg-[#0B3343]/50 flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-colors hover:bg-[#0B3343]/70 ${
-              previewUri ? 'border-solid border-[#75ADAF]' : ''
-            }`}
-          >
-            {previewUri ? (
-              <div className="relative w-full h-[240px]">
-                <img src={previewUri} alt="Proof preview" className="w-full h-full object-cover" />
-                <div className="absolute inset-x-0 bottom-0 bg-black/55 py-2.5 text-center">
-                  <span className="font-sans font-semibold text-xs text-white">Tap to retake</span>
+          {previews.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-3">
+              {previews.map((url, index) => (
+                <div
+                  key={url}
+                  className="relative h-20 w-20 shrink-0 rounded-xl overflow-hidden border border-white/15"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt="" className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removePhotoAt(index)}
+                    className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/70 text-white text-[10px]"
+                  >
+                    ×
+                  </button>
                 </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-2.5 p-8">
-                <div className="w-14 h-14 rounded-full bg-[#75ADAF]/15 flex items-center justify-center border border-[#75ADAF]/30 text-[#75ADAF]">
-                  <Camera size={24} />
-                </div>
-                <span className="font-sans font-semibold text-sm text-[#75ADAF]">Take Photo</span>
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          )}
 
-          {photoMissing && (
+          <button
+            type="button"
+            onClick={triggerPicker}
+            className="w-full min-h-[120px] rounded-2xl border border-dashed border-white/12 bg-[#0B3343]/50 flex flex-col items-center justify-center gap-2.5 hover:bg-[#0B3343]/70 transition-colors"
+          >
+            <div className="w-14 h-14 rounded-full bg-[#75ADAF]/15 flex items-center justify-center border border-[#75ADAF]/30 text-[#75ADAF]">
+              <Camera size={24} />
+            </div>
+            <span className="font-sans font-semibold text-sm text-[#75ADAF]">
+              {photos.length > 0 ? 'Add another photo' : 'Take photo'}
+            </span>
+          </button>
+
+          {submitAttempted && validation.photoError && (
             <p className="text-[#FD6046] text-[11px] mt-2 font-sans font-medium">
-              A proof photo is required to complete this task.
+              {validation.photoError}
             </p>
           )}
         </div>
 
         {isError && error && (
-          <div className="bg-[#FD6046]/10 border-l-[3px] border-[#FD6046] rounded-xl p-3.5 mb-5 flex items-start gap-2.5">
+          <div className="bg-[#FD6046]/10 border-l-[3px] border-[#FD6046] rounded-xl p-3.5 flex items-start gap-2.5">
             <ShieldAlert size={18} className="text-[#FD6046] flex-shrink-0 mt-0.5" />
             <span className="font-sans text-xs text-white">
               {(error as Error).message || 'Submission failed. Please try again.'}
@@ -236,7 +332,7 @@ export default function TaskCompletePage() {
         )}
 
         <button
-          onClick={handleComplete}
+          onClick={() => void handleComplete()}
           disabled={!canSubmit}
           className={`w-full h-[51px] rounded-[30px] bg-[#75ADAF] hover:bg-[#66989A] text-white font-bold text-sm transition-all duration-200 shadow-md flex items-center justify-center ${
             !canSubmit ? 'opacity-35 cursor-not-allowed' : 'active:scale-95'
@@ -248,12 +344,6 @@ export default function TaskCompletePage() {
             'Mark as Complete'
           )}
         </button>
-
-        {!previewUri && hasArrived && (
-          <p className="text-center text-xs text-[#8F9098] mt-3 font-sans">
-            Take a proof photo to enable submission.
-          </p>
-        )}
       </div>
     </div>
   );

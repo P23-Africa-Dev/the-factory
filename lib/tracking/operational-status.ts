@@ -65,13 +65,14 @@ export function resolveOperationalStatusFromTask(
     return "offline";
   }
 
+  // Completed always wins over a stale destination_reached operational flag.
+  if (task.status === "completed") {
+    return "completed";
+  }
+
   // Trust real, non-clock backend statuses when present.
   if (task.operationalStatus && task.operationalStatus !== "offline") {
     return task.operationalStatus;
-  }
-
-  if (task.status === "completed") {
-    return "completed";
   }
 
   if (task.status === "arrived") {

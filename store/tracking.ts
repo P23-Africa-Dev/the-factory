@@ -28,6 +28,45 @@ function newerIso(candidate: string | undefined, current: string | undefined): s
   return c >= p ? candidate : current;
 }
 
+/** True when candidate time is at least as new as current (or current is missing). */
+function isAtLeastAsNew(
+  candidate: string | undefined,
+  current: string | undefined,
+): boolean {
+  if (!candidate) return false;
+  if (!current) return true;
+  const c = new Date(candidate).getTime();
+  const p = new Date(current).getTime();
+  if (!Number.isFinite(c)) return false;
+  if (!Number.isFinite(p)) return true;
+  return c >= p;
+}
+
+function resolveLocationLiveStatus(params: {
+  prevStatus?: LiveTaskState["status"];
+  proximityState?: string | null;
+  taskStatus?: string | null;
+  arrivedFlag?: boolean;
+  nearFlag?: boolean;
+}): LiveTaskState["status"] {
+  // Never regress completed → arrived on late location events.
+  if (params.prevStatus === "completed") return "completed";
+
+  const fromProximity = normalizeProximityState(params.proximityState);
+  if (fromProximity === "completed") return "completed";
+
+  const fromTask = normalizeLiveStatus(params.taskStatus);
+  if (fromTask === "completed") return "completed";
+
+  if (fromProximity) return fromProximity;
+  if (fromTask === "arrived" || fromTask === "near_destination") return fromTask;
+
+  if (params.arrivedFlag) return "arrived";
+  if (params.nearFlag) return "near_destination";
+
+  return params.prevStatus ?? "in_progress";
+}
+
 type WsStatus = "idle" | "connecting" | "connected" | "reconnecting" | "error";
 
 interface TrackingStore {
@@ -114,7 +153,15 @@ function buildFromEnvelope(
   const normalizedStatus =
     normalizeProximityState(payload.data?.proximity_state) ??
     normalizeLiveStatus(payload.data?.task?.status ?? payload.data?.task_status);
-  const taskStatus = normalizedStatus ?? prev?.status ?? "in_progress";
+  const taskStatus =
+    prev?.status === "completed"
+      ? "completed"
+      : normalizedStatus === "completed"
+        ? "completed"
+        : normalizedStatus ?? prev?.status ?? "in_progress";
+
+  const coordsAreFresh =
+    !prev?.lastEventAt || isAtLeastAsNew(payload.occurred_at, prev.lastEventAt);
 
   const base: LiveTaskState = prev ?? {
     taskId: payload.task_id,
@@ -166,7 +213,7 @@ function buildFromEnvelope(
         },
       }
       : {}),
-    ...(hasCoords && { lastPosition: [lng!, lat!] }),
+    ...(hasCoords && coordsAreFresh ? { lastPosition: [lng!, lat!] as [number, number] } : {}),
     distanceToDestinationMeters:
       payload.data?.distance_to_destination_meters ??
       prev?.distanceToDestinationMeters ??
@@ -176,13 +223,15 @@ function buildFromEnvelope(
       prev?.distanceRemainingMeters ??
       null,
     speedMps:
-      payload.data?.location?.speed_mps ??
-      payload.data?.speed_mps ??
+      (coordsAreFresh
+        ? payload.data?.location?.speed_mps ?? payload.data?.speed_mps
+        : undefined) ??
       prev?.speedMps ??
       null,
     headingDegrees:
-      payload.data?.location?.heading_degrees ??
-      payload.data?.heading_degrees ??
+      (coordsAreFresh
+        ? payload.data?.location?.heading_degrees ?? payload.data?.heading_degrees
+        : undefined) ??
       prev?.headingDegrees ??
       null,
     etaSeconds: payload.data?.eta_seconds ?? prev?.etaSeconds ?? null,
@@ -192,9 +241,11 @@ function buildFromEnvelope(
       prev?.routeDeviationMeters ??
       null,
     operationalStatus:
-      payload.data?.status?.operational_status ??
-      payload.data?.operational_status ??
-      prev?.operationalStatus,
+      taskStatus === "completed"
+        ? "completed"
+        : payload.data?.status?.operational_status ??
+          payload.data?.operational_status ??
+          prev?.operationalStatus,
     isOnline:
       payload.data?.status?.is_online ??
       payload.data?.is_online ??
@@ -239,37 +290,45 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
         type === "tracking.location.updated" ||
         type === "tracking.agent.location.updated"
       ) {
+        const coordsAreFresh =
+          !prev?.lastEventAt || isAtLeastAsNew(payload.occurred_at, prev.lastEventAt);
+
         const polyline = prev?.polyline ?? [];
         const isDuplicateByTimestamp = prev?.lastEventAt === payload.occurred_at;
         const lastPoint = polyline[polyline.length - 1];
         const isDuplicateByPoint =
           !!lastPoint && hasCoords && lastPoint[0] === lng && lastPoint[1] === lat;
-        const shouldAppend = hasCoords && !(isDuplicateByTimestamp && isDuplicateByPoint);
-        const newPolyline: [number, number][] = hasCoords
-          ? shouldAppend
-            ? ([...polyline, [lng!, lat!] as [number, number]] as [number, number][]).slice(
-              -MAX_POLYLINE_PTS
+        const shouldAppend =
+          hasCoords &&
+          coordsAreFresh &&
+          !(isDuplicateByTimestamp && isDuplicateByPoint);
+        const newPolyline: [number, number][] = shouldAppend
+          ? ([...polyline, [lng!, lat!] as [number, number]] as [number, number][]).slice(
+              -MAX_POLYLINE_PTS,
             )
-            : polyline
           : polyline;
 
-        const arrivedNow = !!payload.data?.arrived;
-        const nearNow = !!payload.data?.near_destination && !arrivedNow;
+        const nextStatus = resolveLocationLiveStatus({
+          prevStatus: prev?.status === "completed" ? "completed" : updated.status,
+          proximityState: payload.data?.proximity_state,
+          taskStatus: payload.data?.task?.status ?? payload.data?.task_status,
+          arrivedFlag: !!payload.data?.arrived,
+          nearFlag: !!payload.data?.near_destination,
+        });
+
         return {
           liveTasks: {
             ...s.liveTasks,
             [taskId]: {
               ...updated,
               polyline: newPolyline,
-              status: arrivedNow
-                ? "arrived"
-                : nearNow
-                  ? "near_destination"
-                  : updated.status,
-              ...(nearNow && !prev?.nearDetectedAt
+              status: nextStatus,
+              operationalStatus:
+                nextStatus === "completed" ? "completed" : updated.operationalStatus,
+              ...(nextStatus === "near_destination" && !prev?.nearDetectedAt
                 ? { nearDetectedAt: payload.data?.near_recorded_at ?? payload.occurred_at }
                 : {}),
-              ...(arrivedNow && !prev?.arrivedAt
+              ...(nextStatus === "arrived" && !prev?.arrivedAt
                 ? { arrivedAt: payload.occurred_at }
                 : {}),
             },
@@ -291,6 +350,14 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
       }
 
       if (type === "tracking.task.arrived") {
+        if (prev?.status === "completed") {
+          return {
+            liveTasks: {
+              ...s.liveTasks,
+              [taskId]: { ...updated, status: "completed", operationalStatus: "completed" },
+            },
+          };
+        }
         return {
           liveTasks: {
             ...s.liveTasks,
@@ -304,7 +371,11 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
       }
 
       if (type === "tracking.task.completed") {
-        const completedEntry: LiveTaskState = { ...updated, status: "completed" };
+        const completedEntry: LiveTaskState = {
+          ...updated,
+          status: "completed",
+          operationalStatus: "completed",
+        };
         setTimeout(() => get().removeTask(taskId), COMPLETED_LINGER_MS);
         return {
           liveTasks: { ...s.liveTasks, [taskId]: completedEntry },
@@ -348,8 +419,29 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
       const polyline = (route.polyline ?? []) as [number, number][];
       const lastPt = polyline[polyline.length - 1] as [number, number] | undefined;
 
-      const anchor = lastPt ?? prev?.lastPosition;
+      const routeEventAt =
+        route.end?.recorded_at ??
+        route.arrival?.recorded_at ??
+        route.near?.recorded_at ??
+        route.start?.recorded_at ??
+        undefined;
+      const routePositionIsFresh = isAtLeastAsNew(routeEventAt, prev?.lastEventAt);
+      const lastPosition =
+        routePositionIsFresh && lastPt
+          ? lastPt
+          : prev?.lastPosition ?? lastPt ?? [0, 0];
+
+      const anchor = lastPosition;
       const livePolyline = resolveLivePolylineForHydrate(prev?.polyline, anchor);
+
+      const routeStatus: LiveTaskState["status"] =
+        prev?.status === "completed" || route.status === "completed"
+          ? "completed"
+          : route.arrival
+            ? "arrived"
+            : route.near || route.proximity?.state === "near_destination"
+              ? "near_destination"
+              : "in_progress";
 
       const entry: LiveTaskState = {
         taskId,
@@ -360,14 +452,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
         taskTitle: task.title,
         projectName: task.project?.name ?? prev?.projectName,
         taskAddress: task.address ?? task.location,
-        status:
-          route.status === "completed"
-            ? "completed"
-            : route.arrival
-              ? "arrived"
-              : route.near || route.proximity?.state === "near_destination"
-                ? "near_destination"
-                : "in_progress",
+        status: routeStatus,
         destination: route.destination
           ? {
             lat: route.destination.latitude,
@@ -375,20 +460,13 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             radiusM: route.destination.radius_meters,
           }
           : undefined,
-        lastPosition: lastPt ?? prev?.lastPosition ?? [0, 0],
+        lastPosition,
         polyline: livePolyline.slice(-MAX_POLYLINE_PTS),
         trackingStartedAt:
           prev?.trackingStartedAt ?? route.start?.recorded_at ?? route.arrival?.recorded_at,
-        lastEventAt: newerIso(
-          route.end?.recorded_at ??
-            route.arrival?.recorded_at ??
-            route.near?.recorded_at ??
-            route.start?.recorded_at ??
-            undefined,
-          prev?.lastEventAt,
-        ),
+        lastEventAt: newerIso(routeEventAt, prev?.lastEventAt),
         nearDetectedAt: route.near?.recorded_at ?? prev?.nearDetectedAt,
-        arrivedAt: route.arrival?.recorded_at,
+        arrivedAt: route.arrival?.recorded_at ?? prev?.arrivedAt,
         distanceToDestinationMeters:
           route.proximity?.distance_to_destination_meters ??
           prev?.distanceToDestinationMeters ??
@@ -398,12 +476,17 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
           prev?.distanceRemainingMeters ??
           null,
         movementStarted: prev?.movementStarted,
-        speedMps: route.proximity?.speed_mps ?? prev?.speedMps ?? null,
+        speedMps:
+          (routePositionIsFresh ? route.proximity?.speed_mps : undefined) ??
+          prev?.speedMps ??
+          null,
         etaSeconds: route.proximity?.eta_seconds ?? prev?.etaSeconds ?? null,
         routeDeviationMeters:
           route.proximity?.route_deviation_meters ?? prev?.routeDeviationMeters ?? null,
         operationalStatus:
-          route.proximity?.operational_status ?? prev?.operationalStatus,
+          routeStatus === "completed"
+            ? "completed"
+            : route.proximity?.operational_status ?? prev?.operationalStatus,
         lastReceivedAt: prev?.lastReceivedAt,
       };
 
@@ -428,10 +511,27 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
         if (!taskId) continue;
 
         const prev = merged[taskId];
-        const lastPosition: [number, number] = [
+        const snapshotAt =
+          item.location.recorded_at ??
+          item.status.last_seen_at ??
+          item.updated_at ??
+          undefined;
+        const positionIsFresh = isAtLeastAsNew(snapshotAt, prev?.lastEventAt);
+        const snapshotPosition: [number, number] = [
           item.location.longitude,
           item.location.latitude,
         ];
+        const lastPosition = positionIsFresh
+          ? snapshotPosition
+          : prev?.lastPosition ?? snapshotPosition;
+
+        const nextStatus =
+          prev?.status === "completed"
+            ? "completed"
+            : normalizeProximityState(item.status.proximity_state) ??
+              normalizeLiveStatus(item.task.status) ??
+              prev?.status ??
+              "in_progress";
 
         merged[taskId] = {
           taskId,
@@ -443,11 +543,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
           taskTitle: item.task.title ?? prev?.taskTitle ?? `Task #${taskId}`,
           projectName: prev?.projectName,
           taskAddress: item.task.address ?? item.task.location ?? prev?.taskAddress,
-          status:
-            normalizeProximityState(item.status.proximity_state) ??
-            normalizeLiveStatus(item.task.status) ??
-            prev?.status ??
-            "in_progress",
+          status: nextStatus,
           destination:
             typeof item.task.destination_latitude === "number" &&
               typeof item.task.destination_longitude === "number"
@@ -458,20 +554,16 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
               : prev?.destination,
           lastPosition,
           polyline:
-            prev?.polyline && prev.polyline.length > 0 ? prev.polyline : [lastPosition],
+            prev?.polyline && prev.polyline.length > 0
+              ? prev.polyline
+              : [lastPosition],
           trackingStartedAt:
             prev?.trackingStartedAt ??
             item.location.recorded_at ??
             item.status.last_seen_at ??
             item.updated_at ??
             undefined,
-          lastEventAt: newerIso(
-            item.location.recorded_at ??
-              item.status.last_seen_at ??
-              item.updated_at ??
-              undefined,
-            prev?.lastEventAt,
-          ),
+          lastEventAt: newerIso(snapshotAt, prev?.lastEventAt),
           lastReceivedAt: prev?.lastReceivedAt,
           nearDetectedAt:
             item.status.proximity_state === "near_destination" && !item.location.arrived
@@ -489,13 +581,19 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             item.location.distance_remaining_meters ??
             prev?.distanceRemainingMeters ??
             null,
-          speedMps: item.location.speed_mps ?? prev?.speedMps ?? null,
-          headingDegrees: item.location.heading_degrees ?? prev?.headingDegrees ?? null,
+          speedMps: positionIsFresh
+            ? item.location.speed_mps ?? prev?.speedMps ?? null
+            : prev?.speedMps ?? null,
+          headingDegrees: positionIsFresh
+            ? item.location.heading_degrees ?? prev?.headingDegrees ?? null
+            : prev?.headingDegrees ?? null,
           etaSeconds: item.location.eta_seconds ?? prev?.etaSeconds ?? null,
           routeDeviationMeters:
             item.location.route_deviation_meters ?? prev?.routeDeviationMeters ?? null,
           operationalStatus:
-            item.status.operational_status ?? prev?.operationalStatus,
+            nextStatus === "completed"
+              ? "completed"
+              : item.status.operational_status ?? prev?.operationalStatus,
           isOnline: item.status.is_online ?? prev?.isOnline,
           movementStarted:
             item.status.operational_status === "en_route" ||
@@ -595,7 +693,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
       return {
         liveTasks: {
           ...s.liveTasks,
-          [taskId]: { ...prev, status: "completed" },
+          [taskId]: { ...prev, status: "completed", operationalStatus: "completed" },
         },
       };
     });

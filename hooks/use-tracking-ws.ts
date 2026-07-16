@@ -453,9 +453,13 @@ export function useTrackingWebSocket() {
     connectRef.current = connect;
   }, [connect]);
 
-  // Management dashboards: keep snapshot read-model fresh even when WS is slow/blocked.
+  // Management dashboards: hydrate once on mount; poll only when WS is down.
+  // Continuous polling while connected caused stale snapshots to snap markers backward.
+  const wsStatus = useTrackingStore((s) => s.wsStatus);
+
   useEffect(() => {
     if (!token || !companyId || !isManagementRole(companyRole)) return;
+    if (wsStatus === "connected") return;
 
     const refresh = () => {
       void hydrateLocationSnapshots();
@@ -463,7 +467,7 @@ export function useTrackingWebSocket() {
 
     const intervalId = setInterval(refresh, POLL_INTERVAL_MS);
     return () => clearInterval(intervalId);
-  }, [token, companyId, companyRole, hydrateLocationSnapshots]);
+  }, [token, companyId, companyRole, hydrateLocationSnapshots, wsStatus]);
 
   useEffect(() => {
     mountedRef.current = true;
