@@ -306,7 +306,7 @@ export default function AgentDashboardPage() {
         </div>
 
         {/* Scroll Content container */}
-        <div className="relative z-10 flex flex-col flex-1 px-5 pt-6 pb-[290px]">
+        <div className="relative z-10 flex flex-col flex-1 px-5 pt-[calc(env(safe-area-inset-top,0px)+24px)] pb-[290px]">
           {/* Header */}
           <div className="relative flex items-center justify-between mb-4 h-16">
             {isSearching ? (

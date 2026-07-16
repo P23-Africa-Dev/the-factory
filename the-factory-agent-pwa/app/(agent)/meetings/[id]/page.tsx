@@ -100,7 +100,7 @@ export default function MeetingDetailPage({ params }: MeetingDetailPageProps) {
     <ScreenErrorBoundary screenName="MeetingDetail">
       <div className="relative min-h-screen bg-[#0A1D25] text-white flex flex-col font-sans select-none overflow-hidden pb-10">
         {/* Header */}
-        <div className="relative z-10 flex items-center justify-between px-5 pt-6 mb-6">
+        <div className="relative z-10 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top,0px)+24px)] mb-6">
           <button
             onClick={nav.goBack}
             className="text-sm font-semibold text-[#75ADAF] hover:text-[#5DA1A3] transition-colors focus:outline-none"

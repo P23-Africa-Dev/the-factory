@@ -148,7 +148,7 @@ export default function TaskCompletePage() {
 
   return (
     <div className="flex flex-col flex-1 bg-[#0A1D25] min-h-screen">
-      <header className="px-6 py-4 mt-2">
+      <header className="px-6 pt-[calc(env(safe-area-inset-top,0px)+16px)] pb-4 mt-2">
         <h2 className="font-sans font-semibold text-xl text-white">Complete Task</h2>
         {task && (
           <p className="font-sans text-xs text-[#8F9098] mt-1 leading-relaxed">{task.title}</p>

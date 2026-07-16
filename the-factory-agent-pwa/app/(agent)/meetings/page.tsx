@@ -86,7 +86,7 @@ export default function MeetingsListPage() {
   return (
     <ScreenErrorBoundary screenName="MeetingsList">
       <div className="relative min-h-screen bg-[#0A1D25] text-white flex flex-col font-sans select-none overflow-hidden pb-16">
-        <div className="relative z-10 flex items-center justify-between px-5 pt-6 mb-4">
+        <div className="relative z-10 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top,0px)+24px)] mb-4">
           <h2 className="font-bold text-xl text-white">Meetings</h2>
           {canCreate && (
             <button

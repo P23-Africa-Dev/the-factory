@@ -199,7 +199,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
     <ScreenErrorBoundary screenName="LeadDetail">
       <div className="relative min-h-screen bg-[#0A1D25] text-white flex flex-col font-sans select-none overflow-hidden pb-10">
         {/* Header */}
-        <div className="relative z-10 flex items-center justify-between px-5 pt-6 mb-6">
+        <div className="relative z-10 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top,0px)+24px)] mb-6">
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={goBack}
