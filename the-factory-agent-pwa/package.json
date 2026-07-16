@@ -10,7 +10,8 @@
     "cap:sync": "npx cap sync android",
     "cap:open:android": "npx cap open android",
     "apk:debug": "node scripts/run-gradle.js assembleDebug",
-    "apk:release": "node scripts/run-gradle.js assembleRelease"
+    "apk:release": "node scripts/run-gradle.js assembleRelease",
+    "icons:android": "node scripts/generate-android-icons.js"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",
