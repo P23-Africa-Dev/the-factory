@@ -17,12 +17,12 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto flex flex-col gap-10">
         
         {/* Top Section */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
+        <div className="flex flex-col md:flex-row justify-between items-center md:items-start gap-10 text-center md:text-left w-full">
           
           {/* Logo and Navigation Links */}
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col items-center md:items-start gap-6">
             {/* Logo + Brand Name */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center md:justify-start gap-3">
               <svg width="71" height="41" viewBox="0 0 71 41" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-12 h-auto">
                 <path d="M0 20.0438C0 16.8309 2.57865 14.2388 5.77471 14.2388C8.97078 14.2388 11.5494 16.8309 11.5494 20.0438C11.5494 29.5362 17.8689 37.5317 26.4765 40.0509C24.6606 40.5985 22.6993 40.8906 20.7018 40.8906C9.26133 40.8541 0 31.5077 0 20.0438Z" fill="#0A242D"/>
                 <path d="M6.27878 34.9759C4.06332 32.7488 4.06332 29.1344 6.27878 26.9074C8.49423 24.6803 12.0898 24.6803 14.3053 26.9074C20.879 33.5156 30.8304 34.6839 38.6026 30.3758C37.6947 32.0187 36.5325 33.5886 35.1523 34.9759C27.1622 43.008 14.2326 43.008 6.27878 34.9759Z" fill="#CCEAEB"/>
@@ -49,7 +49,7 @@ export default function Footer() {
             </div>
             
             {/* Nav Menu */}
-            <nav className="flex flex-wrap gap-x-8 gap-y-2">
+            <nav className="flex flex-wrap justify-center md:justify-start gap-x-8 gap-y-2">
               <Link href="#" className="text-sm font-semibold hover:opacity-80 transition-opacity">
                 About
               </Link>
@@ -66,9 +66,9 @@ export default function Footer() {
           </div>
 
           {/* Newsletter Form */}
-          <div className="flex flex-col gap-3 w-full md:w-auto min-w-[300px] lg:min-w-[360px]">
+          <div className="flex flex-col items-center md:items-start gap-3 w-full md:w-auto min-w-[280px] sm:min-w-[300px] lg:min-w-[360px]">
             <span className="text-sm font-semibold">Get the freshest news from us</span>
-            <form onSubmit={handleSubscribe} className="flex gap-3 w-full">
+            <form onSubmit={handleSubscribe} className="flex flex-col sm:flex-row gap-3 w-full">
               <input
                 type="email"
                 placeholder="Your email address..."
@@ -79,7 +79,7 @@ export default function Footer() {
               />
               <button
                 type="submit"
-                className="px-6 py-3 bg-[#0B252C] text-white text-sm font-bold rounded-lg hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer whitespace-nowrap"
+                className="w-full sm:w-auto px-6 py-3 bg-[#0B252C] text-white text-sm font-bold rounded-lg hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer whitespace-nowrap"
               >
                 Subscribe
               </button>
