@@ -15,7 +15,7 @@ export type NativeWatchOptions = {
   message?: string;
 };
 
-const DEFAULT_TITLE = 'Factory 23 — Live tracking';
+const DEFAULT_TITLE = 'Factory 23 (Live tracking)';
 const DEFAULT_MESSAGE = 'Tap to open map · Location shared with your team';
 
 let watcherId: string | null = null;
