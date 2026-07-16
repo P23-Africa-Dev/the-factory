@@ -170,7 +170,7 @@ export function CompleteRequirementsSheet({
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 bg-[#051014]/60 backdrop-blur-sm z-[100] flex items-end sm:items-center justify-center p-0 sm:p-5 font-sans">
+    <div className="fixed inset-0 bg-[#051014]/60 backdrop-blur-sm z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-5 font-sans">
       <div className="relative bg-[#0B3343] border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6 shadow-2xl flex flex-col gap-4 text-white">
         <div className="flex items-start justify-between gap-3">
           <div>
