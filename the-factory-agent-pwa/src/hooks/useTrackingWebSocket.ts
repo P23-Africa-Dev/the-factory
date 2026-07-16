@@ -8,6 +8,7 @@ import { hydrateLiveTaskFromRoute } from '@/features/tracking/hydrateRoute';
 import { appStore, getActiveCompanyId } from '@/lib/storage/stores';
 import { queryClient } from '@/lib/queryClient';
 import { env } from '@/constants/env';
+import { notifyTrackingNearDestination } from '@/lib/notifications/trackingAlerts';
 
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
@@ -146,6 +147,7 @@ export const useTrackingWebSocket = (): void => {
         case 'tracking.task.near_destination':
           if (taskId == null) break;
           upsertTask(taskId, { status: 'tracking', lastUpdatedAt: occurredAt });
+          void notifyTrackingNearDestination(taskId);
           break;
 
         case 'tracking.task.arrived':

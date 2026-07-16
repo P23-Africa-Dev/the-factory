@@ -5,7 +5,10 @@ import { isNativeAndroid } from '../native/capacitorPlatform';
 import {
   startNativeBackgroundWatch,
   stopNativeBackgroundWatch,
+  buildLiveTrackingTitle,
+  buildLiveTrackingMessage,
 } from '../native/nativeBackgroundGeolocation';
+import { useTrackingStore } from '@/store/tracking';
 
 export type PermissionStatus = 'unknown' | 'prompt' | 'granted' | 'denied';
 
@@ -294,13 +297,19 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
       if (isNativeAndroid()) {
         clearWatcher();
         try {
+          const taskId = useTrackingStore.getState().activeTrackingTaskId;
+          const live = taskId != null ? useTrackingStore.getState().liveTaskMap[taskId] : null;
+          const title = buildLiveTrackingTitle(live?.taskTitle ?? null);
+          const message = buildLiveTrackingMessage(null);
+
           await startNativeBackgroundWatch(
             (loc) => {
               if (!isValidReading(loc, MAX_STREAMING_ACCURACY_LOW_M)) return;
               rememberPosition(loc);
               onUpdateRef.current?.(loc);
             },
-            (message) => setError(message),
+            (messageText) => setError(messageText),
+            { title, message },
           );
           nativeWatchActiveRef.current = true;
           setIsWatching(true);

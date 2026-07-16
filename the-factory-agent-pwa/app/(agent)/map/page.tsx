@@ -1093,6 +1093,12 @@ function MapContent() {
     if (!isFromTrackingScreen || !trackingTaskId) return;
     startTracking(trackingTaskId, companyId, {
       onArrived: () => setHasArrived(true),
+      onNearDestination: () => {
+        if (!nearAlertShownRef.current) {
+          nearAlertShownRef.current = true;
+          void notifyTrackingNearDestination(trackingTaskId);
+        }
+      },
       onDistanceRemaining: (m) => setDistanceRemainingM(m),
     });
     useTrackingStore.getState().setActiveTrackingTaskId(trackingTaskId);
