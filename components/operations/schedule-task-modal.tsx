@@ -1,14 +1,15 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Calendar, FileText, Loader2, MapPin, Navigation, User, X } from "lucide-react";
+import { Calendar, FileText, MapPin, Navigation, User, X } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth";
 import { useInternalUsers } from "@/hooks/use-projects";
 import { useCreateSelfTask, useCreateTask } from "@/hooks/use-tasks";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { geocodeAddressWithMapbox } from "@/lib/utils/geocoding";
+import { PlaceAutocompleteField } from "@/components/map/PlaceAutocompleteField";
+import type { RetrievedPlace } from "@/lib/utils/place-search";
 import type { TaskApiItem } from "@/lib/api/tasks";
 
 type ScheduleTaskModalProps = {
@@ -75,7 +76,6 @@ export function ScheduleTaskModal({
         dueDate: defaultDueDate(defaultDate),
     });
     const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
-    const [geocoding, setGeocoding] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [wasOpen, setWasOpen] = useState(false);
 
@@ -123,28 +123,20 @@ export function ScheduleTaskModal({
         return Object.keys(nextErrors).length === 0;
     }, [canDelegate, form.assignTo, form.taskDescription]);
 
-    const geocodeAddress = useCallback(async (address: string) => {
-        if (!address.trim()) {
-            setCoords(null);
-            return;
-        }
-
-        setGeocoding(true);
-
-        try {
-            const geocoded = await geocodeAddressWithMapbox(address);
-            setCoords(geocoded);
-        } catch {
-            setCoords(null);
-        } finally {
-            setGeocoding(false);
-        }
+    const applyRetrievedPlace = useCallback((place: RetrievedPlace) => {
+        setForm((previous) => ({
+            ...previous,
+            location: place.name,
+            address: place.address || place.name,
+        }));
+        setCoords({ lat: place.lat, lng: place.lng });
+        setErrors((previous) => ({ ...previous, location: "", address: "" }));
     }, []);
 
     const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
         setForm((previous) => ({ ...previous, [key]: value }));
         setErrors((previous) => ({ ...previous, [key]: "" }));
-        if (key === "address") {
+        if (key === "address" || key === "location") {
             setCoords(null);
         }
     };
@@ -274,12 +266,13 @@ export function ScheduleTaskModal({
                             Location <span className="font-normal normal-case text-gray-400">(optional)</span>
                         </label>
                         <div className="relative">
-                            <MapPin className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-                            <input
+                            <MapPin className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-10" size={14} />
+                            <PlaceAutocompleteField
                                 value={form.location}
-                                onChange={(event) => updateField("location", event.target.value)}
-                                className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm outline-none transition-colors focus:border-[#094B5C]"
+                                onChange={(next) => updateField("location", next)}
+                                onPlaceSelect={applyRetrievedPlace}
                                 placeholder="Area or city"
+                                inputClassName="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm outline-none transition-colors focus:border-[#094B5C]"
                             />
                         </div>
                         {errors.location && <p className="text-[11px] text-red-500">{errors.location}</p>}
@@ -288,24 +281,24 @@ export function ScheduleTaskModal({
                             Address
                         </label>
                         <div className="relative">
-                            {geocoding ? (
-                                <Loader2 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 animate-spin text-[#094B5C]" size={14} />
-                            ) : (
-                                <Navigation className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-                            )}
-                            <input
+                            <Navigation className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-10" size={14} />
+                            <PlaceAutocompleteField
                                 value={form.address}
-                                onChange={(event) => updateField("address", event.target.value)}
-                                onBlur={(event) => geocodeAddress(event.target.value)}
-                                className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm outline-none transition-colors focus:border-[#094B5C]"
-                                placeholder="Optional exact address"
+                                onChange={(next) => updateField("address", next)}
+                                onPlaceSelect={applyRetrievedPlace}
+                                placeholder="Search exact address or place"
+                                inputClassName="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm outline-none transition-colors focus:border-[#094B5C]"
                             />
                         </div>
-                        {coords && (
+                        {coords ? (
                             <p className="text-[10px] font-medium text-green-600">
                                 GPS: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
                             </p>
-                        )}
+                        ) : (form.address.trim().length >= 2 || form.location.trim().length >= 2) ? (
+                            <p className="text-[10px] text-amber-700">
+                                Pick a suggestion to lock map coordinates.
+                            </p>
+                        ) : null}
                         {errors.address && <p className="text-[11px] text-red-500">{errors.address}</p>}
 
                         <label className="block text-[11px] font-bold uppercase tracking-wide text-[#0B1215]">

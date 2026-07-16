@@ -45,7 +45,16 @@ export async function POST(request: Request) {
   const credit = await consumeMapCredit(request, "autocomplete");
   if (credit.blocked) {
     // Out of credits — return empty so the client falls back to Mapbox.
-    return NextResponse.json({ enabled: true, suggestions: [] });
+    return NextResponse.json({
+      enabled: true,
+      suggestions: [],
+      credits: {
+        blocked: true,
+        low: credit.low,
+        metered: credit.metered,
+        balance: credit.balance,
+      },
+    });
   }
 
   const results = await googleAutocomplete(apiKey, input, sessionToken, locationBias, limit);
@@ -58,5 +67,11 @@ export async function POST(request: Request) {
       placeFormatted: item.placeFormatted,
       category: item.category,
     })),
+    credits: {
+      blocked: false,
+      low: credit.low,
+      metered: credit.metered,
+      balance: credit.balance,
+    },
   });
 }

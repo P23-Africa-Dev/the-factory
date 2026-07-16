@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   X,
@@ -14,7 +14,8 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { useCreateSelfTask } from '../queries';
-import { searchPlacesWithMapbox, type GeocodedPlaceSuggestion } from '@/lib/map/geocoding';
+import { PlaceAutocompleteField } from '@/features/locations/components/PlaceAutocompleteField';
+import type { RetrievedPlace } from '@/lib/map/place-search';
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
 import { toast } from '@/lib/toast';
 import { useAgentIdentity } from '@/features/auth';
@@ -61,11 +62,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
   const [requiredActions, setRequiredActions] = useState<string[]>([]);
 
   // Geocoding and GPS states
-  const [geocoding, setGeocoding] = useState(false);
   const [gpsLocating, setGpsLocating] = useState(false);
-  const [suggestions, setSuggestions] = useState<GeocodedPlaceSuggestion[]>([]);
-  const [activeSearchField, setActiveSearchField] = useState<'location' | 'address' | null>(null);
-  const placeSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Default due date to end of today (23:59) local time
   useEffect(() => {
@@ -97,27 +94,10 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
     setRequiredActions((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const searchPlaces = useCallback((query: string, field: 'location' | 'address') => {
-    if (placeSearchTimer.current) clearTimeout(placeSearchTimer.current);
-    if (query.trim().length < 2) {
-      setSuggestions([]);
-      setActiveSearchField(null);
-      return;
-    }
-    setActiveSearchField(field);
-    placeSearchTimer.current = setTimeout(() => {
-      void searchPlacesWithMapbox(query).then((results) => {
-        setSuggestions(results);
-      });
-    }, 300);
-  }, []);
-
-  const applyPlace = (place: GeocodedPlaceSuggestion) => {
+  const applyRetrievedPlace = (place: RetrievedPlace) => {
     setLocationName(place.name);
-    setAddress(place.address);
-    setCoords({ lat: place.latitude, lng: place.longitude });
-    setSuggestions([]);
-    setActiveSearchField(null);
+    setAddress(place.address || place.name);
+    setCoords({ lat: place.lat, lng: place.lng });
   };
 
   // 10x GPS coordinates loader
@@ -211,8 +191,6 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
     setRequiredActions([]);
     setVisitVerification(false);
     setMinPhotos(0);
-    setSuggestions([]);
-    setActiveSearchField(null);
   };
 
   if (!isOpen) return null;
@@ -324,35 +302,17 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
               <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans">
                 Location Name
               </label>
-              <input
-                type="text"
-                placeholder="e.g., Shoprite Mall"
+              <PlaceAutocompleteField
                 value={locationName}
-                onChange={(e) => {
-                  setLocationName(e.target.value);
-                  searchPlaces(e.target.value, 'location');
+                onChange={(next) => {
+                  setLocationName(next);
+                  setCoords(null);
                 }}
-                onFocus={() => {
-                  if (locationName.length >= 2) searchPlaces(locationName, 'location');
-                }}
-                className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors"
+                onPlaceSelect={applyRetrievedPlace}
+                placeholder="e.g., Shoprite Mall"
+                variant="dark"
+                inputClassName="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors placeholder:text-white/30"
               />
-              {activeSearchField === 'location' && suggestions.length > 0 && (
-                <ul className="absolute z-30 left-0 right-0 top-[60px] bg-[#0E2833] border border-white/10 rounded-xl overflow-hidden shadow-2xl max-h-40 overflow-y-auto">
-                  {suggestions.map((s, idx) => (
-                    <li key={idx}>
-                      <button
-                        type="button"
-                        onClick={() => applyPlace(s)}
-                        className="w-full text-left px-4 py-2 text-xs hover:bg-white/5 border-b border-white/5"
-                      >
-                        <span className="font-bold text-white block">{s.name}</span>
-                        <span className="text-[10px] text-white/50 block truncate">{s.address}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </div>
 
             <div className="relative flex flex-col">
@@ -374,40 +334,26 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
                   Locate Me
                 </button>
               </div>
-              <input
-                type="text"
-                placeholder="e.g., 24 Admiralty Way, Lekki Phase 1"
+              <PlaceAutocompleteField
                 value={address}
-                onChange={(e) => {
-                  setAddress(e.target.value);
-                  searchPlaces(e.target.value, 'address');
+                onChange={(next) => {
+                  setAddress(next);
+                  setCoords(null);
                 }}
-                onFocus={() => {
-                  if (address.length >= 2) searchPlaces(address, 'address');
-                }}
-                className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors"
+                onPlaceSelect={applyRetrievedPlace}
+                placeholder="e.g., 24 Admiralty Way, Lekki Phase 1"
+                variant="dark"
+                inputClassName="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors placeholder:text-white/30"
               />
-              {activeSearchField === 'address' && suggestions.length > 0 && (
-                <ul className="absolute z-30 left-0 right-0 top-[60px] bg-[#0E2833] border border-white/10 rounded-xl overflow-hidden shadow-2xl max-h-40 overflow-y-auto">
-                  {suggestions.map((s, idx) => (
-                    <li key={idx}>
-                      <button
-                        type="button"
-                        onClick={() => applyPlace(s)}
-                        className="w-full text-left px-4 py-2 text-xs hover:bg-white/5 border-b border-white/5"
-                      >
-                        <span className="font-bold text-white block">{s.name}</span>
-                        <span className="text-[10px] text-white/50 block truncate">{s.address}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {coords && (
+              {coords ? (
                 <p className="text-[9px] text-green-400 mt-1 font-semibold flex items-center gap-1 font-sans">
                   <CheckCircle size={10} /> Coordinates: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
                 </p>
-              )}
+              ) : (address.trim().length >= 2 || locationName.trim().length >= 2) ? (
+                <p className="text-[9px] text-amber-300 mt-1 font-sans">
+                  Pick a suggestion to lock map coordinates for arrival detection.
+                </p>
+              ) : null}
             </div>
           </div>
 

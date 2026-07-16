@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { SAVED_LOCATION_TYPES } from '@/lib/map/locationTypes';
 import { useCrmLabels } from '@/features/crm';
+import { PlaceAutocompleteField } from './PlaceAutocompleteField';
 import { saveLocationFormSchema } from '../schema';
 import type { CreateSavedLocationInput } from '../types';
+import type { RetrievedPlace } from '@/lib/map/place-search';
 
 export type SaveLocationSheetProps = {
   visible: boolean;
@@ -17,6 +19,8 @@ export type SaveLocationSheetProps = {
   isSubmitting?: boolean;
   onClose: () => void;
   onSubmit: (input: CreateSavedLocationInput) => void;
+  /** Called when the user picks a Google/Mapbox place so the map pin can move. */
+  onCoordinatesChange?: (latitude: number, longitude: number, address: string) => void;
 };
 
 export function SaveLocationSheet({
@@ -28,6 +32,7 @@ export function SaveLocationSheet({
   isSubmitting,
   onClose,
   onSubmit,
+  onCoordinatesChange,
 }: SaveLocationSheetProps) {
   const [name, setName] = useState(initialName ?? '');
   const [type, setType] = useState('office');
@@ -35,17 +40,35 @@ export function SaveLocationSheet({
   const [address, setAddress] = useState(initialAddress ?? '');
   const [contactNumber, setContactNumber] = useState('');
   const [email, setEmail] = useState('');
+  const [pickedCoords, setPickedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const { data: crmLabels = [] } = useCrmLabels();
   const defaultCrmStatus = crmLabels.find((l) => l.is_default)?.slug ?? crmLabels[0]?.slug ?? 'newly_lead';
   const [crmStatus, setCrmStatus] = useState(defaultCrmStatus);
   const [mounted, setMounted] = useState(false);
 
+  const resolvedLat = pickedCoords?.lat ?? latitude;
+  const resolvedLng = pickedCoords?.lng ?? longitude;
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  // Keep address in sync when reverse-geocode arrives from the parent.
+  useEffect(() => {
+    if (initialAddress != null && initialAddress !== '') {
+      setAddress(initialAddress);
+    }
+  }, [initialAddress]);
+
   if (!visible || !mounted) return null;
+
+  const handlePlaceSelect = (place: RetrievedPlace) => {
+    const nextAddress = place.address || place.name;
+    setAddress(nextAddress);
+    setPickedCoords({ lat: place.lat, lng: place.lng });
+    onCoordinatesChange?.(place.lat, place.lng, nextAddress);
+  };
 
   const handleSubmit = (saveToCrm: boolean) => {
     const result = saveLocationFormSchema.safeParse({
@@ -73,8 +96,8 @@ export function SaveLocationSheet({
       type,
       description: description.trim() || null,
       address: address.trim() || null,
-      latitude,
-      longitude,
+      latitude: resolvedLat,
+      longitude: resolvedLng,
       contactNumber: contactNumber.trim() || null,
       email: email.trim() || null,
       saveToCrm,
@@ -128,13 +151,18 @@ export function SaveLocationSheet({
 
           <div>
             <label className="block text-xs font-semibold text-[#9FC4C6] mb-1.5">Address</label>
-            <input
-              type="text"
+            <PlaceAutocompleteField
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Auto-filled from map"
-              className="w-full h-12 bg-white rounded-xl px-4 text-[#09232D] placeholder-gray-400 focus:outline-none text-sm font-semibold border-none"
+              onChange={setAddress}
+              onPlaceSelect={handlePlaceSelect}
+              placeholder="Search address or place…"
+              disabled={isSubmitting}
+              proximity={[longitude, latitude]}
+              inputClassName="w-full h-12 bg-white rounded-xl px-4 text-[#09232D] placeholder-gray-400 focus:outline-none text-sm font-semibold border-none"
             />
+            <p className="mt-1 text-[10px] text-white/40">
+              {resolvedLat.toFixed(6)}, {resolvedLng.toFixed(6)}
+            </p>
             {errors.address && <p className="text-[#FD6046] text-[10px] mt-1">{errors.address}</p>}
           </div>
 
@@ -179,7 +207,6 @@ export function SaveLocationSheet({
             </div>
           </div>
 
-          {/* CRM Label Selection Option */}
           <div className="flex items-center gap-2 py-1 select-none">
             <input
               type="checkbox"

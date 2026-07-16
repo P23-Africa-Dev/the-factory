@@ -88,10 +88,14 @@ async function suggestPlacesGoogle(
 
     const payload = (await response.json()) as {
       enabled?: boolean;
+      credits?: { blocked?: boolean };
       suggestions?: Array<{ placeId?: string; name?: string; placeFormatted?: string; category?: string | null }>;
     };
 
     if (!response.ok || payload.enabled === false) return [];
+
+    // Credits exhausted — empty list triggers Mapbox fallback in suggestPlaces.
+    if (payload.credits?.blocked) return [];
 
     return (payload.suggestions ?? [])
       .filter((item) => item.placeId && item.name)

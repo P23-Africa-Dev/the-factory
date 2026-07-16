@@ -1,16 +1,14 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import { createPortal } from "react-dom";
 import { Building2, Loader2, Mail, MapPin, Phone, X } from "lucide-react";
 
 import { SAVED_LOCATION_TYPES } from "@/lib/map/location-types";
 import type { SavedLocation } from "@/lib/api/saved-locations";
 import type { CrmLabel } from "@/lib/api/crm";
-import {
-  searchPlacesWithMapbox,
-  type GeocodedPlaceSuggestion,
-} from "@/lib/utils/geocoding";
+import { PlaceAutocompleteField } from "@/components/map/PlaceAutocompleteField";
+import type { RetrievedPlace } from "@/lib/utils/place-search";
 
 export type SaveLocationFormValues = {
   name: string;
@@ -57,8 +55,6 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 const BASE_INPUT =
   "w-full bg-gray-50 rounded-xl text-sm text-[#0B1215] outline-none border transition-colors placeholder:text-gray-300";
 
-const PLACE_SEARCH_DEBOUNCE_MS = 300;
-
 export function SaveLocationModal({
   open,
   mode,
@@ -87,41 +83,10 @@ export function SaveLocationModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pickedCoords, setPickedCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const resolvedCoords = pickedCoords ?? { latitude, longitude };
-  const [placeSuggestions, setPlaceSuggestions] = useState<GeocodedPlaceSuggestion[]>([]);
-  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-  const [searchingPlaces, setSearchingPlaces] = useState(false);
-  const placeSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const defaultCrmStatus = crmLabels.find((l) => l.is_default)?.slug ?? crmLabels[0]?.slug ?? "newly_lead";
   const [crmStatus, setCrmStatus] = useState(defaultCrmStatus);
 
-  useEffect(() => {
-    return () => {
-      if (placeSearchTimerRef.current) clearTimeout(placeSearchTimerRef.current);
-    };
-  }, []);
-
   const title = mode === "create" ? "Save Location" : "Edit Location";
-
-  const searchPlaces = useCallback((query: string) => {
-    if (placeSearchTimerRef.current) clearTimeout(placeSearchTimerRef.current);
-
-    const trimmed = query.trim();
-    if (trimmed.length < 2) {
-      setPlaceSuggestions([]);
-      setSuggestionsOpen(false);
-      setSearchingPlaces(false);
-      return;
-    }
-
-    setSearchingPlaces(true);
-    placeSearchTimerRef.current = setTimeout(() => {
-      void searchPlacesWithMapbox(trimmed, { limit: 6 }).then((results) => {
-        setPlaceSuggestions(results);
-        setSuggestionsOpen(true);
-        setSearchingPlaces(false);
-      });
-    }, PLACE_SEARCH_DEBOUNCE_MS);
-  }, []);
 
   // In create mode the address resolves asynchronously; show the resolved value
   // until the user edits it, without an effect.
@@ -133,12 +98,10 @@ export function SaveLocationModal({
     setValues((prev) => ({ ...prev, [field]: value }));
   };
 
-  const applyPlaceSuggestion = (place: GeocodedPlaceSuggestion) => {
+  const applyRetrievedPlace = (place: RetrievedPlace) => {
     setAddressDirty(true);
-    handleChange("address", place.address);
+    handleChange("address", place.address || place.name);
     setPickedCoords({ latitude: place.lat, longitude: place.lng });
-    setPlaceSuggestions([]);
-    setSuggestionsOpen(false);
     onCoordinatesChange?.(place.lat, place.lng);
   };
 
@@ -218,54 +181,24 @@ export function SaveLocationModal({
 
           <div>
             <FieldLabel>Address</FieldLabel>
-            <div className="relative">
-              <input
-                value={addressValue}
-                onChange={(e) => {
-                  setAddressDirty(true);
-                  handleChange("address", e.target.value);
-                  searchPlaces(e.target.value);
-                }}
-                onFocus={() => {
-                  if (addressValue.trim().length >= 2) {
-                    searchPlaces(addressValue);
-                  }
-                }}
-                onBlur={() => {
-                  window.setTimeout(() => setSuggestionsOpen(false), 150);
-                }}
-                placeholder={addressLoading ? "Resolving address…" : "Search or edit address"}
-                className={`${BASE_INPUT} px-3 py-2.5 border-gray-200 focus:border-[#094B5C]`}
-              />
-              {(addressLoading || searchingPlaces) && (
-                <Loader2 size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />
-              )}
-              {suggestionsOpen && placeSuggestions.length > 0 && (
-                <ul className="absolute z-20 left-0 right-0 mt-1 max-h-44 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
-                  {placeSuggestions.map((place) => (
-                    <li key={`${place.lat}-${place.lng}-${place.address}`}>
-                      <button
-                        type="button"
-                        className="w-full px-3 py-2 text-left hover:bg-gray-50"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          applyPlaceSuggestion(place);
-                        }}
-                      >
-                        <span className="block text-[13px] font-semibold text-[#0B1215] leading-tight">
-                          {place.name}
-                        </span>
-                        {place.address && place.address !== place.name && (
-                          <span className="block text-[11px] text-gray-500 leading-tight mt-0.5 truncate">
-                            {place.address}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            <PlaceAutocompleteField
+              value={addressValue}
+              onChange={(next) => {
+                setAddressDirty(true);
+                handleChange("address", next);
+              }}
+              onPlaceSelect={applyRetrievedPlace}
+              placeholder={addressLoading ? "Resolving address…" : "Search or edit address"}
+              disabled={busy}
+              proximity={[longitude, latitude]}
+              inputClassName={`${BASE_INPUT} px-3 py-2.5 border-gray-200 focus:border-[#094B5C]`}
+            />
+            {addressLoading && (
+              <p className="mt-1 flex items-center gap-1.5 text-[11px] text-gray-400">
+                <Loader2 size={12} className="animate-spin" />
+                Resolving address from pin…
+              </p>
+            )}
             <p className="mt-1 text-[10px] text-gray-400">
               {resolvedCoords.latitude.toFixed(6)}, {resolvedCoords.longitude.toFixed(6)}
             </p>

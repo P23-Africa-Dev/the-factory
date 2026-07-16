@@ -2339,6 +2339,9 @@ function MapContent() {
           isSubmitting={isSavingLocation}
           onClose={() => setPendingPin(null)}
           onSubmit={handleSubmitSavedLocation}
+          onCoordinatesChange={(lat, lng, address) => {
+            setPendingPin({ lat, lng, address });
+          }}
         />
       )}
 
