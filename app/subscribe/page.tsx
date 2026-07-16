@@ -13,6 +13,9 @@ import {
   type BillingPlan,
 } from "@/lib/api/billing";
 import { ApiRequestError } from "@/lib/api/onboarding";
+import { logout } from "@/lib/api/auth";
+import { clearAuthSession, getAuthTokenFromDocument } from "@/lib/auth/session";
+import { useAuthStore } from "@/store/auth";
 
 // Default allocation display (5% of monthly price at 100 credits = $1). The
 // server is the source of truth; this is an at-a-glance marketing figure.
@@ -46,6 +49,9 @@ function SubscribePageInner() {
   const [interval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
   const [pendingPlanKey, setPendingPlanKey] = useState<string | null>(null);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const clearUser = useAuthStore((s) => s.clearUser);
+  const authUser = useAuthStore((s) => s.user);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["billing-plans"],
@@ -87,6 +93,33 @@ function SubscribePageInner() {
     }
   }, [data, router]);
 
+  async function handleSignOut() {
+    if (isSigningOut) {
+      return;
+    }
+
+    setIsSigningOut(true);
+
+    const isAgent =
+      viewerRole === "agent" ||
+      authUser?.active_company?.role === "agent" ||
+      authUser?.user_type === "agent";
+
+    try {
+      const token = getAuthTokenFromDocument();
+      if (token) {
+        await logout(token);
+      }
+    } catch {
+      // Continue local logout cleanup even if API logout fails
+      // (e.g. already deauthenticated / expired token).
+    }
+
+    clearAuthSession();
+    clearUser();
+    window.location.href = isAgent ? "/agent/login" : "/login";
+  }
+
   const isAnyPending = checkoutMutation.isPending;
 
   return (
@@ -100,10 +133,12 @@ function SubscribePageInner() {
           </div>
           <button
             type="button"
-            onClick={() => router.push("/login")}
-            className="text-xs text-white/50 hover:text-white transition"
+            onClick={handleSignOut}
+            disabled={isSigningOut}
+            className="text-xs text-white/50 hover:text-white transition disabled:opacity-50 disabled:cursor-wait inline-flex items-center gap-1.5"
           >
-            Sign out
+            {isSigningOut && <Loader2 className="w-3 h-3 animate-spin" />}
+            {isSigningOut ? "Signing out…" : "Sign out"}
           </button>
         </div>
       </header>
