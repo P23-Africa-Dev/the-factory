@@ -1,6 +1,11 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { isNativeAndroid } from '../native/capacitorPlatform';
+import {
+  startNativeBackgroundWatch,
+  stopNativeBackgroundWatch,
+} from '../native/nativeBackgroundGeolocation';
 
 export type PermissionStatus = 'unknown' | 'prompt' | 'granted' | 'denied';
 
@@ -102,6 +107,7 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
   const onUpdateRef = useRef<((loc: LocationObject) => void) | null>(null);
   const lowAccuracyRef = useRef(false);
   const lastPositionRef = useRef<LocationObject | null>(cachedLastPosition);
+  const nativeWatchActiveRef = useRef(false);
 
   const rememberPosition = useCallback((loc: LocationObject) => {
     cachedLastPosition = loc;
@@ -127,6 +133,8 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
   const beginWatch = useCallback(() => {
     if (typeof window === 'undefined' || !navigator.geolocation) return;
     if (!onUpdateRef.current) return;
+    // Native Android uses the background-geolocation foreground service instead.
+    if (isNativeAndroid()) return;
 
     clearWatcher();
 
@@ -282,18 +290,50 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
   const startWatching = useCallback(
     async (onUpdate: (loc: LocationObject) => void): Promise<void> => {
       onUpdateRef.current = onUpdate;
+
+      if (isNativeAndroid()) {
+        clearWatcher();
+        try {
+          await startNativeBackgroundWatch(
+            (loc) => {
+              if (!isValidReading(loc, MAX_STREAMING_ACCURACY_LOW_M)) return;
+              rememberPosition(loc);
+              onUpdateRef.current?.(loc);
+            },
+            (message) => setError(message),
+          );
+          nativeWatchActiveRef.current = true;
+          setIsWatching(true);
+          setPermission('granted');
+        } catch (err) {
+          nativeWatchActiveRef.current = false;
+          setIsWatching(false);
+          const message = err instanceof Error ? err.message : 'Failed to start native tracking';
+          setError(message);
+          throw err;
+        }
+        return;
+      }
+
       beginWatch();
     },
-    [beginWatch],
+    [beginWatch, clearWatcher, rememberPosition, setPermission],
   );
 
   const stopWatching = useCallback(() => {
     onUpdateRef.current = null;
+    if (nativeWatchActiveRef.current || isNativeAndroid()) {
+      nativeWatchActiveRef.current = false;
+      void stopNativeBackgroundWatch();
+      setIsWatching(false);
+    }
     clearWatcher();
   }, [clearWatcher]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
+    // Native Android keeps high-accuracy FGS; no visibility downgrade.
+    if (isNativeAndroid()) return;
 
     const handler = () => {
       const hidden = document.visibilityState === 'hidden';

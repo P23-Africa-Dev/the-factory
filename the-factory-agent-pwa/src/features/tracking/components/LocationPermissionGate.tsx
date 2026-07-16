@@ -2,11 +2,15 @@
 
 import React, { useMemo } from 'react';
 import { Compass, ShieldAlert, X } from 'lucide-react';
+import { isNativeAndroid } from '../native/capacitorPlatform';
+import { openNativeLocationSettings } from '../native/nativeBackgroundGeolocation';
 
-type Platform = 'ios' | 'android' | 'chrome-desktop' | 'pwa' | 'other';
+type Platform = 'ios' | 'android' | 'android-native' | 'chrome-desktop' | 'pwa' | 'other';
 
 function detectPlatform(): Platform {
   if (typeof navigator === 'undefined') return 'other';
+
+  if (isNativeAndroid()) return 'android-native';
 
   const ua = navigator.userAgent || '';
   const isStandalone =
@@ -35,6 +39,12 @@ const GUIDANCE: Record<Platform, string[]> = {
     'Make sure system Location is turned on in Quick Settings',
     'Return here and tap Try Again',
   ],
+  'android-native': [
+    'Open App info → Permissions → Location and choose "Allow all the time"',
+    'Allow Notifications so the live-tracking indicator can stay on',
+    'Under Battery, set unrestricted / no battery optimization for this app',
+    'Return here and tap Try Again (or Open Settings below)',
+  ],
   'chrome-desktop': [
     'Click the lock / tune icon to the left of the address bar',
     'Set Location to Allow',
@@ -55,6 +65,7 @@ const GUIDANCE: Record<Platform, string[]> = {
 const PLATFORM_LABEL: Record<Platform, string> = {
   ios: 'On iPhone / iPad',
   android: 'On Android',
+  'android-native': 'In the Android app',
   'chrome-desktop': 'In Chrome',
   pwa: 'In the installed app',
   other: 'In your browser',
@@ -126,6 +137,15 @@ export function LocationPermissionGate({
         >
           {isBusy ? 'Checking…' : 'Try Again'}
         </button>
+        {platform === 'android-native' && (
+          <button
+            type="button"
+            onClick={() => void openNativeLocationSettings()}
+            className="mt-2 h-11 w-full max-w-xs rounded-full border border-white/15 bg-white/5 text-xs font-semibold text-white hover:bg-white/10 active:scale-95"
+          >
+            Open App Settings
+          </button>
+        )}
         {onDismiss && (
           <button
             onClick={onDismiss}
@@ -158,7 +178,9 @@ export function LocationPermissionGate({
       <p className="mb-8 max-w-xs text-xs leading-relaxed text-[#8F9098]">
         {isResume
           ? 'This task is already in progress. Allow location access to resume tracking from where you left off.'
-          : 'To start this task we track your location so supervisors can monitor your route and confirm you reached the destination. Your location is only shared while the task is active.'}
+          : platform === 'android-native'
+            ? 'To start this task we track your location in the background (even when minimized or the screen is locked). Allow location “all the time” and notifications so the live-tracking indicator can stay on.'
+            : 'To start this task we track your location so supervisors can monitor your route and confirm you reached the destination. Your location is only shared while the task is active.'}
       </p>
       <button
         onClick={onRequest}

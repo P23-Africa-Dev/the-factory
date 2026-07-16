@@ -15,6 +15,7 @@ export { trackingApi } from './api';
 export { trackingKeys } from './queryKeys';
 export { LocationPermissionGate } from './components/LocationPermissionGate';
 export type { LocationPermissionGateProps } from './components/LocationPermissionGate';
+export { isNativeAndroid, isNativePlatform } from './native/capacitorPlatform';
 
 export type {
   TrackingSession,

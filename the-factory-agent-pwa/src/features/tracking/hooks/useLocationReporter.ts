@@ -231,7 +231,9 @@ export const useLocationReporter = ({
     }
 
     needsImmediateFlushRef.current = true;
-    startWatching(enqueue);
+    void startWatching(enqueue).catch((err) => {
+      console.error('[tracking] failed to start location watch', err);
+    });
     flushIntervalRef.current = setInterval(() => {
       void flush();
     }, FLUSH_INTERVAL_MS);
