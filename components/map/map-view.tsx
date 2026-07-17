@@ -210,14 +210,11 @@ function buildSelectedAgentPopupHtml(params: { name: string; avatarUrl?: string;
 
   return `
     <div style="width:140px; padding:15px 13px; border-radius:16px; background:#ffffff; border:0.5px solid rgba(226,232,240,0.88); box-shadow:0 12px 27px rgba(15,23,42,0.24); font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; position:relative;">
-      <button type="button" data-popup-close="selected-agent" aria-label="Close popup" style="position:absolute; top:8px; right:8px; color:#0F2530; display:flex; align-items:center; justify-content:center; width:12px; height:12px; padding:0; border:0; background:transparent; cursor:pointer;">
+      <button type="button" data-popup-close="selected-agent" aria-label="Close popup" style="position:absolute; top:13px; right:8px; color:#0F2530; display:flex; align-items:center; justify-content:center; width:12px; height:12px; padding:0; border:0; background:transparent; cursor:pointer;">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
       </button>
       <div style="display:flex; align-items:center; justify-content:space-between;">
         <a href="/operations/agents" style="font-size:8px; line-height:1; font-weight:700; color:#1F2933; text-decoration:underline; text-underline-offset:1.5px; letter-spacing:-0.01em;">View Full Profile</a>
-        <span style="color:#0F2530; display:flex; align-items:center; justify-content:center; width:13px; height:13px;">
-          <svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="0.85" fill="currentColor"/><circle cx="12" cy="12" r="0.85" fill="currentColor"/><circle cx="12" cy="19" r="0.85" fill="currentColor"/></svg>
-        </span>
       </div>
 
       <div style="margin-top:5px; display:flex; justify-content:center;">
