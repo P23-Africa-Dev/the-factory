@@ -241,7 +241,7 @@ export function CompleteRequirementsSheet({
 
           {requirements.visitVerificationRequired && (
             <p className="text-[11px] text-amber-200/90 bg-amber-500/10 border border-amber-400/20 rounded-xl px-3 py-2">
-              Visit verification is required (your current location will be attached with the proofs).
+              Visit verification is required, your current location will be attached with the proofs.
             </p>
           )}
 
