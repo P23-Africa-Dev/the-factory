@@ -38,7 +38,7 @@ class TaskProofController extends Controller
         );
     }
 
-    public function show(Request $request, Task $task, TaskProof $proof): StreamedResponse
+    public function show(Request $request, Task $task, TaskProof $proof): StreamedResponse|JsonResponse
     {
         $proof = $this->taskService->findProofForDownload(
             user: $request->user(),
@@ -47,10 +47,23 @@ class TaskProofController extends Controller
             companyId: $this->resolveCompanyContextId($request->input('company_id')),
         );
 
-        return Storage::disk($proof->disk)->download(
-            $proof->file_path,
+        $disk = Storage::disk($proof->disk);
+        $path = (string) $proof->file_path;
+
+        if ($path === '' || ! $disk->exists($path)) {
+            return $this->error(
+                message: 'Proof file is no longer available.',
+                errors: ['file' => ['The stored proof file could not be found. Re-upload the proof to restore it.']],
+                status: 404,
+            );
+        }
+
+        return $disk->response(
+            $path,
             $this->taskService->proofDownloadName($proof),
-            ['Content-Type' => $proof->mime_type],
+            [
+                'Content-Type' => $proof->mime_type ?: 'application/octet-stream',
+            ],
         );
     }
 }

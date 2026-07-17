@@ -376,7 +376,10 @@ export function TaskProofGallery({
                   <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-gray-100 to-gray-200" />
                 ) : preview.status === "error" ? (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center">
-                    <p className="text-[11px] text-red-500 font-medium line-clamp-2">
+                    <p
+                      className="text-[11px] text-red-500 font-medium line-clamp-3"
+                      title={preview.error || "Failed to load"}
+                    >
                       {preview.error || "Failed to load"}
                     </p>
                     <span

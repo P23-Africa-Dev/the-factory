@@ -7,7 +7,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Storage;
 
 class TaskProof extends Model
 {
@@ -57,12 +56,14 @@ class TaskProof extends Model
         return $this->belongsTo(User::class, 'uploaded_by_user_id');
     }
 
-    public function getFileUrlAttribute(): string
+    public function getFileUrlAttribute(): ?string
     {
-        if (array_key_exists('file_url', $this->attributes) && is_string($this->attributes['file_url'])) {
-            return $this->attributes['file_url'];
+        if (! array_key_exists('file_url', $this->attributes)) {
+            return null;
         }
 
-        return Storage::disk($this->disk)->url($this->file_path);
+        $value = $this->attributes['file_url'];
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 }
