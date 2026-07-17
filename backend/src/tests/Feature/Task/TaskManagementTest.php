@@ -1142,6 +1142,12 @@ class TaskManagementTest extends TestCase
 
         $ownerResponse->assertOk();
 
+        $taskDetailResponse = $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/tasks/' . $task->id . '?company_id=' . $company->id);
+
+        $taskDetailResponse->assertOk()
+            ->assertJsonPath('data.task.proofs.0.file_name', 'evidence.jpg');
+
         $supervisorResponse = $this->actingAs($supervisor, 'sanctum')
             ->getJson('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
 

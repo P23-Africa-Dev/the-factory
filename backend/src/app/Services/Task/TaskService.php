@@ -45,7 +45,7 @@ class TaskService
         'latestReassignment.fromUser',
         'latestReassignment.toUser',
         'latestReassignment.respondedBy',
-        'proofs',
+        'proofs.uploader',
     ];
 
     public function __construct(

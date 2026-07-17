@@ -27,6 +27,7 @@ import {
 import { toast } from 'sonner';
 import { LocationPermissionGate } from '@/components/tracking/LocationPermissionGate';
 import { CompleteTaskSheet } from '@/components/tracking/CompleteTaskSheet';
+import { TaskProofGallery } from '@/components/operations/task-proof-gallery';
 import { useActiveTracking } from '@/components/tracking/active-tracking-provider';
 import { startTaskTracking } from '@/lib/api/tracking';
 import { ApiRequestError } from '@/lib/api/onboarding';
@@ -765,25 +766,13 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                   </div>
                 </div>
               )}
-              {detailQuery.data?.proofs?.length ? (
-                <div className="mt-4 space-y-2">
-                  <h4 className="text-[13px] font-bold text-dash-dark">Proofs</h4>
-                  {detailQuery.data.proofs.map((proof) => (
-                    <div
-                      key={proof.id}
-                      className="flex items-center justify-between text-[11px] text-gray-500 border border-gray-100 rounded-lg px-3 py-2"
-                    >
-                      <span>Proof #{proof.id}</span>
-                      {canDownloadProofs && proof.file_url ? (
-                        <a href={proof.file_url} className="text-dash-teal font-semibold">
-                          Download
-                        </a>
-                      ) : (
-                        <span className="text-gray-400">Restricted</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
+              {detailQuery.data?.proofs?.length && taskId && companyId ? (
+                <TaskProofGallery
+                  taskId={taskId}
+                  companyId={companyId}
+                  proofs={detailQuery.data.proofs}
+                  canDownload={canDownloadProofs}
+                />
               ) : null}
               <div className="mt-4 p-3 border border-gray-100 rounded-lg space-y-2">
                 <p className="text-[12px] font-bold text-dash-dark">Reassign Task</p>
