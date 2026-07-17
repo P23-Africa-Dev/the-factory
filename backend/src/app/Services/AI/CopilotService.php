@@ -591,7 +591,12 @@ class CopilotService
             return ['text' => $trimmed, 'result' => $generationResult];
         }
 
-        return ['text' => $this->degradedModeMessage(), 'result' => null];
+        return [
+            'text' => $this->degradedModeMessage(
+                $generationResult instanceof AiGenerationResult ? $generationResult : null
+            ),
+            'result' => null,
+        ];
     }
 
     private function looksLikeProductQuestion(string $normalizedMessage): bool
@@ -624,8 +629,16 @@ class CopilotService
         return false;
     }
 
-    private function degradedModeMessage(): string
+    private function degradedModeMessage(?AiGenerationResult $result = null): string
     {
+        $errorClass = strtolower(trim((string) ($result?->errorClass ?? '')));
+        $isNvidiaTimeout = $result?->provider === 'nvidia'
+            && in_array($errorClass, ['timeout', 'unreachable'], true);
+
+        if ($isNvidiaTimeout) {
+            return 'NVIDIA NIM took too long to respond — the hosted API catalog can be slow under load. Try again in a moment, or switch the AI stack to OpenAI + Claude in Admin → AI for faster day-to-day chat. I can still run dashboard queries if you ask specifically, for example: "show overdue tasks", "plan my day", or "list my CRM leads".';
+        }
+
         return 'ELY is running in limited mode right now because the AI provider is temporarily unavailable. I can still run dashboard queries if you ask specifically, for example: "show overdue tasks", "plan my day", or "list my CRM leads".';
     }
 

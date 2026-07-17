@@ -31,7 +31,10 @@ class NvidiaProvider implements AiProviderContract
             );
         }
 
-        $timeoutMs = (int) config('services.ai.request_timeout_ms', 30000);
+        $timeoutMs = (int) config(
+            'services.ai.nvidia.request_timeout_ms',
+            (int) config('services.ai.request_timeout_ms', 30000),
+        );
         $baseUrl = rtrim((string) config('services.ai.nvidia.base_url', 'https://integrate.api.nvidia.com/v1'), '/');
 
         $configuredMaxTokens = max(64, (int) config('services.ai.max_tokens', 4000));
@@ -39,6 +42,17 @@ class NvidiaProvider implements AiProviderContract
         $effectiveMaxTokens = max(64, min($configuredMaxTokens, $requestedMaxTokens));
 
         $purpose = (string) ($options['purpose'] ?? 'default');
+        $purposeKey = strtolower(trim($purpose));
+        // Day-to-day chat/routing: keep completions short so hosted NIM finishes sooner.
+        // Callers can opt out with allow_high_max_tokens for unusual long-form operational jobs.
+        if (
+            in_array($purposeKey, ['operational', 'routing', 'default'], true)
+            && empty($options['allow_high_max_tokens'])
+        ) {
+            $operationalCap = max(64, (int) config('services.ai.nvidia.operational_max_tokens', 1000));
+            $effectiveMaxTokens = min($effectiveMaxTokens, $operationalCap);
+        }
+
         $model = $this->modelResolver->resolve(
             $purpose,
             isset($options['model']) ? (string) $options['model'] : null,

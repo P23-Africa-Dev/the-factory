@@ -97,8 +97,13 @@ return [
         'nvidia' => [
             'api_key' => env('NVIDIA_API_KEY'),
             'base_url' => env('NVIDIA_BASE_URL', 'https://integrate.api.nvidia.com/v1'),
+            // Hosted NIM often exceeds the global 30s AI timeout under queue load.
+            'request_timeout_ms' => (int) env('NVIDIA_REQUEST_TIMEOUT_MS', 120000),
+            // Cap day-to-day chat completions; larger budgets slow large models further.
+            'operational_max_tokens' => (int) env('NVIDIA_OPERATIONAL_MAX_TOKENS', 1000),
             'routing_model' => env('NVIDIA_ROUTING_MODEL', 'nvidia/llama-3.1-nemotron-nano-8b-v1'),
-            'exec_model' => env('NVIDIA_EXEC_MODEL', 'nvidia/llama-3.3-nemotron-super-49b-v1.5'),
+            // Nano-class default for snappy Ask ELY; override with Super-49B via env if needed.
+            'exec_model' => env('NVIDIA_EXEC_MODEL', 'nvidia/llama-3.1-nemotron-nano-8b-v1'),
             'analyst_model' => env('NVIDIA_ANALYST_MODEL', 'nvidia/llama-3.1-nemotron-ultra-253b-v1'),
         ],
         'admin' => [

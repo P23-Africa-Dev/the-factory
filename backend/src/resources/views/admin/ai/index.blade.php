@@ -285,6 +285,11 @@
                 · OpenAI key: <strong>{{ $openaiConfigured ? 'configured' : 'missing' }}</strong>
                 · Claude key: <strong>{{ $claudeConfigured ? 'configured' : 'missing' }}</strong>
             </div>
+            <div class="mt-2 alert alert-warning mb-0 py-2 px-3" style="font-size:.78rem">
+                Hosted NVIDIA NIM (API catalog) can be slow or queue under load — that is NVIDIA-side contention, not a Factory23 outage.
+                Day-to-day chat defaults to a smaller exec model and a longer NVIDIA timeout.
+                For production latency, use paid/self-hosted NIM, or keep OpenAI + Claude for snappy Ask ELY.
+            </div>
         @else
             <div style="font-size:.82rem;color:var(--text-secondary)">
                 Ask a super admin to switch stacks. Current NVIDIA key status:

@@ -24,7 +24,7 @@ final class NvidiaModelResolver
             ),
             default => $this->configuredOrDefault(
                 'services.ai.nvidia.exec_model',
-                'nvidia/llama-3.3-nemotron-super-49b-v1.5',
+                'nvidia/llama-3.1-nemotron-nano-8b-v1',
             ),
         };
     }
