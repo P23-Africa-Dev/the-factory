@@ -11,6 +11,7 @@ use App\Services\AI\Admin\AiFailoverTracker;
 use App\Services\AI\Admin\AiOperationsAnalyticsService;
 use App\Services\AI\Admin\AiProviderHealthService;
 use App\Services\AI\AiLoggingService;
+use App\Services\AI\AiStackSettingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -26,6 +27,7 @@ class AiManagementController extends Controller
         private readonly AiFailoverTracker $failoverTracker,
         private readonly AiOperationsAnalyticsService $operationsAnalytics,
         private readonly AiAlertService $alertService,
+        private readonly AiStackSettingService $aiStackSettingService,
     ) {}
 
     public function index(): View
@@ -40,10 +42,11 @@ class AiManagementController extends Controller
         $statsToday = $this->emptyStats();
         $statsWeek = $this->emptyStats();
         $statsMonth = $this->emptyStats();
-        $avgExecutionByProvider = ['openai' => null, 'claude' => null];
+        $avgExecutionByProvider = ['openai' => null, 'claude' => null, 'nvidia' => null];
         $providerUsage = [
             'openai' => $this->emptyProviderUsage(),
             'claude' => $this->emptyProviderUsage(),
+            'nvidia' => $this->emptyProviderUsage(),
         ];
         $topUsers = [];
         $topOrganizations = [];
@@ -69,6 +72,11 @@ class AiManagementController extends Controller
             $avgExecutionByProvider['claude'] = AiLog::query()
                 ->llmInvocations()
                 ->where('provider', 'claude')
+                ->where('created_at', '>=', $now->copy()->subDays(30))
+                ->avg('execution_ms');
+            $avgExecutionByProvider['nvidia'] = AiLog::query()
+                ->llmInvocations()
+                ->where('provider', 'nvidia')
                 ->where('created_at', '>=', $now->copy()->subDays(30))
                 ->avg('execution_ms');
 
@@ -98,12 +106,17 @@ class AiManagementController extends Controller
 
         $openaiConfigured = trim((string) config('services.ai.openai.api_key')) !== '';
         $claudeConfigured = trim((string) config('services.ai.claude.api_key')) !== '';
+        $nvidiaConfigured = trim((string) config('services.ai.nvidia.api_key')) !== '';
         $primaryProvider = (string) config('services.ai.provider', 'openai');
         $fallbackProvider = (string) config('services.ai.fallback_provider', 'claude');
+        $aiStackSnapshot = $this->aiStackSettingService->getSnapshot();
+        $activeAiStack = (string) $aiStackSnapshot['stack'];
+        $canManageAiStack = auth('admin')->user()?->canAccessAbility('manage_ai') === true;
 
         $providerChecks = $this->healthService->checkAll(persist: true);
         $openaiHealth = $providerChecks['openai'];
         $claudeHealth = $providerChecks['claude'];
+        $nvidiaHealth = $providerChecks['nvidia'];
         $warningBanners = $this->operationsAnalytics->warningBanners($openaiHealth, $claudeHealth);
         $activeAlerts = $this->alertService->activeAlerts(10);
         $lastFailover = $this->failoverTracker->latest();
@@ -119,6 +132,9 @@ class AiManagementController extends Controller
             fallbackProvider: $fallbackProvider,
             lastFailover: $lastFailover,
             errorRate: $errorRate,
+            stack: $activeAiStack,
+            nvidiaHealth: $nvidiaHealth,
+            nvidiaConfigured: $nvidiaConfigured,
         );
         $aiStatus = $aggregateStatus['status'];
         $activeProviderLabel = $aggregateStatus['active_provider'];
@@ -130,8 +146,12 @@ class AiManagementController extends Controller
             'aiLogsReady',
             'openaiConfigured',
             'claudeConfigured',
+            'nvidiaConfigured',
             'primaryProvider',
             'fallbackProvider',
+            'aiStackSnapshot',
+            'activeAiStack',
+            'canManageAiStack',
             'avgExecutionByProvider',
             'errorRate',
             'aiStatus',
@@ -139,6 +159,7 @@ class AiManagementController extends Controller
             'last24hFailed',
             'openaiHealth',
             'claudeHealth',
+            'nvidiaHealth',
             'warningBanners',
             'activeAlerts',
             'lastFailover',

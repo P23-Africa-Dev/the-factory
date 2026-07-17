@@ -93,9 +93,12 @@ class AiLog extends Model
                 'claude-3-haiku-20240307' => ['input' => 0.25, 'output' => 1.25],
                 'default' => ['input' => 3.00, 'output' => 15.00],
             ],
+            'nvidia' => [
+                'default' => ['input' => 0.20, 'output' => 0.80],
+            ],
         ];
 
-        $providerPricing = $pricing[$provider] ?? $pricing['openai'];
+        $providerPricing = $pricing[$provider] ?? ['default' => ['input' => 0.40, 'output' => 1.60]];
         $modelPricing = $providerPricing[$model] ?? $providerPricing['default'];
 
         $inputCost = ($inputTokens / 1_000_000) * $modelPricing['input'];

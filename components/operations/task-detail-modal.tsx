@@ -772,6 +772,9 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                   companyId={companyId}
                   proofs={detailQuery.data.proofs}
                   canDownload={canDownloadProofs}
+                  onProofReplaced={() => {
+                    void detailQuery.refetch();
+                  }}
                 />
               ) : null}
               <div className="mt-4 p-3 border border-gray-100 rounded-lg space-y-2">

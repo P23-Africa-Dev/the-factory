@@ -236,6 +236,63 @@
         </div>
     </div>
 
+    {{-- AI stack switch (super_admin) --}}
+    <div class="metric-card p-4 mb-4">
+        <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+            <div>
+                <h6 class="fw-bold mb-1" style="font-size:.9rem">ELY AI Stack</h6>
+                <p class="mb-0" style="font-size:.8rem;color:var(--text-secondary)">
+                    Active stack: <strong>{{ $activeAiStack === 'nvidia' ? 'NVIDIA NIM' : 'OpenAI + Claude' }}</strong>.
+                    Switching completely stops calls (and vendor token usage) on the inactive stack.
+                </p>
+            </div>
+            @if (! $canManageAiStack)
+                <span class="badge text-bg-light border" style="font-size:.75rem">Super admin only</span>
+            @endif
+        </div>
+
+        @if ($canManageAiStack)
+            <form method="POST" action="{{ route('admin.ai.stack.update') }}" class="row g-3 align-items-stretch">
+                @csrf
+                <div class="col-md-5">
+                    <input type="radio" class="btn-check" name="stack" id="ai-stack-openai-claude" value="openai_claude"
+                        {{ $activeAiStack === 'openai_claude' ? 'checked' : '' }}>
+                    <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="ai-stack-openai-claude">
+                        <div class="fw-bold mb-1">OpenAI + Claude</div>
+                        <div style="font-size:.78rem;color:var(--text-secondary)">
+                            Operational/routing on OpenAI; analyst/report on Claude, with in-stack failover.
+                        </div>
+                    </label>
+                </div>
+                <div class="col-md-5">
+                    <input type="radio" class="btn-check" name="stack" id="ai-stack-nvidia" value="nvidia"
+                        {{ $activeAiStack === 'nvidia' ? 'checked' : '' }}>
+                    <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="ai-stack-nvidia">
+                        <div class="fw-bold mb-1">NVIDIA NIM</div>
+                        <div style="font-size:.78rem;color:var(--text-secondary)">
+                            Routing: {{ $aiStackSnapshot['nvidia_models']['routing'] ?? '—' }}<br>
+                            Chat: {{ $aiStackSnapshot['nvidia_models']['exec'] ?? '—' }}<br>
+                            Analyst: {{ $aiStackSnapshot['nvidia_models']['analyst'] ?? '—' }}
+                        </div>
+                    </label>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">Apply stack</button>
+                </div>
+            </form>
+            <div class="mt-3" style="font-size:.78rem;color:var(--text-muted)">
+                NVIDIA key: <strong>{{ $nvidiaConfigured ? 'configured' : 'missing' }}</strong>
+                · OpenAI key: <strong>{{ $openaiConfigured ? 'configured' : 'missing' }}</strong>
+                · Claude key: <strong>{{ $claudeConfigured ? 'configured' : 'missing' }}</strong>
+            </div>
+        @else
+            <div style="font-size:.82rem;color:var(--text-secondary)">
+                Ask a super admin to switch stacks. Current NVIDIA key status:
+                <strong>{{ $nvidiaConfigured ? 'configured' : 'missing' }}</strong>.
+            </div>
+        @endif
+    </div>
+
     {{-- Real-time status widget --}}
     <div class="metric-card p-4 mb-4 ai-status-panel d-flex align-items-center justify-content-between flex-wrap">
         <div class="d-flex align-items-center gap-3">
@@ -247,6 +304,7 @@
                 <div class="fw-bold" style="font-size:1rem">Real-Time AI Status</div>
                 <div style="font-size:.8rem;color:var(--text-secondary)">
                     Active provider: <strong id="ai-active-provider-label">{{ $activeProviderLabel }}</strong>
+                    · Stack: <strong>{{ $activeAiStack === 'nvidia' ? 'NVIDIA' : 'OpenAI + Claude' }}</strong>
                 </div>
             </div>
         </div>
@@ -254,8 +312,10 @@
             <div style="font-size:.82rem">
                 <span class="me-3">OpenAI:
                     <strong id="realtime-status-openai">{{ $openaiHealth['label'] ?? (($openaiHealth['ok'] ?? false) ? 'Connected' : 'Unavailable') }}</strong></span>
-                <span>Claude:
+                <span class="me-3">Claude:
                     <strong id="realtime-status-claude">{{ $claudeHealth['label'] ?? (($claudeHealth['ok'] ?? false) ? 'Connected' : 'Unavailable') }}</strong></span>
+                <span>NVIDIA:
+                    <strong id="realtime-status-nvidia">{{ $nvidiaHealth['label'] ?? (($nvidiaHealth['ok'] ?? false) ? 'Connected' : 'Unavailable') }}</strong></span>
             </div>
             <span class="ai-status-badge {{ $aggregateStatus['class'] }}" id="ai-aggregate-status-badge">
                 <i class="bi {{ $aggregateStatus['icon'] }}" id="ai-aggregate-status-icon"></i>
@@ -272,16 +332,29 @@
 
     {{-- Provider health cards --}}
     <div class="row g-3 mb-4">
-        @foreach (['openai' => ['label' => 'OpenAI', 'health' => $openaiHealth], 'claude' => ['label' => 'Claude (Anthropic)', 'health' => $claudeHealth]] as $key => $item)
+        @foreach ([
+            'openai' => ['label' => 'OpenAI', 'health' => $openaiHealth],
+            'claude' => ['label' => 'Claude (Anthropic)', 'health' => $claudeHealth],
+            'nvidia' => ['label' => 'NVIDIA NIM', 'health' => $nvidiaHealth],
+        ] as $key => $item)
             @php
                 $health = $item['health'];
                 $usage = $providerUsage[$key] ?? [];
                 $presentation = app(\App\Services\AI\Admin\AiProviderHealthService::class)->presentation($health);
+                $isActiveStackVendor = ($activeAiStack === 'nvidia' && $key === 'nvidia')
+                    || ($activeAiStack === 'openai_claude' && in_array($key, ['openai', 'claude'], true));
             @endphp
-            <div class="col-lg-6">
+            <div class="col-lg-4">
                 <div class="provider-health-card {{ $presentation['card_class'] }}" id="provider-card-{{ $key }}">
                     <div class="d-flex align-items-center justify-content-between mb-3">
-                        <h6 class="fw-bold mb-0" style="font-size:.9rem">{{ $item['label'] }}</h6>
+                        <h6 class="fw-bold mb-0" style="font-size:.9rem">
+                            {{ $item['label'] }}
+                            @if ($isActiveStackVendor)
+                                <span class="badge text-bg-primary ms-1" style="font-size:.65rem">active stack</span>
+                            @else
+                                <span class="badge text-bg-light border ms-1" style="font-size:.65rem">idle</span>
+                            @endif
+                        </h6>
                         <span class="health-pill {{ $presentation['pill_class'] }}" id="provider-pill-{{ $key }}">{{ $presentation['label'] }}</span>
                     </div>
                     <div class="row g-2 mb-3" style="font-size:.78rem">
@@ -332,14 +405,18 @@
         <h6 class="fw-bold mb-3" style="font-size:.88rem">Provider Routing & Failover</h6>
         <div class="row g-3">
             <div class="col-md-3">
+                <div style="font-size:.75rem;color:var(--text-muted)">Active Stack</div>
+                <div class="fw-bold">{{ $activeAiStack === 'nvidia' ? 'NVIDIA NIM' : 'OpenAI + Claude' }}</div>
+            </div>
+            <div class="col-md-3">
                 <div style="font-size:.75rem;color:var(--text-muted)">Default Provider</div>
-                <div class="fw-bold text-capitalize">{{ $primaryProvider }}</div>
+                <div class="fw-bold text-capitalize">{{ $activeAiStack === 'nvidia' ? 'nvidia' : $primaryProvider }}</div>
             </div>
             <div class="col-md-3">
                 <div style="font-size:.75rem;color:var(--text-muted)">Fallback Provider</div>
-                <div class="fw-bold text-capitalize">{{ $fallbackProvider }}</div>
+                <div class="fw-bold text-capitalize">{{ $activeAiStack === 'nvidia' ? 'none (hard switch)' : $fallbackProvider }}</div>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-3">
                 <div style="font-size:.75rem;color:var(--text-muted)">Last Automatic Failover</div>
                 @if ($lastFailover)
                     <div class="fw-bold">{{ $lastFailover['message'] ?? '—' }}</div>
@@ -351,8 +428,6 @@
                 @endif
             </div>
         </div>
-    </div>
-
     </div>
 
     {{-- Usage analytics: users, orgs, models --}}
@@ -710,7 +785,7 @@
                 <h6 class="fw-bold mb-3" style="font-size:.88rem">Token Consumption (30 Days)</h6>
 
                 <div class="d-flex flex-column gap-2">
-                    @foreach (['openai' => 'OpenAI', 'claude' => 'Claude', 'none' => 'Blocked/Cancelled'] as $key => $label)
+                    @foreach (['openai' => 'OpenAI', 'claude' => 'Claude', 'nvidia' => 'NVIDIA', 'none' => 'Blocked/Cancelled'] as $key => $label)
                         @if (isset($statsMonth['by_provider'][$key]))
                             @php $p = $statsMonth['by_provider'][$key]; @endphp
                             <div style="background:var(--surface-hover);border-radius:.5rem;padding:.65rem .85rem;">
@@ -791,12 +866,15 @@
         window.__aiProviderHealth = {
             openai: @json($openaiHealth),
             claude: @json($claudeHealth),
+            nvidia: @json($nvidiaHealth),
         };
         window.__aiProviderConfig = {
             openaiConfigured: @json($openaiConfigured),
             claudeConfigured: @json($claudeConfigured),
+            nvidiaConfigured: @json($nvidiaConfigured),
             primaryProvider: @json($primaryProvider),
             fallbackProvider: @json($fallbackProvider),
+            activeStack: @json($activeAiStack),
         };
 
         function providerPresentation(health) {
@@ -880,11 +958,18 @@
         function updateAggregateStatus() {
             const openai = window.__aiProviderHealth.openai || {};
             const claude = window.__aiProviderHealth.claude || {};
+            const nvidia = window.__aiProviderHealth.nvidia || {};
             const cfg = window.__aiProviderConfig || {};
             const openaiOk = openai.ok === true;
             const claudeOk = claude.ok === true;
+            const nvidiaOk = nvidia.ok === true;
             let status = 'online';
-            if (!cfg.openaiConfigured && !cfg.claudeConfigured) {
+
+            if (cfg.activeStack === 'nvidia') {
+                if (!cfg.nvidiaConfigured || !nvidiaOk) {
+                    status = 'offline';
+                }
+            } else if (!cfg.openaiConfigured && !cfg.claudeConfigured) {
                 status = 'offline';
             } else if (!openaiOk && !claudeOk) {
                 status = 'offline';
@@ -915,13 +1000,22 @@
                 label.textContent = current.label;
             }
             if (activeProvider) {
-                let providerName = cfg.primaryProvider || 'openai';
-                if (!openaiOk && claudeOk) {
-                    providerName = cfg.fallbackProvider || 'claude';
-                } else if (!claudeOk && openaiOk) {
-                    providerName = cfg.primaryProvider || 'openai';
+                if (cfg.activeStack === 'nvidia') {
+                    activeProvider.textContent = 'NVIDIA';
+                } else {
+                    let providerName = cfg.primaryProvider || 'openai';
+                    if (!openaiOk && claudeOk) {
+                        providerName = cfg.fallbackProvider || 'claude';
+                    } else if (!claudeOk && openaiOk) {
+                        providerName = cfg.primaryProvider || 'openai';
+                    }
+                    activeProvider.textContent = providerName.charAt(0).toUpperCase() + providerName.slice(1);
                 }
-                activeProvider.textContent = providerName.charAt(0).toUpperCase() + providerName.slice(1);
+            }
+
+            const nvidiaRealtime = document.getElementById('realtime-status-nvidia');
+            if (nvidiaRealtime) {
+                nvidiaRealtime.textContent = nvidia.label || (nvidiaOk ? 'Connected' : 'Unavailable');
             }
         }
 

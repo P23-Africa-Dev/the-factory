@@ -59,6 +59,8 @@ return [
     ],
 
     'ai' => [
+        // Env default only — runtime stack is overridden by platform_settings.ai.stack when set.
+        'stack' => env('AI_STACK', 'openai_claude'),
         'provider' => env('AI_PROVIDER', 'openai'),
         'fallback_provider' => env('AI_FALLBACK_PROVIDER', 'claude'),
         'default_model' => env('AI_DEFAULT_MODEL', 'auto'),
@@ -91,6 +93,13 @@ return [
             'base_url' => env('ANTHROPIC_BASE_URL', 'https://api.anthropic.com/v1'),
             'model' => env('CLAUDE_MODEL', 'auto'),
             'version' => env('ANTHROPIC_VERSION', '2023-06-01'),
+        ],
+        'nvidia' => [
+            'api_key' => env('NVIDIA_API_KEY'),
+            'base_url' => env('NVIDIA_BASE_URL', 'https://integrate.api.nvidia.com/v1'),
+            'routing_model' => env('NVIDIA_ROUTING_MODEL', 'nvidia/llama-3.1-nemotron-nano-8b-v1'),
+            'exec_model' => env('NVIDIA_EXEC_MODEL', 'nvidia/llama-3.3-nemotron-super-49b-v1.5'),
+            'analyst_model' => env('NVIDIA_ANALYST_MODEL', 'nvidia/llama-3.1-nemotron-ultra-253b-v1'),
         ],
         'admin' => [
             'spending_alert_usd' => (float) env('AI_ADMIN_SPENDING_ALERT_USD', 500),

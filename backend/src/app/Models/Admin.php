@@ -46,6 +46,7 @@ class Admin extends Authenticatable
             'manage_users' => in_array($this->role, ['super_admin', 'admin', 'supervisor'], true),
             'manage_billing' => $this->role === 'super_admin',
             'manage_database' => $this->role === 'super_admin',
+            'manage_ai' => $this->role === 'super_admin',
             default => false,
         };
     }

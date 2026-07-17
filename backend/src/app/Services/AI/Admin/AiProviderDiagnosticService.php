@@ -25,6 +25,7 @@ class AiProviderDiagnosticService
         $completions = [
             'openai' => $this->probeCompletion('openai'),
             'claude' => $this->probeCompletion('claude'),
+            'nvidia' => $this->probeCompletion('nvidia'),
         ];
         $failover = $simulateFailover ? $this->probeFailover() : ['skipped' => true];
         $intentSmoke = $this->intentSmokeTests();
@@ -50,6 +51,10 @@ class AiProviderDiagnosticService
         }
 
         if ($provider === 'claude' && trim((string) config('services.ai.claude.api_key')) === '') {
+            return $this->completionResult($provider, false, 'not_configured', 'No API key configured.', null, 0);
+        }
+
+        if ($provider === 'nvidia' && trim((string) config('services.ai.nvidia.api_key')) === '') {
             return $this->completionResult($provider, false, 'not_configured', 'No API key configured.', null, 0);
         }
 

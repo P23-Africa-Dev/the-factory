@@ -410,6 +410,29 @@ export async function uploadTaskProof(
   return body;
 }
 
+export async function replaceTaskProof(
+  taskId: number | string,
+  proofId: number | string,
+  formData: FormData,
+  token: string
+): Promise<ApiEnvelope<{ proof: TaskProofItem }>> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
+  const response = await fetch(`${base}/tasks/${taskId}/proofs/${proofId}`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+
+  const body = (await response.json()) as ApiEnvelope<{ proof: TaskProofItem }>;
+  if (!response.ok || !body.success) {
+    throw new ApiRequestError(body.message || "Request failed.", response.status, body.errors);
+  }
+  return body;
+}
+
 export async function downloadTaskProof(
   taskId: number | string,
   proofId: number | string,

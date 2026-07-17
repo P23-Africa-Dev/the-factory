@@ -403,6 +403,9 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
                 Route::patch('/{task}/assign', [TaskAssignmentController::class, 'update'])->name('assign');
                 Route::patch('/{task}/status', [AdminTaskStatusController::class, 'update'])->name('status.update');
                 Route::get('/{task}/proofs/{proof}', [TaskProofController::class, 'show'])->name('proofs.show');
+                Route::post('/{task}/proofs/{proof}', [TaskProofController::class, 'replace'])
+                    ->middleware('throttle:api-heavy')
+                    ->name('proofs.replace');
             });
 
             Route::prefix('kpis')->name('kpis.')->group(function (): void {
@@ -798,6 +801,9 @@ Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->gr
             ->name('proofs.store');
         Route::get('/{task}/proofs/{proof}', [TaskProofController::class, 'show'])
             ->name('proofs.show');
+        Route::post('/{task}/proofs/{proof}', [TaskProofController::class, 'replace'])
+            ->middleware('throttle:api-heavy')
+            ->name('proofs.replace');
     });
 
     Route::prefix('kpis')->name('kpis.')->group(function (): void {

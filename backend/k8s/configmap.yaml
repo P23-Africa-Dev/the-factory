@@ -73,6 +73,7 @@ data:
   INTERNAL_DEFAULT_AVATAR_PATH: "avatar/default/ghost.svg"
 
   # ── AI Providers (non-sensitive config) ───────────────────────────────────────
+  AI_STACK: "openai_claude"
   AI_PROVIDER: "openai"
   AI_FALLBACK_PROVIDER: "claude"
   AI_DEFAULT_MODEL: "auto"
@@ -85,6 +86,10 @@ data:
   ANTHROPIC_BASE_URL: "https://api.anthropic.com/v1"
   ANTHROPIC_VERSION: "2023-06-01"
   CLAUDE_MODEL: "auto"
+  NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1"
+  NVIDIA_ROUTING_MODEL: "nvidia/llama-3.1-nemotron-nano-8b-v1"
+  NVIDIA_EXEC_MODEL: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+  NVIDIA_ANALYST_MODEL: "nvidia/llama-3.1-nemotron-ultra-253b-v1"
 
   # ── Task Tracking ─────────────────────────────────────────────────────────────
   TASK_TRACKING_ARRIVAL_RADIUS_METERS: "75"

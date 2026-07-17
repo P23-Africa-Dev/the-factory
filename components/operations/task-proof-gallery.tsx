@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronLeft,
@@ -9,12 +9,14 @@ import {
   ImageIcon,
   Loader2,
   RefreshCw,
+  Upload,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   downloadTaskProof,
   formatProofBytes,
+  replaceTaskProof,
   triggerProofBlobDownload,
   type TaskProofItem,
 } from "@/lib/api/tasks";
@@ -33,6 +35,7 @@ type TaskProofGalleryProps = {
   companyId: number | string;
   proofs: TaskProofItem[];
   canDownload: boolean;
+  onProofReplaced?: () => void;
 };
 
 function proofDisplayName(proof: TaskProofItem): string {
@@ -58,13 +61,17 @@ export function TaskProofGallery({
   companyId,
   proofs,
   canDownload,
+  onProofReplaced,
 }: TaskProofGalleryProps) {
   const [previews, setPreviews] = useState<Record<number, ProofPreviewState>>({});
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [replacingId, setReplacingId] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
   const blobUrlsRef = useRef<Map<number, string>>(new Map());
   const loadGenerationRef = useRef(0);
+  const replaceInputRef = useRef<HTMLInputElement | null>(null);
+  const replaceTargetIdRef = useRef<number | null>(null);
   const proofIdsKey = useMemo(() => proofs.map((p) => p.id).join(","), [proofs]);
 
   useEffect(() => {
@@ -184,6 +191,46 @@ export function TaskProofGallery({
       setDownloadingId(null);
     }
   };
+
+  const openReplacePicker = (proofId: number) => {
+    replaceTargetIdRef.current = proofId;
+    replaceInputRef.current?.click();
+  };
+
+  const handleReplaceSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    const proofId = replaceTargetIdRef.current;
+    event.currentTarget.value = "";
+    if (!file || proofId == null || !canDownload) return;
+
+    setReplacingId(proofId);
+    try {
+      const token = getAuthTokenFromDocument() || "";
+      if (!token) throw new ApiRequestError("You must be logged in to replace proof files.", 401);
+      const formData = new FormData();
+      formData.append("company_id", String(companyId));
+      formData.append("file", file);
+      await replaceTaskProof(taskId, proofId, formData, token);
+      toast.success("Proof replaced.");
+      onProofReplaced?.();
+      const proof = proofs.find((item) => item.id === proofId);
+      if (proof) void loadProof(proof);
+    } catch (error) {
+      const message =
+        error instanceof ApiRequestError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "Failed to replace proof.";
+      toast.error(message);
+    } finally {
+      setReplacingId(null);
+      replaceTargetIdRef.current = null;
+    }
+  };
+
+  const isMissingFileError = (message?: string | null) =>
+    !!message && /could not be found|no longer available/i.test(message);
 
   const closeLightbox = useCallback(() => setLightboxIndex(null), []);
 
@@ -311,14 +358,31 @@ export function TaskProofGallery({
                       {activePreview?.error || "Could not load preview"}
                     </p>
                     {canDownload ? (
-                      <button
-                        type="button"
-                        onClick={() => void loadProof(activeProof)}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-dash-dark text-[13px] font-bold"
-                      >
-                        <RefreshCw size={14} />
-                        Retry
-                      </button>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void loadProof(activeProof)}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-dash-dark text-[13px] font-bold"
+                        >
+                          <RefreshCw size={14} />
+                          Retry
+                        </button>
+                        {isMissingFileError(activePreview?.error) ? (
+                          <button
+                            type="button"
+                            onClick={() => openReplacePicker(activeProof.id)}
+                            disabled={replacingId === activeProof.id}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-dash-teal text-white text-[13px] font-bold disabled:opacity-60"
+                          >
+                            {replacingId === activeProof.id ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <Upload size={14} />
+                            )}
+                            Replace photo
+                          </button>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 ) : (
@@ -344,6 +408,13 @@ export function TaskProofGallery({
 
   return (
     <div className="mt-4 space-y-3">
+      <input
+        ref={replaceInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/jpg"
+        className="hidden"
+        onChange={(event) => void handleReplaceSelected(event)}
+      />
       <h4 className="text-[13px] font-bold text-dash-dark">Proofs</h4>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {proofs.map((proof, index) => {
@@ -382,25 +453,52 @@ export function TaskProofGallery({
                     >
                       {preview.error || "Failed to load"}
                     </p>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-dash-teal"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void loadProof(proof);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
+                    <div className="flex flex-col items-center gap-1">
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-dash-teal"
+                        onClick={(event) => {
                           event.stopPropagation();
                           void loadProof(proof);
-                        }
-                      }}
-                    >
-                      <RefreshCw size={12} />
-                      Retry
-                    </span>
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void loadProof(proof);
+                          }
+                        }}
+                      >
+                        <RefreshCw size={12} />
+                        Retry
+                      </span>
+                      {isMissingFileError(preview.error) ? (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-dash-dark"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openReplacePicker(proof.id);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openReplacePicker(proof.id);
+                            }
+                          }}
+                        >
+                          {replacingId === proof.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Upload size={12} />
+                          )}
+                          Replace photo
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element -- authenticated blob URL

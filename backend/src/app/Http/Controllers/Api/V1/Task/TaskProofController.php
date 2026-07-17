@@ -38,6 +38,22 @@ class TaskProofController extends Controller
         );
     }
 
+    public function replace(UploadTaskProofRequest $request, Task $task, TaskProof $proof): JsonResponse
+    {
+        $updated = $this->taskService->replaceProofFile(
+            user: $request->user(),
+            task: $task,
+            proof: $proof,
+            file: $request->file('file'),
+            data: $request->validated(),
+        );
+
+        return $this->success(
+            message: 'Task proof replaced successfully.',
+            data: ['proof' => new TaskProofResource($updated)],
+        );
+    }
+
     public function show(Request $request, Task $task, TaskProof $proof): StreamedResponse|JsonResponse
     {
         $proof = $this->taskService->findProofForDownload(

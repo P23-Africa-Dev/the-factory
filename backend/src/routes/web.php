@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AI\AiHealthController;
 use App\Http\Controllers\Admin\AI\AiLogController;
 use App\Http\Controllers\Admin\AI\AiManagementController;
+use App\Http\Controllers\Admin\AI\AiStackSettingController;
 use App\Http\Controllers\Admin\Auth\LoginController;
 use App\Http\Controllers\Admin\Billing\BillingEnforcementController;
 use App\Http\Controllers\Admin\Billing\BillingOverviewController;
@@ -51,6 +52,9 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
             Route::get('/health', [AiHealthController::class, 'check'])->name('health');
             Route::post('/health/test/{provider}', [AiHealthController::class, 'testProvider'])->name('health.test');
             Route::post('/alerts/{alert}/resolve', [AiManagementController::class, 'resolveAlert'])->name('alerts.resolve');
+            Route::post('/stack', [AiStackSettingController::class, 'update'])
+                ->name('stack.update')
+                ->middleware('admin.permission:manage_ai');
         });
 
         // ── Users ──────────────────────────────────────────────

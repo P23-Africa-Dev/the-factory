@@ -1170,6 +1170,24 @@ class TaskManagementTest extends TestCase
 
         $missingResponse->assertNotFound()
             ->assertJsonPath('message', 'Proof file is no longer available.');
+
+        $replaceResponse = $this->actingAs($admin, 'sanctum')
+            ->post('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id, [
+                'company_id' => $company->id,
+                'file' => UploadedFile::fake()->image('restored.jpg'),
+            ]);
+
+        $replaceResponse->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.proof.file_name', 'restored.jpg');
+
+        $this->assertSame('drive', $proof->fresh()->disk);
+        $this->assertTrue(Storage::disk('drive')->exists((string) $proof->fresh()->file_path));
+
+        $restoredDownload = $this->actingAs($admin, 'sanctum')
+            ->get('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
+
+        $restoredDownload->assertOk();
     }
 
     private function seedCompanyUsers(): array
