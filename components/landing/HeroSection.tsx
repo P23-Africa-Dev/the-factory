@@ -16,7 +16,7 @@ export default function HeroSection({ onDownloadAgentApp }: HeroSectionProps) {
         <div className="hidden lg:block h-12" />
 
         {/* Hero Content */}
-        <main id="about" className="my-auto py-6 lg:py-0 flex flex-col justify-center max-w-xl">
+        <main className="my-auto py-6 lg:py-0 flex flex-col justify-center max-w-xl">
           {/* Feature Badge */}
           <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white p-1 pr-4 self-start mb-8 shadow-sm">
             <span className="rounded-full bg-[#82C341] px-3 py-1.5 text-[11px] font-semibold text-white tracking-wide uppercase">
@@ -29,14 +29,14 @@ export default function HeroSection({ onDownloadAgentApp }: HeroSectionProps) {
 
           {/* Heading */}
           <h1 className="text-4xl sm:text-5xl lg:text-[62px] font-extrabold text-[#0B252C] leading-[1.1] tracking-[-0.02em] mb-6">
+            Factory 23 <br />
             The Ultimate Field <br />
-            Agent Tracking <br />
-            System
+            Agent Tracking System
           </h1>
 
           {/* Subheading / Description */}
           <p className="text-sm sm:text-base text-[#4A5F64] leading-relaxed mb-10 max-w-lg">
-            An all-in-one field management and CRM platform built for real-world operations. Track teams, manage tasks, and capture customer interactions seamlessly, even offline.
+            Factory 23 is an all-in-one field management and CRM platform built for real-world operations. Track teams, manage tasks, and capture customer interactions seamlessly, even offline.
           </p>
 
           {/* Action Buttons */}

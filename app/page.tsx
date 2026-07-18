@@ -6,6 +6,7 @@ import { getAgentInstallUrl, isMobileDevice } from "@/lib/agent-pwa-url";
 import Footer from "@/components/layout/footer";
 import LandingNavbar from "@/components/landing/LandingNavbar";
 import HeroSection from "@/components/landing/HeroSection";
+import AboutSection from "@/components/landing/AboutSection";
 import FeaturesSection from "@/components/landing/FeaturesSection";
 import TestimonialsSection from "@/components/landing/TestimonialsSection";
 import PricingSection from "@/components/landing/PricingSection";
@@ -41,6 +42,9 @@ export default function Home() {
           <HeroSection onDownloadAgentApp={handleDownloadAgentApp} />
         </div>
       </div>
+
+      {/* About / app purpose */}
+      <AboutSection />
 
       {/* Features & Stats grid */}
       <FeaturesSection />
