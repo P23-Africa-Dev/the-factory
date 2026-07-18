@@ -106,10 +106,13 @@ return [
             'analyst_timeout_ms' => (int) env('NVIDIA_ANALYST_TIMEOUT_MS', (int) env('NVIDIA_REQUEST_TIMEOUT_MS', 120000)),
             // Cap day-to-day chat completions; larger budgets slow large models further.
             'operational_max_tokens' => (int) env('NVIDIA_OPERATIONAL_MAX_TOKENS', 1000),
-            'routing_model' => env('NVIDIA_ROUTING_MODEL', 'nvidia/llama-3.1-nemotron-nano-8b-v1'),
-            // Nano-class default for snappy Ask ELY; override with Super-49B via env if needed.
-            'exec_model' => env('NVIDIA_EXEC_MODEL', 'nvidia/llama-3.1-nemotron-nano-8b-v1'),
-            'analyst_model' => env('NVIDIA_ANALYST_MODEL', 'nvidia/llama-3.1-nemotron-ultra-253b-v1'),
+            // Nemotron models reason ("thinking") by default, which is slow and can consume
+            // the whole token budget. Off by default; flip via env for analyst-grade output.
+            'enable_thinking' => filter_var(env('NVIDIA_ENABLE_THINKING', false), FILTER_VALIDATE_BOOL),
+            // Verified live on the hosted catalog (nano-8b pool hangs; ultra-253b is 404).
+            'routing_model' => env('NVIDIA_ROUTING_MODEL', 'meta/llama-3.1-8b-instruct'),
+            'exec_model' => env('NVIDIA_EXEC_MODEL', 'nvidia/llama-3.3-nemotron-super-49b-v1.5'),
+            'analyst_model' => env('NVIDIA_ANALYST_MODEL', 'nvidia/llama-3.3-nemotron-super-49b-v1.5'),
         ],
         // After a timeout/unreachable, skip that vendor briefly so the next turn fails fast.
         'provider_timeout_skip_ttl_seconds' => (int) env('AI_PROVIDER_TIMEOUT_SKIP_TTL', 90),

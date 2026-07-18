@@ -55,6 +55,14 @@ class NvidiaProvider implements AiProviderContract
             isset($options['model']) ? (string) $options['model'] : null,
         );
 
+        // Nemotron models default to reasoning ("detailed thinking") mode, which is slow
+        // and can spend the entire max_tokens budget on thinking, returning null content.
+        // NVIDIA docs: prefixing the system prompt with /no_think disables it.
+        $effectiveSystemPrompt = $systemPrompt;
+        if ($this->shouldDisableThinking($model, $options)) {
+            $effectiveSystemPrompt = "/no_think\n" . $systemPrompt;
+        }
+
         try {
             $response = $this->http
                 ->timeout(max(1, (int) ceil($timeoutMs / 1000)))
@@ -65,7 +73,7 @@ class NvidiaProvider implements AiProviderContract
                     'max_tokens' => $effectiveMaxTokens,
                     'temperature' => (float) ($options['temperature'] ?? 0.2),
                     'messages' => [
-                        ['role' => 'system', 'content' => $systemPrompt],
+                        ['role' => 'system', 'content' => $effectiveSystemPrompt],
                         ['role' => 'user', 'content' => $userPrompt],
                     ],
                 ]);
@@ -127,6 +135,22 @@ class NvidiaProvider implements AiProviderContract
             errorMessage: 'Audio transcription is not available on the NVIDIA stack.',
             purpose: (string) ($options['purpose'] ?? 'operational'),
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function shouldDisableThinking(string $model, array $options = []): bool
+    {
+        if (! str_contains(strtolower($model), 'nemotron')) {
+            return false;
+        }
+
+        if (array_key_exists('enable_thinking', $options)) {
+            return ! (bool) $options['enable_thinking'];
+        }
+
+        return ! (bool) config('services.ai.nvidia.enable_thinking', false);
     }
 
     /**

@@ -16,15 +16,15 @@ final class NvidiaModelResolver
         return match (strtolower(trim($purpose))) {
             'routing' => $this->configuredOrDefault(
                 'services.ai.nvidia.routing_model',
-                'nvidia/llama-3.1-nemotron-nano-8b-v1',
+                'meta/llama-3.1-8b-instruct',
             ),
             'analyst', 'report' => $this->configuredOrDefault(
                 'services.ai.nvidia.analyst_model',
-                'nvidia/llama-3.1-nemotron-ultra-253b-v1',
+                'nvidia/llama-3.3-nemotron-super-49b-v1.5',
             ),
             default => $this->configuredOrDefault(
                 'services.ai.nvidia.exec_model',
-                'nvidia/llama-3.1-nemotron-nano-8b-v1',
+                'nvidia/llama-3.3-nemotron-super-49b-v1.5',
             ),
         };
     }

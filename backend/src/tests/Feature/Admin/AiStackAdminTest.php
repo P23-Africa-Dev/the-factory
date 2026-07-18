@@ -34,7 +34,7 @@ final class AiStackAdminTest extends TestCase
             'services.ai.claude.api_key' => 'sk-ant-test',
             'services.ai.nvidia.api_key' => 'nvapi-test',
             'services.ai.nvidia.base_url' => 'https://integrate.api.nvidia.com/v1',
-            'services.ai.nvidia.exec_model' => 'nvidia/llama-3.1-nemotron-nano-8b-v1',
+            'services.ai.nvidia.exec_model' => 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
             'services.ai.nvidia.request_timeout_ms' => 120000,
             'services.ai.nvidia.operational_max_tokens' => 1000,
             'services.ai.openai.base_url' => 'https://api.openai.com/v1',
@@ -89,7 +89,7 @@ final class AiStackAdminTest extends TestCase
                 'choices' => [
                     ['message' => ['content' => 'Hello from NVIDIA ELY.']],
                 ],
-                'model' => 'nvidia/llama-3.1-nemotron-nano-8b-v1',
+                'model' => 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
                 'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5],
             ], 200),
             'api.openai.com/*' => Http::response(['error' => ['message' => 'should not be called']], 500),
@@ -112,7 +112,7 @@ final class AiStackAdminTest extends TestCase
 
             $data = $request->data();
 
-            return ($data['model'] ?? null) === 'nvidia/llama-3.1-nemotron-nano-8b-v1'
+            return ($data['model'] ?? null) === 'nvidia/llama-3.3-nemotron-super-49b-v1.5'
                 && (int) ($data['max_tokens'] ?? 0) === 1000;
         });
         Http::assertNotSent(fn ($request) => str_contains($request->url(), 'api.openai.com'));

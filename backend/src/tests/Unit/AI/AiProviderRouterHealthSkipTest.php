@@ -62,7 +62,7 @@ final class AiProviderRouterHealthSkipTest extends TestCase
             'services.ai.nvidia.api_key' => 'nvapi-test',
             'services.ai.openai.api_key' => 'openai-key',
             'services.ai.claude.api_key' => 'claude-key',
-            'services.ai.nvidia.exec_model' => 'nvidia/llama-3.1-nemotron-nano-8b-v1',
+            'services.ai.nvidia.exec_model' => 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
         ]);
 
         $admin = \App\Models\Admin::create([

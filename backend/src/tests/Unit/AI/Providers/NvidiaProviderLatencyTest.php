@@ -30,19 +30,21 @@ final class NvidiaProviderLatencyTest extends TestCase
             'services.ai.nvidia.operational_timeout_ms' => 60000,
             'services.ai.nvidia.analyst_timeout_ms' => 120000,
             'services.ai.nvidia.operational_max_tokens' => 1000,
-            'services.ai.nvidia.exec_model' => 'nvidia/llama-3.1-nemotron-nano-8b-v1',
-            'services.ai.nvidia.analyst_model' => 'nvidia/llama-3.1-nemotron-ultra-253b-v1',
+            'services.ai.nvidia.enable_thinking' => false,
+            'services.ai.nvidia.exec_model' => 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
+            'services.ai.nvidia.routing_model' => 'meta/llama-3.1-8b-instruct',
+            'services.ai.nvidia.analyst_model' => 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
         ]);
     }
 
-    public function test_operational_chat_caps_max_tokens_and_uses_nano_exec_model(): void
+    public function test_operational_chat_caps_max_tokens_and_disables_thinking(): void
     {
         Http::fake([
             'integrate.api.nvidia.com/*' => Http::response([
                 'choices' => [
                     ['message' => ['content' => 'Short NVIDIA reply.']],
                 ],
-                'model' => 'nvidia/llama-3.1-nemotron-nano-8b-v1',
+                'model' => 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
                 'usage' => ['prompt_tokens' => 12, 'completion_tokens' => 4],
             ], 200),
         ]);
@@ -54,14 +56,45 @@ final class NvidiaProviderLatencyTest extends TestCase
 
         $this->assertNotNull($result);
         $this->assertTrue($result->isSuccessful());
-        $this->assertSame('nvidia/llama-3.1-nemotron-nano-8b-v1', $result->model);
+        $this->assertSame('nvidia/llama-3.3-nemotron-super-49b-v1.5', $result->model);
 
         Http::assertSent(function (Request $request) {
             $data = $request->data();
+            $systemContent = (string) ($data['messages'][0]['content'] ?? '');
 
             return str_contains($request->url(), 'integrate.api.nvidia.com')
-                && ($data['model'] ?? null) === 'nvidia/llama-3.1-nemotron-nano-8b-v1'
-                && (int) ($data['max_tokens'] ?? 0) === 1000;
+                && ($data['model'] ?? null) === 'nvidia/llama-3.3-nemotron-super-49b-v1.5'
+                && (int) ($data['max_tokens'] ?? 0) === 1000
+                && str_starts_with($systemContent, '/no_think');
+        });
+    }
+
+    public function test_non_nemotron_routing_model_does_not_get_no_think_prefix(): void
+    {
+        Http::fake([
+            'integrate.api.nvidia.com/*' => Http::response([
+                'choices' => [
+                    ['message' => ['content' => '{"intent":"chat"}']],
+                ],
+                'model' => 'meta/llama-3.1-8b-instruct',
+                'usage' => ['prompt_tokens' => 5, 'completion_tokens' => 5],
+            ], 200),
+        ]);
+
+        $result = app(NvidiaProvider::class)->generateText('You route intents.', 'hello', [
+            'purpose' => 'routing',
+            'max_tokens' => 220,
+        ]);
+
+        $this->assertNotNull($result);
+        $this->assertTrue($result->isSuccessful());
+
+        Http::assertSent(function (Request $request) {
+            $data = $request->data();
+            $systemContent = (string) ($data['messages'][0]['content'] ?? '');
+
+            return ($data['model'] ?? null) === 'meta/llama-3.1-8b-instruct'
+                && ! str_contains($systemContent, '/no_think');
         });
     }
 
@@ -72,7 +105,7 @@ final class NvidiaProviderLatencyTest extends TestCase
                 'choices' => [
                     ['message' => ['content' => 'Long analyst reply.']],
                 ],
-                'model' => 'nvidia/llama-3.1-nemotron-ultra-253b-v1',
+                'model' => 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
                 'usage' => ['prompt_tokens' => 20, 'completion_tokens' => 40],
             ], 200),
         ]);
@@ -88,7 +121,7 @@ final class NvidiaProviderLatencyTest extends TestCase
         Http::assertSent(function (Request $request) {
             $data = $request->data();
 
-            return ($data['model'] ?? null) === 'nvidia/llama-3.1-nemotron-ultra-253b-v1'
+            return ($data['model'] ?? null) === 'nvidia/llama-3.3-nemotron-super-49b-v1.5'
                 && (int) ($data['max_tokens'] ?? 0) === 4000;
         });
     }
@@ -99,7 +132,7 @@ final class NvidiaProviderLatencyTest extends TestCase
             'choices' => [
                 ['message' => ['content' => 'ok']],
             ],
-            'model' => 'nvidia/llama-3.1-nemotron-nano-8b-v1',
+            'model' => 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
             'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1],
         ], JSON_THROW_ON_ERROR);
 
