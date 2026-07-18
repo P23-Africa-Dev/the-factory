@@ -142,6 +142,10 @@ class AiProviderRouter
         }
 
         if ($this->stackSettingService->isNvidia()) {
+            if ($forced === '' && $this->healthService->shouldSkipProvider('nvidia')) {
+                return [];
+            }
+
             return [$this->nvidiaProvider];
         }
 
@@ -277,6 +281,22 @@ class AiProviderRouter
         }
 
         if (! $attempted) {
+            if ($this->stackSettingService->isNvidia()) {
+                $cached = $this->healthService->cachedStatus('nvidia');
+                $status = is_array($cached) ? (string) ($cached['status'] ?? 'timeout') : 'timeout';
+                $message = is_array($cached) && is_string($cached['message'] ?? null) && trim((string) $cached['message']) !== ''
+                    ? (string) $cached['message']
+                    : 'NVIDIA NIM is temporarily unavailable after a recent timeout. Try again shortly, or switch to OpenAI + Claude in Admin → AI.';
+
+                return AiGenerationResult::failure(
+                    provider: 'nvidia',
+                    model: app(NvidiaModelResolver::class)->resolve($purpose),
+                    errorClass: in_array($status, ['timeout', 'unreachable'], true) ? $status : 'unreachable',
+                    errorMessage: $message,
+                    purpose: $purpose,
+                );
+            }
+
             return AiGenerationResult::failure(
                 provider: 'none',
                 model: 'unconfigured',

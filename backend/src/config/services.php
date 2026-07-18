@@ -97,8 +97,13 @@ return [
         'nvidia' => [
             'api_key' => env('NVIDIA_API_KEY'),
             'base_url' => env('NVIDIA_BASE_URL', 'https://integrate.api.nvidia.com/v1'),
-            // Hosted NIM often exceeds the global 30s AI timeout under queue load.
+            // Ceiling / analyst default. Hosted NIM often queues for a long time under load.
             'request_timeout_ms' => (int) env('NVIDIA_REQUEST_TIMEOUT_MS', 120000),
+            // Intent routing must fail fast so rule-based routing can take over.
+            'routing_timeout_ms' => (int) env('NVIDIA_ROUTING_TIMEOUT_MS', 15000),
+            // Day-to-day Ask ELY; shorter than analyst so hung NIM does not block for 2 minutes.
+            'operational_timeout_ms' => (int) env('NVIDIA_OPERATIONAL_TIMEOUT_MS', 60000),
+            'analyst_timeout_ms' => (int) env('NVIDIA_ANALYST_TIMEOUT_MS', (int) env('NVIDIA_REQUEST_TIMEOUT_MS', 120000)),
             // Cap day-to-day chat completions; larger budgets slow large models further.
             'operational_max_tokens' => (int) env('NVIDIA_OPERATIONAL_MAX_TOKENS', 1000),
             'routing_model' => env('NVIDIA_ROUTING_MODEL', 'nvidia/llama-3.1-nemotron-nano-8b-v1'),
@@ -106,6 +111,8 @@ return [
             'exec_model' => env('NVIDIA_EXEC_MODEL', 'nvidia/llama-3.1-nemotron-nano-8b-v1'),
             'analyst_model' => env('NVIDIA_ANALYST_MODEL', 'nvidia/llama-3.1-nemotron-ultra-253b-v1'),
         ],
+        // After a timeout/unreachable, skip that vendor briefly so the next turn fails fast.
+        'provider_timeout_skip_ttl_seconds' => (int) env('AI_PROVIDER_TIMEOUT_SKIP_TTL', 90),
         'admin' => [
             'spending_alert_usd' => (float) env('AI_ADMIN_SPENDING_ALERT_USD', 500),
         ],

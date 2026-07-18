@@ -31,18 +31,15 @@ class NvidiaProvider implements AiProviderContract
             );
         }
 
-        $timeoutMs = (int) config(
-            'services.ai.nvidia.request_timeout_ms',
-            (int) config('services.ai.request_timeout_ms', 30000),
-        );
+        $purpose = (string) ($options['purpose'] ?? 'default');
+        $purposeKey = strtolower(trim($purpose));
+        $timeoutMs = $this->resolveTimeoutMs($purposeKey, $options);
         $baseUrl = rtrim((string) config('services.ai.nvidia.base_url', 'https://integrate.api.nvidia.com/v1'), '/');
 
         $configuredMaxTokens = max(64, (int) config('services.ai.max_tokens', 4000));
         $requestedMaxTokens = (int) ($options['max_tokens'] ?? $configuredMaxTokens);
         $effectiveMaxTokens = max(64, min($configuredMaxTokens, $requestedMaxTokens));
 
-        $purpose = (string) ($options['purpose'] ?? 'default');
-        $purposeKey = strtolower(trim($purpose));
         // Day-to-day chat/routing: keep completions short so hosted NIM finishes sooner.
         // Callers can opt out with allow_high_max_tokens for unusual long-form operational jobs.
         if (
@@ -61,6 +58,7 @@ class NvidiaProvider implements AiProviderContract
         try {
             $response = $this->http
                 ->timeout(max(1, (int) ceil($timeoutMs / 1000)))
+                ->connectTimeout(15)
                 ->withToken((string) config('services.ai.nvidia.api_key'))
                 ->post($baseUrl . '/chat/completions', [
                     'model' => $model,
@@ -129,6 +127,29 @@ class NvidiaProvider implements AiProviderContract
             errorMessage: 'Audio transcription is not available on the NVIDIA stack.',
             purpose: (string) ($options['purpose'] ?? 'operational'),
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function resolveTimeoutMs(string $purposeKey, array $options = []): int
+    {
+        if (isset($options['timeout_ms']) && is_numeric($options['timeout_ms'])) {
+            return max(1000, (int) $options['timeout_ms']);
+        }
+
+        $fallback = (int) config(
+            'services.ai.nvidia.request_timeout_ms',
+            (int) config('services.ai.request_timeout_ms', 30000),
+        );
+
+        $configured = match ($purposeKey) {
+            'routing' => (int) config('services.ai.nvidia.routing_timeout_ms', 15000),
+            'analyst', 'report' => (int) config('services.ai.nvidia.analyst_timeout_ms', $fallback),
+            default => (int) config('services.ai.nvidia.operational_timeout_ms', min(60000, $fallback)),
+        };
+
+        return max(1000, $configured > 0 ? $configured : $fallback);
     }
 
     private function intOrNull(mixed $value): ?int

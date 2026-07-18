@@ -26,6 +26,9 @@ final class NvidiaProviderLatencyTest extends TestCase
             'services.ai.nvidia.api_key' => 'nvapi-test',
             'services.ai.nvidia.base_url' => 'https://integrate.api.nvidia.com/v1',
             'services.ai.nvidia.request_timeout_ms' => 120000,
+            'services.ai.nvidia.routing_timeout_ms' => 15000,
+            'services.ai.nvidia.operational_timeout_ms' => 60000,
+            'services.ai.nvidia.analyst_timeout_ms' => 120000,
             'services.ai.nvidia.operational_max_tokens' => 1000,
             'services.ai.nvidia.exec_model' => 'nvidia/llama-3.1-nemotron-nano-8b-v1',
             'services.ai.nvidia.analyst_model' => 'nvidia/llama-3.1-nemotron-ultra-253b-v1',
@@ -90,31 +93,41 @@ final class NvidiaProviderLatencyTest extends TestCase
         });
     }
 
-    public function test_provider_uses_nvidia_timeout_not_global_thirty_seconds(): void
+    public function test_routing_uses_short_timeout_and_operational_uses_sixty_seconds(): void
     {
-        $response = new Response(new \GuzzleHttp\Psr7\Response(
-            200,
-            ['Content-Type' => 'application/json'],
-            json_encode([
-                'choices' => [
-                    ['message' => ['content' => 'ok']],
-                ],
-                'model' => 'nvidia/llama-3.1-nemotron-nano-8b-v1',
-                'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1],
-            ], JSON_THROW_ON_ERROR),
-        ));
+        $okBody = json_encode([
+            'choices' => [
+                ['message' => ['content' => 'ok']],
+            ],
+            'model' => 'nvidia/llama-3.1-nemotron-nano-8b-v1',
+            'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1],
+        ], JSON_THROW_ON_ERROR);
 
-        $pending = Mockery::mock(PendingRequest::class);
-        $pending->shouldReceive('withToken')->once()->with('nvapi-test')->andReturnSelf();
-        $pending->shouldReceive('post')->once()->andReturn($response);
+        $routingPending = Mockery::mock(PendingRequest::class);
+        $routingPending->shouldReceive('connectTimeout')->once()->with(15)->andReturnSelf();
+        $routingPending->shouldReceive('withToken')->once()->with('nvapi-test')->andReturnSelf();
+        $routingPending->shouldReceive('post')->once()->andReturn(
+            new Response(new \GuzzleHttp\Psr7\Response(200, ['Content-Type' => 'application/json'], $okBody)),
+        );
+
+        $operationalPending = Mockery::mock(PendingRequest::class);
+        $operationalPending->shouldReceive('connectTimeout')->once()->with(15)->andReturnSelf();
+        $operationalPending->shouldReceive('withToken')->once()->with('nvapi-test')->andReturnSelf();
+        $operationalPending->shouldReceive('post')->once()->andReturn(
+            new Response(new \GuzzleHttp\Psr7\Response(200, ['Content-Type' => 'application/json'], $okBody)),
+        );
 
         $http = Mockery::mock(HttpFactory::class);
-        $http->shouldReceive('timeout')->once()->with(120)->andReturn($pending);
+        $http->shouldReceive('timeout')->once()->with(15)->andReturn($routingPending);
+        $http->shouldReceive('timeout')->once()->with(60)->andReturn($operationalPending);
 
         $provider = new NvidiaProvider($http, app(NvidiaModelResolver::class));
-        $result = $provider->generateText('sys', 'user', ['purpose' => 'operational']);
 
-        $this->assertNotNull($result);
-        $this->assertTrue($result->isSuccessful());
+        $this->assertTrue(
+            $provider->generateText('sys', 'user', ['purpose' => 'routing'])->isSuccessful()
+        );
+        $this->assertTrue(
+            $provider->generateText('sys', 'user', ['purpose' => 'operational'])->isSuccessful()
+        );
     }
 }

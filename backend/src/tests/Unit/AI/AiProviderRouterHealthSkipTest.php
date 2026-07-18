@@ -53,4 +53,52 @@ final class AiProviderRouterHealthSkipTest extends TestCase
         $this->assertTrue($result->isSuccessful());
         $this->assertSame('claude', $result->provider);
     }
+
+    public function test_nvidia_stack_fails_fast_after_recent_timeout_without_http_call(): void
+    {
+        config([
+            'services.ai.stack' => 'openai_claude',
+            'services.ai.provider_timeout_skip_ttl_seconds' => 90,
+            'services.ai.nvidia.api_key' => 'nvapi-test',
+            'services.ai.openai.api_key' => 'openai-key',
+            'services.ai.claude.api_key' => 'claude-key',
+            'services.ai.nvidia.exec_model' => 'nvidia/llama-3.1-nemotron-nano-8b-v1',
+        ]);
+
+        $admin = \App\Models\Admin::create([
+            'name' => 'Super Admin',
+            'email' => 'nvidia-skip@example.com',
+            'password' => 'StrongPass123!',
+            'role' => 'super_admin',
+            'is_active' => true,
+        ]);
+        app(\App\Services\AI\AiStackSettingService::class)->setStack(
+            \App\Services\AI\AiStackSettingService::NVIDIA,
+            $admin,
+        );
+
+        Cache::put(AiProviderHealthService::CACHE_KEY_NVIDIA, [
+            'provider' => 'nvidia',
+            'ok' => false,
+            'status' => 'timeout',
+            'label' => 'Timeout',
+            'message' => 'cURL error 28: Operation timed out after 15000 milliseconds',
+            'last_failed_at' => now()->toIso8601String(),
+        ], 600);
+
+        Http::fake();
+
+        $result = app(AiProviderRouter::class)->generateForPurpose(
+            purpose: 'routing',
+            systemPrompt: 'You are helpful.',
+            userPrompt: 'Say hello.',
+            options: ['max_tokens' => 32],
+        );
+
+        $this->assertNotNull($result);
+        $this->assertTrue($result->isFailure());
+        $this->assertSame('nvidia', $result->provider);
+        $this->assertSame('timeout', $result->errorClass);
+        Http::assertNothingSent();
+    }
 }

@@ -111,8 +111,17 @@ class AiProviderHealthService
             return false;
         }
 
-        $skipStatuses = ['quota_exceeded', 'auth_failed', 'rate_limited', 'not_configured', 'model_not_found'];
-        if (! in_array((string) ($cached['status'] ?? ''), $skipStatuses, true)) {
+        $status = (string) ($cached['status'] ?? '');
+        $skipStatuses = [
+            'quota_exceeded',
+            'auth_failed',
+            'rate_limited',
+            'not_configured',
+            'model_not_found',
+            'timeout',
+            'unreachable',
+        ];
+        if (! in_array($status, $skipStatuses, true)) {
             return false;
         }
 
@@ -121,7 +130,9 @@ class AiProviderHealthService
             return true;
         }
 
-        $ttl = max(60, (int) config('services.ai.provider_skip_ttl_seconds', 300));
+        $ttl = in_array($status, ['timeout', 'unreachable'], true)
+            ? max(30, (int) config('services.ai.provider_timeout_skip_ttl_seconds', 90))
+            : max(60, (int) config('services.ai.provider_skip_ttl_seconds', 300));
 
         try {
             $failedAt = \Illuminate\Support\Carbon::parse($lastFailedAt);
@@ -447,7 +458,7 @@ class AiProviderHealthService
         $start = microtime(true);
         try {
             $baseUrl = rtrim((string) config('services.ai.nvidia.base_url', 'https://integrate.api.nvidia.com/v1'), '/');
-            $response = Http::timeout(12)->withToken($apiKey)->post($baseUrl . '/chat/completions', [
+            $response = Http::timeout(25)->withToken($apiKey)->post($baseUrl . '/chat/completions', [
                 'model' => $model,
                 'max_tokens' => 1,
                 'messages' => [

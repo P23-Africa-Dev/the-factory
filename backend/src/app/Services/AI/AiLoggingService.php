@@ -144,11 +144,29 @@ class AiLoggingService
 
         $this->fail($log, $errorCode, $errorMessage);
 
+        $executionMs = $this->inferExecutionMsFromErrorMessage($errorMessage);
+        if ($executionMs !== null) {
+            $log->update(['execution_ms' => $executionMs]);
+        }
+
         if (Schema::hasColumn('ai_logs', 'llm_invoked')) {
             $log->update(['llm_invoked' => true]);
         }
 
         return $log;
+    }
+
+    private function inferExecutionMsFromErrorMessage(string $errorMessage): ?int
+    {
+        if (preg_match('/timed out after (\d+)\s*milliseconds/i', $errorMessage, $matches) === 1) {
+            return max(0, (int) $matches[1]);
+        }
+
+        if (preg_match('/timed out after (\d+(?:\.\d+)?)\s*seconds/i', $errorMessage, $matches) === 1) {
+            return max(0, (int) round(((float) $matches[1]) * 1000));
+        }
+
+        return null;
     }
 
     /**
