@@ -82,12 +82,26 @@ function requiredActionsToString(raw: unknown): string {
   return "";
 }
 
+/**
+ * Drafts can be seeded before assignee options load, leaving a raw user ID
+ * (e.g. "38") as the assignee token. Once options arrive, upgrade it to the
+ * matching option's email so the select shows the user's name.
+ */
+function upgradeNumericAssignee(value: string, assigneeOptions: ElyTaskAssigneeOption[]): string {
+  const trimmed = value.trim();
+  if (trimmed === "" || !/^\d+$/.test(trimmed)) {
+    return trimmed;
+  }
+  const matched = assigneeOptions.find((item) => item.id === Number(trimmed));
+  return matched?.email ?? trimmed;
+}
+
 function resolveAssigneeSeed(
   args: Record<string, unknown>,
   assigneeOptions: ElyTaskAssigneeOption[],
 ): string {
   if (typeof args.assignee === "string" && args.assignee.trim() !== "") {
-    return args.assignee.trim();
+    return upgradeNumericAssignee(args.assignee, assigneeOptions);
   }
 
   const assignedId = asNumberOrNull(args.assigned_agent_id);
@@ -109,7 +123,9 @@ export function buildTaskDraftFromArgs(
     type: existing?.type ?? String(args.type ?? "inspection"),
     description: existing?.description ?? String(args.description ?? ""),
     due_date: existing?.due_date ?? asDateTimeLocalInputValue(args.due_date),
-    assignee: existing?.assignee ?? resolveAssigneeSeed(args, assigneeOptions),
+    assignee: existing !== undefined
+      ? upgradeNumericAssignee(existing.assignee, assigneeOptions)
+      : resolveAssigneeSeed(args, assigneeOptions),
     location: existing?.location ?? String(args.location ?? ""),
     address: existing?.address ?? String(args.address ?? ""),
     priority: existing?.priority ?? String(args.priority ?? ""),
@@ -197,7 +213,9 @@ export function ElyTaskActionFields({
   );
 
   useEffect(() => {
-    if (!draft) {
+    // Seed the draft on first render, and re-sync when late-loading assignee
+    // options upgrade a numeric ID placeholder to the resolved user email.
+    if (!draft || draft.assignee !== currentDraft.assignee) {
       onDraftChange(msgId, currentDraft);
     }
   }, [currentDraft, draft, msgId, onDraftChange]);

@@ -483,6 +483,13 @@ class TaskInferenceService
                     ->where('company_users.role', 'agent');
             });
 
+        // Editors may submit a raw user ID before the assignee list resolved to a name.
+        if (preg_match('/^\d+$/', $candidate) === 1) {
+            $byId = (clone $query)->where('users.id', (int) $candidate)->value('id');
+
+            return is_numeric($byId) ? (int) $byId : null;
+        }
+
         if (preg_match('/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i', $candidate) === 1) {
             $byEmail = (clone $query)->where('email', $candidate)->value('id');
 
