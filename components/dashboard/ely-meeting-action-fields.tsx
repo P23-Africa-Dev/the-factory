@@ -91,7 +91,11 @@ function buildDraftFromArgs(args: Record<string, unknown>, existing?: ElyMeeting
   };
 }
 
-export function buildMeetingActionArgs(draft: ElyMeetingDraft, candidates: MeetingAttendeeCandidate[]): Record<string, unknown> {
+export function buildMeetingActionArgs(
+  draft: ElyMeetingDraft,
+  candidates: MeetingAttendeeCandidate[],
+  preserveArgs: Record<string, unknown> = {},
+): Record<string, unknown> {
   const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
   const attendees: MeetingAttendeeInput[] = [];
   const seen = new Set<string>();
@@ -127,7 +131,7 @@ export function buildMeetingActionArgs(draft: ElyMeetingDraft, candidates: Meeti
     }
   }
 
-  return {
+  const built: Record<string, unknown> = {
     title: draft.title.trim(),
     description: draft.description.trim(),
     location: draft.location.trim(),
@@ -137,6 +141,15 @@ export function buildMeetingActionArgs(draft: ElyMeetingDraft, candidates: Meeti
     attendees,
     reminders,
   };
+
+  // Preserve server-inferred linkage fields that the specialized editor does not expose.
+  for (const key of ["project_id", "task_id", "lead_ids", "meeting_settings", "draft_id", "draft_version"] as const) {
+    if (preserveArgs[key] !== undefined && built[key] === undefined) {
+      built[key] = preserveArgs[key];
+    }
+  }
+
+  return built;
 }
 
 export function ElyMeetingActionFields({

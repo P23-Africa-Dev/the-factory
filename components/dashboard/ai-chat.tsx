@@ -6,6 +6,11 @@ import {
   ElyMeetingActionFields,
   type ElyMeetingDraft,
 } from "@/components/dashboard/ely-meeting-action-fields";
+import {
+  buildTaskActionArgs,
+  ElyTaskActionFields,
+  type ElyTaskDraft,
+} from "@/components/dashboard/ely-task-action-fields";
 import { formatAiMessageHtml, formatPlainAiMessage } from "@/lib/format-ai-message";
 import { ELY_INPUT_PLACEHOLDER, ELY_LANDING_HEADLINE, ELY_LANDING_SUBTEXT, ELY_NAME } from "@/lib/ely-brand";
 import type { CopilotChatContext, CopilotThreadSearchResult, ForecastHorizonDays, ForecastOverviewResponse } from "@/lib/api/copilot";
@@ -382,6 +387,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [highlightQuery, setHighlightQuery] = useState("");
   const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
   const [meetingActionDrafts, setMeetingActionDrafts] = useState<Record<string, ElyMeetingDraft>>({});
+  const [taskActionDrafts, setTaskActionDrafts] = useState<Record<string, ElyTaskDraft>>({});
   const [assigneeOptions, setAssigneeOptions] = useState<Record<string, AssigneeOptionsState>>({});
   const [leadOptions, setLeadOptions] = useState<Record<string, LeadOptionsState>>({});
   const [meetingAttendeeOptions, setMeetingAttendeeOptions] = useState<Record<string, MeetingAttendeeOptionsState>>({});
@@ -492,6 +498,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     setTimeout(() => setAssigneeOptions({}), 0);
     setTimeout(() => setMeetingAttendeeOptions({}), 0);
     setTimeout(() => setMeetingActionDrafts({}), 0);
+    setTimeout(() => setTaskActionDrafts({}), 0);
   }, [companyId]);
 
   useEffect(() => {
@@ -557,7 +564,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const argKeys = rawArgs ? Object.keys(rawArgs) : [];
       const hasUserAssignmentField = argKeys.some((key) => USER_ASSIGNMENT_FIELD_PATTERN.test(key));
 
-      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "crm.send_email", "kpis.create", "notifications.send", "org.users.create"].includes(tool) && !hasUserAssignmentField) {
+      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "crm.send_email", "crm.log_visit", "kpis.create", "notifications.send", "org.users.create"].includes(tool) && !hasUserAssignmentField) {
         continue;
       }
 
@@ -566,7 +573,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         continue;
       }
 
-      if (tool === "crm.send_email") {
+      if (tool === "crm.send_email" || tool === "crm.log_visit") {
         void loadLeadOptions(msg.id);
         continue;
       }
@@ -839,6 +846,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }));
   }
 
+  function updateTaskActionDraft(msgId: string, draft: ElyTaskDraft) {
+    setTaskActionDrafts((prev) => ({
+      ...prev,
+      [msgId]: draft,
+    }));
+  }
+
   async function loadLeadOptions(msgId: string) {
     const current = leadOptions[msgId];
     if (current?.loading === true || current?.loaded === true) {
@@ -939,19 +953,35 @@ export function AIChat({ open, onClose }: AIChatProps) {
     const tool = actionToolForMessage(msg);
 
     if (tool === "tasks.create") {
-      const merged: Record<string, unknown> = { ...baseArgs };
+      const taskDraft = taskActionDrafts[msg.id];
+      if (taskDraft) {
+        const merged: Record<string, unknown> = {
+          ...baseArgs,
+          ...buildTaskActionArgs(taskDraft),
+        };
 
-      if (Object.prototype.hasOwnProperty.call(draft, "title")) {
-        merged.title = draft.title;
+        // Prefer the edited assignee token so the backend can re-resolve the agent ID.
+        if (typeof merged.assignee === "string" && merged.assignee.trim() !== "") {
+          delete merged.assigned_agent_id;
+        }
+
+        if (isAgent) {
+          delete merged.assignee;
+          delete merged.assigned_agent_id;
+          delete merged.assigned_agent_ids;
+        }
+
+        // Preserve hidden server fields when the specialized form rebuilds args.
+        for (const key of ["project_id", "draft_id", "draft_version"] as const) {
+          if (baseArgs[key] !== undefined && merged[key] === undefined) {
+            merged[key] = baseArgs[key];
+          }
+        }
+
+        return merged;
       }
 
-      if (Object.prototype.hasOwnProperty.call(draft, "type")) {
-        merged.type = draft.type;
-      }
-
-      if (Object.prototype.hasOwnProperty.call(draft, "due_date")) {
-        merged.due_date = draft.due_date;
-      }
+      const merged: Record<string, unknown> = { ...baseArgs, ...draft };
 
       if (Object.prototype.hasOwnProperty.call(draft, "assignee")) {
         const assignee = (draft.assignee ?? "").trim();
@@ -976,7 +1006,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const draft = meetingActionDrafts[msg.id];
       if (draft) {
         const candidates = meetingAttendeeOptions[msg.id]?.items ?? [];
-        return buildMeetingActionArgs(draft, candidates);
+        return buildMeetingActionArgs(draft, candidates, baseArgs);
       }
 
       return baseArgs;
@@ -1145,6 +1175,11 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function assigneeDropdownValue(msg: Message, args: Record<string, unknown>): string {
+    const taskDraftAssignee = String(taskActionDrafts[msg.id]?.assignee ?? "").trim();
+    if (taskDraftAssignee !== "") {
+      return taskDraftAssignee;
+    }
+
     const draftValue = assigneeDraftValue(msg);
     if (draftValue !== "") {
       return draftValue;
@@ -1296,17 +1331,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
     const tool = actionToolForMessage(msg);
 
     if (tool === "tasks.create") {
-      const fields: EditFieldConfig[] = [
-        { key: "title", label: "Title", control: "text" },
-        { key: "type", label: "Type", control: "select", options: TASK_TYPE_OPTIONS },
-        { key: "due_date", label: "Due Date", control: "date" },
-      ];
-
-      if (!isAgent) {
-        fields.push({ key: "assignee", label: "Assignee", control: "select", options: assigneeSelectOptions(msg) });
-      }
-
-      return fields;
+      // Specialized ElyTaskActionFields renderer handles the full task form.
+      return [];
     }
 
     if (tool === "meetings.schedule") {
@@ -1316,23 +1342,28 @@ export function AIChat({ open, onClose }: AIChatProps) {
     if (tool === "projects.create") {
       return [
         { key: "name", label: "Project Name", control: "text" },
+        { key: "description", label: "Description", control: "textarea" },
         { key: "type", label: "Type", control: "select", options: PROJECT_TYPE_OPTIONS },
         { key: "status", label: "Status", control: "select", options: PROJECT_STATUS_OPTIONS },
         { key: "priority", label: "Priority", control: "select", options: PRIORITY_OPTIONS },
         { key: "start_date", label: "Start Date", control: "date" },
         { key: "end_date", label: "End Date", control: "date" },
         { key: "project_manager_user_id", label: "Project Manager", control: "select", options: userIdSelectOptions(msg) },
+        { key: "assigned_team", label: "Assigned Team", control: "text" },
+        { key: "territory_zone", label: "Territory Zone", control: "text" },
+        { key: "notes", label: "Notes", control: "textarea" },
       ];
     }
 
     if (tool === "notifications.send") {
       return [
-        { key: "user_ids", label: "Recipients (user IDs, comma-separated)", control: "text" },
+        { key: "user_ids", label: "Recipients", control: "multi-select", options: userIdSelectOptions(msg) },
         { key: "title", label: "Title", control: "text" },
         { key: "message", label: "Message", control: "textarea" },
         { key: "category", label: "Category", control: "select", options: NOTIFICATION_CATEGORY_OPTIONS },
         { key: "priority", label: "Priority", control: "select", options: NOTIFICATION_PRIORITY_OPTIONS },
         { key: "delivery_types", label: "Delivery (in_app, push, email)", control: "text" },
+        { key: "action_url", label: "Action URL", control: "text" },
       ];
     }
 
@@ -1341,6 +1372,17 @@ export function AIChat({ open, onClose }: AIChatProps) {
         { key: "task_id", label: "Task ID", control: "number" },
         { key: "to_user_id", label: "Reassign To", control: "select", options: userIdSelectOptions(msg) },
         { key: "reason", label: "Reason", control: "textarea" },
+      ];
+    }
+
+    if (tool === "crm.log_visit") {
+      return [
+        { key: "lead_id", label: "Lead", control: "select", options: leadSelectOptions(msg) },
+        { key: "summary", label: "Visit Summary", control: "textarea" },
+        { key: "outcomes", label: "Outcomes", control: "textarea" },
+        { key: "opportunities", label: "Opportunities", control: "textarea" },
+        { key: "objections", label: "Objections", control: "textarea" },
+        { key: "follow_up_actions", label: "Follow-up Actions", control: "textarea" },
       ];
     }
 
@@ -1765,6 +1807,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         { key: "type", label: "Type", value: formatPreviewValue("type", args.type) },
         { key: "due_date", label: "Due Date", value: formatPreviewValue("due_date", args.due_date) },
         { key: "location", label: "Location", value: formatPreviewValue("location", args.location) },
+        { key: "address", label: "Address", value: formatPreviewValue("address", args.address) },
       ];
 
       const assigneeEdited = assigneeDropdownValue(msg, args) !== "";
@@ -3240,6 +3283,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
                                     onDraftChange={updateMeetingActionDraft}
                                     candidates={meetingAttendeeOptions[msg.id]?.items ?? []}
                                     loadingCandidates={meetingAttendeeOptions[msg.id]?.loading === true}
+                                  />
+                                </div>
+                              );
+                            }
+
+                            if (payloadTool === "tasks.create") {
+                              return (
+                                <div className="mb-2 rounded-xl border border-[#355C57]/70 bg-[#102322] px-3 py-2">
+                                  <p className="text-[11px] font-semibold text-[#9FD3C8] mb-2">Edit before confirm:</p>
+                                  <ElyTaskActionFields
+                                    msgId={msg.id}
+                                    args={args}
+                                    draft={taskActionDrafts[msg.id]}
+                                    onDraftChange={updateTaskActionDraft}
+                                    assigneeOptions={assigneeOptions[msg.id]?.items ?? []}
+                                    loadingAssignees={assigneeOptions[msg.id]?.loading === true}
+                                    isAgent={isAgent}
                                   />
                                 </div>
                               );
