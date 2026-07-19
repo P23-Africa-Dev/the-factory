@@ -1288,6 +1288,80 @@ class LeadManagementTest extends TestCase
         $this->assertStringNotContainsString('Hidden Agent Lead', $content);
     }
 
+    public function test_lead_detail_response_includes_full_user_facing_contract(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $interactionAt = Carbon::parse('2026-07-01T10:30:00Z');
+        $convertedAt = Carbon::parse('2026-07-10T12:00:00Z');
+
+        $lead = Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Detail Contract Lead',
+            'email' => 'detail@example.com',
+            'phone' => '+2348000000001',
+            'location' => 'Ikeja GRA',
+            'company_name' => 'Acme Ltd',
+            'website' => 'https://acme.com',
+            'position' => 'Head of Sales',
+            'profile_urls' => ['https://linkedin.com/in/detail'],
+            'source' => 'referral',
+            'status' => 'qualified',
+            'priority' => 'high',
+            'budget_amount' => 12500.50,
+            'budget_currency' => 'NGN',
+            'next_action' => 'Send proposal',
+            'last_interaction' => 'Requested formal quote',
+            'last_interaction_at' => $interactionAt,
+            'converted_at' => $convertedAt,
+            'meta' => ['note' => 'internal-only'],
+        ]);
+
+        $adminResponse = $this->withToken($admin->createToken('admin-detail-contract', ['*'])->plainTextToken)
+            ->getJson('/api/v1/crm/leads/' . $lead->id . '?company_id=' . $company->id);
+
+        $adminResponse->assertOk()
+            ->assertJsonPath('data.lead.id', $lead->id)
+            ->assertJsonPath('data.lead.email', 'detail@example.com')
+            ->assertJsonPath('data.lead.company_name', 'Acme Ltd')
+            ->assertJsonPath('data.lead.website', 'https://acme.com')
+            ->assertJsonPath('data.lead.position', 'Head of Sales')
+            ->assertJsonPath('data.lead.profile_urls.0', 'https://linkedin.com/in/detail')
+            ->assertJsonPath('data.lead.budget_amount', 12500.5)
+            ->assertJsonPath('data.lead.budget_currency', 'NGN')
+            ->assertJsonPath('data.lead.budget', 'NGN 12500.50')
+            ->assertJsonPath('data.lead.pipeline.id', $pipelineId)
+            ->assertJsonPath('data.lead.pipeline.name', 'Default Pipeline')
+            ->assertJsonPath('data.lead.pipeline.currency_code', 'USD')
+            ->assertJsonPath('data.lead.creator.id', $admin->id)
+            ->assertJsonPath('data.lead.creator.name', $admin->name)
+            ->assertJsonPath('data.lead.assignee.id', $agent->id)
+            ->assertJsonPath('data.lead.assignee.name', $agent->name)
+            ->assertJsonPath('data.lead.linked_to_map', false)
+            ->assertJsonPath('data.lead.last_interaction', 'Requested formal quote')
+            ->assertJsonPath('data.lead.meta.note', 'internal-only');
+
+        $leadPayload = $adminResponse->json('data.lead');
+        $this->assertArrayNotHasKey('deleted_at', $leadPayload);
+        $this->assertNotEmpty($leadPayload['last_interaction_at']);
+        $this->assertNotEmpty($leadPayload['converted_at']);
+        $this->assertNotEmpty($leadPayload['created_at']);
+        $this->assertNotEmpty($leadPayload['updated_at']);
+
+        $agentResponse = $this->withToken($agent->createToken('agent-detail-contract', ['*'])->plainTextToken)
+            ->getJson('/api/v1/crm/leads/' . $lead->id . '?company_id=' . $company->id);
+
+        $agentResponse->assertOk()
+            ->assertJsonPath('data.lead.email', 'detail@example.com')
+            ->assertJsonPath('data.lead.pipeline.name', 'Default Pipeline')
+            ->assertJsonPath('data.lead.budget_currency', 'NGN');
+
+        $this->assertArrayNotHasKey('deleted_at', $agentResponse->json('data.lead'));
+    }
+
     private function seedCompanyUsers(): array
     {
         $company = Company::create([
