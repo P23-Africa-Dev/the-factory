@@ -24,23 +24,12 @@ export default function Home() {
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-white font-sans overflow-x-hidden">
-      {/* Top Header & Navbar wrapper */}
-      <div className="w-full bg-white px-6 sm:px-10 lg:px-16 pt-6 sm:pt-8 lg:pt-10">
-        <div className="flex w-full items-center justify-between">
-          {/* Vertical spacer match for split column offset */}
-          <div className="w-12 hidden lg:block shrink-0" />
-          <div className="flex-1">
-            <LandingNavbar />
-          </div>
-        </div>
-      </div>
+      {/* Top Header & Navbar */}
+      <LandingNavbar />
 
       {/* Split-screen Layout Hero section */}
       <div className="flex-grow w-full flex flex-col bg-white">
-        <div className="flex-grow w-full flex flex-col lg:flex-row bg-white">
-          <div className="w-12 bg-[#0B252C] shrink-0 hidden lg:block" />
-          <HeroSection onDownloadAgentApp={handleDownloadAgentApp} />
-        </div>
+        <HeroSection onDownloadAgentApp={handleDownloadAgentApp} />
       </div>
 
       {/* About / app purpose */}
