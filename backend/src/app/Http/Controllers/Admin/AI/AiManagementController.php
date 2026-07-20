@@ -11,6 +11,7 @@ use App\Services\AI\Admin\AiFailoverTracker;
 use App\Services\AI\Admin\AiOperationsAnalyticsService;
 use App\Services\AI\Admin\AiProviderHealthService;
 use App\Services\AI\AiLoggingService;
+use App\Services\AI\AiIntentRoutingSettingService;
 use App\Services\AI\AiStackSettingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -28,6 +29,7 @@ class AiManagementController extends Controller
         private readonly AiOperationsAnalyticsService $operationsAnalytics,
         private readonly AiAlertService $alertService,
         private readonly AiStackSettingService $aiStackSettingService,
+        private readonly AiIntentRoutingSettingService $aiIntentRoutingSettingService,
     ) {}
 
     public function index(): View
@@ -118,6 +120,8 @@ class AiManagementController extends Controller
         $fallbackProvider = (string) config('services.ai.fallback_provider', 'claude');
         $aiStackSnapshot = $this->aiStackSettingService->getSnapshot();
         $activeAiStack = (string) $aiStackSnapshot['stack'];
+        $intentRoutingSnapshot = $this->aiIntentRoutingSettingService->getSnapshot();
+        $activeIntentRoutingMode = (string) $intentRoutingSnapshot['mode'];
         $canManageAiStack = auth('admin')->user()?->canAccessAbility('manage_ai') === true;
 
         $providerChecks = $this->healthService->checkAll(persist: true);
@@ -162,6 +166,8 @@ class AiManagementController extends Controller
             'fallbackProvider',
             'aiStackSnapshot',
             'activeAiStack',
+            'intentRoutingSnapshot',
+            'activeIntentRoutingMode',
             'canManageAiStack',
             'avgExecutionByProvider',
             'errorRate',

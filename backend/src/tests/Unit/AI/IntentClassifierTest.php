@@ -163,4 +163,24 @@ final class IntentClassifierTest extends TestCase
             $this->assertSame('org.users', $intent['tool'], "Failed for message: {$message}");
         }
     }
+
+    public function test_classifies_task_list_queries_without_create_action(): void
+    {
+        $classifier = new IntentClassifier();
+
+        $intent = $classifier->classify('Give me the list of tasks created by Agent John');
+
+        $this->assertSame('tool', $intent['type']);
+        $this->assertSame('tasks.list', $intent['tool']);
+    }
+
+    public function test_classifies_explicit_task_creation_as_action(): void
+    {
+        $classifier = new IntentClassifier();
+
+        $intent = $classifier->classify('Create a task and assign it to John');
+
+        $this->assertSame('action', $intent['type']);
+        $this->assertSame('tasks.create', $intent['tool']);
+    }
 }

@@ -325,6 +325,61 @@
             @endif
         </div>
 
+        {{-- Intent routing mode (super_admin) --}}
+        <div class="metric-card p-4 mb-4">
+            <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+                <div>
+                    <h6 class="fw-bold mb-1" style="font-size:.9rem">ELY Intent Routing</h6>
+                    <p class="mb-0" style="font-size:.8rem;color:var(--text-secondary)">
+                        Active mode: <strong>{{ $activeIntentRoutingMode === 'ai_first' ? 'Semantic routing (AI-first)' : 'Keyword routing (Rules-first)' }}</strong>.
+                        Applies to all AI stacks (OpenAI + Claude, NVIDIA NIM, GLM).
+                        @if (! empty($intentRoutingSnapshot['updated_at']))
+                            Last changed {{ \Illuminate\Support\Carbon::parse($intentRoutingSnapshot['updated_at'])->format('M j, Y g:i A') }}.
+                        @endif
+                    </p>
+                </div>
+                @if (! $canManageAiStack)
+                    <span class="badge text-bg-light border" style="font-size:.75rem">Super admin only</span>
+                @endif
+            </div>
+
+            @if ($canManageAiStack)
+                <form method="POST" action="{{ route('admin.ai.intent-routing.update') }}" class="row g-3 align-items-stretch">
+                    @csrf
+                    <div class="col-md-6">
+                        <input type="radio" class="btn-check" name="mode" id="ai-intent-rules-first" value="rules_first"
+                            {{ $activeIntentRoutingMode === 'rules_first' ? 'checked' : '' }}>
+                        <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="ai-intent-rules-first">
+                            <div class="fw-bold mb-1">Keyword routing (Rules-first)</div>
+                            <div style="font-size:.78rem;color:var(--text-secondary)">
+                                Match keywords and regex patterns first. Faster and cheaper; best for predictable operational phrases.
+                            </div>
+                        </label>
+                    </div>
+                    <div class="col-md-6">
+                        <input type="radio" class="btn-check" name="mode" id="ai-intent-ai-first" value="ai_first"
+                            {{ $activeIntentRoutingMode === 'ai_first' ? 'checked' : '' }}>
+                        <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="ai-intent-ai-first">
+                            <div class="fw-bold mb-1">Semantic routing (AI-first)</div>
+                            <div style="font-size:.78rem;color:var(--text-secondary)">
+                                AI classifies intent before choosing tools — better at create-vs-list and similar phrasing.
+                            </div>
+                        </label>
+                    </div>
+                    <div class="col-12 d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary px-4">Apply routing mode</button>
+                    </div>
+                </form>
+                <div class="mt-2 alert alert-info mb-0 py-2 px-3" style="font-size:.78rem">
+                    Semantic routing adds a small routing LLM call on most turns. Confirmations, drafts, and action execution are unchanged in both modes.
+                </div>
+            @else
+                <div style="font-size:.82rem;color:var(--text-secondary)">
+                    Ask a super admin to change intent routing mode.
+                </div>
+            @endif
+        </div>
+
         {{-- Real-time status widget --}}
         <div class="metric-card p-4 mb-4 ai-status-panel d-flex align-items-center justify-content-between flex-wrap">
             <div class="d-flex align-items-center gap-3">

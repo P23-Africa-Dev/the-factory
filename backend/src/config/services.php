@@ -71,6 +71,7 @@ return [
         'router_model' => env('AI_ROUTER_MODEL', 'auto'),
         'provider_skip_ttl_seconds' => (int) env('AI_PROVIDER_SKIP_TTL', 300),
         'enable_hybrid_router' => filter_var(env('AI_ENABLE_HYBRID_ROUTER', true), FILTER_VALIDATE_BOOL),
+        'intent_routing_mode' => env('AI_INTENT_ROUTING_MODE', 'rules_first'),
         'enable_read_synthesis' => filter_var(env('AI_ENABLE_READ_SYNTHESIS', true), FILTER_VALIDATE_BOOL),
         'enable_streaming' => filter_var(env('AI_ENABLE_STREAMING', true), FILTER_VALIDATE_BOOL),
         'enable_actions' => filter_var(env('AI_ENABLE_ACTIONS', true), FILTER_VALIDATE_BOOL),

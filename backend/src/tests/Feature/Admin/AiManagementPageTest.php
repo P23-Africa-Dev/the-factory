@@ -28,7 +28,8 @@ class AiManagementPageTest extends TestCase
             ->assertOk()
             ->assertSee('AI Operations Center')
             ->assertSee('Hosted NVIDIA NIM')
-            ->assertSee('GLM (Zhipu)');
+            ->assertSee('GLM (Zhipu)')
+            ->assertSee('ELY Intent Routing');
     }
 
     public function test_admin_ai_index_renders_when_ai_logs_table_is_missing(): void

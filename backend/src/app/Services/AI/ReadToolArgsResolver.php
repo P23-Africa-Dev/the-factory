@@ -15,6 +15,7 @@ class ReadToolArgsResolver
     private const LIST_TOOLS = [
         'crm.top_leads',
         'tasks.overdue',
+        'tasks.list',
         'org.users',
         'meetings.today',
         'crm.stale_leads',
@@ -58,6 +59,40 @@ class ReadToolArgsResolver
 
         if ($this->isCountOnlyQuestion($message)) {
             $args['count_only'] = true;
+        }
+
+        if ($tool === 'tasks.list') {
+            $args = array_merge($args, $this->resolveTasksListArgs($message));
+        }
+
+        return $args;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolveTasksListArgs(string $message): array
+    {
+        $args = [];
+
+        if (preg_match('/\bcreated\s+by\s+(.+?)(?:\?|$)/i', $message, $matches) === 1) {
+            $args['created_by_name'] = trim((string) $matches[1]);
+        } elseif (preg_match('/\btasks?\s+created\s+by\s+(.+?)(?:\?|$)/i', $message, $matches) === 1) {
+            $args['created_by_name'] = trim((string) $matches[1]);
+        }
+
+        if (preg_match('/\bassigned\s+to\s+(.+?)(?:\?|$)/i', $message, $matches) === 1) {
+            $args['assignee_name'] = trim((string) $matches[1]);
+        } elseif (preg_match('/\btasks?\s+(?:for|assigned\s+to)\s+(.+?)(?:\?|$)/i', $message, $matches) === 1) {
+            $args['assignee_name'] = trim((string) $matches[1]);
+        }
+
+        foreach (['created_by_name', 'assignee_name'] as $key) {
+            if (! isset($args[$key]) || ! is_string($args[$key])) {
+                continue;
+            }
+
+            $args[$key] = trim(preg_replace('/\b(agent|user|tasks?|created|assigned)\b/i', '', $args[$key]) ?? $args[$key]);
         }
 
         return $args;

@@ -74,6 +74,7 @@ data:
 
   # ── AI Providers (non-sensitive config) ───────────────────────────────────────
   AI_STACK: "openai_claude"
+  AI_INTENT_ROUTING_MODE: "rules_first"
   AI_PROVIDER: "openai"
   AI_FALLBACK_PROVIDER: "claude"
   AI_DEFAULT_MODEL: "auto"
