@@ -7,6 +7,7 @@ namespace App\Services\AI;
 use App\Models\Admin;
 use App\Models\PlatformSetting;
 use App\Services\AI\Admin\AiProviderHealthService;
+use App\Services\AI\Providers\GlmModelResolver;
 use Illuminate\Support\Facades\Cache;
 
 class AiStackSettingService
@@ -16,6 +17,8 @@ class AiStackSettingService
     public const OPENAI_CLAUDE = 'openai_claude';
 
     public const NVIDIA = 'nvidia';
+
+    public const GLM = 'glm';
 
     private const CACHE_KEY = 'platform_settings.ai_stack';
 
@@ -38,17 +41,19 @@ class AiStackSettingService
     }
 
     /**
-     * @return array{stack: string, updated_at: ?string, nvidia_configured: bool, openai_configured: bool, claude_configured: bool, nvidia_models: array{routing: string, exec: string, analyst: string}}
+     * @return array{stack: string, updated_at: ?string, nvidia_configured: bool, glm_configured: bool, openai_configured: bool, claude_configured: bool, nvidia_models: array{routing: string, exec: string, analyst: string}, glm_models: array{routing: string, exec: string, analyst: string}}
      */
     public function getSnapshot(): array
     {
         $setting = PlatformSetting::query()->where('key', self::KEY)->first();
         $stack = $this->normalize($setting?->value) ?? $this->defaultStack();
+        $glmModels = app(GlmModelResolver::class)->purposeModels();
 
         return [
             'stack' => $stack,
             'updated_at' => $setting?->updated_at?->toIso8601String(),
             'nvidia_configured' => trim((string) config('services.ai.nvidia.api_key')) !== '',
+            'glm_configured' => trim((string) config('services.ai.glm.api_key')) !== '',
             'openai_configured' => trim((string) config('services.ai.openai.api_key')) !== '',
             'claude_configured' => trim((string) config('services.ai.claude.api_key')) !== '',
             'nvidia_models' => [
@@ -56,6 +61,7 @@ class AiStackSettingService
                 'exec' => (string) config('services.ai.nvidia.exec_model'),
                 'analyst' => (string) config('services.ai.nvidia.analyst_model'),
             ],
+            'glm_models' => $glmModels,
         ];
     }
 
@@ -86,6 +92,11 @@ class AiStackSettingService
         return $this->getStack() === self::NVIDIA;
     }
 
+    public function isGlm(): bool
+    {
+        return $this->getStack() === self::GLM;
+    }
+
     public function isOpenAiClaude(): bool
     {
         return $this->getStack() === self::OPENAI_CLAUDE;
@@ -101,7 +112,7 @@ class AiStackSettingService
     {
         $normalized = strtolower(trim((string) $value));
 
-        if ($normalized === self::OPENAI_CLAUDE || $normalized === self::NVIDIA) {
+        if (in_array($normalized, [self::OPENAI_CLAUDE, self::NVIDIA, self::GLM], true)) {
             return $normalized;
         }
 
@@ -113,8 +124,10 @@ class AiStackSettingService
      */
     private function inactiveProvidersFor(string $activeStack): array
     {
-        return $activeStack === self::NVIDIA
-            ? ['openai', 'claude']
-            : ['nvidia'];
+        return match ($activeStack) {
+            self::NVIDIA => ['openai', 'claude', 'glm'],
+            self::GLM => ['openai', 'claude', 'nvidia'],
+            default => ['nvidia', 'glm'],
+        };
     }
 }

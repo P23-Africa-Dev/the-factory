@@ -42,11 +42,12 @@ class AiManagementController extends Controller
         $statsToday = $this->emptyStats();
         $statsWeek = $this->emptyStats();
         $statsMonth = $this->emptyStats();
-        $avgExecutionByProvider = ['openai' => null, 'claude' => null, 'nvidia' => null];
+        $avgExecutionByProvider = ['openai' => null, 'claude' => null, 'nvidia' => null, 'glm' => null];
         $providerUsage = [
             'openai' => $this->emptyProviderUsage(),
             'claude' => $this->emptyProviderUsage(),
             'nvidia' => $this->emptyProviderUsage(),
+            'glm' => $this->emptyProviderUsage(),
         ];
         $topUsers = [];
         $topOrganizations = [];
@@ -79,6 +80,11 @@ class AiManagementController extends Controller
                 ->where('provider', 'nvidia')
                 ->where('created_at', '>=', $now->copy()->subDays(30))
                 ->avg('execution_ms');
+            $avgExecutionByProvider['glm'] = AiLog::query()
+                ->llmInvocations()
+                ->where('provider', 'glm')
+                ->where('created_at', '>=', $now->copy()->subDays(30))
+                ->avg('execution_ms');
 
             $providerUsage = $this->operationsAnalytics->providerUsage($today, $monthStart);
             $topUsers = $this->operationsAnalytics->topUsers($now->copy()->subDays(30));
@@ -107,6 +113,7 @@ class AiManagementController extends Controller
         $openaiConfigured = trim((string) config('services.ai.openai.api_key')) !== '';
         $claudeConfigured = trim((string) config('services.ai.claude.api_key')) !== '';
         $nvidiaConfigured = trim((string) config('services.ai.nvidia.api_key')) !== '';
+        $glmConfigured = trim((string) config('services.ai.glm.api_key')) !== '';
         $primaryProvider = (string) config('services.ai.provider', 'openai');
         $fallbackProvider = (string) config('services.ai.fallback_provider', 'claude');
         $aiStackSnapshot = $this->aiStackSettingService->getSnapshot();
@@ -117,6 +124,7 @@ class AiManagementController extends Controller
         $openaiHealth = $providerChecks['openai'];
         $claudeHealth = $providerChecks['claude'];
         $nvidiaHealth = $providerChecks['nvidia'];
+        $glmHealth = $providerChecks['glm'];
         $warningBanners = $this->operationsAnalytics->warningBanners($openaiHealth, $claudeHealth);
         $activeAlerts = $this->alertService->activeAlerts(10);
         $lastFailover = $this->failoverTracker->latest();
@@ -135,6 +143,8 @@ class AiManagementController extends Controller
             stack: $activeAiStack,
             nvidiaHealth: $nvidiaHealth,
             nvidiaConfigured: $nvidiaConfigured,
+            glmHealth: $glmHealth,
+            glmConfigured: $glmConfigured,
         );
         $aiStatus = $aggregateStatus['status'];
         $activeProviderLabel = $aggregateStatus['active_provider'];
@@ -147,6 +157,7 @@ class AiManagementController extends Controller
             'openaiConfigured',
             'claudeConfigured',
             'nvidiaConfigured',
+            'glmConfigured',
             'primaryProvider',
             'fallbackProvider',
             'aiStackSnapshot',
@@ -160,6 +171,7 @@ class AiManagementController extends Controller
             'openaiHealth',
             'claudeHealth',
             'nvidiaHealth',
+            'glmHealth',
             'warningBanners',
             'activeAlerts',
             'lastFailover',

@@ -24,12 +24,13 @@ class AiHealthController extends Controller
             'openai' => $providerChecks['openai'],
             'claude' => $providerChecks['claude'],
             'nvidia' => $providerChecks['nvidia'],
+            'glm' => $providerChecks['glm'],
             'redis' => $this->checkRedis(),
             'queue' => $this->checkQueue(),
         ];
 
         $providerOk = collect($checks)
-            ->only(['openai', 'claude', 'nvidia'])
+            ->only(['openai', 'claude', 'nvidia', 'glm'])
             ->contains(fn ($c) => ($c['ok'] ?? false) === true);
         $infraOk = ($checks['redis']['ok'] ?? false) === true && ($checks['queue']['ok'] ?? false) === true;
         $status = $providerOk && $infraOk ? 'healthy' : ($providerOk || $infraOk ? 'degraded' : 'unhealthy');
@@ -44,13 +45,14 @@ class AiHealthController extends Controller
     public function testProvider(Request $request, string $provider): JsonResponse
     {
         $provider = strtolower($provider);
-        if (! in_array($provider, ['openai', 'claude', 'nvidia'], true)) {
+        if (! in_array($provider, ['openai', 'claude', 'nvidia', 'glm'], true)) {
             return response()->json(['ok' => false, 'message' => 'Unknown provider.'], 422);
         }
 
         $result = match ($provider) {
             'claude' => $this->healthService->checkClaude(persist: true),
             'nvidia' => $this->healthService->checkNvidia(persist: true),
+            'glm' => $this->healthService->checkGlm(persist: true),
             default => $this->healthService->checkOpenAi(persist: true),
         };
 

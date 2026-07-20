@@ -27,7 +27,8 @@ class AiManagementPageTest extends TestCase
             ->get(route('admin.ai.index'))
             ->assertOk()
             ->assertSee('AI Operations Center')
-            ->assertSee('Hosted NVIDIA NIM');
+            ->assertSee('Hosted NVIDIA NIM')
+            ->assertSee('GLM (Zhipu)');
     }
 
     public function test_admin_ai_index_renders_when_ai_logs_table_is_missing(): void

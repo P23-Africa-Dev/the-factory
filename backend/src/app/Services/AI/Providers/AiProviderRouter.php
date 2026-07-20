@@ -18,6 +18,7 @@ class AiProviderRouter
         private readonly OpenAiProvider $openAiProvider,
         private readonly ClaudeProvider $claudeProvider,
         private readonly NvidiaProvider $nvidiaProvider,
+        private readonly GlmProvider $glmProvider,
         private readonly AiStackSettingService $stackSettingService,
         private readonly AiFailoverTracker $failoverTracker,
         private readonly AiProviderHealthService $healthService,
@@ -89,6 +90,10 @@ class AiProviderRouter
             return app(NvidiaModelResolver::class)->resolve($purpose);
         }
 
+        if ($this->stackSettingService->isGlm()) {
+            return app(GlmModelResolver::class)->resolve($purpose);
+        }
+
         return match ($purpose) {
             'routing' => (string) config('services.ai.router_model', 'auto'),
             'analyst', 'report' => (string) config('services.ai.analyst_model', 'auto'),
@@ -114,6 +119,8 @@ class AiProviderRouter
             $model = app(OpenAiModelResolver::class)->resolve($purpose, $model);
         } elseif ($provider === 'nvidia') {
             $model = app(NvidiaModelResolver::class)->resolve($purpose, $model);
+        } elseif ($provider === 'glm') {
+            $model = app(GlmModelResolver::class)->resolve($purpose, $model);
         }
 
         return [
@@ -140,6 +147,9 @@ class AiProviderRouter
         if ($forced === 'nvidia') {
             return [$this->nvidiaProvider];
         }
+        if ($forced === 'glm') {
+            return [$this->glmProvider];
+        }
 
         if ($this->stackSettingService->isNvidia()) {
             if ($forced === '' && $this->healthService->shouldSkipProvider('nvidia')) {
@@ -147,6 +157,14 @@ class AiProviderRouter
             }
 
             return [$this->nvidiaProvider];
+        }
+
+        if ($this->stackSettingService->isGlm()) {
+            if ($forced === '' && $this->healthService->shouldSkipProvider('glm')) {
+                return [];
+            }
+
+            return [$this->glmProvider];
         }
 
         if (in_array($purpose, ['analyst', 'report'], true)) {
@@ -201,6 +219,19 @@ class AiProviderRouter
             );
         }
 
+        if ($this->stackSettingService->isGlm()) {
+            return $this->finalizeInvocation(
+                AiGenerationResult::failure(
+                    provider: 'glm',
+                    model: 'unsupported',
+                    errorClass: 'not_configured',
+                    errorMessage: 'Audio transcription is not available on the GLM stack.',
+                    purpose: (string) ($options['purpose'] ?? 'operational'),
+                ),
+                $options,
+            );
+        }
+
         return $this->finalizeInvocation(
             $this->tryProviders(
                 $this->orderedProviders((string) ($options['purpose'] ?? 'operational'), $options),
@@ -218,7 +249,7 @@ class AiProviderRouter
         string $userPrompt,
         array $options = [],
     ): ?string {
-        if ($this->stackSettingService->isNvidia()) {
+        if ($this->stackSettingService->isNvidia() || $this->stackSettingService->isGlm()) {
             return null;
         }
 
@@ -297,6 +328,22 @@ class AiProviderRouter
                 );
             }
 
+            if ($this->stackSettingService->isGlm()) {
+                $cached = $this->healthService->cachedStatus('glm');
+                $status = is_array($cached) ? (string) ($cached['status'] ?? 'timeout') : 'timeout';
+                $message = is_array($cached) && is_string($cached['message'] ?? null) && trim((string) $cached['message']) !== ''
+                    ? (string) $cached['message']
+                    : 'GLM is temporarily unavailable after a recent timeout. Try again shortly, or switch stacks in Admin → AI.';
+
+                return AiGenerationResult::failure(
+                    provider: 'glm',
+                    model: app(GlmModelResolver::class)->resolve($purpose),
+                    errorClass: in_array($status, ['timeout', 'unreachable'], true) ? $status : 'unreachable',
+                    errorMessage: $message,
+                    purpose: $purpose,
+                );
+            }
+
             return AiGenerationResult::failure(
                 provider: 'none',
                 model: 'unconfigured',
@@ -334,6 +381,7 @@ class AiProviderRouter
             $provider instanceof OpenAiProvider => 'openai',
             $provider instanceof ClaudeProvider => 'claude',
             $provider instanceof NvidiaProvider => 'nvidia',
+            $provider instanceof GlmProvider => 'glm',
             default => 'unknown',
         };
     }

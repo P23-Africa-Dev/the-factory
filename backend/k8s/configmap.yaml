@@ -96,6 +96,15 @@ data:
   NVIDIA_EXEC_MODEL: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
   NVIDIA_ANALYST_MODEL: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
 
+  GLM_BASE_URL: "https://open.bigmodel.cn/api/paas/v4"
+  GLM_ROUTING_MODEL: "glm-4-flash"
+  GLM_EXEC_MODEL: "glm-4-air"
+  GLM_ANALYST_MODEL: "glm-4-plus"
+  GLM_REQUEST_TIMEOUT_MS: "120000"
+  GLM_ROUTING_TIMEOUT_MS: "15000"
+  GLM_OPERATIONAL_TIMEOUT_MS: "60000"
+  GLM_OPERATIONAL_MAX_TOKENS: "1000"
+
   # ── Task Tracking ─────────────────────────────────────────────────────────────
   TASK_TRACKING_ARRIVAL_RADIUS_METERS: "75"
   TASK_TRACKING_NEAR_RADIUS_METERS: "250"

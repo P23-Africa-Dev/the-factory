@@ -188,6 +188,18 @@
 @endpush
 
 @section('content')
+@php
+    $activeStackLabel = match ($activeAiStack) {
+        'nvidia' => 'NVIDIA NIM',
+        'glm' => 'GLM (Zhipu)',
+        default => 'OpenAI + Claude',
+    };
+    $activeStackShortLabel = match ($activeAiStack) {
+        'nvidia' => 'NVIDIA',
+        'glm' => 'GLM',
+        default => 'OpenAI + Claude',
+    };
+@endphp
 <div class="page-container ai-ops-page">
     @if (!$aiLogsReady)
         <div class="alert alert-warning mb-4" role="alert">
@@ -242,7 +254,7 @@
             <div>
                 <h6 class="fw-bold mb-1" style="font-size:.9rem">ELY AI Stack</h6>
                 <p class="mb-0" style="font-size:.8rem;color:var(--text-secondary)">
-                    Active stack: <strong>{{ $activeAiStack === 'nvidia' ? 'NVIDIA NIM' : 'OpenAI + Claude' }}</strong>.
+                    Active stack: <strong>{{ $activeStackLabel }}</strong>.
                     Switching completely stops calls (and vendor token usage) on the inactive stack.
                 </p>
             </div>
@@ -254,7 +266,7 @@
         @if ($canManageAiStack)
             <form method="POST" action="{{ route('admin.ai.stack.update') }}" class="row g-3 align-items-stretch">
                 @csrf
-                <div class="col-md-5">
+                <div class="col-md-4">
                     <input type="radio" class="btn-check" name="stack" id="ai-stack-openai-claude" value="openai_claude"
                         {{ $activeAiStack === 'openai_claude' ? 'checked' : '' }}>
                     <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="ai-stack-openai-claude">
@@ -264,7 +276,7 @@
                         </div>
                     </label>
                 </div>
-                <div class="col-md-5">
+                <div class="col-md-4">
                     <input type="radio" class="btn-check" name="stack" id="ai-stack-nvidia" value="nvidia"
                         {{ $activeAiStack === 'nvidia' ? 'checked' : '' }}>
                     <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="ai-stack-nvidia">
@@ -276,12 +288,25 @@
                         </div>
                     </label>
                 </div>
-                <div class="col-md-2 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary w-100">Apply stack</button>
+                <div class="col-md-4">
+                    <input type="radio" class="btn-check" name="stack" id="ai-stack-glm" value="glm"
+                        {{ $activeAiStack === 'glm' ? 'checked' : '' }}>
+                    <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="ai-stack-glm">
+                        <div class="fw-bold mb-1">GLM (Zhipu)</div>
+                        <div style="font-size:.78rem;color:var(--text-secondary)">
+                            Routing: {{ $aiStackSnapshot['glm_models']['routing'] ?? '—' }}<br>
+                            Chat: {{ $aiStackSnapshot['glm_models']['exec'] ?? '—' }}<br>
+                            Analyst: {{ $aiStackSnapshot['glm_models']['analyst'] ?? '—' }}
+                        </div>
+                    </label>
+                </div>
+                <div class="col-12 d-flex justify-content-end">
+                    <button type="submit" class="btn btn-primary px-4">Apply stack</button>
                 </div>
             </form>
             <div class="mt-3" style="font-size:.78rem;color:var(--text-muted)">
-                NVIDIA key: <strong>{{ $nvidiaConfigured ? 'configured' : 'missing' }}</strong>
+                GLM key: <strong>{{ $glmConfigured ? 'configured' : 'missing' }}</strong>
+                · NVIDIA key: <strong>{{ $nvidiaConfigured ? 'configured' : 'missing' }}</strong>
                 · OpenAI key: <strong>{{ $openaiConfigured ? 'configured' : 'missing' }}</strong>
                 · Claude key: <strong>{{ $claudeConfigured ? 'configured' : 'missing' }}</strong>
             </div>
@@ -310,7 +335,7 @@
                 <div class="fw-bold" style="font-size:1rem">Real-Time AI Status</div>
                 <div style="font-size:.8rem;color:var(--text-secondary)">
                     Active provider: <strong id="ai-active-provider-label">{{ $activeProviderLabel }}</strong>
-                    · Stack: <strong>{{ $activeAiStack === 'nvidia' ? 'NVIDIA' : 'OpenAI + Claude' }}</strong>
+                    · Stack: <strong>{{ $activeStackShortLabel }}</strong>
                 </div>
             </div>
         </div>
@@ -322,6 +347,8 @@
                     <strong id="realtime-status-claude">{{ $claudeHealth['label'] ?? (($claudeHealth['ok'] ?? false) ? 'Connected' : 'Unavailable') }}</strong></span>
                 <span>NVIDIA:
                     <strong id="realtime-status-nvidia">{{ $nvidiaHealth['label'] ?? (($nvidiaHealth['ok'] ?? false) ? 'Connected' : 'Unavailable') }}</strong></span>
+                <span class="ms-3">GLM:
+                    <strong id="realtime-status-glm">{{ $glmHealth['label'] ?? (($glmHealth['ok'] ?? false) ? 'Connected' : 'Unavailable') }}</strong></span>
             </div>
             <span class="ai-status-badge {{ $aggregateStatus['class'] }}" id="ai-aggregate-status-badge">
                 <i class="bi {{ $aggregateStatus['icon'] }}" id="ai-aggregate-status-icon"></i>
@@ -342,15 +369,17 @@
             'openai' => ['label' => 'OpenAI', 'health' => $openaiHealth],
             'claude' => ['label' => 'Claude (Anthropic)', 'health' => $claudeHealth],
             'nvidia' => ['label' => 'NVIDIA NIM', 'health' => $nvidiaHealth],
+            'glm' => ['label' => 'GLM (Zhipu)', 'health' => $glmHealth],
         ] as $key => $item)
             @php
                 $health = $item['health'];
                 $usage = $providerUsage[$key] ?? [];
                 $presentation = app(\App\Services\AI\Admin\AiProviderHealthService::class)->presentation($health);
                 $isActiveStackVendor = ($activeAiStack === 'nvidia' && $key === 'nvidia')
+                    || ($activeAiStack === 'glm' && $key === 'glm')
                     || ($activeAiStack === 'openai_claude' && in_array($key, ['openai', 'claude'], true));
             @endphp
-            <div class="col-lg-4">
+            <div class="col-lg-3">
                 <div class="provider-health-card {{ $presentation['card_class'] }}" id="provider-card-{{ $key }}">
                     <div class="d-flex align-items-center justify-content-between mb-3">
                         <h6 class="fw-bold mb-0" style="font-size:.9rem">
@@ -412,15 +441,15 @@
         <div class="row g-3">
             <div class="col-md-3">
                 <div style="font-size:.75rem;color:var(--text-muted)">Active Stack</div>
-                <div class="fw-bold">{{ $activeAiStack === 'nvidia' ? 'NVIDIA NIM' : 'OpenAI + Claude' }}</div>
+                <div class="fw-bold">{{ $activeStackLabel }}</div>
             </div>
             <div class="col-md-3">
                 <div style="font-size:.75rem;color:var(--text-muted)">Default Provider</div>
-                <div class="fw-bold text-capitalize">{{ $activeAiStack === 'nvidia' ? 'nvidia' : $primaryProvider }}</div>
+                <div class="fw-bold text-capitalize">{{ in_array($activeAiStack, ['nvidia', 'glm'], true) ? $activeAiStack : $primaryProvider }}</div>
             </div>
             <div class="col-md-3">
                 <div style="font-size:.75rem;color:var(--text-muted)">Fallback Provider</div>
-                <div class="fw-bold text-capitalize">{{ $activeAiStack === 'nvidia' ? 'none (hard switch)' : $fallbackProvider }}</div>
+                <div class="fw-bold text-capitalize">{{ in_array($activeAiStack, ['nvidia', 'glm'], true) ? 'none (hard switch)' : $fallbackProvider }}</div>
             </div>
             <div class="col-md-3">
                 <div style="font-size:.75rem;color:var(--text-muted)">Last Automatic Failover</div>
@@ -873,11 +902,13 @@
             openai: @json($openaiHealth),
             claude: @json($claudeHealth),
             nvidia: @json($nvidiaHealth),
+            glm: @json($glmHealth),
         };
         window.__aiProviderConfig = {
             openaiConfigured: @json($openaiConfigured),
             claudeConfigured: @json($claudeConfigured),
             nvidiaConfigured: @json($nvidiaConfigured),
+            glmConfigured: @json($glmConfigured),
             primaryProvider: @json($primaryProvider),
             fallbackProvider: @json($fallbackProvider),
             activeStack: @json($activeAiStack),
@@ -965,14 +996,20 @@
             const openai = window.__aiProviderHealth.openai || {};
             const claude = window.__aiProviderHealth.claude || {};
             const nvidia = window.__aiProviderHealth.nvidia || {};
+            const glm = window.__aiProviderHealth.glm || {};
             const cfg = window.__aiProviderConfig || {};
             const openaiOk = openai.ok === true;
             const claudeOk = claude.ok === true;
             const nvidiaOk = nvidia.ok === true;
+            const glmOk = glm.ok === true;
             let status = 'online';
 
             if (cfg.activeStack === 'nvidia') {
                 if (!cfg.nvidiaConfigured || !nvidiaOk) {
+                    status = 'offline';
+                }
+            } else if (cfg.activeStack === 'glm') {
+                if (!cfg.glmConfigured || !glmOk) {
                     status = 'offline';
                 }
             } else if (!cfg.openaiConfigured && !cfg.claudeConfigured) {
@@ -1008,6 +1045,8 @@
             if (activeProvider) {
                 if (cfg.activeStack === 'nvidia') {
                     activeProvider.textContent = 'NVIDIA';
+                } else if (cfg.activeStack === 'glm') {
+                    activeProvider.textContent = 'GLM';
                 } else {
                     let providerName = cfg.primaryProvider || 'openai';
                     if (!openaiOk && claudeOk) {
@@ -1022,6 +1061,10 @@
             const nvidiaRealtime = document.getElementById('realtime-status-nvidia');
             if (nvidiaRealtime) {
                 nvidiaRealtime.textContent = nvidia.label || (nvidiaOk ? 'Connected' : 'Unavailable');
+            }
+            const glmRealtime = document.getElementById('realtime-status-glm');
+            if (glmRealtime) {
+                glmRealtime.textContent = glm.label || (glmOk ? 'Connected' : 'Unavailable');
             }
         }
 

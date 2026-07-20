@@ -7,6 +7,7 @@ namespace App\Services\AI;
 use App\Models\AiLog;
 use App\Services\AI\Providers\AiGenerationResult;
 use App\Services\AI\Providers\ClaudeModelResolver;
+use App\Services\AI\Providers\GlmModelResolver;
 use App\Services\AI\Providers\OpenAiModelResolver;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
@@ -367,6 +368,7 @@ class AiLoggingService
         return match ($provider) {
             'claude' => app(ClaudeModelResolver::class)->resolve($purposeKey, $model),
             'openai' => app(OpenAiModelResolver::class)->resolve($purposeKey, $model),
+            'glm' => app(GlmModelResolver::class)->resolve($purposeKey, $model),
             'demo' => 'mock-ely',
             default => $model !== '' ? $model : 'unknown',
         };

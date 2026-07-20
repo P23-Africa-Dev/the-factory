@@ -101,4 +101,52 @@ final class AiProviderRouterHealthSkipTest extends TestCase
         $this->assertSame('timeout', $result->errorClass);
         Http::assertNothingSent();
     }
+
+    public function test_glm_stack_fails_fast_after_recent_timeout_without_http_call(): void
+    {
+        config([
+            'services.ai.stack' => 'openai_claude',
+            'services.ai.provider_timeout_skip_ttl_seconds' => 90,
+            'services.ai.glm.api_key' => 'glm-test',
+            'services.ai.openai.api_key' => 'openai-key',
+            'services.ai.claude.api_key' => 'claude-key',
+            'services.ai.glm.exec_model' => 'glm-4-air',
+        ]);
+
+        $admin = \App\Models\Admin::create([
+            'name' => 'Super Admin',
+            'email' => 'glm-skip@example.com',
+            'password' => 'StrongPass123!',
+            'role' => 'super_admin',
+            'is_active' => true,
+        ]);
+        app(\App\Services\AI\AiStackSettingService::class)->setStack(
+            \App\Services\AI\AiStackSettingService::GLM,
+            $admin,
+        );
+
+        Cache::put(AiProviderHealthService::CACHE_KEY_GLM, [
+            'provider' => 'glm',
+            'ok' => false,
+            'status' => 'timeout',
+            'label' => 'Timeout',
+            'message' => 'cURL error 28: Operation timed out after 15000 milliseconds',
+            'last_failed_at' => now()->toIso8601String(),
+        ], 600);
+
+        Http::fake();
+
+        $result = app(AiProviderRouter::class)->generateForPurpose(
+            purpose: 'routing',
+            systemPrompt: 'You are helpful.',
+            userPrompt: 'Say hello.',
+            options: ['max_tokens' => 32],
+        );
+
+        $this->assertNotNull($result);
+        $this->assertTrue($result->isFailure());
+        $this->assertSame('glm', $result->provider);
+        $this->assertSame('timeout', $result->errorClass);
+        Http::assertNothingSent();
+    }
 }

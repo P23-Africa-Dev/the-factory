@@ -114,6 +114,18 @@ return [
             'exec_model' => env('NVIDIA_EXEC_MODEL', 'nvidia/llama-3.3-nemotron-super-49b-v1.5'),
             'analyst_model' => env('NVIDIA_ANALYST_MODEL', 'nvidia/llama-3.3-nemotron-super-49b-v1.5'),
         ],
+        'glm' => [
+            'api_key' => env('GLM_API_KEY'),
+            'base_url' => env('GLM_BASE_URL', 'https://open.bigmodel.cn/api/paas/v4'),
+            'request_timeout_ms' => (int) env('GLM_REQUEST_TIMEOUT_MS', 120000),
+            'routing_timeout_ms' => (int) env('GLM_ROUTING_TIMEOUT_MS', 15000),
+            'operational_timeout_ms' => (int) env('GLM_OPERATIONAL_TIMEOUT_MS', 60000),
+            'analyst_timeout_ms' => (int) env('GLM_ANALYST_TIMEOUT_MS', (int) env('GLM_REQUEST_TIMEOUT_MS', 120000)),
+            'operational_max_tokens' => (int) env('GLM_OPERATIONAL_MAX_TOKENS', 1000),
+            'routing_model' => env('GLM_ROUTING_MODEL', 'glm-4-flash'),
+            'exec_model' => env('GLM_EXEC_MODEL', 'glm-4-air'),
+            'analyst_model' => env('GLM_ANALYST_MODEL', 'glm-4-plus'),
+        ],
         // After a timeout/unreachable, skip that vendor briefly so the next turn fails fast.
         'provider_timeout_skip_ttl_seconds' => (int) env('AI_PROVIDER_TIMEOUT_SKIP_TTL', 90),
         'admin' => [

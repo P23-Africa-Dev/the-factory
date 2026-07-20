@@ -733,9 +733,15 @@ class CopilotService
         $errorClass = strtolower(trim((string) ($result?->errorClass ?? '')));
         $isNvidiaTimeout = $result?->provider === 'nvidia'
             && in_array($errorClass, ['timeout', 'unreachable'], true);
+        $isGlmTimeout = $result?->provider === 'glm'
+            && in_array($errorClass, ['timeout', 'unreachable'], true);
 
         if ($isNvidiaTimeout) {
             return 'NVIDIA NIM took too long to respond — the hosted API catalog can be slow under load. Try again in a moment, or switch the AI stack to OpenAI + Claude in Admin → AI for faster day-to-day chat. I can still run dashboard queries if you ask specifically, for example: "show overdue tasks", "plan my day", or "list my CRM leads".';
+        }
+
+        if ($isGlmTimeout) {
+            return 'GLM took too long to respond. Try again in a moment, or switch the AI stack in Admin → AI (OpenAI + Claude or NVIDIA NIM). I can still run dashboard queries if you ask specifically, for example: "show overdue tasks", "plan my day", or "list my CRM leads".';
         }
 
         return 'ELY is running in limited mode right now because the AI provider is temporarily unavailable. I can still run dashboard queries if you ask specifically, for example: "show overdue tasks", "plan my day", or "list my CRM leads".';

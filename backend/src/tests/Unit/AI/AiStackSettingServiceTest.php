@@ -8,6 +8,7 @@ use App\Models\Admin;
 use App\Services\AI\AiStackSettingService;
 use App\Services\AI\Providers\AiProviderRouter;
 use App\Services\AI\Providers\ClaudeProvider;
+use App\Services\AI\Providers\GlmProvider;
 use App\Services\AI\Providers\NvidiaProvider;
 use App\Services\AI\Providers\OpenAiProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -44,6 +45,7 @@ final class AiStackSettingServiceTest extends TestCase
     {
         Cache::put(AiProviderHealthServiceCacheKeys::openai(), ['ok' => false, 'status' => 'quota_exceeded'], 600);
         Cache::put(AiProviderHealthServiceCacheKeys::claude(), ['ok' => false, 'status' => 'quota_exceeded'], 600);
+        Cache::put(AiProviderHealthServiceCacheKeys::glm(), ['ok' => false, 'status' => 'timeout'], 600);
 
         $admin = Admin::create([
             'name' => 'Super Admin',
@@ -64,6 +66,26 @@ final class AiStackSettingServiceTest extends TestCase
         ]);
         $this->assertNull(Cache::get(AiProviderHealthServiceCacheKeys::openai()));
         $this->assertNull(Cache::get(AiProviderHealthServiceCacheKeys::claude()));
+        $this->assertNull(Cache::get(AiProviderHealthServiceCacheKeys::glm()));
+    }
+
+    public function test_router_uses_only_glm_when_glm_stack_active(): void
+    {
+        $admin = Admin::create([
+            'name' => 'Super Admin',
+            'email' => 'ai-glm-router@example.com',
+            'password' => 'StrongPass123!',
+            'role' => 'super_admin',
+            'is_active' => true,
+        ]);
+
+        app(AiStackSettingService::class)->setStack(AiStackSettingService::GLM, $admin);
+
+        $router = app(AiProviderRouter::class);
+        $providers = $this->invokeOrderedProviders($router, 'operational');
+
+        $this->assertCount(1, $providers);
+        $this->assertInstanceOf(GlmProvider::class, $providers[0]);
     }
 
     public function test_router_uses_only_nvidia_when_nvidia_stack_active(): void
@@ -85,7 +107,7 @@ final class AiStackSettingServiceTest extends TestCase
         $this->assertInstanceOf(NvidiaProvider::class, $providers[0]);
     }
 
-    public function test_router_excludes_nvidia_on_openai_claude_stack(): void
+    public function test_router_excludes_nvidia_and_glm_on_openai_claude_stack(): void
     {
         $router = app(AiProviderRouter::class);
         $providers = $this->invokeOrderedProviders($router, 'operational');
@@ -93,6 +115,7 @@ final class AiStackSettingServiceTest extends TestCase
         $this->assertNotEmpty($providers);
         foreach ($providers as $provider) {
             $this->assertNotInstanceOf(NvidiaProvider::class, $provider);
+            $this->assertNotInstanceOf(GlmProvider::class, $provider);
             $this->assertTrue(
                 $provider instanceof OpenAiProvider || $provider instanceof ClaudeProvider
             );
@@ -124,5 +147,10 @@ final class AiProviderHealthServiceCacheKeys
     public static function claude(): string
     {
         return 'ai:provider:status:claude';
+    }
+
+    public static function glm(): string
+    {
+        return 'ai:provider:status:glm';
     }
 }

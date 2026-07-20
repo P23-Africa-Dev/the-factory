@@ -23,6 +23,7 @@ class UpdateAiStackRequest extends FormRequest
                 'in:' . implode(',', [
                     AiStackSettingService::OPENAI_CLAUDE,
                     AiStackSettingService::NVIDIA,
+                    AiStackSettingService::GLM,
                 ]),
             ],
         ];
