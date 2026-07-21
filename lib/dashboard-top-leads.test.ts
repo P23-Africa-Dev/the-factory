@@ -68,26 +68,26 @@ describe("dashboard-top-leads", () => {
         40,
       ),
     ).toEqual([
-      { name: "Alpha", value: 55, fill: "#7BB6B8" },
-      { name: "Beta", value: 75, fill: "#146AFA" },
-      { name: "Gamma", value: 35, fill: "#FD6046" },
+      { id: "1", name: "Alpha", value: 55, fill: "#7BB6B8" },
+      { id: "2", name: "Beta", value: 75, fill: "#146AFA" },
+      { id: "3", name: "Gamma", value: 35, fill: "#FD6046" },
     ]);
   });
 
   it("uses the conversion rate for all rings when no prospects are available", () => {
     expect(buildTopLeadsChartData([], 62)).toEqual([
-      { name: "Lead 1", value: 62, fill: "#7BB6B8" },
-      { name: "Lead 2", value: 62, fill: "#146AFA" },
-      { name: "Lead 3", value: 62, fill: "#FD6046" },
+      { id: "placeholder-0", name: "Lead 1", value: 62, fill: "#7BB6B8" },
+      { id: "placeholder-1", name: "Lead 2", value: 62, fill: "#146AFA" },
+      { id: "placeholder-2", name: "Lead 3", value: 62, fill: "#FD6046" },
     ]);
   });
 
   it("calibrates the center percentage to the highest ring value", () => {
     expect(
       getTopLeadsCenterRate([
-        { name: "Alpha", value: 55, fill: "#7BB6B8" },
-        { name: "Beta", value: 75, fill: "#146AFA" },
-        { name: "Gamma", value: 35, fill: "#FD6046" },
+        { id: "1", name: "Alpha", value: 55, fill: "#7BB6B8" },
+        { id: "2", name: "Beta", value: 75, fill: "#146AFA" },
+        { id: "3", name: "Gamma", value: 35, fill: "#FD6046" },
       ]),
     ).toBe(75);
   });

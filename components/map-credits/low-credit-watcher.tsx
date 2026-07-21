@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { AlertTriangle, MapPin, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -13,6 +14,85 @@ const TOAST_ID = "map-credit-low";
 // Don't nag: at most one prompt per this interval, regardless of how many
 // Google calls the user makes.
 const THROTTLE_MS = 10 * 60 * 1000;
+
+type CreditPromptProps = {
+  exhausted: boolean;
+  balance?: number | null;
+  toastId: string | number;
+  onTopUp: () => void;
+};
+
+function MapCreditPrompt({ exhausted, balance, toastId, onTopUp }: CreditPromptProps) {
+  const title = exhausted ? "Map credits exhausted" : "Map credits running low";
+  const description = exhausted
+    ? "Google Maps search & places are paused until you top up. The map still works via the fallback provider."
+    : "Top up soon to avoid interruptions to map search and places.";
+
+  return (
+    <div
+      className="pointer-events-auto w-[min(100vw-2rem,420px)] overflow-hidden rounded-2xl border border-black/5 bg-white shadow-[0_12px_40px_-12px_rgba(9,35,45,0.35)]"
+      role="status"
+      aria-live="polite"
+    >
+      <div
+        className={`h-1 w-full ${
+          exhausted
+            ? "bg-gradient-to-r from-[#E11D48] via-[#FB7185] to-[#FDBA74]"
+            : "bg-gradient-to-r from-[#D97706] via-[#F59E0B] to-[#FCD34D]"
+        }`}
+      />
+
+      <div className="flex gap-3.5 p-4 sm:p-[18px]">
+        <div
+          className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+            exhausted ? "bg-[#FFF1F2] text-[#E11D48]" : "bg-[#FFFBEB] text-[#D97706]"
+          }`}
+        >
+          {exhausted ? <AlertTriangle size={18} strokeWidth={2.25} /> : <MapPin size={18} strokeWidth={2.25} />}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <p className="text-[14px] font-bold tracking-tight text-[#0B1215]">{title}</p>
+            {typeof balance === "number" && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${
+                  exhausted
+                    ? "bg-[#FFF1F2] text-[#BE123C]"
+                    : "bg-[#FFFBEB] text-[#B45309]"
+                }`}
+              >
+                {balance} left
+              </span>
+            )}
+          </div>
+          <p className="text-[12.5px] leading-relaxed text-[#5B6570]">{description}</p>
+
+          <div className="mt-3.5 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => toast.dismiss(toastId)}
+              className="rounded-xl px-3.5 py-2 text-[12px] font-semibold text-[#5B6570] transition-colors hover:bg-[#F3F4F6] hover:text-[#0B1215] cursor-pointer"
+            >
+              Later
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                toast.dismiss(toastId);
+                onTopUp();
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#0B1215] px-3.5 py-2 text-[12px] font-semibold text-white shadow-sm transition-colors hover:bg-[#1A2428] cursor-pointer"
+            >
+              <Zap size={13} className="text-[#86EFAC]" />
+              Top up
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Surfaces a throttled low/exhausted-credit prompt to management users. Driven
@@ -48,25 +128,23 @@ export function LowCreditWatcher() {
     if (now - lastPromptAtRef.current < THROTTLE_MS) return;
     lastPromptAtRef.current = now;
 
-    toast[exhausted ? "error" : "warning"](
-      exhausted ? "Map credits exhausted" : "Map credits running low",
+    const balance = data?.balance ?? signalMeta?.balance ?? null;
+
+    toast.custom(
+      (t) => (
+        <MapCreditPrompt
+          exhausted={exhausted}
+          balance={balance}
+          toastId={t}
+          onTopUp={() => router.push("/settings/map-credits")}
+        />
+      ),
       {
         id: TOAST_ID,
-        description: exhausted
-          ? "Google Maps search & places are paused until you top up. The map still works via the fallback provider."
-          : "Top up soon to avoid interruptions to map search and places.",
         duration: Infinity,
-        action: {
-          label: "Top up",
-          onClick: () => router.push("/settings/map-credits"),
-        },
-        cancel: {
-          label: "Later",
-          onClick: () => toast.dismiss(TOAST_ID),
-        },
       },
     );
-  }, [isManagement, data?.low, data?.exhausted, data?.metered, signalAt, signalMeta, router]);
+  }, [isManagement, data?.low, data?.exhausted, data?.metered, data?.balance, signalAt, signalMeta, router]);
 
   return null;
 }

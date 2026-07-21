@@ -80,6 +80,7 @@ export function TopCustomers() {
   );
 
   const legendItems = chartData.map((item) => ({
+    id: item.id,
     name: item.name,
     fill: item.fill,
   }));
@@ -131,7 +132,7 @@ export function TopCustomers() {
       {/* Legend */}
       <div className="flex flex-wrap items-center justify-center gap-3 mb-3 md:mb-4 lg:mb-6.25">
         {legendItems.map((item) => (
-          <div key={item.name} className="flex items-center gap-2.5">
+          <div key={item.id} className="flex items-center gap-2.5">
             <div
               className="w-[14px] h-[14px] rounded-full"
               style={{ background: item.fill }}
