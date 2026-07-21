@@ -6,6 +6,16 @@ html {
   scroll-behavior: smooth;
 }
 
+@keyframes dash {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+.animate-dash-route {
+  animation: dash 12s linear infinite;
+}
+
 .PhoneInput {
   display: flex;
   align-items: center;

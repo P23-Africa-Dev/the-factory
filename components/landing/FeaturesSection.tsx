@@ -28,75 +28,57 @@ export default function FeaturesSection() {
             <div>
               <h3 className="text-base font-bold text-[#0B252C] mb-2">See your team in real time</h3>
               <p className="text-sm text-[#4A5F64] leading-relaxed">
-                Live GPS tracking across your entire field force. Know who is where, when they arrived, and how long they stayed. No check-in calls. No guesswork.
+                Live GPS tracking across territories. See agent locations, movement status, and active tasks on an interactive map.
               </p>
             </div>
           </div>
 
-          {/* Card 2 — Own your territories */}
+          {/* Card 2 — Track every visit and task */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-7 flex flex-col gap-5 hover:shadow-md transition-shadow">
-            <div className="w-12 h-12 rounded-full bg-[#F3EEFF] flex items-center justify-center shrink-0">
-              <Target className="w-5 h-5 text-[#A855F7]" strokeWidth={2} />
+            <div className="w-12 h-12 rounded-full bg-[#FEF3C7] flex items-center justify-center shrink-0">
+              <Target className="w-5 h-5 text-[#D97706]" strokeWidth={2} />
             </div>
             <div>
-              <h3 className="text-base font-bold text-[#0B252C] mb-2">Own your territories</h3>
+              <h3 className="text-base font-bold text-[#0B252C] mb-2">Track every visit and task</h3>
               <p className="text-sm text-[#4A5F64] leading-relaxed">
-                Divide and assign areas so your team knows exactly where to work. Stop losing deals to overlap, gaps, or agents working the wrong zones.
+                Check-ins, check-outs, photos, forms, and client signoffs. Know when visits happen and what was accomplished.
               </p>
             </div>
           </div>
 
-          {/* Card 3 — Track every lead and task */}
+          {/* Card 3 — Works 100% offline */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-7 flex flex-col gap-5 hover:shadow-md transition-shadow">
-            <div className="w-12 h-12 rounded-full bg-[#E6FAF8] flex items-center justify-center shrink-0">
-              <Activity className="w-5 h-5 text-[#14B8A6]" strokeWidth={2} />
+            <div className="w-12 h-12 rounded-full bg-[#DCFCE7] flex items-center justify-center shrink-0">
+              <Activity className="w-5 h-5 text-[#16A34A]" strokeWidth={2} />
             </div>
             <div>
-              <h3 className="text-base font-bold text-[#0B252C] mb-2">Track every lead and task</h3>
+              <h3 className="text-base font-bold text-[#0B252C] mb-2">Works 100% offline</h3>
               <p className="text-sm text-[#4A5F64] leading-relaxed">
-                CRM and project management in one place. Every follow-up, assignment, and activity logged. Nothing falls through.
+                No signal? No problem. Agents log visits, take photos, and complete tasks offline. Everything syncs when back online.
               </p>
             </div>
           </div>
 
         </div>
 
-        {/* Bottom row — 1 feature card + stats */}
-        <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-5">
-
-          {/* Card 4 — Automate your outreach */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-7 flex flex-col gap-5 hover:shadow-md transition-shadow">
-            <div className="w-12 h-12 rounded-full bg-[#FEFCE8] flex items-center justify-center shrink-0">
-              <Sparkles className="w-5 h-5 text-[#CA8A04]" strokeWidth={2} />
+        {/* Bottom row — ELY AI highlight card */}
+        <div className="w-full bg-gradient-to-br from-[#0B252C] via-[#113843] to-[#0A1F25] rounded-3xl p-8 sm:p-10 border border-[#1E5A69]/30 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-8">
+          <div className="flex flex-col gap-3 max-w-xl">
+            <div className="inline-flex items-center gap-2 bg-amber-400/10 border border-amber-300/30 text-amber-300 text-xs font-bold px-3 py-1 rounded-full self-start">
+              <Sparkles className="w-3.5 h-3.5" />
+              Powered by ELY Field AI
             </div>
-            <div>
-              <h3 className="text-base font-bold text-[#0B252C] mb-2">Automate your outreach</h3>
-              <p className="text-sm text-[#4A5F64] leading-relaxed">
-                AI-powered sequences that run from your own connected inbox. The platform decides when and who to contact next.
-              </p>
-            </div>
+            <h3 className="text-2xl sm:text-3xl font-extrabold leading-tight">
+              Intelligent route optimization & automated task dispatch
+            </h3>
+            <p className="text-sm text-white/80 leading-relaxed">
+              ELY analyzes agent routes and daily schedules to cut transit times by up to 28% while boosting completed client visits per day.
+            </p>
           </div>
-
-          {/* Stats block — spans the remaining 2 columns */}
-          <div className="md:col-span-2 flex flex-row items-center justify-center sm:justify-start gap-16 sm:gap-24 px-4 sm:px-10">
-            <div>
-              <div className="text-5xl lg:text-6xl font-extrabold text-[#0B252C] tracking-tight">
-                25k +
-              </div>
-              <div className="text-xs sm:text-sm font-semibold text-[#4A5F64] mt-2 tracking-wide">
-                Total Users
-              </div>
-            </div>
-            <div>
-              <div className="text-5xl lg:text-6xl font-extrabold text-[#0B252C] tracking-tight">
-                1.5k +
-              </div>
-              <div className="text-xs sm:text-sm font-semibold text-[#4A5F64] mt-2 tracking-wide">
-                Users Ratings
-              </div>
-            </div>
+          <div className="shrink-0 flex flex-col items-center justify-center bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl p-6 text-center min-w-[200px]">
+            <span className="text-4xl font-extrabold text-[#9BDD7C]">+35%</span>
+            <span className="text-xs font-bold text-white/90 mt-1">Weekly Field Productivity</span>
           </div>
-
         </div>
 
       </div>
