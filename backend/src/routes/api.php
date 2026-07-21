@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\ResendOtpController;
 use App\Http\Controllers\Api\V1\Auth\ResetPasswordController;
+use App\Http\Controllers\Api\V1\Auth\SupportAccessController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
 use App\Http\Controllers\Api\V1\Billing\BillingCheckoutController;
@@ -95,6 +96,10 @@ Route::get('/geography/lgas', [GeographyController::class, 'lgas'])
 Route::get('/map/provider', MapProviderController::class)
     ->middleware('throttle:api-heavy')
     ->name('map.provider');
+
+Route::post('/support-access/exchange', [SupportAccessController::class, 'exchange'])
+    ->middleware('throttle:support-access')
+    ->name('support-access.exchange');
 Route::get('/calendar/integration/callback', [CalendarIntegrationController::class, 'callback'])
     ->middleware('throttle:api')
     ->name('calendar.integration.callback');
@@ -187,7 +192,13 @@ Route::prefix('internal')->name('internal.')->group(function (): void {
 });
 
 // Authenticated
-Route::middleware(['auth:sanctum', 'account.active', 'subscription.active'])->group(function (): void {
+Route::middleware(['auth:sanctum', 'account.active', 'support.access', 'subscription.active'])->group(function (): void {
+    Route::get('/support-access/status', [SupportAccessController::class, 'status'])
+        ->name('support-access.status');
+    Route::post('/support-access/end', [SupportAccessController::class, 'end'])
+        ->middleware('throttle:support-access')
+        ->name('support-access.end');
+
     Route::post('/auth/logout', LogoutController::class)->name('auth.logout');
 
     Route::prefix('billing')->name('billing.')->group(function (): void {

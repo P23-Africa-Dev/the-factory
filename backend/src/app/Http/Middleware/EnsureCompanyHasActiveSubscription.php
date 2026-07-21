@@ -22,6 +22,10 @@ class EnsureCompanyHasActiveSubscription
 
     public function handle(Request $request, Closure $next): Response
     {
+        if ($request->attributes->has('support_access_session')) {
+            return $next($request);
+        }
+
         if (! $this->billingEnforcement->isEnabled()) {
             return $next($request);
         }

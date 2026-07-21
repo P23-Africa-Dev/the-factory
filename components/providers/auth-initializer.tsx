@@ -7,6 +7,7 @@ import {
   isAccountStatusCode,
 } from "@/lib/auth/account-status";
 import { clearAuthSession, getAuthTokenFromDocument, setCompanyId } from "@/lib/auth/session";
+import { isSupportSessionActiveInDocument } from "@/lib/auth/support-session";
 import { useAuthStore } from "@/store/auth";
 
 export default function AuthInitializer({
@@ -18,8 +19,9 @@ export default function AuthInitializer({
 
   useEffect(() => {
     const token = getAuthTokenFromDocument();
+    const supportActive = isSupportSessionActiveInDocument();
 
-    if (token) {
+    if (token || supportActive) {
       getMe(token)
         .then((res) => {
           if (res.success) {
@@ -63,6 +65,13 @@ export default function AuthInitializer({
 
           // If token is invalid (401), clear session
           if (err.status === 401) {
+            if (supportActive) {
+              fetch("/api/support/end", { method: "POST" }).finally(() => {
+                window.location.replace(token ? "/dashboard" : "/login");
+              });
+              return;
+            }
+
             clearAuthSession();
             clearUser();
           }

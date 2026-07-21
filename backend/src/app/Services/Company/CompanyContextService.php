@@ -21,6 +21,19 @@ class CompanyContextService
      */
     public function resolve(User $user, ?int $companyId = null): array
     {
+        $supportCompanyId = request()?->attributes->get('support_company_id');
+        if (is_numeric($supportCompanyId)) {
+            $supportCompanyId = (int) $supportCompanyId;
+
+            if ($companyId !== null && $companyId !== $supportCompanyId) {
+                throw ValidationException::withMessages([
+                    'company_id' => ['Company context cannot be changed during support access.'],
+                ]);
+            }
+
+            $companyId = $supportCompanyId;
+        }
+
         $baseQuery = DB::table('company_users')
             ->join('companies', 'companies.id', '=', 'company_users.company_id')
             ->where('company_users.user_id', $user->id)

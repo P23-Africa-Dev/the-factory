@@ -19,7 +19,7 @@ class OperationalReminderMail extends Mailable
         public readonly string $organizationName,
         public readonly string $recipientName,
         public readonly string $title,
-        public readonly string $message,
+        public readonly string $bodyText,
         public readonly ?string $actionUrl = null,
     ) {}
 
@@ -36,7 +36,7 @@ class OperationalReminderMail extends Mailable
                 'organizationName' => $this->organizationName,
                 'recipientName' => $this->recipientName,
                 'title' => $this->title,
-                'message' => $this->message,
+                'bodyText' => $this->bodyText,
                 'actionUrl' => $this->actionUrl,
             ],
         );

@@ -17,6 +17,15 @@
     $suspended    = $user->suspended_until && $user->suspended_until->isFuture();
     $isEnterprise = !$isInternal && $user->enterprise_onboarding_completed_at !== null;
     $isSelfServe  = !$isInternal && !$isEnterprise && $user->onboarding_completed_at !== null;
+    $canCreateSupportAccess = auth('admin')->user()?->canAccessAbility('impersonate_users') === true;
+    $supportCompanies = $user->companies->where('status', 'active')->values();
+    $supportOnboarded = $user->hasCompletedOnboarding()
+        || $user->hasCompletedEnterpriseOnboarding()
+        || $user->hasCompletedInternalOnboarding();
+    $supportEligible = !$user->trashed()
+        && $user->canAuthenticate()
+        && $supportOnboarded
+        && $supportCompanies->isNotEmpty();
 @endphp
 
 @if ($suspended)
@@ -209,6 +218,33 @@
     {{-- ── Right Column: Actions ─────────────────────── --}}
     <div class="col-lg-4">
 
+        @if ($canCreateSupportAccess)
+        {{-- Support Access ───────────────────────────── --}}
+        <div class="metric-card p-4 mb-3" style="border-color:rgba(79,70,229,.2)">
+            <div class="section-label" style="color:#4338ca">
+                <i class="bi bi-headset"></i>Support Access
+            </div>
+            <p style="font-size:.8rem;color:var(--text-secondary)" class="mb-3">
+                Passwords are one-way hashed and cannot be viewed. Start a short-lived, audited
+                support session instead. Read-only access is the default.
+            </p>
+
+            @if ($supportEligible)
+                <div class="d-grid">
+                    <button class="btn btn-sm"
+                            style="background:rgba(79,70,229,.1);color:#4338ca;border:1px solid rgba(79,70,229,.2)"
+                            data-bs-toggle="modal" data-bs-target="#supportAccessModal">
+                        <i class="bi bi-box-arrow-up-right me-2"></i>Access Account
+                    </button>
+                </div>
+            @else
+                <div class="alert alert-warning mb-0 py-2" style="font-size:.78rem">
+                    Support access requires an active, onboarded user with an active company membership.
+                </div>
+            @endif
+        </div>
+        @endif
+
         {{-- Account Status ───────────────────────────── --}}
         <div class="metric-card p-4 mb-3">
             <div class="section-label"><i class="bi bi-person-gear"></i>Account Status</div>
@@ -356,6 +392,85 @@
 
     </div>
 </div>
+
+@if ($canCreateSupportAccess && $supportEligible)
+{{-- ── Support Access Modal ────────────────────────────── --}}
+<div class="modal fade" id="supportAccessModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" style="font-size:.95rem">
+                    <i class="bi bi-headset me-2" style="color:#4338ca"></i>
+                    Access {{ $user->name }}'s account
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST"
+                  action="{{ route('admin.users.support-access.store', $user) }}"
+                  target="_blank">
+                @csrf
+                <div class="modal-body">
+                    <div class="alert alert-info py-2" style="font-size:.8rem">
+                        The session expires after 15 minutes, is company-scoped, and is fully audited.
+                        Security-sensitive actions remain blocked.
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Company</label>
+                        <select name="company_id" class="form-select form-select-sm" required>
+                            @foreach ($supportCompanies as $supportCompany)
+                                <option value="{{ $supportCompany->id }}">
+                                    {{ $supportCompany->name }} ({{ $supportCompany->pivot?->role }})
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Access level</label>
+                        <select name="access_level" class="form-select form-select-sm" required>
+                            <option value="read_only" selected>Read-only (recommended)</option>
+                            <option value="operational_full">Operational full access</option>
+                        </select>
+                        <div class="form-text">
+                            Operational access still blocks passwords, billing, roles, deletion,
+                            credentials, and security settings.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Support reason</label>
+                        <textarea name="reason" class="form-control form-control-sm" rows="3"
+                                  minlength="10" maxlength="1000" required
+                                  placeholder="Describe the customer issue being investigated"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Ticket reference (optional)</label>
+                        <input type="text" name="ticket_reference" class="form-control form-control-sm"
+                               maxlength="191" placeholder="e.g. SUP-1042">
+                    </div>
+
+                    <div class="mb-0">
+                        <label class="form-label small fw-semibold">Confirm your admin password</label>
+                        <input type="password" name="admin_password"
+                               class="form-control form-control-sm" autocomplete="current-password" required>
+                        <div class="form-text">Required every time support access is created.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>Start Support Session
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@endif
 
 {{-- ── Suspend Modal ───────────────────────────────────── --}}
 <div class="modal fade" id="suspendModal" tabindex="-1">

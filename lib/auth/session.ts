@@ -1,3 +1,5 @@
+import { isSupportSessionActiveInDocument } from "@/lib/auth/support-session";
+
 export const AUTH_TOKEN_COOKIE = "factory_auth_token";
 export const ONBOARDING_DONE_COOKIE = "factory_onboarding_done";
 export const COMPANY_ID_KEY = "factory_company_id";
@@ -83,6 +85,10 @@ export function getCompanyId(): string | null {
 
 export function getAuthTokenFromDocument() {
   if (typeof document === "undefined") {
+    return "";
+  }
+
+  if (isSupportSessionActiveInDocument()) {
     return "";
   }
 

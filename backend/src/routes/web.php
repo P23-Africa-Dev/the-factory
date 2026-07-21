@@ -20,6 +20,7 @@ use App\Http\Controllers\Admin\Database\DatabaseManagerController;
 use App\Http\Controllers\Admin\Enterprise\DemoRequestController;
 use App\Http\Controllers\Admin\MapProviderSettingController;
 use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\Admin\SupportAccessController;
 use App\Http\Controllers\Web\InternalOnboardingRedirectController;
 use Illuminate\Support\Facades\Route;
 
@@ -62,6 +63,13 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         });
 
         // ── Users ──────────────────────────────────────────────
+        Route::post('/users/{user}/support-access', [SupportAccessController::class, 'store'])
+            ->middleware([
+                'admin.permission:impersonate_users',
+                'throttle:support-access',
+            ])
+            ->name('users.support-access.store');
+
         Route::prefix('users')->name('users.')->middleware('admin.permission:manage_users')->group(function (): void {
             Route::get('/', [UserManagementController::class, 'index'])->name('index');
             Route::get('/{user}', [UserManagementController::class, 'show'])->name('show');

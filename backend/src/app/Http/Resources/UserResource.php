@@ -11,11 +11,27 @@ class UserResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $activeCompany = $this->companies()
-            ->where('companies.status', 'active')
-            ->orderByPivot('joined_at', 'desc')
-            ->orderBy('company_users.created_at', 'desc')
-            ->first(['companies.id', 'companies.company_id', 'companies.name', 'companies.status', 'companies.is_demo', 'companies.subscription_status', 'companies.subscription_plan_key', 'companies.assigned_plan_key']);
+        $companyQuery = $this->companies()->where('companies.status', 'active');
+        $supportCompanyId = $request->attributes->get('support_company_id');
+
+        if (is_numeric($supportCompanyId)) {
+            $companyQuery->where('companies.id', (int) $supportCompanyId);
+        } else {
+            $companyQuery
+                ->orderByPivot('joined_at', 'desc')
+                ->orderBy('company_users.created_at', 'desc');
+        }
+
+        $activeCompany = $companyQuery->first([
+            'companies.id',
+            'companies.company_id',
+            'companies.name',
+            'companies.status',
+            'companies.is_demo',
+            'companies.subscription_status',
+            'companies.subscription_plan_key',
+            'companies.assigned_plan_key',
+        ]);
 
         $billingActive = $activeCompany?->hasEffectiveSubscriptionAccess() ?? false;
         $paidSubscription = $activeCompany?->hasPaidSubscription() ?? false;
