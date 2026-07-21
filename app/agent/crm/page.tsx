@@ -6,7 +6,7 @@ import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm"
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { DEFAULT_AVATAR, resolveAvatarSrc } from "@/lib/avatar";
-import { useAgentUploadsOverview, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useAgentUploadsOverview, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useLeadStagePages, useUpdateLead } from "@/hooks/use-crm";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
 import { CRMPageSkeleton } from "@/components/crm/crm-page-skeleton";
@@ -85,7 +85,8 @@ function buildContainers(leads: LeadApiItem[], stages: Array<{ id: ApiLeadStatus
   stages.forEach((s) => grouped.set(s.id, []));
   leads.forEach((lead) => {
     const status = (lead.status ?? "newly_lead") as ApiLeadStatus;
-    grouped.get(status)?.push(mapLeadToItem(lead));
+    const target = grouped.has(status) ? status : ("__uncategorized__" as ApiLeadStatus);
+    grouped.get(target)?.push(mapLeadToItem(lead));
   });
   return stages.map((s) => ({ id: s.id, title: s.title, color: s.color, items: grouped.get(s.id) ?? [] }));
 }
@@ -196,6 +197,10 @@ function LeadColumn({
   activeTabId,
   stages,
   onMoveToStage,
+  total,
+  hasMore,
+  isFetchingMore,
+  onLoadMore,
 }: {
   id: string;
   title: string;
@@ -206,6 +211,10 @@ function LeadColumn({
   activeTabId?: string;
   stages?: Array<{ id: string; title: string; color: string }>;
   onMoveToStage?: (leadId: string, targetStageId: string) => void;
+  total?: number;
+  hasMore?: boolean;
+  isFetchingMore?: boolean;
+  onLoadMore?: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
 
@@ -225,7 +234,7 @@ function LeadColumn({
             className="rounded-full min-w-5.5 h-5.5 px-1.5 flex items-center justify-center font-bold text-[11px] bg-white"
             style={{ color }}
           >
-            {items.length < 10 ? `0${items.length}` : items.length}
+            {(total ?? items.length).toLocaleString()}
           </div>
         </div>
         <span className="text-white text-[12px] font-medium">$ {items.reduce((sum, item) => sum + (item.rawValue ?? 0), 0).toLocaleString()}</span>
@@ -255,15 +264,30 @@ function LeadColumn({
           </div>
         </SortableContext>
 
-        <button
-          onClick={() => onAddCard()}
-          className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-gray-400 hover:text-[#0B1215] transition-colors group mt-4"
-        >
-          <span className="text-[11px] font-medium">Add Leads</span>
-          <div className="w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center group-hover:border-[#0B1215] transition-colors">
-            <Plus size={11} />
-          </div>
-        </button>
+        {hasMore && (
+          <button
+            type="button"
+            onClick={onLoadMore}
+            disabled={isFetchingMore}
+            className="mx-2 mt-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-[11px] font-semibold text-gray-600 hover:border-gray-300 disabled:opacity-50"
+          >
+            {isFetchingMore
+              ? "Loading…"
+              : `Load more (${items.length.toLocaleString()} of ${(total ?? items.length).toLocaleString()})`}
+          </button>
+        )}
+
+        {id !== "__uncategorized__" && (
+          <button
+            onClick={() => onAddCard()}
+            className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-gray-400 hover:text-[#0B1215] transition-colors group mt-4"
+          >
+            <span className="text-[11px] font-medium">Add Leads</span>
+            <div className="w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center group-hover:border-[#0B1215] transition-colors">
+              <Plus size={11} />
+            </div>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -271,7 +295,15 @@ function LeadColumn({
 
 /* ─── List View ─────────────────────────────────────────── */
 
-function LeadListView({ containers, basePath = "/agent/crm" }: { containers: DndContainer[]; basePath?: string }) {
+function LeadListView({
+  containers,
+  basePath = "/agent/crm",
+  stageMeta,
+}: {
+  containers: DndContainer[];
+  basePath?: string;
+  stageMeta?: Record<string, { total: number }>;
+}) {
   const router = useRouter();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -310,7 +342,7 @@ function LeadListView({ containers, basePath = "/agent/crm" }: { containers: Dnd
                 className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
                 style={{ backgroundColor: `${container.color}20`, color: container.color }}
               >
-                {container.items.length} leads
+                {(stageMeta?.[container.id]?.total ?? container.items.length).toLocaleString()} leads
               </span>
               <span className="text-[12px] font-semibold text-gray-500 mr-2">
                 $ {(total).toLocaleString()}
@@ -396,7 +428,11 @@ function LeadListView({ containers, basePath = "/agent/crm" }: { containers: Dnd
       {/* Summary footer */}
       <div className="mt-4 flex flex-col sm:flex-row gap-2 items-start sm:items-center sm:justify-between px-4 py-3 bg-gray-50 rounded-xl">
         <span className="text-[12px] font-semibold text-gray-500">
-          {allLeads.length} total leads across {containers.length} stages
+          {allLeads.length.toLocaleString()} loaded of{" "}
+          {(stageMeta
+            ? Object.values(stageMeta).reduce((sum, stage) => sum + stage.total, 0)
+            : allLeads.length
+          ).toLocaleString()} total leads
         </span>
         <span className="text-[13px] font-bold text-[#0B1215]">
           $ {(allLeads.length * 40010).toLocaleString()} pipeline value
@@ -406,13 +442,15 @@ function LeadListView({ containers, basePath = "/agent/crm" }: { containers: Dnd
   );
 }
 
-function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, onStatusChange, onAddClick, isLoading }: {
+function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, onStatusChange, onAddClick, isLoading, stageMeta, onLoadMore }: {
   basePath?: string;
   leadListUrl?: string;
   initialContainers: DndContainer[];
   onStatusChange: (leadId: string, status: ApiLeadStatus) => Promise<void>;
   onAddClick?: (status: ApiLeadStatus) => void;
   isLoading?: boolean;
+  stageMeta?: Record<string, { total: number; hasMore: boolean; isFetchingMore: boolean }>;
+  onLoadMore?: (stageId: string) => void;
 }) {
   const router = useRouter();
   const [containers, setContainers] = useState<DndContainer[]>(initialContainers);
@@ -570,7 +608,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
 
       {viewMode === "list" ? (
         <div className="flex-1 overflow-y-auto">
-          <LeadListView containers={containers} basePath={basePath} />
+          <LeadListView containers={containers} basePath={basePath} stageMeta={stageMeta} />
         </div>
       ) : (
         <div className="flex-1 overflow-x-auto overflow-y-auto pb-6">
@@ -597,6 +635,10 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
                   onMoveToStage={async (leadId, targetStageId) => {
                     await onStatusChange(leadId, targetStageId as ApiLeadStatus);
                   }}
+                  total={stageMeta?.[container.id]?.total}
+                  hasMore={stageMeta?.[container.id]?.hasMore}
+                  isFetchingMore={stageMeta?.[container.id]?.isFetchingMore}
+                  onLoadMore={() => onLoadMore?.(container.id)}
                 />
               ))}
             </div>
@@ -684,6 +726,7 @@ function AgentUploadsCard({
 export default function CRMPage() {
   const basePath = "/agent/crm";
   const apiBasePath = "/agent" as const;
+  const router = useRouter();
   const searchParams = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
@@ -717,21 +760,32 @@ export default function CRMPage() {
     return labels.map((label) => ({ id: label.slug, title: label.name, color: label.color }));
   }, [labels]);
 
+  const boardStageDefinitions = useMemo(() => {
+    const selectedStages =
+      selectedLabel === "all" ? stages : stages.filter((stage) => stage.id === selectedLabel);
+    return selectedLabel === "all"
+      ? [
+          ...selectedStages,
+          { id: "__uncategorized__" as ApiLeadStatus, title: "Uncategorized", color: "#6B7280" },
+        ]
+      : selectedStages;
+  }, [selectedLabel, stages]);
+
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
     return () => clearTimeout(t);
   }, [search]);
 
-  const { data, isLoading, refetch } = useLeads(
+  const stageQuery = useLeadStagePages(
+    boardStageDefinitions,
     {
       company_id: companyId ?? undefined,
       search: debouncedSearch || undefined,
-      page: 1,
       pipeline_id: selectedPipelineId ?? undefined,
-      status: selectedLabel === "all" ? undefined : selectedLabel,
       source: agentUploadScope ? AGENT_UPLOAD_SOURCE_FILTER : undefined,
+      per_page: 20,
     },
-    apiBasePath
+    apiBasePath,
   );
 
   const { data: leadsAnalytics, isLoading: isAnalyticsLoading } = useCrmLeadsAnalytics(
@@ -745,7 +799,36 @@ export default function CRMPage() {
     apiBasePath
   );
 
-  const initialContainers = useMemo(() => buildContainers(data?.leads ?? [], stages), [data?.leads, stages]);
+  const visibleStagePages = useMemo(
+    () => stageQuery.stages.filter((stage) => stage.id !== "__uncategorized__" || stage.total > 0),
+    [stageQuery.stages],
+  );
+  const loadedLeads = useMemo(
+    () => visibleStagePages.flatMap((stage) => stage.leads),
+    [visibleStagePages],
+  );
+  const visibleStages = useMemo(
+    () => visibleStagePages.map(({ id, title, color }) => ({ id, title, color })),
+    [visibleStagePages],
+  );
+  const initialContainers = useMemo(
+    () => buildContainers(loadedLeads, visibleStages),
+    [loadedLeads, visibleStages],
+  );
+  const stageMeta = useMemo(
+    () =>
+      Object.fromEntries(
+        visibleStagePages.map((stage) => [
+          stage.id,
+          {
+            total: stage.total,
+            hasMore: stage.hasMore,
+            isFetchingMore: stage.isFetchingMore,
+          },
+        ]),
+      ),
+    [visibleStagePages],
+  );
 
   const updateMutation = useUpdateLead(undefined, apiBasePath);
 
@@ -753,14 +836,13 @@ export default function CRMPage() {
     try {
       await updateMutation.mutateAsync({ leadId, payload: { company_id: companyId ?? "", status } });
       toast.success("Lead status updated");
-      await refetch();
     } catch {
       toast.error("Could not update lead status. Reverting...");
       throw new Error("status update failed");
     }
   }
 
-  if (isLoading) return <CRMPageSkeleton />;
+  if (stageQuery.isLoading) return <CRMPageSkeleton />;
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
@@ -813,6 +895,12 @@ export default function CRMPage() {
                 status: selectedLabel === "all" ? undefined : selectedLabel,
                 source: agentUploadScope ? AGENT_UPLOAD_SOURCE_FILTER : undefined,
               }}
+              onViewImportedPipeline={(pipelineId) => {
+                setSelectedPipelineId(pipelineId);
+                setSelectedLabel("all");
+                setSearch("");
+              }}
+              onViewAllLeads={() => router.push(`${basePath}/leads`)}
             />
             <button
               onClick={() => { setDefaultStatus("newly_lead"); setIsAddModalOpen(true); }}
@@ -870,7 +958,9 @@ export default function CRMPage() {
           initialContainers={initialContainers}
           onStatusChange={persistStatusChange}
           onAddClick={(status) => { setDefaultStatus(status); setIsAddModalOpen(true); }}
-          isLoading={isLoading}
+          isLoading={stageQuery.isLoading}
+          stageMeta={stageMeta}
+          onLoadMore={(stageId) => stageQuery.loadMore(stageId as ApiLeadStatus)}
         />
       </div>
 

@@ -10,6 +10,7 @@ use App\Models\LeadPipeline;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -946,9 +947,16 @@ class LeadManagementTest extends TestCase
         $this->assertStringContainsString('https://linkedin.com/in/export', $content);
     }
 
-    public function test_import_duplicate_update_updates_company_name(): void
+    public function test_import_duplicate_update_moves_to_target_pipeline_and_updates_company_name(): void
     {
         [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+        $targetPipeline = LeadPipeline::create([
+            'company_id' => $company->id,
+            'name' => 'Imported Pipeline',
+            'currency_code' => 'USD',
+            'sort_order' => 2,
+            'is_default' => false,
+        ]);
 
         Lead::create([
             'company_id' => $company->id,
@@ -964,7 +972,7 @@ class LeadManagementTest extends TestCase
         $response = $this->withToken($admin->createToken('admin-import-dup-co', ['*'])->plainTextToken)
             ->postJson('/api/v1/crm/leads/import', [
                 'company_id' => $company->id,
-                'pipeline_id' => $pipelineId,
+                'pipeline_id' => $targetPipeline->id,
                 'duplicate_policy' => 'update',
                 'rows' => [[
                     'name' => 'Duplicate Co Lead',
@@ -979,7 +987,18 @@ class LeadManagementTest extends TestCase
         $this->assertDatabaseHas('leads', [
             'email' => 'dup-co@example.com',
             'company_name' => 'New Co',
+            'pipeline_id' => $targetPipeline->id,
         ]);
+
+        $this->withToken($admin->createToken('admin-find-updated-import', ['*'])->plainTextToken)
+            ->getJson(
+                '/api/v1/crm/leads?company_id=' . $company->id
+                . '&pipeline_id=' . $targetPipeline->id
+                . '&search=New%20Co',
+            )
+            ->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.email', 'dup-co@example.com');
     }
 
     public function test_legacy_budget_string_is_normalized_on_create(): void
@@ -1360,6 +1379,82 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.lead.budget_currency', 'NGN');
 
         $this->assertArrayNotHasKey('deleted_at', $agentResponse->json('data.lead'));
+    }
+
+    public function test_imported_leads_are_reachable_across_all_paginated_pipeline_pages(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+        $rows = collect(range(1, 405))->map(static fn (int $index): array => [
+            'name' => "Imported Lead {$index}",
+            'email' => "imported-{$index}@example.com",
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+        ])->all();
+
+        $token = $admin->createToken('admin-large-import', ['*'])->plainTextToken;
+        $this->withToken($token)
+            ->postJson('/api/v1/crm/leads/import', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'duplicate_policy' => 'create',
+                'rows' => $rows,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.imported_count', 405);
+
+        $seenIds = [];
+        foreach (range(1, 21) as $page) {
+            $response = $this->withToken($token)
+                ->getJson(
+                    '/api/v1/crm/leads?company_id=' . $company->id
+                    . '&pipeline_id=' . $pipelineId
+                    . '&status=newly_lead&per_page=20&page=' . $page,
+                )
+                ->assertOk()
+                ->assertJsonPath('data.pagination.total', 405)
+                ->assertJsonPath('data.pagination.last_page', 21)
+                ->json('data.items');
+
+            $seenIds = [...$seenIds, ...array_column($response, 'id')];
+        }
+
+        $this->assertCount(405, $seenIds);
+        $this->assertCount(405, array_unique($seenIds));
+    }
+
+    public function test_uncategorized_filter_and_visibility_command_repair_hidden_leads(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+
+        $lead = Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => null,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Historically Hidden Lead',
+            'status' => 'deleted_custom_stage',
+            'priority' => 'medium',
+        ]);
+
+        $token = $admin->createToken('admin-uncategorized', ['*'])->plainTextToken;
+        $this->withToken($token)
+            ->getJson('/api/v1/crm/leads?company_id=' . $company->id . '&uncategorized=1')
+            ->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.id', $lead->id);
+
+        $this->assertSame(0, Artisan::call('crm:audit-lead-visibility', [
+            'company' => (string) $company->id,
+            '--repair' => true,
+        ]));
+
+        $lead->refresh();
+        $this->assertSame($pipelineId, (int) $lead->pipeline_id);
+        $this->assertSame('newly_lead', $lead->status);
+
+        $this->withToken($token)
+            ->getJson('/api/v1/crm/leads?company_id=' . $company->id . '&uncategorized=1')
+            ->assertOk()
+            ->assertJsonPath('data.pagination.total', 0);
     }
 
     private function seedCompanyUsers(): array

@@ -99,6 +99,7 @@ export type ListLeadsParams = {
     assigned_to_user_id?: number | string;
     per_page?: number;
     page?: number;
+    uncategorized?: boolean;
 };
 
 export type LeadsListData = {
@@ -369,6 +370,7 @@ export function listLeads(
         assigned_to_user_id: params.assigned_to_user_id,
         per_page: params.per_page,
         page: params.page,
+        uncategorized: params.uncategorized ? 1 : undefined,
     });
 
     return apiRequest<LeadsListData>({

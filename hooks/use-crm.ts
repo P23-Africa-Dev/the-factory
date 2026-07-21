@@ -1,6 +1,7 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { hasActiveApiSession } from "@/lib/auth/support-session";
 import {
@@ -33,6 +34,7 @@ import {
     type AddLeadActivityPayload,
     type AddLeadNotePayload,
     type AgentUploadOverview,
+    type ApiLeadStatus,
     type ApiRoleBasePath,
     type CrmLeadsAnalytics,
     type CrmLeadsAnalyticsParams,
@@ -46,6 +48,7 @@ import {
     type UpdateLeadPayload,
 } from "@/lib/api/crm";
 import { SAVED_LOCATION_KEYS } from "@/hooks/use-saved-locations";
+import { mergeLeadPages } from "@/lib/crm/lead-visibility";
 
 export const CRM_KEYS = {
     all: ["crm"] as const,
@@ -90,7 +93,115 @@ export function useLeads(
         },
         enabled: hasActiveApiSession(token) && !!params.company_id,
         staleTime: 1000 * 60 * 2,
+        placeholderData: (previousData) => previousData,
     });
+}
+
+export type LeadStageDefinition = {
+    id: ApiLeadStatus | "__uncategorized__";
+    title: string;
+    color: string;
+};
+
+export type LeadStagePage = LeadStageDefinition & {
+    leads: LeadApiItem[];
+    loaded: number;
+    total: number;
+    hasMore: boolean;
+    isLoading: boolean;
+    isFetchingMore: boolean;
+};
+
+const EMPTY_STAGE_PAGE_COUNTS: Record<string, number> = {};
+
+export function useLeadStagePages(
+    stages: LeadStageDefinition[],
+    params: Omit<ListLeadsParams, "status" | "page" | "uncategorized">,
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+    const [pageState, setPageState] = useState<{
+        key: string;
+        counts: Record<string, number>;
+    }>({ key: "", counts: {} });
+    const resetKey = JSON.stringify([stages.map((stage) => stage.id), params, basePath]);
+    const pageCounts = pageState.key === resetKey ? pageState.counts : EMPTY_STAGE_PAGE_COUNTS;
+
+    const specs = useMemo(
+        () =>
+            stages.flatMap((stage) => {
+                const pageCount = pageCounts[stage.id] ?? 1;
+                return Array.from({ length: pageCount }, (_, index) => {
+                    const page = index + 1;
+                    const queryParams: ListLeadsParams = {
+                        ...params,
+                        page,
+                        per_page: params.per_page ?? 20,
+                        status: stage.id === "__uncategorized__" ? undefined : stage.id,
+                        uncategorized: stage.id === "__uncategorized__",
+                    };
+                    return { stageId: stage.id, page, queryParams };
+                });
+            }),
+        [pageCounts, params, stages],
+    );
+
+    const queries = useQueries({
+        queries: specs.map((spec) => ({
+            queryKey: CRM_KEYS.list(spec.queryParams, basePath),
+            queryFn: async (): Promise<LeadsResult> => {
+                const response = await listLeads(spec.queryParams, token, basePath);
+                return {
+                    leads: response.data.items,
+                    pagination: response.data.pagination,
+                };
+            },
+            enabled: hasActiveApiSession(token) && !!params.company_id,
+            staleTime: 1000 * 60 * 2,
+            placeholderData: (previousData: LeadsResult | undefined) => previousData,
+        })),
+    });
+
+    const stagePages = stages.map((stage): LeadStagePage => {
+        const stageResults = specs
+            .map((spec, index) => ({ spec, query: queries[index] }))
+            .filter(({ spec }) => spec.stageId === stage.id)
+            .sort((left, right) => left.spec.page - right.spec.page);
+        const leads = mergeLeadPages(
+            stageResults.map(({ query }) => query.data?.leads ?? []),
+        );
+        const total = stageResults[0]?.query.data?.pagination.total ?? 0;
+        const pageCount = pageCounts[stage.id] ?? 1;
+
+        return {
+            ...stage,
+            leads,
+            loaded: leads.length,
+            total,
+            hasMore: leads.length < total,
+            isLoading: stageResults.some(({ query }) => query.isLoading),
+            isFetchingMore:
+                pageCount > 1 &&
+                Boolean(stageResults.find(({ spec }) => spec.page === pageCount)?.query.isFetching),
+        };
+    });
+
+    return {
+        stages: stagePages,
+        isLoading: stagePages.some((stage) => stage.isLoading),
+        loadMore: (stageId: LeadStageDefinition["id"]) => {
+            setPageState((current) => {
+                const counts = current.key === resetKey ? current.counts : {};
+                return {
+                    key: resetKey,
+                    counts: {
+                        ...counts,
+                        [stageId]: (counts[stageId] ?? 1) + 1,
+                    },
+                };
+            });
+        },
+    };
 }
 
 export function useLeadPipeline(

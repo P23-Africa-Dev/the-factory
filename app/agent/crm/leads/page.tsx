@@ -20,6 +20,7 @@ import { CrmImportExportButton } from "@/components/crm/crm-import-export-button
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { CrmFilterBar } from "@/components/crm/crm-filter-bar";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
+import { LeadPagination } from "@/components/crm/lead-pagination";
 import type { ApiLeadStatus } from "@/lib/api/crm";
 import { resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { toast } from "sonner";
@@ -38,11 +39,6 @@ interface Lead {
 function getStatusColor(status: string | null | undefined, labels: Array<{ slug: string; color: string }>): string {
   const match = labels.find((label) => label.slug === status);
   return match ? match.color : "#9CA3AF";
-}
-
-function getStatusLabel(status: string | null | undefined, labels: Array<{ slug: string; name: string }>): string {
-  const match = labels.find((label) => label.slug === status);
-  return match ? match.name : "New Lead";
 }
 
 function StatusDropdown({
@@ -102,6 +98,7 @@ export default function AllLeadsPage() {
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>("all");
   const [showFilter, setShowFilter] = useState(false);
@@ -127,9 +124,9 @@ export default function AllLeadsPage() {
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, "/agent");
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, "/agent");
 
-  const { data, isLoading, refetch } = useLeads({
+  const { data, isFetching, refetch } = useLeads({
     company_id: companyId ?? undefined,
-    page: 1,
+    page,
     search: search.trim() || undefined,
     pipeline_id: selectedPipelineId ?? undefined,
     status: selectedLabel === "all" ? undefined : selectedLabel,
@@ -155,6 +152,11 @@ export default function AllLeadsPage() {
   }));
 
   const allChecked = leads.length > 0 && selected.size === leads.length;
+
+  const resetPageSelection = () => {
+    setPage(1);
+    setSelected(new Set());
+  };
 
   const toggleAll = () => {
     if (allChecked) {
@@ -207,7 +209,10 @@ export default function AllLeadsPage() {
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                resetPageSelection();
+              }}
               placeholder="Search for Leads"
               className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
             />
@@ -223,7 +228,10 @@ export default function AllLeadsPage() {
             <MapLeadsToolbarButton
               pipelines={pipelines}
               selectedPipelineId={selectedPipelineId}
-              onPipelineChange={setSelectedPipelineId}
+              onPipelineChange={(pipelineId) => {
+                setSelectedPipelineId(pipelineId);
+                resetPageSelection();
+              }}
             />
             <button onClick={() => setShowFilter((prev) => !prev)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <Tag size={13} />
@@ -246,6 +254,18 @@ export default function AllLeadsPage() {
                 source: agentUploadScope ? "agent_upload" : undefined,
               }}
               selectedLeadIds={Array.from(selected)}
+              onViewImportedPipeline={(pipelineId) => {
+                setSearch("");
+                setSelectedPipelineId(pipelineId);
+                setSelectedLabel("all");
+                resetPageSelection();
+              }}
+              onViewAllLeads={() => {
+                setSearch("");
+                setSelectedPipelineId(null);
+                setSelectedLabel("all");
+                setPage(1);
+              }}
             />
             <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all">
               Add New Leads
@@ -259,12 +279,19 @@ export default function AllLeadsPage() {
             pipelines={pipelines}
             labels={labels}
             selectedPipelineId={selectedPipelineId}
-            onPipelineChange={setSelectedPipelineId}
+            onPipelineChange={(pipelineId) => {
+              setSelectedPipelineId(pipelineId);
+              resetPageSelection();
+            }}
             selectedLabel={selectedLabel}
-            onLabelChange={setSelectedLabel}
+            onLabelChange={(label) => {
+              setSelectedLabel(label);
+              resetPageSelection();
+            }}
             onClear={() => {
               setSelectedPipelineId(null);
               setSelectedLabel("all");
+              resetPageSelection();
             }}
           />
         )}
@@ -298,7 +325,7 @@ export default function AllLeadsPage() {
                   </svg>
                 )}
               </div>
-              <span className="text-[13px] font-medium text-gray-500">Select All</span>
+              <span className="text-[13px] font-medium text-gray-500">Select page</span>
             </label>
 
             <div className="flex items-center gap-1">
@@ -482,21 +509,29 @@ export default function AllLeadsPage() {
           </div>
 
           {/* Footer */}
-          <div className="shrink-0 px-6 py-3 border-t border-gray-100 flex items-center justify-between">
-            <span className="text-[12px] text-gray-400">
-              {selected.size > 0
-                ? `${selected.size} of ${leads.length} selected`
-                : `${leads.length} leads total`}
-            </span>
+          <div className="shrink-0">
             {selected.size > 0 && (
-              <button
-                onClick={() => setShowBulkDeleteConfirm(true)}
-                className="flex items-center gap-1.5 text-[12px] font-medium text-red-500 hover:text-red-600 transition-colors"
-              >
-                <Trash2 size={13} />
-                Delete selected
-              </button>
+              <div className="px-6 py-2 border-t border-gray-100 flex items-center justify-between">
+                <span className="text-[12px] text-gray-400">{selected.size} selected on this page</span>
+                <button
+                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 text-[12px] font-medium text-red-500 hover:text-red-600 transition-colors"
+                >
+                  <Trash2 size={13} />
+                  Delete selected
+                </button>
+              </div>
             )}
+            <LeadPagination
+              pagination={data?.pagination}
+              itemCount={leads.length}
+              page={page}
+              onPageChange={(nextPage) => {
+                setSelected(new Set());
+                setPage(nextPage);
+              }}
+              disabled={isFetching}
+            />
           </div>
         </div>
       </div>

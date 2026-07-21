@@ -106,6 +106,8 @@ export function ImportLeadsWizard({
     defaultPipelineId,
     labels,
     onClose,
+    onViewImportedPipeline,
+    onViewAllLeads,
 }: {
     companyId: number | string;
     apiBasePath: ApiRoleBasePath;
@@ -113,6 +115,8 @@ export function ImportLeadsWizard({
     defaultPipelineId?: number | null;
     labels: CrmLabel[];
     onClose: () => void;
+    onViewImportedPipeline?: (pipelineId: number) => void;
+    onViewAllLeads?: () => void;
 }) {
     const [step, setStep] = useState<Step>("upload");
     const [fileName, setFileName] = useState<string>("");
@@ -611,6 +615,9 @@ export function ImportLeadsWizard({
                                 <span className="font-semibold">{result.failed_rows.length}</span> failed.
                             </p>
                         </div>
+                        <p className="text-[12px] text-gray-500">
+                            Imported leads are available immediately. Pipeline columns load progressively for large datasets.
+                        </p>
 
                         {(result.failed_rows.length > 0 || result.skipped_rows.length > 0) && (
                             <div className="flex justify-end">
@@ -662,8 +669,17 @@ export function ImportLeadsWizard({
                                     {importMutation.isPending ? "Retrying…" : "Retry failed rows"}
                                 </button>
                             )}
-                            <button onClick={onClose} className={`px-4 py-2 rounded-lg text-[12px] font-semibold ${failedRows.length > 0 ? "border border-gray-200 text-gray-600" : "bg-dash-dark text-white"}`}>
-                                {failedRows.length > 0 ? "Close" : "View imported leads"}
+                            <button
+                                onClick={() => onViewAllLeads?.()}
+                                className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 text-[12px] font-semibold"
+                            >
+                                View all leads
+                            </button>
+                            <button
+                                onClick={() => onViewImportedPipeline?.(Number(pipelineId))}
+                                className="px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold"
+                            >
+                                View imported pipeline
                             </button>
                         </div>
                     </>

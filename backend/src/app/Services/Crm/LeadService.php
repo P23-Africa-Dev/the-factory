@@ -66,7 +66,7 @@ class LeadService
         $query = $this->baseQuery($companyId);
         $this->applyLeadListFilters($query, $user, $role, $filters);
 
-        $perPage = (int) ($filters['per_page'] ?? 20);
+        $perPage = max(1, min((int) ($filters['per_page'] ?? 20), 100));
 
         return $query->latest('id')->paginate($perPage)->withQueryString();
     }
@@ -967,7 +967,7 @@ class LeadService
                     continue;
                 }
 
-                $duplicate->update($this->buildDuplicateUpdatePayload($duplicate, $row, $data));
+                $duplicate->update($this->buildDuplicateUpdatePayload($duplicate, $row, $data, $pipelineId));
                 $updatedCount++;
                 continue;
             }
@@ -1178,6 +1178,15 @@ class LeadService
             $query->where('status', (string) $filters['status']);
         }
 
+        if (! empty($filters['uncategorized'])) {
+            $query->whereNotExists(function ($subquery): void {
+                $subquery->selectRaw('1')
+                    ->from('lead_labels')
+                    ->whereColumn('lead_labels.company_id', 'leads.company_id')
+                    ->whereColumn('lead_labels.slug', 'leads.status');
+            });
+        }
+
         if (! empty($filters['priority'])) {
             $query->where('priority', (string) $filters['priority']);
         }
@@ -1206,7 +1215,9 @@ class LeadService
                 $builder->where('name', 'like', '%' . $search . '%')
                     ->orWhere('email', 'like', '%' . $search . '%')
                     ->orWhere('phone', 'like', '%' . $search . '%')
-                    ->orWhere('location', 'like', '%' . $search . '%');
+                    ->orWhere('location', 'like', '%' . $search . '%')
+                    ->orWhere('company_name', 'like', '%' . $search . '%')
+                    ->orWhere('source', 'like', '%' . $search . '%');
             });
         }
     }
@@ -1501,9 +1512,15 @@ class LeadService
      * @param  array<string, mixed>  $normalized
      * @return array<string, mixed>
      */
-    private function buildDuplicateUpdatePayload(Lead $existing, array $row, array $normalized): array
+    private function buildDuplicateUpdatePayload(
+        Lead $existing,
+        array $row,
+        array $normalized,
+        int $targetPipelineId,
+    ): array
     {
-        $update = [];
+        // "Target Pipeline" applies to both newly created and updated rows.
+        $update = ['pipeline_id' => $targetPipelineId];
         $provided = static fn(string $key): bool => trim((string) ($row[$key] ?? '')) !== '';
 
         foreach (['name', 'email', 'phone', 'location', 'company_name', 'website', 'position', 'source'] as $field) {
