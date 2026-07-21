@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import HeroIllustration from "@/components/layout/HeroIllustration";
+import FieldCommandHubHero from "@/components/landing/FieldCommandHubHero";
 
 interface HeroSectionProps {
   onDownloadAgentApp: () => void;
@@ -10,7 +10,7 @@ interface HeroSectionProps {
 export default function HeroSection({ onDownloadAgentApp }: HeroSectionProps) {
   return (
     <div className="flex-1 w-full flex flex-col lg:flex-row bg-white">
-      {/* Main Content Pane (White Background) */}
+      {/* Main Content Pane (White Background - perfectly aligned 58% width matching Navbar) */}
       <div className="flex-grow lg:max-w-[58%] bg-white flex flex-col justify-between p-6 sm:p-10 lg:p-16 py-6 sm:py-10 lg:py-12 lg:min-h-[calc(100vh-100px)]">
         {/* Hero Content */}
         <main id="about" className="my-auto py-6 lg:py-0 flex flex-col justify-center max-w-xl">
@@ -53,11 +53,15 @@ export default function HeroSection({ onDownloadAgentApp }: HeroSectionProps) {
         </main>
       </div>
 
-      {/* Right Column Pane (Dark Teal Background) */}
-      <div className="hidden lg:flex lg:w-[42%] bg-[#0B252C] flex-col justify-center p-6 sm:p-10 lg:p-16 relative overflow-hidden min-h-[320px] lg:min-h-[calc(100vh-100px)]">
-        {/* Vector Line Art Illustration */}
-        <div className="flex-1 flex items-center justify-center z-10 py-6 lg:py-0">
-          <HeroIllustration className="w-48 h-auto sm:w-56 md:w-64 lg:w-[280px]" />
+      {/* Right Column Pane (Dark Teal Background - perfectly aligned 42% width matching Navbar) */}
+      <div className="flex w-full lg:w-[42%] bg-[#0B252C] flex-col justify-center p-6 sm:p-8 lg:p-10 relative overflow-hidden min-h-[460px] lg:min-h-[calc(100vh-100px)]">
+        {/* Geometric Hexagon Background Accents */}
+        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-96 h-96 rounded-full bg-[#1E5A69]/20 blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-80 h-80 rounded-full bg-[#82C341]/10 blur-3xl pointer-events-none" />
+
+        {/* Command Hub Interactive Visual */}
+        <div className="w-full flex-1 flex items-center justify-center z-10 py-2 lg:py-0">
+          <FieldCommandHubHero />
         </div>
       </div>
     </div>

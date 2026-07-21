@@ -6,55 +6,61 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const testimonials = [
   {
-    quote: "I've been consistently impressed with the quality of service provided by Factory 23. It have exceeded my expectations and delivered exceptional results. Highly recommended!",
+    quote:
+      "Factory 23 completely eliminated our visibility blind spots. Being able to track field agents and sync visit reports even in remote zero-connectivity areas transformed our distribution efficiency across 12 regions.",
     name: "John D.",
-    role: "Company CEO",
+    role: "VP of Field Operations, OmniDistribution",
     avatar: "/avatars/john_avatar.png",
     bgColor: "bg-[#FDF2FB]",
     borderColor: "border-[#FAD8F7]",
   },
   {
-    quote: "I've been consistently impressed with the quality of service provided by Factory 23. It have exceeded my expectations and delivered exceptional results. Highly recommended!",
+    quote:
+      "Our field sales reps save over 10 hours a week with the ELY AI assistant and automated visit logging. We closed 35% more field leads in our very first quarter using Factory 23.",
     name: "Touka F.",
-    role: "Company CEO",
+    role: "Head of Sales & CRM, Apex FMCG",
     avatar: "/avatars/touka_avatar.png",
     bgColor: "bg-white",
     borderColor: "border-gray-100",
     shadow: "shadow-lg shadow-gray-100/50",
   },
   {
-    quote: "I've been consistently impressed with the quality of service provided by Factory 23. It have exceeded my expectations and delivered exceptional results. Highly recommended!",
+    quote:
+      "Scaling our field workforce from 5 to 50+ agents was completely seamless. The transparent seat pricing and automated KPI performance dashboards gave our executive team actionable insights from day one.",
     name: "Donald N.",
-    role: "Company CEO",
+    role: "Chief Operating Officer, Vanguard Energy",
     avatar: "/avatars/donald_avatar.png",
     bgColor: "bg-[#F0FDF8]",
     borderColor: "border-[#D1F7E2]",
   },
   {
-    quote: "Implementing the Factory 23 field tracking system transformed our dispatch operations. Real-time updates and offline synchronization are absolute game-changers.",
+    quote:
+      "Implementing Factory 23's field tracking matrix transformed our dispatch operations. Real-time task assignments and location-verified check-ins keep our entire field force in sync.",
     name: "Sarah M.",
-    role: "Operations Director",
+    role: "Operations Director, Summit Field Services",
     avatar: "/avatars/female-avatar.png",
     bgColor: "bg-[#FDF2FB]",
     borderColor: "border-[#FAD8F7]",
   },
   {
-    quote: "We tried several platforms before, but none offered the offline reliability of Factory 23. Our field agents love the app's simplicity and speed.",
+    quote:
+      "We evaluated several platforms, but none offered the offline reliability of Factory 23. Our field agents love the PWA app's speed, clean UI, and instant offline sync.",
     name: "David K.",
-    role: "Logistics Manager",
+    role: "Logistics Manager, Horizon Supply Chain",
     avatar: "/avatars/male-avatar.png",
     bgColor: "bg-white",
     borderColor: "border-gray-100",
     shadow: "shadow-lg shadow-gray-100/50",
   },
   {
-    quote: "The customer service and custom workflows allowed us to integrate our existing database smoothly. Highly recommend for any enterprise with field teams.",
+    quote:
+      "The seamless integration with our customer database and reliable GPS-backed attendance verification allowed us to scale rapidly while maintaining strict operational quality.",
     name: "Elena R.",
-    role: "Product Head",
-    avatar: "/avatars/female-avatar.png",
+    role: "Head of Product, Nexa Infrastructure",
+    avatar: "/avatars/female-avatar-old.png",
     bgColor: "bg-[#F0FDF8]",
     borderColor: "border-[#D1F7E2]",
-  }
+  },
 ];
 
 export default function TestimonialsSection() {
@@ -129,7 +135,7 @@ export default function TestimonialsSection() {
         {/* Header */}
         <div className="text-center max-w-3xl mb-16">
           <h2 className="text-3xl sm:text-4xl lg:text-[40px] font-extrabold text-[#0B252C] tracking-tight">
-            What Our Client Say About Us
+            What Our Clients Say About Us
           </h2>
           <p className="text-sm sm:text-base text-[#4A5F64] leading-relaxed mt-4">
             Discover the experiences of our satisfied customers! Read their testimonials to learn how our services have made a positive impact on their businesses.
