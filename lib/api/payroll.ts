@@ -3,6 +3,7 @@
 import { apiRequest, ApiEnvelope, API_BASE_URL, ApiRequestError } from "./onboarding";
 import { formatPayrollMoney, resolvePayrollCurrency } from "@/lib/payroll/currency";
 import { resolveAvatarSrc } from "@/lib/avatar";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 
 export type PayrollSettings = {
   id: number;
@@ -341,10 +342,15 @@ export async function downloadPayrollExport(
     }
   });
 
-  const response = await fetch(`${API_BASE_URL}/payroll/export?${query.toString()}`, {
+  const transport = getSupportAwareApiTransport(
+    `/payroll/export?${query.toString()}`,
+    token,
+    API_BASE_URL,
+  );
+  const response = await fetch(transport.url, {
     method: "GET",
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...transport.authorizationHeaders,
       Accept: "text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;q=0.9, */*;q=0.8",
     },
   });

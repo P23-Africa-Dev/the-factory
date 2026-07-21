@@ -1,6 +1,7 @@
 "use client";
 
 import { apiRequest, API_BASE_URL, ApiEnvelope } from "./onboarding";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 
 export type NotificationCategory =
   | "task"
@@ -148,12 +149,17 @@ export async function deleteNotification(
   notificationId: number,
   token: string
 ): Promise<void> {
-  await fetch(`${API_BASE_URL}/notifications/${notificationId}`, {
+  const transport = getSupportAwareApiTransport(
+    `/notifications/${notificationId}`,
+    token,
+    API_BASE_URL,
+  );
+  await fetch(transport.url, {
     method: "DELETE",
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      Authorization: `Bearer ${token}`,
+      ...transport.authorizationHeaders,
     },
   });
 }

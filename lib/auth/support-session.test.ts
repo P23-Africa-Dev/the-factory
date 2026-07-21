@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiRequest, ApiRequestError } from "@/lib/api/onboarding";
 import {
+  getSupportAwareApiTransport,
   getSupportLevelFromDocument,
+  hasActiveApiSession,
   isSupportSessionActiveInDocument,
   SUPPORT_ACTIVE_COOKIE,
   SUPPORT_LEVEL_COOKIE,
 } from "@/lib/auth/support-session";
+import { clearAuthSession } from "@/lib/auth/session";
 
 function setCookie(name: string, value: string) {
   document.cookie = `${name}=${value}; Path=/`;
@@ -33,6 +36,39 @@ describe("support session client transport", () => {
 
     expect(isSupportSessionActiveInDocument()).toBe(true);
     expect(getSupportLevelFromDocument()).toBe("read_only");
+  });
+
+  it("activates API queries for either normal auth or support mode", () => {
+    expect(hasActiveApiSession("customer-token")).toBe(true);
+    expect(hasActiveApiSession("")).toBe(false);
+
+    setCookie(SUPPORT_ACTIVE_COOKIE, "1");
+    expect(hasActiveApiSession("")).toBe(true);
+  });
+
+  it("builds support and normal transports without leaking bearer credentials", () => {
+    expect(getSupportAwareApiTransport("/crm/leads", "customer-token", "https://api.test/v1"))
+      .toEqual({
+        url: "https://api.test/v1/crm/leads",
+        authorizationHeaders: { Authorization: "Bearer customer-token" },
+      });
+
+    setCookie(SUPPORT_ACTIVE_COOKIE, "1");
+    expect(getSupportAwareApiTransport("/crm/leads", "customer-token", "https://api.test/v1"))
+      .toEqual({
+        url: "/api/support/proxy/crm/leads",
+        authorizationHeaders: {},
+      });
+  });
+
+  it("does not clear support markers during ordinary auth cleanup", () => {
+    setCookie(SUPPORT_ACTIVE_COOKIE, "1");
+    setCookie(SUPPORT_LEVEL_COOKIE, "operational_full");
+
+    clearAuthSession();
+
+    expect(isSupportSessionActiveInDocument()).toBe(true);
+    expect(getSupportLevelFromDocument()).toBe("operational_full");
   });
 
   it("blocks mutations locally during read-only support", async () => {

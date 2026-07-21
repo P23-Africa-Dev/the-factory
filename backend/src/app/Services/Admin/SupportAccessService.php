@@ -224,6 +224,39 @@ class SupportAccessService
         $this->notifyTarget($session, started: false);
     }
 
+    public function revoke(
+        SupportAccessSession $session,
+        Request $request,
+        string $reason,
+    ): void {
+        if ($session->revoked_at !== null || $session->ended_at !== null) {
+            return;
+        }
+
+        DB::transaction(function () use ($session): void {
+            if ($session->personal_access_token_id !== null) {
+                DB::table('personal_access_tokens')
+                    ->where('id', $session->personal_access_token_id)
+                    ->delete();
+            }
+
+            $session->forceFill(['revoked_at' => now()])->save();
+        });
+
+        $this->actionLogger->log(
+            action: 'support_access.revoked',
+            targetType: User::class,
+            targetId: (string) $session->target_user_id,
+            context: [
+                ...$this->auditContext($session),
+                'revocation_reason' => $reason,
+            ],
+            request: $request,
+            adminId: (int) $session->admin_id,
+        );
+        $this->notifyTarget($session, started: false);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -249,9 +282,7 @@ class SupportAccessService
                 'name' => $session->company_name_snapshot,
                 'role' => $session->target_company_role_snapshot,
             ],
-            'dashboard_path' => $session->target_company_role_snapshot === 'agent'
-                ? '/agent/dashboard'
-                : '/dashboard',
+            'dashboard_path' => '/dashboard',
         ];
     }
 

@@ -1,4 +1,5 @@
 import { apiRequest, ApiEnvelope, ApiRequestError } from "./onboarding";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 
 export type ApiTaskStatus =
   | "pending"
@@ -391,12 +392,12 @@ export async function uploadTaskProof(
   formData: FormData,
   token: string
 ): Promise<ApiEnvelope<{ proof: { id: number; file_url: string | null } }>> {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
-  const response = await fetch(`${base}/tasks/${taskId}/proofs`, {
+  const transport = getSupportAwareApiTransport(`/tasks/${taskId}/proofs`, token);
+  const response = await fetch(transport.url, {
     method: "POST",
     headers: {
       Accept: "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...transport.authorizationHeaders,
     },
     body: formData,
   });
@@ -416,12 +417,12 @@ export async function replaceTaskProof(
   formData: FormData,
   token: string
 ): Promise<ApiEnvelope<{ proof: TaskProofItem }>> {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
-  const response = await fetch(`${base}/tasks/${taskId}/proofs/${proofId}`, {
+  const transport = getSupportAwareApiTransport(`/tasks/${taskId}/proofs/${proofId}`, token);
+  const response = await fetch(transport.url, {
     method: "POST",
     headers: {
       Accept: "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...transport.authorizationHeaders,
     },
     body: formData,
   });
@@ -439,15 +440,18 @@ export async function downloadTaskProof(
   params: { company_id?: number | string },
   token: string
 ): Promise<Blob> {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
   const qs = new URLSearchParams();
   if (params.company_id != null) qs.set("company_id", String(params.company_id));
   const query = qs.toString() ? `?${qs.toString()}` : "";
-  const response = await fetch(`${base}/tasks/${taskId}/proofs/${proofId}${query}`, {
+  const transport = getSupportAwareApiTransport(
+    `/tasks/${taskId}/proofs/${proofId}${query}`,
+    token,
+  );
+  const response = await fetch(transport.url, {
     method: "GET",
     headers: {
       Accept: "*/*",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...transport.authorizationHeaders,
     },
   });
 

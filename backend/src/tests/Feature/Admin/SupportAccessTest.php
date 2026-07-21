@@ -6,6 +6,8 @@ namespace Tests\Feature\Admin;
 
 use App\Models\Admin;
 use App\Models\Company;
+use App\Models\Lead;
+use App\Models\LeadPipeline;
 use App\Models\SupportAccessSession;
 use App\Models\User;
 use App\Services\Admin\SupportAccessService;
@@ -204,6 +206,94 @@ class SupportAccessTest extends TestCase
         $this->postJson('/api/v1/support-access/exchange', [
             'code' => str_repeat('a', 64),
         ])->assertTooManyRequests();
+    }
+
+    public function test_agent_target_receives_company_wide_management_data(): void
+    {
+        [$admin, $target, $company] = $this->fixtures();
+        $target->forceFill([
+            'internal_role' => 'agent',
+            'internal_onboarding_completed_at' => now(),
+        ])->save();
+        DB::table('company_users')
+            ->where('company_id', $company->id)
+            ->where('user_id', $target->id)
+            ->update(['role' => 'agent']);
+
+        $owner = User::factory()->create([
+            'is_active' => true,
+            'onboarding_completed_at' => now(),
+            'email_verified_at' => now(),
+        ]);
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $owner->id,
+            'role' => 'owner',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $pipeline = LeadPipeline::query()->create([
+            'company_id' => $company->id,
+            'name' => 'Support Visibility Pipeline',
+            'currency_code' => 'NGN',
+            'sort_order' => 0,
+            'is_default' => true,
+        ]);
+        Lead::query()->create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipeline->id,
+            'created_by_user_id' => $owner->id,
+            'assigned_to_user_id' => $owner->id,
+            'name' => 'Company Wide Lead',
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+        ]);
+
+        $token = $this->exchangeGrant($admin, $target, $company, 'read_only');
+
+        $this->withToken($token)
+            ->getJson('/api/v1/user/me')
+            ->assertOk()
+            ->assertJsonPath('data.active_company.id', $company->id)
+            ->assertJsonPath('data.active_company.role', 'owner');
+
+        $this->withToken($token)
+            ->getJson('/api/v1/admin/dashboard/overview?company_id=999999')
+            ->assertOk()
+            ->assertJsonPath('data.kpis.total_leads', 1);
+
+        $this->withToken($token)
+            ->getJson('/api/v1/admin/crm/leads?company_id=999999')
+            ->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.name', 'Company Wide Lead');
+
+        $this->withToken($token)
+            ->getJson('/api/v1/admin/internal-users?company_id=999999')
+            ->assertOk();
+    }
+
+    public function test_removed_company_membership_revokes_active_support_session(): void
+    {
+        [$admin, $target, $company] = $this->fixtures();
+        $token = $this->exchangeGrant($admin, $target, $company, 'read_only');
+
+        DB::table('company_users')
+            ->where('company_id', $company->id)
+            ->where('user_id', $target->id)
+            ->delete();
+
+        $this->withToken($token)
+            ->getJson('/api/v1/support-access/status')
+            ->assertForbidden();
+
+        $this->assertNotNull(SupportAccessSession::query()->firstOrFail()->revoked_at);
+        $this->assertDatabaseHas('admin_action_logs', [
+            'admin_id' => $admin->id,
+            'action' => 'support_access.revoked',
+        ]);
     }
 
     /**

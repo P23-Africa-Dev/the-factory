@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useAuthStore } from "@/store/auth";
 import {
@@ -63,7 +64,7 @@ export function useSavedLocations(params: ListSavedLocationsParams = {}) {
       const res = await listSavedLocations(queryParams, token, basePath);
       return res.data.items;
     },
-    enabled: !!token && !!companyId,
+    enabled: hasActiveApiSession(token) && !!companyId,
     staleTime: 1000 * 60 * 2,
   });
 }

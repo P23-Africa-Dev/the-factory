@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 import { fetchDriveFileBlob } from "@/lib/api/drive";
 
 export const DRIVE_PREVIEW_KEYS = {
@@ -15,7 +16,7 @@ export function useDriveFileBlobUrl(fileId?: number, companyId?: number | string
   const query = useQuery({
     queryKey: DRIVE_PREVIEW_KEYS.blob(fileId ?? 0, companyId),
     queryFn: async () => fetchDriveFileBlob(token, fileId as number, companyId),
-    enabled: !!token && !!fileId && companyId != null && enabled,
+    enabled: hasActiveApiSession(token) && !!fileId && companyId != null && enabled,
     staleTime: 1000 * 60 * 5,
   });
 

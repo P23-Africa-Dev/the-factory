@@ -23,6 +23,7 @@ import {
   type UpdateInternalUserPayload,
 } from "@/lib/api/internal-users";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 
 export const INTERNAL_USER_KEYS = {
   all: ["internal-users"] as const,
@@ -40,7 +41,7 @@ export function useInternalUsers(params: ListInternalUsersParams = {}) {
       const res = await listInternalUsers(params, token);
       return res.data;
     },
-    enabled: !!token && !!params.company_id,
+    enabled: hasActiveApiSession(token) && !!params.company_id,
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -57,7 +58,7 @@ export function useInternalUsersPaginated(
       const res = await listInternalUsersPaginated(params, token);
       return res.data;
     },
-    enabled: !!token && !!params.company_id,
+    enabled: hasActiveApiSession(token) && !!params.company_id,
     staleTime: 1000 * 60 * 2,
     refetchInterval: options?.refetchInterval,
   });
@@ -72,7 +73,7 @@ export function useInternalUsersOnboardingStatus(companyId?: number | string) {
       const res = await getInternalUsersOnboardingStatus({ company_id: companyId }, token);
       return res.data;
     },
-    enabled: !!token && !!companyId,
+    enabled: hasActiveApiSession(token) && !!companyId,
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -115,7 +116,7 @@ export function useCompanyZones(companyId?: number | string) {
       const res = await listCompanyZones({ company_id: companyId, is_active: 1 }, token);
       return res.data;
     },
-    enabled: !!token && !!companyId,
+    enabled: hasActiveApiSession(token) && !!companyId,
     staleTime: 1000 * 60 * 2,
   });
 }

@@ -31,17 +31,8 @@ export function setOnboardingCompletedCookie() {
 
 export function clearAuthSession() {
   if (typeof document !== "undefined") {
-    // Clear specific known cookies
     document.cookie = `${AUTH_TOKEN_COOKIE}=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
     document.cookie = `${ONBOARDING_DONE_COOKIE}=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-
-    // Clear all cookies
-    const cookies = document.cookie.split(";");
-    for (const cookie of cookies) {
-      const eqPos = cookie.indexOf("=");
-      const name = eqPos > -1 ? cookie.substring(0, eqPos).trim() : cookie.trim();
-      document.cookie = `${name}=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-    }
   }
 
   if (typeof localStorage !== "undefined") {

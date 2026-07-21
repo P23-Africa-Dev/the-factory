@@ -192,7 +192,7 @@ Route::prefix('internal')->name('internal.')->group(function (): void {
 });
 
 // Authenticated
-Route::middleware(['auth:sanctum', 'account.active', 'support.access', 'subscription.active'])->group(function (): void {
+Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscription.active'])->group(function (): void {
     Route::get('/support-access/status', [SupportAccessController::class, 'status'])
         ->name('support-access.status');
     Route::post('/support-access/end', [SupportAccessController::class, 'end'])

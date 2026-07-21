@@ -44,6 +44,33 @@ export function isSupportSessionActiveInDocument(): boolean {
   return documentCookieValue(SUPPORT_ACTIVE_COOKIE) === "1";
 }
 
+export function hasActiveApiSession(token?: string | null): boolean {
+  return Boolean(token?.trim()) || isSupportSessionActiveInDocument();
+}
+
+export function getSupportAwareApiTransport(
+  path: string,
+  token?: string | null,
+  apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ??
+    "https://api.thefactory23.com/api/v1",
+): { url: string; authorizationHeaders: Record<string, string> } {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  if (isSupportSessionActiveInDocument()) {
+    return {
+      url: `/api/support/proxy${normalizedPath}`,
+      authorizationHeaders: {},
+    };
+  }
+
+  return {
+    url: `${apiBaseUrl.replace(/\/$/, "")}${normalizedPath}`,
+    authorizationHeaders: token
+      ? { Authorization: `Bearer ${token}` }
+      : {},
+  };
+}
+
 export function getSupportLevelFromDocument(): SupportAccessLevel | null {
   const value = documentCookieValue(SUPPORT_LEVEL_COOKIE);
   return value === "read_only" || value === "operational_full" ? value : null;

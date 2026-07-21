@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Middleware;
 
 use App\Models\SupportAccessSession;
+use App\Models\User;
 use App\Services\Admin\AdminActionLogger;
 use App\Services\Admin\SupportAccessService;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\PersonalAccessToken;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -54,8 +56,32 @@ class EnforceSupportAccessSession
             throw new AuthorizationException('This support session has ended or expired.');
         }
 
+        $user = $request->user();
+        $hasLiveMembership = $user instanceof User
+            && (int) $user->id === (int) $session->target_user_id
+            && $user->canAuthenticate()
+            && DB::table('company_users')
+                ->join('companies', 'companies.id', '=', 'company_users.company_id')
+                ->where('company_users.user_id', $user->id)
+                ->where('company_users.company_id', $session->company_id)
+                ->where('companies.status', 'active')
+                ->exists();
+
+        if (! $hasLiveMembership) {
+            $this->supportAccessService->revoke(
+                $session,
+                $request,
+                'Target account or pinned company membership is no longer eligible.',
+            );
+            throw new AuthorizationException('This support session is no longer valid.');
+        }
+
+        $companyId = (int) $session->company_id;
         $request->attributes->set('support_access_session', $session);
-        $request->attributes->set('support_company_id', (int) $session->company_id);
+        $request->attributes->set('support_company_id', $companyId);
+        $request->attributes->set('support_effective_role', 'owner');
+        $request->query->set('company_id', $companyId);
+        $request->request->set('company_id', $companyId);
 
         if ($this->isAlwaysAllowed($request)) {
             return $next($request);

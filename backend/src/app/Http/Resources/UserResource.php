@@ -13,6 +13,7 @@ class UserResource extends JsonResource
     {
         $companyQuery = $this->companies()->where('companies.status', 'active');
         $supportCompanyId = $request->attributes->get('support_company_id');
+        $supportEffectiveRole = $request->attributes->get('support_effective_role');
 
         if (is_numeric($supportCompanyId)) {
             $companyQuery->where('companies.id', (int) $supportCompanyId);
@@ -67,7 +68,9 @@ class UserResource extends JsonResource
                 'company_id' => $activeCompany->company_id,
                 'name' => $activeCompany->name,
                 'status' => $activeCompany->status,
-                'role' => $activeCompany->pivot?->role,
+                'role' => is_string($supportEffectiveRole)
+                    ? $supportEffectiveRole
+                    : $activeCompany->pivot?->role,
                 'subscription_status' => $activeCompany->subscription_status,
                 'has_active_subscription' => $billingActive,
                 'has_paid_subscription' => $paidSubscription,

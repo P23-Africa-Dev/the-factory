@@ -24,13 +24,6 @@ class CompanyContextService
         $supportCompanyId = request()?->attributes->get('support_company_id');
         if (is_numeric($supportCompanyId)) {
             $supportCompanyId = (int) $supportCompanyId;
-
-            if ($companyId !== null && $companyId !== $supportCompanyId) {
-                throw ValidationException::withMessages([
-                    'company_id' => ['Company context cannot be changed during support access.'],
-                ]);
-            }
-
             $companyId = $supportCompanyId;
         }
 
@@ -82,7 +75,9 @@ class CompanyContextService
 
         return [
             'company' => $company,
-            'role' => (string) $membership->role,
+            'role' => is_numeric($supportCompanyId)
+                ? (string) (request()?->attributes->get('support_effective_role') ?? 'owner')
+                : (string) $membership->role,
         ];
     }
 }

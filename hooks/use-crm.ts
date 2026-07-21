@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 import {
     addLeadActivity,
     addLeadNote,
@@ -87,7 +88,7 @@ export function useLeads(
                 pagination: res.data.pagination,
             };
         },
-        enabled: !!token && !!params.company_id,
+        enabled: hasActiveApiSession(token) && !!params.company_id,
         staleTime: 1000 * 60 * 2,
     });
 }
@@ -104,7 +105,7 @@ export function useLeadPipeline(
             const res = await getLeadPipeline({ company_id: companyId }, token, basePath);
             return res.data;
         },
-        enabled: !!token && !!companyId,
+        enabled: hasActiveApiSession(token) && !!companyId,
         staleTime: 1000 * 60 * 2,
     });
 }
@@ -122,7 +123,7 @@ export function useLead(
             const res = await getLead(leadId, { company_id: companyId }, token, basePath);
             return res.data.lead;
         },
-        enabled: !!token && !!leadId,
+        enabled: hasActiveApiSession(token) && !!leadId,
         staleTime: 1000 * 60 * 2,
     });
 }
@@ -139,7 +140,7 @@ export function useCrmPipelines(
             const res = await listCrmPipelines({ company_id: companyId }, token, basePath);
             return res.data.items;
         },
-        enabled: !!token && !!companyId,
+        enabled: hasActiveApiSession(token) && !!companyId,
         staleTime: 1000 * 60 * 2,
     });
 }
@@ -156,7 +157,7 @@ export function useCrmLabels(
             const res = await listCrmLabels({ company_id: companyId }, token, basePath);
             return res.data.items;
         },
-        enabled: !!token && !!companyId,
+        enabled: hasActiveApiSession(token) && !!companyId,
         staleTime: 1000 * 60 * 2,
     });
 }
@@ -173,7 +174,7 @@ export function useAgentUploadsOverview(
             const res = await getAgentUploadsOverview({ company_id: companyId }, token, basePath);
             return res.data;
         },
-        enabled: !!token && !!companyId,
+        enabled: hasActiveApiSession(token) && !!companyId,
         staleTime: 1000 * 60,
     });
 }
@@ -190,7 +191,7 @@ export function useCrmLeadsAnalytics(
             const res = await getCrmLeadsAnalytics(params, token, basePath);
             return res.data;
         },
-        enabled: !!token && !!params.company_id,
+        enabled: hasActiveApiSession(token) && !!params.company_id,
         staleTime: 1000 * 60,
     });
 }

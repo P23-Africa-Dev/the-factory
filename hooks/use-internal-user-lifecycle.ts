@@ -11,6 +11,7 @@ import {
   type SuspendInternalUserPayload,
 } from "@/lib/api/internal-users";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 
 export function useSuspendInternalUser() {
   const queryClient = useQueryClient();
@@ -70,7 +71,7 @@ export function useInternalUserAuditLogs(
       );
       return res.data;
     },
-    enabled: !!token && !!companyId,
+    enabled: hasActiveApiSession(token) && !!companyId,
     staleTime: 1000 * 60,
   });
 }

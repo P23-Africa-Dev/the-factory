@@ -27,6 +27,16 @@ class EnsureApiAccessRole
             throw new AuthorizationException('Unauthenticated request context.');
         }
 
+        if ($request->attributes->has('support_access_session')) {
+            if ($scope === 'agent') {
+                throw new AuthorizationException(
+                    'Support sessions use company management endpoints.'
+                );
+            }
+
+            return $next($request);
+        }
+
         $activeRoles = DB::table('company_users')
             ->join('companies', 'companies.id', '=', 'company_users.company_id')
             ->where('company_users.user_id', $user->id)
