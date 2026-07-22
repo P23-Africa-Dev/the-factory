@@ -45,6 +45,25 @@ interface LiveFeedsPanelProps {
   onSelectTask: (taskId: number) => void;
 }
 
+function LoadingFeedCard() {
+  return (
+    <div className="w-full rounded-[20px] bg-[#F8FAFC] px-4 py-3.5 animate-pulse">
+      <div className="flex items-center gap-4">
+        <div className="w-12 h-12 rounded-full bg-slate-200 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-28 rounded-full bg-slate-200" />
+            <div className="h-5 w-16 rounded-full bg-slate-200" />
+          </div>
+          <div className="mt-2 h-3 w-40 rounded-full bg-slate-200" />
+          <div className="mt-2 h-3 w-32 rounded-full bg-slate-200" />
+        </div>
+        <div className="w-5 h-5 rounded-full bg-slate-200 shrink-0" />
+      </div>
+    </div>
+  );
+}
+
 function FeedCard({
   task,
   isSelected,
@@ -147,7 +166,12 @@ export function LiveFeedsPanel({
   if (needle) {
     return (
       <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-2">
-        {searchResults.length === 0 ? (
+        {isInitialHydrating ? (
+          <>
+            <LoadingFeedCard />
+            <LoadingFeedCard />
+          </>
+        ) : searchResults.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 gap-2">
             <Radio size={24} className="text-gray-200" />
             <p className="text-[12px] text-gray-400">No matching agents</p>
@@ -171,7 +195,7 @@ export function LiveFeedsPanel({
     <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 flex flex-col gap-2 min-h-0">
       <div className="flex items-center justify-between gap-2 shrink-0 pb-1">
         <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 text-[11px] font-semibold">
-          Active ({active.length})
+          {isInitialHydrating ? "Active (Loading...)" : `Active (${active.length})`}
         </span>
         <button
           type="button"
@@ -187,11 +211,11 @@ export function LiveFeedsPanel({
         </button>
       </div>
 
-      {isInitialHydrating && active.length === 0 && history.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-10 gap-2">
-          <span className="w-5 h-5 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
-          <p className="text-[12px] text-gray-400">Loading feeds…</p>
-        </div>
+      {isInitialHydrating ? (
+        <>
+          <LoadingFeedCard />
+          <LoadingFeedCard />
+        </>
       ) : active.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-8 gap-2">
           <Radio size={24} className="text-gray-200" />

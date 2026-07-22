@@ -232,14 +232,12 @@ function buildSelectedAgentPopupHtml(params: { name: string; avatarUrl?: string;
 
   return `
     <div style="width:140px; padding:15px 13px; border-radius:16px; background:#ffffff; border:0.5px solid rgba(226,232,240,0.88); box-shadow:0 12px 27px rgba(15,23,42,0.24); font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; position:relative;">
-      <button type="button" data-popup-close="selected-agent" aria-label="Close popup" style="position:absolute; top:8px; right:8px; color:#0F2530; display:flex; align-items:center; justify-content:center; width:12px; height:12px; padding:0; border:0; background:transparent; cursor:pointer;">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
-      </button>
+     
       <div style="display:flex; align-items:center; justify-content:space-between;">
         <a href="/operations/agents" style="font-size:8px; line-height:1; font-weight:700; color:#1F2933; text-decoration:underline; text-underline-offset:1.5px; letter-spacing:-0.01em;">View Full Profile</a>
-        <span style="color:#0F2530; display:flex; align-items:center; justify-content:center; width:13px; height:13px;">
-          <svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="0.85" fill="currentColor"/><circle cx="12" cy="12" r="0.85" fill="currentColor"/><circle cx="12" cy="19" r="0.85" fill="currentColor"/></svg>
-        </span>
+         <button type="button" data-popup-close="selected-agent" aria-label="Close popup" style="position:absolute; top:12px; right:8px; color:#0F2530; display:flex; align-items:center; justify-content:center; width:12px; height:12px; padding:0; border:0; background:transparent; cursor:pointer;">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+      </button>
       </div>
 
       <div style="margin-top:5px; display:flex; justify-content:center;">
@@ -350,6 +348,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const [nowMs, setNowMs] = useState(() => Date.now());
   // Flips true after map 'load' fires so the sync effect knows the map is ready
   const [mapVersion, setMapVersion] = useState(0);
+  const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const [isInitialHydrating, setIsInitialHydrating] = useState(false);
   const hoverPopupRef = useRef<mapboxgl.Popup | null>(null);
   const [pinMode, setPinMode] = useState(false);
@@ -406,6 +405,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     () => resolveTrajectoryTaskIds(feedGroups.active, selectedTaskId, followAllActive),
     [feedGroups.active, selectedTaskId, followAllActive],
   );
+  const followedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
   const hasActiveTaskPositions = useMemo(
     () => tasks.some((task) => hasUsableTaskPosition(task)),
     [tasks]
@@ -453,7 +453,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     map.once('moveend', () => {
       suppressFollowBreakRef.current = false;
     });
-  }, []);
+  }, [setSelectedTaskId]);
 
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {
@@ -463,7 +463,43 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       }
       return !prev;
     });
-  }, []);
+  }, [setFollowAllActive, setIsFollowing]);
+
+  const handleToggleSelectedFollowGoogle = useCallback(() => {
+    const task = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
+    if (!task) return;
+    if (isFollowing) {
+      setIsFollowing(false);
+      return;
+    }
+    setFollowAllActive(false);
+    const map = mapRef.current;
+    const [lng, lat] = task.lastPosition;
+    if (map && Number.isFinite(lng) && Number.isFinite(lat)) {
+      map.panTo({ lat, lng });
+      if (map.getZoom() < 15) map.setZoom(15);
+    }
+    setIsFollowing(true);
+  }, [isFollowing, liveTasks, selectedTaskId, setFollowAllActive, setIsFollowing]);
+
+  const handleToggleSelectedFollow = useCallback(() => {
+    if (!selectedTask) return;
+    if (isFollowing) {
+      setIsFollowing(false);
+      return;
+    }
+    setFollowAllActive(false);
+    const map = mapRef.current;
+    const [lng, lat] = selectedTask.lastPosition;
+    if (map && Number.isFinite(lng) && Number.isFinite(lat)) {
+      suppressFollowBreakRef.current = true;
+      map.flyTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), 15.5), speed: 1.4 });
+      map.once('moveend', () => {
+        suppressFollowBreakRef.current = false;
+      });
+    }
+    setIsFollowing(true);
+  }, [isFollowing, selectedTask, setFollowAllActive, setIsFollowing]);
 
   const savedLocationMatches = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
@@ -596,11 +632,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     }
 
     hoverPopupRef.current.setLngLat(position).setHTML(html).addTo(map);
-  }, []);
+  }, [setSelectedTaskId]);
 
   const hideHoverPopup = useCallback(() => {
     hoverPopupRef.current?.remove();
-  }, []);
+  }, [setFollowAllActive, setIsFollowing]);
 
   const bindHoverPopup = useCallback(
     (element: HTMLElement, getPosition: () => [number, number], getHtml: () => string) => {
@@ -700,7 +736,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
     const firstFrame = requestAnimationFrame(step);
     markerAnimationsRef.current.set(taskId, firstFrame);
-  }, []);
+  }, [setSelectedTaskId]);
 
   // ── Staleness clock (state, not Date.now() in render — react-hooks/purity) ─
   useEffect(() => {
@@ -712,7 +748,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     bump();
     const iv = setInterval(bump, 30_000);
     return () => clearInterval(iv);
-  }, []);
+  }, [setFollowAllActive, setIsFollowing]);
 
   useEffect(() => {
     const query = searchQuery.trim();
@@ -1008,6 +1044,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       }
 
       mapLoadedRef.current = true;
+      setMapInstance(map);
       setMapVersion((v) => v + 1);
     });
 
@@ -1042,6 +1079,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
       map.remove();
       mapRef.current = null;
+      setMapInstance(null);
     };
   }, [token, compact, appearance, initialViewport, initialViewportIsUserLocation]);
 
@@ -1739,23 +1777,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
               </p>
 
               <button
-                onClick={() => {
-                  if (isFollowing) {
-                    setIsFollowing(false);
-                    return;
-                  }
-                  setFollowAllActive(false);
-                  const map = mapRef.current;
-                  const [lng, lat] = selectedTask.lastPosition;
-                  if (map && Number.isFinite(lng) && Number.isFinite(lat)) {
-                    suppressFollowBreakRef.current = true;
-                    map.flyTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), 15.5), speed: 1.4 });
-                    map.once('moveend', () => {
-                      suppressFollowBreakRef.current = false;
-                    });
-                  }
-                  setIsFollowing(true);
-                }}
+                onClick={handleToggleSelectedFollow}
                 className={`w-full flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-[12px] font-semibold transition-colors ${isFollowing
                   ? 'bg-dash-teal/10 text-dash-teal hover:bg-dash-teal/20'
                   : 'bg-[#0A192F] text-white hover:bg-[#132B4A]'
@@ -1950,7 +1972,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
     map.panTo({ lat, lng });
     if (map.getZoom() < 15.5) map.setZoom(15.5);
-  }, []);
+  }, [setSelectedTaskId]);
 
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {
@@ -1960,7 +1982,24 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       }
       return !prev;
     });
-  }, []);
+  }, [setFollowAllActive, setIsFollowing]);
+
+  const handleToggleSelectedFollowGoogle = useCallback(() => {
+    const task = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
+    if (!task) return;
+    if (isFollowing) {
+      setIsFollowing(false);
+      return;
+    }
+    setFollowAllActive(false);
+    const map = mapRef.current;
+    const [lng, lat] = task.lastPosition;
+    if (map && Number.isFinite(lng) && Number.isFinite(lat)) {
+      map.panTo({ lat, lng });
+      if (map.getZoom() < 15) map.setZoom(15);
+    }
+    setIsFollowing(true);
+  }, [isFollowing, liveTasks, selectedTaskId, setFollowAllActive, setIsFollowing]);
 
   // Smoothly tween a Google agent marker between GPS fixes (rAF lerp) so
   // movement reads as continuous instead of teleporting on each update.
@@ -2782,20 +2821,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
         {followedTask && (
           <button
-            onClick={() => {
-              if (isFollowing) {
-                setIsFollowing(false);
-                return;
-              }
-              setFollowAllActive(false);
-              const map = mapRef.current;
-              const [lng, lat] = followedTask.lastPosition;
-              if (map && Number.isFinite(lng) && Number.isFinite(lat)) {
-                map.panTo({ lat, lng });
-                if (map.getZoom() < 15) map.setZoom(15);
-              }
-              setIsFollowing(true);
-            }}
+            onClick={handleToggleSelectedFollowGoogle}
             className={`h-10 rounded-full backdrop-blur shadow-lg border px-4 flex items-center gap-2 text-[12px] font-semibold active:scale-95 transition-all ${isFollowing
               ? 'bg-[#0A192F] text-white border-[#0A192F]'
               : 'bg-white/95 text-dash-dark border-slate-200 hover:bg-slate-50'

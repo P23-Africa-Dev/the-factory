@@ -234,10 +234,6 @@ function MapboxAgentMapView({
         }
     }, [searchFocus]);
 
-    useEffect(() => {
-        setShowGooglePois(showGooglePoisProp);
-    }, [showGooglePoisProp]);
-
     useTrackingWebSocket();
     useAttendanceMapSnapshots({}, { scope: 'agent' });
     const clockedInItemMap = useAttendanceMapStore((s) => s.items);
@@ -428,6 +424,7 @@ function MapboxAgentMapView({
 
             mapLoadedRef.current = true;
             setMapReady(true);
+            setMapInstance(map);
 
         });
 
@@ -446,6 +443,7 @@ function MapboxAgentMapView({
             clearUserLocationMarkers();
             map.remove();
             mapRef.current = null;
+            setMapInstance(null);
             agentMarkerRef.current = null;
             originMarkerRef.current = null;
             destinationMarkerRef.current = null;

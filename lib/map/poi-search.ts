@@ -15,6 +15,8 @@ import {
 import { ingestCreditMeta } from "@/store/map-credits";
 
 const MAPBOX_POI_QUERIES = ["supermarket", "restaurant", "bank", "pharmacy", "hotel", "hospital"];
+const GOOGLE_NEARBY_RETRY_AFTER_MS = 30_000;
+let googleNearbyUnavailableUntil = 0;
 
 function deriveRadiusM(ctx: LocationContext): number {
   if (ctx.bbox) {
@@ -36,6 +38,8 @@ function isOverpassFallbackEnabled(): boolean {
 }
 
 async function fetchGoogleNearby(ctx: LocationContext): Promise<PoiResult[]> {
+  if (Date.now() < googleNearbyUnavailableUntil) return [];
+
   const lat = ctx.center[1];
   const lng = ctx.center[0];
 
@@ -51,7 +55,12 @@ async function fetchGoogleNearby(ctx: LocationContext): Promise<PoiResult[]> {
       }),
     });
 
-    if (response.status === 503 || !response.ok) return [];
+    if (response.status === 503) {
+      googleNearbyUnavailableUntil = Date.now() + GOOGLE_NEARBY_RETRY_AFTER_MS;
+      return [];
+    }
+
+    if (!response.ok) return [];
 
     const payload = (await response.json()) as {
       enabled?: boolean;
@@ -121,11 +130,16 @@ async function fetchOverpassFallback(ctx: LocationContext): Promise<PoiResult[]>
   return fetchBusinessesNearPoint(ctx.center[1], ctx.center[0]);
 }
 
-export async function fetchPlacesInArea(ctx: LocationContext): Promise<PoiResult[]> {
+export async function fetchPlacesInArea(
+  ctx: LocationContext,
+  options?: { skipGoogleNearby?: boolean },
+): Promise<PoiResult[]> {
   if (ctx.bbox && isBboxTooLarge(ctx.bbox)) return [];
 
-  const googleResults = await fetchGoogleNearby(ctx);
-  if (googleResults.length > 0) return googleResults;
+  if (!options?.skipGoogleNearby) {
+    const googleResults = await fetchGoogleNearby(ctx);
+    if (googleResults.length > 0) return googleResults;
+  }
 
   const mapboxResults = await fetchMapboxPoiFallback(ctx);
   if (mapboxResults.length > 0) return mapboxResults;

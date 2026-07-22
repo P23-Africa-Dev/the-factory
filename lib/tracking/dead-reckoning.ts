@@ -82,7 +82,7 @@ export function smoothBearing(
     factor = 0.35,
 ): number {
     if (previous == null || !Number.isFinite(previous)) return next;
-    let delta = ((next - previous + 540) % 360) - 180;
+    const delta = ((next - previous + 540) % 360) - 180;
     return (previous + delta * Math.min(Math.max(factor, 0), 1) + 360) % 360;
 }
 

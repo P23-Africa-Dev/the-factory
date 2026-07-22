@@ -47,10 +47,9 @@ export function useGooglePoiViewport(
   const lastFetchRef = useRef<{ lat: number; lng: number; zoomBucket: number } | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!map || !mapReady || !enabled) {
-      setPois([]);
-      setBusy(false);
-      setZoomTooLow(false);
+    if (!isInteractive || !map) {
+      abortRef.current?.abort();
+      abortRef.current = null;
       return;
     }
 
@@ -119,7 +118,7 @@ export function useGooglePoiViewport(
     } finally {
       if (!controller.signal.aborted) setBusy(false);
     }
-  }, [enabled, map, mapReady]);
+  }, [isInteractive, map]);
 
   useEffect(() => {
     if (!map || !mapReady || !enabled) {
@@ -145,7 +144,7 @@ export function useGooglePoiViewport(
       map.off("moveend", scheduleRefresh);
       abortRef.current?.abort();
     };
-  }, [enabled, map, mapReady, refresh]);
+  }, [isInteractive, map, refresh]);
 
   const selectPoi = useCallback((poi: PoiResult | null) => {
     setSelectedPoi(poi);
@@ -180,11 +179,11 @@ export function useGooglePoiViewport(
   }, []);
 
   return {
-    pois,
-    busy,
-    error,
-    zoomTooLow,
-    selectedPoi,
+    pois: isInteractive ? pois : [],
+    busy: isInteractive ? busy : false,
+    error: isInteractive ? error : null,
+    zoomTooLow: isInteractive ? zoomTooLow : false,
+    selectedPoi: isInteractive ? selectedPoi : null,
     setSelectedPoi: selectPoi,
     refresh,
   };

@@ -30,41 +30,52 @@ export function useInitialMapViewport(options: {
   taskFocus?: TaskMapFocus | null;
 }): InitialMapViewportState {
   const { preferUserLocation, taskFocus } = options;
-  const [viewport, setViewport] = useState<ResolvedMapViewport | null>(null);
-  const [isUserLocation, setIsUserLocation] = useState(false);
+  const immediateViewport = taskFocus
+    ? taskFocusViewport(taskFocus)
+    : preferUserLocation
+      ? null
+      : getCountryFallbackViewport();
+  const resolutionKey = immediateViewport === null ? 'user-location' : null;
+  const [resolvedState, setResolvedState] = useState<{
+    key: string;
+    viewport: ResolvedMapViewport | null;
+    isUserLocation: boolean;
+  }>({
+    key: '',
+    viewport: null,
+    isUserLocation: false,
+  });
 
   useEffect(() => {
+    if (!resolutionKey) {
+      return;
+    }
+
     let cancelled = false;
-
-    if (taskFocus) {
-      setViewport(taskFocusViewport(taskFocus));
-      setIsUserLocation(false);
-      return;
-    }
-
-    if (!preferUserLocation) {
-      setViewport(getCountryFallbackViewport());
-      setIsUserLocation(false);
-      return;
-    }
-
-    setViewport(null);
-    setIsUserLocation(false);
 
     resolvePrivacySafeViewport({ preferFreshGps: true }).then((resolved) => {
       if (cancelled) {
         return;
       }
 
-      setViewport(resolved);
-      setIsUserLocation(resolved.granularity === 'gps');
+      setResolvedState({
+        key: resolutionKey,
+        viewport: resolved,
+        isUserLocation: resolved.granularity === 'gps',
+      });
     });
 
     return () => {
       cancelled = true;
     };
-  }, [preferUserLocation, taskFocus?.taskId, taskFocus?.lat, taskFocus?.lng]);
+  }, [resolutionKey]);
 
+  const viewport =
+    immediateViewport ?? (resolvedState.key === resolutionKey ? resolvedState.viewport : null);
+  const isUserLocation =
+    immediateViewport === null &&
+    resolvedState.key === resolutionKey &&
+    resolvedState.isUserLocation;
   const isResolving = preferUserLocation && !taskFocus && viewport === null;
 
   return { viewport, isResolving, isUserLocation };
