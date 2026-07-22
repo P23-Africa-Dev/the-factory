@@ -42,32 +42,39 @@ export default function HeroSectionOption2({ onDownloadAgentApp }: HeroSectionOp
         </div>
 
         {/* BOLD Centered Heading with Supervisor Tag */}
-        <h1 className="text-[26px] xs:text-3xl sm:text-5xl lg:text-[56px] font-extrabold text-white leading-[1.18] sm:leading-[1.15] tracking-tight max-w-4xl mb-5 sm:mb-6 px-1">
-          The Ultimate{" "}
-          <span className="relative inline-block bg-[#FBBF24]/20 border border-[#FBBF24]/40 text-[#FCD34D] px-2.5 sm:px-3.5 py-0.5 rounded-xl sm:rounded-2xl mx-0.5 my-0.5">
-            Field Agent
-            <span className="absolute -top-2.5 -right-2 sm:-top-3.5 sm:-right-3.5 bg-[#F59E0B] text-[#0B252C] text-[9px] sm:text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-md shadow-md">
-              Supervisor
+        <h1 className="text-[28px] xs:text-3xl sm:text-5xl lg:text-[56px] font-extrabold text-white leading-[1.18] sm:leading-[1.15] tracking-tight max-w-4xl mb-5 sm:mb-6 px-1">
+          Your{" "}
+          <span className="relative z-20 inline-flex items-center mr-[16px] sm:mr-[20px] lg:mr-[24px] select-none">
+            {/* Green highlight pill wrapping field team */}
+            <span className="inline-flex items-center bg-[#82C341]/10 border border-[#82C341]/30 text-[#9BDD7C] px-2.5 sm:px-4 py-0.5 sm:py-1 rounded-xl sm:rounded-2xl">
+              field team
             </span>
-          </span>{" "}
-          Tracking System
+            {/* Absolute supervisor flag positioned beside the pill */}
+            <span className="absolute left-full top-1/2 -translate-y-[75%] w-[50px] sm:w-[60px] lg:w-[74px] block z-50">
+              <img
+                src="/supervisor-flag.png"
+                alt="Supervisor"
+                className="w-full h-auto block object-contain drop-shadow-sm select-none pointer-events-none"
+              />
+            </span>
+          </span>is out there. Do you know what they&rsquo;re doing?
         </h1>
 
         {/* Subtitle / Description */}
-        <p className="text-xs sm:text-[16px] font-light text-white text-center leading-relaxed sm:leading-normal max-w-[706px] mx-auto mb-7 sm:mb-8 px-2">
-          An all-in-one field management and CRM platform built for real-world operations. Track teams, manage tasks, and capture customer interactions seamlessly, even offline.
+        <p className="text-xs sm:text-[16px] font-light text-white/80 text-center leading-relaxed sm:leading-normal max-w-[760px] mx-auto mb-7 sm:mb-8 px-2">
+          Field teams across Africa run on guesswork, where agents are, who they&rsquo;re calling, whose territory is whose, what&rsquo;s actually been followed up. Every blind spot costs revenue. Factory 23 closes them.
         </p>
 
         {/* CTA Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 sm:gap-4 w-full max-w-md mb-8 sm:mb-12">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 sm:gap-4 w-full max-w-lg mb-8 sm:mb-12">
           <Link href="/register" className="w-full sm:w-auto">
-            <button className="w-full sm:w-auto px-8 sm:px-10 h-12 sm:h-13 bg-white text-[#0B252C] text-sm font-extrabold rounded-full shadow-lg hover:bg-white/90 active:scale-[0.98] transition-all cursor-pointer">
+            <button className="w-full sm:w-[180px] h-13 bg-white text-[#0B252C] text-sm font-extrabold rounded-full shadow-lg hover:bg-white/95 active:scale-[0.98] transition-all cursor-pointer">
               Sign Up
             </button>
           </Link>
           <button
             onClick={onDownloadAgentApp}
-            className="w-full sm:w-auto px-6 sm:px-8 h-12 sm:h-13 border border-white/40 text-white text-sm font-extrabold rounded-full bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all cursor-pointer"
+            className="w-full sm:w-[220px] h-13 border border-white/40 text-white text-sm font-extrabold rounded-full bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all cursor-pointer"
           >
             Download Agent App
           </button>
