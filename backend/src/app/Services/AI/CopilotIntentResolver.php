@@ -46,9 +46,32 @@ class CopilotIntentResolver
             return $this->buildResult($intent, $actionConfirmed, $actionArgs, $message, $threadId, $companyId, $userId);
         }
 
+        // Prefer the latest assistant suggestion (truncated list offer) over stale action confirmations.
+        $truncatedListTool = $this->readToolArgsResolver->resolveTruncatedListToolFromThread(
+            $message,
+            $threadId,
+            $companyId,
+            $userId,
+        );
+        if (is_string($truncatedListTool) && $truncatedListTool !== '') {
+            return $this->buildResult(
+                ['type' => 'tool', 'tool' => $truncatedListTool, 'confidence' => 0.95],
+                $actionConfirmed,
+                $actionArgs,
+                $message,
+                $threadId,
+                $companyId,
+                $userId,
+            );
+        }
+
         if ($this->isNaturalLanguageConfirmation($message)) {
-            $pendingTool = $this->resolvePendingActionToolFromThread($threadId, $companyId, $userId)
-                ?? $this->resolveContextualActionToolFromThread($threadId, $companyId, $userId);
+            $pendingTool = $this->resolvePendingActionToolFromThread($threadId, $companyId, $userId);
+            if ($pendingTool === null
+                && ! $this->readToolArgsResolver->latestAssistantTurnIsTruncatedListOffer($threadId, $companyId, $userId)
+            ) {
+                $pendingTool = $this->resolveContextualActionToolFromThread($threadId, $companyId, $userId);
+            }
 
             if (is_string($pendingTool) && $pendingTool !== '') {
                 return $this->buildResult(
@@ -99,24 +122,6 @@ class CopilotIntentResolver
                     $userId,
                 );
             }
-        }
-
-        $truncatedListTool = $this->readToolArgsResolver->resolveTruncatedListToolFromThread(
-            $message,
-            $threadId,
-            $companyId,
-            $userId,
-        );
-        if (is_string($truncatedListTool) && $truncatedListTool !== '') {
-            return $this->buildResult(
-                ['type' => 'tool', 'tool' => $truncatedListTool, 'confidence' => 0.95],
-                $actionConfirmed,
-                $actionArgs,
-                $message,
-                $threadId,
-                $companyId,
-                $userId,
-            );
         }
 
         if ($this->intentRoutingSettingService->isAiFirst()) {
@@ -609,9 +614,24 @@ class CopilotIntentResolver
             }
 
             $payload = is_array($msg['payload'] ?? null) ? $msg['payload'] : [];
+
+            // A newer truncated list offer supersedes older pending action confirmations.
+            if ($this->readToolArgsResolver->isListTool((string) ($msg['tool'] ?? ''))
+                && (
+                    ($payload['truncated'] ?? false) === true
+                    || ($payload['offer_full_list'] ?? false) === true
+                    || (is_int($payload['remaining_count'] ?? null) && (int) $payload['remaining_count'] > 0)
+                )
+            ) {
+                return null;
+            }
+
             if (($payload['confirmation_required'] ?? false) === true && is_string($payload['tool'] ?? null)) {
                 return (string) $payload['tool'];
             }
+
+            // Latest assistant turn is not an action confirmation — do not dig for older ones.
+            return null;
         }
 
         return null;

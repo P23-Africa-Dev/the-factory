@@ -109,11 +109,104 @@ class ReadToolArgsResolver
         ?int $companyId,
         ?int $userId,
     ): ?string {
-        if (! $this->wantsExplicitFullList($message) && ! $this->isAffirmativeExpansionRequest($message)) {
+        if ($this->wantsExplicitFullList($message)) {
+            return $this->findLatestTruncatedListToolFromThread($threadId, $companyId, $userId);
+        }
+
+        if ($this->isAffirmativeExpansionRequest($message)) {
+            // Affirmatives must bind to the latest assistant turn only — never skip past a newer confirmation.
+            return $this->latestAssistantTruncatedListTool($threadId, $companyId, $userId);
+        }
+
+        return null;
+    }
+
+    /**
+     * Inspect only the most recent assistant message for a truncated list offer.
+     */
+    public function latestAssistantTruncatedListTool(
+        ?string $threadId,
+        ?int $companyId,
+        ?int $userId,
+    ): ?string {
+        $latest = $this->latestAssistantMessage($threadId, $companyId, $userId);
+        if ($latest === null) {
             return null;
         }
 
-        return $this->findLatestTruncatedListToolFromThread($threadId, $companyId, $userId);
+        return $this->truncatedListToolFromMessage($latest);
+    }
+
+    public function latestAssistantTurnIsTruncatedListOffer(
+        ?string $threadId,
+        ?int $companyId,
+        ?int $userId,
+    ): bool {
+        return $this->latestAssistantTruncatedListTool($threadId, $companyId, $userId) !== null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function latestAssistantMessage(
+        ?string $threadId,
+        ?int $companyId,
+        ?int $userId,
+    ): ?array {
+        if (! is_string($threadId) || $threadId === '' || $companyId === null || $userId === null) {
+            return null;
+        }
+
+        $thread = $this->conversationMemoryService->getThread($companyId, $userId, $threadId);
+        if (! is_array($thread)) {
+            return null;
+        }
+
+        $messages = is_array($thread['messages'] ?? null) ? $thread['messages'] : [];
+
+        for ($i = count($messages) - 1; $i >= 0; $i--) {
+            $msg = $messages[$i] ?? null;
+            if (! is_array($msg) || (string) ($msg['role'] ?? '') !== 'assistant') {
+                continue;
+            }
+
+            return $msg;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $msg
+     */
+    private function truncatedListToolFromMessage(array $msg): ?string
+    {
+        $tool = (string) ($msg['tool'] ?? '');
+        if (! $this->isListTool($tool)) {
+            return null;
+        }
+
+        $payload = is_array($msg['payload'] ?? null) ? $msg['payload'] : [];
+        if (! $this->payloadLooksTruncated($payload)) {
+            return null;
+        }
+
+        return $tool;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function payloadLooksTruncated(array $payload): bool
+    {
+        return ($payload['truncated'] ?? false) === true
+            || ($payload['offer_full_list'] ?? false) === true
+            || (is_int($payload['remaining_count'] ?? null) && (int) $payload['remaining_count'] > 0)
+            || (
+                is_int($payload['total'] ?? null)
+                && is_int($payload['count'] ?? null)
+                && (int) $payload['total'] > (int) $payload['count']
+            );
     }
 
     private function findLatestTruncatedListToolFromThread(
@@ -138,21 +231,16 @@ class ReadToolArgsResolver
                 continue;
             }
 
-            $tool = (string) ($msg['tool'] ?? '');
-            if (! $this->isListTool($tool)) {
-                continue;
-            }
-
-            $payload = is_array($msg['payload'] ?? null) ? $msg['payload'] : [];
-            $truncated = ($payload['truncated'] ?? false) === true
-                || (is_int($payload['remaining_count'] ?? null) && (int) $payload['remaining_count'] > 0)
-                || (is_int($payload['total'] ?? null) && is_int($payload['count'] ?? null) && (int) $payload['total'] > (int) $payload['count']);
-
-            if ($truncated) {
+            $tool = $this->truncatedListToolFromMessage($msg);
+            if ($tool !== null) {
                 return $tool;
             }
 
-            return null;
+            // Stop at the first list-tool reply that is not truncated.
+            $candidateTool = (string) ($msg['tool'] ?? '');
+            if ($this->isListTool($candidateTool)) {
+                return null;
+            }
         }
 
         return null;
@@ -206,7 +294,7 @@ class ReadToolArgsResolver
         int $userId,
         string $tool,
     ): bool {
-        $latestTool = $this->findLatestTruncatedListToolFromThread($threadId, $companyId, $userId);
+        $latestTool = $this->latestAssistantTruncatedListTool($threadId, $companyId, $userId);
 
         return $latestTool === $tool;
     }

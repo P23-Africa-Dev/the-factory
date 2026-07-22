@@ -8,6 +8,8 @@ use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
 use App\Enums\TaskType;
 use App\Models\Company;
+use App\Models\Lead;
+use App\Models\LeadPipeline;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -124,6 +126,130 @@ final class CopilotListDisclosureTest extends TestCase
         $this->assertSame(0, $payload['remaining_count'] ?? null);
     }
 
+    public function test_yes_please_expands_truncated_leads_instead_of_stale_task_confirmation(): void
+    {
+        [$company, $admin, $pipelineId] = $this->seedCompanyAdminWithPipeline();
+
+        for ($i = 1; $i <= 15; $i++) {
+            Lead::query()->create([
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'created_by_user_id' => $admin->id,
+                'name' => 'Lead ' . $i,
+                'status' => 'new',
+                'priority' => 'medium',
+                'source' => 'manual',
+                'location' => 'Lagos, Nigeria',
+            ]);
+        }
+
+        $taskPreview = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create a task for tomorrow titled Inspect HQ',
+            ]);
+
+        $taskPreview
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true);
+
+        $threadId = (string) $taskPreview->json('data.thread_id');
+        $this->assertNotSame('', $threadId);
+
+        $leadsPreview = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => $threadId,
+                'message' => 'Show my leads',
+            ]);
+
+        $leadsPreview
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'crm.top_leads');
+
+        $previewPayload = $leadsPreview->json('data.response.payload');
+        $this->assertIsArray($previewPayload);
+        $this->assertTrue($previewPayload['truncated'] ?? false);
+
+        $expanded = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => $threadId,
+                'message' => 'yes please',
+            ]);
+
+        $expanded
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'crm.top_leads');
+
+        $this->assertNotSame('tasks.create', $expanded->json('data.response.tool'));
+        $this->assertNull($expanded->json('data.response.payload.confirmation_required'));
+
+        $payload = $expanded->json('data.response.payload');
+        $this->assertIsArray($payload);
+        $this->assertSame(15, $payload['total'] ?? null);
+        $this->assertSame(15, $payload['count'] ?? null);
+        $this->assertFalse($payload['truncated'] ?? true);
+    }
+
+    public function test_go_ahead_still_confirms_when_action_confirmation_is_latest(): void
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+        $agent = User::factory()->createOne([
+            'name' => 'Kelvin Agent',
+            'email' => 'kelvin-' . Str::lower(Str::random(6)) . '@example.com',
+            'is_active' => true,
+        ]);
+        $company->users()->attach($agent->id, ['role' => 'agent', 'joined_at' => now()]);
+
+        $preview = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create a task for Kelvin Agent to visit Shoprite tomorrow',
+            ]);
+
+        $preview
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true);
+
+        $threadId = (string) $preview->json('data.thread_id');
+
+        $confirmed = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => $threadId,
+                'message' => 'go ahead',
+                'action_confirmed' => true,
+                'action_args' => [
+                    'title' => 'Visit Shoprite',
+                    'type' => TaskType::SALES_VISIT->value,
+                    'due_date' => now()->addDay()->toIso8601String(),
+                    'location' => 'Shoprite',
+                    'address' => 'Shoprite',
+                    'assigned_agent_id' => $agent->id,
+                    'priority' => TaskPriority::MEDIUM->value,
+                    'description' => 'Visit Shoprite',
+                ],
+            ]);
+
+        $confirmed
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create');
+
+        $content = strtolower((string) $confirmed->json('data.response.content'));
+        $this->assertTrue(
+            str_contains($content, 'created') || str_contains($content, 'success'),
+            'Expected task creation success message, got: ' . $content
+        );
+    }
+
     /**
      * @return array{0: Company, 1: User}
      */
@@ -143,5 +269,21 @@ final class CopilotListDisclosureTest extends TestCase
         $company->users()->attach($admin->id, ['role' => 'admin', 'joined_at' => now()]);
 
         return [$company, $admin];
+    }
+
+    /**
+     * @return array{0: Company, 1: User, 2: int}
+     */
+    private function seedCompanyAdminWithPipeline(): array
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+
+        $pipelineId = (int) LeadPipeline::query()->create([
+            'company_id' => $company->id,
+            'name' => 'Default Pipeline',
+            'is_default' => true,
+        ])->id;
+
+        return [$company, $admin, $pipelineId];
     }
 }
