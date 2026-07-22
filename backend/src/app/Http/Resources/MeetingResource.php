@@ -27,6 +27,9 @@ class MeetingResource extends JsonResource
             'source_page' => $this->source_page,
             'organizer_email_snapshot' => $this->organizer_email_snapshot,
             'organizer_name_snapshot' => $this->organizer_name_snapshot,
+            'google_calendar_owner_email' => is_array($this->meeting_settings)
+                ? ($this->meeting_settings['google_calendar_owner_email'] ?? null)
+                : null,
             'reminder_config' => $this->reminder_config ?? [],
             'meeting_settings' => $this->meeting_settings,
             'google_event_id' => $this->google_event_id,

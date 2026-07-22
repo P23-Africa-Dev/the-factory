@@ -57,6 +57,7 @@ export type MeetingItem = {
     source_page: "dashboard" | "operations" | "project" | "task" | "api" | "agent";
     organizer_email_snapshot?: string | null;
     organizer_name_snapshot?: string | null;
+    google_calendar_owner_email?: string | null;
     reminder_config?: Array<{
         offset_minutes?: number | null;
         custom_remind_at?: string | null;
@@ -148,6 +149,7 @@ export type MeetingMutationData = {
         connected: boolean;
         status: string;
         requires_owner_action: boolean;
+        google_calendar_owner_email?: string | null;
     };
     warnings: string[];
 };

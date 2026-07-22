@@ -32,6 +32,11 @@ class MeetingSyncService
                 'company_id' => $meeting->company_id,
             ]);
 
+            $meeting->update([
+                'sync_status' => 'pending',
+                'sync_error_message' => 'Google Calendar sync is disabled for demo companies.',
+            ]);
+
             return;
         }
 

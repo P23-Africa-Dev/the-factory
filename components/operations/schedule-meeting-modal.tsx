@@ -618,13 +618,31 @@ export function ScheduleMeetingModal({
             },
             {
                 onSuccess: (response) => {
+                    const meeting = response.data.meeting;
                     const warning = response.data.warnings?.[0];
-                    if (warning) {
-                        toast.warning(warning);
+                    const googleHost =
+                        response.data.integration?.google_calendar_owner_email
+                        ?? meeting.google_calendar_owner_email
+                        ?? null;
+
+                    if (meeting.sync_status === "synced") {
+                        if (warning) {
+                            toast.warning(warning);
+                        } else {
+                            toast.success(
+                                googleHost
+                                    ? `Meeting scheduled successfully on ${googleHost}.`
+                                    : "Meeting scheduled successfully.",
+                            );
+                        }
                     } else {
-                        toast.success("Meeting scheduled successfully.");
+                        toast.warning(
+                            warning
+                                || meeting.sync_error_message
+                                || "Meeting was saved in Factory 23, but Google Calendar sync did not complete.",
+                        );
                     }
-                    onCreated?.(response.data.meeting);
+                    onCreated?.(meeting);
                     onClose();
                 },
                 onError: (error: unknown) => {
@@ -742,6 +760,9 @@ export function ScheduleMeetingModal({
                             )}
                             <p className="mt-0.5 text-[10px] text-emerald-700">
                                 Health: {integration.connection_health_status ?? "healthy"}
+                            </p>
+                            <p className="mt-0.5 text-[10px] text-emerald-700 leading-relaxed">
+                                Events are created on this Google Calendar. You are added as the Factory organizer/attendee automatically.
                             </p>
                             {canConnectIntegration && (
                                 <div className="mt-2 flex flex-wrap gap-2">

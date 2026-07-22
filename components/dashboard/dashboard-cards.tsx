@@ -430,9 +430,11 @@ export function WeeklyTasksAgents() {
     day: "numeric",
   });
 
-  const [now] = useState(Date.now);
-
   const upcomingMeetings = useMemo(() => {
+    const dayStart = new Date(selectedDate);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(selectedDate);
+    dayEnd.setHours(23, 59, 59, 999);
 
     return (meetingsData?.meetings ?? [])
       .filter((meeting) => meeting.status === "scheduled" && Boolean(meeting.start_at))
@@ -443,9 +445,13 @@ export function WeeklyTasksAgents() {
           startsAt: start,
         };
       })
-      .filter(({ startsAt }) => !Number.isNaN(startsAt.getTime()) && startsAt.getTime() >= now)
+      .filter(({ startsAt }) => {
+        if (Number.isNaN(startsAt.getTime())) {
+          return false;
+        }
+        return startsAt.getTime() >= dayStart.getTime() && startsAt.getTime() <= dayEnd.getTime();
+      })
       .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
-      .slice(0, 2)
       .map(({ meeting }, index) => ({
         id: meeting.id,
         time: formatTimeLabel(meeting.start_at),
@@ -459,7 +465,7 @@ export function WeeklyTasksAgents() {
         remaining: formatRemainingTime(meeting.start_at ?? null),
         color: TASK_COLORS[index % TASK_COLORS.length],
       }));
-  }, [meetingsData?.meetings]);
+  }, [meetingsData?.meetings, selectedDate]);
   const ongoingTask = overview?.ongoing_tasks?.[0] ?? null;
   const progressPercent = Math.max(
     0,
