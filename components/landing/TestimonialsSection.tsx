@@ -17,7 +17,7 @@ const testimonials = [
   {
     quote:
       "Our field sales reps save over 10 hours a week with the ELY AI assistant and automated visit logging. We closed 35% more field leads in our very first quarter using Factory 23.",
-    name: "Touka F.",
+    name: "Toure Y.",
     role: "Head of Sales & CRM, Apex FMCG",
     avatar: "/avatars/touka_avatar.png",
     bgColor: "bg-white",
@@ -27,7 +27,7 @@ const testimonials = [
   {
     quote:
       "Scaling our field workforce from 5 to 50+ agents was completely seamless. The transparent seat pricing and automated KPI performance dashboards gave our executive team actionable insights from day one.",
-    name: "Donald N.",
+    name: "John N.",
     role: "Chief Operating Officer, Vanguard Energy",
     avatar: "/avatars/donald_avatar.png",
     bgColor: "bg-[#F0FDF8]",

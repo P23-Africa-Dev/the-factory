@@ -331,21 +331,32 @@ export default function PricingSection() {
                 )}
 
                 {/* Price */}
-                <div className="mb-1 mt-3">
-                  <span
-                    className={`text-4xl font-extrabold tracking-tight ${
-                      plan.featured ? "text-white" : "text-[#0B252C]"
-                    }`}
-                  >
-                    ${billingYearly ? plan.price.yearly : plan.price.monthly}
-                  </span>
-                  <span
-                    className={`text-sm font-medium ml-1 ${
-                      plan.featured ? "text-white/70" : "text-[#4A5F64]"
-                    }`}
-                  >
-                    /month
-                  </span>
+                <div className="mb-1 mt-3 flex flex-col">
+                  <div className="flex items-baseline">
+                    <span
+                      className={`text-4xl font-extrabold tracking-tight ${
+                        plan.featured ? "text-white" : "text-[#0B252C]"
+                      }`}
+                    >
+                      {billingYearly ? plan.annualAmount : `$${plan.price.monthly}`}
+                    </span>
+                    <span
+                      className={`text-sm font-medium ml-1 ${
+                        plan.featured ? "text-white/70" : "text-[#4A5F64]"
+                      }`}
+                    >
+                      {billingYearly ? "/year" : "/month"}
+                    </span>
+                  </div>
+                  {billingYearly && (
+                    <span
+                      className={`text-[11px] font-semibold mt-1 transition-all ${
+                        plan.featured ? "text-[#9BDD7C]" : "text-[#1E5A69]"
+                      }`}
+                    >
+                      Billed annually (${plan.price.yearly}/mo equivalent)
+                    </span>
+                  )}
                 </div>
 
                 {/* Users */}
