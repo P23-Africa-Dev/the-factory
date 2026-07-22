@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   ArrowRight,
   ChevronDown,
+  Users,
 } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameMonth, isSameDay, addDays, isBefore, startOfDay } from "date-fns";
 import Logo from "@/assets/images/logo.png";
@@ -28,6 +29,8 @@ import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import PhoneNumberInput from "@/components/ui/phone-number-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import LandingNavbar from "@/components/landing/LandingNavbar";
+import Footer from "@/components/layout/footer";
 import {
   getCountries,
   submitDemoRequest,
@@ -250,7 +253,7 @@ export default function ScheduleDemoPage() {
 
   const renderTimePicker = () => {
     return (
-      <div className="flex flex-col lg:flex-row gap-8 lg:gap-16 items-start w-full max-w-[650px] mx-auto mt-12">
+      <div className="flex flex-col sm:flex-row lg:flex-col xl:flex-row gap-6 lg:gap-8 xl:gap-12 items-start xl:items-center w-full max-w-[550px] xl:max-w-[650px] mx-auto mt-12">
         <div className="bg-black/20 border border-white/5 rounded-[16px] p-6 w-full max-w-[340px] backdrop-blur-md">
           <div className="flex justify-between items-center mb-6">
             <span className="text-sm font-bold text-white">Set time</span>
@@ -323,121 +326,84 @@ export default function ScheduleDemoPage() {
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col lg:flex-row bg-white font-sans overflow-x-hidden relative">
-      <div className="w-full lg:w-[46%] bg-white flex flex-col justify-between p-6 sm:p-10 lg:p-16 lg:min-h-screen relative bg-[radial-gradient(#e5e7eb_1.5px,transparent_1.5px)] [background-size:24px_24px]">
+    <div className="min-h-screen w-full flex flex-col bg-white font-sans overflow-x-hidden relative">
+      {/* Unified Landing Navbar */}
+      <LandingNavbar
+        leftWidthClass="lg:max-w-[46%]"
+        rightWidthClass="lg:w-[54%]"
+        minimal={true}
+      />
 
-        <header className="flex items-center gap-6 sm:gap-12 w-full">
-          <Link href="/" className="flex items-center shrink-0">
-            <Image
-              src={Logo}
-              alt="Factory 23 Logo"
-              width={54}
-              height={54}
-              className="object-contain"
-              priority
-            />
-          </Link>
-
-          <nav className="hidden sm:flex items-center gap-8">
-            <Link href="#" className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
-              About
-            </Link>
-            <Link href="#" className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
-              Pricing
-            </Link>
-            <Link href="#" className="text-sm font-semibold text-[#0B252C] hover:opacity-80 transition-opacity">
-              Reviews
-            </Link>
-          </nav>
-        </header>
-
-        <main className="my-auto py-16 lg:py-0 flex flex-col justify-center max-w-md relative z-10">
-          <Link
-            href="/"
-            className="group inline-flex items-center gap-2 text-sm font-bold text-[#0B252C]/60 hover:text-[#0B252C] transition-colors mb-8"
-          >
-            <ArrowLeft size={16} className="transition-transform group-hover:-translate-x-1" />
-            Back to Home
-          </Link>
-
-          {step === 1 ? (
-            <>
-              <h1 className="text-5xl lg:text-[64px] font-extrabold text-[#0B252C] leading-[1.1] tracking-[-0.02em] mb-6">
-                Request <br />
-                Your Demo
-              </h1>
-              <p className="text-sm sm:text-base text-[#4A5F64] leading-relaxed max-w-sm">
-                Request a Demo for Factory 23 and one of our representatives will <span className="font-bold uppercase">GET IN TOUCH</span> with You
-              </p>
-            </>
-          ) : (
-            <>
-              <h1 className="text-5xl lg:text-[64px] font-extrabold text-[#0B252C] leading-[1.1] tracking-[-0.02em] mb-6">
-                Schedule <br />
-                Your Demo
-              </h1>
-              <p className="text-sm sm:text-base text-[#4A5F64] leading-relaxed max-w-sm">
-                Pick a convenient date and time for your demo. You&apos;ll receive a confirmation email once it&apos;s booked.
-              </p>
-            </>
-          )}
-
-          {/* Action Area */}
-          <div className="mt-16 sm:mt-24 flex items-center">
-            {/* Green Shape */}
-            <div className="h-[100px] lg:h-[130px] w-32 lg:w-44 bg-[#9BDD7C] rounded-r-full -ml-6 sm:-ml-10 lg:-ml-16 shrink-0 shadow-sm" />
-            
-            {/* Action Button */}
-            <div className="ml-8 sm:ml-12 lg:ml-16">
-              {step === 1 ? (
-                <button
-                  type="button"
-                  onClick={handleNextStep}
-                  className="h-14 px-8 lg:px-20 bg-[#0B252C] text-white text-[15px] font-medium rounded-xl flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg"
-                >
-                  Next <ArrowRight size={18} />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleFinalSubmit}
-                  disabled={requestMutation.isPending}
-                  className="h-14 px-8 lg:px-20 bg-[#0B252C] text-white text-[15px] font-medium rounded-xl flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg disabled:opacity-50"
-                >
-                  {requestMutation.isPending ? "Processing..." : "Submit"} <ArrowRight size={18} />
-                </button>
-              )}
-            </div>
-          </div>
-        </main>
-      </div>
-
-      {/* Right Pane */}
-      <div className="w-full lg:w-[54%] bg-[#0B252C] flex flex-col justify-between p-6 sm:p-10 lg:p-16 relative lg:min-h-screen">
-
-        <div className="flex items-center justify-between w-full z-10">
-          <Link href="#" className="text-sm font-semibold text-white/90 hover:opacity-80 transition-opacity">
-            P23 Africa
-          </Link>
-
-          <div className="flex items-center gap-4">
+      {/* Split Columns Content Container */}
+      <div className="flex-grow w-full flex flex-col lg:flex-row items-stretch">
+        {/* Left Column Content */}
+        <div className="w-full lg:w-[46%] bg-white flex flex-col justify-between pt-24 lg:pt-28 pb-12 lg:pb-16 px-6 sm:px-10 lg:px-16 lg:min-h-screen relative bg-[radial-gradient(#e5e7eb_1.5px,transparent_1.5px)] [background-size:24px_24px]">
+          {/* Main heading and description */}
+          <main className="mt-6 lg:mt-12 mb-auto py-12 lg:py-0 flex flex-col justify-center max-w-md relative z-10 w-full">
             <Link
-              href="/login"
-              className="px-6 h-12 border border-white/30 text-white text-xs font-semibold rounded-full flex items-center justify-center gap-2 hover:border-white/60 hover:bg-white/5 active:scale-[0.98] transition-all"
+              href="/"
+              className="group inline-flex items-center gap-2 text-sm font-bold text-[#0B252C]/60 hover:text-[#0B252C] transition-colors mb-8"
             >
-              <User className="w-4 h-4 stroke-[2.5]" />
-              Log In
+              <ArrowLeft size={16} className="transition-transform group-hover:-translate-x-1" />
+              Back to Home
             </Link>
-            <Link href="/enterprise/schedule-demo">
-              <button className="px-6 h-12 bg-white text-[#0B252C] text-xs font-bold rounded-full shadow-[0px_2px_8px_rgba(0,0,0,0.1)] hover:bg-white/95 active:scale-[0.98] transition-all cursor-pointer">
-                Book a Demo
-              </button>
-            </Link>
-          </div>
+
+            {step === 1 ? (
+              <>
+                <h1 className="text-5xl lg:text-[64px] font-extrabold text-[#0B252C] leading-[1.1] tracking-[-0.02em] mb-6">
+                  Request <br />
+                  Your Demo
+                </h1>
+                <p className="text-sm sm:text-base text-[#4A5F64] leading-relaxed max-w-sm">
+                  Request a Demo for Factory 23 and one of our representatives will <span className="font-bold uppercase">GET IN TOUCH</span> with You
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="text-5xl lg:text-[64px] font-extrabold text-[#0B252C] leading-[1.1] tracking-[-0.02em] mb-6">
+                  Schedule <br />
+                  Your Demo
+                </h1>
+                <p className="text-sm sm:text-base text-[#4A5F64] leading-relaxed max-w-sm">
+                  Pick a convenient date and time for your demo. You&apos;ll receive a confirmation email once it&apos;s booked.
+                </p>
+              </>
+            )}
+
+            {/* Action Area (Desktop only) */}
+            <div className="hidden lg:flex mt-16 sm:mt-24 items-center">
+              {/* Green Shape */}
+              <div className="h-[100px] lg:h-[130px] w-32 lg:w-44 bg-[#9BDD7C] rounded-r-full -ml-6 sm:-ml-10 lg:-ml-16 shrink-0 shadow-sm" />
+              
+              {/* Action Button */}
+              <div className="ml-8 sm:ml-12 lg:ml-16">
+                {step === 1 ? (
+                  <button
+                    type="button"
+                    onClick={handleNextStep}
+                    className="h-14 px-8 lg:px-20 bg-[#0B252C] text-white text-[15px] font-medium rounded-xl flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg"
+                  >
+                    Next <ArrowRight size={18} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleFinalSubmit}
+                    disabled={requestMutation.isPending}
+                    className="h-14 px-8 lg:px-20 bg-[#0B252C] text-white text-[15px] font-medium rounded-xl flex items-center justify-center gap-3 hover:bg-[#13323B] transition-all cursor-pointer shadow-lg disabled:opacity-50"
+                  >
+                    {requestMutation.isPending ? "Processing..." : "Submit"} <ArrowRight size={18} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </main>
         </div>
 
-        {/* Form or Calendar */}
-        <div className="flex-1 flex flex-col items-center justify-center z-10 py-12 lg:py-0 w-full relative">
+        {/* Right Pane */}
+        <div className="w-full lg:w-[54%] bg-[#0B252C] flex flex-col justify-between pt-24 lg:pt-28 pb-12 lg:pb-16 px-6 sm:px-10 lg:px-16 relative lg:min-h-screen">
+          {/* Form or Calendar */}
+          <div className="flex-1 flex flex-col items-center justify-start z-10 py-12 lg:py-0 lg:pt-12 w-full relative">
           {step === 1 ? (
             <div className="w-full max-w-[500px] bg-black/15 border border-white/10 rounded-[32px] p-6 sm:p-8 flex flex-col gap-6 shadow-[0px_8px_32px_rgba(0,0,0,0.2)] backdrop-blur-md">
               <form className="flex flex-col gap-5">
@@ -550,20 +516,25 @@ export default function ScheduleDemoPage() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <Controller
-                    name="team_size"
-                    control={control}
-                    render={({ field }) => (
-                      <SearchableSelect
-                        variant="enterprise"
-                        value={field.value}
-                        onChange={field.onChange}
-                        options={teamSizeOptions}
-                        placeholder="Team size"
-                        className={selectTriggerClassName}
-                      />
-                    )}
-                  />
+                  <div className="group relative">
+                    <div className="pointer-events-none absolute left-6 top-1/2 z-10 -translate-y-1/2 text-white/40 transition-colors group-focus-within:text-[#6FA8A6]">
+                      <Users size={18} />
+                    </div>
+                    <Controller
+                      name="team_size"
+                      control={control}
+                      render={({ field }) => (
+                        <SearchableSelect
+                          variant="enterprise"
+                          value={field.value}
+                          onChange={field.onChange}
+                          options={teamSizeOptions}
+                          placeholder="Team size"
+                          className={selectTriggerClassName}
+                        />
+                      )}
+                    />
+                  </div>
                   {errors.team_size && <p className="px-4 text-[10px] font-medium text-red-400">{errors.team_size.message}</p>}
                   {apiErrors?.team_size && <p className="px-4 text-[10px] font-medium text-red-400">{apiErrors.team_size[0]}</p>}
                 </div>
@@ -585,12 +556,35 @@ export default function ScheduleDemoPage() {
                 {apiErrors?.use_case && <p className="px-4 text-[10px] font-medium text-red-400">{apiErrors.use_case[0]}</p>}
               </div>
 
+              {/* Action Area (Mobile only) */}
+              <div className="lg:hidden mt-4 flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={handleNextStep}
+                  className="w-full h-14 bg-[#9BDD7C] text-[#0B252C] text-[15px] font-bold rounded-xl flex items-center justify-center gap-3 hover:bg-[#8bc96e] transition-all cursor-pointer shadow-lg"
+                >
+                  Next <ArrowRight size={18} />
+                </button>
+              </div>
+
               </form>
             </div>
           ) : (
             <div className="w-full flex flex-col items-center pb-12 pt-8">
                {renderCalendar()}
                {renderTimePicker()}
+               
+               {/* Action Area (Mobile only) */}
+               <div className="lg:hidden mt-12 w-full max-w-[340px] px-2 flex justify-center">
+                 <button
+                   type="button"
+                   onClick={handleFinalSubmit}
+                   disabled={requestMutation.isPending}
+                   className="w-full h-14 bg-[#9BDD7C] text-[#0B252C] text-[15px] font-bold rounded-xl flex items-center justify-center gap-3 hover:bg-[#8bc96e] transition-all cursor-pointer shadow-lg disabled:opacity-50"
+                 >
+                   {requestMutation.isPending ? "Processing..." : "Submit"} <ArrowRight size={18} />
+                 </button>
+               </div>
             </div>
           )}
         </div>
@@ -603,6 +597,9 @@ export default function ScheduleDemoPage() {
           </button>
         </div>
       </div>
+      </div>
+
+      <Footer />
 
       {/* Success Modal */}
       {showSuccessModal && (

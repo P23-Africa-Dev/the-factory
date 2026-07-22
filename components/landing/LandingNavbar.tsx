@@ -9,12 +9,20 @@ interface LandingNavbarProps {
   variant?: "default" | "dark";
   heroOption?: "option1" | "option2";
   onToggleHeroOption?: () => void;
+  leftWidthClass?: string;
+  rightWidthClass?: string;
+  showP23AfricaOnRight?: boolean;
+  minimal?: boolean;
 }
 
 export default function LandingNavbar({
   variant = "default",
   heroOption = "option1",
   onToggleHeroOption,
+  leftWidthClass = "lg:max-w-[58%]",
+  rightWidthClass = "lg:w-[42%]",
+  showP23AfricaOnRight = false,
+  minimal = false,
 }: LandingNavbarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -53,7 +61,7 @@ export default function LandingNavbar({
       <div className="hidden lg:flex w-full items-stretch">
         {/* Left Pane Header */}
         <div
-          className={`flex-1 lg:max-w-[58%] px-6 sm:px-10 lg:px-16 pt-8 pb-6 flex items-center justify-between transition-colors duration-300 ${
+          className={`flex-1 ${leftWidthClass} px-6 sm:px-10 lg:px-16 pt-8 pb-6 flex items-center justify-between transition-colors duration-300 ${
             isDark ? "bg-[#0B252C]" : "bg-white"
           }`}
         >
@@ -70,48 +78,63 @@ export default function LandingNavbar({
           </Link>
 
           {/* Navigation Links */}
-          <nav className="flex items-center gap-8 sm:gap-10 xl:gap-14">
-            <a
-              href="#about"
-              onClick={(e) => handleScroll(e, "about")}
-              className={`text-sm font-semibold hover:opacity-80 transition-opacity ${
-                isDark ? "text-white/90" : "text-[#0B252C]"
-              }`}
-            >
-              About
-            </a>
-            <a
-              href="#pricing"
-              onClick={(e) => handleScroll(e, "pricing")}
-              className={`text-sm font-semibold hover:opacity-80 transition-opacity ${
-                isDark ? "text-white/90" : "text-[#0B252C]"
-              }`}
-            >
-              Pricing
-            </a>
-            <a
-              href="#reviews"
-              onClick={(e) => handleScroll(e, "reviews")}
-              className={`text-sm font-semibold hover:opacity-80 transition-opacity ${
-                isDark ? "text-white/90" : "text-[#0B252C]"
-              }`}
-            >
-              Reviews
-            </a>
-            <a
-              href="#p23-africa"
-              onClick={(e) => handleScroll(e, "p23-africa")}
-              className={`text-sm font-semibold hover:opacity-80 transition-opacity ${
-                isDark ? "text-white/90" : "text-[#0B252C]"
-              }`}
-            >
-              P23 Africa
-            </a>
-          </nav>
+          {!minimal && (
+            <nav className="flex items-center gap-8 sm:gap-10 xl:gap-14">
+              <a
+                href="#about"
+                onClick={(e) => handleScroll(e, "about")}
+                className={`text-sm font-semibold hover:opacity-80 transition-opacity ${
+                  isDark ? "text-white/90" : "text-[#0B252C]"
+                }`}
+              >
+                About
+              </a>
+              <a
+                href="#pricing"
+                onClick={(e) => handleScroll(e, "pricing")}
+                className={`text-sm font-semibold hover:opacity-80 transition-opacity ${
+                  isDark ? "text-white/90" : "text-[#0B252C]"
+                }`}
+              >
+                Pricing
+              </a>
+              <a
+                href="#reviews"
+                onClick={(e) => handleScroll(e, "reviews")}
+                className={`text-sm font-semibold hover:opacity-80 transition-opacity ${
+                  isDark ? "text-white/90" : "text-[#0B252C]"
+                }`}
+              >
+                Reviews
+              </a>
+              {!showP23AfricaOnRight && (
+                <a
+                  href="https://p23africa.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`text-sm font-semibold hover:opacity-80 transition-opacity ${
+                    isDark ? "text-white/90" : "text-[#0B252C]"
+                  }`}
+                >
+                  P23 Africa
+                </a>
+              )}
+            </nav>
+          )}
         </div>
 
         {/* Right Pane Header (Dark Teal Background) */}
-        <div className="lg:w-[42%] bg-[#0B252C] px-6 sm:px-10 lg:px-16 pt-8 pb-6 flex items-center justify-end gap-3">
+        <div className={`${rightWidthClass} bg-[#0B252C] px-6 sm:px-10 lg:px-16 pt-8 pb-6 flex items-center justify-end gap-3`}>
+          {!minimal && showP23AfricaOnRight && (
+            <a
+              href="https://p23africa.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-semibold text-white/90 hover:opacity-80 transition-opacity mr-auto"
+            >
+              P23 Africa
+            </a>
+          )}
           {/* Hero Toggle Switch Icon Button beside Login */}
           {onToggleHeroOption && (
             <button
@@ -174,20 +197,22 @@ export default function LandingNavbar({
           )}
 
           {/* Mobile Hamburger Button */}
-          <button
-            onClick={() => setIsOpen(!isOpen)}
-            className={`p-2 focus:outline-none rounded-lg transition-colors ${
-              isDark ? "text-white hover:bg-white/10" : "text-[#0B252C] hover:bg-gray-100"
-            }`}
-            aria-label="Toggle navigation menu"
-          >
-            {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
+          {!minimal && (
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className={`p-2 focus:outline-none rounded-lg transition-colors ${
+                isDark ? "text-white hover:bg-white/10" : "text-[#0B252C] hover:bg-gray-100"
+              }`}
+              aria-label="Toggle navigation menu"
+            >
+              {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Mobile Menu Dropdown */}
-      {isOpen && (
+      {isOpen && !minimal && (
         <div
           className={`absolute top-full left-0 right-0 shadow-xl p-6 flex flex-col gap-5 z-40 animate-in fade-in slide-in-from-top-5 duration-200 lg:hidden ${
             isDark ? "bg-[#0B252C] border-t border-white/10 text-white" : "bg-white border-t border-gray-100 text-[#0B252C]"
@@ -215,8 +240,10 @@ export default function LandingNavbar({
             Reviews
           </a>
           <a
-            href="#p23-africa"
-            onClick={(e) => handleScroll(e, "p23-africa")}
+            href="https://p23africa.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setIsOpen(false)}
             className="text-base font-semibold py-2 border-b border-white/10 hover:text-opacity-70"
           >
             P23 Africa
