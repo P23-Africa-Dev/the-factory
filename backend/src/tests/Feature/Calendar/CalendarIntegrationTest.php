@@ -31,7 +31,6 @@ class CalendarIntegrationTest extends TestCase
             'profile',
             'https://www.googleapis.com/auth/calendar',
             'https://www.googleapis.com/auth/calendar.events',
-            'https://www.googleapis.com/auth/gmail.readonly',
             'https://www.googleapis.com/auth/gmail.send',
             'https://www.googleapis.com/auth/gmail.modify',
         ]);
@@ -61,8 +60,9 @@ class CalendarIntegrationTest extends TestCase
         $this->assertStringContainsString('openid', (string) $response->json('data.authorization_url'));
         $this->assertStringContainsString('email', (string) $response->json('data.authorization_url'));
         $this->assertStringContainsString('profile', (string) $response->json('data.authorization_url'));
-        $this->assertStringContainsString('gmail.readonly', (string) $response->json('data.authorization_url'));
+        $this->assertStringNotContainsString('gmail.readonly', (string) $response->json('data.authorization_url'));
         $this->assertStringContainsString('gmail.send', (string) $response->json('data.authorization_url'));
+        $this->assertStringContainsString('gmail.modify', (string) $response->json('data.authorization_url'));
     }
 
     public function test_admin_can_request_google_calendar_connect_url(): void
@@ -150,7 +150,6 @@ class CalendarIntegrationTest extends TestCase
             'refresh_token_encrypted' => 'agent-refresh-token',
             'token_expires_at' => now()->addHour(),
             'scopes' => [
-                'https://www.googleapis.com/auth/gmail.readonly',
                 'https://www.googleapis.com/auth/gmail.send',
                 'https://www.googleapis.com/auth/gmail.modify',
             ],
@@ -391,7 +390,7 @@ class CalendarIntegrationTest extends TestCase
                 'access_token' => 'oauth-access-token',
                 'refresh_token' => 'oauth-refresh-token',
                 'expires_in' => 3600,
-                'scope' => 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify',
+                'scope' => 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify',
                 'token_type' => 'Bearer',
             ], 200),
             'https://www.googleapis.com/oauth2/v3/userinfo' => Http::response([
