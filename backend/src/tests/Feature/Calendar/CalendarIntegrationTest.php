@@ -404,7 +404,10 @@ class CalendarIntegrationTest extends TestCase
         $callbackResponse->assertOk();
         $callbackResponse->assertHeader('Content-Type', 'text/html; charset=UTF-8');
         $callbackResponse->assertSee('google-calendar-oauth', false);
-        $callbackResponse->assertSee('Google account connected successfully for calendar and email. You can close this window.', false);
+        $callbackResponse->assertSee('Google account connected successfully for calendar and email.', false);
+        $callbackResponse->assertSee('/settings/meetings', false);
+        $callbackResponse->assertSee('google_oauth=success', false);
+        $callbackResponse->assertSee('Redirecting you back to Factory 23', false);
     }
 
     public function test_oauth_callback_persists_connection_for_admin(): void
