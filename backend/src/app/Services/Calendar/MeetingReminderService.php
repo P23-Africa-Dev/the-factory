@@ -30,8 +30,9 @@ class MeetingReminderService
 
         $normalizedReminders = $this->normalizeReminderConfig($meeting, $reminders ?? []);
 
+        $meeting->update(['reminder_config' => $normalizedReminders]);
+
         if ($normalizedReminders === []) {
-            $meeting->update(['reminder_config' => []]);
             return;
         }
 
@@ -46,6 +47,13 @@ class MeetingReminderService
             ->values();
 
         foreach ($normalizedReminders as $index => $reminder) {
+            $remindAt = Carbon::parse((string) $reminder['remind_at']);
+
+            // Keep reminder definitions visible on the meeting even if the send time already passed.
+            if (! $remindAt->isFuture()) {
+                continue;
+            }
+
             foreach ($attendees as $attendee) {
                 $dedupeKey = sha1(implode('|', [
                     (string) $meeting->id,
@@ -75,8 +83,6 @@ class MeetingReminderService
                 );
             }
         }
-
-        $meeting->update(['reminder_config' => $normalizedReminders]);
 
         Log::info('Meeting reminders synchronized.', [
             'meeting_id' => $meeting->id,
@@ -125,7 +131,7 @@ class MeetingReminderService
                 ? $meeting->start_at?->copy()->subMinutes($offset)
                 : $customRemindAt;
 
-            if ($remindAt === null || ! $remindAt->isFuture()) {
+            if ($remindAt === null) {
                 continue;
             }
 

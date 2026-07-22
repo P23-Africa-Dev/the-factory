@@ -6,7 +6,7 @@ import happyIcon from "@/assets/images/happy.png";
 import SearchListIcon from "@/assets/images/search-list-icon.png";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { useDashboardOverview } from "@/hooks/use-dashboard";
-import { useMeetingDetail, useMeetings } from "@/hooks/use-meetings";
+import { useCancelMeeting, useMeetingDetail, useMeetings } from "@/hooks/use-meetings";
 import { useCalendarIntegrationStatus } from "@/hooks/use-calendar-integration";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { DEFAULT_AVATAR } from "@/lib/avatar";
@@ -18,9 +18,11 @@ import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { ScheduleMeetingModal } from "@/components/operations/schedule-meeting-modal";
 import { MeetingDetailsModal } from "@/components/dashboard/meeting-details-modal";
 import { AIChat } from "@/components/dashboard/ai-chat";
+import type { MeetingItem } from "@/lib/api/meetings";
 
 export function TopCustomers() {
   const customers = [
@@ -378,6 +380,7 @@ export function WeeklyTasksAgents() {
   const [showCreateMeetingModal, setShowCreateMeetingModal] = useState(false);
   const [meetingModalKey, setMeetingModalKey] = useState(0);
   const [selectedMeetingId, setSelectedMeetingId] = useState<number | null>(null);
+  const [editingMeeting, setEditingMeeting] = useState<MeetingItem | null>(null);
   const searchParams = useSearchParams();
   const meetingIdParam = searchParams.get('meetingId');
   const meetingIdFromUrl = useMemo(() => {
@@ -389,6 +392,7 @@ export function WeeklyTasksAgents() {
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const basePath = role === "agent" ? "/agent" : "/admin";
+  const cancelMeetingMutation = useCancelMeeting();
 
   const { data: overview } = useDashboardOverview({
     company_id: companyId ?? undefined,
@@ -423,6 +427,39 @@ export function WeeklyTasksAgents() {
   const selectedMeeting = activeMeetingId !== null
     ? meetingDetailQuery.data ?? selectedMeetingSummary
     : null;
+
+  const canManageSelectedMeeting = Boolean(
+    selectedMeeting
+    && (
+      role === "owner"
+      || role === "admin"
+      || Number(selectedMeeting.created_by_user_id) === Number(user?.id)
+    )
+  );
+
+  const handleCancelSelectedMeeting = () => {
+    if (!selectedMeeting || !companyId) {
+      return;
+    }
+
+    if (!window.confirm("Cancel this meeting? Attendees will be notified on Google Calendar.")) {
+      return;
+    }
+
+    cancelMeetingMutation.mutate(
+      { meetingId: selectedMeeting.id, companyId },
+      {
+        onSuccess: () => {
+          toast.success("Meeting cancelled successfully.");
+          setSelectedMeetingId(null);
+        },
+        onError: (error: unknown) => {
+          const apiError = error as { message?: string };
+          toast.error(apiError.message || "Failed to cancel meeting.");
+        },
+      }
+    );
+  };
 
   const formattedDate = selectedDate.toLocaleDateString("en-US", {
     weekday: "short",
@@ -679,17 +716,35 @@ export function WeeklyTasksAgents() {
 
       <ScheduleMeetingModal
         key={meetingModalKey}
-        isOpen={showCreateMeetingModal}
-        onClose={() => setShowCreateMeetingModal(false)}
+        isOpen={showCreateMeetingModal || editingMeeting != null}
+        onClose={() => {
+          setShowCreateMeetingModal(false);
+          setEditingMeeting(null);
+        }}
         defaultDate={selectedDate}
-        title="Schedule Meeting"
+        title={editingMeeting ? "Edit Meeting" : "Schedule Meeting"}
         sourcePage="dashboard"
+        initialMeeting={editingMeeting}
+        onUpdated={() => {
+          setEditingMeeting(null);
+          setSelectedMeetingId(null);
+        }}
       />
 
       <MeetingDetailsModal
-        isOpen={activeMeetingId !== null}
+        isOpen={activeMeetingId !== null && editingMeeting == null}
         onClose={() => setSelectedMeetingId(null)}
         meeting={selectedMeeting ?? null}
+        canManage={canManageSelectedMeeting}
+        onEdit={() => {
+          if (!selectedMeeting) {
+            return;
+          }
+          setEditingMeeting(selectedMeeting);
+          setSelectedMeetingId(null);
+        }}
+        onCancelMeeting={handleCancelSelectedMeeting}
+        isCancelling={cancelMeetingMutation.isPending}
       />
     </div>
   );
