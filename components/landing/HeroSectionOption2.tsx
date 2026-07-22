@@ -9,7 +9,7 @@ interface HeroSectionOption2Props {
 
 export default function HeroSectionOption2({ onDownloadAgentApp }: HeroSectionOption2Props) {
   return (
-    <div className="relative w-full flex flex-col items-center justify-center pt-6 sm:pt-8 pb-10 sm:pb-16 lg:pb-20 px-3.5 sm:px-6 lg:px-8 z-20 overflow-x-clip">
+    <div className="relative w-full flex flex-col items-center justify-center pt-6 sm:pt-8 pb-[16px] sm:pb-[20px] lg:pb-[24px] px-3.5 sm:px-6 lg:px-8 z-20 overflow-x-clip">
       {/* Stepped Background Shape with Drop Shadow */}
       <div className="absolute inset-0 -z-10 filter drop-shadow-[0_25px_25px_rgba(0,0,0,0.15)] pointer-events-none">
         {/* Mobile View Background */}
@@ -42,7 +42,7 @@ export default function HeroSectionOption2({ onDownloadAgentApp }: HeroSectionOp
         </div>
 
         {/* BOLD Centered Heading with Supervisor Tag */}
-        <h1 className="text-3xl sm:text-5xl lg:text-[56px] font-extrabold text-white leading-[1.18] sm:leading-[1.15] tracking-tight max-w-4xl mb-5 sm:mb-6 px-1">
+        <h1 className="text-[26px] xs:text-3xl sm:text-5xl lg:text-[56px] font-extrabold text-white leading-[1.18] sm:leading-[1.15] tracking-tight max-w-4xl mb-5 sm:mb-6 px-1">
           The Ultimate{" "}
           <span className="relative inline-block bg-[#FBBF24]/20 border border-[#FBBF24]/40 text-[#FCD34D] px-2.5 sm:px-3.5 py-0.5 rounded-xl sm:rounded-2xl mx-0.5 my-0.5">
             Field Agent
@@ -90,7 +90,7 @@ export default function HeroSectionOption2({ onDownloadAgentApp }: HeroSectionOp
           />
 
           {/* Map Video Card */}
-          <div className="relative w-full h-[260px] xs:h-[320px] sm:h-[460px] lg:h-[597px] rounded-2xl sm:rounded-[32px] overflow-hidden shadow-2xl z-10 bg-[#0B252C] rounded-[24px]">
+          <div className="relative w-full h-[260px] xs:h-[320px] sm:h-[460px] lg:h-[597px] rounded-2xl sm:rounded-[32px] overflow-hidden shadow-2xl z-10 bg-[#0B252C] rounded-[24px] mt-6">
             <video
               src="/assets/GIFs/fac23landingpageHero.mp4"
               autoPlay
