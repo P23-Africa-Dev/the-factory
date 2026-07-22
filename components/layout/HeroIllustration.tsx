@@ -1,4 +1,6 @@
-export default function HeroIllustration({ className }: { className?: string }) {
+import { SVGProps } from "react";
+
+export default function HeroIllustration(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
       width="254"
@@ -6,8 +8,8 @@ export default function HeroIllustration({ className }: { className?: string }) 
       viewBox="0 0 254 233"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={className}
       aria-hidden="true"
+      {...props}
     >
       <path
         fillRule="evenodd"

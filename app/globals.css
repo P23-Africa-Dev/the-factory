@@ -6,6 +6,16 @@ html {
   scroll-behavior: smooth;
 }
 
+@keyframes dash {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+.animate-dash-route {
+  animation: dash 12s linear infinite;
+}
+
 .PhoneInput {
   display: flex;
   align-items: center;
@@ -151,6 +161,23 @@ html {
 
 :root {
   --font-poppins: "Poppins", sans-serif;
+  --container-padding: 14px;
+  --container-pb: 40px;
+  --map-half-width: min(50% - var(--container-padding), 452.5px);
+}
+
+@media (min-width: 640px) {
+  :root {
+    --container-padding: 24px;
+    --container-pb: 64px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --container-padding: 32px;
+    --container-pb: 80px;
+  }
 }
 
 @layer utilities {
@@ -331,3 +358,4 @@ html {
     opacity: 1;
   }
 }
+

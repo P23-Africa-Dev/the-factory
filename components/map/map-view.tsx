@@ -418,7 +418,6 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   } = useInitialMapViewport({ preferUserLocation, taskFocus });
   const selectedTask = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
   const token = getMapboxPublicToken();
-  const mapInstance = mapVersion > 0 ? mapRef.current : null;
   // Super-admin master toggle (per-org override) for Google business pins.
   const { enabled: poiDisplayAllowed } = useMapPoiDisplay();
   const {
