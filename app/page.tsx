@@ -13,7 +13,7 @@ import PricingSection from "@/components/landing/PricingSection";
 
 export default function Home() {
   const [agentModalOpen, setAgentModalOpen] = useState(false);
-  const [heroOption, setHeroOption] = useState<"option1" | "option2">("option1");
+  const [heroOption, setHeroOption] = useState<"option1" | "option2">("option2");
 
   function handleDownloadAgentApp() {
     if (isMobileDevice()) {

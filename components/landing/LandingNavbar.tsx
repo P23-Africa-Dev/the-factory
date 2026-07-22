@@ -107,7 +107,7 @@ export default function LandingNavbar({
               >
                 Reviews
               </a>
-              {!showP23AfricaOnRight && (
+              {/* {!showP23AfricaOnRight && (
                 <a
                   href="https://p23africa.com/"
                   target="_blank"
@@ -118,7 +118,7 @@ export default function LandingNavbar({
                 >
                   P23 Africa
                 </a>
-              )}
+              )} */}
             </nav>
           )}
         </div>
@@ -136,7 +136,7 @@ export default function LandingNavbar({
             </a>
           )}
           {/* Hero Toggle Switch Icon Button beside Login */}
-          {onToggleHeroOption && (
+          {/* {onToggleHeroOption && (
             <button
               onClick={onToggleHeroOption}
               title={`Switch Hero Layout (Current: ${
@@ -150,7 +150,7 @@ export default function LandingNavbar({
                 {heroOption === "option1" ? "Opt 1" : "Opt 2"}
               </span>
             </button>
-          )}
+          )} */}
 
           <Link
             href="/login"

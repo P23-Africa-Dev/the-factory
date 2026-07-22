@@ -39,14 +39,14 @@ export default function Footer() {
               <Link href="#" className="text-sm font-semibold hover:opacity-80 transition-opacity">
                 Reviews
               </Link>
-              <a
+              {/* <a
                 href="https://p23africa.com/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm font-semibold hover:opacity-80 transition-opacity"
               >
                 P23 Africa
-              </a>
+              </a> */}
             </nav>
           </div>
 
