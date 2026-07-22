@@ -197,19 +197,37 @@ export function EmailPanel({
                         />
                         <ConfirmDeleteModal
                             isOpen={showDeleteEmailConfirm}
-                            onClose={() => setShowDeleteEmailConfirm(false)}
+                            onClose={() => {
+                                if (!deleteMutation.isPending) {
+                                    setShowDeleteEmailConfirm(false);
+                                }
+                            }}
                             onConfirm={() => {
+                                if (!selectedEmail || deleteMutation.isPending) {
+                                    return;
+                                }
+
                                 deleteMutation.mutate(selectedEmail.messageId, {
                                     onSuccess: () => {
-                                        toast.success("Email deleted.");
+                                        toast.success("Email moved to trash.");
+                                        setShowDeleteEmailConfirm(false);
                                         setSelectedEmail(null);
                                         setView("list");
                                     },
+                                    onError: (error: unknown) => {
+                                        const apiError = error as { message?: string };
+                                        toast.error(
+                                            apiError.message ||
+                                                "Failed to delete email. Reconnect Google if permissions are missing.",
+                                        );
+                                    },
                                 });
-                                setShowDeleteEmailConfirm(false);
                             }}
                             title="Delete Email"
-                            description="Are you sure you want to delete this email? This action cannot be undone."
+                            description="This will move the email to trash in Gmail and remove it from this lead."
+                            confirmLabel={deleteMutation.isPending ? "Deleting..." : "Delete"}
+                            closeOnConfirm={false}
+                            confirmDisabled={deleteMutation.isPending}
                         />
                     </>
                 ) : emailsQuery.isLoading ? (
