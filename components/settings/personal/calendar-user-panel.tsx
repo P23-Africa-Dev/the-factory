@@ -63,7 +63,7 @@ export function CalendarUserPanel() {
       await disconnectUserCalendarIntegration({ company_id: companyId! }, token ?? "");
     },
     onSuccess: () => {
-      toast.success("Google Calendar disconnected.");
+      toast.success("Google account disconnected.");
       queryClient.invalidateQueries({ queryKey: ["user-calendar-status", companyId] });
     },
     onError: (err: Error) => toast.error(err.message || "Failed to disconnect."),
@@ -73,8 +73,8 @@ export function CalendarUserPanel() {
 
   return (
     <SettingsSectionCard
-      title="My Calendar"
-      description="Connect your Google account to create and sync your meetings"
+      title="Google Account"
+      description="Connect Google to sync meetings and use CRM email from your mailbox"
       scope="personal"
     >
       {isLoading ? (
@@ -93,14 +93,14 @@ export function CalendarUserPanel() {
             )}
             <div>
               <p className="text-[14px] font-bold text-dash-dark">
-                {connected ? "Google Calendar connected" : "Google Calendar not connected"}
+                {connected ? "Google account connected" : "Google account not connected"}
               </p>
               {connected && status?.connected_google_email && (
                 <p className="text-[12px] text-gray-600 mt-0.5">{status.connected_google_email}</p>
               )}
               {!connected && (
                 <p className="text-[12px] text-gray-600 mt-0.5">
-                  Connect your account before scheduling meetings from your dashboard.
+                  Connect to schedule meetings, sync your calendar, and send or sync CRM follow-up emails.
                 </p>
               )}
               {status?.requires_reauthentication && (
@@ -137,7 +137,7 @@ export function CalendarUserPanel() {
               <button
                 type="button"
                 onClick={() => {
-                  if (window.confirm("Disconnect your Google Calendar from this account?")) {
+                  if (window.confirm("Disconnect your Google account from Factory 23?")) {
                     disconnectMutation.mutate();
                   }
                 }}
