@@ -19,7 +19,7 @@ export default function HeroSectionOption2({ onDownloadAgentApp }: HeroSectionOp
         <div className="hidden sm:block absolute left-0 top-0 bottom-[var(--container-pb)] right-[calc(50%+var(--map-half-width)-1px)] bg-[#0B252C]" />
 
         {/* Tablet/Desktop Center body (protrusion with 32px rounded corners on bottom edges) */}
-        <div className="hidden sm:block absolute left-[calc(50%-var(--map-half-width)-10px)] right-[calc(50%-var(--map-half-width)-1px)] top-0 bottom-0 bg-[#0B252C] rounded-b-[32px]" />
+        <div className="hidden sm:block absolute left-[calc(50%-var(--map-half-width)-20px)] right-[calc(50%-var(--map-half-width)-20px)] top-0 bottom-0 bg-[#0B252C] rounded-b-[32px]" />
 
         {/* Tablet/Desktop Right wing */}
         <div className="hidden sm:block absolute left-[calc(50%+var(--map-half-width)-1px)] top-0 bottom-[var(--container-pb)] right-0 bg-[#0B252C]" />
@@ -81,10 +81,10 @@ export default function HeroSectionOption2({ onDownloadAgentApp }: HeroSectionOp
             style={{
               width: "219px",
               height: "130px",
-              transform: "rotate(-45.4deg)",
+              transform: "rotate(-35.4deg)",
               transformOrigin: "top left",
               opacity: 1,
-              top: "-25px",
+              top: "25px",
               left: "calc(100% - 63.5px)"
             }}
           />
@@ -95,7 +95,7 @@ export default function HeroSectionOption2({ onDownloadAgentApp }: HeroSectionOp
               src="/assets/GIFs/fac23landingpageHero.mp4"
               autoPlay
               loop
-              // muted
+              muted
               playsInline
               className="w-full h-full object-cover rounded-2xl sm:rounded-[32px]"
             />
