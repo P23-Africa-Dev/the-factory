@@ -11,27 +11,10 @@ import {
   setActiveThreadId,
 } from './storage';
 import type { AssistantMessage } from './types';
-
-const PROCESSING_LABELS = [
-  'Thinking...',
-  'Analyzing...',
-  'Sorting results...',
-  'Preparing response...',
-];
-
-function processingLabelsForMessage(text: string): string[] {
-  const normalized = text.toLowerCase();
-  if (/\b(perform|performance|team|kpi|rank)\b/.test(normalized)) {
-    return ['Thinking...', 'Analyzing team KPIs...', 'Ranking performers...'];
-  }
-  if (/\bplan\s+my\s+day\b/.test(normalized)) {
-    return ['Thinking...', 'Reviewing your schedule...', 'Prioritizing actions...'];
-  }
-  if (/\b(crm|lead|follow[\s-]?up)\b/.test(normalized)) {
-    return ['Thinking...', 'Scanning CRM records...', 'Sorting leads...'];
-  }
-  return PROCESSING_LABELS;
-}
+import {
+  labelsForMessage,
+  PROCESSING_LABEL_INTERVAL_MS,
+} from '@/lib/ely-processing-labels';
 
 let messageSeq = 0;
 function nextId(suffix: string): string {
@@ -145,13 +128,13 @@ export function useAssistantConversation() {
       setMessages((prev) => [...prev, userMsg]);
       setIsSending(true);
 
-      const labels = processingLabelsForMessage(content);
+      const labels = labelsForMessage(content);
       let labelIndex = 0;
       setProcessingLabel(labels[0] ?? 'Thinking...');
       const labelTimer = window.setInterval(() => {
         labelIndex = (labelIndex + 1) % labels.length;
         setProcessingLabel(labels[labelIndex] ?? 'Thinking...');
-      }, 900);
+      }, PROCESSING_LABEL_INTERVAL_MS);
 
       try {
         const geoContext = options?.withGeolocation

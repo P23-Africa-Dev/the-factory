@@ -341,6 +341,10 @@ final class CopilotReadFlowTest extends TestCase
         $this->assertStringContainsString('event: done', $content);
         $this->assertStringContainsString('Hello from ELY streaming.', $content);
         $this->assertStringNotContainsString('unable to complete that request', strtolower($content));
+
+        $this->assertSame(1, substr_count($content, 'event: processing'));
+        $this->assertStringContainsString('Thinking...', $content);
+        $this->assertStringNotContainsString('Just a little more...', $content);
     }
 
     /**
