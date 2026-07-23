@@ -91,6 +91,7 @@ final class ReadToolArgsResolverTest extends TestCase
                 'total' => 15,
                 'truncated' => true,
                 'remaining_count' => 5,
+                'offer_full_list' => true,
             ],
         );
 
@@ -105,6 +106,229 @@ final class ReadToolArgsResolverTest extends TestCase
 
         $this->assertTrue($args['expand_full_list']);
         $this->assertSame(50, $args['limit']);
+    }
+
+    public function test_affirmative_binds_to_latest_truncated_list_not_older_confirmation(): void
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+        $memory = $this->app->make(ConversationMemoryService::class);
+
+        $thread = $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            null,
+            'user',
+            'Create a task',
+        );
+        $threadId = (string) $thread['thread_id'];
+
+        $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            $threadId,
+            'assistant',
+            'ELY action ready: create task',
+            ['tasks.create'],
+            'tasks.create',
+            [
+                'confirmation_required' => true,
+                'tool' => 'tasks.create',
+                'title' => 'Task created by ELY',
+            ],
+        );
+
+        $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            $threadId,
+            'user',
+            'Show my leads',
+        );
+
+        $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            $threadId,
+            'assistant',
+            'You have 15 leads. Showing 10 (5 more). Would you like me to list all of them?',
+            ['crm.top_leads'],
+            'crm.top_leads',
+            [
+                'items' => array_fill(0, 10, ['id' => 1, 'name' => 'Lead']),
+                'count' => 10,
+                'total' => 15,
+                'truncated' => true,
+                'remaining_count' => 5,
+                'offer_full_list' => true,
+            ],
+        );
+
+        $this->assertTrue(
+            $this->resolver->latestAssistantTurnIsTruncatedListOffer(
+                $threadId,
+                (int) $company->id,
+                (int) $admin->id,
+            )
+        );
+
+        $this->assertSame(
+            'crm.top_leads',
+            $this->resolver->resolveTruncatedListToolFromThread(
+                'yes please',
+                $threadId,
+                (int) $company->id,
+                (int) $admin->id,
+            )
+        );
+    }
+
+    public function test_affirmative_does_not_expand_when_latest_turn_is_action_confirmation(): void
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+        $memory = $this->app->make(ConversationMemoryService::class);
+
+        $thread = $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            null,
+            'user',
+            'Show overdue tasks',
+        );
+        $threadId = (string) $thread['thread_id'];
+
+        $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            $threadId,
+            'assistant',
+            'You have 15 overdue tasks. Showing 10 (5 more).',
+            ['tasks.overdue'],
+            'tasks.overdue',
+            [
+                'count' => 10,
+                'total' => 15,
+                'truncated' => true,
+                'remaining_count' => 5,
+                'offer_full_list' => true,
+            ],
+        );
+
+        $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            $threadId,
+            'user',
+            'Create a task',
+        );
+
+        $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            $threadId,
+            'assistant',
+            'ELY action ready: create task',
+            ['tasks.create'],
+            'tasks.create',
+            [
+                'confirmation_required' => true,
+                'tool' => 'tasks.create',
+            ],
+        );
+
+        $this->assertNull(
+            $this->resolver->resolveTruncatedListToolFromThread(
+                'yes please',
+                $threadId,
+                (int) $company->id,
+                (int) $admin->id,
+            )
+        );
+
+        $this->assertSame(
+            'tasks.overdue',
+            $this->resolver->resolveTruncatedListToolFromThread(
+                'list them all',
+                $threadId,
+                (int) $company->id,
+                (int) $admin->id,
+            )
+        );
+    }
+
+    public function test_affirmative_honors_soft_list_suggestion_without_truncated_payload(): void
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+        $memory = $this->app->make(ConversationMemoryService::class);
+
+        $thread = $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            null,
+            'user',
+            'Why can\'t you understand me',
+        );
+        $threadId = (string) $thread['thread_id'];
+
+        $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            $threadId,
+            'assistant',
+            'ELY action ready: create task',
+            ['tasks.create'],
+            'tasks.create',
+            [
+                'confirmation_required' => true,
+                'tool' => 'tasks.create',
+            ],
+        );
+
+        $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            $threadId,
+            'user',
+            'Why can\'t you understand me',
+        );
+
+        $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            $threadId,
+            'assistant',
+            'You have 19 leads on your platform. Would you like me to list all of them for you?',
+            [],
+            null,
+            null,
+        );
+
+        $this->assertTrue(
+            $this->resolver->latestAssistantTurnOffersListExpansion(
+                $threadId,
+                (int) $company->id,
+                (int) $admin->id,
+            )
+        );
+
+        $this->assertSame(
+            'crm.top_leads',
+            $this->resolver->resolveTruncatedListToolFromThread(
+                'Yes please',
+                $threadId,
+                (int) $company->id,
+                (int) $admin->id,
+            )
+        );
+
+        $args = $this->resolver->resolve(
+            'crm.top_leads',
+            'Yes please',
+            'admin',
+            $threadId,
+            (int) $company->id,
+            (int) $admin->id,
+        );
+        $this->assertTrue($args['expand_full_list'] ?? false);
     }
 
     public function test_non_list_tool_returns_empty_args(): void

@@ -1,4 +1,5 @@
 import { apiRequest, ApiEnvelope, ApiRequestError } from "./onboarding";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 
 export type ApiTaskStatus =
   | "pending"
@@ -53,12 +54,26 @@ export type TaskApiItem = {
     avatar_url?: string | null;
   } | null;
   latest_reassignment?: TaskReassignmentItem | null;
-  proofs?: Array<{
+  proofs?: TaskProofItem[];
+};
+
+export type TaskProofItem = {
+  id: number;
+  uploaded_by_user_id: number;
+  file_url: string | null;
+  file_name?: string | null;
+  mime_type: string;
+  size_bytes?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  captured_at?: string | null;
+  notes?: string | null;
+  uploader?: {
     id: number;
-    uploaded_by_user_id: number;
-    file_url: string | null;
-    mime_type: string;
-  }>;
+    name: string;
+    email: string;
+  } | null;
+  created_at?: string | null;
 };
 
 export type TaskReassignmentItem = {
@@ -377,12 +392,12 @@ export async function uploadTaskProof(
   formData: FormData,
   token: string
 ): Promise<ApiEnvelope<{ proof: { id: number; file_url: string | null } }>> {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
-  const response = await fetch(`${base}/tasks/${taskId}/proofs`, {
+  const transport = getSupportAwareApiTransport(`/tasks/${taskId}/proofs`, token);
+  const response = await fetch(transport.url, {
     method: "POST",
     headers: {
       Accept: "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...transport.authorizationHeaders,
     },
     body: formData,
   });
@@ -396,27 +411,81 @@ export async function uploadTaskProof(
   return body;
 }
 
+export async function replaceTaskProof(
+  taskId: number | string,
+  proofId: number | string,
+  formData: FormData,
+  token: string
+): Promise<ApiEnvelope<{ proof: TaskProofItem }>> {
+  const transport = getSupportAwareApiTransport(`/tasks/${taskId}/proofs/${proofId}`, token);
+  const response = await fetch(transport.url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      ...transport.authorizationHeaders,
+    },
+    body: formData,
+  });
+
+  const body = (await response.json()) as ApiEnvelope<{ proof: TaskProofItem }>;
+  if (!response.ok || !body.success) {
+    throw new ApiRequestError(body.message || "Request failed.", response.status, body.errors);
+  }
+  return body;
+}
+
 export async function downloadTaskProof(
   taskId: number | string,
   proofId: number | string,
   params: { company_id?: number | string },
   token: string
 ): Promise<Blob> {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
   const qs = new URLSearchParams();
   if (params.company_id != null) qs.set("company_id", String(params.company_id));
   const query = qs.toString() ? `?${qs.toString()}` : "";
-  const response = await fetch(`${base}/tasks/${taskId}/proofs/${proofId}${query}`, {
+  const transport = getSupportAwareApiTransport(
+    `/tasks/${taskId}/proofs/${proofId}${query}`,
+    token,
+  );
+  const response = await fetch(transport.url, {
     method: "GET",
     headers: {
       Accept: "*/*",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...transport.authorizationHeaders,
     },
   });
 
   if (!response.ok) {
-    throw new ApiRequestError("Failed to download proof.", response.status);
+    let message = "Failed to download proof.";
+    let errors: Record<string, string[]> | null = null;
+    try {
+      const payload = (await response.json()) as ApiEnvelope<unknown>;
+      if (payload?.message) message = payload.message;
+      if (payload?.errors) errors = payload.errors;
+    } catch {
+      // Non-JSON error body (binary stream failure, gateway HTML, etc.)
+    }
+    throw new ApiRequestError(message, response.status, errors);
   }
 
   return response.blob();
+}
+
+/** Trigger a browser download from an authenticated proof blob. */
+export function triggerProofBlobDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename || "proof.jpg";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+export function formatProofBytes(bytes: number | null | undefined): string {
+  if (bytes == null || !Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

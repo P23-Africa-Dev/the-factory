@@ -7,6 +7,7 @@ import Footer from "@/components/layout/footer";
 import LandingNavbar from "@/components/landing/LandingNavbar";
 import HeroSection from "@/components/landing/HeroSection";
 import HeroSectionOption2 from "@/components/landing/HeroSectionOption2";
+import AboutSection from "@/components/landing/AboutSection";
 import FeaturesSection from "@/components/landing/FeaturesSection";
 import TestimonialsSection from "@/components/landing/TestimonialsSection";
 import PricingSection from "@/components/landing/PricingSection";
@@ -44,6 +45,9 @@ export default function Home() {
           <HeroSectionOption2 onDownloadAgentApp={handleDownloadAgentApp} />
         )}
       </div>
+
+      {/* About / app purpose */}
+      <AboutSection />
 
       {/* Features & Stats grid */}
       <div className={heroOption === "option2" ? "mt-0 sm:mt-[-51px] lg:mt-[-64px] relative z-10" : ""}>

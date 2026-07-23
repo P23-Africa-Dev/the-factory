@@ -166,11 +166,18 @@ class GmailApiService
 
     public function trashMessage(CompanyCalendarConnection|UserCalendarConnection $connection, string $messageId): void
     {
-        $this->request(
+        $response = $this->rawRequest(
             $connection,
             'POST',
             'https://www.googleapis.com/gmail/v1/users/me/messages/' . urlencode($messageId) . '/trash',
         );
+
+        // Already trashed / missing in this mailbox — treat as success for CRM delete UX.
+        if ($response->status() === 404) {
+            return;
+        }
+
+        $this->throwIfFailed($connection, $response, 'https://www.googleapis.com/gmail/v1/users/me/messages/' . urlencode($messageId) . '/trash');
     }
 
     /**
@@ -213,17 +220,38 @@ class GmailApiService
         string $url,
         ?array $json = null,
     ): Response {
+        $response = $this->rawRequest($connection, $method, $url, $json);
+        $this->throwIfFailed($connection, $response, $url);
+
+        return $response;
+    }
+
+    /**
+     * @param  array<string,mixed>|null  $json
+     */
+    private function rawRequest(
+        CompanyCalendarConnection|UserCalendarConnection $connection,
+        string $method,
+        string $url,
+        ?array $json = null,
+    ): Response {
         $accessToken = $this->tokenService->resolveAccessToken($connection);
 
         $pending = Http::withToken($accessToken)->timeout(45)->acceptJson();
 
-        $response = match (strtoupper($method)) {
+        return match (strtoupper($method)) {
             'GET' => $pending->get($url),
             'POST' => $pending->post($url, $json ?? []),
             'DELETE' => $pending->delete($url),
             default => $pending->send($method, $url, ['json' => $json]),
         };
+    }
 
+    private function throwIfFailed(
+        CompanyCalendarConnection|UserCalendarConnection $connection,
+        Response $response,
+        string $url,
+    ): void {
         if ($response->status() === 401 || $response->status() === 403) {
             $connection->update([
                 'status' => 'error',
@@ -253,8 +281,6 @@ class GmailApiService
                 'integration' => ['Gmail API error: ' . $this->responseErrorMessage($response)],
             ]);
         }
-
-        return $response;
     }
 
     private function responseErrorMessage(Response $response): string

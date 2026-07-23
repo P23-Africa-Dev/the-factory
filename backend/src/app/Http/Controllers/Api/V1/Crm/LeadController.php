@@ -38,6 +38,7 @@ class LeadController extends Controller
             'source' => $request->string('source')->toString(),
             'assigned_to_user_id' => $request->input('assigned_to_user_id'),
             'per_page' => $request->input('per_page'),
+            'uncategorized' => $request->boolean('uncategorized'),
         ]);
 
         return $this->success(

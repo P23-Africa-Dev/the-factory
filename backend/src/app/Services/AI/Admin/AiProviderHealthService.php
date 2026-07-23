@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\AI\Admin;
 
 use App\Services\AI\Providers\ClaudeModelResolver;
+use App\Services\AI\Providers\GlmModelResolver;
+use App\Services\AI\Providers\NvidiaModelResolver;
 use App\Services\AI\Providers\OpenAiModelResolver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -14,6 +16,10 @@ class AiProviderHealthService
     public const CACHE_KEY_OPENAI = 'ai:provider:status:openai';
 
     public const CACHE_KEY_CLAUDE = 'ai:provider:status:claude';
+
+    public const CACHE_KEY_NVIDIA = 'ai:provider:status:nvidia';
+
+    public const CACHE_KEY_GLM = 'ai:provider:status:glm';
 
     private const CACHE_TTL_SECONDS = 600;
 
@@ -34,14 +40,47 @@ class AiProviderHealthService
     }
 
     /**
-     * @return array{openai: array<string, mixed>, claude: array<string, mixed>}
+     * @return array<string, mixed>
+     */
+    public function checkNvidia(bool $persist = true): array
+    {
+        return $this->persistIfNeeded($this->probeNvidia(), 'nvidia', $persist);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function checkGlm(bool $persist = true): array
+    {
+        return $this->persistIfNeeded($this->probeGlm(), 'glm', $persist);
+    }
+
+    /**
+     * @return array{openai: array<string, mixed>, claude: array<string, mixed>, nvidia: array<string, mixed>, glm: array<string, mixed>}
      */
     public function checkAll(bool $persist = true): array
     {
         return [
             'openai' => $this->checkOpenAi($persist),
             'claude' => $this->checkClaude($persist),
+            'nvidia' => $this->checkNvidia($persist),
+            'glm' => $this->checkGlm($persist),
         ];
+    }
+
+    /**
+     * @param  array<int, string>  $providers
+     */
+    public function clearStackHealth(array $providers): void
+    {
+        foreach ($providers as $provider) {
+            $key = $this->cacheKeyFor($provider);
+            try {
+                Cache::forget($key);
+            } catch (\Throwable) {
+                // Best-effort clear.
+            }
+        }
     }
 
     /**
@@ -49,7 +88,7 @@ class AiProviderHealthService
      */
     public function cachedStatus(string $provider): ?array
     {
-        $key = $provider === 'claude' ? self::CACHE_KEY_CLAUDE : self::CACHE_KEY_OPENAI;
+        $key = $this->cacheKeyFor($provider);
 
         try {
             $cached = Cache::get($key);
@@ -70,7 +109,12 @@ class AiProviderHealthService
             return $cached;
         }
 
-        return $provider === 'claude' ? $this->probeClaude() : $this->probeOpenAi();
+        return match ($provider) {
+            'claude' => $this->probeClaude(),
+            'nvidia' => $this->probeNvidia(),
+            'glm' => $this->probeGlm(),
+            default => $this->probeOpenAi(),
+        };
     }
 
     public function shouldSkipProvider(string $provider): bool
@@ -80,8 +124,17 @@ class AiProviderHealthService
             return false;
         }
 
-        $skipStatuses = ['quota_exceeded', 'auth_failed', 'rate_limited', 'not_configured', 'model_not_found'];
-        if (! in_array((string) ($cached['status'] ?? ''), $skipStatuses, true)) {
+        $status = (string) ($cached['status'] ?? '');
+        $skipStatuses = [
+            'quota_exceeded',
+            'auth_failed',
+            'rate_limited',
+            'not_configured',
+            'model_not_found',
+            'timeout',
+            'unreachable',
+        ];
+        if (! in_array($status, $skipStatuses, true)) {
             return false;
         }
 
@@ -90,7 +143,9 @@ class AiProviderHealthService
             return true;
         }
 
-        $ttl = max(60, (int) config('services.ai.provider_skip_ttl_seconds', 300));
+        $ttl = in_array($status, ['timeout', 'unreachable'], true)
+            ? max(30, (int) config('services.ai.provider_timeout_skip_ttl_seconds', 90))
+            : max(60, (int) config('services.ai.provider_skip_ttl_seconds', 300));
 
         try {
             $failedAt = \Illuminate\Support\Carbon::parse($lastFailedAt);
@@ -148,6 +203,8 @@ class AiProviderHealthService
     /**
      * @param  array<string, mixed>  $openaiHealth
      * @param  array<string, mixed>  $claudeHealth
+     * @param  array<string, mixed>|null  $nvidiaHealth
+     * @param  array<string, mixed>|null  $glmHealth
      * @return array{status: string, label: string, icon: string, class: string, active_provider: string}
      */
     public function aggregateStatus(
@@ -159,7 +216,68 @@ class AiProviderHealthService
         string $fallbackProvider,
         ?array $lastFailover = null,
         float $errorRate = 0.0,
+        string $stack = 'openai_claude',
+        ?array $nvidiaHealth = null,
+        bool $nvidiaConfigured = false,
+        ?array $glmHealth = null,
+        bool $glmConfigured = false,
     ): array {
+        if ($stack === 'nvidia') {
+            $nvidiaOk = ($nvidiaHealth['ok'] ?? false) === true;
+            $status = (! $nvidiaConfigured || ! $nvidiaOk) ? 'offline' : ($errorRate > 20 ? 'degraded' : 'online');
+
+            return [
+                'status' => $status,
+                'label' => match ($status) {
+                    'online' => 'Online',
+                    'offline' => 'Offline',
+                    'degraded' => 'Degraded',
+                    default => 'Fallback Active',
+                },
+                'icon' => match ($status) {
+                    'online' => 'bi-check-circle-fill',
+                    'offline' => 'bi-x-circle-fill',
+                    'degraded' => 'bi-exclamation-triangle-fill',
+                    default => 'bi-arrow-repeat',
+                },
+                'class' => match ($status) {
+                    'online' => 'ai-status-online',
+                    'offline' => 'ai-status-offline',
+                    'degraded' => 'ai-status-degraded',
+                    default => 'ai-status-fallback',
+                },
+                'active_provider' => 'NVIDIA',
+            ];
+        }
+
+        if ($stack === 'glm') {
+            $glmOk = ($glmHealth['ok'] ?? false) === true;
+            $status = (! $glmConfigured || ! $glmOk) ? 'offline' : ($errorRate > 20 ? 'degraded' : 'online');
+
+            return [
+                'status' => $status,
+                'label' => match ($status) {
+                    'online' => 'Online',
+                    'offline' => 'Offline',
+                    'degraded' => 'Degraded',
+                    default => 'Fallback Active',
+                },
+                'icon' => match ($status) {
+                    'online' => 'bi-check-circle-fill',
+                    'offline' => 'bi-x-circle-fill',
+                    'degraded' => 'bi-exclamation-triangle-fill',
+                    default => 'bi-arrow-repeat',
+                },
+                'class' => match ($status) {
+                    'online' => 'ai-status-online',
+                    'offline' => 'ai-status-offline',
+                    'degraded' => 'ai-status-degraded',
+                    default => 'ai-status-fallback',
+                },
+                'active_provider' => 'GLM',
+            ];
+        }
+
         $openaiOk = ($openaiHealth['ok'] ?? false) === true;
         $claudeOk = ($claudeHealth['ok'] ?? false) === true;
 
@@ -361,6 +479,140 @@ class AiProviderHealthService
         }
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function probeNvidia(): array
+    {
+        $apiKey = (string) config('services.ai.nvidia.api_key');
+        if (trim($apiKey) === '') {
+            return $this->result(
+                provider: 'nvidia',
+                ok: false,
+                status: 'not_configured',
+                label: 'Disconnected',
+                message: 'No API key configured.',
+                latencyMs: null,
+            );
+        }
+
+        $resolver = app(NvidiaModelResolver::class);
+        $model = $resolver->resolve('operational');
+
+        $start = microtime(true);
+        try {
+            $baseUrl = rtrim((string) config('services.ai.nvidia.base_url', 'https://integrate.api.nvidia.com/v1'), '/');
+            $response = Http::timeout(25)->withToken($apiKey)->post($baseUrl . '/chat/completions', [
+                'model' => $model,
+                'max_tokens' => 1,
+                'messages' => [
+                    ['role' => 'user', 'content' => 'ping'],
+                ],
+            ]);
+            $latency = (int) round((microtime(true) - $start) * 1000);
+            $errorMessage = (string) $response->json('error.message', '');
+
+            if ($response->status() === 401) {
+                return $this->result('nvidia', false, 'auth_failed', 'Authentication Failed', 'Invalid API key.', $latency);
+            }
+            if ($response->status() === 404) {
+                return $this->result('nvidia', false, 'model_not_found', 'Model Not Found', $errorMessage !== '' ? $errorMessage : "Model {$model} is not available.", $latency, [
+                    'resolved_model' => $model,
+                ]);
+            }
+            if ($response->status() === 429) {
+                return $this->result('nvidia', false, 'rate_limited', 'Rate Limited', 'Rate limit exceeded.', $latency, [
+                    'resolved_model' => $model,
+                ]);
+            }
+            if ($response->successful()) {
+                return $this->result('nvidia', true, 'connected', 'Connected', 'NVIDIA NIM completions are available.', $latency, [
+                    'resolved_model' => $model,
+                    'configured_model' => (string) config('services.ai.nvidia.exec_model'),
+                    'routing_model' => (string) config('services.ai.nvidia.routing_model'),
+                    'analyst_model' => (string) config('services.ai.nvidia.analyst_model'),
+                ]);
+            }
+
+            return $this->result('nvidia', false, 'error', 'Error', $errorMessage !== '' ? $errorMessage : 'HTTP ' . $response->status(), $latency, [
+                'resolved_model' => $model,
+            ]);
+        } catch (\Throwable $e) {
+            $latency = (int) round((microtime(true) - $start) * 1000);
+            $message = $e->getMessage();
+            $status = str_contains(strtolower($message), 'timed out') ? 'timeout' : 'unreachable';
+
+            return $this->result('nvidia', false, $status, ucfirst(str_replace('_', ' ', $status)), $message, $latency);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function probeGlm(): array
+    {
+        $apiKey = (string) config('services.ai.glm.api_key');
+        if (trim($apiKey) === '') {
+            return $this->result(
+                provider: 'glm',
+                ok: false,
+                status: 'not_configured',
+                label: 'Disconnected',
+                message: 'No API key configured.',
+                latencyMs: null,
+            );
+        }
+
+        $resolver = app(GlmModelResolver::class);
+        $model = $resolver->resolve('operational');
+
+        $start = microtime(true);
+        try {
+            $baseUrl = rtrim((string) config('services.ai.glm.base_url', 'https://open.bigmodel.cn/api/paas/v4'), '/');
+            $response = Http::timeout(25)->withToken($apiKey)->post($baseUrl . '/chat/completions', [
+                'model' => $model,
+                'max_tokens' => 1,
+                'messages' => [
+                    ['role' => 'user', 'content' => 'ping'],
+                ],
+            ]);
+            $latency = (int) round((microtime(true) - $start) * 1000);
+            $errorMessage = (string) $response->json('error.message', '');
+
+            if ($response->status() === 401) {
+                return $this->result('glm', false, 'auth_failed', 'Authentication Failed', 'Invalid API key.', $latency);
+            }
+            if ($response->status() === 404) {
+                return $this->result('glm', false, 'model_not_found', 'Model Not Found', $errorMessage !== '' ? $errorMessage : "Model {$model} is not available.", $latency, [
+                    'resolved_model' => $model,
+                ]);
+            }
+            if ($response->status() === 429) {
+                return $this->result('glm', false, 'rate_limited', 'Rate Limited', 'Rate limit exceeded.', $latency, [
+                    'resolved_model' => $model,
+                ]);
+            }
+            if ($response->successful()) {
+                return $this->result('glm', true, 'connected', 'Connected', 'GLM completions are available.', $latency, [
+                    'resolved_model' => $model,
+                    'configured_model' => (string) config('services.ai.glm.exec_model'),
+                    'routing_model' => (string) config('services.ai.glm.routing_model'),
+                    'analyst_model' => (string) config('services.ai.glm.analyst_model'),
+                ]);
+            }
+
+            return $this->result('glm', false, 'error', 'Error', $errorMessage !== '' ? $errorMessage : 'HTTP ' . $response->status(), $latency, [
+                'resolved_model' => $model,
+            ]);
+        } catch (\Throwable $e) {
+            $latency = (int) round((microtime(true) - $start) * 1000);
+            $message = $e->getMessage();
+            $status = str_contains(strtolower($message), 'timed out') ? 'timeout' : 'unreachable';
+
+            return $this->result('glm', false, $status, ucfirst(str_replace('_', ' ', $status)), $message, $latency);
+        }
+    }
+
     private function claudeModelModeLabel(): string
     {
         $configured = strtolower(trim((string) config('services.ai.claude.model', 'auto')));
@@ -409,7 +661,7 @@ class AiProviderHealthService
             return $result;
         }
 
-        $key = $provider === 'claude' ? self::CACHE_KEY_CLAUDE : self::CACHE_KEY_OPENAI;
+        $key = $this->cacheKeyFor($provider);
 
         try {
             $previous = Cache::get($key);
@@ -431,5 +683,15 @@ class AiProviderHealthService
         app(AiAlertService::class)->syncProviderAlert($result);
 
         return $result;
+    }
+
+    private function cacheKeyFor(string $provider): string
+    {
+        return match ($provider) {
+            'claude' => self::CACHE_KEY_CLAUDE,
+            'nvidia' => self::CACHE_KEY_NVIDIA,
+            'glm' => self::CACHE_KEY_GLM,
+            default => self::CACHE_KEY_OPENAI,
+        };
     }
 }

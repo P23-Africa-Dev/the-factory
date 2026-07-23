@@ -1,9 +1,11 @@
 "use client";
 
+import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { SettingsSectionCard } from "@/components/settings/settings-section-card";
+import { useGoogleOAuthReturnToast } from "@/hooks/use-google-oauth-return-toast";
 import { useSettingsAccess } from "@/hooks/use-settings-access";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import {
@@ -32,6 +34,12 @@ export function MeetingsIntegrationsPanel() {
     },
     enabled: !!token && !!companyId,
   });
+
+  const refreshStatus = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["org-calendar-status", companyId] });
+  }, [queryClient, companyId]);
+
+  useGoogleOAuthReturnToast(refreshStatus);
 
   const { data: companySettings, isLoading: loadingSettings } = useQuery({
     queryKey: ["company-settings", companyId],

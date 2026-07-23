@@ -8,8 +8,7 @@ export default function RegisterPage() {
           Let{"\u2019"}s Create your Account
         </h2>
         <p className="text-gray-500 text-sm tracking-[0px] leading-[16px] max-w-[380px] md:mx-auto">
-          Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
-          eiusmod tempor
+          Sign up to get started and manage your workspace with ease.
         </p>
       </div>
 

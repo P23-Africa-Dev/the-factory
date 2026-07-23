@@ -1,6 +1,7 @@
 "use client";
 
 import { API_BASE_URL, apiRequest, ApiEnvelope, ApiRequestError } from "./onboarding";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 
 export type CopilotSource = string;
 
@@ -378,13 +379,18 @@ export async function downloadWeeklySummaryReport(
     params.set("format", format);
     const query = `?${params.toString()}`;
 
+    const transport = getSupportAwareApiTransport(
+        `/copilot/reports/weekly-summary/${encodeURIComponent(reportId)}/download${query}`,
+        token,
+        API_BASE_URL,
+    );
     const response = await fetch(
-        `${API_BASE_URL}/copilot/reports/weekly-summary/${encodeURIComponent(reportId)}/download${query}`,
+        transport.url,
         {
             method: "GET",
             headers: {
                 Accept: "application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/octet-stream, */*",
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                ...transport.authorizationHeaders,
             },
         }
     );
@@ -527,12 +533,13 @@ export async function sendCopilotMessageStream(
         onDone?: (event: StreamEventDone) => void;
     } = {}
 ): Promise<StreamEventDone> {
-    const response = await fetch(`${API_BASE_URL}/copilot/chat`, {
+    const transport = getSupportAwareApiTransport("/copilot/chat", token, API_BASE_URL);
+    const response = await fetch(transport.url, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
             "Accept": "text/event-stream, application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...transport.authorizationHeaders,
         },
         body: JSON.stringify({
             ...payload,

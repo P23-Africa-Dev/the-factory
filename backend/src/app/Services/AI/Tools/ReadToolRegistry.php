@@ -19,6 +19,7 @@ use App\Services\Calendar\MeetingService;
 use App\Services\Company\CompanyContextService;
 use App\Services\Crm\CrmEmailService;
 use App\Services\Crm\LeadService;
+use App\Services\AI\TaskInferenceService;
 use App\Services\AI\Crm\CrmIntelligenceService;
 use App\Services\AI\Support\DriveFileContentReader;
 use App\Services\AI\Support\ReadListPresenter;
@@ -49,6 +50,7 @@ class ReadToolRegistry
         private readonly ReadListPresenter $readListPresenter,
         private readonly CompanyDriveService $companyDriveService,
         private readonly DriveFileContentReader $driveFileContentReader,
+        private readonly TaskInferenceService $taskInferenceService,
     ) {}
 
     public function execute(string $tool, User $user, int $companyId, array $args = []): array
@@ -56,6 +58,7 @@ class ReadToolRegistry
         return match ($tool) {
             'crm.top_leads' => $this->topLeads($user, $companyId, $args),
             'tasks.overdue' => $this->overdueTasks($user, $companyId, $args),
+            'tasks.list' => $this->tasksList($user, $companyId, $args),
             'projects.at_risk_summary' => $this->projectRiskSummary($user, $companyId, $args),
             'attendance.today_summary' => $this->attendanceSummary($user, $companyId),
             'meetings.today' => $this->meetingsToday($user, $companyId, $args),
@@ -577,6 +580,168 @@ class ReadToolRegistry
             'payload' => $payload,
             'sources' => ['tasks.overdue'],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $args
+     */
+    private function tasksList(User $user, int $companyId, array $args): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $role = (string) $context['role'];
+        $resolvedCompanyId = (int) $context['company']->id;
+        $limit = max(1, min($this->readListPresenter->maxExpandedLimit('tasks.list'), (int) ($args['limit'] ?? $this->readListPresenter->previewLimit())));
+        $countOnly = ($args['count_only'] ?? false) === true;
+
+        $baseQuery = Task::query()->where('company_id', $resolvedCompanyId);
+
+        if ($role === 'agent') {
+            $baseQuery->where(function (Builder $builder) use ($user): void {
+                $builder->where('assigned_agent_id', $user->id)
+                    ->orWhereExists(function ($sub) use ($user): void {
+                        $sub->selectRaw('1')
+                            ->from('task_assignments')
+                            ->whereColumn('task_assignments.task_id', 'tasks.id')
+                            ->where('task_assignments.assigned_agent_id', $user->id)
+                            ->where('task_assignments.is_current', true);
+                    });
+            });
+        }
+
+        $assigneeName = is_string($args['assignee_name'] ?? null) ? trim((string) $args['assignee_name']) : '';
+        if ($assigneeName !== '') {
+            $assigneeId = $this->taskInferenceService->resolveAgentIdFromAssigneeToken($assigneeName, $resolvedCompanyId);
+            if ($assigneeId !== null) {
+                $baseQuery->where(function (Builder $builder) use ($assigneeId): void {
+                    $builder->where('assigned_agent_id', $assigneeId)
+                        ->orWhereExists(function ($sub) use ($assigneeId): void {
+                            $sub->selectRaw('1')
+                                ->from('task_assignments')
+                                ->whereColumn('task_assignments.task_id', 'tasks.id')
+                                ->where('task_assignments.assigned_agent_id', $assigneeId)
+                                ->where('task_assignments.is_current', true);
+                        });
+                });
+            }
+        }
+
+        $createdByName = is_string($args['created_by_name'] ?? null) ? trim((string) $args['created_by_name']) : '';
+        if ($createdByName !== '') {
+            $creatorId = $this->resolveCompanyUserIdByName($createdByName, $resolvedCompanyId);
+            if ($creatorId !== null) {
+                $baseQuery->where('created_by_user_id', $creatorId);
+            }
+        }
+
+        $total = (int) (clone $baseQuery)->count();
+
+        $tasks = (clone $baseQuery)
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->with([
+                'assignedAgent:id,name',
+                'creator:id,name',
+                'project:id,name',
+            ])
+            ->get();
+
+        $items = $tasks
+            ->map(static function (Task $task): array {
+                return [
+                    'id' => $task->id,
+                    'title' => $task->title,
+                    'status' => $task->status?->value,
+                    'priority' => $task->priority?->value,
+                    'due_at' => $task->due_at?->toIso8601String(),
+                    'created_at' => $task->created_at?->toIso8601String(),
+                    'assigned_agent_name' => $task->assignedAgent?->name,
+                    'created_by_name' => $task->creator?->name,
+                    'project_name' => $task->project?->name,
+                ];
+            })
+            ->values()
+            ->all();
+
+        $payload = $this->readListPresenter->enrichPayload($items, $total);
+        if ($countOnly) {
+            $payload['count_only'] = true;
+        }
+
+        $filterParts = array_values(array_filter([
+            $assigneeName !== '' ? 'assignee ' . $assigneeName : null,
+            $createdByName !== '' ? 'creator ' . $createdByName : null,
+        ]));
+        $filterLabel = $filterParts !== [] ? implode(', ', $filterParts) : null;
+
+        $header = $this->readListPresenter->formatListHeader(
+            resourceLabel: 'task(s)',
+            shownCount: count($items),
+            scopeTotal: $total,
+            filterLabel: $filterLabel,
+            truncated: ($payload['truncated'] ?? false) === true,
+            remainingCount: (int) ($payload['remaining_count'] ?? 0),
+        );
+
+        if ($total <= 0) {
+            $summary = 'No tasks found matching your query in your permitted scope.';
+        } elseif ($countOnly && count($items) > 3) {
+            $summary = rtrim($header, ':') . '.';
+        } else {
+            $lines = collect($items)
+                ->map(static function (array $item): string {
+                    $title = is_string($item['title'] ?? null) && trim((string) $item['title']) !== ''
+                        ? '"' . trim((string) $item['title']) . '"'
+                        : 'Untitled task';
+                    $assignee = is_string($item['assigned_agent_name'] ?? null) && trim((string) $item['assigned_agent_name']) !== ''
+                        ? (string) $item['assigned_agent_name']
+                        : 'Unassigned';
+                    $creator = is_string($item['created_by_name'] ?? null) && trim((string) $item['created_by_name']) !== ''
+                        ? (string) $item['created_by_name']
+                        : 'Unknown';
+
+                    return sprintf('%s — assignee: %s, created by: %s', $title, $assignee, $creator);
+                })
+                ->values()
+                ->all();
+            $footer = (($payload['truncated'] ?? false) === true) ? "\nWould you like me to list all of them?" : '';
+            $summary = $header . "\n" . implode("\n", $lines) . $footer;
+        }
+
+        return [
+            'tool' => 'tasks.list',
+            'summary' => $summary,
+            'payload' => $payload,
+            'sources' => ['tasks.list'],
+        ];
+    }
+
+    private function resolveCompanyUserIdByName(string $name, int $companyId): ?int
+    {
+        $candidate = trim($name);
+        if ($candidate === '') {
+            return null;
+        }
+
+        $query = User::query()
+            ->whereHas('companies', static function ($q) use ($companyId): void {
+                $q->where('companies.id', $companyId);
+            });
+
+        $exact = (clone $query)->whereRaw('LOWER(name) = ?', [strtolower($candidate)])->value('id');
+        if (is_numeric($exact)) {
+            return (int) $exact;
+        }
+
+        $matches = (clone $query)
+            ->where('name', 'like', '%' . $candidate . '%')
+            ->limit(2)
+            ->pluck('id');
+
+        if ($matches->count() === 1) {
+            return (int) $matches->first();
+        }
+
+        return null;
     }
 
     /**

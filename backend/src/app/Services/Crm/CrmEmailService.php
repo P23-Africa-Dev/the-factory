@@ -58,6 +58,7 @@ class CrmEmailService
         return CrmEmailThread::query()
             ->where('company_id', $companyId)
             ->where('lead_id', $lead->id)
+            ->whereHas('messages')
             ->with(['messages' => fn($q) => $this->applyMessageTimelineOrder($q)])
             ->orderByDesc('last_message_at')
             ->paginate($perPage)
@@ -290,7 +291,7 @@ class CrmEmailService
         }
 
         $connection = $this->requireUserGmailConnection($companyId, $userId);
-        $query = sprintf('from:%s OR to:%s', $email, $email);
+        $query = sprintf('(from:%s OR to:%s) -in:trash -in:spam', $email, $email);
         $pageToken = null;
 
         do {
@@ -346,12 +347,34 @@ class CrmEmailService
         $resolvedCompanyId = (int) $context['company']->id;
         $this->assertMessageBelongsToLead($message, $resolvedCompanyId, (int) $lead->id);
 
-        if (! str_starts_with((string) $message->gmail_message_id, 'pending-')) {
-            $connection = $this->requireUserGmailConnection($resolvedCompanyId, (int) $user->id);
-            $this->gmailApiService->trashMessage($connection, (string) $message->gmail_message_id);
+        $threadId = (int) $message->thread_id;
+        $gmailMessageId = (string) $message->gmail_message_id;
+
+        if ($gmailMessageId !== '' && ! str_starts_with($gmailMessageId, 'pending-')) {
+            $connection = $this->resolveGmailConnectionForMessage(
+                $resolvedCompanyId,
+                (int) $user->id,
+                $message,
+            );
+            $this->gmailApiService->trashMessage($connection, $gmailMessageId);
         }
 
         $message->delete();
+
+        $thread = CrmEmailThread::query()->find($threadId);
+        if ($thread !== null) {
+            $remaining = $thread->messages()->count();
+            $thread->update([
+                'message_count' => $remaining,
+                'unread_count' => $thread->messages()->where('is_read', false)->count(),
+                'last_message_at' => $remaining > 0
+                    ? ($thread->messages()->max('sent_at')
+                        ?? $thread->messages()->max('received_at')
+                        ?? $thread->last_message_at)
+                    : $thread->last_message_at,
+            ]);
+        }
+
         $this->invalidateLeadCache($resolvedCompanyId, (int) $lead->id);
     }
 
@@ -494,16 +517,23 @@ class CrmEmailService
         string $gmailMessageId,
         ?int $forcedLeadId = null,
     ): void {
-        if (CrmEmailMessage::query()
+        $existing = CrmEmailMessage::withTrashed()
             ->where('company_id', $companyId)
             ->where('gmail_message_id', $gmailMessageId)
-            ->exists()
-        ) {
+            ->first();
+
+        // Intentionally deleted in CRM — never re-import from Gmail sync.
+        if ($existing !== null) {
             return;
         }
 
         $raw = $this->gmailApiService->getMessage($connection, $gmailMessageId);
         $parsed = $this->gmailMessageParser->parse($raw);
+
+        $labelIds = is_array($raw['labelIds'] ?? null) ? $raw['labelIds'] : [];
+        if (in_array('TRASH', $labelIds, true) || in_array('SPAM', $labelIds, true)) {
+            return;
+        }
 
         $leadId = $forcedLeadId ?? $this->resolveLeadIdFromParticipants($companyId, $parsed);
         $organizerEmail = strtolower((string) $connection->organizer_email);
@@ -725,6 +755,70 @@ class CrmEmailService
         }
 
         return $connection;
+    }
+
+    /**
+     * Prefer the mailbox that originally synced/owned the CRM message.
+     */
+    private function resolveGmailConnectionForMessage(
+        int $companyId,
+        int $userId,
+        CrmEmailMessage $message,
+    ): CompanyCalendarConnection|UserCalendarConnection {
+        $accountEmail = strtolower(trim((string) ($message->gmail_account_email ?? '')));
+
+        $userConnection = UserCalendarConnection::query()
+            ->where('company_id', $companyId)
+            ->where('user_id', $userId)
+            ->where('status', 'active')
+            ->whereNull('disconnected_at')
+            ->first();
+
+        if (
+            $userConnection !== null
+            && GoogleScopeHelper::connectionHasGmailScopes($userConnection)
+            && ($accountEmail === '' || strtolower((string) $userConnection->organizer_email) === $accountEmail)
+        ) {
+            return $userConnection;
+        }
+
+        if ($accountEmail !== '') {
+            $matchedUserConnection = UserCalendarConnection::query()
+                ->where('company_id', $companyId)
+                ->where('status', 'active')
+                ->whereNull('disconnected_at')
+                ->whereRaw('LOWER(organizer_email) = ?', [$accountEmail])
+                ->first();
+
+            if (
+                $matchedUserConnection !== null
+                && GoogleScopeHelper::connectionHasGmailScopes($matchedUserConnection)
+            ) {
+                return $matchedUserConnection;
+            }
+
+            $companyConnection = CompanyCalendarConnection::query()
+                ->where('company_id', $companyId)
+                ->where('status', 'active')
+                ->whereNull('disconnected_at')
+                ->whereRaw('LOWER(organizer_email) = ?', [$accountEmail])
+                ->first();
+
+            if (
+                $companyConnection !== null
+                && GoogleScopeHelper::connectionHasGmailScopes($companyConnection)
+            ) {
+                return $companyConnection;
+            }
+        }
+
+        if ($userConnection !== null && GoogleScopeHelper::connectionHasGmailScopes($userConnection)) {
+            return $userConnection;
+        }
+
+        throw ValidationException::withMessages([
+            'integration' => ['Google account is not connected. Connect your Google account to manage CRM emails.'],
+        ]);
     }
 
     private function requireCompanyGmailConnection(int $companyId): CompanyCalendarConnection

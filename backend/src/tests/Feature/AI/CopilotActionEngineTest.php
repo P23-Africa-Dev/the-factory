@@ -10,6 +10,7 @@ use App\Models\Task;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Mockery;
 use Tests\TestCase;
@@ -567,6 +568,109 @@ final class CopilotActionEngineTest extends TestCase
         ]);
     }
 
+    public function test_reported_prompt_infers_visit_client_at_lekki_with_assignee_grammar(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+        $agent = $this->createCompanyAgent($company, 'Taraji Henson', 'taraji.henson@example.com');
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => 'thread-smart-forms-1',
+                'message' => 'Create a task to visit a client at Lekki Phase II and assign Taraji Henson to it',
+                'action_confirmed' => false,
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.action_args.title', 'Visit client')
+            ->assertJsonPath('data.response.payload.action_args.type', TaskType::SALES_VISIT->value)
+            ->assertJsonPath('data.response.payload.action_args.location', 'Lekki Phase II')
+            ->assertJsonPath('data.response.payload.action_args.assigned_agent_id', $agent->id);
+
+        $this->assertNotEmpty($response->json('data.response.payload.action_args.draft_id'));
+        $this->assertIsInt($response->json('data.response.payload.action_args.draft_version'));
+        $this->assertStringNotContainsString('assign Taraji', (string) $response->json('data.response.payload.action_args.location'));
+    }
+
+    public function test_conversational_correction_patches_pending_task_draft(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+        $agent = $this->createCompanyAgent($company, 'Taraji Henson', 'taraji.henson@example.com');
+        $threadId = 'thread-smart-forms-patch';
+
+        $initial = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => $threadId,
+                'message' => 'Create a task to visit a client and assign Taraji Henson to it',
+                'action_confirmed' => false,
+            ]);
+
+        $initial
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.payload.action_args.assigned_agent_id', $agent->id);
+
+        $draftId = (string) $initial->json('data.response.payload.action_args.draft_id');
+        $this->assertNotSame('', $draftId);
+
+        $patched = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => $threadId,
+                'message' => 'include location Lekki Phase II',
+                'action_confirmed' => false,
+            ]);
+
+        $patched
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'tasks.create')
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.action_args.location', 'Lekki Phase II')
+            ->assertJsonPath('data.response.payload.action_args.draft_id', $draftId)
+            ->assertJsonPath('data.response.payload.action_args.assigned_agent_id', $agent->id)
+            ->assertJsonPath('data.response.payload.action_args.title', 'Visit client');
+    }
+
+    public function test_confirmed_action_revalidates_blockers_before_execution(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Create task now',
+                'action_confirmed' => true,
+                'action_args' => [
+                    'title' => 'Blocked without assignee',
+                    'type' => 'inspection',
+                    'description' => 'This should not execute while assignee is unresolved.',
+                    'location' => 'Ops Yard',
+                    'address' => '32 Industrial Avenue, Lagos',
+                    'due_date' => now()->addDay()->toIso8601String(),
+                    'assignee' => 'Definitely Unknown Agent',
+                ],
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.payload.confirmation_required', true)
+            ->assertJsonPath('data.response.payload.blocking_confirmation', true);
+
+        $this->assertContains('assignee_unresolved', $response->json('data.response.payload.blocking_warning_codes') ?? []);
+        $this->assertDatabaseMissing('tasks', [
+            'company_id' => $company->id,
+            'title' => 'Blocked without assignee',
+        ]);
+    }
+
     public function test_org_users_create_confirmation_payload_autofills_from_prompt(): void
     {
         [$company, $owner] = $this->seedCompanyUser('owner');
@@ -600,6 +704,8 @@ final class CopilotActionEngineTest extends TestCase
 
     public function test_management_role_can_execute_org_users_create_action(): void
     {
+        Mail::fake();
+
         [$company, $owner] = $this->seedCompanyUser('owner');
         $company->update([
             'subscription_status' => 'active',

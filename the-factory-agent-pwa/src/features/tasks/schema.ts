@@ -40,6 +40,9 @@ const rawTaskSchema = z
     priority: z.enum(['low', 'medium', 'high', 'urgent']).nullable().optional(),
     assigned_by: z.string().nullable().optional(),
     assigned_agent_id: z.union([z.string(), z.number(), z.null()]).optional(),
+    required_actions: z.array(z.string()).optional().nullable(),
+    minimum_photos_required: z.number().optional().nullable(),
+    visit_verification_required: z.boolean().optional().nullable(),
     creator: z
       .object({
         name: z.string().optional(),
@@ -75,6 +78,14 @@ const rawTaskSchema = z
       data.assigned_agent_id != null && data.assigned_agent_id !== ''
         ? Number(data.assigned_agent_id)
         : null,
+    requiredActions: (data.required_actions ?? []).filter(
+      (a): a is string => typeof a === 'string' && a.trim().length > 0,
+    ),
+    minimumPhotosRequired:
+      typeof data.minimum_photos_required === 'number' && Number.isFinite(data.minimum_photos_required)
+        ? Math.max(0, Math.floor(data.minimum_photos_required))
+        : 0,
+    visitVerificationRequired: Boolean(data.visit_verification_required),
   }));
 
 export const taskSchema = rawTaskSchema;

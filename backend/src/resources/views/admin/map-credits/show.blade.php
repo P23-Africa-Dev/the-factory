@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Map Credits — ' . $company->name)
+@section('title', 'Map Credits | ' . $company->name)
 @section('page-title', 'Map Credits')
 
 @section('breadcrumb')
@@ -16,7 +16,7 @@
         <h4 class="fw-bold mb-1" style="font-size:1.05rem">{{ $company->name }}</h4>
         <p class="mb-0" style="font-size:.82rem;color:var(--text-secondary)">
             {{ $company->company_id }} · Plan: {{ $snapshot['plan_label'] ?? '—' }}
-            @if (! $snapshot['metered'])
+            @if (!$snapshot['metered'])
                 · <span class="badge-status badge-inactive">Not metered (demo / enforcement off)</span>
             @endif
         </p>
@@ -27,14 +27,16 @@
             <div class="stat-card p-3">
                 <div class="stat-label mb-1">Balance</div>
                 <div class="stat-value">{{ number_format($snapshot['balance'], 0) }}</div>
-                <div style="font-size:.75rem;color:var(--text-muted)">≈ ${{ number_format($snapshot['balance_usd'], 2) }}</div>
+                <div style="font-size:.75rem;color:var(--text-muted)">≈ ${{ number_format($snapshot['balance_usd'], 2) }}
+                </div>
             </div>
         </div>
         <div class="col-6 col-lg-3">
             <div class="stat-card p-3">
                 <div class="stat-label mb-1">Allocation / cycle</div>
                 <div class="stat-value">{{ number_format($snapshot['allocation_credits'], 0) }}</div>
-                <div style="font-size:.75rem;color:var(--text-muted)">Plan left: {{ number_format($snapshot['plan_credits'], 0) }}</div>
+                <div style="font-size:.75rem;color:var(--text-muted)">Plan left:
+                    {{ number_format($snapshot['plan_credits'], 0) }}</div>
             </div>
         </div>
         <div class="col-6 col-lg-3">
@@ -48,7 +50,8 @@
             <div class="stat-card p-3">
                 <div class="stat-label mb-1">Lifetime consumed</div>
                 <div class="stat-value">{{ number_format($snapshot['lifetime_consumed'], 0) }}</div>
-                <div style="font-size:.75rem;color:var(--text-muted)">≈ ${{ number_format($snapshot['lifetime_consumed'] / $rate, 2) }}</div>
+                <div style="font-size:.75rem;color:var(--text-muted)">≈
+                    ${{ number_format($snapshot['lifetime_consumed'] / $rate, 2) }}</div>
             </div>
         </div>
     </div>
@@ -59,7 +62,11 @@
                 <div class="section-label"><i class="bi bi-bar-chart"></i>Usage by SKU</div>
                 <table class="table admin-table mb-0">
                     <thead>
-                        <tr><th>SKU</th><th>Calls</th><th>Credits</th></tr>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Calls</th>
+                            <th>Credits</th>
+                        </tr>
                     </thead>
                     <tbody>
                         @forelse ($bySku as $row)
@@ -69,7 +76,10 @@
                                 <td>{{ number_format((float) $row->credits, 1) }}</td>
                             </tr>
                         @empty
-                            <tr><td colspan="3" class="text-center py-3" style="color:var(--text-muted)">No consumption yet.</td></tr>
+                            <tr>
+                                <td colspan="3" class="text-center py-3" style="color:var(--text-muted)">No consumption
+                                    yet.</td>
+                            </tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -88,7 +98,8 @@
                         <input type="text" name="reason" class="form-control form-control-sm" maxlength="255">
                     </div>
                     <div class="col-12">
-                        <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-check2 me-1"></i>Apply</button>
+                        <button type="submit" class="btn btn-sm btn-outline-primary"><i
+                                class="bi bi-check2 me-1"></i>Apply</button>
                     </div>
                 </form>
             </div>
@@ -124,7 +135,10 @@
                                     <td style="font-size:.75rem;color:var(--text-muted)">{{ $tx->source }}</td>
                                 </tr>
                             @empty
-                                <tr><td colspan="6" class="text-center py-4" style="color:var(--text-muted)">No transactions yet.</td></tr>
+                                <tr>
+                                    <td colspan="6" class="text-center py-4" style="color:var(--text-muted)">No
+                                        transactions yet.</td>
+                                </tr>
                             @endforelse
                         </tbody>
                     </table>

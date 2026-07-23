@@ -21,7 +21,7 @@ class AiOperationsAnalyticsService
      */
     public function providerUsage(string $today, string $monthStart): array
     {
-        $providers = ['openai', 'claude', 'demo'];
+        $providers = ['openai', 'claude', 'nvidia', 'glm', 'demo'];
         $result = [];
 
         foreach ($providers as $provider) {

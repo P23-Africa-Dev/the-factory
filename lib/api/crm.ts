@@ -1,6 +1,7 @@
 "use client";
 
 import { apiRequest, ApiEnvelope, ApiRequestError, API_BASE_URL } from "./onboarding";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 
 export type ApiRoleBasePath = "/admin" | "/agent";
 
@@ -98,6 +99,7 @@ export type ListLeadsParams = {
     assigned_to_user_id?: number | string;
     per_page?: number;
     page?: number;
+    uncategorized?: boolean;
 };
 
 export type LeadsListData = {
@@ -368,6 +370,7 @@ export function listLeads(
         assigned_to_user_id: params.assigned_to_user_id,
         per_page: params.per_page,
         page: params.page,
+        uncategorized: params.uncategorized ? 1 : undefined,
     });
 
     return apiRequest<LeadsListData>({
@@ -649,10 +652,15 @@ export async function downloadCrmLeadsExport(
         query.set(key, String(value));
     });
 
-    const response = await fetch(`${API_BASE_URL}${withBase(basePath, "/crm/leads/export")}?${query.toString()}`, {
+    const transport = getSupportAwareApiTransport(
+        `${withBase(basePath, "/crm/leads/export")}?${query.toString()}`,
+        token,
+        API_BASE_URL,
+    );
+    const response = await fetch(transport.url, {
         method: "GET",
         headers: {
-            Authorization: `Bearer ${token}`,
+            ...transport.authorizationHeaders,
             Accept: "text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;q=0.9, */*;q=0.8",
         },
     });

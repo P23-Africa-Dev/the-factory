@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 import {
   createDriveFolder,
   deleteDriveFile,
@@ -34,7 +35,7 @@ export function useDriveUsage(companyId?: number | string) {
       const res = await getDriveUsage(token, companyId);
       return res.data;
     },
-    enabled: !!token && companyId != null,
+    enabled: hasActiveApiSession(token) && companyId != null,
   });
 }
 
@@ -47,7 +48,7 @@ export function useDriveFolders(companyId?: number | string, parentId?: number |
       const res = await getDriveFolders(token, companyId, parentId);
       return res.data.items;
     },
-    enabled: !!token && companyId != null,
+    enabled: hasActiveApiSession(token) && companyId != null,
   });
 }
 
@@ -66,7 +67,7 @@ export function useDriveFiles(params: {
       const res = await getDriveFiles(token, params);
       return res.data;
     },
-    enabled: !!token && params.company_id != null,
+    enabled: hasActiveApiSession(token) && params.company_id != null,
   });
 }
 
@@ -79,7 +80,7 @@ export function useDriveFile(fileId?: number, companyId?: number | string) {
       const res = await getDriveFile(token, fileId as number, companyId);
       return res.data;
     },
-    enabled: !!token && !!fileId && companyId != null,
+    enabled: hasActiveApiSession(token) && !!fileId && companyId != null,
   });
 }
 

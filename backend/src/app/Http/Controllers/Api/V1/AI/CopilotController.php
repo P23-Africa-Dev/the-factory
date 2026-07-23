@@ -85,12 +85,12 @@ class CopilotController extends Controller
                     @ob_flush();
                     @flush();
 
-                    foreach ($processingLabels as $label) {
-                        echo "event: processing\n";
-                        echo 'data: ' . $this->encodeSseData(['label' => $label]) . "\n\n";
-                        @ob_flush();
-                        @flush();
-                    }
+                    // Emit only the first label — the client owns engaging status rotation pacing.
+                    $firstLabel = $processingLabels[0] ?? 'Thinking...';
+                    echo "event: processing\n";
+                    echo 'data: ' . $this->encodeSseData(['label' => $firstLabel]) . "\n\n";
+                    @ob_flush();
+                    @flush();
 
                     $result = $this->copilotService->chat(
                         user: $chatUser,

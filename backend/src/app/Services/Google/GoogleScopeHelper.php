@@ -9,9 +9,13 @@ use App\Models\UserCalendarConnection;
 
 class GoogleScopeHelper
 {
-    /** @var list<string> */
+    /**
+     * Minimum Gmail scopes for CRM email features.
+     * gmail.modify already includes read access, so gmail.readonly is not required.
+     *
+     * @var list<string>
+     */
     private const GMAIL_SCOPES = [
-        'https://www.googleapis.com/auth/gmail.readonly',
         'https://www.googleapis.com/auth/gmail.send',
         'https://www.googleapis.com/auth/gmail.modify',
     ];

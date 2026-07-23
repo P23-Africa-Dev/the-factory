@@ -68,12 +68,13 @@ class MeetingManagementTest extends TestCase
         ]);
 
         [$company, $owner] = $this->seedCompanyUsers();
+        $owner->forceFill(['email' => 'emmanuel@factory23.test', 'name' => 'Emmanuel'])->save();
 
         CompanyCalendarConnection::create([
             'company_id' => $company->id,
             'owner_user_id' => $owner->id,
-            'organizer_email' => 'owner@factory23.test',
-            'organizer_name' => 'Calendar Owner',
+            'organizer_email' => 'mike@gmail.com',
+            'organizer_name' => 'Mike Calendar',
             'organizer_google_user_id' => 'google-owner-123',
             'access_token_encrypted' => 'access-token',
             'refresh_token_encrypted' => 'refresh-token',
@@ -100,10 +101,15 @@ class MeetingManagementTest extends TestCase
         $response->assertCreated()
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.meeting.sync_status', 'synced')
-            ->assertJsonPath('data.meeting.organizer_email_snapshot', 'owner@factory23.test')
-            ->assertJsonPath('data.meeting.organizer_name_snapshot', 'Calendar Owner')
+            ->assertJsonPath('data.meeting.organizer_email_snapshot', 'emmanuel@factory23.test')
+            ->assertJsonPath('data.meeting.organizer_name_snapshot', 'Emmanuel')
+            ->assertJsonPath('data.meeting.google_calendar_owner_email', 'mike@gmail.com')
             ->assertJsonPath('data.integration.connected', true)
-            ->assertJsonPath('data.warnings', []);
+            ->assertJsonPath('data.integration.google_calendar_owner_email', 'mike@gmail.com');
+
+        $warnings = $response->json('data.warnings');
+        $this->assertIsArray($warnings);
+        $this->assertSame([], $warnings);
 
         Http::assertSent(static function ($request): bool {
             if (! str_contains($request->url(), 'https://www.googleapis.com/calendar/v3/calendars/')) {
@@ -115,22 +121,154 @@ class MeetingManagementTest extends TestCase
             }
 
             $payload = $request->data();
+            $attendeeEmails = collect($payload['attendees'] ?? [])
+                ->pluck('email')
+                ->map(static fn($email): string => strtolower((string) $email))
+                ->all();
 
             return ($payload['start']['timeZone'] ?? null) === 'Africa/Lagos'
-                && ($payload['end']['timeZone'] ?? null) === 'Africa/Lagos';
+                && ($payload['end']['timeZone'] ?? null) === 'Africa/Lagos'
+                && ! in_array('emmanuel@factory23.test', $attendeeEmails, true)
+                && ! in_array('mike@gmail.com', $attendeeEmails, true)
+                && in_array('admin@factory23.test', $attendeeEmails, true);
         });
 
         $meetingId = (int) $response->json('data.meeting.id');
 
         $this->assertDatabaseHas('meeting_attendees', [
             'meeting_id' => $meetingId,
-            'email' => 'owner@factory23.test',
+            'email' => 'emmanuel@factory23.test',
+            'user_id' => $owner->id,
             'is_organizer' => true,
+        ]);
+
+        $this->assertDatabaseMissing('meeting_attendees', [
+            'meeting_id' => $meetingId,
+            'email' => 'mike@gmail.com',
         ]);
 
         $this->assertNotNull($response->json('data.meeting.google_event_id'));
         $this->assertSame('primary', $response->json('data.meeting.google_calendar_id'));
         $this->assertSame('https://meet.google.com/event-owner-123', $response->json('data.meeting.google_meet_url'));
+    }
+
+    public function test_creator_is_auto_included_as_organizer_when_personal_google_email_differs(): void
+    {
+        Http::fake([
+            'https://www.googleapis.com/calendar/v3/calendars/*/events?conferenceDataVersion=1&sendUpdates=all' => Http::response([
+                'id' => 'event-personal-456',
+                'organizer' => ['email' => 'mike@gmail.com'],
+                'hangoutLink' => 'https://meet.google.com/event-personal-456',
+                'htmlLink' => 'https://calendar.google.com/event?eid=personal456',
+                'updated' => now()->toIso8601String(),
+            ], 200),
+        ]);
+
+        [$company, $owner] = $this->seedCompanyUsers('FAC-MEETDIFF');
+        $owner->forceFill(['email' => 'emmanuel@factory23.test', 'name' => 'Emmanuel'])->save();
+
+        \App\Models\UserCalendarConnection::create([
+            'company_id' => $company->id,
+            'user_id' => $owner->id,
+            'organizer_email' => 'mike@gmail.com',
+            'organizer_name' => 'Mike Gmail',
+            'organizer_google_user_id' => 'google-mike-456',
+            'access_token_encrypted' => 'access-token',
+            'refresh_token_encrypted' => 'refresh-token',
+            'token_expires_at' => now()->addHour(),
+            'scopes' => ['https://www.googleapis.com/auth/calendar'],
+            'status' => 'active',
+            'connected_at' => now(),
+        ]);
+
+        $response = $this->withToken($owner->createToken('owner-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/meetings', [
+                'company_id' => $company->company_id,
+                'title' => 'Client Kickoff',
+                'timezone' => 'UTC',
+                'start_at' => now()->addDay()->setHour(14)->setMinute(0)->toIso8601String(),
+                'end_at' => now()->addDay()->setHour(15)->setMinute(0)->toIso8601String(),
+                'source_page' => 'operations',
+                'attendees' => [],
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.meeting.sync_status', 'synced')
+            ->assertJsonPath('data.meeting.organizer_email_snapshot', 'emmanuel@factory23.test');
+
+        $meetingId = (int) $response->json('data.meeting.id');
+
+        $this->assertDatabaseHas('meeting_attendees', [
+            'meeting_id' => $meetingId,
+            'email' => 'emmanuel@factory23.test',
+            'user_id' => $owner->id,
+            'is_organizer' => true,
+        ]);
+
+        $this->assertDatabaseMissing('meeting_attendees', [
+            'meeting_id' => $meetingId,
+            'email' => 'mike@gmail.com',
+        ]);
+    }
+
+    public function test_explicit_google_host_email_receives_google_invite(): void
+    {
+        Http::fake([
+            'https://www.googleapis.com/calendar/v3/calendars/*/events?conferenceDataVersion=1&sendUpdates=all' => Http::response([
+                'id' => 'event-explicit-host',
+                'organizer' => ['email' => 'mike@gmail.com'],
+                'hangoutLink' => 'https://meet.google.com/event-explicit-host',
+                'htmlLink' => 'https://calendar.google.com/event?eid=explicithost',
+                'updated' => now()->toIso8601String(),
+            ], 200),
+        ]);
+
+        [$company, $owner] = $this->seedCompanyUsers('FAC-MEETHOST');
+        $owner->forceFill(['email' => 'emmanuel@factory23.test', 'name' => 'Emmanuel'])->save();
+
+        \App\Models\UserCalendarConnection::create([
+            'company_id' => $company->id,
+            'user_id' => $owner->id,
+            'organizer_email' => 'mike@gmail.com',
+            'organizer_name' => 'Mike Gmail',
+            'organizer_google_user_id' => 'google-mike-host',
+            'access_token_encrypted' => 'access-token',
+            'refresh_token_encrypted' => 'refresh-token',
+            'token_expires_at' => now()->addHour(),
+            'scopes' => ['https://www.googleapis.com/auth/calendar'],
+            'status' => 'active',
+            'connected_at' => now(),
+        ]);
+
+        $response = $this->withToken($owner->createToken('owner-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/meetings', [
+                'company_id' => $company->company_id,
+                'title' => 'Invite Host Explicitly',
+                'timezone' => 'UTC',
+                'start_at' => now()->addDay()->setHour(14)->setMinute(0)->toIso8601String(),
+                'end_at' => now()->addDay()->setHour(15)->setMinute(0)->toIso8601String(),
+                'source_page' => 'operations',
+                'attendees' => [
+                    ['email' => 'mike@gmail.com', 'display_name' => 'Mike'],
+                ],
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.meeting.sync_status', 'synced');
+
+        Http::assertSent(static function ($request): bool {
+            if (! str_contains($request->url(), '/events?conferenceDataVersion=1&sendUpdates=all')) {
+                return false;
+            }
+
+            $attendeeEmails = collect($request->data()['attendees'] ?? [])
+                ->pluck('email')
+                ->map(static fn($email): string => strtolower((string) $email))
+                ->all();
+
+            return in_array('mike@gmail.com', $attendeeEmails, true)
+                && ! in_array('emmanuel@factory23.test', $attendeeEmails, true);
+        });
     }
 
     public function test_owner_can_create_meeting_with_lead_ids(): void

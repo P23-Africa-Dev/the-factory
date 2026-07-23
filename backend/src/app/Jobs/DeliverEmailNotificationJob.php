@@ -60,7 +60,7 @@ class DeliverEmailNotificationJob implements ShouldQueue
             organizationName: $companyName,
             recipientName: (string) ($user->name ?? 'Team member'),
             title: (string) $notification->title,
-            message: (string) $notification->message,
+            bodyText: (string) $notification->message,
             actionUrl: $actionUrl,
         ));
     }

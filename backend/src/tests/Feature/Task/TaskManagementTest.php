@@ -650,6 +650,7 @@ class TaskManagementTest extends TestCase
     public function test_agent_can_upload_proof_and_complete_task(): void
     {
         Storage::fake('local');
+        Storage::fake('drive');
 
         [$company, $admin, $agent] = $this->seedCompanyUsers();
 
@@ -685,10 +686,11 @@ class TaskManagementTest extends TestCase
         $uploadResponse->assertStatus(201)
             ->assertJson(['success' => true]);
 
-        $proofPath = TaskProof::query()->value('file_path');
+        $proof = TaskProof::query()->first();
 
-        $this->assertNotNull($proofPath);
-        $this->assertTrue(Storage::disk('local')->exists((string) $proofPath));
+        $this->assertNotNull($proof);
+        $this->assertSame('drive', $proof->disk);
+        $this->assertTrue(Storage::disk('drive')->exists((string) $proof->file_path));
 
         $inProgressResponse = $this->withToken($token)->patchJson('/api/v1/tasks/' . $task->id . '/status', [
             'company_id' => $company->id,
@@ -1073,6 +1075,7 @@ class TaskManagementTest extends TestCase
     public function test_proof_download_is_restricted_to_owner_and_admin(): void
     {
         Storage::fake('local');
+        Storage::fake('drive');
 
         [$company, $admin, $agent] = $this->seedCompanyUsers();
 
@@ -1117,7 +1120,7 @@ class TaskManagementTest extends TestCase
             'status' => 'pending',
         ]);
 
-        $path = Storage::disk('local')->putFile(
+        $path = Storage::disk('drive')->putFile(
             'task-proofs/company-' . $company->id . '/task-' . $task->id,
             UploadedFile::fake()->image('evidence.jpg')
         );
@@ -1125,7 +1128,7 @@ class TaskManagementTest extends TestCase
         $proof = TaskProof::create([
             'task_id' => $task->id,
             'uploaded_by_user_id' => $agent->id,
-            'disk' => 'local',
+            'disk' => 'drive',
             'file_path' => $path,
             'mime_type' => 'image/jpeg',
             'size_bytes' => 1024,
@@ -1142,6 +1145,12 @@ class TaskManagementTest extends TestCase
 
         $ownerResponse->assertOk();
 
+        $taskDetailResponse = $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/tasks/' . $task->id . '?company_id=' . $company->id);
+
+        $taskDetailResponse->assertOk()
+            ->assertJsonPath('data.task.proofs.0.file_name', 'evidence.jpg');
+
         $supervisorResponse = $this->actingAs($supervisor, 'sanctum')
             ->getJson('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
 
@@ -1153,6 +1162,32 @@ class TaskManagementTest extends TestCase
 
         $agentResponse->assertUnprocessable()
             ->assertJsonPath('errors.authorization.0', 'Only owners and admins can view proof files.');
+
+        Storage::disk('drive')->delete((string) $proof->file_path);
+
+        $missingResponse = $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
+
+        $missingResponse->assertNotFound()
+            ->assertJsonPath('message', 'Proof file is no longer available.');
+
+        $replaceResponse = $this->actingAs($admin, 'sanctum')
+            ->post('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id, [
+                'company_id' => $company->id,
+                'file' => UploadedFile::fake()->image('restored.jpg'),
+            ]);
+
+        $replaceResponse->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.proof.file_name', 'restored.jpg');
+
+        $this->assertSame('drive', $proof->fresh()->disk);
+        $this->assertTrue(Storage::disk('drive')->exists((string) $proof->fresh()->file_path));
+
+        $restoredDownload = $this->actingAs($admin, 'sanctum')
+            ->get('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
+
+        $restoredDownload->assertOk();
     }
 
     private function seedCompanyUsers(): array

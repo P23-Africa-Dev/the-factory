@@ -7,6 +7,7 @@ namespace App\Services\AI;
 use App\Models\AiLog;
 use App\Services\AI\Providers\AiGenerationResult;
 use App\Services\AI\Providers\ClaudeModelResolver;
+use App\Services\AI\Providers\GlmModelResolver;
 use App\Services\AI\Providers\OpenAiModelResolver;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
@@ -144,11 +145,29 @@ class AiLoggingService
 
         $this->fail($log, $errorCode, $errorMessage);
 
+        $executionMs = $this->inferExecutionMsFromErrorMessage($errorMessage);
+        if ($executionMs !== null) {
+            $log->update(['execution_ms' => $executionMs]);
+        }
+
         if (Schema::hasColumn('ai_logs', 'llm_invoked')) {
             $log->update(['llm_invoked' => true]);
         }
 
         return $log;
+    }
+
+    private function inferExecutionMsFromErrorMessage(string $errorMessage): ?int
+    {
+        if (preg_match('/timed out after (\d+)\s*milliseconds/i', $errorMessage, $matches) === 1) {
+            return max(0, (int) $matches[1]);
+        }
+
+        if (preg_match('/timed out after (\d+(?:\.\d+)?)\s*seconds/i', $errorMessage, $matches) === 1) {
+            return max(0, (int) round(((float) $matches[1]) * 1000));
+        }
+
+        return null;
     }
 
     /**
@@ -349,6 +368,7 @@ class AiLoggingService
         return match ($provider) {
             'claude' => app(ClaudeModelResolver::class)->resolve($purposeKey, $model),
             'openai' => app(OpenAiModelResolver::class)->resolve($purposeKey, $model),
+            'glm' => app(GlmModelResolver::class)->resolve($purposeKey, $model),
             'demo' => 'mock-ely',
             default => $model !== '' ? $model : 'unknown',
         };

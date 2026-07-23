@@ -49,7 +49,7 @@ return [
         ),
         'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
             'GOOGLE_CALENDAR_SCOPES',
-            'openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify',
+            'openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify',
         ))))),
     ],
 
@@ -59,6 +59,8 @@ return [
     ],
 
     'ai' => [
+        // Env default only — runtime stack is overridden by platform_settings.ai.stack when set.
+        'stack' => env('AI_STACK', 'openai_claude'),
         'provider' => env('AI_PROVIDER', 'openai'),
         'fallback_provider' => env('AI_FALLBACK_PROVIDER', 'claude'),
         'default_model' => env('AI_DEFAULT_MODEL', 'auto'),
@@ -69,6 +71,7 @@ return [
         'router_model' => env('AI_ROUTER_MODEL', 'auto'),
         'provider_skip_ttl_seconds' => (int) env('AI_PROVIDER_SKIP_TTL', 300),
         'enable_hybrid_router' => filter_var(env('AI_ENABLE_HYBRID_ROUTER', true), FILTER_VALIDATE_BOOL),
+        'intent_routing_mode' => env('AI_INTENT_ROUTING_MODE', 'rules_first'),
         'enable_read_synthesis' => filter_var(env('AI_ENABLE_READ_SYNTHESIS', true), FILTER_VALIDATE_BOOL),
         'enable_streaming' => filter_var(env('AI_ENABLE_STREAMING', true), FILTER_VALIDATE_BOOL),
         'enable_actions' => filter_var(env('AI_ENABLE_ACTIONS', true), FILTER_VALIDATE_BOOL),
@@ -92,6 +95,40 @@ return [
             'model' => env('CLAUDE_MODEL', 'auto'),
             'version' => env('ANTHROPIC_VERSION', '2023-06-01'),
         ],
+        'nvidia' => [
+            'api_key' => env('NVIDIA_API_KEY'),
+            'base_url' => env('NVIDIA_BASE_URL', 'https://integrate.api.nvidia.com/v1'),
+            // Ceiling / analyst default. Hosted NIM often queues for a long time under load.
+            'request_timeout_ms' => (int) env('NVIDIA_REQUEST_TIMEOUT_MS', 120000),
+            // Intent routing must fail fast so rule-based routing can take over.
+            'routing_timeout_ms' => (int) env('NVIDIA_ROUTING_TIMEOUT_MS', 15000),
+            // Day-to-day Ask ELY; shorter than analyst so hung NIM does not block for 2 minutes.
+            'operational_timeout_ms' => (int) env('NVIDIA_OPERATIONAL_TIMEOUT_MS', 60000),
+            'analyst_timeout_ms' => (int) env('NVIDIA_ANALYST_TIMEOUT_MS', (int) env('NVIDIA_REQUEST_TIMEOUT_MS', 120000)),
+            // Cap day-to-day chat completions; larger budgets slow large models further.
+            'operational_max_tokens' => (int) env('NVIDIA_OPERATIONAL_MAX_TOKENS', 1000),
+            // Nemotron models reason ("thinking") by default, which is slow and can consume
+            // the whole token budget. Off by default; flip via env for analyst-grade output.
+            'enable_thinking' => filter_var(env('NVIDIA_ENABLE_THINKING', false), FILTER_VALIDATE_BOOL),
+            // Verified live on the hosted catalog (nano-8b pool hangs; ultra-253b is 404).
+            'routing_model' => env('NVIDIA_ROUTING_MODEL', 'meta/llama-3.1-8b-instruct'),
+            'exec_model' => env('NVIDIA_EXEC_MODEL', 'nvidia/llama-3.3-nemotron-super-49b-v1.5'),
+            'analyst_model' => env('NVIDIA_ANALYST_MODEL', 'nvidia/llama-3.3-nemotron-super-49b-v1.5'),
+        ],
+        'glm' => [
+            'api_key' => env('GLM_API_KEY'),
+            'base_url' => env('GLM_BASE_URL', 'https://open.bigmodel.cn/api/paas/v4'),
+            'request_timeout_ms' => (int) env('GLM_REQUEST_TIMEOUT_MS', 120000),
+            'routing_timeout_ms' => (int) env('GLM_ROUTING_TIMEOUT_MS', 15000),
+            'operational_timeout_ms' => (int) env('GLM_OPERATIONAL_TIMEOUT_MS', 60000),
+            'analyst_timeout_ms' => (int) env('GLM_ANALYST_TIMEOUT_MS', (int) env('GLM_REQUEST_TIMEOUT_MS', 120000)),
+            'operational_max_tokens' => (int) env('GLM_OPERATIONAL_MAX_TOKENS', 1000),
+            'routing_model' => env('GLM_ROUTING_MODEL', 'glm-4-flash'),
+            'exec_model' => env('GLM_EXEC_MODEL', 'glm-4-air'),
+            'analyst_model' => env('GLM_ANALYST_MODEL', 'glm-4-plus'),
+        ],
+        // After a timeout/unreachable, skip that vendor briefly so the next turn fails fast.
+        'provider_timeout_skip_ttl_seconds' => (int) env('AI_PROVIDER_TIMEOUT_SKIP_TTL', 90),
         'admin' => [
             'spending_alert_usd' => (float) env('AI_ADMIN_SPENDING_ALERT_USD', 500),
         ],

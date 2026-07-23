@@ -10,6 +10,7 @@ import {
     type CalendarIntegrationStatus,
 } from "@/lib/api/calendar-integration";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 
 export const CALENDAR_INTEGRATION_KEYS = {
     all: ["calendar-integration"] as const,
@@ -25,7 +26,7 @@ export function useCalendarIntegrationStatus(companyId?: number | string) {
             const response = await getUserCalendarIntegrationStatus({ company_id: companyId }, token);
             return response.data;
         },
-        enabled: !!token && !!companyId,
+        enabled: hasActiveApiSession(token) && !!companyId,
         staleTime: 1000 * 30,
     });
 }

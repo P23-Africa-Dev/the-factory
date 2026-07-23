@@ -45,7 +45,7 @@ class TaskService
         'latestReassignment.fromUser',
         'latestReassignment.toUser',
         'latestReassignment.respondedBy',
-        'proofs',
+        'proofs.uploader',
     ];
 
     public function __construct(
@@ -446,14 +446,24 @@ class TaskService
             ]);
         }
 
-        $path = Storage::disk('local')->putFile("task-proofs/company-{$context->company->id}/task-{$task->id}", $file);
+        $disk = (string) config('filesystems.drive_disk', 'drive');
+        $directory = "task-proofs/company-{$context->company->id}/task-{$task->id}";
+        $path = Storage::disk($disk)->putFile($directory, $file, [
+            'visibility' => 'private',
+        ]);
+
+        if (! is_string($path) || $path === '') {
+            throw ValidationException::withMessages([
+                'file' => ['Unable to store the uploaded proof file.'],
+            ]);
+        }
 
         $proof = TaskProof::create([
             'task_id' => $task->id,
             'uploaded_by_user_id' => $user->id,
-            'disk' => 'local',
+            'disk' => $disk,
             'file_path' => $path,
-            'mime_type' => (string) $file->getMimeType(),
+            'mime_type' => (string) ($file->getMimeType() ?: 'application/octet-stream'),
             'size_bytes' => (int) $file->getSize(),
             'latitude' => $data['latitude'] ?? null,
             'longitude' => $data['longitude'] ?? null,
@@ -465,6 +475,91 @@ class TaskService
         ]);
 
         $this->notifyTaskProofUploaded($task, $user);
+
+        if (app('router')->has('tasks.proofs.show')) {
+            $proof->setAttribute(
+                'file_url',
+                route('tasks.proofs.show', [
+                    'task' => $task->id,
+                    'proof' => $proof->id,
+                    'company_id' => $task->company_id,
+                ])
+            );
+        }
+
+        return $proof;
+    }
+
+    public function replaceProofFile(
+        User $user,
+        Task $task,
+        TaskProof $proof,
+        UploadedFile $file,
+        array $data = [],
+    ): TaskProof {
+        $context = $this->accessService->resolve($user, $data['company_id'] ?? null);
+        $this->assertTaskIntegrityInCompany($task, $context->company->id);
+
+        if (! $context->canViewProofFiles()) {
+            throw ValidationException::withMessages([
+                'authorization' => ['Only owners and admins can replace proof files.'],
+            ]);
+        }
+
+        if ((int) $proof->task_id !== (int) $task->id) {
+            throw ValidationException::withMessages([
+                'proof' => ['Proof does not belong to the selected task.'],
+            ]);
+        }
+
+        $disk = (string) config('filesystems.drive_disk', 'drive');
+        $directory = "task-proofs/company-{$context->company->id}/task-{$task->id}";
+        $path = Storage::disk($disk)->putFile($directory, $file, [
+            'visibility' => 'private',
+        ]);
+
+        if (! is_string($path) || $path === '') {
+            throw ValidationException::withMessages([
+                'file' => ['Unable to store the replacement proof file.'],
+            ]);
+        }
+
+        $previousDisk = is_string($proof->disk) ? $proof->disk : null;
+        $previousPath = is_string($proof->file_path) ? $proof->file_path : null;
+
+        $metadata = is_array($proof->metadata) ? $proof->metadata : [];
+        $metadata['original_name'] = $file->getClientOriginalName();
+
+        $proof->update([
+            'disk' => $disk,
+            'file_path' => $path,
+            'mime_type' => (string) ($file->getMimeType() ?: 'application/octet-stream'),
+            'size_bytes' => (int) $file->getSize(),
+            'notes' => array_key_exists('notes', $data) ? ($data['notes'] ?? null) : $proof->notes,
+            'metadata' => $metadata,
+        ]);
+
+        if (
+            $previousDisk
+            && $previousPath
+            && ($previousDisk !== $disk || $previousPath !== $path)
+            && Storage::disk($previousDisk)->exists($previousPath)
+        ) {
+            Storage::disk($previousDisk)->delete($previousPath);
+        }
+
+        $proof->refresh();
+
+        if (app('router')->has('tasks.proofs.show')) {
+            $proof->setAttribute(
+                'file_url',
+                route('tasks.proofs.show', [
+                    'task' => $task->id,
+                    'proof' => $proof->id,
+                    'company_id' => $task->company_id,
+                ])
+            );
+        }
 
         return $proof;
     }

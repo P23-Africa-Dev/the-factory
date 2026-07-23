@@ -66,7 +66,6 @@ class SyncGmailCommandTest extends TestCase
             'refresh_token_encrypted' => 'company-refresh-token',
             'token_expires_at' => now()->addHour(),
             'scopes' => [
-                'https://www.googleapis.com/auth/gmail.readonly',
                 'https://www.googleapis.com/auth/gmail.send',
                 'https://www.googleapis.com/auth/gmail.modify',
             ],
@@ -83,7 +82,6 @@ class SyncGmailCommandTest extends TestCase
             'refresh_token_encrypted' => 'user-refresh-token',
             'token_expires_at' => now()->addHour(),
             'scopes' => [
-                'https://www.googleapis.com/auth/gmail.readonly',
                 'https://www.googleapis.com/auth/gmail.send',
                 'https://www.googleapis.com/auth/gmail.modify',
             ],

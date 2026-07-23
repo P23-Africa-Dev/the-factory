@@ -28,6 +28,7 @@ import {
   type UpdateTaskPayload,
 } from "@/lib/api/tasks";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 import { toast } from "sonner";
 
 export const TASK_KEYS = {
@@ -56,7 +57,7 @@ export function useTasks(params: ListTasksParams = {}) {
         pagination: res.data.pagination,
       };
     },
-    enabled: !!token && (!!params.company_id || !!params.project_id),
+    enabled: hasActiveApiSession(token) && (!!params.company_id || !!params.project_id),
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -84,7 +85,7 @@ export function useTaskDetail(taskId: number | string, companyId?: number | stri
   return useQuery({
     queryKey: TASK_KEYS.detail(taskId, companyId),
     queryFn: async () => (await getTask(taskId, { company_id: companyId }, token)).data.task,
-    enabled: !!token && !!taskId,
+    enabled: hasActiveApiSession(token) && !!taskId,
   });
 }
 
@@ -111,7 +112,7 @@ export function useTaskReassignmentInbox(params: TaskReassignmentsInboxParams = 
       const res = await listTaskReassignmentInbox(params, token);
       return res.data.reassignments;
     },
-    enabled: !!token && !!params.company_id,
+    enabled: hasActiveApiSession(token) && !!params.company_id,
     staleTime: 1000 * 30,
   });
 }

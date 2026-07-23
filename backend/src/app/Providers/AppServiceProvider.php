@@ -110,5 +110,12 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinutes(10, (int) config('rate_limits.auth_resend_otp_per_10_minutes', 5))
                 ->by($request->ip());
         });
+
+        RateLimiter::for('support-access', function (Request $request) {
+            $adminId = auth('admin')->id();
+
+            return Limit::perMinute(10)
+                ->by((string) ($adminId ?: $request->ip()));
+        });
     }
 }

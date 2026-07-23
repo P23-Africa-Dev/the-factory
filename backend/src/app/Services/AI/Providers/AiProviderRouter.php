@@ -7,6 +7,7 @@ namespace App\Services\AI\Providers;
 use App\Services\AI\Admin\AiFailoverTracker;
 use App\Services\AI\Admin\AiProviderHealthService;
 use App\Services\AI\AiLoggingService;
+use App\Services\AI\AiStackSettingService;
 use App\Services\Demo\DemoAiResponseService;
 use App\Services\Demo\DemoCompanyService;
 use Illuminate\Http\UploadedFile;
@@ -16,6 +17,9 @@ class AiProviderRouter
     public function __construct(
         private readonly OpenAiProvider $openAiProvider,
         private readonly ClaudeProvider $claudeProvider,
+        private readonly NvidiaProvider $nvidiaProvider,
+        private readonly GlmProvider $glmProvider,
+        private readonly AiStackSettingService $stackSettingService,
         private readonly AiFailoverTracker $failoverTracker,
         private readonly AiProviderHealthService $healthService,
         private readonly DemoCompanyService $demoCompanyService,
@@ -82,6 +86,14 @@ class AiProviderRouter
             return trim($options['model']);
         }
 
+        if ($this->stackSettingService->isNvidia()) {
+            return app(NvidiaModelResolver::class)->resolve($purpose);
+        }
+
+        if ($this->stackSettingService->isGlm()) {
+            return app(GlmModelResolver::class)->resolve($purpose);
+        }
+
         return match ($purpose) {
             'routing' => (string) config('services.ai.router_model', 'auto'),
             'analyst', 'report' => (string) config('services.ai.analyst_model', 'auto'),
@@ -90,29 +102,32 @@ class AiProviderRouter
     }
 
     /**
-     * @return array{provider: string, model: string, purpose: string}
+     * @return array{provider: string, model: string, purpose: string, stack: string}
      */
     public function routingMetadata(string $purpose): array
     {
         $purpose = strtolower(trim($purpose));
+        $stack = $this->stackSettingService->getStack();
         $providers = $this->orderedProviders($purpose);
         $first = $providers[0] ?? null;
-        $provider = match (true) {
-            $first instanceof OpenAiProvider => 'openai',
-            $first instanceof ClaudeProvider => 'claude',
-            default => strtolower((string) config('services.ai.provider', 'openai')),
-        };
+        $provider = $this->providerKey($first ?? $this->openAiProvider);
         $model = $this->resolveModelForPurpose($purpose);
+
         if ($provider === 'claude') {
             $model = app(ClaudeModelResolver::class)->resolve($purpose, $model);
         } elseif ($provider === 'openai') {
             $model = app(OpenAiModelResolver::class)->resolve($purpose, $model);
+        } elseif ($provider === 'nvidia') {
+            $model = app(NvidiaModelResolver::class)->resolve($purpose, $model);
+        } elseif ($provider === 'glm') {
+            $model = app(GlmModelResolver::class)->resolve($purpose, $model);
         }
 
         return [
             'provider' => $provider,
             'model' => $model,
             'purpose' => $purpose,
+            'stack' => $stack,
         ];
     }
 
@@ -128,6 +143,28 @@ class AiProviderRouter
         }
         if ($forced === 'claude') {
             return [$this->claudeProvider];
+        }
+        if ($forced === 'nvidia') {
+            return [$this->nvidiaProvider];
+        }
+        if ($forced === 'glm') {
+            return [$this->glmProvider];
+        }
+
+        if ($this->stackSettingService->isNvidia()) {
+            if ($forced === '' && $this->healthService->shouldSkipProvider('nvidia')) {
+                return [];
+            }
+
+            return [$this->nvidiaProvider];
+        }
+
+        if ($this->stackSettingService->isGlm()) {
+            if ($forced === '' && $this->healthService->shouldSkipProvider('glm')) {
+                return [];
+            }
+
+            return [$this->glmProvider];
         }
 
         if (in_array($purpose, ['analyst', 'report'], true)) {
@@ -169,6 +206,32 @@ class AiProviderRouter
 
     public function transcribeAudio(UploadedFile $audio, string $prompt = '', array $options = []): ?AiGenerationResult
     {
+        if ($this->stackSettingService->isNvidia()) {
+            return $this->finalizeInvocation(
+                AiGenerationResult::failure(
+                    provider: 'nvidia',
+                    model: 'unsupported',
+                    errorClass: 'not_configured',
+                    errorMessage: 'Audio transcription is not available on the NVIDIA stack.',
+                    purpose: (string) ($options['purpose'] ?? 'operational'),
+                ),
+                $options,
+            );
+        }
+
+        if ($this->stackSettingService->isGlm()) {
+            return $this->finalizeInvocation(
+                AiGenerationResult::failure(
+                    provider: 'glm',
+                    model: 'unsupported',
+                    errorClass: 'not_configured',
+                    errorMessage: 'Audio transcription is not available on the GLM stack.',
+                    purpose: (string) ($options['purpose'] ?? 'operational'),
+                ),
+                $options,
+            );
+        }
+
         return $this->finalizeInvocation(
             $this->tryProviders(
                 $this->orderedProviders((string) ($options['purpose'] ?? 'operational'), $options),
@@ -186,6 +249,10 @@ class AiProviderRouter
         string $userPrompt,
         array $options = [],
     ): ?string {
+        if ($this->stackSettingService->isNvidia() || $this->stackSettingService->isGlm()) {
+            return null;
+        }
+
         if (! $this->openAiProvider->isConfigured() || $this->healthService->shouldSkipProvider('openai')) {
             return null;
         }
@@ -245,6 +312,38 @@ class AiProviderRouter
         }
 
         if (! $attempted) {
+            if ($this->stackSettingService->isNvidia()) {
+                $cached = $this->healthService->cachedStatus('nvidia');
+                $status = is_array($cached) ? (string) ($cached['status'] ?? 'timeout') : 'timeout';
+                $message = is_array($cached) && is_string($cached['message'] ?? null) && trim((string) $cached['message']) !== ''
+                    ? (string) $cached['message']
+                    : 'NVIDIA NIM is temporarily unavailable after a recent timeout. Try again shortly, or switch to OpenAI + Claude in Admin → AI.';
+
+                return AiGenerationResult::failure(
+                    provider: 'nvidia',
+                    model: app(NvidiaModelResolver::class)->resolve($purpose),
+                    errorClass: in_array($status, ['timeout', 'unreachable'], true) ? $status : 'unreachable',
+                    errorMessage: $message,
+                    purpose: $purpose,
+                );
+            }
+
+            if ($this->stackSettingService->isGlm()) {
+                $cached = $this->healthService->cachedStatus('glm');
+                $status = is_array($cached) ? (string) ($cached['status'] ?? 'timeout') : 'timeout';
+                $message = is_array($cached) && is_string($cached['message'] ?? null) && trim((string) $cached['message']) !== ''
+                    ? (string) $cached['message']
+                    : 'GLM is temporarily unavailable after a recent timeout. Try again shortly, or switch stacks in Admin → AI.';
+
+                return AiGenerationResult::failure(
+                    provider: 'glm',
+                    model: app(GlmModelResolver::class)->resolve($purpose),
+                    errorClass: in_array($status, ['timeout', 'unreachable'], true) ? $status : 'unreachable',
+                    errorMessage: $message,
+                    purpose: $purpose,
+                );
+            }
+
             return AiGenerationResult::failure(
                 provider: 'none',
                 model: 'unconfigured',
@@ -278,7 +377,13 @@ class AiProviderRouter
 
     private function providerKey(AiProviderContract $provider): string
     {
-        return $provider instanceof OpenAiProvider ? 'openai' : 'claude';
+        return match (true) {
+            $provider instanceof OpenAiProvider => 'openai',
+            $provider instanceof ClaudeProvider => 'claude',
+            $provider instanceof NvidiaProvider => 'nvidia',
+            $provider instanceof GlmProvider => 'glm',
+            default => 'unknown',
+        };
     }
 
     private function maybeDemoResponse(string $purpose, string $systemPrompt, string $userPrompt, array $options): ?AiGenerationResult

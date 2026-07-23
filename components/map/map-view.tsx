@@ -187,28 +187,6 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
-function buildAgentPopupHtml(params: { name: string; avatarUrl?: string; location: string; statusLabel: string }): string {
-  const name = escapeHtml(params.name || 'Agent');
-  const location = escapeHtml(params.location || 'No location details');
-  const statusLabel = escapeHtml(params.statusLabel || 'On field');
-  const initials = escapeHtml(getAgentInitials(params.name) ?? '');
-  const avatarUrl = params.avatarUrl ? escapeHtml(params.avatarUrl) : '';
-
-  return `
-    <div style="display:flex; align-items:center; gap:12px; min-width:240px; max-width:320px; padding:12px 14px; border-radius:18px; background:rgba(255,255,255,0.96); border:1px solid rgba(148,163,184,0.18); box-shadow:0 18px 48px rgba(15,23,42,0.16); backdrop-filter:blur(18px);">
-      <div style="width:52px; height:52px; border-radius:9999px; overflow:hidden; background:#E2E8F0; flex:0 0 auto; display:flex; align-items:center; justify-content:center;">
-        ${avatarUrl ? `<img src="${avatarUrl}" alt="${name} avatar" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
-        <div style="width:100%; height:100%; display:${avatarUrl ? 'none' : 'flex'}; align-items:center; justify-content:center; font-size:14px; font-weight:800; color:#0F172A; background:linear-gradient(135deg, #E2E8F0, #F8FAFC);">${initials || '•'}</div>
-      </div>
-      <div style="min-width:0; flex:1; font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
-        <div style="font-size:14px; font-weight:700; color:#0F172A; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
-        <div style="margin-top:4px; font-size:12px; line-height:1.45; color:#475569; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${location}</div>
-        <div style="margin-top:6px; font-size:11px; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; color:#0EA5E9;">${statusLabel}</div>
-      </div>
-    </div>
-  `;
-}
-
 function buildDestinationPopupHtml(params: { title: string; location: string; statusLabel: string }): string {
   const title = escapeHtml(params.title || 'Destination');
   const location = escapeHtml(params.location || 'No location details');
@@ -867,11 +845,16 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     const liveTask = liveTasks[taskFocus.taskId];
     if (liveTask && hasUsableTaskPosition(liveTask)) {
       // Upgrade the static pin to the live tracked task once it is available.
+      // Center on the agent without auto-opening the detail card (click-to-open).
       taskFocusMarkerRef.current?.remove();
       taskFocusMarkerRef.current = null;
       if (!taskFocusSelectedRef.current) {
         taskFocusSelectedRef.current = true;
-        setSelectedTaskId(taskFocus.taskId);
+        map.flyTo({
+          center: liveTask.lastPosition,
+          zoom: Math.max(map.getZoom(), 15.5),
+          speed: 1.2,
+        });
       }
       return;
     }
@@ -1248,17 +1231,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         el.dataset.avatarUrl = task.agentAvatarUrl ?? '';
         el.dataset.location = task.taskAddress || task.taskTitle || 'No location details';
         el.dataset.statusLabel = getStatusLabel(task.status);
-        bindHoverPopup(
-          el,
-          () => task.lastPosition,
-          () =>
-            buildAgentPopupHtml({
-              name: el.dataset.agentName ?? task.agentName,
-              avatarUrl: el.dataset.avatarUrl || undefined,
-              location: el.dataset.location || task.taskAddress || task.taskTitle || 'No location details',
-              statusLabel: el.dataset.statusLabel ?? getStatusLabel(task.status),
-            })
-        );
+        // Agent detail card is click-only — no hover popup (blocks live route while tracking).
         if (!compact) {
           el.addEventListener('click', () => {
             handleSelectTask(task.taskId);
@@ -2337,11 +2310,14 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
     const liveTask = liveTasks[taskFocus.taskId];
     if (liveTask && hasUsableTaskPosition(liveTask)) {
+      // Center on the agent without auto-opening the detail card (click-to-open).
       taskFocusMarkerRef.current?.setMap(null);
       taskFocusMarkerRef.current = null;
       if (!taskFocusSelectedRef.current) {
         taskFocusSelectedRef.current = true;
-        setSelectedTaskId(taskFocus.taskId);
+        const [lng, lat] = liveTask.lastPosition;
+        map.panTo({ lat, lng });
+        if (map.getZoom() < 15.5) map.setZoom(15.5);
       }
       return;
     }

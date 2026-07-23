@@ -41,6 +41,7 @@ import {
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { EmailPanel } from "@/components/crm/email/email-panel";
+import { getLeadDetailDisplay } from "@/lib/crm/lead-details";
 
 /* --- Mock Lead Data -------------------------------------- */
 
@@ -387,7 +388,7 @@ function PillDropdown({
 
 /* --- Map Preview Component ------------------------------- */
 
-function MapPreview({ name }: { name: string }) {
+function MapPreview({ name, location }: { name: string; location: string }) {
   return (
     <div className="relative w-full h-full bg-[#E8F0E8] rounded-[14px] overflow-hidden">
       {/* Fake map grid lines */}
@@ -451,19 +452,15 @@ function MapPreview({ name }: { name: string }) {
         <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-white shadow-sm">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/avatars/male-avatar.png"
+            src="/avatars/default-ghost.svg"
             alt={name}
             className="w-full h-full object-cover"
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).src =
-                "https://i.pravatar.cc/150?u=lane-wade";
-            }}
           />
         </div>
         <div className="bg-white/90 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm">
           <p className="text-[9px] font-semibold text-[#0B1215]">{name}</p>
           <p className="text-[7px] text-gray-500 font-normal">
-            14, Adeola Road, Ikeja GRA
+            {location}
           </p>
         </div>
       </div>
@@ -572,7 +569,8 @@ export default function LeadDetailsPage() {
     );
   }
 
-  const currentAssigneeLabel = leadData.assignee?.name || "Unassigned";
+  const leadDisplay = getLeadDetailDisplay(leadData);
+  const currentAssigneeLabel = leadDisplay.assigneeName;
   const selectedStatusValue = isEditing ? editForm.status : (leadData.status || "newly_lead");
   const selectedStatusOption = statusOptions.find((option) => option.value === selectedStatusValue);
 
@@ -637,16 +635,12 @@ export default function LeadDetailsPage() {
                 <div className="bg-white rounded-[24px] sm:rounded-[28px] p-4 shadow-xl flex flex-col items-center w-full">
                   <div className="relative w-24 sm:w-full aspect-square mb-4">
                     <div className="absolute inset-0 bg-black/20 rounded-[22px] blur-xl translate-y-4" />
-                    <div className="relative w-full h-full rounded-[22px] overflow-hidden bg-[#FFC58E]">
+                    <div className="relative w-full h-full rounded-[22px] overflow-hidden bg-[#E8ECF1]">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src="/avatars/male-avatar.png"
+                        src="/avatars/default-ghost.svg"
                         alt={leadData.name}
                         className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).src =
-                            `https://i.pravatar.cc/150?u=${leadData.id}`;
-                        }}
                       />
                     </div>
                   </div>
@@ -687,15 +681,30 @@ export default function LeadDetailsPage() {
                       Phone Number
                     </label>
                     <p className="text-white text-[16px] font-semibold truncate">
-                      {leadData.phone || "N/A"}
+                      {leadDisplay.phone}
                     </p>
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
+                      Email Address
+                    </label>
+                    {leadData.email ? (
+                      <a
+                        href={`mailto:${leadData.email}`}
+                        className="text-[#7DD3FC] text-[16px] font-semibold truncate hover:underline"
+                      >
+                        {leadData.email}
+                      </a>
+                    ) : (
+                      <p className="text-white text-[16px] font-semibold truncate">N/A</p>
+                    )}
                   </div>
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Location
                     </label>
                     <p className="text-white text-[16px] font-semibold truncate">
-                      {leadData.location || "N/A"}
+                      {leadDisplay.location}
                     </p>
                   </div>
                   <div className="flex flex-col">
@@ -764,7 +773,7 @@ export default function LeadDetailsPage() {
                 </div>
                 {/* Map */}
                 <div className="w-full h-[160px] sm:flex-1 rounded-[24px] overflow-hidden shadow-inner">
-                  <MapPreview name={leadData.name} />
+                  <MapPreview name={leadData.name} location={leadDisplay.mapLocationLabel} />
                 </div>
               </div>
             </div>
@@ -797,10 +806,18 @@ export default function LeadDetailsPage() {
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
+                    Pipeline
+                  </label>
+                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                    {leadDisplay.pipelineName}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Uploaded By
                   </label>
                   <p className="text-[#0B1215] text-[16px] font-semibold">
-                    {leadData.creator?.name || "System"}
+                    {leadDisplay.creatorName}
                   </p>
                 </div>
                 <div className="flex flex-col gap-1">
@@ -808,7 +825,15 @@ export default function LeadDetailsPage() {
                     Last Interaction
                   </label>
                   <p className="text-[#0B1215] text-[16px] font-semibold truncate">
-                    {leadData.last_interaction || "None"}
+                    {leadDisplay.lastInteraction}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
+                    Interaction Date
+                  </label>
+                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                    {leadDisplay.lastInteractionAt}
                   </p>
                 </div>
                 <div className="flex flex-col gap-1">
@@ -816,7 +841,7 @@ export default function LeadDetailsPage() {
                     Source
                   </label>
                   <p className="text-[#0B1215] text-[16px] font-semibold truncate">
-                    {leadData.source || "Unknown"}
+                    {leadDisplay.source}
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -832,7 +857,7 @@ export default function LeadDetailsPage() {
                     Next Action
                   </label>
                   <p className="text-[#0B1215] text-[16px] font-semibold truncate">
-                    {leadData.next_action || "None"}
+                    {leadDisplay.nextAction}
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -851,12 +876,46 @@ export default function LeadDetailsPage() {
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
+                    Budget
+                  </label>
+                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                    {leadDisplay.budget}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
+                    Map Link
+                  </label>
+                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                    {leadDisplay.mapLinkState}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Created
                   </label>
                   <p className="text-[#0B1215] text-[16px] font-semibold">
-                    {leadData.created_at ? new Date(leadData.created_at).toLocaleDateString() : "Unknown"}
+                    {leadDisplay.createdAt}
                   </p>
                 </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
+                    Updated
+                  </label>
+                  <p className="text-[#0B1215] text-[16px] font-semibold">
+                    {leadDisplay.updatedAt}
+                  </p>
+                </div>
+                {leadDisplay.convertedAt ? (
+                  <div className="flex flex-col gap-1">
+                    <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
+                      Converted
+                    </label>
+                    <p className="text-[#0B1215] text-[16px] font-semibold">
+                      {leadDisplay.convertedAt}
+                    </p>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>

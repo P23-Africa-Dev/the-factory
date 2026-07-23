@@ -9,6 +9,7 @@ import {
   listAgentTasks,
 } from "@/lib/api/tracking";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 import { TASK_KEYS } from "@/hooks/use-tasks";
 import type { StartTrackingPayload, RecordLocationPayload } from "@/types/tracking";
 import type { ListTasksParams } from "@/lib/api/tasks";
@@ -26,7 +27,7 @@ export function useAgentTasks(params: ListTasksParams) {
       const res = await listAgentTasks(params, token);
       return { tasks: res.data.items, pagination: res.data.pagination };
     },
-    enabled: !!token && !!params.company_id,
+    enabled: hasActiveApiSession(token) && !!params.company_id,
     staleTime: 1000 * 30,
   });
 }
@@ -42,7 +43,7 @@ export function useTaskRoute(
       const res = await getTaskRoute(taskId!, params, token);
       return res.data;
     },
-    enabled: !!token && !!taskId && !!params.company_id,
+    enabled: hasActiveApiSession(token) && !!taskId && !!params.company_id,
     staleTime: 1000 * 60,
   });
 }

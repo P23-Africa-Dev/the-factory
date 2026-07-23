@@ -39,6 +39,32 @@ vi.mock("@/hooks/use-crm", () => ({
     useCrmLabels: vi.fn(() => ({ data: [] })),
 }));
 
+vi.mock("@/hooks/use-internal-users", () => ({
+    useCompanyZones: vi.fn(() => ({ data: [], isLoading: false })),
+}));
+
+vi.mock("@/components/zones/create-zone-modal", () => ({
+    CreateZoneModal: () => null,
+}));
+
+vi.mock("@/components/map/PlaceAutocompleteField", () => ({
+    PlaceAutocompleteField: ({
+        value,
+        onChange,
+        placeholder,
+    }: {
+        value: string;
+        onChange: (value: string) => void;
+        placeholder?: string;
+    }) => (
+        <input
+            aria-label={placeholder ?? "Place"}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+        />
+    ),
+}));
+
 vi.mock("@/store/auth", () => ({
     useAuthStore: vi.fn((selector: (state: { user: unknown }) => unknown) =>
         selector({
@@ -136,7 +162,13 @@ describe("AIChat", () => {
                         confirmation_required: true,
                         action_args: {
                             title: "Dispatch checks",
+                            type: "inspection",
+                            description: "Run dispatch checks at the operations yard.",
                             location: "Ops Yard",
+                            address: "Ops Yard",
+                            due_date: "2026-07-20T17:00:00.000Z",
+                            draft_id: "draft-1",
+                            draft_version: 1,
                         },
                     },
                 },
@@ -157,18 +189,85 @@ describe("AIChat", () => {
 
         render(<AIChat open onClose={() => { }} />);
 
+        await waitFor(() => {
+            expect(screen.getByDisplayValue("Dispatch checks")).toBeTruthy();
+            expect(screen.getAllByDisplayValue("Ops Yard").length).toBeGreaterThan(0);
+        });
+
         fireEvent.click(screen.getByText("Confirm Action"));
 
         await waitFor(() => {
-            expect(sendMessageMock).toHaveBeenCalledWith({
-                message: "Create task for dispatch checks",
-                companyId: 99,
-                actionConfirmed: true,
-                actionArgs: {
-                    title: "Dispatch checks",
-                    location: "Ops Yard",
+            expect(sendMessageMock).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message: "Create task for dispatch checks",
+                    companyId: 99,
+                    actionConfirmed: true,
+                    actionArgs: expect.objectContaining({
+                        title: "Dispatch checks",
+                        location: "Ops Yard",
+                        address: "Ops Yard",
+                        draft_id: "draft-1",
+                        draft_version: 1,
+                    }),
+                }),
+            );
+        });
+    });
+
+    it("renders full task editor with prefilled location for tasks.create", async () => {
+        useCopilotChatMock.mockReturnValue({
+            messages: [
+                {
+                    id: "u-task",
+                    role: "user",
+                    content: "Create a task to visit a client at Lekki Phase II and assign Taraji Henson to it",
+                    sources: [],
                 },
-            });
+                {
+                    id: "a-task",
+                    role: "assistant",
+                    content: "Review this task before confirming.",
+                    sources: ["tasks.create"],
+                    payload: {
+                        confirmation_required: true,
+                        blocking_confirmation: true,
+                        blocking_warning_codes: ["assignee_unresolved"],
+                        validation_warning_codes: ["assignee_unresolved"],
+                        action_args: {
+                            title: "Visit client",
+                            type: "sales_visit",
+                            description: "Complete the assigned visit to a client at Lekki Phase II.",
+                            location: "Lekki Phase II",
+                            address: "Lekki Phase II",
+                            due_date: "2026-07-20T17:00:00.000Z",
+                            draft_id: "draft-lekki",
+                            draft_version: 2,
+                        },
+                    },
+                },
+            ],
+            isStreaming: false,
+            weeklyReport: null,
+            isQueueingWeeklyReport: false,
+            initialize: initializeMock,
+            sendMessage: sendMessageMock,
+            queueWeeklyReport: queueWeeklyReportMock,
+            downloadWeeklyReport: downloadWeeklyReportMock,
+            runVoiceTranscription: runVoiceTranscriptionMock,
+            runFileAnalysis: runFileAnalysisMock,
+            runTranscriptSummary: runTranscriptSummaryMock,
+            loadForecastOverview: loadForecastOverviewMock,
+            searchAssignees: searchAssigneesMock,
+        });
+
+        render(<AIChat open onClose={() => { }} />);
+
+        await waitFor(() => {
+            expect(screen.getByDisplayValue("Visit client")).toBeTruthy();
+            expect(screen.getAllByDisplayValue("Lekki Phase II").length).toBeGreaterThan(0);
+            expect(screen.getAllByText("Location").length).toBeGreaterThan(0);
+            expect(screen.getByText("Priority")).toBeTruthy();
+            expect(screen.getByText("Confirm Action").closest("button")?.disabled).toBe(true);
         });
     });
 

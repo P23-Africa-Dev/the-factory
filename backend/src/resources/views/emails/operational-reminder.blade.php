@@ -9,7 +9,7 @@
         Hi {{ $recipientName }},
     </p>
     <p style="margin:0 0 18px 0;font-size:14px;line-height:1.55;color:#334155;">
-        {{ $message }}
+        {{ $bodyText }}
     </p>
 
     @if (!empty($actionUrl))

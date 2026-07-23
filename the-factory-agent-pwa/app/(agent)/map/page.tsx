@@ -12,12 +12,13 @@ import {
   useStartTask,
   useActiveTracking,
   useTaskRoute,
-  buildCompleteFormData,
   hydrateLiveTaskFromRoute,
   trackingApi,
   LocationPermissionGate,
+  CompleteRequirementsSheet,
+  resolveCompletionRequirements,
 } from '@/features/tracking';
-import { useTaskListItems, useTask, taskKeys, taskApi, taskHasMapLocation } from '@/features/tasks';
+import { useTaskListItems, useTask, taskKeys, taskHasMapLocation } from '@/features/tasks';
 import { useAuth, useAgentIdentity } from '@/features/auth';
 import { getSafeAvatarSrc } from '@/lib/avatar';
 import { buildTraveledSegment, sliceRemainingRoute } from '@/lib/map/route-geometry';
@@ -33,8 +34,6 @@ import { getActiveCompanyId } from '@/lib/storage/stores';
 import { env } from '@/constants/env';
 import { getMapboxPublicToken } from '@/lib/map/public-env';
 import { fetchDirectionsRoute, type DirectionsResult } from '@/lib/map/directions';
-import { getDb } from '@/lib/db/client';
-import { syncEngine } from '@/lib/sync/syncEngine';
 import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 import { showApiErrorToast } from '@/lib/api/errors';
 import { openGoogleMapsNavigation, resolveGoogleMapsTravelMode } from '@/lib/map/googleMapsNavigation';
@@ -704,174 +703,6 @@ function OriginSearch({
   );
 }
 
-
-// ─── AddNoteModal ─────────────────────────────────────────────────────────────
-
-function AddNoteModal({
-  visible,
-  taskId,
-  hasArrived,
-  onDone,
-}: {
-  visible: boolean;
-  taskId: number;
-  hasArrived: boolean;
-  onDone: () => void;
-}) {
-  const { getCurrentPosition } = useGeolocation();
-  const { stopTracking } = useActiveTracking();
-  const [note, setNote] = useState('');
-  const [photos, setPhotos] = useState<File[]>([]);
-  const [_previews, setPreviews] = useState<string[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const companyId = getActiveCompanyId() ?? 0;
-
-  const handlePickPhoto = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setPhotos((prev) => [...prev, file]);
-      const objectUrl = URL.createObjectURL(file);
-      setPreviews((prev) => [...prev, objectUrl]);
-    }
-  };
-
-  const handleTaskDone = async () => {
-    if (isSubmitting) return;
-    if (!hasArrived) {
-      toast.error('Not arrived yet', 'You must reach the destination before completing this task.');
-      return;
-    }
-    if (photos.length === 0) {
-      toast.error('Photo required', 'Please attach at least one proof photo.');
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      try {
-        const db = await getDb();
-        for (const file of photos) {
-          await db.add('proofQueue', {
-            taskId,
-            fileBlob: file,
-            fileName: `proof_${taskId}_${Date.now()}.jpg`,
-            mimeType: file.type || 'image/jpeg',
-            uploaded: 0,
-            createdAt: new Date().toISOString(),
-            attempts: 0,
-            nextAttemptAt: new Date().toISOString(),
-            lastError: null,
-          });
-        }
-      } catch (dbErr) {
-        console.warn('[complete] proofQueue insert failed (non-fatal):', dbErr);
-      }
-      await syncEngine.scheduleSync();
-
-      let position = {
-        latitude: 0,
-        longitude: 0,
-        accuracyMeters: null as number | null,
-        recordedAt: new Date().toISOString(),
-      };
-      try {
-        const pos = await getCurrentPosition();
-        position = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracyMeters: pos.coords.accuracy,
-          recordedAt: new Date(pos.timestamp).toISOString(),
-        };
-      } catch {
-        // best-effort GPS at completion
-      }
-
-      const formData = buildCompleteFormData({
-        companyId,
-        files: photos,
-        notes: note.trim() || undefined,
-        position,
-      });
-
-      await taskApi.completeTask(taskId, formData);
-      await stopTracking();
-
-      toast.success('Task completed', 'Great work — tracking has stopped.');
-
-      setNote('');
-      setPhotos([]);
-      setPreviews([]);
-      onDone();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Could not complete task. Please try again.';
-      toast.error('Completion failed', msg);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  if (!visible) return null;
-
-  return (
-    <div className="fixed inset-0 bg-[#051014]/60 backdrop-blur-sm z-[100] flex items-center justify-center p-5 font-sans">
-      <div className="relative bg-[#0B3343] border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col gap-4 text-white">
-        <h3 className="font-bold text-xl text-white">Add Note</h3>
-
-        <div className="bg-white rounded-xl p-3.5 min-h-[120px] flex flex-col">
-          <textarea
-            placeholder="Type your note here ..."
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={4}
-            className="w-full bg-transparent border-none text-[#09232D] placeholder-gray-400 focus:outline-none resize-none text-base font-semibold p-0"
-          />
-        </div>
-
-        {photos.length > 0 && (
-          <p className="text-[11px] font-bold text-[#75ADAF] uppercase tracking-wider">
-            {photos.length} photo{photos.length > 1 ? 's' : ''} attached
-          </p>
-        )}
-
-        {/* Hidden Camera Input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-
-        <div className="flex gap-3 mt-2">
-          <button
-            onClick={handlePickPhoto}
-            disabled={isSubmitting}
-            className="flex-1 h-12 rounded-xl border-1.5 border-white bg-transparent text-white font-bold text-xs hover:bg-white/5 active:scale-95 transition-all"
-          >
-            Upload Photo ⬆
-          </button>
-          <button
-            onClick={handleTaskDone}
-            disabled={isSubmitting || !hasArrived}
-            className="flex-1 h-12 rounded-xl bg-[#75ADAF] hover:bg-[#66989A] text-white font-bold text-xs active:scale-95 transition-all flex items-center justify-center disabled:opacity-40"
-          >
-            {isSubmitting ? (
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-            ) : (
-              'Task Done'
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─── Main Content Component ───────────────────────────────────────────────────
 
@@ -1883,6 +1714,7 @@ function MapContent() {
 
   // Success feedback when the agent reaches the destination (once per session).
   const arrivedToastShownRef = useRef(false);
+  const autoOpenedCompleteRef = useRef(false);
   useEffect(() => {
     if (phase !== 'activity_started') {
       arrivedToastShownRef.current = false;
@@ -1898,6 +1730,20 @@ function MapContent() {
       }
     }
   }, [phase, hasArrived, trackingTaskId, selectedDestination?.taskId]);
+
+  // Auto-open completion requirements when configured on the task.
+  useEffect(() => {
+    if (!hasArrived) {
+      autoOpenedCompleteRef.current = false;
+      return;
+    }
+    if (autoOpenedCompleteRef.current) return;
+    if (phase !== 'activity_started') return;
+    if (!trackingTask) return;
+    if (!resolveCompletionRequirements(trackingTask).hasConfiguredRequirements) return;
+    autoOpenedCompleteRef.current = true;
+    setPhase('activity_ended');
+  }, [hasArrived, phase, trackingTask]);
 
   const handleEndActivity = useCallback((): void => {
     void stopTracking();
@@ -2351,13 +2197,22 @@ function MapContent() {
         />
       )}
 
-      {/* Complete notes modal */}
+      {/* Complete requirements sheet */}
       {selectedDestination && selectedDestination.taskId > 0 && (
-        <AddNoteModal
+        <CompleteRequirementsSheet
           visible={phase === 'activity_ended'}
           taskId={selectedDestination.taskId}
+          task={trackingTask ?? activeTask}
           hasArrived={hasArrived}
           onDone={handleTaskDone}
+          onDismiss={() => {
+            if (hasArrived) {
+              setPhase('activity_started');
+              setTrackingStatus('live');
+            } else {
+              setPhase('destination_selected');
+            }
+          }}
         />
       )}
 

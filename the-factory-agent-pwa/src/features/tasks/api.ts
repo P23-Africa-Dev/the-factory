@@ -315,6 +315,9 @@ export const taskApi = {
         priority: payload.priority ?? undefined,
         assignedBy: 'You',
         assignedAgentId: null,
+        requiredActions: [],
+        minimumPhotosRequired: 0,
+        visitVerificationRequired: false,
       };
       if (companyId) {
         await putCachedTaskDetail(companyId, mockTask);

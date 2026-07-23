@@ -31,7 +31,6 @@ class CalendarIntegrationTest extends TestCase
             'profile',
             'https://www.googleapis.com/auth/calendar',
             'https://www.googleapis.com/auth/calendar.events',
-            'https://www.googleapis.com/auth/gmail.readonly',
             'https://www.googleapis.com/auth/gmail.send',
             'https://www.googleapis.com/auth/gmail.modify',
         ]);
@@ -61,8 +60,9 @@ class CalendarIntegrationTest extends TestCase
         $this->assertStringContainsString('openid', (string) $response->json('data.authorization_url'));
         $this->assertStringContainsString('email', (string) $response->json('data.authorization_url'));
         $this->assertStringContainsString('profile', (string) $response->json('data.authorization_url'));
-        $this->assertStringContainsString('gmail.readonly', (string) $response->json('data.authorization_url'));
+        $this->assertStringNotContainsString('gmail.readonly', (string) $response->json('data.authorization_url'));
         $this->assertStringContainsString('gmail.send', (string) $response->json('data.authorization_url'));
+        $this->assertStringContainsString('gmail.modify', (string) $response->json('data.authorization_url'));
     }
 
     public function test_admin_can_request_google_calendar_connect_url(): void
@@ -150,7 +150,6 @@ class CalendarIntegrationTest extends TestCase
             'refresh_token_encrypted' => 'agent-refresh-token',
             'token_expires_at' => now()->addHour(),
             'scopes' => [
-                'https://www.googleapis.com/auth/gmail.readonly',
                 'https://www.googleapis.com/auth/gmail.send',
                 'https://www.googleapis.com/auth/gmail.modify',
             ],
@@ -391,7 +390,7 @@ class CalendarIntegrationTest extends TestCase
                 'access_token' => 'oauth-access-token',
                 'refresh_token' => 'oauth-refresh-token',
                 'expires_in' => 3600,
-                'scope' => 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify',
+                'scope' => 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify',
                 'token_type' => 'Bearer',
             ], 200),
             'https://www.googleapis.com/oauth2/v3/userinfo' => Http::response([
@@ -405,7 +404,10 @@ class CalendarIntegrationTest extends TestCase
         $callbackResponse->assertOk();
         $callbackResponse->assertHeader('Content-Type', 'text/html; charset=UTF-8');
         $callbackResponse->assertSee('google-calendar-oauth', false);
-        $callbackResponse->assertSee('Google account connected successfully for calendar and email. You can close this window.', false);
+        $callbackResponse->assertSee('Google account connected successfully for calendar and email.', false);
+        $callbackResponse->assertSee('/settings/meetings', false);
+        $callbackResponse->assertSee('google_oauth=success', false);
+        $callbackResponse->assertSee('Redirecting you back to Factory 23', false);
     }
 
     public function test_oauth_callback_persists_connection_for_admin(): void

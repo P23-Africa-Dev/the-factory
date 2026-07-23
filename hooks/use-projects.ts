@@ -20,6 +20,7 @@ import {
   type ProjectsAnalyticsData,
 } from "@/lib/api/projects";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 import { mapApiProject } from "@/types/operations";
 import type { Project } from "@/types/operations";
 import { toast } from "sonner";
@@ -57,7 +58,7 @@ export function useProjects(params: ListProjectsParams = {}, basePath = "") {
         analytics: res.data.analytics ?? null,
       };
     },
-    enabled: !!token,
+    enabled: hasActiveApiSession(token),
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -73,7 +74,7 @@ export function useProject(id: number | string | null | undefined, basePath = ""
       const res = await getProject(id!, token, basePath);
       return mapApiProject(res.data.project);
     },
-    enabled: !!token && !!id,
+    enabled: hasActiveApiSession(token) && !!id,
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -131,7 +132,7 @@ export function useInternalUsers(params: InternalUsersParams = { role: "supervis
       const res = await fetchInternalUsers(params, token);
       return res.data;
     },
-    enabled: !!token,
+    enabled: hasActiveApiSession(token),
     staleTime: 1000 * 60 * 5,
   });
 }

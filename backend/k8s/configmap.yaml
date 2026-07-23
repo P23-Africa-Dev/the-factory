@@ -73,6 +73,8 @@ data:
   INTERNAL_DEFAULT_AVATAR_PATH: "avatar/default/ghost.svg"
 
   # ── AI Providers (non-sensitive config) ───────────────────────────────────────
+  AI_STACK: "openai_claude"
+  AI_INTENT_ROUTING_MODE: "rules_first"
   AI_PROVIDER: "openai"
   AI_FALLBACK_PROVIDER: "claude"
   AI_DEFAULT_MODEL: "auto"
@@ -85,6 +87,24 @@ data:
   ANTHROPIC_BASE_URL: "https://api.anthropic.com/v1"
   ANTHROPIC_VERSION: "2023-06-01"
   CLAUDE_MODEL: "auto"
+  NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1"
+  NVIDIA_ROUTING_MODEL: "meta/llama-3.1-8b-instruct"
+  NVIDIA_REQUEST_TIMEOUT_MS: "120000"
+  NVIDIA_ROUTING_TIMEOUT_MS: "15000"
+  NVIDIA_OPERATIONAL_TIMEOUT_MS: "60000"
+  NVIDIA_OPERATIONAL_MAX_TOKENS: "1000"
+  NVIDIA_ENABLE_THINKING: "false"
+  NVIDIA_EXEC_MODEL: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+  NVIDIA_ANALYST_MODEL: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+
+  GLM_BASE_URL: "https://open.bigmodel.cn/api/paas/v4"
+  GLM_ROUTING_MODEL: "glm-4-flash"
+  GLM_EXEC_MODEL: "glm-4-air"
+  GLM_ANALYST_MODEL: "glm-4-plus"
+  GLM_REQUEST_TIMEOUT_MS: "120000"
+  GLM_ROUTING_TIMEOUT_MS: "15000"
+  GLM_OPERATIONAL_TIMEOUT_MS: "60000"
+  GLM_OPERATIONAL_MAX_TOKENS: "1000"
 
   # ── Task Tracking ─────────────────────────────────────────────────────────────
   TASK_TRACKING_ARRIVAL_RADIUS_METERS: "75"
@@ -104,7 +124,8 @@ data:
   # ── Google Calendar / Gmail OAuth ───────────────────────────────────────────
   # Client ID + secret live in factory23-secret. Redirect URI must match Google Cloud Console.
   GOOGLE_CALENDAR_REDIRECT_URI: "https://api.thefactory23.com/api/v1/calendar/integration/callback"
-  GOOGLE_CALENDAR_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify"
+  # Least privilege: gmail.modify already includes read access, so gmail.readonly is omitted.
+  GOOGLE_CALENDAR_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify"
 
   # ── Mail (non-sensitive) ──────────────────────────────────────────────────────
   MAIL_MAILER: "resend"

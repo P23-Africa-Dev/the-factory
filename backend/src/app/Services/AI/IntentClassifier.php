@@ -21,6 +21,14 @@ class IntentClassifier
             ];
         }
 
+        if ($this->matchesTaskListQuery($normalized)) {
+            return [
+                'type' => 'tool',
+                'tool' => 'tasks.list',
+                'confidence' => 0.92,
+            ];
+        }
+
         $actionPatterns = [
             'tasks.create' => [
                 '/\b(create|add|open|new|set|assign|give)\s+(a\s+|an\s+)?task\b/i',
@@ -80,6 +88,10 @@ class IntentClassifier
         ];
 
         foreach ($actionPatterns as $tool => $regexPatterns) {
+            if ($tool === 'tasks.create' && $this->matchesTaskListQuery($normalized)) {
+                continue;
+            }
+
             foreach ($regexPatterns as $regex) {
                 if (preg_match($regex, $normalized) === 1) {
                     return [
@@ -161,6 +173,12 @@ class IntentClassifier
                 '/\bwhat\s+is\s+overdue\b/i',
                 '/\bshow\s+overdue\b/i',
             ],
+            'tasks.list' => [
+                '/\b(list|show|get|give|provide|pull|fetch|display|retrieve|view|what|which|how many)\b.{0,80}\btasks?\b/i',
+                '/\btasks?\b.{0,80}\b(created|assigned|by|for)\b/i',
+                '/\bwhat\s+tasks?\b/i',
+                '/\bwhich\s+tasks?\b/i',
+            ],
             'projects.at_risk_summary' => [
                 '/\b(projects?\s+at\s+risk|project\s+risk|behind\s+schedule|delayed\s+projects?)\b/i',
             ],
@@ -218,5 +236,34 @@ class IntentClassifier
             'tool' => null,
             'confidence' => 0.4,
         ];
+    }
+
+    private function matchesTaskListQuery(string $normalized): bool
+    {
+        if (preg_match('/\btasks?\b/i', $normalized) !== 1) {
+            return false;
+        }
+
+        if (preg_match('/\boverdue\b/i', $normalized) === 1) {
+            return false;
+        }
+
+        if (preg_match('/\b(create|add|open|new|schedule)\s+(a\s+|an\s+)?task\b/i', $normalized) === 1) {
+            return false;
+        }
+
+        $hasListCue = preg_match('/\b(list|show|what|which|how many)\b/i', $normalized) === 1;
+
+        if (! $hasListCue && preg_match('/\b(set|assign|give)\b.{0,40}\btask\b/i', $normalized) === 1) {
+            return false;
+        }
+
+        if (! $hasListCue && preg_match('/\btask\b.{0,50}\bfor\b/i', $normalized) === 1) {
+            return false;
+        }
+
+        return preg_match('/\b(list|show|get|give|provide|pull|fetch|display|retrieve|view|what|which|how many)\b/i', $normalized) === 1
+            || preg_match('/\b(created|assigned)\s+(by|to)\b/i', $normalized) === 1
+            || preg_match('/\btasks?\s+(created|assigned)\s+(by|to)\b/i', $normalized) === 1;
     }
 }

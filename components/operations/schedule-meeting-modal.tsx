@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { canConnectGoogleCalendar } from "@/lib/calendar-permissions";
-import { useCreateMeeting } from "@/hooks/use-meetings";
+import { useCreateMeeting, useUpdateMeeting } from "@/hooks/use-meetings";
 import { useLeads } from "@/hooks/use-crm";
 import type { LeadApiItem } from "@/lib/api/crm";
 import {
@@ -59,7 +59,9 @@ type ScheduleMeetingModalProps = {
     sourcePage?: "dashboard" | "operations" | "project" | "task" | "api" | "agent";
     projectId?: number | string;
     taskId?: number | string;
+    initialMeeting?: MeetingItem | null;
     onCreated?: (meeting: MeetingItem) => void;
+    onUpdated?: (meeting: MeetingItem) => void;
 };
 
 function toInputDateTime(date: Date): string {
@@ -176,19 +178,75 @@ function buildDefaultFormState(defaultDate?: Date): FormState {
     };
 }
 
+function buildFormStateFromMeeting(meeting: MeetingItem): FormState {
+    const start = new Date(meeting.start_at);
+    const end = new Date(meeting.end_at);
+    const startValue = Number.isNaN(start.getTime()) ? defaultStart() : toInputDateTime(start);
+    const endValue = Number.isNaN(end.getTime()) ? defaultEnd(startValue) : toInputDateTime(end);
+    const timezoneOptions = getTimeZoneOptions();
+    const meetingTimezone = meeting.timezone?.trim() || resolveUserTimezone();
+    const timezone = timezoneOptions.includes(meetingTimezone)
+        ? meetingTimezone
+        : timezoneOptions[0] ?? meetingTimezone;
+
+    const inviteableAttendees = (meeting.attendees ?? []).filter((attendee) => !attendee.is_organizer);
+    const selectedInternalAttendeeIds = inviteableAttendees
+        .map((attendee) => attendee.user_id)
+        .filter((id): id is number => typeof id === "number");
+    const externalAttendees = inviteableAttendees
+        .filter((attendee) => attendee.user_id == null)
+        .map((attendee) => ({
+            email: attendee.email,
+            display_name: attendee.display_name ?? undefined,
+        }));
+
+    const selectedReminderOffsets = (meeting.reminder_config ?? [])
+        .map((reminder) => reminder.offset_minutes)
+        .filter((offset): offset is number => typeof offset === "number");
+
+    const customReminder = (meeting.reminder_config ?? []).find(
+        (reminder) => reminder.offset_minutes == null && reminder.custom_remind_at
+    );
+
+    return {
+        meetingTitle: meeting.title ?? "",
+        meetingDescription: meeting.description ?? "",
+        meetingDate: toInputDate(startValue),
+        startTime: toInputTime(startValue),
+        endTime: toInputTime(endValue),
+        timezone,
+        externalEmailInput: "",
+        externalAttendees,
+        selectedInternalAttendeeIds,
+        internalSearch: "",
+        selectedLeadIds: (meeting.leads ?? []).map((lead) => lead.id),
+        leadSearch: "",
+        selectedReminderOffsets,
+        customReminderInput: customReminder?.custom_remind_at
+            ? toInputDateTime(new Date(customReminder.custom_remind_at))
+            : "",
+        errors: {},
+    };
+}
+
 export function ScheduleMeetingModal({
     isOpen,
     onClose,
     defaultDate,
-    title = "Schedule Meeting",
+    title,
     sourcePage = "operations",
     projectId,
     taskId,
+    initialMeeting = null,
     onCreated,
+    onUpdated,
 }: ScheduleMeetingModalProps) {
     const user = useAuthStore((state) => state.user);
     const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
     const createMeetingMutation = useCreateMeeting();
+    const updateMeetingMutation = useUpdateMeeting();
+    const isEditMode = initialMeeting != null;
+    const modalTitle = title ?? (isEditMode ? "Edit Meeting" : "Schedule Meeting");
     const integrationStatusQuery = useCalendarIntegrationStatus(companyId ?? undefined);
     const connectUrlMutation = useCreateCalendarConnectUrl();
     const disconnectMutation = useDisconnectCalendarIntegration();
@@ -232,7 +290,7 @@ export function ScheduleMeetingModal({
         errors,
     } = form;
 
-    const isSubmitting = createMeetingMutation.isPending;
+    const isSubmitting = createMeetingMutation.isPending || updateMeetingMutation.isPending;
     const canConnectIntegration = canConnectGoogleCalendar(role);
     const integration = integrationStatusQuery.data;
     const timezoneOptions = useMemo(() => getTimeZoneOptions(), []);
@@ -249,6 +307,16 @@ export function ScheduleMeetingModal({
 
         return timezoneOptions.filter((option) => option.toLowerCase().includes(query));
     }, [timezoneOptions, timezoneSearch]);
+
+    useEffect(() => {
+        if (!isOpen) {
+            return;
+        }
+
+        setForm(initialMeeting ? buildFormStateFromMeeting(initialMeeting) : buildDefaultFormState(defaultDate));
+        // Reset only when the modal opens or the meeting being edited changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: avoid resetting while typing
+    }, [isOpen, initialMeeting?.id, defaultDate]);
 
     useEffect(() => {
         if (!isOpen) {
@@ -553,7 +621,9 @@ export function ScheduleMeetingModal({
         // Defensive guard: block if calendar disconnected while modal was open
         if (integration && !integration.connected) {
             toast.error(
-                "Meeting creation requires Google Calendar to be connected. Connect your Google account to continue."
+                isEditMode
+                    ? "Connect your Google Calendar before updating this meeting."
+                    : "Connect your Google Calendar before scheduling a meeting."
             );
             return;
         }
@@ -601,6 +671,64 @@ export function ScheduleMeetingModal({
             }
         }
 
+        const showResultToast = (meeting: MeetingItem, warning?: string) => {
+            if (meeting.sync_status === "synced") {
+                toast.success(isEditMode ? "Meeting updated successfully." : "Meeting scheduled successfully.");
+                return;
+            }
+
+            toast.error(
+                warning
+                || meeting.sync_error_message
+                || (isEditMode
+                    ? "The meeting was updated, but Google Calendar sync did not finish."
+                    : "The meeting was saved, but Google Calendar sync did not finish.")
+            );
+        };
+
+        if (isEditMode && initialMeeting) {
+            updateMeetingMutation.mutate(
+                {
+                    meetingId: initialMeeting.id,
+                    payload: {
+                        company_id: companyId,
+                        project_id: projectId ?? initialMeeting.project_id ?? undefined,
+                        task_id: taskId ?? initialMeeting.task_id ?? undefined,
+                        title: meetingTitle.trim(),
+                        description: meetingDescription.trim(),
+                        timezone: timezone.trim(),
+                        start_at: startDate.toISOString(),
+                        end_at: endDate.toISOString(),
+                        attendees,
+                        lead_ids: selectedLeadIds,
+                        reminders,
+                    },
+                },
+                {
+                    onSuccess: (response) => {
+                        const meeting = response.data.meeting;
+                        showResultToast(meeting, response.data.warnings?.[0]);
+                        onUpdated?.(meeting);
+                        onClose();
+                    },
+                    onError: (error: unknown) => {
+                        const apiError = error as { message?: string; errors?: Record<string, string[]> };
+                        if (apiError.errors?.google_calendar?.[0]) {
+                            toast.error(apiError.errors.google_calendar[0]);
+                            return;
+                        }
+                        const mapped: Record<string, string> = {};
+                        if (apiError.errors?.title?.[0]) mapped.title = apiError.errors.title[0];
+                        if (apiError.errors?.start_at?.[0]) mapped.start_at = apiError.errors.start_at[0];
+                        if (apiError.errors?.end_at?.[0]) mapped.end_at = apiError.errors.end_at[0];
+                        if (Object.keys(mapped).length > 0) setForm((prev) => ({ ...prev, errors: { ...prev.errors, ...mapped } }));
+                        toast.error(apiError.message || "Failed to update meeting.");
+                    },
+                }
+            );
+            return;
+        }
+
         createMeetingMutation.mutate(
             {
                 company_id: companyId,
@@ -618,13 +746,9 @@ export function ScheduleMeetingModal({
             },
             {
                 onSuccess: (response) => {
-                    const warning = response.data.warnings?.[0];
-                    if (warning) {
-                        toast.warning(warning);
-                    } else {
-                        toast.success("Meeting scheduled successfully.");
-                    }
-                    onCreated?.(response.data.meeting);
+                    const meeting = response.data.meeting;
+                    showResultToast(meeting, response.data.warnings?.[0]);
+                    onCreated?.(meeting);
                     onClose();
                 },
                 onError: (error: unknown) => {
@@ -681,7 +805,7 @@ export function ScheduleMeetingModal({
                         id="schedule-meeting-modal-title"
                         className="text-[16px] font-bold text-[#09232D]"
                     >
-                        {title}
+                        {modalTitle}
                     </h2>
                     <button
                         onClick={onClose}
@@ -733,15 +857,12 @@ export function ScheduleMeetingModal({
                     )}
 
                     {integration?.connected && (
-                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
-                            <p className="text-[11px] font-semibold text-emerald-800">
-                                Connected as {integration.connected_google_email ?? integration.organizer_email ?? "company organizer"}
-                            </p>
-                            {integration.google_account_name && (
-                                <p className="mt-0.5 text-[10px] text-emerald-700">Google account: {integration.google_account_name}</p>
-                            )}
-                            <p className="mt-0.5 text-[10px] text-emerald-700">
-                                Health: {integration.connection_health_status ?? "healthy"}
+                        <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                            <p className="text-[12px] text-[#0B1215]">
+                                Google Calendar is connected
+                                {(integration.connected_google_email ?? integration.organizer_email)
+                                    ? ` as ${integration.connected_google_email ?? integration.organizer_email}.`
+                                    : "."}
                             </p>
                             {canConnectIntegration && (
                                 <div className="mt-2 flex flex-wrap gap-2">
@@ -749,7 +870,7 @@ export function ScheduleMeetingModal({
                                         type="button"
                                         onClick={handleSwitchGoogleCalendar}
                                         disabled={switchMutation.isPending}
-                                        className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-60"
                                     >
                                         {switchMutation.isPending ? "Preparing..." : "Switch Account"}
                                     </button>
@@ -757,7 +878,7 @@ export function ScheduleMeetingModal({
                                         type="button"
                                         onClick={handleDisconnectGoogleCalendar}
                                         disabled={disconnectMutation.isPending}
-                                        className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-60"
                                     >
                                         {disconnectMutation.isPending ? "Disconnecting..." : "Disconnect"}
                                     </button>
@@ -765,7 +886,7 @@ export function ScheduleMeetingModal({
                                         type="button"
                                         onClick={handleReconnectGoogleCalendar}
                                         disabled={reconnectMutation.isPending}
-                                        className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-60"
                                     >
                                         {reconnectMutation.isPending ? "Preparing..." : "Reconnect"}
                                     </button>
@@ -1330,7 +1451,13 @@ export function ScheduleMeetingModal({
                         className="inline-flex items-center gap-2 rounded-xl bg-[#09232D] px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                         {isSubmitting && <Loader2 className="animate-spin" size={14} />}
-                        {isSubmitting ? "Creating…" : "Create Meeting"}
+                        {isSubmitting
+                            ? isEditMode
+                                ? "Saving…"
+                                : "Creating…"
+                            : isEditMode
+                                ? "Save Changes"
+                                : "Create Meeting"}
                     </button>
                 </div>
             </div>

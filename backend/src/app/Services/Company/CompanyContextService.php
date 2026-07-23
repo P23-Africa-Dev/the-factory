@@ -21,6 +21,12 @@ class CompanyContextService
      */
     public function resolve(User $user, ?int $companyId = null): array
     {
+        $supportCompanyId = request()?->attributes->get('support_company_id');
+        if (is_numeric($supportCompanyId)) {
+            $supportCompanyId = (int) $supportCompanyId;
+            $companyId = $supportCompanyId;
+        }
+
         $baseQuery = DB::table('company_users')
             ->join('companies', 'companies.id', '=', 'company_users.company_id')
             ->where('company_users.user_id', $user->id)
@@ -69,7 +75,9 @@ class CompanyContextService
 
         return [
             'company' => $company,
-            'role' => (string) $membership->role,
+            'role' => is_numeric($supportCompanyId)
+                ? (string) (request()?->attributes->get('support_effective_role') ?? 'owner')
+                : (string) $membership->role,
         ];
     }
 }

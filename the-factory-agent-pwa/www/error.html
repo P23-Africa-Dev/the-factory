@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Connection problem — Factory 23 Agent</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+        background: #0a1d25;
+        color: #e8f1f2;
+      }
+      .card {
+        width: 100%;
+        max-width: 360px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        background: #0b3343;
+        padding: 28px 24px;
+        text-align: center;
+      }
+      h1 {
+        margin: 0 0 10px;
+        font-size: 1.25rem;
+        font-weight: 700;
+      }
+      p {
+        margin: 0 0 12px;
+        font-size: 0.875rem;
+        line-height: 1.5;
+        color: rgba(232, 241, 242, 0.72);
+      }
+      code {
+        font-size: 0.75rem;
+        word-break: break-all;
+        color: #75adaf;
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 20px;
+      }
+      button {
+        appearance: none;
+        border: 0;
+        border-radius: 999px;
+        height: 48px;
+        font-size: 0.875rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .primary {
+        background: #75adaf;
+        color: #0a1d25;
+      }
+      .secondary {
+        background: transparent;
+        color: #e8f1f2;
+        border: 1px solid rgba(255, 255, 255, 0.35);
+      }
+      ul {
+        margin: 16px 0 0;
+        padding-left: 18px;
+        text-align: left;
+        font-size: 0.8rem;
+        line-height: 1.45;
+        color: rgba(232, 241, 242, 0.65);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Can’t reach Factory 23</h1>
+      <p>
+        The app needs internet to load. Your phone could not resolve
+        <code id="host">app.thefactory23.com</code>
+        (<span id="hint">DNS / network error</span>).
+      </p>
+      <ul>
+        <li>Turn on mobile data or Wi‑Fi with internet</li>
+        <li>Open the same URL in Chrome to confirm it loads</li>
+        <li>If Private DNS is on, set it to Off or Automatic, then retry</li>
+      </ul>
+      <div class="actions">
+        <button type="button" class="primary" id="retry">Try again</button>
+        <button type="button" class="secondary" id="open-browser">Open in Chrome</button>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var DEFAULT_URL = 'https://app.thefactory23.com/';
+        var params = new URLSearchParams(window.location.search || '');
+        var target = params.get('url') || DEFAULT_URL;
+        try {
+          document.getElementById('host').textContent = new URL(target).hostname;
+        } catch (e) {
+          target = DEFAULT_URL;
+        }
+        document.getElementById('retry').addEventListener('click', function () {
+          window.location.href = target;
+        });
+        document.getElementById('open-browser').addEventListener('click', function () {
+          window.open(target, '_system');
+          window.location.href = target;
+        });
+      })();
+    </script>
+  </body>
+</html>

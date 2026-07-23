@@ -16,7 +16,7 @@ function buildSectionsForRole(role: string | null): SettingsSectionDef[] {
   const defs: SettingsSectionDef[] = [
     { id: "profile", label: "Profile", scope: "personal", description: "", canView: true, canEdit: true },
     { id: "notifications", label: "Notifications", scope: "personal", description: "", canView: true, canEdit: true },
-    { id: "calendar", label: "My Calendar", scope: "personal", description: "", canView: true, canEdit: true },
+    { id: "calendar", label: "Google Account", scope: "personal", description: "", canView: true, canEdit: true },
     { id: "security", label: "Security", scope: "personal", description: "", canView: true, canEdit: false },
     { id: "organization", label: "Organization", scope: "organization", description: "", canView: isManagement || isAgent, canEdit: canEditOrg },
     { id: "crm", label: "CRM", scope: "organization", description: "", canView: isManagement, canEdit: canEditOrg },

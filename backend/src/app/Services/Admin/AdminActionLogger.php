@@ -15,9 +15,10 @@ class AdminActionLogger
         ?string $targetId = null,
         array $context = [],
         ?Request $request = null,
+        ?int $adminId = null,
     ): AdminActionLog {
         $request ??= request();
-        $adminId = auth('admin')->id();
+        $adminId ??= auth('admin')->id();
 
         return AdminActionLog::create([
             'admin_id' => $adminId ? (int) $adminId : null,

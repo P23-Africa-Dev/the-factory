@@ -25,6 +25,7 @@ import {
   type PayrollExportParams,
 } from "@/lib/api/payroll";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 
 export const PAYROLL_KEYS = {
   all: ["payroll"] as const,
@@ -43,7 +44,7 @@ export function usePayroll(companyId: number | string | null | undefined) {
       const res = await getPayroll(companyId!, token);
       return res.data.payroll;
     },
-    enabled: !!token && !!companyId,
+    enabled: hasActiveApiSession(token) && !!companyId,
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -91,7 +92,7 @@ export function usePayrollOverview(params: PayrollOverviewParams) {
       const res = await getPayrollOverview(params, token);
       return res.data;
     },
-    enabled: !!token && !!params.company_id,
+    enabled: hasActiveApiSession(token) && !!params.company_id,
     staleTime: 1000 * 60,
   });
 }
@@ -105,7 +106,7 @@ export function usePayrollAgents(params: PayrollAgentListParams) {
       const res = await getPayrollAgents(params, token);
       return res.data;
     },
-    enabled: !!token && !!params.company_id,
+    enabled: hasActiveApiSession(token) && !!params.company_id,
     staleTime: 1000 * 60,
   });
 }
@@ -119,7 +120,7 @@ export function usePayrollAgentProfile(userId: number | string | null | undefine
       const res = await getPayrollAgentProfile(userId!, params, token);
       return res.data;
     },
-    enabled: !!token && !!userId && !!params.company_id,
+    enabled: hasActiveApiSession(token) && !!userId && !!params.company_id,
     staleTime: 1000 * 60,
   });
 }

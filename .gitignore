@@ -66,15 +66,19 @@ debug-*.log
 # local database dumps
 /backend/backup.sql
 
-# Android / Capacitor binaries — never push APKs or signing keys to GitHub
+# Android / Capacitor binaries — never push signing keys or build-output trees
 *.apk
 *.aab
 *.ap_
 *.keystore
 *.jks
-public/downloads/*.apk
 **/outputs/apk/**
 **/outputs/bundle/**
+
+# Single published Agent APK for QR install (always overwritten by apk:debug/release)
+!public/downloads/
+!public/downloads/.gitkeep
+!public/downloads/factory23-agent.apk
 
 # vercel
 .vercel

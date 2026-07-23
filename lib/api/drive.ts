@@ -1,6 +1,7 @@
 "use client";
 
 import { apiRequest, ApiEnvelope, API_BASE_URL, ApiRequestError } from "./onboarding";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 
 export type DriveFolder = {
   id: number;
@@ -125,11 +126,12 @@ export async function uploadDriveFile(
   if (payload.share_with_all) formData.append("share_with_all", "1");
   payload.user_ids?.forEach((id) => formData.append("user_ids[]", String(id)));
 
-  const response = await fetch(`${API_BASE_URL}/drive/files`, {
+  const transport = getSupportAwareApiTransport("/drive/files", token, API_BASE_URL);
+  const response = await fetch(transport.url, {
     method: "POST",
     headers: {
       Accept: "application/json",
-      Authorization: `Bearer ${token}`,
+      ...transport.authorizationHeaders,
     },
     body: formData,
   });
@@ -170,9 +172,14 @@ export async function fetchDriveFileBlob(
   companyId?: number | string,
 ): Promise<Blob> {
   const q = companyQuery(companyId);
-  const response = await fetch(`${API_BASE_URL}/drive/files/${fileId}/download${q ? `?${q}` : ""}`, {
+  const transport = getSupportAwareApiTransport(
+    `/drive/files/${fileId}/download${q ? `?${q}` : ""}`,
+    token,
+    API_BASE_URL,
+  );
+  const response = await fetch(transport.url, {
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...transport.authorizationHeaders,
     },
   });
 

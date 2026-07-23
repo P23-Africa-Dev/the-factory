@@ -17,6 +17,7 @@ use App\Support\AvatarUrlResolver;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -39,7 +40,7 @@ class MeetingService
         $this->ensureMeetingAccessRole((string) $context['role']);
 
         $query = Meeting::query()
-            ->with(['attendees', 'creator', 'reminders'])
+            ->with(['attendees', 'creator', 'reminders', 'leads'])
             ->where('company_id', $companyId)
             ->latest('start_at');
 
@@ -103,9 +104,16 @@ class MeetingService
                 'end_at' => $data['end_at'],
                 'status' => 'scheduled',
                 'source_page' => $data['source_page'] ?? 'api',
-                'organizer_email_snapshot' => $connection?->organizer_email,
-                'organizer_name_snapshot' => $connection?->organizer_name,
-                'meeting_settings' => $data['meeting_settings'] ?? null,
+                // App organizer identity = Factory user; Google host may differ.
+                'organizer_email_snapshot' => $user->email,
+                'organizer_name_snapshot' => $user->name,
+                'meeting_settings' => array_merge(
+                    is_array($data['meeting_settings'] ?? null) ? $data['meeting_settings'] : [],
+                    [
+                        'google_calendar_owner_email' => $connection?->organizer_email,
+                        'google_calendar_owner_name' => $connection?->organizer_name,
+                    ],
+                ),
                 'sync_status' => 'pending',
             ]);
 
@@ -121,7 +129,7 @@ class MeetingService
             $this->syncAttendees(
                 meeting: $meeting,
                 attendees: $allAttendees,
-                organizerEmail: $connection?->organizer_email,
+                organizer: $user,
             );
 
             $this->meetingReminderService->syncForMeeting(
@@ -132,11 +140,23 @@ class MeetingService
             return $meeting;
         });
 
-        $this->meetingSyncService->syncMeeting((int) $meeting->id);
+        try {
+            $this->meetingSyncService->syncMeeting((int) $meeting->id);
+        } catch (\Throwable $exception) {
+            // Meeting is already persisted; surface sync failure via warnings instead of failing create.
+            Log::warning('Meeting created locally but Google Calendar sync failed.', [
+                'meeting_id' => $meeting->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
 
         $meeting = $this->loadMeeting($meeting->fresh());
         $this->dispatchLifecycleEmails('created', $meeting, (string) $context['company']->name);
         $this->notifyInternalAttendees($meeting, $companyId, 'created', $user->id);
+
+        $googleHost = is_array($meeting->meeting_settings)
+            ? trim((string) ($meeting->meeting_settings['google_calendar_owner_email'] ?? ''))
+            : '';
 
         return [
             'meeting' => $meeting,
@@ -144,8 +164,9 @@ class MeetingService
                 'connected' => true,
                 'status' => 'active',
                 'requires_owner_action' => false,
+                'google_calendar_owner_email' => $googleHost !== '' ? $googleHost : ($connection?->organizer_email),
             ],
-            'warnings' => [],
+            'warnings' => $this->buildSyncWarnings($meeting),
         ];
     }
 
@@ -224,7 +245,7 @@ class MeetingService
                 $this->syncAttendees(
                     meeting: $meeting,
                     attendees: array_merge($baseAttendees, $leadAttendees),
-                    organizerEmail: $connection?->organizer_email,
+                    organizer: $user,
                 );
             }
 
@@ -237,12 +258,26 @@ class MeetingService
         });
 
         if ($hasActiveIntegration) {
-            $this->meetingSyncService->syncMeeting((int) $meeting->id);
+            try {
+                $this->meetingSyncService->syncMeeting((int) $meeting->id);
+            } catch (\Throwable $exception) {
+                Log::warning('Meeting updated locally but Google Calendar sync failed.', [
+                    'meeting_id' => $meeting->id,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
         }
 
         $freshMeeting = $this->loadMeeting($meeting->fresh());
         $this->dispatchLifecycleEmails('updated', $freshMeeting, (string) $context['company']->name);
         $this->notifyInternalAttendees($freshMeeting, $companyId, 'updated', $user->id);
+
+        $googleHost = is_array($freshMeeting->meeting_settings)
+            ? trim((string) ($freshMeeting->meeting_settings['google_calendar_owner_email'] ?? ''))
+            : '';
+        if ($googleHost === '' && $connection !== null) {
+            $googleHost = trim((string) ($connection->organizer_email ?? ''));
+        }
 
         return [
             'meeting' => $freshMeeting,
@@ -250,9 +285,10 @@ class MeetingService
                 'connected' => $hasActiveIntegration,
                 'status' => $hasActiveIntegration ? 'active' : 'not_connected',
                 'requires_owner_action' => ! $hasActiveIntegration,
+                'google_calendar_owner_email' => $googleHost !== '' ? $googleHost : null,
             ],
             'warnings' => $hasActiveIntegration
-                ? []
+                ? $this->buildSyncWarnings($freshMeeting)
                 : ['Connect your Google Calendar to enable sync.'],
         ];
     }
@@ -489,20 +525,23 @@ class MeetingService
             return;
         }
 
-        if ((int) $meeting->created_by_user_id === (int) $user->id && $meeting->start_at?->isFuture()) {
+        if ((int) $meeting->created_by_user_id === (int) $user->id) {
             return;
         }
 
         throw ValidationException::withMessages([
-            'authorization' => ['Meeting creators can only edit meetings before the start time.'],
+            'authorization' => ['Only owners/admins or the meeting creator can edit this meeting.'],
         ]);
     }
 
     /**
      * @param  array<int,array<string,mixed>>  $attendees
      */
-    private function syncAttendees(Meeting $meeting, array $attendees, ?string $organizerEmail): void
-    {
+    private function syncAttendees(
+        Meeting $meeting,
+        array $attendees,
+        User $organizer,
+    ): void {
         $meeting->attendees()->delete();
 
         $normalized = collect($attendees)
@@ -520,29 +559,45 @@ class MeetingService
             ->unique('email')
             ->values();
 
-        if ($organizerEmail !== null && trim($organizerEmail) !== '') {
-            $organizerNormalized = strtolower(trim($organizerEmail));
+        // Emails explicitly submitted (or resolved from leads) receive Google Calendar invites.
+        // The Factory organizer is always stored in Factory, but is only invited on Google when listed here.
+        $googleInviteEmails = $normalized
+            ->pluck('email')
+            ->filter(static fn(string $email): bool => $email !== '')
+            ->unique()
+            ->values()
+            ->all();
 
+        $settings = is_array($meeting->meeting_settings) ? $meeting->meeting_settings : [];
+        $settings['google_invite_emails'] = $googleInviteEmails;
+        $meeting->update(['meeting_settings' => $settings]);
+
+        $organizerEmail = strtolower(trim((string) $organizer->email));
+        $organizerName = trim((string) ($organizer->name ?? ''));
+
+        if ($organizerEmail !== '') {
             $alreadyIncluded = $normalized->contains(
-                static fn(array $attendee): bool => $attendee['email'] === $organizerNormalized,
+                static fn(array $attendee): bool => $attendee['email'] === $organizerEmail,
             );
 
             if (! $alreadyIncluded) {
                 $normalized->push([
-                    'user_id' => null,
+                    'user_id' => (int) $organizer->id,
                     'lead_id' => null,
-                    'email' => $organizerNormalized,
-                    'display_name' => null,
+                    'email' => $organizerEmail,
+                    'display_name' => $organizerName !== '' ? $organizerName : null,
                     'response_status' => 'accepted',
                     'is_optional' => false,
                     'is_organizer' => true,
                 ]);
             } else {
-                $normalized = $normalized->map(static function (array $attendee) use ($organizerNormalized): array {
-                    if ($attendee['email'] !== $organizerNormalized) {
+                $normalized = $normalized->map(static function (array $attendee) use ($organizer, $organizerEmail, $organizerName): array {
+                    if ($attendee['email'] !== $organizerEmail) {
                         return $attendee;
                     }
 
+                    $attendee['user_id'] = (int) $organizer->id;
+                    $attendee['display_name'] = $attendee['display_name'] ?: ($organizerName !== '' ? $organizerName : null);
                     $attendee['is_organizer'] = true;
                     $attendee['response_status'] = 'accepted';
 
@@ -563,6 +618,38 @@ class MeetingService
                 'is_organizer' => (bool) $attendee['is_organizer'],
             ]);
         });
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function buildSyncWarnings(Meeting $meeting): array
+    {
+        $status = trim((string) ($meeting->sync_status ?? ''));
+
+        if ($status === 'synced') {
+            return [];
+        }
+
+        if ($status === 'pending_setup') {
+            return [
+                trim((string) ($meeting->sync_error_message ?: 'Connect your Google Calendar to finish setting up this meeting.')),
+            ];
+        }
+
+        if ($status === 'failed') {
+            return [
+                trim((string) ($meeting->sync_error_message ?: 'We could not sync this meeting to Google Calendar. It was saved in Factory 23.')),
+            ];
+        }
+
+        if ($status === 'pending') {
+            return [
+                'The meeting was saved, but Google Calendar sync has not finished yet.',
+            ];
+        }
+
+        return [];
     }
 
     private function assertMeetingBelongsToCompany(Meeting $meeting, int $companyId): void

@@ -6,6 +6,7 @@ import {
     type MeetingAttendeeCandidate,
 } from "@/lib/api/meeting-attendees";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 
 export const MEETING_ATTENDEE_KEYS = {
     all: ["meeting-attendees"] as const,
@@ -21,7 +22,7 @@ export function useMeetingAttendeeCandidates(companyId?: number | string) {
             const response = await listMeetingAttendeeCandidates({ company_id: companyId }, token);
             return response.data.items;
         },
-        enabled: !!token && !!companyId,
+        enabled: hasActiveApiSession(token) && !!companyId,
         staleTime: 1000 * 60 * 2,
     });
 }

@@ -52,9 +52,12 @@ intent, tool, confidence, extracted_entities
 Rules:
 - tool must be one of the allowed tools listed, or null for chat
 - confidence is 0.0 to 1.0
-- extracted_entities is an object of simple strings (agent, date, timeframe, lead, project, etc.)
+- extracted_entities is an object of simple strings (agent, date, timeframe, lead, project, assignee, created_by, etc.)
 - Prefer a concrete tool/action when the user clearly wants operational help
 - Use chat only when no listed tool/action fits
+- Do NOT choose tasks.create when the user is listing, showing, querying, or asking about existing tasks
+- Phrases like "tasks created by...", "tasks assigned to...", or "what tasks did X create" are tasks.list (tool), not tasks.create (action)
+- Only choose actions when the user explicitly wants to create, schedule, send, or register something new
 PROMPT;
 
         $userPrompt = "Allowed tools and actions:\n{$toolCatalog}\n\nRecent conversation:\n{$recent}\n\nLatest user message:\n{$message}";
@@ -95,6 +98,7 @@ PROMPT;
             'crm.stale_leads' => 'Leads not contacted recently',
             'crm.follow_up_summary' => 'Follow-up recommendations',
             'tasks.overdue' => 'Overdue or due-today tasks',
+            'tasks.list' => 'List or query existing tasks (by assignee, creator, or status)',
             'planning.daily' => 'Plan my day / priorities',
             'meetings.today' => 'Meetings today / calendar',
             'attendance.today_summary' => 'Attendance snapshot',

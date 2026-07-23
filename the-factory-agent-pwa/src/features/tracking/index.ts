@@ -10,6 +10,13 @@ export { ActiveTrackingProvider, useActiveTracking } from './ActiveTrackingProvi
 export { getApiErrorMessage, startMapTaskSession } from './lib/startMapTaskSession';
 export type { StartMapTaskSessionResult } from './lib/startMapTaskSession';
 export { buildCompleteFormData } from './completeTaskForm';
+export {
+  resolveCompletionRequirements,
+  validateCompletionRequirements,
+} from './completionRequirements';
+export type { CompletionRequirements } from './completionRequirements';
+export { CompleteRequirementsSheet } from './components/CompleteRequirementsSheet';
+export type { CompleteRequirementsSheetProps } from './components/CompleteRequirementsSheet';
 export { hydrateLiveTaskFromRoute } from './hydrateRoute';
 export { trackingApi } from './api';
 export { trackingKeys } from './queryKeys';

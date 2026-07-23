@@ -180,6 +180,9 @@ export function useDeleteLeadEmail(
             queryClient.invalidateQueries({
                 queryKey: CRM_EMAIL_KEYS.lead(leadId, companyId, basePath),
             });
+            queryClient.invalidateQueries({
+                queryKey: ["crm-emails", "thread", basePath, leadId],
+            });
         },
     });
 }

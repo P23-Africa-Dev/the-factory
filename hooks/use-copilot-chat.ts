@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import {
+    labelsForMessage,
+    nextProcessingLabelIndex,
+    PROCESSING_LABEL_INTERVAL_MS,
+} from "@/lib/ely-processing-labels";
 import { resolveUserTimezone } from "@/lib/meeting-timezone";
 import {
     CopilotAssigneeOption,
@@ -79,6 +84,17 @@ export function useCopilotChat() {
     const [threadMessageCount, setThreadMessageCount] = useState<number | null>(null);
     const [isStreaming, setIsStreaming] = useState(false);
     const [processingLabel, setProcessingLabel] = useState<string | null>(null);
+    const processingLabelTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const clearProcessingLabelTimer = useCallback(() => {
+        if (processingLabelTimerRef.current !== null) {
+            clearInterval(processingLabelTimerRef.current);
+            processingLabelTimerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => () => clearProcessingLabelTimer(), [clearProcessingLabelTimer]);
+
     const [error, setError] = useState<string | null>(null);
     const [weeklyReport, setWeeklyReport] = useState<WeeklySummaryStatusResponse | null>(null);
     const [isQueueingWeeklyReport, setIsQueueingWeeklyReport] = useState(false);
@@ -349,7 +365,16 @@ export function useCopilotChat() {
 
             setError(null);
             setIsStreaming(true);
-            setProcessingLabel("Thinking...");
+
+            const labels = labelsForMessage(message.trim());
+            let labelIndex = 0;
+            clearProcessingLabelTimer();
+            setProcessingLabel(labels[0] ?? "Thinking...");
+            processingLabelTimerRef.current = setInterval(() => {
+                labelIndex = nextProcessingLabelIndex(labels, labelIndex);
+                setProcessingLabel(labels[labelIndex] ?? "Thinking...");
+            }, PROCESSING_LABEL_INTERVAL_MS);
+
             setMessages((prev) => [
                 ...prev,
                 userMessage,
@@ -384,19 +409,11 @@ export function useCopilotChat() {
                                 localStorage.setItem(persistedKey, meta.thread_id);
                             }
                         },
-                        onProcessing: (event) => {
-                            if (event.label) {
-                                setProcessingLabel(event.label);
-                                setMessages((prev) =>
-                                    prev.map((item) =>
-                                        item.id === assistantMessageId
-                                            ? { ...item, content: event.label }
-                                            : item
-                                    )
-                                );
-                            }
+                        onProcessing: () => {
+                            // Client owns label pacing; ignore SSE bursts so status stays engaged.
                         },
                         onDelta: (delta) => {
+                            clearProcessingLabelTimer();
                             setProcessingLabel(null);
                             setMessages((prev) =>
                                 prev.map((item) =>
@@ -407,6 +424,7 @@ export function useCopilotChat() {
                             );
                         },
                         onDone: (event) => {
+                            clearProcessingLabelTimer();
                             setProcessingLabel(null);
                             setThreadId(event.thread_id);
                             setMessages((prev) =>
@@ -443,11 +461,12 @@ export function useCopilotChat() {
                     )
                 );
             } finally {
+                clearProcessingLabelTimer();
                 setIsStreaming(false);
                 setProcessingLabel(null);
             }
         },
-        [persistedKey, threadId, token]
+        [clearProcessingLabelTimer, persistedKey, threadId, token]
     );
 
     return {

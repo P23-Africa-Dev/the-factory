@@ -68,9 +68,9 @@ export function useSettingsAccess() {
       },
       {
         id: "calendar",
-        label: "My Calendar",
+        label: "Google Account",
         scope: "personal",
-        description: "Connect your Google Calendar for meetings",
+        description: "Connect Google for meetings and CRM email",
         canView: true,
         canEdit: true,
       },
