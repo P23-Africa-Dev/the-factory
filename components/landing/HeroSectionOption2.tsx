@@ -99,7 +99,7 @@ export default function HeroSectionOption2({ onDownloadAgentApp }: HeroSectionOp
           {/* Map Video Card */}
           <div className="relative w-full h-[260px] xs:h-[320px] sm:h-[460px] lg:h-[597px] rounded-2xl sm:rounded-[32px] overflow-hidden shadow-2xl z-10 bg-[#0B252C] rounded-[24px] mt-6">
             <video
-              src="/assets/GIFs/fac23landingpageHero.mp4"
+              src="/assets/GIFs/upscaled-map-video.mp4"
               autoPlay
               loop
               muted
