@@ -46,7 +46,7 @@ export default function Home() {
       </div>
 
       {/* Features & Stats grid */}
-      <div className={heroOption === "option2" ? "mt-0 sm:mt-[-64px] lg:mt-[-80px] relative z-10" : ""}>
+      <div className={heroOption === "option2" ? "mt-0 sm:mt-[-51px] lg:mt-[-64px] relative z-10" : ""}>
         <FeaturesSection />
       </div>
 
