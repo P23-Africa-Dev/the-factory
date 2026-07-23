@@ -13,13 +13,13 @@ export default function HeroSectionOption2({ onDownloadAgentApp }: HeroSectionOp
       {/* Stepped Background Shape with Drop Shadow */}
       <div className="absolute inset-0 -z-10 filter drop-shadow-[0_25px_25px_rgba(0,0,0,0.15)] pointer-events-none">
         {/* Mobile View Background */}
-        <div className="w-full h-full bg-[#0B252C] rounded-b-[28px] sm:hidden" />
+        <div className="w-full h-full bg-[#0B252C] rounded-b-[22px] sm:hidden" />
 
         {/* Tablet/Desktop Left wing */}
         <div className="hidden sm:block absolute left-0 top-0 bottom-[var(--container-pb)] right-[calc(50%+var(--map-half-width)-1px)] bg-[#0B252C]" />
 
-        {/* Tablet/Desktop Center body (protrusion with 32px rounded corners on bottom edges) */}
-        <div className="hidden sm:block absolute left-[calc(50%-var(--map-half-width)-20px)] right-[calc(50%-var(--map-half-width)-20px)] top-0 bottom-0 bg-[#0B252C] rounded-b-[32px]" />
+        {/* Tablet/Desktop Center body (protrusion with 26px rounded corners on bottom edges) */}
+        <div className="hidden sm:block absolute left-[calc(50%-var(--map-half-width)-16px)] right-[calc(50%-var(--map-half-width)-16px)] top-0 bottom-0 bg-[#0B252C] rounded-b-[26px]" />
 
         {/* Tablet/Desktop Right wing */}
         <div className="hidden sm:block absolute left-[calc(50%+var(--map-half-width)-1px)] top-0 bottom-[var(--container-pb)] right-0 bg-[#0B252C]" />
@@ -81,7 +81,7 @@ export default function HeroSectionOption2({ onDownloadAgentApp }: HeroSectionOp
         </div>
 
         {/* MAP VIEW CONTAINER WITH TOP-RIGHT DOODLE SVG ILLUSTRATION */}
-        <div className="relative w-full max-w-[905px] mx-auto">
+        <div className="relative w-full max-w-[724px] mx-auto">
           {/* Hand-drawn SVG Doodle Illustration on Top Right of Map */}
           <HeroIllustration
             className="absolute z-30 pointer-events-none hidden lg:block"
@@ -97,14 +97,16 @@ export default function HeroSectionOption2({ onDownloadAgentApp }: HeroSectionOp
           />
 
           {/* Map Video Card */}
-          <div className="relative w-full h-[260px] xs:h-[320px] sm:h-[460px] lg:h-[597px] rounded-2xl sm:rounded-[32px] overflow-hidden shadow-2xl z-10 bg-[#0B252C] rounded-[24px] mt-6">
+          <div className="relative w-full h-[208px] xs:h-[256px] sm:h-[368px] lg:h-[478px] rounded-xl sm:rounded-[26px] overflow-hidden shadow-2xl z-10 bg-[#0B252C] rounded-[19px] mt-6">
             <video
-              src="/assets/GIFs/upscaled-map-video.mp4"
+              src="/assets/GIFs/fac23landingpageHero.mp4"
               autoPlay
               loop
               muted
               playsInline
-              className="w-full h-full object-cover rounded-2xl sm:rounded-[32px]"
+              disablePictureInPicture
+              disableRemotePlayback
+              className="w-full h-full object-cover rounded-xl sm:rounded-[26px] pointer-events-none"
             />
           </div>
         </div>
