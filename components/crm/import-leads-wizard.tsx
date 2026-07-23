@@ -1,7 +1,7 @@
 "use client";
 
-import type { ChangeEvent } from "react";
-import { useMemo, useRef, useState } from "react";
+import type { ChangeEvent, DragEvent } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Download, FileText, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -131,6 +131,8 @@ export function ImportLeadsWizard({
     const [result, setResult] = useState<ImportLeadsResult | null>(null);
     const [failedRows, setFailedRows] = useState<FailedImportRow[]>([]);
     const fileRef = useRef<HTMLInputElement | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const dragCounter = useRef(0);
 
     const importMutation = useImportCrmLeads(apiBasePath);
     const previewMutation = usePreviewImportCrmLeads(apiBasePath);
@@ -172,9 +174,12 @@ export function ImportLeadsWizard({
         downloadCsvFile("crm-leads-import-template.csv", content);
     };
 
-    const onFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+    const processFile = useCallback(async (file: File) => {
+        if (!file.name.toLowerCase().endsWith(".csv") && file.type !== "text/csv") {
+            toast.error("Please upload a CSV file.");
+            return;
+        }
+
         const text = await file.text();
         const parsed = parseCsvContent(text);
 
@@ -201,7 +206,47 @@ export function ImportLeadsWizard({
             }
         });
         setMapping(autoMapping);
+    }, []);
+
+    const onFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        await processFile(file);
     };
+
+    const handleDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter.current += 1;
+        if (e.dataTransfer.items?.length) {
+            setIsDragging(true);
+        }
+    }, []);
+
+    const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter.current -= 1;
+        if (dragCounter.current === 0) {
+            setIsDragging(false);
+        }
+    }, []);
+
+    const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+    }, []);
+
+    const handleDrop = useCallback(async (e: DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter.current = 0;
+        setIsDragging(false);
+
+        const file = e.dataTransfer.files?.[0];
+        if (!file) return;
+        await processFile(file);
+    }, [processFile]);
 
     const mappedRows = useMemo<ImportLeadRow[]>(() => {
         return rawRows.map((values) => {
@@ -355,9 +400,23 @@ export function ImportLeadsWizard({
                             <p><span className="font-semibold text-dash-dark">Profile URLs:</span> Put multiple URLs in one cell, separated by commas (e.g. <code className="text-[11px] bg-gray-50 px-1 rounded">https://linkedin.com/in/jane,https://x.com/jane</code>).</p>
                         </div>
 
-                        <div className="border border-dashed border-gray-300 rounded-xl p-5 bg-gray-50 text-center">
+                        <div
+                            onDragEnter={handleDragEnter}
+                            onDragLeave={handleDragLeave}
+                            onDragOver={handleDragOver}
+                            onDrop={handleDrop}
+                            className={`border-2 border-dashed rounded-xl p-5 text-center transition-colors duration-200 ${
+                                isDragging
+                                    ? "border-dash-dark bg-dash-dark/5 ring-2 ring-dash-dark/10"
+                                    : "border-gray-300 bg-gray-50"
+                            }`}
+                        >
                             <p className="text-[13px] font-semibold text-dash-dark mb-1">2. Upload your CSV file</p>
-                            <p className="text-[12px] text-gray-500 mb-4">Any column names are fine, you can map them in the next step.</p>
+                            <p className="text-[12px] text-gray-500 mb-4">
+                                {isDragging
+                                    ? "Drop your CSV file here"
+                                    : "Drag & drop your CSV here, or choose a file. Any column names are fine."}
+                            </p>
                             <div className="flex flex-col items-center gap-2">
                                 <input
                                     ref={fileRef}
@@ -367,15 +426,22 @@ export function ImportLeadsWizard({
                                     onChange={onFileChange}
                                     className="sr-only"
                                 />
-                                <button
-                                    type="button"
-                                    onClick={() => fileRef.current?.click()}
-                                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-[12px] font-semibold text-gray-700 shadow-sm hover:border-gray-400 hover:bg-gray-100 transition-colors"
-                                >
-                                    <Upload size={14} />
-                                    {fileName ? "Choose another file" : "Choose CSV file"}
-                                </button>
-                                {!fileName && (
+                                {!isDragging && (
+                                    <button
+                                        type="button"
+                                        onClick={() => fileRef.current?.click()}
+                                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-[12px] font-semibold text-gray-700 shadow-sm hover:border-gray-400 hover:bg-gray-100 transition-colors"
+                                    >
+                                        <Upload size={14} />
+                                        {fileName ? "Choose another file" : "Choose CSV file"}
+                                    </button>
+                                )}
+                                {isDragging && (
+                                    <div className="flex flex-col items-center gap-1 py-2">
+                                        <Upload size={24} className="text-dash-dark animate-bounce" />
+                                    </div>
+                                )}
+                                {!fileName && !isDragging && (
                                     <p className="text-[11px] text-gray-400">No file chosen</p>
                                 )}
                             </div>
