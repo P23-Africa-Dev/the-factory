@@ -13,6 +13,7 @@ import { CRMPageSkeleton } from "@/components/crm/crm-page-skeleton";
 import { LeadsChart, TotalLeadsCard } from "@/components/crm/crm-summary-cards";
 import { CrmFilterBar } from "@/components/crm/crm-filter-bar";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
+import { PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
 import { useDroppable } from "@dnd-kit/core";
 import {
   DndContext,
@@ -750,6 +751,7 @@ export default function CRMPage() {
   const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>("all");
   const [showFilter, setShowFilter] = useState(false);
+  const [showPipelineModal, setShowPipelineModal] = useState(false);
 
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, apiBasePath);
@@ -864,7 +866,7 @@ export default function CRMPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={() => setShowFilter((prev) => !prev)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button onClick={() => setShowPipelineModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               {selectedPipelineId
                 ? (pipelines.find((pipeline) => pipeline.id === selectedPipelineId)?.name ?? "All Pipeline")
                 : "All Pipeline"}
@@ -969,6 +971,21 @@ export default function CRMPage() {
           onClose={() => setIsAddModalOpen(false)}
           apiBasePath={apiBasePath}
           defaultStatus={defaultStatus}
+        />
+      )}
+
+      {showPipelineModal && companyId && (
+        <PipelineManagerModal
+          companyId={companyId}
+          apiBasePath={apiBasePath}
+          pipelines={pipelines}
+          selectedPipelineId={selectedPipelineId}
+          mode="prefer"
+          onSelectPipeline={(pipelineId) => {
+            setSelectedPipelineId(pipelineId);
+            setShowPipelineModal(false);
+          }}
+          onClose={() => setShowPipelineModal(false)}
         />
       )}
 

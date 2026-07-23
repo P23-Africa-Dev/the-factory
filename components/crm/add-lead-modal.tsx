@@ -9,8 +9,7 @@ import { FormRow } from "@/components/payroll/payroll/form-row";
 import { InlineInput } from "@/components/payroll/payroll/inline-input";
 import { InlineSelect } from "@/components/payroll/payroll/inline-select";
 import PhoneNumberInput from "@/components/ui/phone-number-input";
-import { useCreateLead, useUpdateLead } from "@/hooks/use-crm";
-import { useCrmLabels, useCrmPipelines } from "@/hooks/use-crm";
+import { useCreateLead, useUpdateLead, useCrmLabels, useCrmPipelines, useCrmPreferences } from "@/hooks/use-crm";
 import { useInternalUsers } from "@/hooks/use-internal-users";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -18,6 +17,7 @@ import type { ApiLeadStatus, ApiLeadPriority, ApiRoleBasePath, LeadApiItem } fro
 import type { ApiRequestError } from "@/lib/api/onboarding";
 import { ProfileUrlInputs } from "@/components/crm/profile-url-inputs";
 import { isValidUrl, normalizeWebsite, parseProfileUrls } from "@/lib/crm/lead-fields";
+import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 
 type FormErrors = Partial<{
   pipelineId: string;
@@ -209,13 +209,24 @@ export function AddLeadModal({
   const [source, setSource] = useState(lead?.source ?? "");
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, apiBasePath);
+  const { data: preferences } = useCrmPreferences(companyId ?? undefined, apiBasePath);
 
-  const defaultPipelineId = lead?.pipeline_id != null
+  const resolvedCreatePipelineId = resolveCrmPipelineId(
+    pipelines,
+    preferences?.preferred_pipeline_id,
+    preferences?.company_default_pipeline_id,
+  );
+
+  const initialPipelineId = lead?.pipeline_id != null
     ? String(lead.pipeline_id)
-    : pipelines[0]?.id != null
-      ? String(pipelines[0].id)
+    : resolvedCreatePipelineId != null
+      ? String(resolvedCreatePipelineId)
       : "";
-  const [pipelineId, setPipelineId] = useState(defaultPipelineId);
+  const [pipelineId, setPipelineId] = useState("");
+  const effectivePipelineId =
+    pipelineId ||
+    initialPipelineId ||
+    (pipelines.length > 0 ? String(pipelines[0].id) : "");
 
   const [status, setStatus] = useState<ApiLeadStatus>(lead?.status ?? defaultStatus);
   const [priority, setPriority] = useState<ApiLeadPriority>(lead?.priority ?? "medium");
@@ -236,8 +247,6 @@ export function AddLeadModal({
 
   const [errors, setErrors] = useState<FormErrors>({});
 
-  const effectivePipelineId =
-    pipelineId || (pipelines.length > 0 ? String(pipelines[0].id) : "");
   const effectiveStatus: ApiLeadStatus =
     labels.length > 0 && !labels.some((label) => label.slug === status)
       ? labels[0].slug
@@ -529,7 +538,7 @@ export function AddLeadModal({
             <div>
               <FormRow label="Pipeline *" labelClassName="w-28">
                 <InlineSelect
-                  value={pipelineId}
+                  value={effectivePipelineId}
                   onChange={(v) => { setPipelineId(v); clearError("pipelineId"); }}
                   options={[{ value: "", label: "Select Pipeline" }, ...pipelines.map((p) => ({ value: String(p.id), label: p.name }))]}
                   className="col-span-2"

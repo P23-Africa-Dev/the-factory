@@ -19,7 +19,8 @@ import type {
     ImportLeadsResult,
     ImportPreviewResult,
 } from "@/lib/api/crm";
-import { useImportCrmLeads, usePreviewImportCrmLeads } from "@/hooks/use-crm";
+import { useCrmPreferences, useImportCrmLeads, usePreviewImportCrmLeads } from "@/hooks/use-crm";
+import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 
 const MAX_IMPORT_ROWS = 500;
 
@@ -103,7 +104,6 @@ export function ImportLeadsWizard({
     companyId,
     apiBasePath,
     pipelines,
-    defaultPipelineId,
     labels,
     onClose,
     onViewImportedPipeline,
@@ -123,9 +123,18 @@ export function ImportLeadsWizard({
     const [headers, setHeaders] = useState<string[]>([]);
     const [rawRows, setRawRows] = useState<string[][]>([]);
     const [mapping, setMapping] = useState<Record<number, FieldKey | "">>({});
-    const [pipelineId, setPipelineId] = useState<string>(
-        defaultPipelineId ? String(defaultPipelineId) : pipelines[0] ? String(pipelines[0].id) : ""
+    const { data: preferences } = useCrmPreferences(companyId, apiBasePath);
+    const resolvedPipelineId = resolveCrmPipelineId(
+        pipelines,
+        preferences?.preferred_pipeline_id,
+        preferences?.company_default_pipeline_id,
     );
+    const [pipelineIdOverride, setPipelineIdOverride] = useState<string>("");
+    const pipelineId =
+        pipelineIdOverride ||
+        (resolvedPipelineId != null ? String(resolvedPipelineId) : "") ||
+        (pipelines[0] ? String(pipelines[0].id) : "");
+    const setPipelineId = setPipelineIdOverride;
     const [duplicatePolicy, setDuplicatePolicy] = useState<DuplicatePolicy>("skip");
     const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
     const [result, setResult] = useState<ImportLeadsResult | null>(null);
