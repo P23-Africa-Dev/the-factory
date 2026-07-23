@@ -3205,7 +3205,17 @@ export function AIChat({ open, onClose }: AIChatProps) {
                   </div>
                 </div>
               )}
-              {messages.map((msg, index) => (
+              {messages.map((msg, index) => {
+                const isStreamingPlaceholder =
+                  isStreaming &&
+                  index === messages.length - 1 &&
+                  msg.role === "assistant" &&
+                  !Boolean(msg.content?.trim());
+                if (isStreamingPlaceholder) {
+                  return null;
+                }
+
+                return (
                 <div key={msg.id} id={`copilot-msg-${msg.id}`}>
                   {msg.role === "user" ? (
                     /* User message */
@@ -3501,7 +3511,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
 
               {isStreaming && (() => {
                 const lastMessage = messages[messages.length - 1];

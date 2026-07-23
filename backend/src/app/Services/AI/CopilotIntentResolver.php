@@ -68,7 +68,7 @@ class CopilotIntentResolver
         if ($this->isNaturalLanguageConfirmation($message)) {
             $pendingTool = $this->resolvePendingActionToolFromThread($threadId, $companyId, $userId);
             if ($pendingTool === null
-                && ! $this->readToolArgsResolver->latestAssistantTurnIsTruncatedListOffer($threadId, $companyId, $userId)
+                && ! $this->readToolArgsResolver->latestAssistantTurnOffersListExpansion($threadId, $companyId, $userId)
             ) {
                 $pendingTool = $this->resolveContextualActionToolFromThread($threadId, $companyId, $userId);
             }
@@ -503,8 +503,12 @@ class CopilotIntentResolver
         }
 
         if (preg_match('/^\s*confirm\b/i', $normalized) === 1 || $this->isNaturalLanguageConfirmation($message)) {
-            $pendingTool = $this->resolvePendingActionToolFromThread($threadId, $companyId, $userId)
-                ?? $this->resolveContextualActionToolFromThread($threadId, $companyId, $userId);
+            $pendingTool = $this->resolvePendingActionToolFromThread($threadId, $companyId, $userId);
+            if ($pendingTool === null
+                && ! $this->readToolArgsResolver->latestAssistantTurnOffersListExpansion($threadId, $companyId, $userId)
+            ) {
+                $pendingTool = $this->resolveContextualActionToolFromThread($threadId, $companyId, $userId);
+            }
             if ($pendingTool !== null) {
                 return $pendingTool;
             }
@@ -601,6 +605,10 @@ class CopilotIntentResolver
             return null;
         }
 
+        if ($this->readToolArgsResolver->latestAssistantTurnOffersListExpansion($threadId, $companyId, $userId)) {
+            return null;
+        }
+
         $thread = $this->conversationMemoryService->getThread($companyId, $userId, $threadId);
         if (! is_array($thread)) {
             return null;
@@ -614,18 +622,6 @@ class CopilotIntentResolver
             }
 
             $payload = is_array($msg['payload'] ?? null) ? $msg['payload'] : [];
-
-            // A newer truncated list offer supersedes older pending action confirmations.
-            if ($this->readToolArgsResolver->isListTool((string) ($msg['tool'] ?? ''))
-                && (
-                    ($payload['truncated'] ?? false) === true
-                    || ($payload['offer_full_list'] ?? false) === true
-                    || (is_int($payload['remaining_count'] ?? null) && (int) $payload['remaining_count'] > 0)
-                )
-            ) {
-                return null;
-            }
-
             if (($payload['confirmation_required'] ?? false) === true && is_string($payload['tool'] ?? null)) {
                 return (string) $payload['tool'];
             }
