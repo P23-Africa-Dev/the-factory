@@ -44,6 +44,7 @@ import {
 import { resolveHeading } from '@/lib/tracking/dead-reckoning';
 import { useEffectiveMapProvider, type EffectiveMapProviderState } from '@/hooks/use-effective-map-provider';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
+import { buildTaskMapUrl } from '@/lib/tasks/map-navigation';
 
 type Phase = 'permission' | 'ready' | 'tracking' | 'complete';
 
@@ -839,7 +840,16 @@ export default function TrackingPage({
         toast.success("You're already at the destination!");
       }
 
-      setPhase('tracking');
+      const mapUrl = buildTaskMapUrl({
+        id: taskId,
+        latitude: res.data.task.latitude,
+        longitude: res.data.task.longitude,
+        label: res.data.task.title,
+        location: res.data.task.location ?? undefined,
+        address: res.data.task.address ?? undefined,
+      }) ?? '/agent/map';
+
+      router.replace(mapUrl);
     } catch (err) {
       if (err instanceof ApiRequestError) {
         const first = err.errors ? Object.values(err.errors)[0]?.[0] : null;

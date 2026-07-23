@@ -10,6 +10,8 @@ import { ingestCreditMeta } from "@/store/map-credits";
 //   Minimal : MIN_ZOOM 14 | DEBOUNCE 1200 | THRESHOLD 500m | TTL 10m
 export const POI_MIN_ZOOM = 13;
 export const POI_MAX_RADIUS_M = 3000;
+const GOOGLE_NEARBY_RETRY_AFTER_MS = 30_000;
+let googleNearbyUnavailableUntil = 0;
 
 /** Debounce before a settled pan/zoom triggers a fetch. */
 export const POI_REFRESH_DEBOUNCE_MS = 900;
@@ -82,6 +84,8 @@ async function fetchGoogleNearbyForViewport(
   circle: ViewportSearchCircle,
   signal?: AbortSignal,
 ): Promise<PoiResult[]> {
+  if (Date.now() < googleNearbyUnavailableUntil) return [];
+
   try {
     const response = await fetch("/api/places/nearby", {
       method: "POST",
@@ -95,7 +99,12 @@ async function fetchGoogleNearbyForViewport(
       signal,
     });
 
-    if (response.status === 503 || !response.ok) return [];
+    if (response.status === 503) {
+      googleNearbyUnavailableUntil = Date.now() + GOOGLE_NEARBY_RETRY_AFTER_MS;
+      return [];
+    }
+
+    if (!response.ok) return [];
 
     const payload = (await response.json()) as {
       enabled?: boolean;
@@ -131,5 +140,5 @@ export async function fetchPlacesInViewport(
     radiusKm: circle.radiusM / 1000,
   };
 
-  return fetchPlacesInArea(ctx);
+  return fetchPlacesInArea(ctx, { skipGoogleNearby: true });
 }
