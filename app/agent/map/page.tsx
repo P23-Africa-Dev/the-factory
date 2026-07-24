@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, ChevronUp, ClipboardList, Radio, X } from 'lucide-react';
 import { AgentMapView } from '@/components/map/agent-map-view';
@@ -12,7 +12,7 @@ import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { getAuthTokenFromDocument } from '@/lib/auth/session';
 import { listAgentTasks, getTaskRoute, listAgentLocations } from '@/lib/api/tracking';
-import { useSavedLocations } from '@/hooks/use-saved-locations';
+import { useInfiniteSavedLocations } from '@/hooks/use-saved-locations';
 import type { AgentLocationSnapshotItem } from '@/types/tracking';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { isInsideLocationContext, type LocationContext } from '@/lib/map/location-search';
@@ -46,15 +46,42 @@ function AgentMapPageContent() {
   const [poiZoomTooLow, setPoiZoomTooLow] = useState(false);
   const [focusPoiId, setFocusPoiId] = useState<string | null>(null);
   const [showPinnedBusinesses, setShowPinnedBusinesses] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
 
   const viewMode = isTracking && activeTask != null;
 
-  const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 300);
+    return () => window.clearTimeout(id);
+  }, [searchQuery]);
+
+  const {
+    items: myPinnedLocations,
+    total: myPinnedTotal,
+    isLoading: savedLocationsLoading,
+    hasNextPage: hasNextSavedPage,
+    isFetchingNextPage: isFetchingNextSavedPage,
+    fetchNextPage: fetchNextSavedPage,
+  } = useInfiniteSavedLocations({
+    mine: true,
+  });
+
+  const { items: globalSearchHits = [] } = useInfiniteSavedLocations({
+    q: debouncedSearchQuery.length >= 2 ? debouncedSearchQuery : undefined,
+    per_page: 8,
+    enabled: debouncedSearchQuery.length >= 2,
+  });
+
+  const savedLocationMatches = useMemo(() => {
+    if (debouncedSearchQuery.length < 2) return [] as SavedLocation[];
+    return globalSearchHits.slice(0, 6);
+  }, [debouncedSearchQuery, globalSearchHits]);
 
   const filteredLocations = useMemo(() => {
-    if (!locationCtx) return savedLocations;
-    return savedLocations.filter((location) => isInsideLocationContext(location, locationCtx));
-  }, [savedLocations, locationCtx]);
+    if (!locationCtx) return myPinnedLocations;
+    return myPinnedLocations.filter((location) => isInsideLocationContext(location, locationCtx));
+  }, [myPinnedLocations, locationCtx]);
 
   const displayedPois = useMemo(() => {
     if (!locationCtx) return viewportPois;
@@ -62,6 +89,11 @@ function AgentMapPageContent() {
       isInsideLocationContext({ latitude: poi.lat, longitude: poi.lng }, locationCtx),
     );
   }, [viewportPois, locationCtx]);
+
+  const pinnedSheetTitle =
+    myPinnedTotal != null
+      ? `Your Pinned Locations (${myPinnedTotal})`
+      : 'Your Pinned Locations';
 
   const handleViewActiveTracking = useCallback(async () => {
     if (!companyId || !user?.id) return;
@@ -138,8 +170,12 @@ function AgentMapPageContent() {
   }, []);
 
   const handleSavedLocationClick = useCallback((location: SavedLocation) => {
-    setFocusLocation(location);
+    setFocusLocation({ ...location });
     setSheetOpen(false);
+  }, []);
+
+  const handleSearchQueryChange = useCallback((q: string) => {
+    setSearchQuery(q);
   }, []);
 
   const handlePoiClick = useCallback((poi: PoiResult) => {
@@ -165,6 +201,8 @@ function AgentMapPageContent() {
       <AgentMapView
         showSavedLocations={showPinnedBusinesses}
         focusLocation={focusLocation}
+        extraLocations={savedLocationMatches}
+        mineSavedLocations
         taskFocus={taskFocus}
         showPinsToggle
         onTogglePins={() => setShowPinnedBusinesses((visible) => !visible)}
@@ -245,6 +283,9 @@ function AgentMapPageContent() {
               <LocationSearchInput
                 activeLocation={locationCtx}
                 onLocationSelect={handleLocationSelect}
+                savedSuggestions={savedLocationMatches}
+                onSavedSelect={handleSavedLocationClick}
+                onQueryChange={handleSearchQueryChange}
                 className="w-full bg-transparent shadow-none border-0 p-0"
               />
             </div>
@@ -260,7 +301,7 @@ function AgentMapPageContent() {
                 <span className="text-[13px] font-bold text-dash-dark">
                   {locationCtx || displayedPois.length > 0
                     ? `Businesses (${displayedPois.length})`
-                    : `Pinned Locations (${filteredLocations.length})`}
+                    : pinnedSheetTitle}
                 </span>
                 {sheetOpen ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronUp size={16} className="text-gray-400" />}
               </button>
@@ -273,6 +314,16 @@ function AgentMapPageContent() {
                     poiZoomTooLow={poiZoomTooLow}
                     savedLocations={filteredLocations}
                     savedLocationsLoading={savedLocationsLoading}
+                    savedLocationsTotal={myPinnedTotal}
+                    hasNextSavedPage={hasNextSavedPage}
+                    isFetchingNextSavedPage={isFetchingNextSavedPage}
+                    onLoadMoreSaved={() => {
+                      void fetchNextSavedPage();
+                    }}
+                    pinnedTitleOverride={pinnedSheetTitle}
+                    pinnedEmptyMessage="No pins of yours yet"
+                    pinnedEmptyHint="Use Location Pinning on the map to save a place"
+                    pinnedListHint="Your pins · search to find any pinned location"
                     onPoiClick={handlePoiClick}
                     onSavedClick={handleSavedLocationClick}
                   />

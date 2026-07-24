@@ -33,7 +33,8 @@ export const SAVED_LOCATION_KEYS = {
   viewport: (
     companyId: number | string | undefined,
     bounds: SavedLocationViewportBounds | null,
-  ) => ["saved-locations", "viewport", companyId, bounds] as const,
+    mine?: boolean,
+  ) => ["saved-locations", "viewport", companyId, bounds, mine ?? false] as const,
 };
 
 const MANAGEMENT_ROLES = ["owner", "admin", "supervisor"];
@@ -93,6 +94,7 @@ export type UseInfiniteSavedLocationsParams = {
   q?: string;
   type?: string;
   is_active?: boolean;
+  mine?: boolean;
   per_page?: number;
   company_id?: number | string;
   enabled?: boolean;
@@ -105,6 +107,7 @@ export function useInfiniteSavedLocations(params: UseInfiniteSavedLocationsParam
     q: params.q?.trim() || undefined,
     type: params.type,
     is_active: params.is_active,
+    mine: params.mine || undefined,
     per_page: perPage,
     company_id: companyId,
   };
@@ -145,12 +148,13 @@ export function useInfiniteSavedLocations(params: UseInfiniteSavedLocationsParam
 
 export function useSavedLocationsInViewport(
   bounds: SavedLocationViewportBounds | null,
-  options?: { enabled?: boolean; company_id?: number | string },
+  options?: { enabled?: boolean; company_id?: number | string; mine?: boolean },
 ) {
   const { token, companyId, basePath } = useSavedLocationRequestContext(options?.company_id);
+  const mine = options?.mine ?? false;
 
   return useQuery({
-    queryKey: SAVED_LOCATION_KEYS.viewport(companyId, bounds),
+    queryKey: SAVED_LOCATION_KEYS.viewport(companyId, bounds, mine),
     queryFn: async (): Promise<SavedLocation[]> => {
       if (!bounds) return [];
       const res = await listSavedLocations(
@@ -158,6 +162,7 @@ export function useSavedLocationsInViewport(
           company_id: companyId,
           per_page: VIEWPORT_PAGE_SIZE,
           page: 1,
+          mine: mine || undefined,
           ...bounds,
         },
         token,

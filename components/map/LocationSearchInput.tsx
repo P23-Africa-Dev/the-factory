@@ -10,6 +10,8 @@ import {
 } from '@/lib/utils/place-search';
 import type { LocationContext } from '@/lib/map/location-search';
 import { inferIsBusiness } from '@/lib/map/poi-display';
+import type { SavedLocation } from '@/lib/api/saved-locations';
+import { getSavedLocationLabel } from '@/lib/map/location-types';
 
 const DEBOUNCE_MS = 300;
 
@@ -17,9 +19,21 @@ type Props = {
   activeLocation: LocationContext | null;
   onLocationSelect: (ctx: LocationContext | null) => void;
   className?: string;
+  /** Optional pinned-location suggestions (server search from parent). */
+  savedSuggestions?: SavedLocation[];
+  onSavedSelect?: (location: SavedLocation) => void;
+  /** Fires on each query change (debounced by parent if needed). */
+  onQueryChange?: (query: string) => void;
 };
 
-export function LocationSearchInput({ activeLocation, onLocationSelect, className }: Props) {
+export function LocationSearchInput({
+  activeLocation,
+  onLocationSelect,
+  className,
+  savedSuggestions = [],
+  onSavedSelect,
+  onQueryChange,
+}: Props) {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [busy, setBusy] = useState(false);
@@ -47,10 +61,20 @@ export function LocationSearchInput({ activeLocation, onLocationSelect, classNam
   }, []);
 
   useEffect(() => {
+    onQueryChange?.(query);
+  }, [query, onQueryChange]);
+
+  useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => search(query), DEBOUNCE_MS);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query, search]);
+
+  useEffect(() => {
+    if (savedSuggestions.length > 0 && query.trim().length >= 2) {
+      setOpen(true);
+    }
+  }, [savedSuggestions, query]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -86,12 +110,23 @@ export function LocationSearchInput({ activeLocation, onLocationSelect, classNam
     setOpen(false);
   }
 
+  function handleSavedSelect(location: SavedLocation) {
+    onSavedSelect?.(location);
+    setQuery('');
+    setSuggestions([]);
+    setOpen(false);
+  }
+
   function handleClear() {
     onLocationSelect(null);
     setQuery('');
     setSuggestions([]);
     setOpen(false);
   }
+
+  const showDropdown =
+    open &&
+    (busy || suggestions.length > 0 || savedSuggestions.length > 0 || query.trim().length >= 2);
 
   return (
     <div ref={containerRef} className={className}>
@@ -115,10 +150,10 @@ export function LocationSearchInput({ activeLocation, onLocationSelect, classNam
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={15} strokeWidth={2} />
             <input
               type="text"
-              placeholder="Search places…"
+              placeholder="Search places or pinned locations…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onFocus={() => suggestions.length > 0 && setOpen(true)}
+              onFocus={() => (suggestions.length > 0 || savedSuggestions.length > 0) && setOpen(true)}
               className="w-full bg-white rounded-full py-3 pl-10 pr-10 text-[13px] shadow-2xl shadow-black/10 outline-none font-medium text-dash-dark placeholder:text-gray-400 border border-slate-100"
             />
             {busy || resolving ? (
@@ -133,37 +168,72 @@ export function LocationSearchInput({ activeLocation, onLocationSelect, classNam
             ) : null}
           </div>
 
-          {open && (busy || suggestions.length > 0) && (
-            <div className="absolute top-full mt-2 left-0 right-0 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur px-2 py-2 shadow-xl max-h-[240px] overflow-y-auto z-30">
-              {busy && suggestions.length === 0 && (
+          {showDropdown && (
+            <div className="absolute top-full mt-2 left-0 right-0 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur px-2 py-2 shadow-xl max-h-[280px] overflow-y-auto z-30">
+              {savedSuggestions.length > 0 && (
+                <div className="mb-1">
+                  <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Pinned locations
+                  </p>
+                  {savedSuggestions.map((loc) => (
+                    <button
+                      key={`saved-${loc.id}`}
+                      type="button"
+                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors"
+                      onClick={() => handleSavedSelect(loc)}
+                    >
+                      <p className="text-[13px] font-semibold text-dash-dark leading-tight">
+                        {loc.name}
+                        <span className="ml-2 text-[10px] font-medium text-dash-teal">
+                          {loc.can_manage ? 'Your pin' : 'Pinned'}
+                        </span>
+                      </p>
+                      <p className="text-[11px] text-slate-400 leading-tight mt-0.5 truncate">
+                        {getSavedLocationLabel(loc.type)}
+                        {loc.address ? ` · ${loc.address}` : ''}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {busy && suggestions.length === 0 && savedSuggestions.length === 0 && (
                 <p className="px-3 py-2 text-[12px] text-slate-400">Searching…</p>
               )}
-              {!busy && suggestions.length === 0 && (
+              {!busy && suggestions.length === 0 && savedSuggestions.length === 0 && (
                 <p className="px-3 py-2 text-[12px] text-slate-400">No places found.</p>
               )}
-              {suggestions.map((s) => (
-                <button
-                  key={`${s.provider}-${s.id}`}
-                  disabled={resolving}
-                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-60"
-                  onClick={() => handleSelect(s)}
-                >
-                  <p className="text-[13px] font-semibold text-dash-dark leading-tight">
-                    {s.name}
-                    {s.category && (
-                      <span className="ml-2 text-[10px] font-medium text-dash-teal capitalize">
-                        {s.category.replace(/_/g, ' ')}
-                      </span>
-                    )}
-                    {s.provider === 'google' && (
-                      <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Google</span>
-                    )}
-                  </p>
-                  {s.placeFormatted && s.placeFormatted !== s.name && (
-                    <p className="text-[11px] text-slate-400 leading-tight mt-0.5 truncate">{s.placeFormatted}</p>
+              {suggestions.length > 0 && (
+                <>
+                  {savedSuggestions.length > 0 && (
+                    <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      Places
+                    </p>
                   )}
-                </button>
-              ))}
+                  {suggestions.map((s) => (
+                    <button
+                      key={`${s.provider}-${s.id}`}
+                      disabled={resolving}
+                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-60"
+                      onClick={() => handleSelect(s)}
+                    >
+                      <p className="text-[13px] font-semibold text-dash-dark leading-tight">
+                        {s.name}
+                        {s.category && (
+                          <span className="ml-2 text-[10px] font-medium text-dash-teal capitalize">
+                            {s.category.replace(/_/g, ' ')}
+                          </span>
+                        )}
+                        {s.provider === 'google' && (
+                          <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Google</span>
+                        )}
+                      </p>
+                      {s.placeFormatted && s.placeFormatted !== s.name && (
+                        <p className="text-[11px] text-slate-400 leading-tight mt-0.5 truncate">{s.placeFormatted}</p>
+                      )}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           )}
         </div>

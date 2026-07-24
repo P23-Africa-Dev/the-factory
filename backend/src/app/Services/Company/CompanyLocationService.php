@@ -50,6 +50,10 @@ class CompanyLocationService
             $query->where('type', (string) $filters['type']);
         }
 
+        if (! empty($filters['mine'])) {
+            $query->where('created_by_user_id', (int) $user->id);
+        }
+
         if (! empty($filters['q'])) {
             $search = trim((string) $filters['q']);
             $query->where(function (Builder $builder) use ($search): void {

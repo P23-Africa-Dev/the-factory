@@ -57,6 +57,8 @@ export type ListSavedLocationsParams = {
   q?: string;
   type?: string;
   is_active?: boolean;
+  /** When true, only return pins created by the authenticated user. */
+  mine?: boolean;
   per_page?: number;
   page?: number;
   min_lat?: number;
@@ -104,6 +106,7 @@ export function listSavedLocations(
   if (params.q) qs.set("q", params.q);
   if (params.type) qs.set("type", params.type);
   if (params.is_active != null) qs.set("is_active", params.is_active ? "1" : "0");
+  if (params.mine) qs.set("mine", "1");
   qs.set("per_page", String(params.per_page ?? 50));
   if (params.page != null) qs.set("page", String(params.page));
   if (params.min_lat != null) qs.set("min_lat", String(params.min_lat));

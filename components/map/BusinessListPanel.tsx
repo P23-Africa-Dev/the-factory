@@ -22,6 +22,12 @@ type Props = {
   hasNextSavedPage?: boolean;
   isFetchingNextSavedPage?: boolean;
   onLoadMoreSaved?: () => void;
+  /** Override empty-state copy for the pinned list (e.g. agent "your pins"). */
+  pinnedEmptyMessage?: string;
+  pinnedEmptyHint?: string;
+  pinnedListHint?: string;
+  /** Override the pinned list heading (default: Pinned Locations / with total). */
+  pinnedTitleOverride?: string | null;
   onPoiClick: (p: PoiResult) => void;
   onSavedClick: (b: SavedLocation) => void;
 };
@@ -37,6 +43,10 @@ export function BusinessListPanel({
   hasNextSavedPage = false,
   isFetchingNextSavedPage = false,
   onLoadMoreSaved,
+  pinnedEmptyMessage = 'No pinned locations yet',
+  pinnedEmptyHint = 'Use Location Pinning on the map to save a place',
+  pinnedListHint = 'Scroll for more · search to find any pin',
+  pinnedTitleOverride = null,
   onPoiClick,
   onSavedClick,
 }: Props) {
@@ -77,9 +87,10 @@ export function BusinessListPanel({
   ]);
 
   const pinnedTitle =
-    savedLocationsTotal != null && savedLocationsTotal > 0
+    pinnedTitleOverride ??
+    (savedLocationsTotal != null && savedLocationsTotal > 0
       ? `Pinned Locations (${savedLocationsTotal})`
-      : 'Pinned Locations';
+      : 'Pinned Locations');
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -106,7 +117,7 @@ export function BusinessListPanel({
         )}
         {!showPoiList && savedLocations.length > 0 && (
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Scroll for more · search to find any pin
+            {pinnedListHint}
           </p>
         )}
       </div>
@@ -146,8 +157,8 @@ export function BusinessListPanel({
         ) : savedLocations.length === 0 ? (
           <Empty
             icon={<MapPin size={26} className="text-slate-300" />}
-            message="No pinned locations yet"
-            hint="Use Location Pinning on the map to save a place"
+            message={pinnedEmptyMessage}
+            hint={pinnedEmptyHint}
           />
         ) : (
           <>
@@ -243,6 +254,9 @@ function SavedCard({
         <div className="flex-1 min-w-0">
           <p className="text-[13px] font-semibold text-dash-dark leading-tight truncate group-hover:text-dash-teal transition-colors">
             {business.name}
+            {business.can_manage && (
+              <span className="ml-1.5 text-[10px] font-medium text-dash-teal">Your pin</span>
+            )}
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">{typeOpt.label}</p>
           {business.address && (

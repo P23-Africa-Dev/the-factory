@@ -545,6 +545,45 @@ class CompanyLocationTest extends TestCase
             ->assertJsonPath('data.items.0.name', 'Inside Viewport');
     }
 
+    public function test_mine_filter_returns_only_caller_pins(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompany('FAC-LOC013', 'Mine Filter Ltd');
+        $agentToken = $agent->createToken('mine-filter', ['*'])->plainTextToken;
+
+        CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $agent->id,
+            'name' => 'Agent Own Pin',
+            'type' => 'client_site',
+            'latitude' => 6.4100000,
+            'longitude' => 3.4100000,
+        ]);
+
+        CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Admin Other Pin',
+            'type' => 'office',
+            'latitude' => 6.4200000,
+            'longitude' => 3.4200000,
+        ]);
+
+        $mineResponse = $this->withToken($agentToken)
+            ->getJson('/api/v1/agent/locations?company_id=' . $company->id . '&mine=1');
+
+        $mineResponse->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.name', 'Agent Own Pin')
+            ->assertJsonPath('data.items.0.can_manage', true);
+
+        $searchOther = $this->withToken($agentToken)
+            ->getJson('/api/v1/agent/locations?company_id=' . $company->id . '&q=Admin+Other');
+
+        $searchOther->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.name', 'Admin Other Pin');
+    }
+
     /**
      * @return array{0: Company, 1: User, 2: User, 3: User}
      */

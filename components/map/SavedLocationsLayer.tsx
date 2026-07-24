@@ -66,6 +66,8 @@ export type SavedLocationsLayerProps = {
   focusLocation?: SavedLocation | null;
   /** Extra pins to always merge into the marker set (e.g. search hits). */
   extraLocations?: SavedLocation[];
+  /** When true, viewport fetch returns only pins created by the current user. */
+  mine?: boolean;
   /** Read-only mode (compact widget): render markers only, no create/edit/move/delete. */
   readOnly?: boolean;
   /** When provided, only markers whose id is in this set are rendered. */
@@ -96,6 +98,7 @@ export function SavedLocationsLayer({
   onPinModeChange,
   focusLocation,
   extraLocations = [],
+  mine = false,
   readOnly = false,
   visibleIds = null,
   pinToolbarClassName = "bottom-32 right-4 md:right-10 z-20",
@@ -181,6 +184,7 @@ export function SavedLocationsLayer({
 
   const { data: viewportLocations = [] } = useSavedLocationsInViewport(viewportBounds, {
     enabled: ready,
+    mine,
   });
 
   const permissions = useSavedLocationPermissions();

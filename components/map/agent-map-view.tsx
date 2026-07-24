@@ -101,6 +101,10 @@ function getDestinationMarkerKind(status: 'in_progress' | 'near_destination' | '
 export type AgentMapViewProps = {
     showSavedLocations?: boolean;
     focusLocation?: SavedLocation | null;
+    /** Search-hit pins to always show on the map (global pins). */
+    extraLocations?: SavedLocation[];
+    /** Default markers: only pins created by the current agent. */
+    mineSavedLocations?: boolean;
     taskFocus?: TaskMapFocus | null;
     pinToolbarClassName?: string;
     mapControlsClassName?: string;
@@ -120,6 +124,8 @@ function MapboxAgentMapView({
     providerState,
     showSavedLocations = true,
     focusLocation = null,
+    extraLocations = [],
+    mineSavedLocations = true,
     taskFocus = null,
     pinToolbarClassName,
     mapControlsClassName,
@@ -735,6 +741,8 @@ function MapboxAgentMapView({
                     pinMode={pinMode}
                     onPinModeChange={setPinMode}
                     focusLocation={focusLocation}
+                    extraLocations={extraLocations}
+                    mine={mineSavedLocations}
                     pinToolbarClassName={pinToolbarClassName}
                 />
             )}
@@ -836,6 +844,8 @@ function GoogleAgentMapView({
     providerState,
     showSavedLocations = true,
     focusLocation = null,
+    extraLocations = [],
+    mineSavedLocations = true,
     taskFocus = null,
     pinToolbarClassName,
     mapControlsClassName,
@@ -1225,6 +1235,8 @@ function GoogleAgentMapView({
                     pinMode={pinMode}
                     onPinModeChange={setPinMode}
                     focusLocation={focusLocation}
+                    extraLocations={extraLocations}
+                    mine={mineSavedLocations}
                     pinToolbarClassName={pinToolbarClassName}
                 />
             )}
@@ -1283,6 +1295,8 @@ function GoogleAgentMapView({
 export function AgentMapView({
     showSavedLocations = true,
     focusLocation = null,
+    extraLocations = [],
+    mineSavedLocations = true,
     taskFocus = null,
     pinToolbarClassName = "bottom-32 right-4 md:right-10 z-20",
     mapControlsClassName = "absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2",
@@ -1305,6 +1319,8 @@ export function AgentMapView({
                 providerState={providerState}
                 showSavedLocations={showSavedLocations}
                 focusLocation={focusLocation}
+                extraLocations={extraLocations}
+                mineSavedLocations={mineSavedLocations}
                 taskFocus={taskFocus}
                 pinToolbarClassName={pinToolbarClassName}
                 mapControlsClassName={mapControlsClassName}
@@ -1320,6 +1336,8 @@ export function AgentMapView({
             providerState={providerState}
             showSavedLocations={showSavedLocations}
             focusLocation={focusLocation}
+            extraLocations={extraLocations}
+            mineSavedLocations={mineSavedLocations}
             taskFocus={taskFocus}
             pinToolbarClassName={pinToolbarClassName}
             mapControlsClassName={mapControlsClassName}
