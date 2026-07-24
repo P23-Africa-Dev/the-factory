@@ -706,12 +706,40 @@ export default function LeadDetailsPage() {
                 </div>
                 {/* Action icons */}
                 <div className="flex items-center gap-4">
-                  <button className="w-12 h-12 rounded-full bg-white flex items-center justify-center hover:bg-gray-50 transition-all shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100">
-                    <MessageSquare size={20} className="text-[#0B1215]" />
-                  </button>
-                  <a href={`tel:${leadData.phone}`} className="w-12 h-12 rounded-full bg-white flex items-center justify-center hover:bg-gray-50 transition-all shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100">
-                    <Phone size={20} className="text-[#0B1215]" />
-                  </a>
+                  {leadData.email ? (
+                    <a
+                      href={`mailto:${leadData.email}`}
+                      className="w-12 h-12 rounded-full bg-white flex items-center justify-center hover:bg-gray-50 transition-all shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100"
+                      title={`Email ${leadData.email}`}
+                    >
+                      <MessageSquare size={20} className="text-[#0B1215]" />
+                    </a>
+                  ) : (
+                    <button
+                      disabled
+                      className="w-12 h-12 rounded-full bg-white/50 flex items-center justify-center opacity-50 cursor-not-allowed shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100"
+                      title="No email available"
+                    >
+                      <MessageSquare size={20} className="text-[#0B1215]" />
+                    </button>
+                  )}
+                  {leadData.phone ? (
+                    <a
+                      href={`tel:${leadData.phone}`}
+                      className="w-12 h-12 rounded-full bg-white flex items-center justify-center hover:bg-gray-50 transition-all shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100"
+                      title={`Call ${leadData.phone}`}
+                    >
+                      <Phone size={20} className="text-[#0B1215]" />
+                    </a>
+                  ) : (
+                    <button
+                      disabled
+                      className="w-12 h-12 rounded-full bg-white/50 flex items-center justify-center opacity-50 cursor-not-allowed shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100"
+                      title="No phone available"
+                    >
+                      <Phone size={20} className="text-[#0B1215]" />
+                    </button>
+                  )}
                 </div>
               </div>
 
