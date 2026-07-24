@@ -33,6 +33,10 @@ class CompanyLocationController extends Controller
             'type' => $request->string('type')->toString(),
             'is_active' => $request->has('is_active') ? $request->boolean('is_active') : null,
             'per_page' => $request->input('per_page'),
+            'min_lat' => $request->input('min_lat'),
+            'max_lat' => $request->input('max_lat'),
+            'min_lng' => $request->input('min_lng'),
+            'max_lng' => $request->input('max_lng'),
         ]);
 
         return $this->success(

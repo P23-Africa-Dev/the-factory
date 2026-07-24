@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import Supercluster from "supercluster";
 import { MarkerClusterer } from "@googlemaps/markerclusterer";
@@ -11,13 +11,13 @@ import {
   useCreateSavedLocation,
   useDeleteSavedLocation,
   useSavedLocationPermissions,
-  useSavedLocations,
+  useSavedLocationsInViewport,
   useUpdateSavedLocation,
 } from "@/hooks/use-saved-locations";
 import { useCrmLabels } from "@/hooks/use-crm";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import type { SavedLocation } from "@/lib/api/saved-locations";
+import type { SavedLocation, SavedLocationViewportBounds } from "@/lib/api/saved-locations";
 import { ApiRequestError } from "@/lib/api/onboarding";
 import {
   createSavedLocationMarkerElement,
@@ -64,6 +64,8 @@ export type SavedLocationsLayerProps = {
   onPinModeChange: (value: boolean) => void;
   /** Saved location to focus/select (search integration). */
   focusLocation?: SavedLocation | null;
+  /** Extra pins to always merge into the marker set (e.g. search hits). */
+  extraLocations?: SavedLocation[];
   /** Read-only mode (compact widget): render markers only, no create/edit/move/delete. */
   readOnly?: boolean;
   /** When provided, only markers whose id is in this set are rendered. */
@@ -93,6 +95,7 @@ export function SavedLocationsLayer({
   pinMode,
   onPinModeChange,
   focusLocation,
+  extraLocations = [],
   readOnly = false,
   visibleIds = null,
   pinToolbarClassName = "bottom-32 right-4 md:right-10 z-20",
@@ -101,7 +104,85 @@ export function SavedLocationsLayer({
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const crmApiBasePath = (role ?? "").toLowerCase() === "agent" ? "/agent" : "/admin";
   const { data: crmLabels = [] } = useCrmLabels(companyId ?? undefined, crmApiBasePath);
-  const { data: locations = [] } = useSavedLocations();
+
+  const [viewportBounds, setViewportBounds] = useState<SavedLocationViewportBounds | null>(null);
+  const boundsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const readMapboxBounds = useCallback((): SavedLocationViewportBounds | null => {
+    const map = getMapboxMap?.();
+    if (!map) return null;
+    const b = map.getBounds();
+    if (!b) return null;
+    // Pad slightly so edge pins stay visible while panning.
+    const pad = 0.02;
+    return {
+      min_lat: b.getSouth() - pad,
+      max_lat: b.getNorth() + pad,
+      min_lng: b.getWest() - pad,
+      max_lng: b.getEast() + pad,
+    };
+  }, [getMapboxMap]);
+
+  const readGoogleBounds = useCallback((): SavedLocationViewportBounds | null => {
+    const bridge = getGoogleMap?.();
+    if (!bridge?.map) return null;
+    const map = bridge.map as GoogleMapInstance & {
+      getBounds?: () => {
+        getSouthWest: () => { lat: () => number; lng: () => number };
+        getNorthEast: () => { lat: () => number; lng: () => number };
+      } | null;
+    };
+    const b = map.getBounds?.();
+    if (!b) return null;
+    const sw = b.getSouthWest();
+    const ne = b.getNorthEast();
+    const pad = 0.02;
+    return {
+      min_lat: sw.lat() - pad,
+      max_lat: ne.lat() + pad,
+      min_lng: sw.lng() - pad,
+      max_lng: ne.lng() + pad,
+    };
+  }, [getGoogleMap]);
+
+  const scheduleBoundsUpdate = useCallback(() => {
+    if (boundsDebounceRef.current) clearTimeout(boundsDebounceRef.current);
+    boundsDebounceRef.current = setTimeout(() => {
+      const next = provider === "mapbox" ? readMapboxBounds() : readGoogleBounds();
+      setViewportBounds(next);
+    }, 250);
+  }, [provider, readMapboxBounds, readGoogleBounds]);
+
+  useEffect(() => {
+    if (!ready) return;
+    scheduleBoundsUpdate();
+
+    if (provider === "mapbox") {
+      const map = getMapboxMap?.();
+      if (!map) return;
+      const handler = () => scheduleBoundsUpdate();
+      map.on("moveend", handler);
+      map.on("zoomend", handler);
+      return () => {
+        map.off("moveend", handler);
+        map.off("zoomend", handler);
+        if (boundsDebounceRef.current) clearTimeout(boundsDebounceRef.current);
+      };
+    }
+
+    const bridge = getGoogleMap?.();
+    if (!bridge?.map) return;
+    const listener = bridge.map.addListener("idle", () => scheduleBoundsUpdate());
+    return () => {
+      listener.remove();
+      if (boundsDebounceRef.current) clearTimeout(boundsDebounceRef.current);
+    };
+  }, [ready, provider, getMapboxMap, getGoogleMap, scheduleBoundsUpdate]);
+
+  const { data: viewportLocations = [] } = useSavedLocationsInViewport(viewportBounds, {
+    enabled: ready,
+  });
+
   const permissions = useSavedLocationPermissions();
   const createMutation = useCreateSavedLocation();
   const [manualMoveRequirement, setManualMoveRequirement] = useState<ManualMoveRequirement | null>(null);
@@ -113,8 +194,33 @@ export function SavedLocationsLayer({
   const deleteMutation = useDeleteSavedLocation();
 
   const [selected, setSelected] = useState<SavedLocation | null>(null);
+
+  const locations = useMemo(() => {
+    const byId = new Map<number, SavedLocation>();
+    for (const loc of viewportLocations) byId.set(loc.id, loc);
+    for (const loc of extraLocations) byId.set(loc.id, loc);
+    if (focusLocation) byId.set(focusLocation.id, focusLocation);
+    if (selected) byId.set(selected.id, selected);
+    return Array.from(byId.values());
+  }, [viewportLocations, extraLocations, focusLocation, selected]);
+
   const visibleIdsRef = useRef<Set<number> | null>(null);
   useEffect(() => { visibleIdsRef.current = visibleIds; }, [visibleIds]);
+
+  const alwaysVisibleIdsRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    const ids = new Set<number>();
+    if (focusLocation) ids.add(focusLocation.id);
+    for (const loc of extraLocations) ids.add(loc.id);
+    if (selected) ids.add(selected.id);
+    alwaysVisibleIdsRef.current = ids;
+  }, [focusLocation, extraLocations, selected]);
+
+  const isLocationVisible = useCallback((locId: number) => {
+    if (alwaysVisibleIdsRef.current.has(locId)) return true;
+    if (!visibleIdsRef.current) return true;
+    return visibleIdsRef.current.has(locId);
+  }, []);
   const [pendingPin, setPendingPin] = useState<PendingPin | null>(null);
   const [editing, setEditing] = useState<SavedLocation | null>(null);
   const [moveMode, setMoveMode] = useState(false);
@@ -241,7 +347,7 @@ export function SavedLocationsLayer({
 
     const points = locationsRef.current
       .filter((loc) => !(moveMode && selected && loc.id === selected.id))
-      .filter((loc) => !visibleIdsRef.current || visibleIdsRef.current.has(loc.id))
+      .filter((loc) => isLocationVisible(loc.id))
       .map((loc) => ({
         type: "Feature" as const,
         properties: { locationId: loc.id },
@@ -312,7 +418,7 @@ export function SavedLocationsLayer({
         .addTo(map);
       mbMarkersRef.current.push(marker);
     });
-  }, [getMapboxMap, clearMapboxMarkers, moveMode, selected]);
+  }, [getMapboxMap, clearMapboxMarkers, moveMode, selected, isLocationVisible]);
 
   useEffect(() => {
     if (provider !== "mapbox" || !ready) return;
@@ -449,7 +555,7 @@ export function SavedLocationsLayer({
 
     const markers = locationsRef.current
       .filter((loc) => !(moveMode && selected && loc.id === selected.id))
-      .filter((loc) => !visibleIdsRef.current || visibleIdsRef.current.has(loc.id))
+      .filter((loc) => isLocationVisible(loc.id))
       .map((loc) => {
         const icon = createSavedLocationMarkerGoogleIcon({
           name: loc.name,
@@ -493,7 +599,7 @@ export function SavedLocationsLayer({
     return () => {
       clearGoogleMarkers();
     };
-  }, [provider, ready, locations, moveMode, selected, getGoogleMap, clearGoogleMarkers]);
+  }, [provider, ready, locations, moveMode, selected, getGoogleMap, clearGoogleMarkers, isLocationVisible]);
 
   // ── Google: pin-mode click + long-press ───────────────────────────────────────
   useEffect(() => {

@@ -58,6 +58,18 @@ export type ListSavedLocationsParams = {
   type?: string;
   is_active?: boolean;
   per_page?: number;
+  page?: number;
+  min_lat?: number;
+  max_lat?: number;
+  min_lng?: number;
+  max_lng?: number;
+};
+
+export type SavedLocationViewportBounds = {
+  min_lat: number;
+  max_lat: number;
+  min_lng: number;
+  max_lng: number;
 };
 
 export type CreateSavedLocationPayload = {
@@ -92,7 +104,12 @@ export function listSavedLocations(
   if (params.q) qs.set("q", params.q);
   if (params.type) qs.set("type", params.type);
   if (params.is_active != null) qs.set("is_active", params.is_active ? "1" : "0");
-  qs.set("per_page", String(params.per_page ?? 200));
+  qs.set("per_page", String(params.per_page ?? 50));
+  if (params.page != null) qs.set("page", String(params.page));
+  if (params.min_lat != null) qs.set("min_lat", String(params.min_lat));
+  if (params.max_lat != null) qs.set("max_lat", String(params.max_lat));
+  if (params.min_lng != null) qs.set("min_lng", String(params.min_lng));
+  if (params.max_lng != null) qs.set("max_lng", String(params.max_lng));
   const query = qs.toString() ? `?${qs.toString()}` : "";
 
   return apiRequest<SavedLocationsListData>({

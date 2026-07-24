@@ -58,7 +58,7 @@ import { useInitialMapViewport } from '@/hooks/use-initial-map-viewport';
 import { TrackingConnectionStatus } from '@/components/tracking/TrackingConnectionStatus';
 import { SavedLocationsLayer, type GoogleMapBridge } from '@/components/map/SavedLocationsLayer';
 import { TerritoryLayer } from '@/components/map/TerritoryLayer';
-import { useSavedLocations, useSavedLocationPermissions } from '@/hooks/use-saved-locations';
+import { useInfiniteSavedLocations, useSavedLocationPermissions } from '@/hooks/use-saved-locations';
 import { getSavedLocationLabel } from '@/lib/map/location-types';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { LocationSearchInput } from '@/components/map/LocationSearchInput';
@@ -339,7 +339,42 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const [showBusinessPins, setShowBusinessPins] = useState(true);
   const [showGooglePois, setShowGooglePois] = useState(true);
   const [locating, setLocating] = useState(false);
-  const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
+  const [debouncedLeftSearch, setDebouncedLeftSearch] = useState('');
+  const [debouncedMapSearch, setDebouncedMapSearch] = useState('');
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedLeftSearch(leftSearchQuery.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [leftSearchQuery]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedMapSearch(searchQuery.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  const businessesSearchQ =
+    leftTab === 'businesses' && debouncedLeftSearch.length > 0 ? debouncedLeftSearch : undefined;
+
+  const {
+    items: infiniteSavedLocations,
+    total: savedLocationsTotal,
+    isLoading: savedLocationsLoading,
+    hasNextPage: hasNextSavedPage,
+    isFetchingNextPage: isFetchingNextSavedPage,
+    fetchNextPage: fetchNextSavedPage,
+  } = useInfiniteSavedLocations({
+    q: businessesSearchQ,
+    enabled: leftTab === 'businesses',
+  });
+
+  // Lightweight page for map-bar saved-location suggestions (server search).
+  const { items: mapSearchSavedHits = [] } = useInfiniteSavedLocations({
+    q: debouncedMapSearch.length >= 2 ? debouncedMapSearch : undefined,
+    per_page: 8,
+    enabled: debouncedMapSearch.length >= 2,
+  });
+
+  const savedLocations = infiniteSavedLocations;
   const savedLocationPermissions = useSavedLocationPermissions();
   const { isLoading: clockedInLoading } = useAttendanceMapSnapshots({}, { scope: 'management' });
   const clockedInItemMap = useAttendanceMapStore((s) => s.items);
@@ -363,10 +398,13 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     return savedLocations.filter((loc) => isInsideLocationContext(loc, locationCtx));
   }, [savedLocations, locationCtx]);
 
-  const filteredBusinessIds = useMemo(
-    () => locationCtx ? new Set(filteredBusinesses.map((b) => b.id)) : null,
-    [filteredBusinesses, locationCtx]
-  );
+  const filteredBusinessIds = useMemo(() => {
+    // When an area context is active, restrict markers — but never hide the focused pin.
+    if (!locationCtx) return null;
+    const ids = new Set(filteredBusinesses.map((b) => b.id));
+    if (focusLocation) ids.add(focusLocation.id);
+    return ids;
+  }, [locationCtx, filteredBusinesses, focusLocation]);
 
   const liveTasks = useTrackingStore((s) => s.liveTasks);
 
@@ -479,17 +517,9 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   }, [isFollowing, selectedTask, setFollowAllActive, setIsFollowing]);
 
   const savedLocationMatches = useMemo(() => {
-    const needle = searchQuery.trim().toLowerCase();
-    if (!needle) return [] as SavedLocation[];
-    return savedLocations
-      .filter(
-        (loc) =>
-          loc.name.toLowerCase().includes(needle) ||
-          getSavedLocationLabel(loc.type).toLowerCase().includes(needle) ||
-          (loc.address ?? '').toLowerCase().includes(needle)
-      )
-      .slice(0, 6);
-  }, [searchQuery, savedLocations]);
+    if (debouncedMapSearch.length < 2) return [] as SavedLocation[];
+    return mapSearchSavedHits.slice(0, 6);
+  }, [debouncedMapSearch, mapSearchSavedHits]);
 
   const leftSearchResults = useMemo(() => {
     const needle = leftSearchQuery.trim().toLowerCase();
@@ -514,19 +544,13 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         .slice(0, 8);
     }
 
+    // Businesses tab uses server-side `q` via useInfiniteSavedLocations — not client filter.
     if (leftTab === 'businesses') {
-      return savedLocations
-        .filter(
-          (loc) =>
-            loc.name.toLowerCase().includes(needle) ||
-            getSavedLocationLabel(loc.type).toLowerCase().includes(needle) ||
-            (loc.address ?? '').toLowerCase().includes(needle)
-        )
-        .slice(0, 8);
+      return null;
     }
 
     return null;
-  }, [leftSearchQuery, leftTab, tasks, clockedInItems, savedLocations]);
+  }, [leftSearchQuery, leftTab, tasks, clockedInItems]);
 
   const handleSearchQueryChange = useCallback((value: string) => {
     setSearchQuery(value);
@@ -1615,10 +1639,19 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             pois={displayedPois}
             poiBusy={poiBusy}
             poiZoomTooLow={poiZoomTooLow}
-            savedLocations={leftSearchResults && Array.isArray(leftSearchResults) ? (leftSearchResults as typeof savedLocations) : savedLocations}
+            savedLocations={savedLocations}
             savedLocationsLoading={savedLocationsLoading}
+            savedLocationsTotal={savedLocationsTotal}
+            hasNextSavedPage={Boolean(hasNextSavedPage)}
+            isFetchingNextSavedPage={isFetchingNextSavedPage}
+            onLoadMoreSaved={() => {
+              if (hasNextSavedPage && !isFetchingNextSavedPage) {
+                void fetchNextSavedPage();
+              }
+            }}
             onPoiClick={handlePoiSelect}
             onSavedClick={(b) => {
+              setFocusLocation(b);
               mapRef.current?.flyTo({ center: [b.longitude, b.latitude], zoom: 17, speed: 1.2 });
             }}
           />
@@ -1634,6 +1667,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           pinMode={pinMode}
           onPinModeChange={setPinMode}
           focusLocation={focusLocation}
+          extraLocations={savedLocationMatches}
           visibleIds={filteredBusinessIds}
         />
       )}
@@ -1888,7 +1922,41 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   // Super-admin master toggle (per-org override) for Google business pins.
   const { enabled: poiDisplayAllowed } = useMapPoiDisplay();
   const googlePoiMarkersRef = useRef<{ setMap: (m: unknown) => void }[]>([]);
-  const { data: savedLocations = [], isLoading: savedLocationsLoading } = useSavedLocations();
+  const [debouncedLeftSearch, setDebouncedLeftSearch] = useState('');
+  const [debouncedMapSearch, setDebouncedMapSearch] = useState('');
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedLeftSearch(leftSearchQuery.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [leftSearchQuery]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedMapSearch(searchQuery.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  const businessesSearchQ =
+    leftTab === 'businesses' && debouncedLeftSearch.length > 0 ? debouncedLeftSearch : undefined;
+
+  const {
+    items: infiniteSavedLocations,
+    total: savedLocationsTotal,
+    isLoading: savedLocationsLoading,
+    hasNextPage: hasNextSavedPage,
+    isFetchingNextPage: isFetchingNextSavedPage,
+    fetchNextPage: fetchNextSavedPage,
+  } = useInfiniteSavedLocations({
+    q: businessesSearchQ,
+    enabled: leftTab === 'businesses',
+  });
+
+  const { items: mapSearchSavedHits = [] } = useInfiniteSavedLocations({
+    q: debouncedMapSearch.length >= 2 ? debouncedMapSearch : undefined,
+    per_page: 8,
+    enabled: debouncedMapSearch.length >= 2,
+  });
+
+  const savedLocations = infiniteSavedLocations;
   const savedLocationPermissions = useSavedLocationPermissions();
   const { isLoading: clockedInLoading } = useAttendanceMapSnapshots({}, { scope: 'management' });
   const clockedInItemMap = useAttendanceMapStore((s) => s.items);
@@ -1915,10 +1983,13 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     return savedLocations.filter((loc) => isInsideLocationContext(loc, locationCtx));
   }, [savedLocations, locationCtx]);
 
-  const filteredBusinessIds = useMemo(
-    () => locationCtx ? new Set(filteredBusinesses.map((b) => b.id)) : null,
-    [filteredBusinesses, locationCtx]
-  );
+  const filteredBusinessIds = useMemo(() => {
+    // When an area context is active, restrict markers — but never hide the focused pin.
+    if (!locationCtx) return null;
+    const ids = new Set(filteredBusinesses.map((b) => b.id));
+    if (focusLocation) ids.add(focusLocation.id);
+    return ids;
+  }, [locationCtx, filteredBusinesses, focusLocation]);
 
   const liveTasks = useTrackingStore((s) => s.liveTasks);
   const tasks = useMemo(() => Object.values(liveTasks), [liveTasks]);
@@ -2053,17 +2124,9 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const googleApiKey = useMemo(() => getGoogleMapsPublicApiKey(), []);
 
   const savedLocationMatches = useMemo(() => {
-    const needle = searchQuery.trim().toLowerCase();
-    if (!needle) return [] as SavedLocation[];
-    return savedLocations
-      .filter(
-        (loc) =>
-          loc.name.toLowerCase().includes(needle) ||
-          getSavedLocationLabel(loc.type).toLowerCase().includes(needle) ||
-          (loc.address ?? '').toLowerCase().includes(needle)
-      )
-      .slice(0, 6);
-  }, [searchQuery, savedLocations]);
+    if (debouncedMapSearch.length < 2) return [] as SavedLocation[];
+    return mapSearchSavedHits.slice(0, 6);
+  }, [debouncedMapSearch, mapSearchSavedHits]);
 
   const handleLocationSelect = useCallback((ctx: LocationContext | null) => {
     setLocationCtx(ctx);
@@ -2534,19 +2597,13 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         .slice(0, 8);
     }
 
+    // Businesses tab uses server-side `q` via useInfiniteSavedLocations.
     if (leftTab === 'businesses') {
-      return savedLocations
-        .filter(
-          (loc) =>
-            loc.name.toLowerCase().includes(needle) ||
-            getSavedLocationLabel(loc.type).toLowerCase().includes(needle) ||
-            (loc.address ?? '').toLowerCase().includes(needle)
-        )
-        .slice(0, 8);
+      return null;
     }
 
     return null;
-  }, [leftSearchQuery, leftTab, tasks, clockedInItems, savedLocations]);
+  }, [leftSearchQuery, leftTab, tasks, clockedInItems]);
 
   if (!googleApiKey) {
     if (compact) {
@@ -2730,13 +2787,22 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             activeLocation={locationCtx}
             pois={poiResults}
             poiBusy={poiBusy}
-            savedLocations={leftSearchResults && Array.isArray(leftSearchResults) ? (leftSearchResults as typeof savedLocations) : savedLocations}
+            savedLocations={savedLocations}
             savedLocationsLoading={savedLocationsLoading}
+            savedLocationsTotal={savedLocationsTotal}
+            hasNextSavedPage={Boolean(hasNextSavedPage)}
+            isFetchingNextSavedPage={isFetchingNextSavedPage}
+            onLoadMoreSaved={() => {
+              if (hasNextSavedPage && !isFetchingNextSavedPage) {
+                void fetchNextSavedPage();
+              }
+            }}
             onPoiClick={(p) => {
               mapRef.current?.panTo({ lat: p.lat, lng: p.lng });
               if ((mapRef.current?.getZoom() ?? 0) < 17) mapRef.current?.setZoom(17);
             }}
             onSavedClick={(b) => {
+              setFocusLocation(b);
               mapRef.current?.panTo({ lat: b.latitude, lng: b.longitude });
               if ((mapRef.current?.getZoom() ?? 0) < 17) mapRef.current?.setZoom(17);
             }}
@@ -2757,6 +2823,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           pinMode={pinMode}
           onPinModeChange={setPinMode}
           focusLocation={focusLocation}
+          extraLocations={savedLocationMatches}
           visibleIds={filteredBusinessIds}
         />
       )}

@@ -59,9 +59,40 @@ class CompanyLocationService
             });
         }
 
-        $perPage = (int) ($filters['per_page'] ?? 100);
+        if ($this->hasCompleteBbox($filters)) {
+            $minLat = (float) $filters['min_lat'];
+            $maxLat = (float) $filters['max_lat'];
+            $minLng = (float) $filters['min_lng'];
+            $maxLng = (float) $filters['max_lng'];
+
+            $query->whereBetween('latitude', [min($minLat, $maxLat), max($minLat, $maxLat)])
+                ->whereBetween('longitude', [min($minLng, $maxLng), max($minLng, $maxLng)]);
+        }
+
+        $perPage = $this->clampPerPage($filters['per_page'] ?? null);
 
         return $query->latest('id')->paginate($perPage)->withQueryString();
+    }
+
+    private function clampPerPage(mixed $perPage): int
+    {
+        $value = (int) ($perPage ?? 50);
+
+        return max(1, min(100, $value));
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function hasCompleteBbox(array $filters): bool
+    {
+        foreach (['min_lat', 'max_lat', 'min_lng', 'max_lng'] as $key) {
+            if (! array_key_exists($key, $filters) || $filters[$key] === null || $filters[$key] === '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function create(User $user, array $data): CompanyLocation
