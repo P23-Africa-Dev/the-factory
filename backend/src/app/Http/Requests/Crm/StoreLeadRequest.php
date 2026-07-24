@@ -75,7 +75,7 @@ class StoreLeadRequest extends FormRequest
     {
         return [
             'company_id' => ['required', 'integer', 'exists:companies,id'],
-            'pipeline_id' => ['required', 'integer', 'exists:lead_pipelines,id'],
+            'pipeline_id' => ['nullable', 'integer', 'exists:lead_pipelines,id'],
             'name' => ['required', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:40'],

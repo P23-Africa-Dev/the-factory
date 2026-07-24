@@ -14,7 +14,7 @@ import {
 import { formatAiMessageHtml, formatPlainAiMessage } from "@/lib/format-ai-message";
 import { ELY_INPUT_PLACEHOLDER, ELY_LANDING_HEADLINE, ELY_LANDING_SUBTEXT, ELY_NAME } from "@/lib/ely-brand";
 import type { CopilotChatContext, CopilotThreadSearchResult, ForecastHorizonDays, ForecastOverviewResponse } from "@/lib/api/copilot";
-import { searchCopilotThreads } from "@/lib/api/copilot";
+import { enhanceCopilotEmailDraft, regenerateCopilotEmailDraft, searchCopilotThreads } from "@/lib/api/copilot";
 import {
   buildForecastChatMessage,
   buildForecastSnapshotRows,
@@ -388,6 +388,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
   const [meetingActionDrafts, setMeetingActionDrafts] = useState<Record<string, ElyMeetingDraft>>({});
   const [taskActionDrafts, setTaskActionDrafts] = useState<Record<string, ElyTaskDraft>>({});
+  const [emailComposeVersions, setEmailComposeVersions] = useState<Record<string, { previous: { subject: string; body_text: string }; pending: boolean }>>({});
   const [assigneeOptions, setAssigneeOptions] = useState<Record<string, AssigneeOptionsState>>({});
   const [leadOptions, setLeadOptions] = useState<Record<string, LeadOptionsState>>({});
   const [meetingAttendeeOptions, setMeetingAttendeeOptions] = useState<Record<string, MeetingAttendeeOptionsState>>({});
@@ -799,6 +800,101 @@ export function AIChat({ open, onClose }: AIChatProps) {
         [msgId]: nextDraft,
       };
     });
+  }
+
+  async function composeEmailDraftForMessage(msg: Message, mode: "regenerate" | "enhance") {
+    const args = actionArgsForMessage(msg);
+    if (!args) return;
+
+    const token = getAuthTokenFromDocument();
+    if (!token) {
+      toast.error("You must be signed in to update the email draft.");
+      return;
+    }
+
+    const subject = String(args.subject ?? "");
+    const bodyText = String(args.body_text ?? "");
+    const toEmail = String(args.to_email ?? args.lead_email ?? "");
+    const leadId = typeof args.lead_id === "number" ? args.lead_id : Number(args.lead_id);
+
+    setEmailComposeVersions((prev) => ({
+      ...prev,
+      [msg.id]: {
+        previous: { subject, body_text: bodyText },
+        pending: true,
+      },
+    }));
+
+    try {
+      const payload = {
+        company_id: companyId ?? undefined,
+        lead_id: Number.isFinite(leadId) && leadId > 0 ? leadId : null,
+        to_email: toEmail || undefined,
+        subject,
+        body_text: bodyText,
+      };
+      const response = mode === "enhance"
+        ? await enhanceCopilotEmailDraft(payload, token)
+        : await regenerateCopilotEmailDraft(payload, token);
+
+      const nextSubject = String(response.data?.subject ?? subject);
+      const nextBody = String(response.data?.body_text ?? bodyText);
+      const previous = response.data?.previous ?? { subject, body_text: bodyText };
+
+      setActionDrafts((prev) => ({
+        ...prev,
+        [msg.id]: {
+          ...(prev[msg.id] ?? {}),
+          subject: nextSubject,
+          body_text: nextBody,
+        },
+      }));
+      setEmailComposeVersions((prev) => ({
+        ...prev,
+        [msg.id]: {
+          previous: {
+            subject: String(previous.subject ?? subject),
+            body_text: String(previous.body_text ?? bodyText),
+          },
+          pending: false,
+        },
+      }));
+      toast.success(mode === "enhance" ? "Message enhanced." : "Message regenerated.");
+    } catch (err) {
+      setEmailComposeVersions((prev) => ({
+        ...prev,
+        [msg.id]: {
+          previous: { subject, body_text: bodyText },
+          pending: false,
+        },
+      }));
+      toast.error(err instanceof Error ? err.message : "Unable to update the email draft.");
+    }
+  }
+
+  function restorePreviousEmailDraft(msg: Message) {
+    const version = emailComposeVersions[msg.id];
+    if (!version) return;
+
+    const currentArgs = actionArgsForMessage(msg);
+    const currentSubject = String(currentArgs?.subject ?? "");
+    const currentBody = String(currentArgs?.body_text ?? "");
+
+    setActionDrafts((prev) => ({
+      ...prev,
+      [msg.id]: {
+        ...(prev[msg.id] ?? {}),
+        subject: version.previous.subject,
+        body_text: version.previous.body_text,
+      },
+    }));
+    setEmailComposeVersions((prev) => ({
+      ...prev,
+      [msg.id]: {
+        previous: { subject: currentSubject, body_text: currentBody },
+        pending: false,
+      },
+    }));
   }
 
   async function loadMeetingAttendeeOptions(msgId: string) {
@@ -3437,6 +3533,35 @@ export function AIChat({ open, onClose }: AIChatProps) {
                                     );
                                   })}
                                 </div>
+                                {payloadTool === "crm.send_email" && (
+                                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      disabled={emailComposeVersions[msg.id]?.pending === true || isStreaming}
+                                      onClick={() => void composeEmailDraftForMessage(msg, "regenerate")}
+                                      className="rounded-full border border-[#4F8C83]/60 bg-[#14302E] px-3 py-1.5 text-[11px] font-semibold text-[#A6DFD2] hover:bg-[#1A3B38] disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {emailComposeVersions[msg.id]?.pending ? "Working…" : "Regenerate message"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={emailComposeVersions[msg.id]?.pending === true || isStreaming}
+                                      onClick={() => void composeEmailDraftForMessage(msg, "enhance")}
+                                      className="rounded-full border border-[#4F8C83]/60 bg-[#14302E] px-3 py-1.5 text-[11px] font-semibold text-[#A6DFD2] hover:bg-[#1A3B38] disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      Enhance message
+                                    </button>
+                                    {emailComposeVersions[msg.id] && !emailComposeVersions[msg.id]?.pending && (
+                                      <button
+                                        type="button"
+                                        onClick={() => restorePreviousEmailDraft(msg)}
+                                        className="rounded-full border border-[#7A5A2A]/60 bg-[#2F2617] px-3 py-1.5 text-[11px] font-semibold text-[#F2D9A6] hover:bg-[#3B2E1D]"
+                                      >
+                                        Use previous
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             );
                           })()}
@@ -3469,7 +3594,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                             )}
                             <button
                               onClick={() => handleConfirmAction(index, msg)}
-                              disabled={isStreaming || isBlockingConfirmation(msg)}
+                              disabled={isStreaming || isBlockingConfirmation(msg) || emailComposeVersions[msg.id]?.pending === true}
                               className="rounded-full bg-[#2D6F63] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#358372] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               Confirm Action

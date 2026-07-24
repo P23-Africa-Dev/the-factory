@@ -125,7 +125,7 @@ export type PipelineSnapshot = {
 
 export type CreateLeadPayload = {
     company_id: number | string;
-    pipeline_id: number | string;
+    pipeline_id?: number | string;
     name: string;
     email?: string | null;
     phone?: string | null;
@@ -539,6 +539,51 @@ export function deleteCrmPipeline(
     }>({
         method: "POST",
         path: withBase(basePath, `/crm/pipelines/${pipelineId}/delete`),
+        body: payload,
+        token,
+    });
+}
+
+export type CrmPreferences = {
+    preferred_pipeline_id: number | null;
+    company_default_pipeline_id: number | null;
+};
+
+export function getCrmPreferences(
+    params: Pick<ListLeadsParams, "company_id">,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<CrmPreferences>> {
+    const query = buildQuery({ company_id: params.company_id });
+    return apiRequest<CrmPreferences>({
+        method: "GET",
+        path: withBase(basePath, `/crm/preferences${query}`),
+        token,
+    });
+}
+
+export function setPreferredCrmPipeline(
+    payload: { company_id: number | string; pipeline_id: number | string },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<CrmPreferences>> {
+    return apiRequest<CrmPreferences>({
+        method: "PUT",
+        path: withBase(basePath, "/crm/preferences/preferred-pipeline"),
+        body: payload,
+        token,
+    });
+}
+
+export function setCompanyDefaultCrmPipeline(
+    pipelineId: number | string,
+    payload: { company_id?: number | string },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ pipeline: CrmPipeline }>> {
+    return apiRequest<{ pipeline: CrmPipeline }>({
+        method: "POST",
+        path: withBase(basePath, `/crm/pipelines/${pipelineId}/set-default`),
         body: payload,
         token,
     });

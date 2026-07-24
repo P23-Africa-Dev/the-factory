@@ -62,7 +62,7 @@ function MapCreditPrompt({ exhausted, balance, toastId, onTopUp }: CreditPromptP
                     : "bg-[#FFFBEB] text-[#B45309]"
                 }`}
               >
-                {balance} left
+                {balance} credits left
               </span>
             )}
           </div>

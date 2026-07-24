@@ -10,6 +10,7 @@ use App\Models\LeadPipeline;
 use App\Models\User;
 use App\Services\AI\Providers\AiProviderRouter;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class LeadInferenceService
@@ -59,7 +60,7 @@ class LeadInferenceService
             $this->extractLabeledValue($message, ['priority']),
         );
 
-        $pipelineId = $this->resolveDefaultPipelineId($companyId);
+        $pipelineId = $this->resolveDefaultPipelineId($companyId, $userId);
 
         $assignedToUserId = $role === 'agent' ? $userId : $this->resolveAssignedUserId($message, $companyId, $entities);
 
@@ -113,7 +114,7 @@ class LeadInferenceService
         }
 
         if (! isset($normalized['pipeline_id']) || (int) ($normalized['pipeline_id'] ?? 0) <= 0) {
-            $normalized['pipeline_id'] = $this->resolveDefaultPipelineId($companyId);
+            $normalized['pipeline_id'] = $this->resolveDefaultPipelineId($companyId, $userId);
         }
 
         if (! is_string($normalized['status'] ?? null) || trim((string) $normalized['status']) === '') {
@@ -233,9 +234,26 @@ class LeadInferenceService
         return null;
     }
 
-    private function resolveDefaultPipelineId(int $companyId): int
+    private function resolveDefaultPipelineId(int $companyId, ?int $userId = null): int
     {
         try {
+            if ($userId !== null) {
+                $preferredId = DB::table('company_users')
+                    ->where('company_id', $companyId)
+                    ->where('user_id', $userId)
+                    ->value('preferred_pipeline_id');
+
+                if ($preferredId !== null) {
+                    $exists = LeadPipeline::query()
+                        ->where('company_id', $companyId)
+                        ->where('id', (int) $preferredId)
+                        ->exists();
+                    if ($exists) {
+                        return (int) $preferredId;
+                    }
+                }
+            }
+
             $pipelineId = LeadPipeline::query()
                 ->where('company_id', $companyId)
                 ->orderByDesc('is_default')

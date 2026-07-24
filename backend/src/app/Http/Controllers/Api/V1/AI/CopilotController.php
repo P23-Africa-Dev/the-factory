@@ -8,6 +8,7 @@ use App\Http\Controllers\Concerns\ResolvesCompanyContextId;
 use App\Http\Controllers\Controller;
 use App\Services\AI\CopilotProcessingLabels;
 use App\Services\AI\CopilotService;
+use App\Services\AI\Crm\EmailInferenceService;
 use App\Services\AI\IntentClassifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,7 +20,10 @@ class CopilotController extends Controller
 {
     use ResolvesCompanyContextId;
 
-    public function __construct(private readonly CopilotService $copilotService) {}
+    public function __construct(
+        private readonly CopilotService $copilotService,
+        private readonly EmailInferenceService $emailInferenceService,
+    ) {}
 
     public function chat(Request $request): JsonResponse|StreamedResponse
     {
@@ -163,6 +167,63 @@ class CopilotController extends Controller
                 'Connection' => 'keep-alive',
                 'X-Accel-Buffering' => 'no',
             ]
+        );
+    }
+
+    public function regenerateEmail(Request $request): JsonResponse
+    {
+        return $this->composeEmailDraft($request, 'regenerate');
+    }
+
+    public function enhanceEmail(Request $request): JsonResponse
+    {
+        return $this->composeEmailDraft($request, 'enhance');
+    }
+
+    private function composeEmailDraft(Request $request, string $mode): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'lead_id' => ['nullable', 'integer', 'min:1'],
+            'to_email' => ['nullable', 'email', 'max:255'],
+            'subject' => ['nullable', 'string', 'max:255'],
+            'body_text' => ['nullable', 'string', 'max:20000'],
+            'user_note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $companyId = $this->resolveCompanyContextId($validated['company_id'] ?? null);
+        $previous = [
+            'subject' => trim((string) ($validated['subject'] ?? '')),
+            'body_text' => trim((string) ($validated['body_text'] ?? '')),
+        ];
+
+        $draft = $mode === 'enhance'
+            ? $this->emailInferenceService->enhanceDraft(
+                companyId: $companyId,
+                userId: $request->user()?->id,
+                leadId: isset($validated['lead_id']) ? (int) $validated['lead_id'] : null,
+                toEmail: trim((string) ($validated['to_email'] ?? '')),
+                subject: $previous['subject'],
+                bodyText: $previous['body_text'],
+                userNote: isset($validated['user_note']) ? (string) $validated['user_note'] : null,
+            )
+            : $this->emailInferenceService->regenerateDraft(
+                companyId: $companyId,
+                userId: $request->user()?->id,
+                leadId: isset($validated['lead_id']) ? (int) $validated['lead_id'] : null,
+                toEmail: trim((string) ($validated['to_email'] ?? '')),
+                subject: $previous['subject'],
+                bodyText: $previous['body_text'],
+                userNote: isset($validated['user_note']) ? (string) $validated['user_note'] : null,
+            );
+
+        return $this->success(
+            message: $mode === 'enhance' ? 'Email draft enhanced.' : 'Email draft regenerated.',
+            data: [
+                'subject' => $draft['subject'],
+                'body_text' => $draft['body_text'],
+                'previous' => $previous,
+            ],
         );
     }
 

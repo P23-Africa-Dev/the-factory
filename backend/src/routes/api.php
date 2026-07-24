@@ -258,6 +258,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::post('/chat', [CopilotController::class, 'chat'])
             ->middleware('throttle:api')
             ->name('chat');
+        Route::post('/email/regenerate', [CopilotController::class, 'regenerateEmail'])
+            ->middleware('throttle:api')
+            ->name('email.regenerate');
+        Route::post('/email/enhance', [CopilotController::class, 'enhanceEmail'])
+            ->middleware('throttle:api')
+            ->name('email.enhance');
         Route::get('/assignees', [CopilotController::class, 'assignees'])
             ->middleware('throttle:api')
             ->name('assignees.index');
@@ -567,6 +573,13 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::post('/pipelines/{pipeline}/delete', [LeadController::class, 'deletePipeline'])
                     ->middleware('throttle:api')
                     ->name('pipelines.delete');
+                Route::post('/pipelines/{pipeline}/set-default', [LeadController::class, 'setCompanyDefaultPipeline'])
+                    ->middleware('throttle:api')
+                    ->name('pipelines.set-default');
+                Route::get('/preferences', [LeadController::class, 'preferences'])->name('preferences.show');
+                Route::put('/preferences/preferred-pipeline', [LeadController::class, 'setPreferredPipeline'])
+                    ->middleware('throttle:api')
+                    ->name('preferences.preferred-pipeline');
                 Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
                 Route::post('/labels', [LeadController::class, 'storeLabel'])
                     ->middleware('throttle:api')
@@ -705,6 +718,10 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::get('/leads/analytics', [LeadController::class, 'leadsAnalytics'])->name('leads.analytics');
                 Route::get('/leads/agent-uploads-overview', [LeadController::class, 'agentUploadsOverview'])->name('leads.agent-uploads-overview');
                 Route::get('/pipelines', [LeadController::class, 'pipelines'])->name('pipelines.index');
+                Route::get('/preferences', [LeadController::class, 'preferences'])->name('preferences.show');
+                Route::put('/preferences/preferred-pipeline', [LeadController::class, 'setPreferredPipeline'])
+                    ->middleware('throttle:api')
+                    ->name('preferences.preferred-pipeline');
                 Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
                 Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
@@ -1012,6 +1029,13 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::post('/pipelines/{pipeline}/delete', [LeadController::class, 'deletePipeline'])
             ->middleware(['access.role:management', 'throttle:api'])
             ->name('pipelines.delete');
+        Route::post('/pipelines/{pipeline}/set-default', [LeadController::class, 'setCompanyDefaultPipeline'])
+            ->middleware(['access.role:management', 'throttle:api'])
+            ->name('pipelines.set-default');
+        Route::get('/preferences', [LeadController::class, 'preferences'])->name('preferences.show');
+        Route::put('/preferences/preferred-pipeline', [LeadController::class, 'setPreferredPipeline'])
+            ->middleware('throttle:api')
+            ->name('preferences.preferred-pipeline');
         Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
         Route::post('/labels', [LeadController::class, 'storeLabel'])
             ->middleware('throttle:api')

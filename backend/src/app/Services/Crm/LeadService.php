@@ -84,6 +84,9 @@ class LeadService
             ? (int) $user->id
             : (isset($data['assigned_to_user_id']) ? (int) $data['assigned_to_user_id'] : null);
         $pipelineId = (int) ($data['pipeline_id'] ?? 0);
+        if ($pipelineId <= 0) {
+            $pipelineId = $this->resolvePreferredPipelineId($user, $companyId);
+        }
 
         $this->assertPipelineInCompany($companyId, $pipelineId);
         $this->assertLabelExists($companyId, (string) $data['status']);
@@ -668,6 +671,144 @@ class LeadService
     }
 
     /**
+     * @return array{preferred_pipeline_id:int|null,company_default_pipeline_id:int|null}
+     */
+    public function getCrmPreferences(User $user, ?int $companyId = null): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($resolvedCompanyId);
+
+        return [
+            'preferred_pipeline_id' => $this->getPreferredPipelineId((int) $user->id, $resolvedCompanyId),
+            'company_default_pipeline_id' => $this->getCompanyDefaultPipelineId($resolvedCompanyId),
+        ];
+    }
+
+    /**
+     * @return array{preferred_pipeline_id:int|null,company_default_pipeline_id:int|null}
+     */
+    public function setPreferredPipeline(User $user, array $payload): array
+    {
+        $context = $this->companyContextService->resolve($user, $payload['company_id'] ?? null);
+        $this->ensureCanCreateLeads((string) $context['role']);
+        $companyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($companyId);
+
+        $pipelineId = (int) ($payload['pipeline_id'] ?? 0);
+        $this->assertPipelineInCompany($companyId, $pipelineId);
+
+        if ($this->isMapSystemPipeline($companyId, $pipelineId)) {
+            throw ValidationException::withMessages([
+                'pipeline_id' => ['System pipelines cannot be set as a personal default.'],
+            ]);
+        }
+
+        DB::table('company_users')
+            ->where('company_id', $companyId)
+            ->where('user_id', $user->id)
+            ->update(['preferred_pipeline_id' => $pipelineId]);
+
+        return $this->getCrmPreferences($user, $companyId);
+    }
+
+    public function setCompanyDefaultPipeline(User $user, int $pipelineId, array $payload): LeadPipeline
+    {
+        $context = $this->companyContextService->resolve($user, $payload['company_id'] ?? null);
+        $this->ensureCanManage((string) $context['role']);
+        $companyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($companyId);
+
+        $pipeline = LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->findOrFail($pipelineId);
+
+        if ($pipeline->system_key === MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY) {
+            throw ValidationException::withMessages([
+                'pipeline' => ['System pipelines cannot be set as the company default.'],
+            ]);
+        }
+
+        DB::transaction(function () use ($companyId, $pipeline): void {
+            LeadPipeline::query()
+                ->where('company_id', $companyId)
+                ->where('id', '!=', $pipeline->id)
+                ->where('is_default', true)
+                ->update(['is_default' => false]);
+
+            $pipeline->update(['is_default' => true]);
+        });
+
+        return $pipeline->fresh();
+    }
+
+    public function resolvePreferredPipelineId(User $user, int $companyId): int
+    {
+        $this->ensureDefaultCrmSetup($companyId);
+
+        $preferredId = $this->getPreferredPipelineId((int) $user->id, $companyId);
+        if ($preferredId !== null && $this->pipelineExistsInCompany($companyId, $preferredId)) {
+            return $preferredId;
+        }
+
+        $companyDefaultId = $this->getCompanyDefaultPipelineId($companyId);
+        if ($companyDefaultId !== null) {
+            return $companyDefaultId;
+        }
+
+        $fallbackId = LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->where(function ($query): void {
+                $query->whereNull('system_key')
+                    ->orWhere('system_key', '!=', MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY);
+            })
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->value('id');
+
+        return (int) ($fallbackId ?? 0);
+    }
+
+    private function getPreferredPipelineId(int $userId, int $companyId): ?int
+    {
+        $value = DB::table('company_users')
+            ->where('company_id', $companyId)
+            ->where('user_id', $userId)
+            ->value('preferred_pipeline_id');
+
+        return $value !== null ? (int) $value : null;
+    }
+
+    private function getCompanyDefaultPipelineId(int $companyId): ?int
+    {
+        $value = LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->where('is_default', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->value('id');
+
+        return $value !== null ? (int) $value : null;
+    }
+
+    private function pipelineExistsInCompany(int $companyId, int $pipelineId): bool
+    {
+        return LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->where('id', $pipelineId)
+            ->exists();
+    }
+
+    private function isMapSystemPipeline(int $companyId, int $pipelineId): bool
+    {
+        return LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->where('id', $pipelineId)
+            ->where('system_key', MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY)
+            ->exists();
+    }
+
+    /**
      * @return array{deleted_pipeline_id:int,reassigned_leads_count:int,reassigned_to_pipeline_id:int|null,reassigned_to_pipeline_name:string|null}
      */
     public function deletePipeline(User $user, int $pipelineId, array $payload): array
@@ -732,6 +873,11 @@ class LeadService
                     ->where('pipeline_id', $pipeline->id)
                     ->update(['pipeline_id' => $fallbackPipeline->id]);
             }
+
+            DB::table('company_users')
+                ->where('company_id', $companyId)
+                ->where('preferred_pipeline_id', $pipeline->id)
+                ->update(['preferred_pipeline_id' => null]);
 
             $pipeline->delete();
         });

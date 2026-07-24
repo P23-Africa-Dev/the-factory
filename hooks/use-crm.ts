@@ -16,6 +16,7 @@ import {
     downloadCrmLeadsExport,
     getAgentUploadsOverview,
     getCrmLeadsAnalytics,
+    getCrmPreferences,
     getLead,
     getLeadPipeline,
     importCrmLeads,
@@ -24,8 +25,11 @@ import {
     listLeads,
     previewImportCrmLeads,
     reorderCrmLabels,
+    setCompanyDefaultCrmPipeline,
+    setPreferredCrmPipeline,
     type CrmLabel,
     type CrmPipeline,
+    type CrmPreferences,
     type ExportLeadsParams,
     type ImportLeadsPayload,
     updateLead,
@@ -69,6 +73,8 @@ export const CRM_KEYS = {
         ["crm", "agent-uploads-overview", basePath, companyId] as const,
     leadsAnalytics: (params: CrmLeadsAnalyticsParams, basePath: ApiRoleBasePath) =>
         ["crm", "leads-analytics", basePath, params] as const,
+    preferences: (companyId: number | string | undefined, basePath: ApiRoleBasePath) =>
+        ["crm", "preferences", basePath, companyId] as const,
 };
 
 export type LeadsResult = {
@@ -253,6 +259,54 @@ export function useCrmPipelines(
         },
         enabled: hasActiveApiSession(token) && !!companyId,
         staleTime: 1000 * 60 * 2,
+    });
+}
+
+export function useCrmPreferences(
+    companyId: number | string | undefined,
+    basePath: ApiRoleBasePath = "/admin"
+) {
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useQuery({
+        queryKey: CRM_KEYS.preferences(companyId, basePath),
+        queryFn: async (): Promise<CrmPreferences> => {
+            const res = await getCrmPreferences({ company_id: companyId }, token, basePath);
+            return res.data;
+        },
+        enabled: hasActiveApiSession(token) && !!companyId,
+        staleTime: 1000 * 60 * 2,
+    });
+}
+
+export function useSetPreferredCrmPipeline(basePath: ApiRoleBasePath = "/admin") {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: (payload: { company_id: number | string; pipeline_id: number | string }) =>
+            setPreferredCrmPipeline(payload, token, basePath),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+        },
+    });
+}
+
+export function useSetCompanyDefaultCrmPipeline(basePath: ApiRoleBasePath = "/admin") {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({
+            pipelineId,
+            payload,
+        }: {
+            pipelineId: number | string;
+            payload: { company_id?: number | string };
+        }) => setCompanyDefaultCrmPipeline(pipelineId, payload, token, basePath),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+        },
     });
 }
 

@@ -244,6 +244,48 @@ class LeadController extends Controller
         );
     }
 
+    public function preferences(Request $request): JsonResponse
+    {
+        $companyId = $this->resolveCompanyContextId($request->input('company_id'));
+        $preferences = $this->leadService->getCrmPreferences($request->user(), $companyId);
+
+        return $this->success(
+            message: 'CRM preferences fetched successfully.',
+            data: $preferences,
+        );
+    }
+
+    public function setPreferredPipeline(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'pipeline_id' => ['required', 'integer', 'exists:lead_pipelines,id'],
+        ]);
+        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+
+        $preferences = $this->leadService->setPreferredPipeline($request->user(), $validated);
+
+        return $this->success(
+            message: 'Preferred pipeline updated successfully.',
+            data: $preferences,
+        );
+    }
+
+    public function setCompanyDefaultPipeline(Request $request, int $pipeline): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+        ]);
+        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+
+        $updated = $this->leadService->setCompanyDefaultPipeline($request->user(), $pipeline, $validated);
+
+        return $this->success(
+            message: 'Company default pipeline updated successfully.',
+            data: ['pipeline' => $updated],
+        );
+    }
+
     public function labels(Request $request): JsonResponse
     {
         $companyId = $this->resolveCompanyContextId($request->input('company_id'));

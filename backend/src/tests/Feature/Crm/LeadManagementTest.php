@@ -1457,6 +1457,121 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.pagination.total', 0);
     }
 
+    public function test_personal_and_company_default_pipelines_drive_create_fallback(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $salesPipeline = LeadPipeline::create([
+            'company_id' => $company->id,
+            'name' => 'Sales Pipeline',
+            'currency_code' => 'USD',
+            'sort_order' => 1,
+            'is_default' => false,
+        ]);
+        $supportPipeline = LeadPipeline::create([
+            'company_id' => $company->id,
+            'name' => 'Support Pipeline',
+            'currency_code' => 'USD',
+            'sort_order' => 2,
+            'is_default' => false,
+        ]);
+
+        $this->actingAs($agent, 'sanctum')
+            ->putJson('/api/v1/crm/preferences/preferred-pipeline', [
+                'company_id' => $company->id,
+                'pipeline_id' => $supportPipeline->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.preferred_pipeline_id', $supportPipeline->id);
+
+        $this->actingAs($admin, 'sanctum')
+            ->putJson('/api/v1/crm/preferences/preferred-pipeline', [
+                'company_id' => $company->id,
+                'pipeline_id' => $salesPipeline->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.preferred_pipeline_id', $salesPipeline->id)
+            ->assertJsonPath('data.company_default_pipeline_id', $pipelineId);
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'name' => 'Admin Preferred Lead',
+                'status' => 'newly_lead',
+                'priority' => 'medium',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.lead.pipeline.id', $salesPipeline->id);
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'name' => 'Agent Preferred Lead',
+                'status' => 'newly_lead',
+                'priority' => 'medium',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.lead.pipeline.id', $supportPipeline->id);
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/pipelines/' . $supportPipeline->id . '/set-default', [
+                'company_id' => $company->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.pipeline.is_default', true);
+
+        $this->assertDatabaseHas('lead_pipelines', [
+            'id' => $supportPipeline->id,
+            'is_default' => true,
+        ]);
+        $this->assertDatabaseHas('lead_pipelines', [
+            'id' => $pipelineId,
+            'is_default' => false,
+        ]);
+
+        $agent->forceFill(['internal_role' => 'agent'])->save();
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/crm/pipelines/' . $salesPipeline->id . '/set-default', [
+                'company_id' => $company->id,
+            ])
+            ->assertForbidden();
+
+        DB::table('company_users')
+            ->where('company_id', $company->id)
+            ->where('user_id', $admin->id)
+            ->update(['preferred_pipeline_id' => null]);
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'name' => 'Company Default Lead',
+                'status' => 'newly_lead',
+                'priority' => 'medium',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.lead.pipeline.id', $supportPipeline->id);
+
+        $this->actingAs($agent, 'sanctum')
+            ->putJson('/api/v1/crm/preferences/preferred-pipeline', [
+                'company_id' => $company->id,
+                'pipeline_id' => $salesPipeline->id,
+            ])
+            ->assertOk();
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/pipelines/' . $salesPipeline->id . '/delete', [
+                'company_id' => $company->id,
+                'force' => true,
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('company_users', [
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'preferred_pipeline_id' => null,
+        ]);
+    }
+
     private function seedCompanyUsers(): array
     {
         $company = Company::create([

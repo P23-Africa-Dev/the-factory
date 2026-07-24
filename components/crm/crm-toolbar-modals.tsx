@@ -10,6 +10,8 @@ import {
   Pencil,
   Star,
   Check,
+  Building2,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiRequestError } from "@/lib/api/onboarding";
@@ -20,6 +22,9 @@ import {
   useDeleteCrmLabel,
   useDeleteCrmPipeline,
   useReorderCrmLabels,
+  useSetCompanyDefaultCrmPipeline,
+  useSetPreferredCrmPipeline,
+  useCrmPreferences,
   useUpdateCrmLabel,
   useUpdateCrmPipeline,
 } from "@/hooks/use-crm";
@@ -109,16 +114,23 @@ export function PipelineManagerModal({
   selectedPipelineId,
   onSelectPipeline,
   onClose,
+  mode = "manage",
 }: BaseModalProps & {
   pipelines: CrmPipeline[];
   selectedPipelineId?: number | null;
   onSelectPipeline: (pipelineId: number) => void;
+  /** `prefer` hides create/edit/delete and company-default controls (agent). */
+  mode?: "manage" | "prefer";
 }) {
+  const canManage = mode === "manage";
   const [newPipelineName, setNewPipelineName] = useState("");
   const [editing, setEditing] = useState<Record<number, string>>({});
   const [editingIds, setEditingIds] = useState<Set<number>>(new Set());
   const [pipelinePendingDelete, setPipelinePendingDelete] =
     useState<CrmPipeline | null>(null);
+
+  const { data: preferences } = useCrmPreferences(companyId, apiBasePath);
+  const preferredPipelineId = preferences?.preferred_pipeline_id ?? null;
 
   const startEdit = (pipeline: CrmPipeline) => {
     setEditing((prev) => ({ ...prev, [pipeline.id]: pipeline.name }));
@@ -136,6 +148,8 @@ export function PipelineManagerModal({
   const createPipeline = useCreateCrmPipeline(apiBasePath);
   const updatePipeline = useUpdateCrmPipeline(apiBasePath);
   const deletePipeline = useDeleteCrmPipeline(apiBasePath);
+  const setPreferredPipeline = useSetPreferredCrmPipeline(apiBasePath);
+  const setCompanyDefault = useSetCompanyDefaultCrmPipeline(apiBasePath);
 
   const saveNew = async () => {
     if (!newPipelineName.trim()) return;
@@ -203,13 +217,43 @@ export function PipelineManagerModal({
     }
   };
 
+  const handleSetPreferred = async (pipelineId: number) => {
+    try {
+      await setPreferredPipeline.mutateAsync({
+        company_id: companyId,
+        pipeline_id: pipelineId,
+      });
+      toast.success("Personal default pipeline updated");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to set personal default",
+      );
+    }
+  };
+
+  const handleSetCompanyDefault = async (pipelineId: number) => {
+    try {
+      await setCompanyDefault.mutateAsync({
+        pipelineId,
+        payload: { company_id: companyId },
+      });
+      toast.success("Company default pipeline updated");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to set company default",
+      );
+    }
+  };
+
   return (
     <>
       <ModalShell title="All Pipelines" onClose={onClose}>
         <div className="space-y-3 mb-5">
           {pipelines.map((pipeline) => {
             const isActive = selectedPipelineId === pipeline.id;
-            const canDelete = !pipeline.is_default;
+            const isPreferred = preferredPipelineId === pipeline.id;
+            const isCompanyDefault = pipeline.is_default;
+            const canDelete = canManage && !pipeline.is_default;
             const isEditing = editingIds.has(pipeline.id);
             return (
               <div
@@ -225,43 +269,65 @@ export function PipelineManagerModal({
                         [pipeline.id]: e.target.value,
                       }))
                     }
-                    readOnly={!isEditing}
+                    readOnly={!canManage || !isEditing}
                     onKeyDown={(e) => {
-                      if (isEditing && e.key === "Enter") saveEdit(pipeline.id);
+                      if (canManage && isEditing && e.key === "Enter") {
+                        saveEdit(pipeline.id);
+                      }
                     }}
                     className={`flex-1 min-w-0 rounded-lg px-3 py-2 text-[13px] transition-colors ${
-                      isEditing
+                      canManage && isEditing
                         ? "border border-gray-200 bg-white"
                         : "border border-transparent bg-transparent cursor-default"
                     }`}
                   />
                   <div
-                    className={`flex items-center gap-1 transition-opacity shrink-0 max-md:opacity-100 group-hover/row:opacity-100 focus-within:opacity-100 ${isEditing ? "opacity-100" : "opacity-0"}`}
+                    className={`flex items-center gap-1 transition-opacity shrink-0 max-md:opacity-100 group-hover/row:opacity-100 focus-within:opacity-100 ${isEditing || isPreferred || isCompanyDefault ? "opacity-100" : "opacity-0"}`}
                   >
                     <IconAction
-                      icon={
-                        isEditing ? (
-                          <Check size={15} />
-                        ) : (
-                          <Pencil size={15} />
-                        )
-                      }
-                      label={isEditing ? "Save" : "Edit"}
-                      onClick={() =>
-                        isEditing ? saveEdit(pipeline.id) : startEdit(pipeline)
-                      }
+                      icon={<Eye size={15} />}
+                      label="View pipeline"
+                      onClick={() => onSelectPipeline(pipeline.id)}
+                      active={isActive}
                     />
                     <IconAction
                       icon={
                         <Star
                           size={15}
-                          className={isActive ? "fill-current" : ""}
+                          className={isPreferred ? "fill-current" : ""}
                         />
                       }
-                      label={isActive ? "Default pipeline" : "Set default"}
-                      onClick={() => onSelectPipeline(pipeline.id)}
-                      active={isActive}
+                      label={isPreferred ? "My default" : "Set as my default"}
+                      onClick={() => handleSetPreferred(pipeline.id)}
+                      active={isPreferred}
                     />
+                    {canManage && (
+                      <IconAction
+                        icon={<Building2 size={15} />}
+                        label={
+                          isCompanyDefault
+                            ? "Company default"
+                            : "Set company default"
+                        }
+                        onClick={() => handleSetCompanyDefault(pipeline.id)}
+                        active={isCompanyDefault}
+                      />
+                    )}
+                    {canManage && (
+                      <IconAction
+                        icon={
+                          isEditing ? (
+                            <Check size={15} />
+                          ) : (
+                            <Pencil size={15} />
+                          )
+                        }
+                        label={isEditing ? "Save" : "Edit"}
+                        onClick={() =>
+                          isEditing ? saveEdit(pipeline.id) : startEdit(pipeline)
+                        }
+                      />
+                    )}
                     {canDelete && (
                       <IconAction
                         icon={<Trash2 size={15} />}
@@ -272,28 +338,42 @@ export function PipelineManagerModal({
                     )}
                   </div>
                 </div>
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Currency: {pipeline.currency_code || "USD"}
-                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <p className="text-[11px] text-gray-400">
+                    Currency: {pipeline.currency_code || "USD"}
+                  </p>
+                  {isPreferred && (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                      My default
+                    </span>
+                  )}
+                  {isCompanyDefault && (
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                      Company default
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
 
-        <div className="border-t border-gray-100 pt-4 flex items-center gap-2">
-          <input
-            value={newPipelineName}
-            onChange={(e) => setNewPipelineName(e.target.value)}
-            placeholder="Create new pipeline"
-            className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
-          />
-          <button
-            onClick={saveNew}
-            className="px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold"
-          >
-            Create
-          </button>
-        </div>
+        {canManage && (
+          <div className="border-t border-gray-100 pt-4 flex items-center gap-2">
+            <input
+              value={newPipelineName}
+              onChange={(e) => setNewPipelineName(e.target.value)}
+              placeholder="Create new pipeline"
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+            />
+            <button
+              onClick={saveNew}
+              className="px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold"
+            >
+              Create
+            </button>
+          </div>
+        )}
       </ModalShell>
 
       <ConfirmDeleteModal
