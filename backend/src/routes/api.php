@@ -258,6 +258,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::post('/chat', [CopilotController::class, 'chat'])
             ->middleware('throttle:api')
             ->name('chat');
+        Route::post('/email/regenerate', [CopilotController::class, 'regenerateEmail'])
+            ->middleware('throttle:api')
+            ->name('email.regenerate');
+        Route::post('/email/enhance', [CopilotController::class, 'enhanceEmail'])
+            ->middleware('throttle:api')
+            ->name('email.enhance');
         Route::get('/assignees', [CopilotController::class, 'assignees'])
             ->middleware('throttle:api')
             ->name('assignees.index');

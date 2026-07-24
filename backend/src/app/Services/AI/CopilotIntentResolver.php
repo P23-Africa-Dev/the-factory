@@ -196,7 +196,13 @@ class CopilotIntentResolver
             'intent' => $intent,
             'action_confirmed' => $actionConfirmed,
             'action_args' => $actionArgs,
-            'action_message' => $this->buildActionableMessage($message, $threadId, $companyId, $userId),
+            'action_message' => $this->buildActionableMessage(
+                $message,
+                $threadId,
+                $companyId,
+                $userId,
+                is_string($intent['tool'] ?? null) ? (string) $intent['tool'] : $resolvedActionTool,
+            ),
             'resolved_action_tool' => $resolvedActionTool,
             'resolved_read_tool' => $resolvedReadTool,
         ];
@@ -638,7 +644,16 @@ class CopilotIntentResolver
         ?string $threadId,
         int $companyId,
         int $userId,
+        ?string $resolvedTool = null,
     ): string {
+        // Email drafts must stay grounded in the current ask — do not prepend meeting/task history.
+        if ($resolvedTool === 'crm.send_email'
+            || preg_match('/\b(send|write|draft|compose|generate)\b.{0,40}\b(email|mail|message|follow[\s-]?up)\b/i', $message) === 1
+            || preg_match('/\b(email|mail)\s+(to|for)\b/i', $message) === 1
+        ) {
+            return trim($message);
+        }
+
         $promptContext = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
         $recentMessages = is_array($promptContext['recent_messages'] ?? null) ? $promptContext['recent_messages'] : [];
         $userLines = collect($recentMessages)

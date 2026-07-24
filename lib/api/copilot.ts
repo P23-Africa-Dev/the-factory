@@ -305,6 +305,48 @@ export function sendCopilotMessage(
     });
 }
 
+export type CopilotEmailComposeRequest = {
+    company_id?: number | string;
+    lead_id?: number | null;
+    to_email?: string;
+    subject?: string;
+    body_text?: string;
+    user_note?: string;
+};
+
+export type CopilotEmailComposeResponse = {
+    subject: string;
+    body_text: string;
+    previous: {
+        subject: string;
+        body_text: string;
+    };
+};
+
+export function regenerateCopilotEmailDraft(
+    payload: CopilotEmailComposeRequest,
+    token: string
+): Promise<ApiEnvelope<CopilotEmailComposeResponse>> {
+    return apiRequest<CopilotEmailComposeResponse>({
+        method: "POST",
+        path: "/copilot/email/regenerate",
+        body: payload,
+        token,
+    });
+}
+
+export function enhanceCopilotEmailDraft(
+    payload: CopilotEmailComposeRequest,
+    token: string
+): Promise<ApiEnvelope<CopilotEmailComposeResponse>> {
+    return apiRequest<CopilotEmailComposeResponse>({
+        method: "POST",
+        path: "/copilot/email/enhance",
+        body: payload,
+        token,
+    });
+}
+
 export function lookupCopilotAssignees(
     token: string,
     query: string,

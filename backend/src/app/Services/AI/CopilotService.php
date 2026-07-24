@@ -713,60 +713,84 @@ class CopilotService
 
         // Patch the latest unconfirmed draft when the user sends a conversational correction.
         if (is_string($threadId) && $threadId !== '') {
+            if ($tool === 'crm.send_email' && $this->emailInferenceService->looksLikeEmailReset($correctionMessage)) {
+                $this->actionDraftStore->clear($companyId, $userId, $threadId);
+            }
+
             $pendingDraft = $this->actionDraftStore->get($companyId, $userId, $threadId);
             if (
                 is_array($pendingDraft)
                 && ($pendingDraft['tool'] ?? null) === $tool
-                && $this->taskInferenceService->looksLikeCorrection($correctionMessage)
             ) {
-                if ($tool === 'tasks.create') {
-                    $patched = $this->taskInferenceService->patchFromCorrection(
-                        $correctionMessage,
-                        is_array($pendingDraft['action_args'] ?? null) ? $pendingDraft['action_args'] : [],
-                        $companyId,
-                        $role,
-                    );
+                if ($tool === 'crm.send_email') {
+                    // Fresh send/draft asks must re-infer — do not sticky-reuse old body/lead.
+                    if ($this->emailInferenceService->looksLikeFreshEmailRequest($correctionMessage)
+                        || $this->emailInferenceService->looksLikeEmailReset($correctionMessage)
+                    ) {
+                        // fall through to fresh infer below
+                    } elseif ($this->emailInferenceService->looksLikeEmailFieldCorrection($correctionMessage)) {
+                        return $this->emailInferenceService->patchFromCorrection(
+                            $correctionMessage,
+                            is_array($pendingDraft['action_args'] ?? null) ? $pendingDraft['action_args'] : [],
+                            $companyId,
+                            $userId,
+                        );
+                    }
+                } elseif ($this->taskInferenceService->looksLikeCorrection($correctionMessage)) {
+                    if ($tool === 'tasks.create') {
+                        $patched = $this->taskInferenceService->patchFromCorrection(
+                            $correctionMessage,
+                            is_array($pendingDraft['action_args'] ?? null) ? $pendingDraft['action_args'] : [],
+                            $companyId,
+                            $role,
+                        );
 
-                    return $this->taskInferenceService->normalizeProvidedArgs(
+                        return $this->taskInferenceService->normalizeProvidedArgs(
+                            $correctionMessage,
+                            $companyId,
+                            $entities,
+                            $patched,
+                            $role,
+                        );
+                    }
+
+                    // Generic field overlays for other tools (location/title/reason style corrections).
+                    $patched = is_array($pendingDraft['action_args'] ?? null) ? $pendingDraft['action_args'] : [];
+                    if (preg_match('/\b(?:change|update|set)\s+(?:the\s+)?title\s*(?:to|=|:)?\s*(.+)$/i', $correctionMessage, $m) === 1) {
+                        $patched['title'] = trim((string) $m[1]);
+                        $patched['name'] = $patched['title'];
+                    }
+                    if ($tool === 'tasks.reassign') {
+                        return $this->taskReassignInferenceService->normalizeProvidedArgs(
+                            $companyId,
+                            array_merge($patched, $this->taskReassignInferenceService->infer($correctionMessage, $companyId, $entities)),
+                        );
+                    }
+                    if ($tool === 'crm.log_visit') {
+                        return $this->visitLogInferenceService->normalizeProvidedArgs(
+                            $companyId,
+                            array_merge($patched, $this->visitLogInferenceService->infer($correctionMessage, $companyId, $entities)),
+                        );
+                    }
+
+                    return $this->normalizeProvidedActionArgs(
+                        $tool,
                         $correctionMessage,
                         $companyId,
                         $entities,
                         $patched,
+                        $clientTimezone,
+                        $companyCountry,
                         $role,
+                        $userId,
                     );
                 }
-
-                // Generic field overlays for other tools (location/title/reason style corrections).
-                $patched = is_array($pendingDraft['action_args'] ?? null) ? $pendingDraft['action_args'] : [];
-                if (preg_match('/\b(?:change|update|set)\s+(?:the\s+)?title\s*(?:to|=|:)?\s*(.+)$/i', $correctionMessage, $m) === 1) {
-                    $patched['title'] = trim((string) $m[1]);
-                    $patched['name'] = $patched['title'];
-                }
-                if ($tool === 'tasks.reassign') {
-                    return $this->taskReassignInferenceService->normalizeProvidedArgs(
-                        $companyId,
-                        array_merge($patched, $this->taskReassignInferenceService->infer($correctionMessage, $companyId, $entities)),
-                    );
-                }
-                if ($tool === 'crm.log_visit') {
-                    return $this->visitLogInferenceService->normalizeProvidedArgs(
-                        $companyId,
-                        array_merge($patched, $this->visitLogInferenceService->infer($correctionMessage, $companyId, $entities)),
-                    );
-                }
-
-                return $this->normalizeProvidedActionArgs(
-                    $tool,
-                    $correctionMessage,
-                    $companyId,
-                    $entities,
-                    $patched,
-                    $clientTimezone,
-                    $companyCountry,
-                    $role,
-                    $userId,
-                );
             }
+        }
+
+        $emailSummary = (string) ($context['summary'] ?? '');
+        if ($tool === 'crm.send_email' && $this->emailInferenceService->looksLikeEmailReset($correctionMessage)) {
+            $emailSummary = '';
         }
 
         return match ($tool) {
@@ -806,10 +830,10 @@ class CopilotService
                 conversationSummary: (string) ($context['summary'] ?? ''),
             ),
             'crm.send_email' => $this->emailInferenceService->infer(
-                message: $message,
+                message: is_string($rawUserMessage) && trim($rawUserMessage) !== '' ? trim($rawUserMessage) : $message,
                 companyId: $companyId,
                 entities: $entities,
-                conversationSummary: (string) ($context['summary'] ?? ''),
+                conversationSummary: $emailSummary,
                 userId: $userId,
                 threadId: $threadId,
             ),
