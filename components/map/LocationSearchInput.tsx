@@ -150,7 +150,7 @@ export function LocationSearchInput({
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={15} strokeWidth={2} />
             <input
               type="text"
-              placeholder="Search places or pinned locations…"
+              placeholder="Search places…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => (suggestions.length > 0 || savedSuggestions.length > 0) && setOpen(true)}

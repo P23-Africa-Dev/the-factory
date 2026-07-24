@@ -75,7 +75,19 @@ class CompanyLocationService
 
         $perPage = $this->clampPerPage($filters['per_page'] ?? null);
 
-        return $query->latest('id')->paginate($perPage)->withQueryString();
+        if ($this->hasNearPoint($filters)) {
+            $nearLat = (float) $filters['near_lat'];
+            $nearLng = (float) $filters['near_lng'];
+            // Approximate distance sort (degrees²). Good enough for nearby-first listing.
+            $query->orderByRaw(
+                '((latitude - ?) * (latitude - ?)) + ((longitude - ?) * (longitude - ?)) asc',
+                [$nearLat, $nearLat, $nearLng, $nearLng]
+            )->orderByDesc('id');
+        } else {
+            $query->latest('id');
+        }
+
+        return $query->paginate($perPage)->withQueryString();
     }
 
     private function clampPerPage(mixed $perPage): int
@@ -97,6 +109,20 @@ class CompanyLocationService
         }
 
         return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function hasNearPoint(array $filters): bool
+    {
+        foreach (['near_lat', 'near_lng'] as $key) {
+            if (! array_key_exists($key, $filters) || $filters[$key] === null || $filters[$key] === '') {
+                return false;
+            }
+        }
+
+        return is_numeric($filters['near_lat']) && is_numeric($filters['near_lng']);
     }
 
     public function create(User $user, array $data): CompanyLocation

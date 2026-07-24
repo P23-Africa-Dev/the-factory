@@ -59,6 +59,7 @@ import { TrackingConnectionStatus } from '@/components/tracking/TrackingConnecti
 import { SavedLocationsLayer, type GoogleMapBridge } from '@/components/map/SavedLocationsLayer';
 import { TerritoryLayer } from '@/components/map/TerritoryLayer';
 import { useInfiniteSavedLocations, useSavedLocationPermissions } from '@/hooks/use-saved-locations';
+import { useViewerCoords } from '@/hooks/use-viewer-coords';
 import { getSavedLocationLabel } from '@/lib/map/location-types';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { LocationSearchInput } from '@/components/map/LocationSearchInput';
@@ -355,6 +356,10 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const businessesSearchQ =
     leftTab === 'businesses' && debouncedLeftSearch.length > 0 ? debouncedLeftSearch : undefined;
 
+  const viewerCoords = useViewerCoords();
+  const nearLat = viewerCoords?.latitude;
+  const nearLng = viewerCoords?.longitude;
+
   const {
     items: infiniteSavedLocations,
     total: savedLocationsTotal,
@@ -364,12 +369,16 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     fetchNextPage: fetchNextSavedPage,
   } = useInfiniteSavedLocations({
     q: businessesSearchQ,
+    near_lat: nearLat,
+    near_lng: nearLng,
     enabled: leftTab === 'businesses',
   });
 
   // Lightweight page for map-bar saved-location suggestions (server search).
   const { items: mapSearchSavedHits = [] } = useInfiniteSavedLocations({
     q: debouncedMapSearch.length >= 2 ? debouncedMapSearch : undefined,
+    near_lat: nearLat,
+    near_lng: nearLng,
     per_page: 8,
     enabled: debouncedMapSearch.length >= 2,
   });
@@ -1938,6 +1947,10 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const businessesSearchQ =
     leftTab === 'businesses' && debouncedLeftSearch.length > 0 ? debouncedLeftSearch : undefined;
 
+  const viewerCoords = useViewerCoords();
+  const nearLat = viewerCoords?.latitude;
+  const nearLng = viewerCoords?.longitude;
+
   const {
     items: infiniteSavedLocations,
     total: savedLocationsTotal,
@@ -1947,11 +1960,15 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     fetchNextPage: fetchNextSavedPage,
   } = useInfiniteSavedLocations({
     q: businessesSearchQ,
+    near_lat: nearLat,
+    near_lng: nearLng,
     enabled: leftTab === 'businesses',
   });
 
   const { items: mapSearchSavedHits = [] } = useInfiniteSavedLocations({
     q: debouncedMapSearch.length >= 2 ? debouncedMapSearch : undefined,
+    near_lat: nearLat,
+    near_lng: nearLng,
     per_page: 8,
     enabled: debouncedMapSearch.length >= 2,
   });

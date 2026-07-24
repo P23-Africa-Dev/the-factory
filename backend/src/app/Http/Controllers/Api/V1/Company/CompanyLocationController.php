@@ -38,6 +38,8 @@ class CompanyLocationController extends Controller
             'max_lat' => $request->input('max_lat'),
             'min_lng' => $request->input('min_lng'),
             'max_lng' => $request->input('max_lng'),
+            'near_lat' => $request->input('near_lat'),
+            'near_lng' => $request->input('near_lng'),
         ]);
 
         return $this->success(

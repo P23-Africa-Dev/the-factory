@@ -95,6 +95,8 @@ export type UseInfiniteSavedLocationsParams = {
   type?: string;
   is_active?: boolean;
   mine?: boolean;
+  near_lat?: number;
+  near_lng?: number;
   per_page?: number;
   company_id?: number | string;
   enabled?: boolean;
@@ -108,6 +110,8 @@ export function useInfiniteSavedLocations(params: UseInfiniteSavedLocationsParam
     type: params.type,
     is_active: params.is_active,
     mine: params.mine || undefined,
+    near_lat: params.near_lat,
+    near_lng: params.near_lng,
     per_page: perPage,
     company_id: companyId,
   };

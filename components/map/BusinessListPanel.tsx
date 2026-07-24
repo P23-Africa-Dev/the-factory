@@ -93,7 +93,7 @@ export function BusinessListPanel({
       : 'Pinned Locations');
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col flex-1 min-h-0 h-full overflow-hidden">
       <div className="px-5 pt-3 pb-2 shrink-0">
         {showPoiList ? (
           <div className="flex items-center gap-2 min-w-0">
@@ -125,7 +125,7 @@ export function BusinessListPanel({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-3 pb-4 space-y-1 min-h-0"
+        className="flex-1 overflow-y-auto overscroll-contain px-3 pb-4 space-y-1 min-h-0"
       >
         {showPoiList ? (
           bboxTooLarge ? (

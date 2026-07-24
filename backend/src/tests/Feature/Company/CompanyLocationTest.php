@@ -584,6 +584,50 @@ class CompanyLocationTest extends TestCase
             ->assertJsonPath('data.items.0.name', 'Admin Other Pin');
     }
 
+    public function test_list_sorts_by_near_point_when_provided(): void
+    {
+        [$company, $admin] = $this->seedCompany('FAC-LOC014', 'Near Sort Ltd');
+        $token = $admin->createToken('near-sort', ['*'])->plainTextToken;
+
+        CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Far Pin',
+            'type' => 'office',
+            'latitude' => 9.0000000,
+            'longitude' => 7.0000000,
+        ]);
+
+        CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Near Pin',
+            'type' => 'office',
+            'latitude' => 6.4550000,
+            'longitude' => 3.4000000,
+        ]);
+
+        $response = $this->withToken($token)
+            ->getJson(
+                '/api/v1/admin/locations?company_id=' . $company->id
+                . '&near_lat=6.45&near_lng=3.39&per_page=10'
+            );
+
+        $response->assertOk()
+            ->assertJsonPath('data.pagination.total', 2)
+            ->assertJsonPath('data.items.0.name', 'Near Pin')
+            ->assertJsonPath('data.items.1.name', 'Far Pin');
+
+        $searchNear = $this->withToken($token)
+            ->getJson(
+                '/api/v1/admin/locations?company_id=' . $company->id
+                . '&q=Pin&near_lat=6.45&near_lng=3.39&per_page=10'
+            );
+
+        $searchNear->assertOk()
+            ->assertJsonPath('data.items.0.name', 'Near Pin');
+    }
+
     /**
      * @return array{0: Company, 1: User, 2: User, 3: User}
      */

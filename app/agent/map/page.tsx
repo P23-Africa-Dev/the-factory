@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ChevronDown, ChevronUp, ClipboardList, Radio, X } from 'lucide-react';
+import { ClipboardList, Radio, Search, X } from 'lucide-react';
 import { AgentMapView } from '@/components/map/agent-map-view';
 import { BusinessListPanel } from '@/components/map/BusinessListPanel';
 import { LocationSearchInput } from '@/components/map/LocationSearchInput';
@@ -13,11 +13,14 @@ import { getActiveCompanyContext } from '@/lib/company-context';
 import { getAuthTokenFromDocument } from '@/lib/auth/session';
 import { listAgentTasks, getTaskRoute, listAgentLocations } from '@/lib/api/tracking';
 import { useInfiniteSavedLocations } from '@/hooks/use-saved-locations';
+import { useViewerCoords } from '@/hooks/use-viewer-coords';
 import type { AgentLocationSnapshotItem } from '@/types/tracking';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { isInsideLocationContext, type LocationContext } from '@/lib/map/location-search';
 import type { PoiResult } from '@/lib/map/overpass-search';
 import { parseTaskMapParams } from '@/lib/tasks/map-navigation';
+
+type AgentLeftTab = 'yours' | 'businesses';
 
 function AgentMapPageContent() {
   const router = useRouter();
@@ -27,6 +30,7 @@ function AgentMapPageContent() {
   const hydrateFromRoute = useTrackingStore((s) => s.hydrateFromRoute);
   const hydrateFromSnapshots = useTrackingStore((s) => s.hydrateFromSnapshots);
   const activeTask = activeTaskId ? liveTasks[activeTaskId] : null;
+  const viewerCoords = useViewerCoords();
 
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
@@ -38,62 +42,83 @@ function AgentMapPageContent() {
 
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
   const [locationCtx, setLocationCtx] = useState<LocationContext | null>(null);
   const [focusLocation, setFocusLocation] = useState<SavedLocation | null>(null);
-  const [viewportPois, setViewportPois] = useState<PoiResult[]>([]);
-  const [poiBusy, setPoiBusy] = useState(false);
-  const [poiZoomTooLow, setPoiZoomTooLow] = useState(false);
   const [focusPoiId, setFocusPoiId] = useState<string | null>(null);
   const [showPinnedBusinesses, setShowPinnedBusinesses] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [leftTab, setLeftTab] = useState<AgentLeftTab>('yours');
+  const [leftSearchQuery, setLeftSearchQuery] = useState('');
+  const [debouncedLeftSearch, setDebouncedLeftSearch] = useState('');
+  const [listHiddenForDetail, setListHiddenForDetail] = useState(false);
 
   const viewMode = isTracking && activeTask != null;
+  const nearLat = viewerCoords?.latitude;
+  const nearLng = viewerCoords?.longitude;
 
   useEffect(() => {
-    const id = window.setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 300);
+    const id = window.setTimeout(() => setDebouncedLeftSearch(leftSearchQuery.trim()), 300);
     return () => window.clearTimeout(id);
-  }, [searchQuery]);
+  }, [leftSearchQuery]);
+
+  const yoursSearchQ =
+    leftTab === 'yours' && debouncedLeftSearch.length > 0 ? debouncedLeftSearch : undefined;
+  const businessesSearchQ =
+    leftTab === 'businesses' && debouncedLeftSearch.length > 0 ? debouncedLeftSearch : undefined;
 
   const {
     items: myPinnedLocations,
     total: myPinnedTotal,
-    isLoading: savedLocationsLoading,
-    hasNextPage: hasNextSavedPage,
-    isFetchingNextPage: isFetchingNextSavedPage,
-    fetchNextPage: fetchNextSavedPage,
+    isLoading: myPinsLoading,
+    hasNextPage: hasNextMyPinsPage,
+    isFetchingNextPage: isFetchingNextMyPinsPage,
+    fetchNextPage: fetchNextMyPinsPage,
   } = useInfiniteSavedLocations({
     mine: true,
+    q: yoursSearchQ,
+    near_lat: nearLat,
+    near_lng: nearLng,
   });
 
-  const { items: globalSearchHits = [] } = useInfiniteSavedLocations({
-    q: debouncedSearchQuery.length >= 2 ? debouncedSearchQuery : undefined,
-    per_page: 8,
-    enabled: debouncedSearchQuery.length >= 2,
+  const {
+    items: allBusinessLocations,
+    total: allBusinessesTotal,
+    isLoading: businessesLoading,
+    hasNextPage: hasNextBusinessesPage,
+    isFetchingNextPage: isFetchingNextBusinessesPage,
+    fetchNextPage: fetchNextBusinessesPage,
+  } = useInfiniteSavedLocations({
+    q: businessesSearchQ,
+    near_lat: nearLat,
+    near_lng: nearLng,
+    enabled: leftTab === 'businesses',
   });
 
-  const savedLocationMatches = useMemo(() => {
-    if (debouncedSearchQuery.length < 2) return [] as SavedLocation[];
-    return globalSearchHits.slice(0, 6);
-  }, [debouncedSearchQuery, globalSearchHits]);
-
-  const filteredLocations = useMemo(() => {
+  const displayedMyPins = useMemo(() => {
     if (!locationCtx) return myPinnedLocations;
     return myPinnedLocations.filter((location) => isInsideLocationContext(location, locationCtx));
   }, [myPinnedLocations, locationCtx]);
 
-  const displayedPois = useMemo(() => {
-    if (!locationCtx) return viewportPois;
-    return viewportPois.filter((poi) =>
-      isInsideLocationContext({ latitude: poi.lat, longitude: poi.lng }, locationCtx),
-    );
-  }, [viewportPois, locationCtx]);
+  const displayedBusinesses = useMemo(() => {
+    if (!locationCtx) return allBusinessLocations;
+    return allBusinessLocations.filter((location) => isInsideLocationContext(location, locationCtx));
+  }, [allBusinessLocations, locationCtx]);
 
-  const pinnedSheetTitle =
+  // Search hits from the active left-panel tab stay visible on the map.
+  const mapExtraLocations = useMemo(() => {
+    if (debouncedLeftSearch.length === 0) return [] as SavedLocation[];
+    if (leftTab === 'yours') return myPinnedLocations.slice(0, 12);
+    return allBusinessLocations.slice(0, 12);
+  }, [leftTab, debouncedLeftSearch, myPinnedLocations, allBusinessLocations]);
+
+  const yoursTitle =
     myPinnedTotal != null
-      ? `Your Pinned Locations (${myPinnedTotal})`
-      : 'Your Pinned Locations';
+      ? `Your Pins (${myPinnedTotal})`
+      : 'Your Pins';
+
+  const businessesTitle =
+    allBusinessesTotal != null
+      ? `Businesses (${allBusinessesTotal})`
+      : 'Businesses';
 
   const handleViewActiveTracking = useCallback(async () => {
     if (!companyId || !user?.id) return;
@@ -140,9 +165,7 @@ function AgentMapPageContent() {
         );
       }
 
-      // Error/stop feedback surfaces via the tracking provider's default toasts.
       startTracking(taskId, companyId, token);
-      setSheetOpen(false);
     } catch {
       setResumeError('Failed to load tracking data. Please try again.');
     } finally {
@@ -161,7 +184,6 @@ function AgentMapPageContent() {
   const handleExitView = useCallback(() => {
     stopTracking();
     setResumeError(null);
-    setSheetOpen(true);
   }, [stopTracking]);
 
   const handleLocationSelect = useCallback((ctx: LocationContext | null) => {
@@ -171,11 +193,7 @@ function AgentMapPageContent() {
 
   const handleSavedLocationClick = useCallback((location: SavedLocation) => {
     setFocusLocation({ ...location });
-    setSheetOpen(false);
-  }, []);
-
-  const handleSearchQueryChange = useCallback((q: string) => {
-    setSearchQuery(q);
+    setListHiddenForDetail(true);
   }, []);
 
   const handlePoiClick = useCallback((poi: PoiResult) => {
@@ -193,7 +211,7 @@ function AgentMapPageContent() {
       is_active: true,
       meta: null,
     });
-    setSheetOpen(false);
+    setListHiddenForDetail(true);
   }, []);
 
   return (
@@ -201,17 +219,14 @@ function AgentMapPageContent() {
       <AgentMapView
         showSavedLocations={showPinnedBusinesses}
         focusLocation={focusLocation}
-        extraLocations={savedLocationMatches}
-        mineSavedLocations
+        extraLocations={mapExtraLocations}
+        mineSavedLocations={leftTab === 'yours'}
         taskFocus={taskFocus}
         showPinsToggle
         onTogglePins={() => setShowPinnedBusinesses((visible) => !visible)}
         pinsToggleLabel={showPinnedBusinesses ? 'Hide Pins' : 'Show Pins'}
         focusPoiId={focusPoiId}
         searchFocus={locationCtx}
-        onPoisChange={setViewportPois}
-        onPoiBusyChange={setPoiBusy}
-        onPoiZoomTooLowChange={setPoiZoomTooLow}
         onGooglePoiSelect={(poi) => setFocusPoiId(poi?.id ?? null)}
       />
 
@@ -255,89 +270,170 @@ function AgentMapPageContent() {
       )}
 
       {!isTracking && (
-        <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-8 z-20 flex flex-col gap-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex flex-col items-start gap-2">
-              <button
-                onClick={() => router.push('/agent/tasks')}
-                className="flex items-center gap-2 px-4 py-2.5 bg-[#0A192F] text-white rounded-full text-[12px] font-bold shadow-lg hover:opacity-90 transition-all"
-              >
-                <ClipboardList size={14} className="text-white/80" />
-                My Tasks
-              </button>
-              <button
-                onClick={handleViewActiveTracking}
-                disabled={resuming || !companyId}
-                className="flex items-center gap-2 px-4 py-2.5 bg-[#7EB5AE] text-white rounded-full text-[12px] font-bold shadow-lg hover:opacity-90 transition-all disabled:opacity-50"
-              >
-                {resuming ? (
-                  <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Radio size={14} />
-                )}
-                {resuming ? 'Loading…' : 'Active Tracking'}
-              </button>
-            </div>
-
-            <div className="ml-auto w-full max-w-md flex justify-end">
-              <LocationSearchInput
-                activeLocation={locationCtx}
-                onLocationSelect={handleLocationSelect}
-                savedSuggestions={savedLocationMatches}
-                onSavedSelect={handleSavedLocationClick}
-                onQueryChange={handleSearchQueryChange}
-                className="w-full bg-transparent shadow-none border-0 p-0"
-              />
-            </div>
+        <>
+          <div className="absolute top-20 left-4 md:top-8 md:left-8 z-20 flex flex-col items-start gap-2">
+            <button
+              onClick={() => router.push('/agent/tasks')}
+              className="flex items-center gap-2 px-4 py-2.5 bg-[#0A192F] text-white rounded-full text-[12px] font-bold shadow-lg hover:opacity-90 transition-all"
+            >
+              <ClipboardList size={14} className="text-white/80" />
+              My Tasks
+            </button>
+            <button
+              onClick={handleViewActiveTracking}
+              disabled={resuming || !companyId}
+              className="flex items-center gap-2 px-4 py-2.5 bg-[#7EB5AE] text-white rounded-full text-[12px] font-bold shadow-lg hover:opacity-90 transition-all disabled:opacity-50"
+            >
+              {resuming ? (
+                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Radio size={14} />
+              )}
+              {resuming ? 'Loading…' : 'Active Tracking'}
+            </button>
           </div>
 
-          <div className="w-full max-w-[300px]">
-            <div className="bg-white rounded-[28px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col">
+          {/* Same containment model as management left panel: top + max-height, scroll inside. */}
+          <div
+            className={`absolute top-[11.5rem] left-4 right-4 md:top-[7.5rem] md:left-8 md:right-auto md:w-[340px] bottom-28 z-10 bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col min-h-0 transition-opacity ${
+              listHiddenForDetail ? 'max-md:hidden' : ''
+            }`}
+          >
+            <div className="px-4 pt-4 pb-2 shrink-0">
+              <div className="relative">
+                <Search
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                  size={15}
+                  strokeWidth={2}
+                />
+                <input
+                  type="text"
+                  placeholder={
+                    leftTab === 'yours'
+                      ? 'Search your pinned locations…'
+                      : 'Search pinned businesses…'
+                  }
+                  value={leftSearchQuery}
+                  onChange={(e) => setLeftSearchQuery(e.target.value)}
+                  className="w-full bg-white rounded-full py-3 pl-10 pr-10 text-[13px] shadow-2xl shadow-black/10 outline-none font-medium text-dash-dark placeholder:text-gray-400 border border-slate-100"
+                />
+                {leftSearchQuery.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setLeftSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors"
+                  >
+                    <X size={10} className="text-slate-500" />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex border-b border-slate-100 shrink-0 mx-4">
               <button
                 type="button"
-                onClick={() => setSheetOpen((open) => !open)}
-                className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0"
+                onClick={() => {
+                  setLeftTab('yours');
+                  setLeftSearchQuery('');
+                }}
+                className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${
+                  leftTab === 'yours'
+                    ? 'text-dash-dark border-b-2 border-dash-dark'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
               >
-                <span className="text-[13px] font-bold text-dash-dark">
-                  {locationCtx || displayedPois.length > 0
-                    ? `Businesses (${displayedPois.length})`
-                    : pinnedSheetTitle}
-                </span>
-                {sheetOpen ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronUp size={16} className="text-gray-400" />}
+                Your Pins
               </button>
-              {sheetOpen && (
-                <div className="min-h-0 max-h-[42vh] overflow-y-auto overscroll-contain">
-                  <BusinessListPanel
-                    activeLocation={locationCtx}
-                    pois={displayedPois}
-                    poiBusy={poiBusy}
-                    poiZoomTooLow={poiZoomTooLow}
-                    savedLocations={filteredLocations}
-                    savedLocationsLoading={savedLocationsLoading}
-                    savedLocationsTotal={myPinnedTotal}
-                    hasNextSavedPage={hasNextSavedPage}
-                    isFetchingNextSavedPage={isFetchingNextSavedPage}
-                    onLoadMoreSaved={() => {
-                      void fetchNextSavedPage();
-                    }}
-                    pinnedTitleOverride={pinnedSheetTitle}
-                    pinnedEmptyMessage="No pins of yours yet"
-                    pinnedEmptyHint="Use Location Pinning on the map to save a place"
-                    pinnedListHint="Your pins · search to find any pinned location"
-                    onPoiClick={handlePoiClick}
-                    onSavedClick={handleSavedLocationClick}
-                  />
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setLeftTab('businesses');
+                  setLeftSearchQuery('');
+                }}
+                className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${
+                  leftTab === 'businesses'
+                    ? 'text-dash-dark border-b-2 border-dash-dark'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Businesses
+              </button>
             </div>
+
+            {leftTab === 'yours' ? (
+              <BusinessListPanel
+                activeLocation={null}
+                pois={[]}
+                poiBusy={false}
+                savedLocations={displayedMyPins}
+                savedLocationsLoading={myPinsLoading}
+                savedLocationsTotal={myPinnedTotal}
+                hasNextSavedPage={Boolean(hasNextMyPinsPage)}
+                isFetchingNextSavedPage={isFetchingNextMyPinsPage}
+                onLoadMoreSaved={() => {
+                  if (hasNextMyPinsPage && !isFetchingNextMyPinsPage) {
+                    void fetchNextMyPinsPage();
+                  }
+                }}
+                pinnedTitleOverride={yoursTitle}
+                pinnedEmptyMessage="No pins of yours yet"
+                pinnedEmptyHint="Use Location Pinning on the map to save a place"
+                  pinnedListHint="Nearest to you · scroll for more"
+                  onPoiClick={handlePoiClick}
+                  onSavedClick={handleSavedLocationClick}
+                />
+              ) : (
+                <BusinessListPanel
+                  activeLocation={null}
+                  pois={[]}
+                  poiBusy={false}
+                  savedLocations={displayedBusinesses}
+                  savedLocationsLoading={businessesLoading}
+                  savedLocationsTotal={allBusinessesTotal}
+                  hasNextSavedPage={Boolean(hasNextBusinessesPage)}
+                  isFetchingNextSavedPage={isFetchingNextBusinessesPage}
+                  onLoadMoreSaved={() => {
+                    if (hasNextBusinessesPage && !isFetchingNextBusinessesPage) {
+                      void fetchNextBusinessesPage();
+                    }
+                  }}
+                  pinnedTitleOverride={businessesTitle}
+                  pinnedEmptyMessage="No pinned businesses yet"
+                  pinnedEmptyHint="Pinned locations from everyone appear here"
+                  pinnedListHint="Nearest to you · scroll for more"
+                onPoiClick={handlePoiClick}
+                onSavedClick={handleSavedLocationClick}
+              />
+            )}
           </div>
 
+          <div className="absolute top-20 right-4 md:top-8 md:right-8 z-20 w-[min(100%-2rem,24rem)] max-w-sm">
+            <LocationSearchInput
+              activeLocation={locationCtx}
+              onLocationSelect={handleLocationSelect}
+              className="w-full bg-transparent shadow-none border-0 p-0"
+            />
+          </div>
+
+          {listHiddenForDetail && (
+            <button
+              type="button"
+              onClick={() => {
+                setListHiddenForDetail(false);
+                setFocusLocation(null);
+              }}
+              className="absolute bottom-28 left-1/2 -translate-x-1/2 z-50 md:hidden rounded-full bg-white px-4 py-2.5 text-[12px] font-bold text-dash-dark shadow-lg border border-slate-200"
+            >
+              Back to list
+            </button>
+          )}
+
           {resumeError && (
-            <p className="text-[11px] text-red-500 bg-white/95 backdrop-blur rounded-xl px-4 py-2 shadow max-w-[300px]">
+            <p className="absolute bottom-24 left-4 z-30 text-[11px] text-red-500 bg-white/95 backdrop-blur rounded-xl px-4 py-2 shadow max-w-[300px]">
               {resumeError}
             </p>
           )}
-        </div>
+        </>
       )}
     </div>
   );
