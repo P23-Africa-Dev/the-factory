@@ -54,7 +54,9 @@ function CreditSuccessInner() {
     if (searchParams.get("session_id")) {
       poll();
     } else {
-      setMessage("Missing checkout session. Returning to settings...");
+      queueMicrotask(() => {
+        setMessage("Missing checkout session. Returning to settings...");
+      });
       window.setTimeout(() => router.replace("/settings/map-credits"), 1500);
     }
 

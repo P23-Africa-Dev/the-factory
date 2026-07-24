@@ -313,7 +313,9 @@ export function ScheduleMeetingModal({
             return;
         }
 
-        setForm(initialMeeting ? buildFormStateFromMeeting(initialMeeting) : buildDefaultFormState(defaultDate));
+        queueMicrotask(() => {
+            setForm(initialMeeting ? buildFormStateFromMeeting(initialMeeting) : buildDefaultFormState(defaultDate));
+        });
         // Reset only when the modal opens or the meeting being edited changes.
         // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: avoid resetting while typing
     }, [isOpen, initialMeeting?.id, defaultDate]);

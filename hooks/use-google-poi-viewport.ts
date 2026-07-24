@@ -122,9 +122,11 @@ export function useGooglePoiViewport(
 
   useEffect(() => {
     if (!map || !mapReady || !enabled) {
-      setPois([]);
-      setBusy(false);
-      setZoomTooLow(false);
+      queueMicrotask(() => {
+        setPois([]);
+        setBusy(false);
+        setZoomTooLow(false);
+      });
       lastFetchRef.current = null;
       return;
     }
@@ -144,7 +146,7 @@ export function useGooglePoiViewport(
       map.off("moveend", scheduleRefresh);
       abortRef.current?.abort();
     };
-  }, [enabled, map, refresh]);
+  }, [enabled, map, mapReady, refresh]);
 
   const selectPoi = useCallback((poi: PoiResult | null) => {
     setSelectedPoi(poi);
