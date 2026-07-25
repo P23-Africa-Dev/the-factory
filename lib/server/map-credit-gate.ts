@@ -6,8 +6,10 @@
  * forwarding the user's Sanctum bearer token (read from the same-origin
  * `factory_auth_token` cookie, or an explicit Authorization header for the PWA).
  *
- * Fails OPEN: if there is no token or the backend is unreachable, the call is
- * allowed and simply not metered, so the map never breaks on infra hiccups.
+ * Fail-closed for Google when there is no auth token: the proxy returns empty
+ * results so the client uses Mapbox instead of unmetered Google. Backend
+ * transport errors still fail open (infra hiccups) unless
+ * PLACES_CREDIT_FAIL_CLOSED=true.
  */
 
 const AUTH_TOKEN_COOKIE = "factory_auth_token";
@@ -20,11 +22,11 @@ export type CreditGateResult = {
   low: boolean;
   metered: boolean;
   balance: number | null;
-  /** True when metering was skipped (no token / backend error / disabled). */
+  /** True when metering was skipped (backend error / disabled). */
   skipped: boolean;
 };
 
-const SKIPPED: CreditGateResult = {
+const SKIPPED_OPEN: CreditGateResult = {
   allowed: true,
   blocked: false,
   low: false,
@@ -32,6 +34,20 @@ const SKIPPED: CreditGateResult = {
   balance: null,
   skipped: true,
 };
+
+const BLOCKED_UNMETERED: CreditGateResult = {
+  allowed: false,
+  blocked: true,
+  low: false,
+  metered: false,
+  balance: null,
+  skipped: true,
+};
+
+function strictFailClosed(): boolean {
+  const raw = process.env.PLACES_CREDIT_FAIL_CLOSED?.trim() ?? "";
+  return raw === "true" || raw === "1";
+}
 
 function apiBaseUrl(): string {
   const raw =
@@ -74,7 +90,10 @@ export async function consumeMapCredit(
   source: CreditSource = "dashboard",
 ): Promise<CreditGateResult> {
   const token = tokenFromRequest(request);
-  if (!token) return SKIPPED;
+  if (!token) {
+    // No auth → do not bill Google unmetered; client falls back to Mapbox.
+    return BLOCKED_UNMETERED;
+  }
 
   const companyId = request.headers.get("x-company-id");
 
@@ -105,7 +124,7 @@ export async function consumeMapCredit(
     }
 
     if (!response.ok) {
-      return SKIPPED;
+      return strictFailClosed() ? BLOCKED_UNMETERED : SKIPPED_OPEN;
     }
 
     const data = await response.json().catch(() => null);
@@ -120,7 +139,7 @@ export async function consumeMapCredit(
       skipped: false,
     };
   } catch {
-    return SKIPPED;
+    return strictFailClosed() ? BLOCKED_UNMETERED : SKIPPED_OPEN;
   }
 }
 

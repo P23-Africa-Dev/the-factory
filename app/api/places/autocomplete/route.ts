@@ -3,6 +3,11 @@ import { getGooglePlacesServerKey } from "@/lib/config/public-env";
 import { googleAutocomplete } from "@/lib/utils/google-places";
 import { clientIdFromRequest, guardPlacesRequest } from "@/lib/server/places-guard";
 import { consumeMapCredit, creditMeta } from "@/lib/server/map-credit-gate";
+import {
+  estimateSkuUsd,
+  hashQuery,
+  recordPlacesTelemetry,
+} from "@/lib/server/places-telemetry";
 
 const AUTOCOMPLETE_CACHE_TTL_MS = 60_000;
 
@@ -55,13 +60,22 @@ export async function POST(request: Request) {
     overBudgetPayload: { enabled: true, suggestions: [] },
   });
   if (guard.blocked && guard.response) return guard.response;
-  if (guard.cached) return NextResponse.json(guard.cached);
+  if (guard.cached) {
+    recordPlacesTelemetry({
+      provider: "cache",
+      sku: "autocomplete",
+      cacheHit: true,
+      queryHash: hashQuery(input),
+    });
+    return NextResponse.json(guard.cached);
+  }
 
   const credit = await consumeMapCredit(request, "autocomplete", "dashboard");
   if (credit.blocked) {
     return NextResponse.json({ enabled: true, suggestions: [], credits: creditMeta(credit) });
   }
 
+  const started = Date.now();
   const results = await googleAutocomplete(apiKey, input, sessionToken, locationBias, limit);
   const payload = {
     enabled: true,
@@ -73,6 +87,16 @@ export async function POST(request: Request) {
     })),
   };
   guard.store(payload, AUTOCOMPLETE_CACHE_TTL_MS);
+
+  recordPlacesTelemetry({
+    provider: "google",
+    sku: "autocomplete",
+    cacheHit: false,
+    fallbackReason: "mapbox_quality_fail_or_client_request",
+    queryHash: hashQuery(input),
+    ms: Date.now() - started,
+    estimatedUsd: estimateSkuUsd("autocomplete"),
+  });
 
   return NextResponse.json({ ...payload, credits: creditMeta(credit) });
 }

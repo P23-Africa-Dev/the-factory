@@ -3,6 +3,10 @@ import { getGooglePlacesServerKey } from "@/lib/config/public-env";
 import { googleNearbyPlaceToPoiResult, googleSearchNearby } from "@/lib/utils/google-places";
 import { clientIdFromRequest, guardPlacesRequest } from "@/lib/server/places-guard";
 import { consumeMapCredit, creditMeta } from "@/lib/server/map-credit-gate";
+import {
+  estimateSkuUsd,
+  recordPlacesTelemetry,
+} from "@/lib/server/places-telemetry";
 
 /** Shared cache key: adjacent viewports and other users in the same ~110m cell reuse one billed call. */
 function nearbyCacheKey(lat: number, lng: number, radius: number): string {
@@ -88,18 +92,28 @@ export async function POST(request: Request) {
     overBudgetPayload: { enabled: true, places: [] },
   });
   if (guard.blocked && guard.response) return guard.response;
-  if (guard.cached) return NextResponse.json(guard.cached);
+  if (guard.cached) {
+    recordPlacesTelemetry({
+      provider: "cache",
+      sku: "nearby",
+      cacheHit: true,
+    });
+    return NextResponse.json(guard.cached);
+  }
 
   const credit = await consumeMapCredit(request, "nearby", "dashboard");
   if (credit.blocked) {
     return NextResponse.json({ enabled: true, places: [], credits: creditMeta(credit) });
   }
 
+  const started = Date.now();
   const seen = new Set<string>();
   const places = [];
+  let billedBatches = 0;
 
   for (const types of resolveTypeBatches()) {
     const batch = await googleSearchNearby(apiKey, { lat, lng }, radius, types, 20);
+    billedBatches += 1;
     for (const place of batch) {
       if (seen.has(place.placeId)) continue;
       seen.add(place.placeId);
@@ -111,6 +125,15 @@ export async function POST(request: Request) {
 
   const payload = { enabled: true, places };
   guard.store(payload);
+
+  recordPlacesTelemetry({
+    provider: "google",
+    sku: "nearby",
+    cacheHit: false,
+    fallbackReason: "poi_quality_fail",
+    ms: Date.now() - started,
+    estimatedUsd: estimateSkuUsd("nearby") * Math.max(billedBatches, 1),
+  });
 
   return NextResponse.json({ ...payload, credits: creditMeta(credit) });
 }

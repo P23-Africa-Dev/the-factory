@@ -1,9 +1,20 @@
 import { NextResponse } from "next/server";
 import { googleAutocomplete } from "@/lib/map/google-places";
-import { consumeMapCredit } from "@/lib/server/map-credit-gate";
+import { clientIdFromRequest, guardPlacesRequest } from "@/lib/server/places-guard";
+import { consumeMapCredit, creditMeta } from "@/lib/server/map-credit-gate";
+
+const AUTOCOMPLETE_CACHE_TTL_MS = 60_000;
+
+function getPlacesApiKey(): string {
+  return (
+    process.env.GOOGLE_PLACES_API_KEY?.trim() ||
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ||
+    ""
+  );
+}
 
 export async function POST(request: Request) {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ?? "";
+  const apiKey = getPlacesApiKey();
   if (!apiKey) {
     return NextResponse.json({ enabled: false, suggestions: [] }, { status: 503 });
   }
@@ -42,24 +53,28 @@ export async function POST(request: Request) {
 
   const limit = Math.min(Math.max(body.limit ?? 6, 1), 10);
 
+  const latKey = locationBias ? locationBias.lat.toFixed(2) : "_";
+  const lngKey = locationBias ? locationBias.lng.toFixed(2) : "_";
+  const guard = guardPlacesRequest({
+    clientId: clientIdFromRequest(request),
+    sku: "autocomplete",
+    cacheKey: `autocomplete:${input.toLowerCase()}:${latKey}:${lngKey}:${limit}`,
+    overBudgetPayload: { enabled: true, suggestions: [] },
+  });
+  if (guard.blocked && guard.response) return guard.response;
+  if (guard.cached) return NextResponse.json(guard.cached);
+
   const credit = await consumeMapCredit(request, "autocomplete");
   if (credit.blocked) {
-    // Out of credits — return empty so the client falls back to Mapbox.
     return NextResponse.json({
       enabled: true,
       suggestions: [],
-      credits: {
-        blocked: true,
-        low: credit.low,
-        metered: credit.metered,
-        balance: credit.balance,
-      },
+      credits: creditMeta(credit),
     });
   }
 
   const results = await googleAutocomplete(apiKey, input, sessionToken, locationBias, limit);
-
-  return NextResponse.json({
+  const payload = {
     enabled: true,
     suggestions: results.map((item) => ({
       placeId: item.placeId,
@@ -67,11 +82,8 @@ export async function POST(request: Request) {
       placeFormatted: item.placeFormatted,
       category: item.category,
     })),
-    credits: {
-      blocked: false,
-      low: credit.low,
-      metered: credit.metered,
-      balance: credit.balance,
-    },
-  });
+  };
+  guard.store(payload, AUTOCOMPLETE_CACHE_TTL_MS);
+
+  return NextResponse.json({ ...payload, credits: creditMeta(credit) });
 }

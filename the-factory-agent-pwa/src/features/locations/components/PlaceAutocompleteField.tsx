@@ -33,7 +33,7 @@ export type PlaceAutocompleteFieldProps = {
 
 /**
  * Form-friendly place typeahead for the Agent PWA.
- * Google Places → Mapbox fallback; meters credits via creditAuthHeaders in place-search.
+ * Mapbox primary → Google quality fallback; meters Google via creditAuthHeaders.
  */
 export function PlaceAutocompleteField({
   value,
@@ -61,11 +61,16 @@ export function PlaceAutocompleteField({
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionTokenRef = useRef(createSearchSessionToken());
   const requestIdRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const proximityLng = proximity?.[0];
+  const proximityLat = proximity?.[1];
 
   const runSearch = useCallback(
     async (query: string) => {
       const trimmed = query.trim();
       if (trimmed.length < 2) {
+        abortRef.current?.abort();
+        abortRef.current = null;
         setSuggestions([]);
         setOpen(false);
         setSearched(false);
@@ -83,30 +88,49 @@ export function PlaceAutocompleteField({
         return;
       }
 
+      abortRef.current?.abort();
+      const abort = new AbortController();
+      abortRef.current = abort;
+
       const requestId = ++requestIdRef.current;
       setBusy(true);
       setStatusNote(null);
 
-      const results = await suggestPlaces(trimmed, {
-        sessionToken: sessionTokenRef.current,
-        proximity,
-        limit,
-      });
+      const proximityBias: [number, number] | undefined =
+        typeof proximityLng === 'number' &&
+        typeof proximityLat === 'number' &&
+        Number.isFinite(proximityLng) &&
+        Number.isFinite(proximityLat)
+          ? [proximityLng, proximityLat]
+          : undefined;
 
-      if (requestId !== requestIdRef.current) return;
+      try {
+        const results = await suggestPlaces(trimmed, {
+          sessionToken: sessionTokenRef.current,
+          proximity: proximityBias,
+          limit,
+          signal: abort.signal,
+        });
 
-      setSuggestions(results);
-      setOpen(true);
-      setSearched(true);
-      setBusy(false);
+        if (requestId !== requestIdRef.current) return;
 
-      if (results.length === 0) {
-        setStatusNote('No places found — try a fuller address.');
-      } else if (results.every((r) => r.provider === 'mapbox')) {
-        setStatusNote('Google search paused or unavailable. Showing Mapbox results.');
+        setSuggestions(results);
+        setOpen(true);
+        setSearched(true);
+        setBusy(false);
+
+        if (results.length === 0) {
+          setStatusNote('No places found — try a fuller address.');
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (requestId !== requestIdRef.current) return;
+        setBusy(false);
+        setSearched(true);
+        setStatusNote('Place search failed — try again.');
       }
     },
-    [limit, proximity],
+    [limit, proximityLng, proximityLat],
   );
 
   useEffect(() => {
@@ -116,6 +140,7 @@ export function PlaceAutocompleteField({
     }, DEBOUNCE_MS);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      abortRef.current?.abort();
     };
   }, [value, runSearch]);
 

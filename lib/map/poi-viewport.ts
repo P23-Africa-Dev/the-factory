@@ -1,24 +1,26 @@
 import { isBboxTooLarge, type PoiResult } from "@/lib/map/overpass-search";
-import { fetchPlacesInArea } from "@/lib/map/poi-search";
+import {
+  arePoiResultsAcceptable,
+  isForceGooglePrimary,
+} from "@/lib/map/place-result-quality";
+import { fetchMapboxPoiFallback, fetchPlacesInArea } from "@/lib/map/poi-search";
 import type { LocationContext } from "@/lib/map/location-search";
 import { ingestCreditMeta } from "@/store/map-credits";
 
-// ── POI cost-control tuning (Balanced tier defaults) ─────────────────────────
-// Switch to the Minimal tier by using the commented values (higher zoom, longer
-// debounce/TTL, wider movement threshold) — no other code changes required.
-//   Balanced: MIN_ZOOM 13 | DEBOUNCE 900 | THRESHOLD 350m | TTL 5m
-//   Minimal : MIN_ZOOM 14 | DEBOUNCE 1200 | THRESHOLD 500m | TTL 10m
-export const POI_MIN_ZOOM = 13;
+// ── POI cost-control tuning (Minimal tier defaults) ──────────────────────────
+// Balanced (higher cost): MIN_ZOOM 13 | DEBOUNCE 900 | THRESHOLD 350m | TTL 5m
+// Minimal (default):     MIN_ZOOM 14 | DEBOUNCE 1200 | THRESHOLD 500m | TTL 10m
+export const POI_MIN_ZOOM = 14;
 export const POI_MAX_RADIUS_M = 3000;
 const GOOGLE_NEARBY_RETRY_AFTER_MS = 30_000;
 let googleNearbyUnavailableUntil = 0;
 
 /** Debounce before a settled pan/zoom triggers a fetch. */
-export const POI_REFRESH_DEBOUNCE_MS = 900;
+export const POI_REFRESH_DEBOUNCE_MS = 1200;
 /** Skip refetching until the viewport center moves at least this far (metres). */
-export const POI_MOVE_THRESHOLD_M = 350;
+export const POI_MOVE_THRESHOLD_M = 500;
 /** How long a fetched tile of POIs stays reusable from the client cache. */
-export const POI_TILE_CACHE_TTL_MS = 5 * 60 * 1000;
+export const POI_TILE_CACHE_TTL_MS = 10 * 60 * 1000;
 /** Grid size (degrees) used to key the client tile cache (~440m at the equator). */
 export const POI_TILE_GRID_DEG = 0.004;
 
@@ -122,6 +124,10 @@ async function fetchGoogleNearbyForViewport(
   }
 }
 
+/**
+ * Viewport POI refresh: Mapbox (via fetchPlacesInArea skipGoogle) first;
+ * Google Nearby Pro only when non-Google results fail the quality gate.
+ */
 export async function fetchPlacesInViewport(
   bounds: ViewportBounds,
   zoom: number,
@@ -130,9 +136,6 @@ export async function fetchPlacesInViewport(
   if (!canFetchPoisForViewport(zoom, bounds)) return [];
 
   const circle = viewportToSearchCircle(bounds);
-  const googleResults = await fetchGoogleNearbyForViewport(circle, signal);
-  if (googleResults.length > 0) return googleResults;
-
   const ctx: LocationContext = {
     name: "Map viewport",
     center: [circle.lng, circle.lat],
@@ -140,5 +143,24 @@ export async function fetchPlacesInViewport(
     radiusKm: circle.radiusM / 1000,
   };
 
-  return fetchPlacesInArea(ctx, { skipGoogleNearby: true });
+  if (isForceGooglePrimary()) {
+    const googleFirst = await fetchGoogleNearbyForViewport(circle, signal);
+    if (googleFirst.length > 0) return googleFirst;
+    return fetchMapboxPoiFallback(ctx);
+  }
+
+  // Mapbox keyword sweep (and optional Overpass inside fetchPlacesInArea).
+  const nonGoogle = await fetchPlacesInArea(ctx, { skipGoogleNearby: true });
+  if (arePoiResultsAcceptable(nonGoogle)) {
+    return nonGoogle;
+  }
+
+  if (signal?.aborted) {
+    throw new DOMException("Aborted", "AbortError");
+  }
+
+  const googleResults = await fetchGoogleNearbyForViewport(circle, signal);
+  if (googleResults.length > 0) return googleResults;
+
+  return nonGoogle;
 }

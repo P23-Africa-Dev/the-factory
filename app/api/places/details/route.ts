@@ -3,6 +3,10 @@ import { getGooglePlacesServerKey } from "@/lib/config/public-env";
 import { googlePlaceDetails } from "@/lib/utils/google-places";
 import { clientIdFromRequest, guardPlacesRequest } from "@/lib/server/places-guard";
 import { consumeMapCredit, creditMeta } from "@/lib/server/map-credit-gate";
+import {
+  estimateSkuUsd,
+  recordPlacesTelemetry,
+} from "@/lib/server/places-telemetry";
 
 export async function GET(request: Request) {
   const apiKey = getGooglePlacesServerKey();
@@ -27,13 +31,21 @@ export async function GET(request: Request) {
     cacheKey: `details:${placeId}`,
   });
   if (guard.blocked && guard.response) return guard.response;
-  if (guard.cached) return NextResponse.json(guard.cached);
+  if (guard.cached) {
+    recordPlacesTelemetry({
+      provider: "cache",
+      sku: "details",
+      cacheHit: true,
+    });
+    return NextResponse.json(guard.cached);
+  }
 
   const credit = await consumeMapCredit(request, "details", "dashboard");
   if (credit.blocked) {
     return NextResponse.json({ enabled: true, blocked: true, credits: creditMeta(credit) });
   }
 
+  const started = Date.now();
   const details = await googlePlaceDetails(apiKey, placeId, sessionToken);
   if (!details) {
     return NextResponse.json({ error: "Place not found" }, { status: 404 });
@@ -48,6 +60,14 @@ export async function GET(request: Request) {
     bbox: details.bbox,
   };
   guard.store(payload);
+
+  recordPlacesTelemetry({
+    provider: "google",
+    sku: "details",
+    cacheHit: false,
+    ms: Date.now() - started,
+    estimatedUsd: estimateSkuUsd("details"),
+  });
 
   return NextResponse.json({ ...payload, credits: creditMeta(credit) });
 }

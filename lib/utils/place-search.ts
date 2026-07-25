@@ -1,12 +1,23 @@
 import { getMapboxPublicToken } from "@/lib/config/public-env";
+import {
+  areSuggestResultsAcceptable,
+  isForceGooglePrimary,
+} from "@/lib/map/place-result-quality";
 import { ingestCreditMeta } from "@/store/map-credits";
 
 /**
- * Unified place search: Google Places API (New) via server proxy first,
- * Mapbox Search Box as automatic fallback when Google is unavailable or empty.
+ * Unified place search: Mapbox Search Box primary, Google Places (New) via
+ * server proxy only when Mapbox results fail the quality gate.
  */
 
 const SEARCHBOX_BASE = "https://api.mapbox.com/search/searchbox/v1";
+
+const CLIENT_CACHE_TTL_MS = 60_000;
+const CLIENT_CACHE_MAX = 100;
+
+type CacheEntry = { value: PlaceSuggestion[]; expiresAt: number };
+const suggestCache = new Map<string, CacheEntry>();
+const suggestInflight = new Map<string, Promise<PlaceSuggestion[]>>();
 
 export type PlaceSuggestion = {
   provider: "google" | "mapbox";
@@ -38,12 +49,61 @@ export function createSearchSessionToken(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function suggestCacheKey(
+  query: string,
+  options: {
+    proximity?: [number, number];
+    limit?: number;
+    skipGoogle?: boolean;
+    forceGoogle?: boolean;
+  },
+): string {
+  const prox =
+    options.proximity &&
+    Number.isFinite(options.proximity[0]) &&
+    Number.isFinite(options.proximity[1])
+      ? `${options.proximity[0].toFixed(3)},${options.proximity[1].toFixed(3)}`
+      : "_";
+  return [
+    query.toLowerCase(),
+    prox,
+    String(options.limit ?? 6),
+    options.skipGoogle ? "sg" : "",
+    options.forceGoogle || isForceGooglePrimary() ? "fg" : "",
+  ].join("|");
+}
+
+function getCachedSuggestions(key: string): PlaceSuggestion[] | null {
+  const entry = suggestCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    suggestCache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function setCachedSuggestions(key: string, value: PlaceSuggestion[]): void {
+  if (suggestCache.size >= CLIENT_CACHE_MAX) {
+    const first = suggestCache.keys().next().value;
+    if (first) suggestCache.delete(first);
+  }
+  suggestCache.set(key, { value, expiresAt: Date.now() + CLIENT_CACHE_TTL_MS });
+}
+
+/** Test helper — clears client suggest cache + inflight map. */
+export function __resetPlaceSearchCachesForTests(): void {
+  suggestCache.clear();
+  suggestInflight.clear();
+}
+
 async function suggestPlacesGoogle(
   query: string,
   options: {
     sessionToken: string;
     proximity?: [number, number];
     limit?: number;
+    signal?: AbortSignal;
   },
 ): Promise<PlaceSuggestion[]> {
   try {
@@ -57,6 +117,7 @@ async function suggestPlacesGoogle(
         lng: options.proximity?.[0],
         limit: options.limit ?? 6,
       }),
+      signal: options.signal,
     });
 
     if (response.status === 503) return [];
@@ -86,7 +147,8 @@ async function suggestPlacesGoogle(
         category: item.category ?? null,
         sessionToken: options.sessionToken,
       }));
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
     return [];
   }
 }
@@ -99,6 +161,7 @@ async function suggestPlacesMapbox(
     country?: string;
     limit?: number;
     token?: string;
+    signal?: AbortSignal;
   },
 ): Promise<PlaceSuggestion[]> {
   const token = options.token ?? getMapboxPublicToken();
@@ -120,7 +183,9 @@ async function suggestPlacesMapbox(
   }
 
   try {
-    const response = await fetch(`${SEARCHBOX_BASE}/suggest?${params.toString()}`);
+    const response = await fetch(`${SEARCHBOX_BASE}/suggest?${params.toString()}`, {
+      signal: options.signal,
+    });
     if (!response.ok) return [];
 
     const payload = (await response.json()) as {
@@ -148,11 +213,51 @@ async function suggestPlacesMapbox(
         featureType: s.feature_type ?? "place",
         maki: s.maki ?? null,
       }));
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
     return [];
   }
 }
 
+async function suggestPlacesUncached(
+  trimmed: string,
+  options: {
+    sessionToken: string;
+    proximity?: [number, number];
+    country?: string;
+    limit?: number;
+    token?: string;
+    skipGoogle?: boolean;
+    forceGoogle?: boolean;
+    signal?: AbortSignal;
+  },
+): Promise<PlaceSuggestion[]> {
+  const forceGoogle = options.forceGoogle === true || isForceGooglePrimary();
+
+  if (forceGoogle && !options.skipGoogle) {
+    const googleResults = await suggestPlacesGoogle(trimmed, options);
+    if (googleResults.length > 0) return googleResults;
+    return suggestPlacesMapbox(trimmed, options);
+  }
+
+  const mapboxResults = await suggestPlacesMapbox(trimmed, options);
+  if (
+    areSuggestResultsAcceptable(mapboxResults, { query: trimmed }) ||
+    options.skipGoogle
+  ) {
+    return mapboxResults;
+  }
+
+  const googleResults = await suggestPlacesGoogle(trimmed, options);
+  if (googleResults.length > 0) return googleResults;
+
+  return mapboxResults;
+}
+
+/**
+ * Mapbox-first place suggestions. Google is only called when Mapbox fails the
+ * quality gate (unless skipGoogle / forceGoogle / env override).
+ */
 export async function suggestPlaces(
   query: string,
   options: {
@@ -163,17 +268,38 @@ export async function suggestPlaces(
     token?: string;
     /** When true, skip Google and use Mapbox only (e.g. POI area fallback). */
     skipGoogle?: boolean;
+    /** Emergency: try Google before Mapbox (tests / ops override). */
+    forceGoogle?: boolean;
+    signal?: AbortSignal;
   },
 ): Promise<PlaceSuggestion[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
 
-  if (!options.skipGoogle) {
-    const googleResults = await suggestPlacesGoogle(trimmed, options);
-    if (googleResults.length > 0) return googleResults;
+  const key = suggestCacheKey(trimmed, options);
+  const cached = getCachedSuggestions(key);
+  if (cached) {
+    // Re-bind session token so retrieve still bills the current session.
+    return cached.map((s) => ({ ...s, sessionToken: options.sessionToken }));
   }
 
-  return suggestPlacesMapbox(trimmed, options);
+  const existing = suggestInflight.get(key);
+  if (existing) {
+    const results = await existing;
+    return results.map((s) => ({ ...s, sessionToken: options.sessionToken }));
+  }
+
+  const promise = suggestPlacesUncached(trimmed, options)
+    .then((results) => {
+      setCachedSuggestions(key, results);
+      return results;
+    })
+    .finally(() => {
+      suggestInflight.delete(key);
+    });
+
+  suggestInflight.set(key, promise);
+  return promise;
 }
 
 async function retrievePlaceGoogle(

@@ -6,6 +6,10 @@ import {
   resolvePoiStyle,
   type PoiResult,
 } from "@/lib/map/overpass-search";
+import {
+  arePoiResultsAcceptable,
+  isForceGooglePrimary,
+} from "@/lib/map/place-result-quality";
 import { getMapboxPublicToken } from "@/lib/config/public-env";
 import {
   createSearchSessionToken,
@@ -15,6 +19,9 @@ import {
 import { ingestCreditMeta } from "@/store/map-credits";
 
 const MAPBOX_POI_QUERIES = ["supermarket", "restaurant", "bank", "pharmacy", "hotel", "hospital"];
+/** Cap retrieves per keyword to limit Mapbox Search Box session cost. */
+const MAPBOX_RETRIEVE_PER_KEYWORD = 2;
+const MAPBOX_MAX_POIS = 24;
 const GOOGLE_NEARBY_RETRY_AFTER_MS = 30_000;
 let googleNearbyUnavailableUntil = 0;
 
@@ -77,7 +84,11 @@ async function fetchGoogleNearby(ctx: LocationContext): Promise<PoiResult[]> {
   }
 }
 
-async function fetchMapboxPoiFallback(ctx: LocationContext): Promise<PoiResult[]> {
+/**
+ * Mapbox Search Box keyword sweep for nearby POIs.
+ * Caps retrieves per keyword to avoid 24–36 serial billable retrieves.
+ */
+export async function fetchMapboxPoiFallback(ctx: LocationContext): Promise<PoiResult[]> {
   const token = getMapboxPublicToken();
   if (!token) return [];
 
@@ -87,18 +98,23 @@ async function fetchMapboxPoiFallback(ctx: LocationContext): Promise<PoiResult[]
   const results: PoiResult[] = [];
 
   for (const keyword of MAPBOX_POI_QUERIES) {
+    if (results.length >= MAPBOX_MAX_POIS) break;
+
     const suggestions = await suggestPlaces(keyword, {
       sessionToken,
       proximity,
-      limit: 3,
+      limit: MAPBOX_RETRIEVE_PER_KEYWORD,
       token,
       skipGoogle: true,
     });
 
+    let retrievedForKeyword = 0;
     for (const suggestion of suggestions) {
       if (suggestion.provider !== "mapbox" || seen.has(suggestion.id)) continue;
+      if (retrievedForKeyword >= MAPBOX_RETRIEVE_PER_KEYWORD) break;
 
       const place = await retrievePlaceByMapboxId(suggestion.id, sessionToken, { token });
+      retrievedForKeyword += 1;
       if (!place) continue;
 
       seen.add(suggestion.id);
@@ -116,7 +132,7 @@ async function fetchMapboxPoiFallback(ctx: LocationContext): Promise<PoiResult[]
         address: place.address || undefined,
       });
 
-      if (results.length >= 40) return results;
+      if (results.length >= MAPBOX_MAX_POIS) return results;
     }
   }
 
@@ -130,23 +146,50 @@ async function fetchOverpassFallback(ctx: LocationContext): Promise<PoiResult[]>
   return fetchBusinessesNearPoint(ctx.center[1], ctx.center[0]);
 }
 
+/**
+ * Area POI search: Mapbox (then optional Overpass) first; Google Nearby only when
+ * non-Google results fail the quality gate (unless forceGoogle / skipGoogleNearby).
+ */
 export async function fetchPlacesInArea(
   ctx: LocationContext,
-  options?: { skipGoogleNearby?: boolean },
+  options?: {
+    skipGoogleNearby?: boolean;
+    /** Prefer Google Nearby before Mapbox (ops/tests only). */
+    forceGoogleNearby?: boolean;
+  },
 ): Promise<PoiResult[]> {
   if (ctx.bbox && isBboxTooLarge(ctx.bbox)) return [];
 
-  if (!options?.skipGoogleNearby) {
+  const forceGoogle =
+    options?.forceGoogleNearby === true || isForceGooglePrimary();
+  const allowGoogle = !options?.skipGoogleNearby;
+
+  if (forceGoogle && allowGoogle) {
     const googleResults = await fetchGoogleNearby(ctx);
     if (googleResults.length > 0) return googleResults;
   }
 
   const mapboxResults = await fetchMapboxPoiFallback(ctx);
-  if (mapboxResults.length > 0) return mapboxResults;
-
-  if (isOverpassFallbackEnabled()) {
-    return fetchOverpassFallback(ctx);
+  if (arePoiResultsAcceptable(mapboxResults)) {
+    return mapboxResults;
   }
 
-  return [];
+  let bestNonGoogle = mapboxResults;
+
+  if (isOverpassFallbackEnabled()) {
+    const overpassResults = await fetchOverpassFallback(ctx);
+    if (arePoiResultsAcceptable(overpassResults)) {
+      return overpassResults;
+    }
+    if (overpassResults.length > bestNonGoogle.length) {
+      bestNonGoogle = overpassResults;
+    }
+  }
+
+  if (allowGoogle && !forceGoogle) {
+    const googleResults = await fetchGoogleNearby(ctx);
+    if (googleResults.length > 0) return googleResults;
+  }
+
+  return bestNonGoogle;
 }

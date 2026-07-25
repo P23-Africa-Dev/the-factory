@@ -41,23 +41,42 @@ export function LocationSearchInput({
   const [open, setOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
   // One Search Box session per suggest→retrieve cycle (Mapbox billing model).
   const sessionTokenRef = useRef<string>(createSearchSessionToken());
 
   const search = useCallback(async (q: string) => {
     if (q.trim().length < 2) {
+      abortRef.current?.abort();
+      abortRef.current = null;
       setSuggestions([]);
       setOpen(false);
+      setBusy(false);
       return;
     }
+
+    abortRef.current?.abort();
+    const abort = new AbortController();
+    abortRef.current = abort;
+    const requestId = ++requestIdRef.current;
+
     setBusy(true);
-    const results = await suggestPlaces(q, {
-      sessionToken: sessionTokenRef.current,
-      limit: 6,
-    });
-    setSuggestions(results);
-    setOpen(true);
-    setBusy(false);
+    try {
+      const results = await suggestPlaces(q, {
+        sessionToken: sessionTokenRef.current,
+        limit: 6,
+        signal: abort.signal,
+      });
+      if (requestId !== requestIdRef.current) return;
+      setSuggestions(results);
+      setOpen(true);
+      setBusy(false);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (requestId !== requestIdRef.current) return;
+      setBusy(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -67,7 +86,10 @@ export function LocationSearchInput({
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => search(query), DEBOUNCE_MS);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      abortRef.current?.abort();
+    };
   }, [query, search]);
 
   useEffect(() => {
