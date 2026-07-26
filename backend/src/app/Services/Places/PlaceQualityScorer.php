@@ -6,9 +6,23 @@ namespace App\Services\Places;
 
 use App\DTO\Places\PlaceResult;
 use App\DTO\Places\PlaceSuggestion;
+use Illuminate\Support\Str;
 
 final class PlaceQualityScorer
 {
+    /**
+     * Generic descriptor / filler words that carry no brand identity. Stripped
+     * before deciding whether a provider's result NAMES actually match the query.
+     *
+     * @var list<string>
+     */
+    private const NAME_STOPWORDS = [
+        'mall', 'malls', 'shopping', 'shop', 'shops', 'store', 'stores',
+        'plaza', 'plazas', 'market', 'markets', 'supermarket', 'hypermarket',
+        'mart', 'centre', 'center', 'complex', 'arcade', 'outlet', 'branch',
+        'the', 'and', 'for',
+    ];
+
     /**
      * @param  list<PlaceSuggestion|PlaceResult>  $results
      */
@@ -73,19 +87,120 @@ final class PlaceQualityScorer
             return false;
         }
 
-        // Geoapify geocode often returns 1 thin hit for brand names — keep falling through
-        // to Foursquare for business queries unless we have multiple solid matches.
+        // Name-relevance gate for brand/business text queries.
+        //
+        // Geocoders (Geoapify especially) happily return same-category places in the
+        // wrong city or country with high confidence — e.g. "Jaraguá Mall, Brazil" for
+        // a "Jara Mall" search, or a random street for "Shoprite". Those score well but
+        // are useless, so the waterfall must fall through to the POI providers
+        // (Foursquare/Google) which index named venues. A provider is only "adequate"
+        // for a brand query when at least one of its top results is actually NAMED after
+        // what the user typed.
         if (
-            $provider === 'geoapify'
-            && $query !== null
-            && $this->looksLikeBusinessQuery($query)
+            $query !== null
             && in_array($operation, ['autocomplete', 'search'], true)
-            && count($results) < 2
+            && $this->looksLikeBusinessQuery($query)
         ) {
-            return false;
+            $tokens = $this->significantQueryTokens($query);
+
+            if ($tokens !== []) {
+                $relevance = $this->bestNameRelevance($results, $tokens);
+                // Single-token brands ("Shoprite", "Jara") must match exactly; multi-token
+                // queries only need half their meaningful tokens present in a result name.
+                $required = count($tokens) === 1 ? 1.0 : 0.5;
+
+                if ($relevance + 1e-9 < $required) {
+                    return false;
+                }
+            }
         }
 
         return true;
+    }
+
+    /**
+     * Meaningful (brand-carrying) tokens from a query, with accents folded and
+     * generic descriptors ("mall", "shopping", ...) removed.
+     *
+     * @return list<string>
+     */
+    public function significantQueryTokens(string $query): array
+    {
+        $tokens = preg_split('/[^a-z0-9]+/', $this->normalize($query), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        $out = [];
+        foreach ($tokens as $token) {
+            if (strlen($token) < 3) {
+                continue;
+            }
+            if (in_array($token, self::NAME_STOPWORDS, true)) {
+                continue;
+            }
+            $out[] = $token;
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * Highest fraction of the query's meaningful tokens that appear in any single
+     * result NAME (top 5 considered). Matching is strict whole-word (accent-folded):
+     * "Jara" does NOT match "Jaraguá", "Jarak" or "Jarahueca". Longer brand tokens
+     * (6+ chars) get a one-character plural/typo allowance so "Shoprite" still matches
+     * "Shoprites" without opening short tokens up to false positives.
+     *
+     * @param  list<PlaceSuggestion|PlaceResult>  $results
+     * @param  list<string>  $tokens
+     */
+    public function bestNameRelevance(array $results, array $tokens): float
+    {
+        if ($tokens === []) {
+            return 1.0;
+        }
+
+        $best = 0.0;
+        foreach (array_slice($results, 0, 5) as $item) {
+            $nameTokens = preg_split('/[^a-z0-9]+/', $this->normalize($item->name), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+            if ($nameTokens === []) {
+                continue;
+            }
+
+            $matched = 0;
+            foreach ($tokens as $qt) {
+                foreach ($nameTokens as $nt) {
+                    if ($this->tokenMatches($qt, $nt)) {
+                        $matched++;
+                        break;
+                    }
+                }
+            }
+
+            $relevance = $matched / count($tokens);
+            if ($relevance > $best) {
+                $best = $relevance;
+            }
+        }
+
+        return $best;
+    }
+
+    private function tokenMatches(string $queryToken, string $nameToken): bool
+    {
+        if ($queryToken === $nameToken) {
+            return true;
+        }
+
+        // Plural/typo tolerance only for longer, distinctive brand tokens.
+        if (strlen($queryToken) >= 6 && str_starts_with($nameToken, $queryToken) && strlen($nameToken) - strlen($queryToken) <= 1) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function normalize(string $value): string
+    {
+        return strtolower(trim(Str::ascii($value)));
     }
 
     public function looksLikeBusinessQuery(string $query): bool

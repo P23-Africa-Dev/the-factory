@@ -58,7 +58,7 @@ final class PlaceSearchService
             limit: $limit,
             source: $source,
             ip: $ip,
-            invoker: fn (PlaceSearchProviderInterface $p): array => $p->autocomplete($query, $lat, $lng, $limit),
+            invoker: fn (PlaceSearchProviderInterface $p, ?string $q): array => $p->autocomplete((string) $q, $lat, $lng, $limit),
         );
     }
 
@@ -83,7 +83,7 @@ final class PlaceSearchService
             limit: $limit,
             source: $source,
             ip: $ip,
-            invoker: fn (PlaceSearchProviderInterface $p): array => $p->search($query, $lat, $lng, $limit),
+            invoker: fn (PlaceSearchProviderInterface $p, ?string $q): array => $p->search((string) $q, $lat, $lng, $limit),
         );
     }
 
@@ -113,7 +113,7 @@ final class PlaceSearchService
             source: $source,
             ip: $ip,
             cacheParts: [$lat, $lng, $radiusM, $categories ?? [], $limit],
-            invoker: fn (PlaceSearchProviderInterface $p): array => $p->nearby($lat, $lng, $radiusM, $categories, $limit),
+            invoker: fn (PlaceSearchProviderInterface $p, ?string $q): array => $p->nearby($lat, $lng, $radiusM, $categories, $limit),
         );
     }
 
@@ -234,7 +234,7 @@ final class PlaceSearchService
             lng: null,
             source: $source,
             ip: $ip,
-            invoker: fn (PlaceSearchProviderInterface $p): ?PlaceResult => $p->geocode($query),
+            invoker: fn (PlaceSearchProviderInterface $p, ?string $q): ?PlaceResult => $p->geocode((string) $q),
         );
     }
 
@@ -257,12 +257,12 @@ final class PlaceSearchService
             source: $source,
             ip: $ip,
             cacheParts: [$lat, $lng],
-            invoker: fn (PlaceSearchProviderInterface $p): ?PlaceResult => $p->reverseGeocode($lat, $lng),
+            invoker: fn (PlaceSearchProviderInterface $p, ?string $q): ?PlaceResult => $p->reverseGeocode($lat, $lng),
         );
     }
 
     /**
-     * @param  callable(PlaceSearchProviderInterface): list<PlaceSuggestion|PlaceResult>  $invoker
+     * @param  callable(PlaceSearchProviderInterface, ?string): list<PlaceSuggestion|PlaceResult>  $invoker
      * @param  list<mixed>|null  $cacheParts
      */
     private function runListOperation(
@@ -296,6 +296,7 @@ final class PlaceSearchService
         $bestScore = 0.0;
         $creditsMeta = null;
         $fallbackDepth = 0;
+        $adequateFound = false;
 
         if ($company !== null) {
             $snapshot = $this->mapCredits->snapshot($company);
@@ -309,55 +310,114 @@ final class PlaceSearchService
             }
         }
 
-        foreach ($this->orderedProviders($query, $operation) as $index => $provider) {
-            if (! $provider->isConfigured()) {
-                continue;
-            }
-            if ($provider->name() === 'google') {
-                if (! (bool) config('places.fallback_enabled', true) && $index > 0) {
-                    continue;
-                }
-                if ($this->usage->googleBudgetExceeded()) {
-                    continue;
-                }
-            }
-
-            $tried[] = $provider->name();
-
-            try {
-                $results = $invoker($provider);
-            } catch (ProviderException $e) {
-                Log::info('places.provider_failed', [
-                    'provider' => $e->provider,
-                    'reason' => $e->reason,
-                    'op' => $operation,
-                ]);
-                continue;
-            }
-
-            // Empty / failed quality attempts are not billed.
-            if ($results === []) {
-                continue;
-            }
-
-            if ($provider->name() === 'google') {
-                $this->usage->recordGoogleCall();
-            }
-
+        $consider = function (array $results, string $providerName) use (
+            &$best, &$bestProvider, &$bestScore, &$fallbackDepth, &$adequateFound, &$tried, $operation, $query, $lat, $lng
+        ): bool {
             $score = $this->scorer->score($results, $operation, $query, $lat, $lng);
             if ($score > $bestScore) {
                 $best = $results;
                 $bestScore = $score;
-                $bestProvider = $provider->name();
+                $bestProvider = $providerName;
                 $fallbackDepth = max(0, count($tried) - 1);
             }
 
-            if ($this->scorer->isAdequateForProvider($results, $operation, $provider->name(), $query)) {
+            if ($this->scorer->isAdequateForProvider($results, $operation, $providerName, $query)) {
                 $best = $results;
-                $bestProvider = $provider->name();
+                $bestProvider = $providerName;
                 $bestScore = $score;
                 $fallbackDepth = max(0, count($tried) - 1);
+                $adequateFound = true;
+
+                return true;
+            }
+
+            return false;
+        };
+
+        // Cheap providers first (Geoapify → Foursquare). Query variants let the
+        // waterfall retry with the brand "core" (descriptors like "Shopping"/"Mall"
+        // stripped) when the verbatim phrasing finds nothing relevant — e.g.
+        // "Jara Shopping Mall" → "Jara" surfaces Foursquare's "Jara Mall". Google is
+        // deliberately excluded here so it stays a true last resort.
+        foreach ($this->queryVariants($query, $operation) as $variant) {
+            foreach ($this->orderedProviders($query, $operation) as $provider) {
+                if ($provider->name() === 'google' || ! $provider->isConfigured()) {
+                    continue;
+                }
+
+                if (! in_array($provider->name(), $tried, true)) {
+                    $tried[] = $provider->name();
+                }
+
+                try {
+                    $results = $invoker($provider, $variant);
+                } catch (ProviderException $e) {
+                    Log::info('places.provider_failed', [
+                        'provider' => $e->provider,
+                        'reason' => $e->reason,
+                        'op' => $operation,
+                    ]);
+                    continue;
+                }
+
+                if ($results === []) {
+                    continue;
+                }
+
+                if ($consider($results, $provider->name())) {
+                    break;
+                }
+            }
+
+            if ($adequateFound) {
                 break;
+            }
+        }
+
+        // Final resort: Google Places, invoked at most once with the verbatim query,
+        // only after every cheaper provider/variant failed to satisfy the request.
+        if (! $adequateFound && (bool) config('places.fallback_enabled', true)) {
+            $google = $this->providerByName('google');
+            if (
+                $google !== null
+                && $google->isConfigured()
+                && ! $this->usage->googleBudgetExceeded()
+            ) {
+                if (! in_array('google', $tried, true)) {
+                    $tried[] = 'google';
+                }
+                try {
+                    $results = $invoker($google, $query);
+                    if ($results !== []) {
+                        $this->usage->recordGoogleCall();
+                        $consider($results, 'google');
+                    }
+                } catch (ProviderException $e) {
+                    Log::info('places.provider_failed', [
+                        'provider' => $e->provider,
+                        'reason' => $e->reason,
+                        'op' => $operation,
+                    ]);
+                }
+            }
+        }
+
+        // For brand/business queries, never surface a completely unrelated place
+        // (e.g. a same-category venue in another country that only "scored" well).
+        // An honest empty result beats a misleading one.
+        if (
+            ! $adequateFound
+            && $bestProvider !== null
+            && $query !== null
+            && in_array($operation, ['autocomplete', 'search'], true)
+            && $this->scorer->looksLikeBusinessQuery($query)
+        ) {
+            $tokens = $this->scorer->significantQueryTokens($query);
+            if ($tokens !== [] && $this->scorer->bestNameRelevance($best, $tokens) <= 0.0) {
+                $best = [];
+                $bestProvider = null;
+                $bestScore = 0.0;
+                $fallbackDepth = max(0, count($tried) - 1);
             }
         }
 
@@ -392,7 +452,7 @@ final class PlaceSearchService
     }
 
     /**
-     * @param  callable(PlaceSearchProviderInterface): (?PlaceResult)  $invoker
+     * @param  callable(PlaceSearchProviderInterface, ?string): (?PlaceResult)  $invoker
      * @param  list<mixed>|null  $cacheParts
      */
     private function runSingleOperation(
@@ -420,8 +480,8 @@ final class PlaceSearchService
             source: $source,
             ip: $ip,
             cacheParts: $cacheParts,
-            invoker: function (PlaceSearchProviderInterface $p) use ($invoker): array {
-                $one = $invoker($p);
+            invoker: function (PlaceSearchProviderInterface $p, ?string $q) use ($invoker): array {
+                $one = $invoker($p, $q);
 
                 return $one !== null ? [$one] : [];
             },
@@ -436,6 +496,32 @@ final class PlaceSearchService
         // Business-heavy autocomplete/search: still Geoapify first, but Foursquare
         // will be reached more often via lower quality threshold in scorer.
         return $this->providers;
+    }
+
+    /**
+     * Query strings to try, in order. The verbatim query first, then — for brand
+     * text searches — a "core" variant with generic descriptors stripped so the
+     * waterfall can still locate the venue when a provider does not index the exact
+     * phrasing (e.g. "Jara Shopping Mall" → "Jara").
+     *
+     * @return list<string|null>
+     */
+    private function queryVariants(?string $query, string $operation): array
+    {
+        if ($query === null || ! in_array($operation, ['autocomplete', 'search'], true)) {
+            return [$query];
+        }
+
+        $variants = [$query];
+
+        if ($this->scorer->looksLikeBusinessQuery($query)) {
+            $core = implode(' ', $this->scorer->significantQueryTokens($query));
+            if ($core !== '' && strtolower(trim($core)) !== strtolower(trim($query))) {
+                $variants[] = $core;
+            }
+        }
+
+        return $variants;
     }
 
     private function providerByName(string $name): ?PlaceSearchProviderInterface

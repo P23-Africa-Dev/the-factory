@@ -125,6 +125,104 @@ class PlaceSearchServiceTest extends TestCase
         $this->assertContains('foursquare', $outcome->providersTried);
     }
 
+    public function test_relaxes_query_to_brand_core_when_verbatim_phrasing_fails(): void
+    {
+        // Geoapify returns high-confidence but wrong-named places for every attempt.
+        // Foursquare has nothing for the verbatim "Jara Shopping Mall" but does index
+        // "Jara Mall" — the waterfall must retry with the stripped brand core "Jara".
+        $geo = Mockery::mock(GeoapifyProvider::class);
+        $fsq = Mockery::mock(FoursquareProvider::class);
+        $google = Mockery::mock(GooglePlacesProvider::class);
+
+        $geo->shouldReceive('name')->andReturn('geoapify');
+        $geo->shouldReceive('isConfigured')->andReturn(true);
+        $geo->shouldReceive('autocomplete')->andReturn([
+            new PlaceSuggestion(
+                id: 'g1',
+                name: 'Jaraguá Mall',
+                formattedAddress: 'Jaraguá, Piracicaba, Brazil',
+                provider: 'geoapify',
+                latitude: -22.7,
+                longitude: -47.6,
+                confidence: 1.0,
+            ),
+        ]);
+
+        $fsq->shouldReceive('name')->andReturn('foursquare');
+        $fsq->shouldReceive('isConfigured')->andReturn(true);
+        $fsq->shouldReceive('autocomplete')
+            ->with('Jara Shopping Mall', Mockery::any(), Mockery::any(), Mockery::any())
+            ->andReturn([]);
+        $fsq->shouldReceive('autocomplete')
+            ->with('jara', Mockery::any(), Mockery::any(), Mockery::any())
+            ->andReturn([
+                new PlaceSuggestion(
+                    id: 'f1',
+                    name: 'Jara Mall',
+                    formattedAddress: 'Ikeja, Lagos',
+                    provider: 'foursquare',
+                    latitude: 6.60,
+                    longitude: 3.35,
+                    confidence: 0.9,
+                ),
+            ]);
+
+        // Google is not needed and must never be reached.
+        $google->shouldReceive('name')->andReturn('google');
+        $google->shouldReceive('isConfigured')->andReturn(false);
+        $google->shouldNotReceive('autocomplete');
+
+        $this->app->instance(GeoapifyProvider::class, $geo);
+        $this->app->instance(FoursquareProvider::class, $fsq);
+        $this->app->instance(GooglePlacesProvider::class, $google);
+
+        $outcome = app(PlaceSearchService::class)->autocomplete('Jara Shopping Mall');
+
+        $this->assertSame('foursquare', $outcome->providerFinal);
+        $this->assertCount(1, $outcome->results);
+        $this->assertSame('Jara Mall', $outcome->results[0]->name);
+    }
+
+    public function test_suppresses_unrelated_result_for_brand_query(): void
+    {
+        // Only Geoapify answers, with a same-category place in the wrong country.
+        // Nothing name-relevant exists, so an empty result is returned rather than junk.
+        $geo = Mockery::mock(GeoapifyProvider::class);
+        $fsq = Mockery::mock(FoursquareProvider::class);
+        $google = Mockery::mock(GooglePlacesProvider::class);
+
+        $geo->shouldReceive('name')->andReturn('geoapify');
+        $geo->shouldReceive('isConfigured')->andReturn(true);
+        $geo->shouldReceive('autocomplete')->andReturn([
+            new PlaceSuggestion(
+                id: 'g1',
+                name: 'Jaraguá Mall',
+                formattedAddress: 'Jaraguá, Piracicaba, Brazil',
+                provider: 'geoapify',
+                latitude: -22.7,
+                longitude: -47.6,
+                confidence: 1.0,
+            ),
+        ]);
+
+        $fsq->shouldReceive('name')->andReturn('foursquare');
+        $fsq->shouldReceive('isConfigured')->andReturn(true);
+        $fsq->shouldReceive('autocomplete')->andReturn([]);
+
+        $google->shouldReceive('name')->andReturn('google');
+        $google->shouldReceive('isConfigured')->andReturn(false);
+
+        $this->app->instance(GeoapifyProvider::class, $geo);
+        $this->app->instance(FoursquareProvider::class, $fsq);
+        $this->app->instance(GooglePlacesProvider::class, $google);
+
+        $outcome = app(PlaceSearchService::class)->autocomplete('Jara Mall');
+
+        $this->assertNull($outcome->providerFinal);
+        $this->assertCount(0, $outcome->results);
+        $this->assertSame('empty', $outcome->status);
+    }
+
     public function test_falls_back_to_google_when_earlier_providers_empty(): void
     {
         $geo = Mockery::mock(GeoapifyProvider::class);
