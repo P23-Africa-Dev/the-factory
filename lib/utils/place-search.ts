@@ -172,6 +172,19 @@ export async function retrievePlace(
     Number.isFinite(suggestion.latitude) &&
     Number.isFinite(suggestion.longitude);
 
+  // Skip details round-trip when autocomplete already returned fly-to-ready coords.
+  if (suggestionHasCoords) {
+    return {
+      placeId: suggestion.id,
+      name: suggestion.name || "Location",
+      address: suggestion.placeFormatted || suggestion.fullAddress || suggestion.name || "",
+      lat: suggestion.latitude as number,
+      lng: suggestion.longitude as number,
+      bbox: null,
+      provider: suggestion.provider,
+    };
+  }
+
   try {
     const envelope = await placesDetails(suggestion.id, suggestion.provider);
     const place = envelope.data?.[0];
@@ -187,21 +200,7 @@ export async function retrievePlace(
       };
     }
   } catch {
-    // Fall through to suggestion coords when details fails.
-  }
-
-  // Autocomplete often already includes coordinates — use them so map fly-to still works
-  // when place-details returns a polygon-only geometry or the provider is down.
-  if (suggestionHasCoords) {
-    return {
-      placeId: suggestion.id,
-      name: suggestion.name || "Location",
-      address: suggestion.placeFormatted || suggestion.fullAddress || suggestion.name || "",
-      lat: suggestion.latitude as number,
-      lng: suggestion.longitude as number,
-      bbox: null,
-      provider: suggestion.provider,
-    };
+    // Details failed and suggestion had no coords.
   }
 
   return null;

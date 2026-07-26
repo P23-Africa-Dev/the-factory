@@ -10,7 +10,13 @@ import {
   type PlaceSuggestion,
   type RetrievedPlace,
 } from '@/lib/map/place-search';
-import { resolveSearchProximity } from '@/lib/map/search-proximity';
+import { getCachedSearchProximity, warmSearchProximity } from '@/lib/map/search-proximity';
+import {
+  fetchRecentDestinations,
+  getRecentDestinations,
+  rememberRecentDestination,
+  type RecentDestination,
+} from '@/lib/map/recentDestinations';
 
 const DEBOUNCE_MS = 300;
 
@@ -53,6 +59,7 @@ export function PlaceAutocompleteField({
   variant = 'light',
 }: PlaceAutocompleteFieldProps) {
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [recents, setRecents] = useState<RecentDestination[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -73,7 +80,6 @@ export function PlaceAutocompleteField({
         abortRef.current?.abort();
         abortRef.current = null;
         setSuggestions([]);
-        setOpen(false);
         setSearched(false);
         setStatusNote(null);
         setBusy(false);
@@ -106,9 +112,12 @@ export function PlaceAutocompleteField({
           : undefined;
 
       if (!proximityBias) {
-        const resolved = await resolveSearchProximity();
-        if (requestId !== requestIdRef.current) return;
-        if (resolved) proximityBias = resolved;
+        const cached = getCachedSearchProximity();
+        if (cached) {
+          proximityBias = cached;
+        } else {
+          warmSearchProximity();
+        }
       }
 
       try {
@@ -176,6 +185,13 @@ export function PlaceAutocompleteField({
       }
       onChange(place.address || place.name);
       onPlaceSelect(place);
+      void rememberRecentDestination({
+        name: place.name,
+        address: place.address,
+        latitude: place.lat,
+        longitude: place.lng,
+        provider: place.provider,
+      });
       setSuggestions([]);
       setOpen(false);
       setSearched(false);
@@ -184,7 +200,24 @@ export function PlaceAutocompleteField({
     }
   };
 
-  const showPanel = open && (busy || resolving || searched || suggestions.length > 0);
+  const handleRecentSelect = (recent: RecentDestination) => {
+    void handleSelect({
+      provider: recent.provider || 'recent',
+      id: recent.provider_place_id || `recent:${recent.latitude},${recent.longitude}`,
+      name: recent.name,
+      placeFormatted: recent.address || recent.name,
+      category: null,
+      sessionToken: sessionTokenRef.current,
+      fullAddress: recent.address || recent.name,
+      latitude: recent.latitude,
+      longitude: recent.longitude,
+    });
+  };
+
+  const showRecentsPanel = open && value.trim().length < 2 && recents.length > 0;
+  const showPanel =
+    open &&
+    (busy || resolving || searched || suggestions.length > 0 || showRecentsPanel);
   const isDark = variant === 'dark';
   const panelClass = isDark
     ? 'absolute z-30 left-0 right-0 mt-1 max-h-44 overflow-y-auto rounded-xl border border-white/10 bg-[#0E2833] shadow-2xl'
@@ -212,7 +245,9 @@ export function PlaceAutocompleteField({
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => {
             onFocus?.();
-            if (suggestions.length > 0 || searched) setOpen(true);
+            setRecents(getRecentDestinations());
+            void fetchRecentDestinations().then(setRecents);
+            setOpen(true);
           }}
           onBlur={() => {
             onBlur?.();
@@ -233,12 +268,41 @@ export function PlaceAutocompleteField({
 
       {showPanel && (
         <ul className={panelClass}>
-          {(busy || resolving) && suggestions.length === 0 && (
+          {showRecentsPanel && (
+            <>
+              <li className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide ${mutedText}`}>
+                Recent
+              </li>
+              {recents.map((r) => (
+                <li key={`recent-${r.id ?? `${r.latitude},${r.longitude}`}`}>
+                  <button
+                    type="button"
+                    disabled={resolving}
+                    className={`w-full px-3 py-2 text-left disabled:opacity-60 ${hoverRow}`}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleRecentSelect(r);
+                    }}
+                  >
+                    <span className={`block text-[13px] font-semibold leading-tight ${titleText}`}>
+                      {r.name}
+                    </span>
+                    {r.address && r.address !== r.name && (
+                      <span className={`block text-[11px] leading-tight mt-0.5 truncate ${subText}`}>
+                        {r.address}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </>
+          )}
+          {(busy || resolving) && suggestions.length === 0 && value.trim().length >= 2 && (
             <li className={`px-3 py-2 text-[12px] ${mutedText}`}>
               {resolving ? 'Loading place…' : 'Searching…'}
             </li>
           )}
-          {!busy && !resolving && suggestions.length === 0 && searched && (
+          {!busy && !resolving && suggestions.length === 0 && searched && value.trim().length >= 2 && (
             <li className={`px-3 py-2 text-[12px] ${mutedText}`}>
               {statusNote ?? 'No places found — try a fuller address.'}
             </li>
@@ -246,7 +310,8 @@ export function PlaceAutocompleteField({
           {statusNote && suggestions.length > 0 && (
             <li className={noteBanner}>{statusNote}</li>
           )}
-          {suggestions.map((s) => (
+          {value.trim().length >= 2 &&
+            suggestions.map((s) => (
             <li key={`${s.provider}-${s.id}`}>
               <button
                 type="button"

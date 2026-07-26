@@ -852,6 +852,7 @@ function GoogleAgentMapView({
     showPinsToggle = false,
     onTogglePins,
     pinsToggleLabel = "Hide Pins",
+    searchFocus = null,
 }: AgentMapViewProps & { providerState: EffectiveMapProviderState }) {
     const mapContainer = useRef<HTMLDivElement>(null);
     const googleRef = useRef<GoogleMapsNamespaceLike | null>(null);
@@ -881,6 +882,14 @@ function GoogleAgentMapView({
         isResolving: isResolvingInitialViewport,
         isUserLocation: initialViewportIsUserLocation,
     } = useInitialMapViewport({ preferUserLocation, taskFocus });
+
+    useEffect(() => {
+        if (!searchFocus || !mapRef.current) return;
+        const [lng, lat] = searchFocus.center;
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        mapRef.current.panTo({ lat, lng });
+        mapRef.current.setZoom(Math.max(mapRef.current.getZoom() || 13, 15));
+    }, [searchFocus]);
 
     useTrackingWebSocket();
     useAttendanceMapSnapshots({}, { scope: 'agent' });
@@ -1327,6 +1336,7 @@ export function AgentMapView({
                 showPinsToggle={showPinsToggle}
                 onTogglePins={onTogglePins}
                 pinsToggleLabel={pinsToggleLabel}
+                searchFocus={searchFocus}
             />
         );
     }

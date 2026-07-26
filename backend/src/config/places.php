@@ -48,8 +48,8 @@ return [
     ],
 
     'timeouts' => [
-        'geoapify' => (float) env('PLACES_TIMEOUT_GEOAPIFY', 2.0),
-        'foursquare' => (float) env('PLACES_TIMEOUT_FOURSQUARE', 2.0),
+        'geoapify' => (float) env('PLACES_TIMEOUT_GEOAPIFY', 1.5),
+        'foursquare' => (float) env('PLACES_TIMEOUT_FOURSQUARE', 1.5),
         'google' => (float) env('PLACES_TIMEOUT_GOOGLE', 2.5),
     ],
 

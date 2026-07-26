@@ -270,4 +270,55 @@ class PlaceSearchServiceTest extends TestCase
         $this->assertTrue($second->cacheHit);
         $this->assertSame('geoapify', $second->providerFinal);
     }
+
+    public function test_prefers_coord_bearing_foursquare_over_geoapify_name_stub(): void
+    {
+        $geo = Mockery::mock(GeoapifyProvider::class);
+        $fsq = Mockery::mock(FoursquareProvider::class);
+        $google = Mockery::mock(GooglePlacesProvider::class);
+
+        $geo->shouldReceive('name')->andReturn('geoapify');
+        $geo->shouldReceive('isConfigured')->andReturn(true);
+        $geo->shouldReceive('autocomplete')->andReturn([
+            new PlaceSuggestion(
+                id: 'g-stub',
+                name: 'Jara Mall',
+                formattedAddress: 'Lagos',
+                provider: 'geoapify',
+                latitude: null,
+                longitude: null,
+                confidence: 1.0,
+            ),
+        ]);
+
+        $fsq->shouldReceive('name')->andReturn('foursquare');
+        $fsq->shouldReceive('isConfigured')->andReturn(true);
+        $fsq->shouldReceive('autocomplete')->andReturn([
+            new PlaceSuggestion(
+                id: 'f1',
+                name: 'Jara Mall',
+                formattedAddress: 'Ikeja, Lagos',
+                provider: 'foursquare',
+                latitude: 6.6012,
+                longitude: 3.3511,
+                confidence: 0.9,
+            ),
+        ]);
+
+        $google->shouldReceive('name')->andReturn('google');
+        $google->shouldReceive('isConfigured')->andReturn(true);
+        $google->shouldNotReceive('autocomplete');
+
+        $this->app->instance(GeoapifyProvider::class, $geo);
+        $this->app->instance(FoursquareProvider::class, $fsq);
+        $this->app->instance(GooglePlacesProvider::class, $google);
+
+        $outcome = app(PlaceSearchService::class)->autocomplete('Jara Mall', null, null, 6.60, 3.35);
+
+        $this->assertSame('foursquare', $outcome->providerFinal);
+        $this->assertSame('Jara Mall', $outcome->results[0]->name);
+        $this->assertSame(6.6012, $outcome->results[0]->latitude);
+        $this->assertSame(3.3511, $outcome->results[0]->longitude);
+        $this->assertCount(1, $outcome->results);
+    }
 }

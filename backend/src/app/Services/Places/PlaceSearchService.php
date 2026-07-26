@@ -15,7 +15,9 @@ use App\Services\Places\Exceptions\ProviderException;
 use App\Services\Places\Providers\FoursquareProvider;
 use App\Services\Places\Providers\GeoapifyProvider;
 use App\Services\Places\Providers\GooglePlacesProvider;
-use Illuminate\Support\Facades\Concurrency;
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -23,6 +25,12 @@ final class PlaceSearchService
 {
     /** @var list<PlaceSearchProviderInterface> */
     private array $providers;
+
+    private ?float $fanoutBiasLat = null;
+
+    private ?float $fanoutBiasLng = null;
+
+    private int $fanoutLimit = 6;
 
     public function __construct(
         private readonly GeoapifyProvider $geoapify,
@@ -376,6 +384,10 @@ final class PlaceSearchService
         }
         $fanoutNames = array_values(array_filter(array_map('strval', $fanoutNames)));
 
+        $this->fanoutBiasLat = $lat;
+        $this->fanoutBiasLng = $lng;
+        $this->fanoutLimit = max(1, $limit);
+
         $tried = [];
         $merged = [];
 
@@ -557,47 +569,38 @@ final class PlaceSearchService
         $tried = array_map(static fn (PlaceSearchProviderInterface $p): string => $p->name(), $configured);
         $results = [];
 
-        // Parallel via Concurrency outside unit tests (mocks live in the parent process).
-        if (count($configured) > 1 && ! app()->runningUnitTests()) {
-            try {
-                $closures = [];
-                foreach ($configured as $provider) {
-                    $name = $provider->name();
-                    $closures[$name] = function () use ($provider, $invoker, $query): array {
-                        try {
-                            return $invoker($provider, $query);
-                        } catch (ProviderException) {
-                            return [];
-                        } catch (\Throwable) {
-                            return [];
-                        }
-                    };
-                }
-                $batch = Concurrency::run($closures);
-                foreach ($configured as $provider) {
-                    $chunk = $batch[$provider->name()] ?? [];
-                    if (is_array($chunk)) {
-                        foreach ($chunk as $item) {
-                            if ($item instanceof PlaceSuggestion || $item instanceof PlaceResult) {
-                                $results[] = $item;
-                            }
-                        }
-                    }
-                }
+        // True concurrent HTTP via Http::pool (no process-fork tax from Concurrency::run).
+        // Unit tests keep sequential mocks in the parent process.
+        $canPool = ! app()->runningUnitTests()
+            && in_array($operation, ['autocomplete', 'search'], true)
+            && count($configured) > 1
+            && $query !== null
+            && $this->providersSupportHttpPool($configured);
 
-                return ['results' => $results, 'tried' => $tried];
+        if ($canPool) {
+            try {
+                $pooled = $this->invokeProvidersHttpPool($configured, $query, $operation);
+                if ($pooled !== null) {
+                    return ['results' => $pooled, 'tried' => $tried];
+                }
             } catch (\Throwable $e) {
-                Log::info('places.fanout_concurrency_fallback', [
+                Log::info('places.fanout_pool_fallback', [
                     'op' => $operation,
                     'error' => $e->getMessage(),
                 ]);
-                // Fall through to sequential.
             }
         }
 
         foreach ($configured as $provider) {
             try {
                 $chunk = $invoker($provider, $query);
+                if ($chunk === []) {
+                    Log::info('places.fanout_empty_chunk', [
+                        'provider' => $provider->name(),
+                        'op' => $operation,
+                        'query_len' => $query !== null ? mb_strlen($query) : 0,
+                    ]);
+                }
                 foreach ($chunk as $item) {
                     $results[] = $item;
                 }
@@ -614,6 +617,112 @@ final class PlaceSearchService
     }
 
     /**
+     * @param  list<PlaceSearchProviderInterface>  $providers
+     */
+    private function providersSupportHttpPool(array $providers): bool
+    {
+        foreach ($providers as $provider) {
+            if (! ($provider instanceof GeoapifyProvider || $provider instanceof FoursquareProvider)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  list<PlaceSearchProviderInterface>  $providers
+     * @return list<PlaceSuggestion|PlaceResult>|null
+     */
+    private function invokeProvidersHttpPool(
+        array $providers,
+        string $query,
+        string $operation,
+    ): ?array {
+        $lat = $this->fanoutBiasLat;
+        $lng = $this->fanoutBiasLng;
+        $limit = $this->fanoutLimit;
+
+        $geo = null;
+        $fsq = null;
+        foreach ($providers as $provider) {
+            if ($provider instanceof GeoapifyProvider) {
+                $geo = $provider;
+            }
+            if ($provider instanceof FoursquareProvider) {
+                $fsq = $provider;
+            }
+        }
+
+        if ($geo === null && $fsq === null) {
+            return null;
+        }
+
+        $responses = Http::pool(function (Pool $pool) use ($geo, $fsq, $query, $lat, $lng, $limit, $operation): void {
+            if ($geo !== null) {
+                if ($operation === 'search') {
+                    $geo->queueSearch($pool, $query, $lat, $lng, $limit);
+                } else {
+                    $geo->queueAutocomplete($pool, $query, $lat, $lng, $limit);
+                }
+            }
+            if ($fsq !== null) {
+                if ($operation === 'search') {
+                    $fsq->queueSearch($pool, $query, $lat, $lng, $limit);
+                } else {
+                    $fsq->queueAutocomplete($pool, $query, $lat, $lng, $limit);
+                }
+            }
+        });
+
+        $results = [];
+        if ($geo !== null) {
+            $geoResponse = $responses['geoapify'] ?? null;
+            $chunk = $geo->parsePooledList(
+                $geoResponse instanceof Response ? $geoResponse : null,
+                $operation,
+                $query,
+                $lat,
+                $lng,
+                $limit,
+            );
+            if ($chunk === []) {
+                Log::info('places.fanout_empty_chunk', [
+                    'provider' => 'geoapify',
+                    'op' => $operation,
+                    'query_len' => mb_strlen($query),
+                ]);
+            }
+            foreach ($chunk as $item) {
+                $results[] = $item;
+            }
+        }
+        if ($fsq !== null) {
+            $fsqResponse = $responses['foursquare'] ?? null;
+            $chunk = $fsq->parsePooledList(
+                $fsqResponse instanceof Response ? $fsqResponse : null,
+                $operation,
+                $query,
+                $lat,
+                $lng,
+                $limit,
+            );
+            if ($chunk === []) {
+                Log::info('places.fanout_empty_chunk', [
+                    'provider' => 'foursquare',
+                    'op' => $operation,
+                    'query_len' => mb_strlen($query),
+                ]);
+            }
+            foreach ($chunk as $item) {
+                $results[] = $item;
+            }
+        }
+
+        return $results;
+    }
+
+    /**
      * @param  list<PlaceSuggestion|PlaceResult>  $existing
      * @param  list<PlaceSuggestion|PlaceResult>  $incoming
      * @return list<PlaceSuggestion|PlaceResult>
@@ -622,48 +731,89 @@ final class PlaceSearchService
     {
         $out = $existing;
         foreach ($incoming as $item) {
-            if (! $this->isDuplicate($out, $item)) {
+            $index = $this->findDuplicateIndex($out, $item);
+            if ($index === null) {
                 $out[] = $item;
+                continue;
             }
+            // Never drop a coord-bearing POI in favor of a name-only stub.
+            $out[$index] = $this->preferPlace($out[$index], $item);
         }
 
-        return $out;
+        return array_values($out);
     }
 
     /**
      * @param  list<PlaceSuggestion|PlaceResult>  $existing
      */
-    private function isDuplicate(array $existing, PlaceSuggestion|PlaceResult $candidate): bool
+    private function findDuplicateIndex(array $existing, PlaceSuggestion|PlaceResult $candidate): ?int
     {
         $dedupeM = (int) config('places.fanout.dedupe_meters', 150);
         $candName = $this->normalizeName($candidate->name);
         $candLat = $candidate->latitude;
         $candLng = $candidate->longitude;
+        $candHasCoords = $candLat !== null && $candLng !== null;
 
-        foreach ($existing as $item) {
+        foreach ($existing as $index => $item) {
             if ($item->provider === $candidate->provider && $item->id !== '' && $item->id === $candidate->id) {
-                return true;
+                return $index;
             }
 
-            $sameName = $this->normalizeName($item->name) === $candName && $candName !== '';
+            $sameName = $candName !== '' && $this->normalizeName($item->name) === $candName;
             if (! $sameName) {
                 continue;
             }
 
             $lat = $item->latitude;
             $lng = $item->longitude;
-            if ($lat !== null && $lng !== null && $candLat !== null && $candLng !== null) {
+            $itemHasCoords = $lat !== null && $lng !== null;
+
+            if ($itemHasCoords && $candHasCoords) {
                 $meters = $this->scorer->haversineKm($lat, $lng, $candLat, $candLng) * 1000.0;
                 if ($meters <= $dedupeM) {
-                    return true;
+                    return $index;
                 }
-            } elseif ($sameName && ($lat === null || $candLat === null)) {
-                // Same normalized name, no coords to disambiguate — treat as duplicate.
-                return true;
+
+                continue;
             }
+
+            // Same name and at least one side lacks coords — treat as the same place
+            // so preferPlace() can keep the coord-bearing candidate.
+            return $index;
         }
 
-        return false;
+        return null;
+    }
+
+    private function preferPlace(
+        PlaceSuggestion|PlaceResult $a,
+        PlaceSuggestion|PlaceResult $b,
+    ): PlaceSuggestion|PlaceResult {
+        $aCoords = $a->latitude !== null && $a->longitude !== null;
+        $bCoords = $b->latitude !== null && $b->longitude !== null;
+
+        if ($bCoords && ! $aCoords) {
+            return $b;
+        }
+        if ($aCoords && ! $bCoords) {
+            return $a;
+        }
+
+        $priority = [
+            'foursquare' => 3,
+            'google' => 2,
+            'geoapify' => 1,
+        ];
+        $ap = $priority[$a->provider] ?? 0;
+        $bp = $priority[$b->provider] ?? 0;
+        if ($bp !== $ap) {
+            return $bp > $ap ? $b : $a;
+        }
+
+        $ac = $a->confidence ?? 0.0;
+        $bc = $b->confidence ?? 0.0;
+
+        return $bc > $ac ? $b : $a;
     }
 
     /**

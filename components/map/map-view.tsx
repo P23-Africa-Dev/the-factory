@@ -89,6 +89,13 @@ import {
   type PlaceSuggestion,
   type RetrievedPlace,
 } from '@/lib/utils/place-search';
+import {
+  fetchRecentPlaces,
+  getLocalRecentPlaces,
+  recentToSuggestionLike,
+  rememberRecentPlace,
+  type RecentPlace,
+} from '@/lib/map/recent-places';
 
 type MapLeftTab = 'feeds' | 'clocked-in' | 'businesses';
 const STALE_MS = TRACKING_STALE_MS;
@@ -310,6 +317,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const [leftSearchQuery, setLeftSearchQuery] = useState('');
   const [appearance, setAppearance] = useState<MapAppearance>(() => resolveMapAppearance());
   const [placeResults, setPlaceResults] = useState<PlaceSuggestion[]>([]);
+  const [recentPlaces, setRecentPlaces] = useState<RecentPlace[]>([]);
+  const [searchPanelOpen, setSearchPanelOpen] = useState(false);
   const [searchBusy, setSearchBusy] = useState(false);
   const [placeResolving, setPlaceResolving] = useState(false);
   const searchSessionTokenRef = useRef<string>(createSearchSessionToken());
@@ -564,7 +573,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const handleSearchQueryChange = useCallback((value: string) => {
     setSearchQuery(value);
 
-    if (value.trim().length < 3) {
+    if (value.trim().length < 2) {
       setPlaceResults([]);
       setSearchBusy(false);
     }
@@ -614,6 +623,15 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
     if (!place) return;
 
+    void rememberRecentPlace({
+      name: place.name,
+      address: place.address,
+      latitude: place.lat,
+      longitude: place.lng,
+      provider: place.provider,
+      provider_place_id: place.placeId,
+    });
+
     handleLocationSelect({
       name: place.name,
       center: [place.lng, place.lat],
@@ -626,7 +644,12 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     }, { place, suggestion });
     setSearchQuery('');
     setPlaceResults([]);
+    setSearchPanelOpen(false);
   }, [handleLocationSelect, setPlaceResolving, setPlaceResults, setSearchQuery]);
+
+  const handleRecentPlaceSelect = useCallback((recent: RecentPlace) => {
+    void handlePlaceResultSelect(recentToSuggestionLike(recent, searchSessionTokenRef.current));
+  }, [handlePlaceResultSelect]);
 
   const showHoverPopup = useCallback((position: [number, number], html: string) => {
     const map = mapRef.current;
@@ -763,7 +786,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   useEffect(() => {
     const query = searchQuery.trim();
 
-    if (!query || query.length < 3 || compact) {
+    if (!query || query.length < 2 || compact) {
       return;
     }
 
@@ -1520,11 +1543,44 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             placeholder="Search by places…"
             value={searchQuery}
             onChange={(e) => handleSearchQueryChange(e.target.value)}
+            onFocus={() => {
+              setRecentPlaces(getLocalRecentPlaces());
+              void fetchRecentPlaces().then(setRecentPlaces);
+              setSearchPanelOpen(true);
+            }}
+            onBlur={() => {
+              // Delay so click on recent/result still registers.
+              window.setTimeout(() => setSearchPanelOpen(false), 150);
+            }}
             className="w-full bg-white rounded-full py-4 pl-14 pr-6 text-[14px] shadow-2xl shadow-black/5 outline-none font-medium text-dash-dark placeholder:text-gray-400"
           />
         </div>
 
-        {(searchBusy || placeResults.length > 0 || savedLocationMatches.length > 0) && searchQuery.trim().length >= 3 && (
+        {searchPanelOpen && searchQuery.trim().length < 2 && recentPlaces.length > 0 && (
+          <div className="mt-2 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur px-2 py-2 shadow-xl max-h-[50vh] overflow-y-auto">
+            <div className="px-3 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              Recent
+            </div>
+            {recentPlaces.map((r) => (
+              <button
+                key={`recent-${r.id ?? `${r.latitude},${r.longitude}`}`}
+                type="button"
+                className="w-full text-left px-3 py-2 rounded-xl text-[12px] text-slate-700 hover:bg-slate-100"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  handleRecentPlaceSelect(r);
+                }}
+              >
+                <span className="font-semibold">{r.name}</span>
+                {r.address && r.address !== r.name && (
+                  <span className="block text-[11px] text-slate-400 truncate">{r.address}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {(searchBusy || placeResults.length > 0 || savedLocationMatches.length > 0) && searchQuery.trim().length >= 2 && (
           <div className="mt-2 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur px-2 py-2 shadow-xl max-h-[50vh] overflow-y-auto">
             {savedLocationMatches.length > 0 && (
               <div className="px-3 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">

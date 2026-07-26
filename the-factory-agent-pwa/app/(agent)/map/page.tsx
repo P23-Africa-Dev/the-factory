@@ -34,7 +34,7 @@ import { getActiveCompanyId } from '@/lib/storage/stores';
 import { env } from '@/constants/env';
 import { getMapboxPublicToken } from '@/lib/map/public-env';
 import { fetchDirectionsRoute, type DirectionsResult } from '@/lib/map/directions';
-import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
+import { getRecentDestinations, saveRecentDestination, fetchRecentDestinations, rememberRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 import { showApiErrorToast } from '@/lib/api/errors';
 import { openGoogleMapsNavigation, resolveGoogleMapsTravelMode } from '@/lib/map/googleMapsNavigation';
 import { resolveTaskDestinationCoords } from '@/lib/map/resolveTaskDestinationCoords';
@@ -62,7 +62,7 @@ import {
   createSearchSessionToken,
   type PlaceSuggestion,
 } from '@/lib/map/place-search';
-import { resolveSearchProximity, setCachedSearchProximity } from '@/lib/map/search-proximity';
+import { getCachedSearchProximity, setCachedSearchProximity, warmSearchProximity } from '@/lib/map/search-proximity';
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
 import type { SavedLocationPin } from '@/features/tracking/components/MapboxMap';
 import { TrackingConnectionStatus } from '@/features/tracking/components/TrackingConnectionStatus';
@@ -1047,9 +1047,10 @@ function MapContent() {
     }
   }, [phase, selectedDestination]);
 
-  // Load recents on mount
+  // Load recents on mount (local instant + server sync)
   useEffect(() => {
     setTimeout(() => setRecentDestinations(getRecentDestinations()), 0);
+    void fetchRecentDestinations().then(setRecentDestinations);
   }, []);
 
   const searchGeoDestPlaces = useCallback(async (query: string): Promise<void> => {
@@ -1070,9 +1071,9 @@ function MapContent() {
       if (proximity) {
         setCachedSearchProximity(proximity[0], proximity[1]);
       } else {
-        const resolved = await resolveSearchProximity();
-        if (requestId !== destSearchRequestIdRef.current) return;
-        if (resolved) proximity = resolved;
+        const cached = getCachedSearchProximity();
+        if (cached) proximity = cached;
+        else warmSearchProximity();
       }
       const suggestions = await suggestPlaces(query, {
         sessionToken: destSessionTokenRef.current,
@@ -1115,6 +1116,11 @@ function MapContent() {
       taskId: 0,
     });
     saveRecentDestination(newDest);
+    void rememberRecentDestination({
+      ...newDest,
+      provider: place.provider,
+      provider_place_id: suggestion.id,
+    });
     setRecentDestinations(getRecentDestinations());
     setSearchQuery('');
     setGeoDestResults([]);
@@ -1139,9 +1145,9 @@ function MapContent() {
       if (proximity) {
         setCachedSearchProximity(proximity[0], proximity[1]);
       } else {
-        const resolved = await resolveSearchProximity();
-        if (requestId !== originSearchRequestIdRef.current) return;
-        if (resolved) proximity = resolved;
+        const cached = getCachedSearchProximity();
+        if (cached) proximity = cached;
+        else warmSearchProximity();
       }
       const suggestions = await suggestPlaces(query, {
         sessionToken: originSessionTokenRef.current,
@@ -1427,6 +1433,7 @@ function MapContent() {
     });
     setPhase('destination_selected');
     saveRecentDestination(dest);
+    void rememberRecentDestination(dest);
     setTimeout(() => setRecentDestinations(getRecentDestinations()), 0);
     setIsDestSearchOpen(false);
     setSearchQuery('');
@@ -1462,7 +1469,7 @@ function MapContent() {
   }, [handleUseMyLocation]);
 
   const SEARCH_DEBOUNCE_MS = 300;
-  const SEARCH_MIN_CHARS = 3;
+  const SEARCH_MIN_CHARS = 2;
 
   const handleDestQueryChange = useCallback((q: string) => {
     setSearchQuery(q);

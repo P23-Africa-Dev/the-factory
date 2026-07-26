@@ -10,13 +10,13 @@ import { AddLeadModal } from '@/features/crm/components/AddLeadModal';
 import { AttendanceCard } from '@/features/attendance';
 import { NotificationPanel, useUnreadCount } from '@/features/notifications';
 import { MeetingWidget, CreateMeetingModal, ViewMeetingsModal, useMeetingList } from '@/features/meetings';
-import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
+import { getRecentDestinations, saveRecentDestination, fetchRecentDestinations, rememberRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 import {
   createSearchSessionToken,
   retrievePlace,
   suggestPlaces,
 } from '@/lib/map/place-search';
-import { resolveSearchProximity } from '@/lib/map/search-proximity';
+import { getCachedSearchProximity, warmSearchProximity } from '@/lib/map/search-proximity';
 import { LocationPermissionGate, useLocationPermissionBootstrap } from '@/features/tracking';
 import { useGeolocation } from '@/features/tracking';
 import { toast } from '@/lib/toast';
@@ -131,11 +131,13 @@ export default function AgentDashboardPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- load persisted recent destinations on mount
     setRecentLocations(getRecentDestinations());
+    void fetchRecentDestinations().then(setRecentLocations);
   }, []);
 
   const handleSelectLocation = useCallback(
     (item: { name: string; address: string; latitude: number; longitude: number }) => {
       saveRecentDestination(item);
+      void rememberRecentDestination(item);
       setRecentLocations(getRecentDestinations());
       goToMapScreen({
         name: item.name,
@@ -206,10 +208,9 @@ export default function AgentDashboardPage() {
 
     setIsSearchingPlaces(true);
     try {
-      let proximity: [number, number] | undefined;
-      const resolved = await resolveSearchProximity();
-      if (requestId !== placeSearchRequestIdRef.current) return;
-      if (resolved) proximity = resolved;
+      const cached = getCachedSearchProximity();
+      const proximity: [number, number] | undefined = cached ?? undefined;
+      if (!proximity) warmSearchProximity();
 
       const suggestions = await suggestPlaces(query, {
         sessionToken: placeSearchSessionRef.current,

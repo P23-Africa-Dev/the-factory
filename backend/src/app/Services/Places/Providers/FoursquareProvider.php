@@ -9,6 +9,8 @@ use App\DTO\Places\PlaceResult;
 use App\DTO\Places\PlaceSuggestion;
 use App\Services\Places\Exceptions\ProviderException;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -42,6 +44,78 @@ class FoursquareProvider implements PlaceSearchProviderInterface
         $payload = $this->get('/autocomplete', $params);
         $results = [];
         foreach ($payload['results'] ?? [] as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $place = is_array($row['place'] ?? null) ? $row['place'] : $row;
+            $suggestion = $this->mapSuggestion($place, is_array($row['text'] ?? null) ? $row['text'] : []);
+            if ($suggestion !== null) {
+                $results[] = $suggestion;
+            }
+        }
+
+        return $results;
+    }
+
+    public function queueAutocomplete(Pool $pool, string $query, ?float $lat, ?float $lng, int $limit): void
+    {
+        $params = [
+            'query' => $query,
+            'limit' => max(1, min(10, $limit)),
+            'types' => 'place',
+        ];
+        if ($lat !== null && $lng !== null) {
+            $params['ll'] = "{$lat},{$lng}";
+        }
+        $pool->as($this->name())
+            ->timeout($this->timeout())
+            ->withHeaders($this->authHeaders())
+            ->get($this->baseUrl().'/autocomplete', $params);
+    }
+
+    public function queueSearch(Pool $pool, string $query, ?float $lat, ?float $lng, int $limit): void
+    {
+        $params = [
+            'query' => $query,
+            'limit' => max(1, min(20, $limit)),
+        ];
+        if ($lat !== null && $lng !== null) {
+            $params['ll'] = "{$lat},{$lng}";
+        }
+        $pool->as($this->name())
+            ->timeout($this->timeout())
+            ->withHeaders($this->authHeaders())
+            ->get($this->baseUrl().'/places/search', $params);
+    }
+
+    /**
+     * @return list<PlaceSuggestion|PlaceResult>
+     */
+    public function parsePooledList(
+        ?Response $response,
+        string $operation,
+        string $query,
+        ?float $lat,
+        ?float $lng,
+        int $limit,
+    ): array {
+        unset($query, $lat, $lng, $limit);
+
+        if ($response === null || $response instanceof \Throwable || ! $response->successful()) {
+            return [];
+        }
+
+        $json = $response->json();
+        if (! is_array($json)) {
+            return [];
+        }
+
+        if ($operation === 'search') {
+            return $this->mapPlaces($json['results'] ?? []);
+        }
+
+        $results = [];
+        foreach ($json['results'] ?? [] as $row) {
             if (! is_array($row)) {
                 continue;
             }
@@ -130,29 +204,41 @@ class FoursquareProvider implements PlaceSearchProviderInterface
     }
 
     /**
-     * @param  array<string, mixed>  $params
-     * @return array<string, mixed>
+     * @return array<string, string>
      */
-    private function get(string $path, array $params): array
+    private function authHeaders(): array
+    {
+        return [
+            'Authorization' => 'Bearer '.$this->apiKey(),
+            'Accept' => 'application/json',
+            'X-Places-Api-Version' => $this->apiVersion(),
+        ];
+    }
+
+    private function baseUrl(): string
     {
         $base = rtrim((string) config(
             'places.providers.foursquare.base_url',
             'https://places-api.foursquare.com'
         ), '/');
 
-        // Legacy v3 host returns 410 for autocomplete — normalize to the new Places API host.
         if (str_contains($base, 'api.foursquare.com')) {
             $base = 'https://places-api.foursquare.com';
         }
 
+        return $base;
+    }
+
+    /**
+     * @param  array<string, mixed>  $params
+     * @return array<string, mixed>
+     */
+    private function get(string $path, array $params): array
+    {
         try {
             $response = Http::timeout($this->timeout())
-                ->withHeaders([
-                    'Authorization' => 'Bearer '.$this->apiKey(),
-                    'Accept' => 'application/json',
-                    'X-Places-Api-Version' => $this->apiVersion(),
-                ])
-                ->get($base.$path, $params);
+                ->withHeaders($this->authHeaders())
+                ->get($this->baseUrl().$path, $params);
         } catch (ConnectionException) {
             throw ProviderException::timeout($this->name());
         }

@@ -130,4 +130,22 @@ describe("suggestPlaces Laravel client", () => {
     expect(place?.lat).toBe(6.45);
     expect(placesDetails).toHaveBeenCalledWith("1", "geoapify");
   });
+
+  it("retrievePlace skips details when suggestion already has coords", async () => {
+    const place = await retrievePlace({
+      id: "f1",
+      name: "Jara Mall",
+      placeFormatted: "Ikeja",
+      provider: "foursquare",
+      category: null,
+      sessionToken: "s",
+      latitude: 6.601,
+      longitude: 3.351,
+    });
+
+    expect(place?.lat).toBe(6.601);
+    expect(place?.lng).toBe(3.351);
+    expect(place?.provider).toBe("foursquare");
+    expect(placesDetails).not.toHaveBeenCalled();
+  });
 });

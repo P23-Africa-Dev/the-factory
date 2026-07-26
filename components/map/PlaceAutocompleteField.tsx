@@ -10,7 +10,14 @@ import {
   type PlaceSuggestion,
   type RetrievedPlace,
 } from "@/lib/utils/place-search";
-import { resolveSearchProximity } from "@/lib/utils/search-proximity";
+import { getCachedSearchProximity, warmSearchProximity } from "@/lib/utils/search-proximity";
+import {
+  fetchRecentPlaces,
+  getLocalRecentPlaces,
+  recentToSuggestionLike,
+  rememberRecentPlace,
+  type RecentPlace,
+} from "@/lib/map/recent-places";
 import { useMapCreditStore } from "@/store/map-credits";
 
 const DEBOUNCE_MS = 300;
@@ -53,6 +60,7 @@ export function PlaceAutocompleteField({
   onBlur,
 }: PlaceAutocompleteFieldProps) {
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [recents, setRecents] = useState<RecentPlace[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -70,6 +78,15 @@ export function PlaceAutocompleteField({
   const creditBlockedRef = useRef(creditBlocked);
   creditBlockedRef.current = creditBlocked;
 
+  const showRecentsPanel = open && value.trim().length < 2 && recents.length > 0;
+
+  const loadRecents = useCallback(() => {
+    setRecents(getLocalRecentPlaces());
+    void fetchRecentPlaces().then((items) => {
+      setRecents(items);
+    });
+  }, []);
+
   const runSearch = useCallback(
     async (query: string) => {
       const trimmed = query.trim();
@@ -77,7 +94,6 @@ export function PlaceAutocompleteField({
         abortRef.current?.abort();
         abortRef.current = null;
         setSuggestions([]);
-        setOpen(false);
         setSearched(false);
         setStatusNote(null);
         setBusy(false);
@@ -110,9 +126,12 @@ export function PlaceAutocompleteField({
           : undefined;
 
       if (!proximityBias) {
-        const resolved = await resolveSearchProximity();
-        if (requestId !== requestIdRef.current) return;
-        if (resolved) proximityBias = resolved;
+        const cached = getCachedSearchProximity();
+        if (cached) {
+          proximityBias = cached;
+        } else {
+          warmSearchProximity();
+        }
       }
 
       try {
@@ -186,6 +205,14 @@ export function PlaceAutocompleteField({
       }
       onChange(place.address || place.name);
       onPlaceSelect(place);
+      void rememberRecentPlace({
+        name: place.name,
+        address: place.address,
+        latitude: place.lat,
+        longitude: place.lng,
+        provider: place.provider,
+        provider_place_id: place.placeId,
+      });
       setSuggestions([]);
       setOpen(false);
       setSearched(false);
@@ -194,7 +221,17 @@ export function PlaceAutocompleteField({
     }
   };
 
-  const showPanel = open && (busy || resolving || searched || suggestions.length > 0);
+  const handleRecentSelect = (recent: RecentPlace) => {
+    void handleSelect(recentToSuggestionLike(recent, sessionTokenRef.current));
+  };
+
+  const showPanel =
+    open &&
+    (busy ||
+      resolving ||
+      searched ||
+      suggestions.length > 0 ||
+      (value.trim().length < 2 && recents.length > 0));
 
   return (
     <div ref={containerRef} className={`relative ${className ?? ""}`}>
@@ -210,7 +247,8 @@ export function PlaceAutocompleteField({
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => {
             onFocus?.();
-            if (suggestions.length > 0 || searched) setOpen(true);
+            loadRecents();
+            setOpen(true);
           }}
           onBlur={() => {
             onBlur?.();
@@ -231,12 +269,41 @@ export function PlaceAutocompleteField({
 
       {showPanel && (
         <ul className="absolute z-30 left-0 right-0 mt-1 max-h-44 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
-          {(busy || resolving) && suggestions.length === 0 && (
+          {showRecentsPanel && (
+            <>
+              <li className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400 bg-slate-50 border-b border-slate-100">
+                Recent
+              </li>
+              {recents.map((r) => (
+                <li key={`recent-${r.id ?? `${r.latitude},${r.longitude}`}`}>
+                  <button
+                    type="button"
+                    disabled={resolving}
+                    className="w-full px-3 py-2 text-left hover:bg-gray-50 disabled:opacity-60"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleRecentSelect(r);
+                    }}
+                  >
+                    <span className="block text-[13px] font-semibold text-[#0B1215] leading-tight">
+                      {r.name}
+                    </span>
+                    {r.address && r.address !== r.name && (
+                      <span className="block text-[11px] text-gray-500 leading-tight mt-0.5 truncate">
+                        {r.address}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </>
+          )}
+          {(busy || resolving) && suggestions.length === 0 && value.trim().length >= 2 && (
             <li className="px-3 py-2 text-[12px] text-slate-400">
               {resolving ? "Loading place…" : "Searching…"}
             </li>
           )}
-          {!busy && !resolving && suggestions.length === 0 && searched && (
+          {!busy && !resolving && suggestions.length === 0 && searched && value.trim().length >= 2 && (
             <li className="px-3 py-2 text-[12px] text-slate-400">
               {statusNote ?? "No places found — try a fuller address."}
             </li>
@@ -246,37 +313,38 @@ export function PlaceAutocompleteField({
               {statusNote}
             </li>
           )}
-          {suggestions.map((s) => (
-            <li key={`${s.provider}-${s.id}`}>
-              <button
-                type="button"
-                disabled={resolving}
-                className="w-full px-3 py-2 text-left hover:bg-gray-50 disabled:opacity-60"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  void handleSelect(s);
-                }}
-              >
-                <span className="block text-[13px] font-semibold text-[#0B1215] leading-tight">
-                  {s.name}
-                  {s.provider === "google" && (
-                    <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Google</span>
-                  )}
-                  {s.provider === "foursquare" && (
-                    <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Foursquare</span>
-                  )}
-                  {s.provider === "geoapify" && (
-                    <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Geoapify</span>
-                  )}
-                </span>
-                {s.placeFormatted && s.placeFormatted !== s.name && (
-                  <span className="block text-[11px] text-gray-500 leading-tight mt-0.5 truncate">
-                    {s.placeFormatted}
+          {value.trim().length >= 2 &&
+            suggestions.map((s) => (
+              <li key={`${s.provider}-${s.id}`}>
+                <button
+                  type="button"
+                  disabled={resolving}
+                  className="w-full px-3 py-2 text-left hover:bg-gray-50 disabled:opacity-60"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    void handleSelect(s);
+                  }}
+                >
+                  <span className="block text-[13px] font-semibold text-[#0B1215] leading-tight">
+                    {s.name}
+                    {s.provider === "google" && (
+                      <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Google</span>
+                    )}
+                    {s.provider === "foursquare" && (
+                      <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Foursquare</span>
+                    )}
+                    {s.provider === "geoapify" && (
+                      <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Geoapify</span>
+                    )}
                   </span>
-                )}
-              </button>
-            </li>
-          ))}
+                  {s.placeFormatted && s.placeFormatted !== s.name && (
+                    <span className="block text-[11px] text-gray-500 leading-tight mt-0.5 truncate">
+                      {s.placeFormatted}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
         </ul>
       )}
     </div>

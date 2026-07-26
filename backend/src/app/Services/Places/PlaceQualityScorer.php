@@ -123,7 +123,14 @@ final class PlaceQualityScorer
 
         $lat = $item->latitude;
         $lng = $item->longitude;
-        if ($biasLat !== null && $biasLng !== null && $lat !== null && $lng !== null) {
+        $hasCoords = $lat !== null && $lng !== null;
+
+        // Prefer fly-to-ready suggestions so coord-less stubs rank below real POIs.
+        if ($hasCoords) {
+            $score += 0.06;
+        }
+
+        if ($biasLat !== null && $biasLng !== null && $hasCoords) {
             $km = $this->haversineKm($biasLat, $biasLng, $lat, $lng);
             if ($km <= 5) {
                 $score += 0.25;
@@ -133,7 +140,7 @@ final class PlaceQualityScorer
                 $score += 0.05;
             }
             // Far-away foreign junk gets no proximity boost (and name gate usually sinks it).
-        } elseif ($lat !== null && $lng !== null) {
+        } elseif ($hasCoords) {
             $score += 0.05;
         }
 

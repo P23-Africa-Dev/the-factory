@@ -9,6 +9,8 @@ use App\DTO\Places\PlaceResult;
 use App\DTO\Places\PlaceSuggestion;
 use App\Services\Places\Exceptions\ProviderException;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
 class GeoapifyProvider implements PlaceSearchProviderInterface
@@ -29,21 +31,7 @@ class GeoapifyProvider implements PlaceSearchProviderInterface
 
     public function autocomplete(string $query, ?float $lat, ?float $lng, int $limit): array
     {
-        $params = [
-            'text' => $query,
-            'apiKey' => $this->apiKey(),
-            'limit' => max(1, min(10, $limit)),
-            'format' => 'json',
-        ];
-        if ($lat !== null && $lng !== null) {
-            $params['bias'] = "proximity:{$lng},{$lat}";
-        }
-
-        // Business-like queries: prefer amenity/POI matches over street addresses.
-        if ($this->looksLikeBusinessQuery($query)) {
-            $params['type'] = 'amenity';
-        }
-
+        $params = $this->autocompleteParams($query, $lat, $lng, $limit, preferAmenity: true);
         $payload = $this->get('/v1/geocode/autocomplete', $params);
         $results = [];
         foreach ($payload['results'] ?? [] as $row) {
@@ -58,7 +46,7 @@ class GeoapifyProvider implements PlaceSearchProviderInterface
 
         // If amenity filter returned nothing, retry without type restriction.
         if ($results === [] && isset($params['type'])) {
-            unset($params['type']);
+            $params = $this->autocompleteParams($query, $lat, $lng, $limit, preferAmenity: false);
             $payload = $this->get('/v1/geocode/autocomplete', $params);
             foreach ($payload['results'] ?? [] as $row) {
                 if (! is_array($row)) {
@@ -72,6 +60,128 @@ class GeoapifyProvider implements PlaceSearchProviderInterface
         }
 
         return $results;
+    }
+
+    public function queueAutocomplete(Pool $pool, string $query, ?float $lat, ?float $lng, int $limit): void
+    {
+        $params = $this->autocompleteParams($query, $lat, $lng, $limit, preferAmenity: true);
+        $base = rtrim((string) config('places.providers.geoapify.base_url'), '/');
+        $pool->as($this->name())
+            ->timeout($this->timeout())
+            ->acceptJson()
+            ->get($base.'/v1/geocode/autocomplete', $params);
+    }
+
+    public function queueSearch(Pool $pool, string $query, ?float $lat, ?float $lng, int $limit): void
+    {
+        $params = [
+            'text' => $query,
+            'apiKey' => $this->apiKey(),
+            'limit' => max(1, min(20, $limit)),
+            'format' => 'json',
+        ];
+        if ($lat !== null && $lng !== null) {
+            $params['bias'] = "proximity:{$lng},{$lat}";
+        }
+        $base = rtrim((string) config('places.providers.geoapify.base_url'), '/');
+        $pool->as($this->name())
+            ->timeout($this->timeout())
+            ->acceptJson()
+            ->get($base.'/v1/geocode/search', $params);
+    }
+
+    /**
+     * @return list<PlaceSuggestion|PlaceResult>
+     */
+    public function parsePooledList(
+        ?Response $response,
+        string $operation,
+        string $query,
+        ?float $lat,
+        ?float $lng,
+        int $limit,
+    ): array {
+        if ($response === null || $response instanceof \Throwable || ! $response->successful()) {
+            return [];
+        }
+
+        $json = $response->json();
+        if (! is_array($json)) {
+            return [];
+        }
+
+        if ($operation === 'search') {
+            $results = [];
+            foreach ($json['results'] ?? [] as $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $place = $this->mapResult($row);
+                if ($place !== null) {
+                    $results[] = $place;
+                }
+            }
+
+            return $results;
+        }
+
+        $results = [];
+        foreach ($json['results'] ?? [] as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $suggestion = $this->mapSuggestion($row);
+            if ($suggestion !== null) {
+                $results[] = $suggestion;
+            }
+        }
+
+        // Amenity filter can miss POIs — retry without type when empty.
+        if ($results === [] && $this->looksLikeBusinessQuery($query)) {
+            try {
+                $params = $this->autocompleteParams($query, $lat, $lng, $limit, preferAmenity: false);
+                $payload = $this->get('/v1/geocode/autocomplete', $params);
+                foreach ($payload['results'] ?? [] as $row) {
+                    if (! is_array($row)) {
+                        continue;
+                    }
+                    $suggestion = $this->mapSuggestion($row);
+                    if ($suggestion !== null) {
+                        $results[] = $suggestion;
+                    }
+                }
+            } catch (ProviderException) {
+                return [];
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function autocompleteParams(
+        string $query,
+        ?float $lat,
+        ?float $lng,
+        int $limit,
+        bool $preferAmenity,
+    ): array {
+        $params = [
+            'text' => $query,
+            'apiKey' => $this->apiKey(),
+            'limit' => max(1, min(10, $limit)),
+            'format' => 'json',
+        ];
+        if ($lat !== null && $lng !== null) {
+            $params['bias'] = "proximity:{$lng},{$lat}";
+        }
+        if ($preferAmenity && $this->looksLikeBusinessQuery($query)) {
+            $params['type'] = 'amenity';
+        }
+
+        return $params;
     }
 
     public function search(string $query, ?float $lat, ?float $lng, int $limit): array

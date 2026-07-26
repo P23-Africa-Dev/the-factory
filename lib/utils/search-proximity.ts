@@ -66,3 +66,9 @@ export async function resolveSearchProximity(
 
   return inflight;
 }
+
+/** Kick off geolocation in the background without awaiting (Uber-style non-blocking bias). */
+export function warmSearchProximity(): void {
+  if (getCachedSearchProximity()) return;
+  void resolveSearchProximity();
+}

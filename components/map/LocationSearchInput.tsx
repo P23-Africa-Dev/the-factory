@@ -8,7 +8,14 @@ import {
   suggestPlaces,
   type PlaceSuggestion,
 } from '@/lib/utils/place-search';
-import { resolveSearchProximity } from '@/lib/utils/search-proximity';
+import { getCachedSearchProximity, warmSearchProximity } from '@/lib/utils/search-proximity';
+import {
+  fetchRecentPlaces,
+  getLocalRecentPlaces,
+  recentToSuggestionLike,
+  rememberRecentPlace,
+  type RecentPlace,
+} from '@/lib/map/recent-places';
 import type { LocationContext } from '@/lib/map/location-search';
 import { inferIsBusiness } from '@/lib/map/poi-display';
 import type { SavedLocation } from '@/lib/api/saved-locations';
@@ -37,6 +44,7 @@ export function LocationSearchInput({
 }: Props) {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [recents, setRecents] = useState<RecentPlace[]>([]);
   const [busy, setBusy] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [open, setOpen] = useState(false);
@@ -64,10 +72,9 @@ export function LocationSearchInput({
 
     setBusy(true);
     try {
-      let proximity: [number, number] | undefined;
-      const resolved = await resolveSearchProximity();
-      if (requestId !== requestIdRef.current) return;
-      if (resolved) proximity = resolved;
+      const cached = getCachedSearchProximity();
+      const proximity: [number, number] | undefined = cached ?? undefined;
+      if (!proximity) warmSearchProximity();
 
       const results = await suggestPlaces(q, {
         sessionToken: sessionTokenRef.current,
@@ -128,6 +135,15 @@ export function LocationSearchInput({
 
     if (!place) return;
 
+    void rememberRecentPlace({
+      name: place.name,
+      address: place.address,
+      latitude: place.lat,
+      longitude: place.lng,
+      provider: place.provider,
+      provider_place_id: place.placeId,
+    });
+
     onLocationSelect({
       name: place.name,
       center: [place.lng, place.lat],
@@ -141,6 +157,10 @@ export function LocationSearchInput({
     setQuery('');
     setSuggestions([]);
     setOpen(false);
+  }
+
+  function handleRecentSelect(recent: RecentPlace) {
+    void handleSelect(recentToSuggestionLike(recent, sessionTokenRef.current));
   }
 
   function handleSavedSelect(location: SavedLocation) {
@@ -157,9 +177,14 @@ export function LocationSearchInput({
     setOpen(false);
   }
 
+  const showRecents = open && query.trim().length < 2 && recents.length > 0;
   const showDropdown =
     open &&
-    (busy || suggestions.length > 0 || savedSuggestions.length > 0 || query.trim().length >= 2);
+    (busy ||
+      suggestions.length > 0 ||
+      savedSuggestions.length > 0 ||
+      query.trim().length >= 2 ||
+      showRecents);
 
   return (
     <div ref={containerRef} className={className}>
@@ -186,7 +211,11 @@ export function LocationSearchInput({
               placeholder="Search places…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onFocus={() => (suggestions.length > 0 || savedSuggestions.length > 0) && setOpen(true)}
+              onFocus={() => {
+                setRecents(getLocalRecentPlaces());
+                void fetchRecentPlaces().then(setRecents);
+                setOpen(true);
+              }}
               className="w-full bg-white rounded-full py-3 pl-10 pr-10 text-[13px] shadow-2xl shadow-black/10 outline-none font-medium text-dash-dark placeholder:text-gray-400 border border-slate-100"
             />
             {busy || resolving ? (
@@ -203,7 +232,27 @@ export function LocationSearchInput({
 
           {showDropdown && (
             <div className="absolute top-full mt-2 left-0 right-0 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur px-2 py-2 shadow-xl max-h-[280px] overflow-y-auto z-30">
-              {savedSuggestions.length > 0 && (
+              {showRecents && (
+                <div className="mb-1">
+                  <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Recent
+                  </p>
+                  {recents.map((r) => (
+                    <button
+                      key={`recent-${r.id ?? `${r.latitude},${r.longitude}`}`}
+                      type="button"
+                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors"
+                      onClick={() => handleRecentSelect(r)}
+                    >
+                      <p className="text-[13px] font-semibold text-dash-dark leading-tight">{r.name}</p>
+                      {r.address && r.address !== r.name && (
+                        <p className="text-[11px] text-slate-400 leading-tight mt-0.5 truncate">{r.address}</p>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {savedSuggestions.length > 0 && query.trim().length >= 2 && (
                 <div className="mb-1">
                   <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
                     Pinned locations
@@ -229,13 +278,16 @@ export function LocationSearchInput({
                   ))}
                 </div>
               )}
-              {busy && suggestions.length === 0 && savedSuggestions.length === 0 && (
+              {busy && suggestions.length === 0 && savedSuggestions.length === 0 && query.trim().length >= 2 && (
                 <p className="px-3 py-2 text-[12px] text-slate-400">Searching…</p>
               )}
-              {!busy && suggestions.length === 0 && savedSuggestions.length === 0 && (
+              {!busy &&
+                suggestions.length === 0 &&
+                savedSuggestions.length === 0 &&
+                query.trim().length >= 2 && (
                 <p className="px-3 py-2 text-[12px] text-slate-400">No places found.</p>
               )}
-              {suggestions.length > 0 && (
+              {suggestions.length > 0 && query.trim().length >= 2 && (
                 <>
                   {savedSuggestions.length > 0 && (
                     <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">

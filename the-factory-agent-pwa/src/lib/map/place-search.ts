@@ -154,6 +154,18 @@ export async function retrievePlace(suggestion: PlaceSuggestion): Promise<Retrie
     Number.isFinite(suggestion.latitude) &&
     Number.isFinite(suggestion.longitude);
 
+  // Skip details when autocomplete already returned fly-to-ready coords.
+  if (suggestionHasCoords) {
+    return {
+      name: suggestion.name || 'Location',
+      address: suggestion.placeFormatted || suggestion.fullAddress || suggestion.name || '',
+      lat: suggestion.latitude as number,
+      lng: suggestion.longitude as number,
+      bbox: null,
+      provider: suggestion.provider,
+    };
+  }
+
   try {
     const { data } = await client.get<PlacesResponse>('/places/details', {
       params: {
@@ -176,18 +188,7 @@ export async function retrievePlace(suggestion: PlaceSuggestion): Promise<Retrie
       };
     }
   } catch {
-    // Fall through to suggestion coords.
-  }
-
-  if (suggestionHasCoords) {
-    return {
-      name: suggestion.name || 'Location',
-      address: suggestion.placeFormatted || suggestion.fullAddress || suggestion.name || '',
-      lat: suggestion.latitude as number,
-      lng: suggestion.longitude as number,
-      bbox: null,
-      provider: suggestion.provider,
-    };
+    // Details failed and suggestion had no coords.
   }
 
   return null;
