@@ -727,6 +727,10 @@
                     class="nav-link {{ request()->routeIs('admin.map-display.*') ? 'active' : '' }}">
                     <i class="bi bi-pin-map"></i><span class="nav-link-text">Business Pins</span>
                 </a>
+                <a href="{{ route('admin.places.index') }}"
+                    class="nav-link {{ request()->routeIs('admin.places.*') ? 'active' : '' }}">
+                    <i class="bi bi-search"></i><span class="nav-link-text">Places Search</span>
+                </a>
             @endif
             @if (auth('admin')->user()?->canAccessAbility('manage_database'))
                 <a href="{{ route('admin.database.index') }}"

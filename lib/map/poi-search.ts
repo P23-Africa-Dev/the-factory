@@ -6,24 +6,8 @@ import {
   resolvePoiStyle,
   type PoiResult,
 } from "@/lib/map/overpass-search";
-import {
-  arePoiResultsAcceptable,
-  isForceGooglePrimary,
-} from "@/lib/map/place-result-quality";
-import { getMapboxPublicToken } from "@/lib/config/public-env";
-import {
-  createSearchSessionToken,
-  retrievePlaceByMapboxId,
-  suggestPlaces,
-} from "@/lib/utils/place-search";
+import { placesNearby } from "@/lib/api/places";
 import { ingestCreditMeta } from "@/store/map-credits";
-
-const MAPBOX_POI_QUERIES = ["supermarket", "restaurant", "bank", "pharmacy", "hotel", "hospital"];
-/** Cap retrieves per keyword to limit Mapbox Search Box session cost. */
-const MAPBOX_RETRIEVE_PER_KEYWORD = 2;
-const MAPBOX_MAX_POIS = 24;
-const GOOGLE_NEARBY_RETRY_AFTER_MS = 30_000;
-let googleNearbyUnavailableUntil = 0;
 
 function deriveRadiusM(ctx: LocationContext): number {
   if (ctx.bbox) {
@@ -44,152 +28,73 @@ function isOverpassFallbackEnabled(): boolean {
   );
 }
 
-async function fetchGoogleNearby(ctx: LocationContext): Promise<PoiResult[]> {
-  if (Date.now() < googleNearbyUnavailableUntil) return [];
-
-  const lat = ctx.center[1];
-  const lng = ctx.center[0];
-
-  try {
-    const response = await fetch("/api/places/nearby", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        lat,
-        lng,
-        radiusM: deriveRadiusM(ctx),
-        bbox: ctx.bbox ?? undefined,
-      }),
-    });
-
-    if (response.status === 503) {
-      googleNearbyUnavailableUntil = Date.now() + GOOGLE_NEARBY_RETRY_AFTER_MS;
-      return [];
-    }
-
-    if (!response.ok) return [];
-
-    const payload = (await response.json()) as {
-      enabled?: boolean;
-      places?: PoiResult[];
-      credits?: unknown;
-    };
-
-    ingestCreditMeta(payload.credits);
-
-    if (payload.enabled === false) return [];
-    return payload.places ?? [];
-  } catch {
-    return [];
-  }
-}
-
 /**
- * Mapbox Search Box keyword sweep for nearby POIs.
- * Caps retrieves per keyword to avoid 24–36 serial billable retrieves.
- */
-export async function fetchMapboxPoiFallback(ctx: LocationContext): Promise<PoiResult[]> {
-  const token = getMapboxPublicToken();
-  if (!token) return [];
-
-  const sessionToken = createSearchSessionToken();
-  const proximity: [number, number] = ctx.center;
-  const seen = new Set<string>();
-  const results: PoiResult[] = [];
-
-  for (const keyword of MAPBOX_POI_QUERIES) {
-    if (results.length >= MAPBOX_MAX_POIS) break;
-
-    const suggestions = await suggestPlaces(keyword, {
-      sessionToken,
-      proximity,
-      limit: MAPBOX_RETRIEVE_PER_KEYWORD,
-      token,
-      skipGoogle: true,
-    });
-
-    let retrievedForKeyword = 0;
-    for (const suggestion of suggestions) {
-      if (suggestion.provider !== "mapbox" || seen.has(suggestion.id)) continue;
-      if (retrievedForKeyword >= MAPBOX_RETRIEVE_PER_KEYWORD) break;
-
-      const place = await retrievePlaceByMapboxId(suggestion.id, sessionToken, { token });
-      retrievedForKeyword += 1;
-      if (!place) continue;
-
-      seen.add(suggestion.id);
-      const category = suggestion.category ?? "business";
-      const style = resolvePoiStyle(category);
-
-      results.push({
-        id: suggestion.id,
-        lat: place.lat,
-        lng: place.lng,
-        name: place.name,
-        category,
-        categoryLabel: style.label,
-        categoryColor: style.color,
-        address: place.address || undefined,
-      });
-
-      if (results.length >= MAPBOX_MAX_POIS) return results;
-    }
-  }
-
-  return results;
-}
-
-async function fetchOverpassFallback(ctx: LocationContext): Promise<PoiResult[]> {
-  if (ctx.bbox) {
-    return fetchBusinessesInBbox(ctx.bbox);
-  }
-  return fetchBusinessesNearPoint(ctx.center[1], ctx.center[0]);
-}
-
-/**
- * Area POI search: Mapbox (then optional Overpass) first; Google Nearby only when
- * non-Google results fail the quality gate (unless forceGoogle / skipGoogleNearby).
+ * Area POI search via Laravel Places orchestrator
+ * (Geoapify → Foursquare → Google). Optional Overpass only if orchestrator empty.
  */
 export async function fetchPlacesInArea(
   ctx: LocationContext,
   options?: {
     skipGoogleNearby?: boolean;
-    /** Prefer Google Nearby before Mapbox (ops/tests only). */
     forceGoogleNearby?: boolean;
+    signal?: AbortSignal;
   },
 ): Promise<PoiResult[]> {
+  void options;
   if (ctx.bbox && isBboxTooLarge(ctx.bbox)) return [];
 
-  const forceGoogle =
-    options?.forceGoogleNearby === true || isForceGooglePrimary();
-  const allowGoogle = !options?.skipGoogleNearby;
+  try {
+    const envelope = await placesNearby({
+      lat: ctx.center[1],
+      lng: ctx.center[0],
+      radius_m: deriveRadiusM(ctx),
+      limit: 40,
+      signal: options?.signal,
+    });
 
-  if (forceGoogle && allowGoogle) {
-    const googleResults = await fetchGoogleNearby(ctx);
-    if (googleResults.length > 0) return googleResults;
+    if (envelope.meta?.credits) {
+      ingestCreditMeta(envelope.meta.credits);
+    }
+
+    const mapped: PoiResult[] = (envelope.data ?? [])
+      .filter(
+        (p) =>
+          typeof p.latitude === "number" &&
+          typeof p.longitude === "number" &&
+          Number.isFinite(p.latitude) &&
+          Number.isFinite(p.longitude),
+      )
+      .map((p) => {
+        const category = p.categories?.[0] ?? "business";
+        const style = resolvePoiStyle(category);
+        return {
+          id: p.id,
+          lat: p.latitude as number,
+          lng: p.longitude as number,
+          name: p.name,
+          category,
+          categoryLabel: style.label,
+          categoryColor: style.color,
+          address: p.formatted_address || undefined,
+          phone: p.phone ?? undefined,
+          openingHours: p.opening_hours ?? undefined,
+        };
+      });
+
+    if (mapped.length > 0) return mapped;
+  } catch {
+    // fall through to Overpass
   }
-
-  const mapboxResults = await fetchMapboxPoiFallback(ctx);
-  if (arePoiResultsAcceptable(mapboxResults)) {
-    return mapboxResults;
-  }
-
-  let bestNonGoogle = mapboxResults;
 
   if (isOverpassFallbackEnabled()) {
-    const overpassResults = await fetchOverpassFallback(ctx);
-    if (arePoiResultsAcceptable(overpassResults)) {
-      return overpassResults;
-    }
-    if (overpassResults.length > bestNonGoogle.length) {
-      bestNonGoogle = overpassResults;
-    }
+    if (ctx.bbox) return fetchBusinessesInBbox(ctx.bbox);
+    return fetchBusinessesNearPoint(ctx.center[1], ctx.center[0]);
   }
 
-  if (allowGoogle && !forceGoogle) {
-    const googleResults = await fetchGoogleNearby(ctx);
-    if (googleResults.length > 0) return googleResults;
-  }
+  return [];
+}
 
-  return bestNonGoogle;
+/** @deprecated Use fetchPlacesInArea — Mapbox keyword sweep removed. */
+export async function fetchMapboxPoiFallback(ctx: LocationContext): Promise<PoiResult[]> {
+  return fetchPlacesInArea(ctx, { skipGoogleNearby: true });
 }

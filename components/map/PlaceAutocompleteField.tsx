@@ -249,6 +249,12 @@ export function PlaceAutocompleteField({
                   {s.provider === "google" && (
                     <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Google</span>
                   )}
+                  {s.provider === "foursquare" && (
+                    <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Foursquare</span>
+                  )}
+                  {s.provider === "geoapify" && (
+                    <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Geoapify</span>
+                  )}
                 </span>
                 {s.placeFormatted && s.placeFormatted !== s.name && (
                   <span className="block text-[11px] text-gray-500 leading-tight mt-0.5 truncate">

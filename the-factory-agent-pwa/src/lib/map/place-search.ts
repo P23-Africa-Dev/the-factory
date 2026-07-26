@@ -1,59 +1,18 @@
 /**
- * Unified place search for the Agent PWA.
- *
- * Mapbox Search Box is primary. Google Places (New) via /api/places/* is only
- * used when Mapbox results fail the quality gate (or forceGoogle / env override).
- *
- * Follows the Mapbox Search Box billing model:
- *   - `suggestPlaces` returns lightweight typeahead suggestions (no coordinates)
- *   - `retrievePlace` resolves a suggestion's id to full coordinates + bbox
- *   - Both calls share the same `sessionToken`; rotate after each retrieval.
+ * Unified place search for the Agent PWA via Laravel Places orchestrator
+ * (Geoapify → Foursquare → Google). Mapbox is not used for search.
  */
 
-import { getMapboxPublicToken } from '@/lib/map/public-env';
-import {
-  areSuggestResultsAcceptable,
-  isForceGooglePrimary,
-} from '@/lib/map/place-result-quality';
-import { appStore, getActiveCompanyId } from '@/lib/storage/stores';
-
-const SEARCHBOX_BASE = 'https://api.mapbox.com/search/searchbox/v1';
-
-const CLIENT_CACHE_TTL_MS = 60_000;
-const CLIENT_CACHE_MAX = 100;
-
-type CacheEntry = { value: PlaceSuggestion[]; expiresAt: number };
-const suggestCache = new Map<string, CacheEntry>();
-const suggestInflight = new Map<string, Promise<PlaceSuggestion[]>>();
-
-/**
- * Auth headers so the Places proxy can meter Google usage against the agent's
- * organization credits. The PWA stores its token in localStorage (separate
- * origin), so it must be forwarded explicitly.
- */
-function creditAuthHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {};
-  try {
-    const token = appStore.getString('auth_token');
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const companyId = getActiveCompanyId();
-    if (companyId != null) headers['X-Company-Id'] = String(companyId);
-  } catch {
-    // Non-fatal — request proceeds; server may fail-closed for Google.
-  }
-  return headers;
-}
+import { client } from '@/lib/api/client';
+import { getActiveCompanyId } from '@/lib/storage/stores';
 
 export type PlaceSuggestion = {
-  provider: 'google' | 'mapbox';
-  /** placeId for Google, mapbox_id for Mapbox */
+  provider: string;
   id: string;
   name: string;
   placeFormatted: string;
   category: string | null;
-  /** Must be forwarded to retrievePlace for correct billing */
   sessionToken: string;
-  /** Mapbox-only extras */
   fullAddress?: string | null;
   featureType?: string;
   maki?: string | null;
@@ -65,7 +24,7 @@ export type RetrievedPlace = {
   lat: number;
   lng: number;
   bbox: [number, number, number, number] | null;
-  provider: 'google' | 'mapbox';
+  provider: string;
 };
 
 export function createSearchSessionToken(): string {
@@ -75,306 +34,36 @@ export function createSearchSessionToken(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function suggestCacheKey(
-  query: string,
-  options: {
-    proximity?: [number, number];
-    limit?: number;
-    skipGoogle?: boolean;
-    forceGoogle?: boolean;
-  },
-): string {
-  const prox =
-    options.proximity &&
-    Number.isFinite(options.proximity[0]) &&
-    Number.isFinite(options.proximity[1])
-      ? `${options.proximity[0].toFixed(3)},${options.proximity[1].toFixed(3)}`
-      : '_';
-  return [
-    query.toLowerCase(),
-    prox,
-    String(options.limit ?? 6),
-    options.skipGoogle ? 'sg' : '',
-    options.forceGoogle || isForceGooglePrimary() ? 'fg' : '',
-  ].join('|');
-}
+type PlacesApiPlace = {
+  id: string;
+  name: string;
+  formatted_address: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  provider: string;
+  categories?: string[];
+  bbox?: [number, number, number, number] | null;
+};
 
-function getCachedSuggestions(key: string): PlaceSuggestion[] | null {
-  const entry = suggestCache.get(key);
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
-    suggestCache.delete(key);
-    return null;
-  }
-  return entry.value;
-}
+type PlacesResponse = {
+  data?: PlacesApiPlace[];
+  meta?: { credits?: unknown };
+};
 
-function setCachedSuggestions(key: string, value: PlaceSuggestion[]): void {
-  if (suggestCache.size >= CLIENT_CACHE_MAX) {
-    const first = suggestCache.keys().next().value;
-    if (first) suggestCache.delete(first);
-  }
-  suggestCache.set(key, { value, expiresAt: Date.now() + CLIENT_CACHE_TTL_MS });
-}
+const CLIENT_CACHE_TTL_MS = 60_000;
+const suggestCache = new Map<string, { value: PlaceSuggestion[]; expiresAt: number }>();
+const suggestInflight = new Map<string, Promise<PlaceSuggestion[]>>();
 
 export function __resetPlaceSearchCachesForTests(): void {
   suggestCache.clear();
   suggestInflight.clear();
 }
 
-// ─── Google provider (server proxy) ──────────────────────────────────────────
-
-async function suggestPlacesGoogle(
-  query: string,
-  options: {
-    sessionToken: string;
-    proximity?: [number, number];
-    limit?: number;
-    signal?: AbortSignal;
-  },
-): Promise<PlaceSuggestion[]> {
-  try {
-    const response = await fetch('/api/places/autocomplete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...creditAuthHeaders() },
-      body: JSON.stringify({
-        input: query,
-        sessionToken: options.sessionToken,
-        lat: options.proximity?.[1],
-        lng: options.proximity?.[0],
-        limit: options.limit ?? 6,
-      }),
-      signal: options.signal,
-    });
-
-    if (response.status === 503) return [];
-
-    const payload = (await response.json()) as {
-      enabled?: boolean;
-      credits?: { blocked?: boolean };
-      suggestions?: Array<{
-        placeId?: string;
-        name?: string;
-        placeFormatted?: string;
-        category?: string | null;
-      }>;
-    };
-
-    if (!response.ok || payload.enabled === false) return [];
-
-    if (payload.credits?.blocked) return [];
-
-    return (payload.suggestions ?? [])
-      .filter((item) => item.placeId && item.name)
-      .map((item) => ({
-        provider: 'google' as const,
-        id: item.placeId!,
-        name: item.name!.trim(),
-        placeFormatted: item.placeFormatted?.trim() ?? '',
-        category: item.category ?? null,
-        sessionToken: options.sessionToken,
-      }));
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw error;
-    return [];
-  }
+function companyParams(): Record<string, string | number> {
+  const companyId = getActiveCompanyId();
+  return companyId != null ? { company_id: companyId } : {};
 }
 
-async function retrievePlaceGoogle(
-  placeId: string,
-  sessionToken: string,
-  fallbackName?: string,
-): Promise<RetrievedPlace | null> {
-  try {
-    const params = new URLSearchParams({ placeId, sessionToken });
-    const response = await fetch(`/api/places/details?${params.toString()}`, {
-      headers: creditAuthHeaders(),
-    });
-    if (response.status === 503 || !response.ok) return null;
-
-    const payload = (await response.json()) as {
-      name?: string;
-      address?: string;
-      lat?: number;
-      lng?: number;
-      bbox?: [number, number, number, number] | null;
-    };
-
-    if (typeof payload.lat !== 'number' || typeof payload.lng !== 'number') return null;
-
-    return {
-      name: fallbackName?.trim() || payload.name?.trim() || 'Location',
-      address: payload.address?.trim() || '',
-      lat: payload.lat,
-      lng: payload.lng,
-      bbox: payload.bbox ?? null,
-      provider: 'google',
-    };
-  } catch {
-    return null;
-  }
-}
-
-// ─── Mapbox Search Box provider ───────────────────────────────────────────────
-
-async function suggestPlacesMapbox(
-  query: string,
-  options: {
-    sessionToken: string;
-    proximity?: [number, number];
-    country?: string;
-    limit?: number;
-    token?: string;
-    signal?: AbortSignal;
-  },
-): Promise<PlaceSuggestion[]> {
-  const token = options.token ?? getMapboxPublicToken();
-  if (!token) return [];
-
-  const params = new URLSearchParams({
-    q: query,
-    access_token: token,
-    session_token: options.sessionToken,
-    limit: String(options.limit ?? 6),
-    types: 'country,region,place,locality,neighborhood,address,poi,street',
-  });
-  if (options.country) params.set('country', options.country);
-  if (options.proximity) {
-    params.set('proximity', `${options.proximity[0]},${options.proximity[1]}`);
-  }
-  if (typeof navigator !== 'undefined' && navigator.language) {
-    params.set('language', navigator.language.split('-')[0]);
-  }
-
-  try {
-    const response = await fetch(`${SEARCHBOX_BASE}/suggest?${params.toString()}`, {
-      signal: options.signal,
-    });
-    if (!response.ok) return [];
-
-    const payload = (await response.json()) as {
-      suggestions?: Array<{
-        mapbox_id?: string;
-        name?: string;
-        place_formatted?: string;
-        full_address?: string;
-        feature_type?: string;
-        poi_category?: string[];
-        maki?: string;
-      }>;
-    };
-
-    return (payload.suggestions ?? [])
-      .filter((s) => !!s.mapbox_id && !!s.name)
-      .map((s) => ({
-        provider: 'mapbox' as const,
-        id: s.mapbox_id!,
-        name: s.name!.trim(),
-        placeFormatted: s.place_formatted?.trim() ?? '',
-        category: s.poi_category?.[0] ?? null,
-        sessionToken: options.sessionToken,
-        fullAddress: s.full_address?.trim() || null,
-        featureType: s.feature_type ?? 'place',
-        maki: s.maki ?? null,
-      }));
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw error;
-    return [];
-  }
-}
-
-async function retrievePlaceMapbox(
-  mapboxId: string,
-  sessionToken: string,
-  options?: { token?: string },
-): Promise<RetrievedPlace | null> {
-  const token = options?.token ?? getMapboxPublicToken();
-  if (!token || !mapboxId) return null;
-
-  const params = new URLSearchParams({
-    access_token: token,
-    session_token: sessionToken,
-  });
-
-  try {
-    const response = await fetch(
-      `${SEARCHBOX_BASE}/retrieve/${encodeURIComponent(mapboxId)}?${params.toString()}`,
-    );
-    if (!response.ok) return null;
-
-    const payload = (await response.json()) as {
-      features?: Array<{
-        geometry?: { coordinates?: [number, number] };
-        properties?: { name?: string; full_address?: string; place_formatted?: string; bbox?: number[] };
-      }>;
-    };
-
-    const feature = payload.features?.[0];
-    const coordinates = feature?.geometry?.coordinates;
-    if (!coordinates || coordinates.length !== 2) return null;
-
-    const [lng, lat] = coordinates;
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-
-    const props = feature.properties ?? {};
-    const rawBbox = props.bbox;
-
-    return {
-      name: props.name?.trim() || 'Location',
-      address: props.full_address?.trim() || props.place_formatted?.trim() || '',
-      lat,
-      lng,
-      bbox:
-        Array.isArray(rawBbox) && rawBbox.length === 4
-          ? (rawBbox as [number, number, number, number])
-          : null,
-      provider: 'mapbox',
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function suggestPlacesUncached(
-  trimmed: string,
-  options: {
-    sessionToken: string;
-    proximity?: [number, number];
-    country?: string;
-    limit?: number;
-    token?: string;
-    skipGoogle?: boolean;
-    forceGoogle?: boolean;
-    signal?: AbortSignal;
-  },
-): Promise<PlaceSuggestion[]> {
-  const forceGoogle = options.forceGoogle === true || isForceGooglePrimary();
-
-  if (forceGoogle && !options.skipGoogle) {
-    const googleResults = await suggestPlacesGoogle(trimmed, options);
-    if (googleResults.length > 0) return googleResults;
-    return suggestPlacesMapbox(trimmed, options);
-  }
-
-  const mapboxResults = await suggestPlacesMapbox(trimmed, options);
-  if (
-    areSuggestResultsAcceptable(mapboxResults, { query: trimmed }) ||
-    options.skipGoogle
-  ) {
-    return mapboxResults;
-  }
-
-  const googleResults = await suggestPlacesGoogle(trimmed, options);
-  if (googleResults.length > 0) return googleResults;
-
-  return mapboxResults;
-}
-
-// ─── Public API ───────────────────────────────────────────────────────────────
-
-/**
- * Mapbox-first place suggestions. Google only when Mapbox fails quality gate.
- */
 export async function suggestPlaces(
   query: string,
   options: {
@@ -383,7 +72,6 @@ export async function suggestPlaces(
     country?: string;
     limit?: number;
     token?: string;
-    /** Skip Google and use Mapbox only (e.g. POI area fallback). */
     skipGoogle?: boolean;
     forceGoogle?: boolean;
     signal?: AbortSignal;
@@ -392,10 +80,15 @@ export async function suggestPlaces(
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
 
-  const key = suggestCacheKey(trimmed, options);
-  const cached = getCachedSuggestions(key);
-  if (cached) {
-    return cached.map((s) => ({ ...s, sessionToken: options.sessionToken }));
+  const key = [
+    trimmed.toLowerCase(),
+    options.proximity?.map((n) => n.toFixed(3)).join(',') ?? '_',
+    String(options.limit ?? 6),
+  ].join('|');
+
+  const cached = suggestCache.get(key);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.value.map((s) => ({ ...s, sessionToken: options.sessionToken }));
   }
 
   const existing = suggestInflight.get(key);
@@ -404,9 +97,40 @@ export async function suggestPlaces(
     return results.map((s) => ({ ...s, sessionToken: options.sessionToken }));
   }
 
-  const promise = suggestPlacesUncached(trimmed, options)
+  const promise = (async () => {
+    try {
+      const { data } = await client.get<PlacesResponse>('/places/autocomplete', {
+        params: {
+          q: trimmed,
+          limit: options.limit ?? 6,
+          ...(options.proximity
+            ? { lng: options.proximity[0], lat: options.proximity[1] }
+            : {}),
+          ...companyParams(),
+          source: 'pwa',
+        },
+        headers: { 'X-Places-Source': 'pwa' },
+        signal: options.signal,
+        suppressErrorToast: true,
+      });
+
+      const items = data?.data ?? [];
+      return items.map((item) => ({
+        provider: item.provider || 'unknown',
+        id: item.id,
+        name: item.name?.trim() || 'Place',
+        placeFormatted: item.formatted_address?.trim() ?? '',
+        category: item.categories?.[0] ?? null,
+        sessionToken: options.sessionToken,
+        fullAddress: item.formatted_address?.trim() || null,
+      }));
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw error;
+      return [];
+    }
+  })()
     .then((results) => {
-      setCachedSuggestions(key, results);
+      suggestCache.set(key, { value: results, expiresAt: Date.now() + CLIENT_CACHE_TTL_MS });
       return results;
     })
     .finally(() => {
@@ -417,25 +141,47 @@ export async function suggestPlaces(
   return promise;
 }
 
-/**
- * Resolve a suggestion to full coordinates.
- * Routes to the correct provider based on `suggestion.provider`.
- */
-export async function retrievePlace(
-  suggestion: PlaceSuggestion,
-  options?: { token?: string },
-): Promise<RetrievedPlace | null> {
-  if (suggestion.provider === 'google') {
-    return retrievePlaceGoogle(suggestion.id, suggestion.sessionToken, suggestion.name);
+export async function retrievePlace(suggestion: PlaceSuggestion): Promise<RetrievedPlace | null> {
+  try {
+    const { data } = await client.get<PlacesResponse>('/places/details', {
+      params: {
+        id: suggestion.id,
+        provider: suggestion.provider,
+        ...companyParams(),
+        source: 'pwa',
+      },
+      headers: { 'X-Places-Source': 'pwa' },
+      suppressErrorToast: true,
+    });
+    const place = data?.data?.[0];
+    if (!place || typeof place.latitude !== 'number' || typeof place.longitude !== 'number') {
+      return null;
+    }
+    return {
+      name: place.name?.trim() || suggestion.name || 'Location',
+      address: place.formatted_address?.trim() || suggestion.placeFormatted || '',
+      lat: place.latitude,
+      lng: place.longitude,
+      bbox: place.bbox ?? null,
+      provider: place.provider || suggestion.provider,
+    };
+  } catch {
+    return null;
   }
-  return retrievePlaceMapbox(suggestion.id, suggestion.sessionToken, options);
 }
 
-/** @deprecated Use retrievePlace(suggestion) instead. Kept for internal Mapbox POI fallback. */
+/** @deprecated Prefer retrievePlace */
 export async function retrievePlaceByMapboxId(
   mapboxId: string,
   sessionToken: string,
-  options?: { token?: string },
 ): Promise<RetrievedPlace | null> {
-  return retrievePlaceMapbox(mapboxId, sessionToken, options);
+  void sessionToken;
+  return retrievePlace({
+    provider: 'geoapify',
+    id: mapboxId,
+    name: 'Location',
+    placeFormatted: '',
+    category: null,
+    sessionToken: createSearchSessionToken(),
+  });
 }

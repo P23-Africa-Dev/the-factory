@@ -31,10 +31,16 @@ class MapCreditService
         'poi-details' => 2.0,
         'details' => 0.5,
         'autocomplete' => 0.283,
+        'places.nearby' => 1.0,
+        'places.details' => 0.4,
+        'places.autocomplete' => 0.2,
+        'places.search' => 0.4,
+        'places.geocode' => 0.2,
+        'places.reverse' => 0.2,
     ];
 
     /** SKUs that only power the automatic business-pin display on the map. */
-    private const POI_DISPLAY_SKUS = ['nearby', 'poi-details'];
+    private const POI_DISPLAY_SKUS = ['nearby', 'poi-details', 'places.nearby'];
 
     public function __construct(
         private readonly CreditAllocationSettingService $settings,
@@ -102,7 +108,7 @@ class MapCreditService
      *
      * @return array<string, mixed> { allowed, blocked, low, balance, ... }
      */
-    public function consume(Company $company, string $sku, string $source = 'system', float $units = 1.0): array
+    public function consume(Company $company, string $sku, string $source = 'system', float $units = 1.0, array $meta = []): array
     {
         $units = max(0.0, $units);
         $cost = round($this->skuCost($sku) * $units, 4);
@@ -122,7 +128,7 @@ class MapCreditService
             );
         }
 
-        return DB::transaction(function () use ($company, $sku, $cost, $metered, $source, $units): array {
+        return DB::transaction(function () use ($company, $sku, $cost, $metered, $source, $units, $meta): array {
             $record = $this->lockRecord($company);
             $balanceBefore = $record->totalBalance();
 
@@ -160,10 +166,13 @@ class MapCreditService
                 'usd_amount' => -$this->creditsToUsd($cost),
                 'balance_after' => $balanceAfter,
                 'source' => $source,
-                'meta' => ['units' => $units, 'metered' => $metered],
+                'meta' => array_merge(['units' => $units, 'metered' => $metered], $meta),
             ]);
 
-            return $this->consumeResult($record, allowed: true, blocked: false, metered: $metered);
+            return array_merge(
+                $this->consumeResult($record, allowed: true, blocked: false, metered: $metered),
+                ['charged' => $cost],
+            );
         });
     }
 
