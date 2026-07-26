@@ -15,7 +15,9 @@ use App\Services\Places\Exceptions\ProviderException;
 use App\Services\Places\Providers\FoursquareProvider;
 use App\Services\Places\Providers\GeoapifyProvider;
 use App\Services\Places\Providers\GooglePlacesProvider;
+use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 final class PlaceSearchService
 {
@@ -34,9 +36,6 @@ final class PlaceSearchService
         $this->providers = [$this->geoapify, $this->foursquare, $this->google];
     }
 
-    /**
-     * @return PlaceSearchOutcome
-     */
     public function autocomplete(
         string $query,
         ?Company $company = null,
@@ -161,7 +160,6 @@ final class PlaceSearchService
             }
         }
 
-        // Fallback chain for details if hinted provider failed.
         if ($result === null && (bool) config('places.fallback_enabled', true)) {
             foreach ($this->providers as $fallback) {
                 if ($fallback->name() === $provider->name() || ! $fallback->isConfigured()) {
@@ -290,14 +288,6 @@ final class PlaceSearchService
             return $outcome;
         }
 
-        $tried = [];
-        $best = [];
-        $bestProvider = null;
-        $bestScore = 0.0;
-        $creditsMeta = null;
-        $fallbackDepth = 0;
-        $adequateFound = false;
-
         if ($company !== null) {
             $snapshot = $this->mapCredits->snapshot($company);
             if (! empty($snapshot['metered']) && ! empty($snapshot['exhausted'])) {
@@ -310,87 +300,127 @@ final class PlaceSearchService
             }
         }
 
-        $consider = function (array $results, string $providerName) use (
-            &$best, &$bestProvider, &$bestScore, &$fallbackDepth, &$adequateFound, &$tried, $operation, $query, $lat, $lng
-        ): bool {
-            $score = $this->scorer->score($results, $operation, $query, $lat, $lng);
-            if ($score > $bestScore) {
-                $best = $results;
-                $bestScore = $score;
-                $bestProvider = $providerName;
-                $fallbackDepth = max(0, count($tried) - 1);
+        $fanoutOps = in_array($operation, ['autocomplete', 'search'], true)
+            && (bool) config('places.fanout.enabled', true);
+
+        if ($fanoutOps) {
+            $bundle = $this->runFanout($operation, $query, $lat, $lng, $limit, $invoker);
+        } else {
+            $bundle = $this->runSequentialWaterfall($operation, $query, $lat, $lng, $invoker);
+        }
+
+        $results = array_slice($bundle['results'], 0, max(1, $limit));
+        $bestProvider = $bundle['providerFinal'];
+        $tried = $bundle['providersTried'];
+        $fallbackDepth = $bundle['fallbackDepth'];
+        $bestScore = $bundle['confidence'];
+        $creditsMeta = null;
+
+        if ($bestProvider !== null && $results !== []) {
+            $chargeProvider = (bool) config('places.fanout.charge_sku_once', true)
+                ? $bestProvider
+                : $bestProvider;
+            $gate = $this->chargeIfNeeded($company, $sku, $chargeProvider, $source);
+            if ($gate['blocked']) {
+                return $this->emptyBlocked($started, $gate['credits']);
             }
+            $creditsMeta = $gate['credits'];
+        }
 
-            if ($this->scorer->isAdequateForProvider($results, $operation, $providerName, $query)) {
-                $best = $results;
-                $bestProvider = $providerName;
-                $bestScore = $score;
-                $fallbackDepth = max(0, count($tried) - 1);
-                $adequateFound = true;
+        $latencyMs = (int) ((hrtime(true) - $started) / 1_000_000);
+        $outcome = new PlaceSearchOutcome(
+            results: $results,
+            providerFinal: $bestProvider,
+            providersTried: $tried,
+            cacheHit: false,
+            fallbackDepth: $fallbackDepth,
+            confidence: $bestScore,
+            latencyMs: $latencyMs,
+            credits: $creditsMeta,
+            status: $results === [] ? 'empty' : 'ok',
+        );
 
-                return true;
-            }
+        if ($results !== []) {
+            $this->cache->put($operation, $cacheKey, $outcome->toApiEnvelope());
+        }
 
-            return false;
-        };
+        $this->logEvent($outcome, $sku, $company, $user, $source, $ip, $query);
 
-        // Cheap providers first (Geoapify → Foursquare). Query variants let the
-        // waterfall retry with the brand "core" (descriptors like "Shopping"/"Mall"
-        // stripped) when the verbatim phrasing finds nothing relevant — e.g.
-        // "Jara Shopping Mall" → "Jara" surfaces Foursquare's "Jara Mall". Google is
-        // deliberately excluded here so it stays a true last resort.
-        foreach ($this->queryVariants($query, $operation) as $variant) {
-            foreach ($this->orderedProviders($query, $operation) as $provider) {
-                if ($provider->name() === 'google' || ! $provider->isConfigured()) {
-                    continue;
-                }
+        return $outcome;
+    }
 
-                if (! in_array($provider->name(), $tried, true)) {
-                    $tried[] = $provider->name();
-                }
+    /**
+     * Parallel fan-out: Geoapify + Foursquare concurrently, merge/dedupe/rank,
+     * then Google only when the merged set is empty or weak.
+     *
+     * @param  callable(PlaceSearchProviderInterface, ?string): list<PlaceSuggestion|PlaceResult>  $invoker
+     * @return array{
+     *   results: list<PlaceSuggestion|PlaceResult>,
+     *   providerFinal: ?string,
+     *   providersTried: list<string>,
+     *   fallbackDepth: int,
+     *   confidence: float
+     * }
+     */
+    private function runFanout(
+        string $operation,
+        ?string $query,
+        ?float $lat,
+        ?float $lng,
+        int $limit,
+        callable $invoker,
+    ): array {
+        $fanoutNames = config('places.fanout.providers', ['geoapify', 'foursquare']);
+        if (! is_array($fanoutNames)) {
+            $fanoutNames = ['geoapify', 'foursquare'];
+        }
+        $fanoutNames = array_values(array_filter(array_map('strval', $fanoutNames)));
 
-                try {
-                    $results = $invoker($provider, $variant);
-                } catch (ProviderException $e) {
-                    Log::info('places.provider_failed', [
-                        'provider' => $e->provider,
-                        'reason' => $e->reason,
-                        'op' => $operation,
-                    ]);
-                    continue;
-                }
+        $tried = [];
+        $merged = [];
 
-                if ($results === []) {
-                    continue;
-                }
+        // Pass 1: verbatim query across fan-out providers (parallel when possible).
+        $pass = $this->invokeProviders($fanoutNames, $query, $invoker, $operation);
+        $tried = array_values(array_unique(array_merge($tried, $pass['tried'])));
+        $merged = $this->mergeResults($merged, $pass['results']);
 
-                if ($consider($results, $provider->name())) {
-                    break;
-                }
-            }
+        $ranked = $this->scorer->rank($merged, $query, $lat, $lng);
 
-            if ($adequateFound) {
-                break;
+        // Pass 2 (settled/weak only): brand-core relaxation — e.g. "Jara Shopping Mall" → "jara".
+        if (
+            $query !== null
+            && $this->scorer->needsBackstop($ranked, $query, $lat, $lng)
+        ) {
+            $core = implode(' ', $this->scorer->significantQueryTokens($query));
+            if ($core !== '' && strtolower(trim($core)) !== strtolower(trim($query))) {
+                $pass2 = $this->invokeProviders($fanoutNames, $core, $invoker, $operation);
+                $tried = array_values(array_unique(array_merge($tried, $pass2['tried'])));
+                $merged = $this->mergeResults($merged, $pass2['results']);
+                $ranked = $this->scorer->rank($merged, $query, $lat, $lng);
             }
         }
 
-        // Final resort: Google Places, invoked at most once with the verbatim query,
-        // only after every cheaper provider/variant failed to satisfy the request.
-        if (! $adequateFound && (bool) config('places.fallback_enabled', true)) {
-            $google = $this->providerByName('google');
+        // Pass 3: Google backstop when still empty/weak.
+        if (
+            $this->scorer->needsBackstop($ranked, $query, $lat, $lng)
+            && (bool) config('places.fallback_enabled', true)
+        ) {
+            $backstop = (string) config('places.fanout.backstop_provider', 'google');
+            $google = $this->providerByName($backstop);
             if (
                 $google !== null
                 && $google->isConfigured()
                 && ! $this->usage->googleBudgetExceeded()
             ) {
-                if (! in_array('google', $tried, true)) {
-                    $tried[] = 'google';
+                if (! in_array($google->name(), $tried, true)) {
+                    $tried[] = $google->name();
                 }
                 try {
-                    $results = $invoker($google, $query);
-                    if ($results !== []) {
+                    $gResults = $invoker($google, $query);
+                    if ($gResults !== []) {
                         $this->usage->recordGoogleCall();
-                        $consider($results, 'google');
+                        $merged = $this->mergeResults($merged, $gResults);
+                        $ranked = $this->scorer->rank($merged, $query, $lat, $lng);
                     }
                 } catch (ProviderException $e) {
                     Log::info('places.provider_failed', [
@@ -402,53 +432,279 @@ final class PlaceSearchService
             }
         }
 
-        // For brand/business queries, never surface a completely unrelated place
-        // (e.g. a same-category venue in another country that only "scored" well).
-        // An honest empty result beats a misleading one.
-        if (
-            ! $adequateFound
-            && $bestProvider !== null
-            && $query !== null
-            && in_array($operation, ['autocomplete', 'search'], true)
-            && $this->scorer->looksLikeBusinessQuery($query)
-        ) {
-            $tokens = $this->scorer->significantQueryTokens($query);
-            if ($tokens !== [] && $this->scorer->bestNameRelevance($best, $tokens) <= 0.0) {
-                $best = [];
-                $bestProvider = null;
-                $bestScore = 0.0;
-                $fallbackDepth = max(0, count($tried) - 1);
+        // Soft filter: drop clearly-irrelevant foreign junk when we already have
+        // stronger local/name-matching hits. Never zero-out the whole list.
+        $ranked = $this->softFilterIrrelevant($ranked, $query, $lat, $lng);
+
+        $providerFinal = $ranked[0]->provider ?? null;
+        $confidence = $ranked !== []
+            ? $this->scorer->itemRelevance($ranked[0], $query, $lat, $lng)
+            : 0.0;
+
+        return [
+            'results' => $ranked,
+            'providerFinal' => $providerFinal,
+            'providersTried' => $tried,
+            'fallbackDepth' => max(0, count($tried) - 1),
+            'confidence' => $confidence,
+        ];
+    }
+
+    /**
+     * Cheap-first sequential path for nearby / geocode / reverse (no hard empty-suppression).
+     *
+     * @param  callable(PlaceSearchProviderInterface, ?string): list<PlaceSuggestion|PlaceResult>  $invoker
+     * @return array{
+     *   results: list<PlaceSuggestion|PlaceResult>,
+     *   providerFinal: ?string,
+     *   providersTried: list<string>,
+     *   fallbackDepth: int,
+     *   confidence: float
+     * }
+     */
+    private function runSequentialWaterfall(
+        string $operation,
+        ?string $query,
+        ?float $lat,
+        ?float $lng,
+        callable $invoker,
+    ): array {
+        $tried = [];
+        $best = [];
+        $bestProvider = null;
+        $bestScore = 0.0;
+
+        foreach ($this->providers as $provider) {
+            if (! $provider->isConfigured()) {
+                continue;
+            }
+            if ($provider->name() === 'google') {
+                if (! (bool) config('places.fallback_enabled', true)) {
+                    continue;
+                }
+                if ($this->usage->googleBudgetExceeded()) {
+                    continue;
+                }
+            }
+
+            $tried[] = $provider->name();
+            try {
+                $results = $invoker($provider, $query);
+            } catch (ProviderException $e) {
+                Log::info('places.provider_failed', [
+                    'provider' => $e->provider,
+                    'reason' => $e->reason,
+                    'op' => $operation,
+                ]);
+                continue;
+            }
+
+            if ($results === []) {
+                continue;
+            }
+
+            if ($provider->name() === 'google') {
+                $this->usage->recordGoogleCall();
+            }
+
+            $score = $this->scorer->score($results, $operation, $query, $lat, $lng);
+            if ($score > $bestScore) {
+                $best = $results;
+                $bestScore = $score;
+                $bestProvider = $provider->name();
+            }
+
+            if ($this->scorer->isAdequateForProvider($results, $operation, $provider->name(), $query)) {
+                $best = $results;
+                $bestProvider = $provider->name();
+                $bestScore = $score;
+                break;
             }
         }
 
-        if ($bestProvider !== null && $best !== []) {
-            $gate = $this->chargeIfNeeded($company, $sku, $bestProvider, $source);
-            if ($gate['blocked']) {
-                return $this->emptyBlocked($started, $gate['credits']);
+        return [
+            'results' => $best,
+            'providerFinal' => $bestProvider,
+            'providersTried' => $tried,
+            'fallbackDepth' => max(0, count($tried) - 1),
+            'confidence' => $bestScore,
+        ];
+    }
+
+    /**
+     * @param  list<string>  $providerNames
+     * @param  callable(PlaceSearchProviderInterface, ?string): list<PlaceSuggestion|PlaceResult>  $invoker
+     * @return array{results: list<PlaceSuggestion|PlaceResult>, tried: list<string>}
+     */
+    private function invokeProviders(
+        array $providerNames,
+        ?string $query,
+        callable $invoker,
+        string $operation,
+    ): array {
+        $configured = [];
+        foreach ($providerNames as $name) {
+            $provider = $this->providerByName($name);
+            if ($provider !== null && $provider->isConfigured()) {
+                $configured[] = $provider;
             }
-            $creditsMeta = $gate['credits'];
         }
 
-        $latencyMs = (int) ((hrtime(true) - $started) / 1_000_000);
-        $outcome = new PlaceSearchOutcome(
-            results: $best,
-            providerFinal: $bestProvider,
-            providersTried: $tried,
-            cacheHit: false,
-            fallbackDepth: $fallbackDepth,
-            confidence: $bestScore,
-            latencyMs: $latencyMs,
-            credits: $creditsMeta,
-            status: $best === [] ? 'empty' : 'ok',
-        );
-
-        if ($best !== []) {
-            $this->cache->put($operation, $cacheKey, $outcome->toApiEnvelope());
+        if ($configured === []) {
+            return ['results' => [], 'tried' => []];
         }
 
-        $this->logEvent($outcome, $sku, $company, $user, $source, $ip, $query);
+        $tried = array_map(static fn (PlaceSearchProviderInterface $p): string => $p->name(), $configured);
+        $results = [];
 
-        return $outcome;
+        // Parallel via Concurrency outside unit tests (mocks live in the parent process).
+        if (count($configured) > 1 && ! app()->runningUnitTests()) {
+            try {
+                $closures = [];
+                foreach ($configured as $provider) {
+                    $name = $provider->name();
+                    $closures[$name] = function () use ($provider, $invoker, $query): array {
+                        try {
+                            return $invoker($provider, $query);
+                        } catch (ProviderException) {
+                            return [];
+                        } catch (\Throwable) {
+                            return [];
+                        }
+                    };
+                }
+                $batch = Concurrency::run($closures);
+                foreach ($configured as $provider) {
+                    $chunk = $batch[$provider->name()] ?? [];
+                    if (is_array($chunk)) {
+                        foreach ($chunk as $item) {
+                            if ($item instanceof PlaceSuggestion || $item instanceof PlaceResult) {
+                                $results[] = $item;
+                            }
+                        }
+                    }
+                }
+
+                return ['results' => $results, 'tried' => $tried];
+            } catch (\Throwable $e) {
+                Log::info('places.fanout_concurrency_fallback', [
+                    'op' => $operation,
+                    'error' => $e->getMessage(),
+                ]);
+                // Fall through to sequential.
+            }
+        }
+
+        foreach ($configured as $provider) {
+            try {
+                $chunk = $invoker($provider, $query);
+                foreach ($chunk as $item) {
+                    $results[] = $item;
+                }
+            } catch (ProviderException $e) {
+                Log::info('places.provider_failed', [
+                    'provider' => $e->provider,
+                    'reason' => $e->reason,
+                    'op' => $operation,
+                ]);
+            }
+        }
+
+        return ['results' => $results, 'tried' => $tried];
+    }
+
+    /**
+     * @param  list<PlaceSuggestion|PlaceResult>  $existing
+     * @param  list<PlaceSuggestion|PlaceResult>  $incoming
+     * @return list<PlaceSuggestion|PlaceResult>
+     */
+    private function mergeResults(array $existing, array $incoming): array
+    {
+        $out = $existing;
+        foreach ($incoming as $item) {
+            if (! $this->isDuplicate($out, $item)) {
+                $out[] = $item;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  list<PlaceSuggestion|PlaceResult>  $existing
+     */
+    private function isDuplicate(array $existing, PlaceSuggestion|PlaceResult $candidate): bool
+    {
+        $dedupeM = (int) config('places.fanout.dedupe_meters', 150);
+        $candName = $this->normalizeName($candidate->name);
+        $candLat = $candidate->latitude;
+        $candLng = $candidate->longitude;
+
+        foreach ($existing as $item) {
+            if ($item->provider === $candidate->provider && $item->id !== '' && $item->id === $candidate->id) {
+                return true;
+            }
+
+            $sameName = $this->normalizeName($item->name) === $candName && $candName !== '';
+            if (! $sameName) {
+                continue;
+            }
+
+            $lat = $item->latitude;
+            $lng = $item->longitude;
+            if ($lat !== null && $lng !== null && $candLat !== null && $candLng !== null) {
+                $meters = $this->scorer->haversineKm($lat, $lng, $candLat, $candLng) * 1000.0;
+                if ($meters <= $dedupeM) {
+                    return true;
+                }
+            } elseif ($sameName && ($lat === null || $candLat === null)) {
+                // Same normalized name, no coords to disambiguate — treat as duplicate.
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Drop clearly-irrelevant items when stronger matches already exist.
+     * Never returns an empty list if the input was non-empty.
+     *
+     * @param  list<PlaceSuggestion|PlaceResult>  $ranked
+     * @return list<PlaceSuggestion|PlaceResult>
+     */
+    private function softFilterIrrelevant(
+        array $ranked,
+        ?string $query,
+        ?float $biasLat,
+        ?float $biasLng,
+    ): array {
+        if ($ranked === [] || $query === null || ! $this->scorer->looksLikeBusinessQuery($query)) {
+            return $ranked;
+        }
+
+        $tokens = $this->scorer->significantQueryTokens($query);
+        if ($tokens === []) {
+            return $ranked;
+        }
+
+        $kept = [];
+        foreach ($ranked as $item) {
+            $nameRel = $this->scorer->nameRelevanceForItem($item, $tokens);
+            $itemScore = $this->scorer->itemRelevance($item, $query, $biasLat, $biasLng);
+
+            // Keep name matches and anything that still scores reasonably with proximity.
+            if ($nameRel > 0.0 || $itemScore >= 0.35) {
+                $kept[] = $item;
+            }
+        }
+
+        return $kept !== [] ? $kept : $ranked;
+    }
+
+    private function normalizeName(string $name): string
+    {
+        return strtolower(trim(Str::ascii($name)));
     }
 
     /**
@@ -488,42 +744,6 @@ final class PlaceSearchService
         );
     }
 
-    /**
-     * @return list<PlaceSearchProviderInterface>
-     */
-    private function orderedProviders(?string $query, string $operation): array
-    {
-        // Business-heavy autocomplete/search: still Geoapify first, but Foursquare
-        // will be reached more often via lower quality threshold in scorer.
-        return $this->providers;
-    }
-
-    /**
-     * Query strings to try, in order. The verbatim query first, then — for brand
-     * text searches — a "core" variant with generic descriptors stripped so the
-     * waterfall can still locate the venue when a provider does not index the exact
-     * phrasing (e.g. "Jara Shopping Mall" → "Jara").
-     *
-     * @return list<string|null>
-     */
-    private function queryVariants(?string $query, string $operation): array
-    {
-        if ($query === null || ! in_array($operation, ['autocomplete', 'search'], true)) {
-            return [$query];
-        }
-
-        $variants = [$query];
-
-        if ($this->scorer->looksLikeBusinessQuery($query)) {
-            $core = implode(' ', $this->scorer->significantQueryTokens($query));
-            if ($core !== '' && strtolower(trim($core)) !== strtolower(trim($query))) {
-                $variants[] = $core;
-            }
-        }
-
-        return $variants;
-    }
-
     private function providerByName(string $name): ?PlaceSearchProviderInterface
     {
         foreach ($this->providers as $provider) {
@@ -544,7 +764,12 @@ final class PlaceSearchService
             return ['blocked' => false, 'credits' => null];
         }
 
+        // Single charge per settled search: use a blended/primary unit cost, not per-provider sum.
         $units = (float) config("places.providers.{$provider}.credit_units", 1.0);
+        if ((bool) config('places.fanout.charge_sku_once', true)) {
+            $units = (float) config('places.providers.geoapify.credit_units', 1.0);
+        }
+
         $result = $this->mapCredits->consume(
             company: $company,
             sku: $sku,
@@ -553,6 +778,7 @@ final class PlaceSearchService
             meta: [
                 'provider' => $provider,
                 'operation' => $sku,
+                'fanout' => true,
             ],
         );
 
@@ -653,11 +879,12 @@ final class PlaceSearchService
         ?string $query,
         ?string $id = null,
     ): void {
-        $provider = $outcome->providerFinal;
         $estimated = 0.0;
-        if ($provider && ! $outcome->cacheHit) {
+        if (! $outcome->cacheHit) {
             $op = str_replace('places.', '', $sku);
-            $estimated = (float) config("places.cost_estimates_usd.{$provider}.{$op}", 0);
+            foreach ($outcome->providersTried as $triedProvider) {
+                $estimated += (float) config("places.cost_estimates_usd.{$triedProvider}.{$op}", 0);
+            }
         }
 
         $hashSeed = $query ?? $id ?? '';

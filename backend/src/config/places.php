@@ -7,7 +7,9 @@ return [
     |--------------------------------------------------------------------------
     | Places Search Platform
     |--------------------------------------------------------------------------
-    | Provider order is always: Geoapify → Foursquare → Google (final fallback).
+    | Autocomplete/search: Geoapify + Foursquare fan out in parallel, merge,
+    | de-dupe and rank; Google is the conditional final backstop.
+    | Nearby/details/geocode keep a cheap-first sequential path.
     | Mapbox is intentionally NOT a search provider (maps/routing only).
     */
 
@@ -21,6 +23,20 @@ return [
     'store_truncated_query' => (bool) env('PLACES_STORE_TRUNCATED_QUERY', false),
 
     'google_daily_budget' => (int) env('PLACES_GOOGLE_DAILY_BUDGET', 200),
+
+    /*
+    | Parallel fan-out for autocomplete / search.
+    | charge_sku_once: one map-credit charge per settled user search (not per provider).
+    */
+    'fanout' => [
+        'enabled' => (bool) env('PLACES_FANOUT_ENABLED', true),
+        'providers' => ['geoapify', 'foursquare'],
+        'backstop_provider' => 'google',
+        'backstop_relevance_floor' => (float) env('PLACES_BACKSTOP_RELEVANCE_FLOOR', 0.5),
+        'dedupe_meters' => (int) env('PLACES_DEDUPE_METERS', 150),
+        'charge_sku_once' => (bool) env('PLACES_CHARGE_SKU_ONCE', true),
+        'business_min_query_length' => (int) env('PLACES_BUSINESS_MIN_QUERY_LENGTH', 2),
+    ],
 
     'ttl' => [
         'autocomplete' => (int) env('PLACES_TTL_AUTOCOMPLETE', 180),

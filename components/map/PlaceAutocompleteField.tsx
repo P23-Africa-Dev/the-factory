@@ -10,6 +10,7 @@ import {
   type PlaceSuggestion,
   type RetrievedPlace,
 } from "@/lib/utils/place-search";
+import { resolveSearchProximity } from "@/lib/utils/search-proximity";
 import { useMapCreditStore } from "@/store/map-credits";
 
 const DEBOUNCE_MS = 300;
@@ -33,8 +34,8 @@ export type PlaceAutocompleteFieldProps = {
 };
 
 /**
- * Form-friendly place typeahead: Mapbox primary → Google quality fallback via
- * suggestPlaces / retrievePlace. Selecting a suggestion resolves coordinates.
+ * Form-friendly place typeahead via Laravel Places (Geoapify + Foursquare
+ * fan-out, Google backstop). Selecting a suggestion resolves coordinates.
  */
 export function PlaceAutocompleteField({
   value,
@@ -100,13 +101,19 @@ export function PlaceAutocompleteField({
       setBusy(true);
       setStatusNote(null);
 
-      const proximityBias: [number, number] | undefined =
+      let proximityBias: [number, number] | undefined =
         typeof proximityLng === "number" &&
         typeof proximityLat === "number" &&
         Number.isFinite(proximityLng) &&
         Number.isFinite(proximityLat)
           ? [proximityLng, proximityLat]
           : undefined;
+
+      if (!proximityBias) {
+        const resolved = await resolveSearchProximity();
+        if (requestId !== requestIdRef.current) return;
+        if (resolved) proximityBias = resolved;
+      }
 
       try {
         const results = await suggestPlaces(trimmed, {
@@ -118,15 +125,21 @@ export function PlaceAutocompleteField({
 
         if (requestId !== requestIdRef.current) return;
 
-        setSuggestions(results);
+        // Keep prior suggestions visible until we have a settled non-empty
+        // response — only clear to empty after the current query finishes empty.
+        if (results.length > 0) {
+          setSuggestions(results);
+          setStatusNote(null);
+        } else {
+          setSuggestions([]);
+          setStatusNote("No places found — try a fuller address.");
+        }
         setOpen(true);
         setSearched(true);
         setBusy(false);
 
-        if (results.length === 0) {
-          setStatusNote("No places found — try a fuller address.");
-        } else if (creditBlockedRef.current) {
-          setStatusNote("Google search paused (map credits). Showing Mapbox results.");
+        if (results.length > 0 && creditBlockedRef.current) {
+          setStatusNote("Map credits low — some providers may be limited.");
         }
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;

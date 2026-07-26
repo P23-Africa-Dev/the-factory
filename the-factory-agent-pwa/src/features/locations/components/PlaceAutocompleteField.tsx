@@ -10,6 +10,7 @@ import {
   type PlaceSuggestion,
   type RetrievedPlace,
 } from '@/lib/map/place-search';
+import { resolveSearchProximity } from '@/lib/map/search-proximity';
 
 const DEBOUNCE_MS = 300;
 
@@ -32,8 +33,8 @@ export type PlaceAutocompleteFieldProps = {
 };
 
 /**
- * Form-friendly place typeahead for the Agent PWA.
- * Mapbox primary → Google quality fallback; meters Google via creditAuthHeaders.
+ * Form-friendly place typeahead for the Agent PWA via Laravel Places
+ * (Geoapify + Foursquare fan-out, Google backstop).
  */
 export function PlaceAutocompleteField({
   value,
@@ -96,13 +97,19 @@ export function PlaceAutocompleteField({
       setBusy(true);
       setStatusNote(null);
 
-      const proximityBias: [number, number] | undefined =
+      let proximityBias: [number, number] | undefined =
         typeof proximityLng === 'number' &&
         typeof proximityLat === 'number' &&
         Number.isFinite(proximityLng) &&
         Number.isFinite(proximityLat)
           ? [proximityLng, proximityLat]
           : undefined;
+
+      if (!proximityBias) {
+        const resolved = await resolveSearchProximity();
+        if (requestId !== requestIdRef.current) return;
+        if (resolved) proximityBias = resolved;
+      }
 
       try {
         const results = await suggestPlaces(trimmed, {
@@ -114,14 +121,16 @@ export function PlaceAutocompleteField({
 
         if (requestId !== requestIdRef.current) return;
 
-        setSuggestions(results);
+        if (results.length > 0) {
+          setSuggestions(results);
+          setStatusNote(null);
+        } else {
+          setSuggestions([]);
+          setStatusNote('No places found — try a fuller address.');
+        }
         setOpen(true);
         setSearched(true);
         setBusy(false);
-
-        if (results.length === 0) {
-          setStatusNote('No places found — try a fuller address.');
-        }
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return;
         if (requestId !== requestIdRef.current) return;

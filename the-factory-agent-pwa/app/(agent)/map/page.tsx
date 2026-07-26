@@ -62,6 +62,7 @@ import {
   createSearchSessionToken,
   type PlaceSuggestion,
 } from '@/lib/map/place-search';
+import { resolveSearchProximity, setCachedSearchProximity } from '@/lib/map/search-proximity';
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
 import type { SavedLocationPin } from '@/features/tracking/components/MapboxMap';
 import { TrackingConnectionStatus } from '@/features/tracking/components/TrackingConnectionStatus';
@@ -750,6 +751,10 @@ function MapContent() {
   // Shared session tokens — rotate after each retrieval (Mapbox billing model)
   const destSessionTokenRef = useRef(createSearchSessionToken());
   const originSessionTokenRef = useRef(createSearchSessionToken());
+  const destSearchAbortRef = useRef<AbortController | null>(null);
+  const originSearchAbortRef = useRef<AbortController | null>(null);
+  const destSearchRequestIdRef = useRef(0);
+  const originSearchRequestIdRef = useRef(0);
   // Debounce place-search so we bill one Autocomplete request per typing pause,
   // not one per keystroke.
   const destSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1049,21 +1054,42 @@ function MapContent() {
 
   const searchGeoDestPlaces = useCallback(async (query: string): Promise<void> => {
     if (!query.trim()) {
+      destSearchAbortRef.current?.abort();
       setGeoDestResults([]);
       return;
     }
+    destSearchAbortRef.current?.abort();
+    const abort = new AbortController();
+    destSearchAbortRef.current = abort;
+    const requestId = ++destSearchRequestIdRef.current;
+
     try {
-      const proximity: [number, number] | undefined = lastPosition
+      let proximity: [number, number] | undefined = lastPosition
         ? [lastPosition.coords.longitude, lastPosition.coords.latitude]
         : undefined;
+      if (proximity) {
+        setCachedSearchProximity(proximity[0], proximity[1]);
+      } else {
+        const resolved = await resolveSearchProximity();
+        if (requestId !== destSearchRequestIdRef.current) return;
+        if (resolved) proximity = resolved;
+      }
       const suggestions = await suggestPlaces(query, {
         sessionToken: destSessionTokenRef.current,
         proximity,
         limit: 6,
+        signal: abort.signal,
       });
-      setGeoDestResults(suggestions);
-    } catch {
-      setGeoDestResults([]);
+      if (requestId !== destSearchRequestIdRef.current) return;
+      if (suggestions.length > 0) {
+        setGeoDestResults(suggestions);
+      } else {
+        setGeoDestResults([]);
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (requestId !== destSearchRequestIdRef.current) return;
+      // Keep last good results on hard failure.
     }
   }, [lastPosition]);
 
@@ -1097,21 +1123,41 @@ function MapContent() {
 
   const searchOriginPlaces = useCallback(async (query: string): Promise<void> => {
     if (!query.trim()) {
+      originSearchAbortRef.current?.abort();
       setOriginGeoResults([]);
       return;
     }
+    originSearchAbortRef.current?.abort();
+    const abort = new AbortController();
+    originSearchAbortRef.current = abort;
+    const requestId = ++originSearchRequestIdRef.current;
+
     try {
-      const proximity: [number, number] | undefined = lastPosition
+      let proximity: [number, number] | undefined = lastPosition
         ? [lastPosition.coords.longitude, lastPosition.coords.latitude]
         : undefined;
+      if (proximity) {
+        setCachedSearchProximity(proximity[0], proximity[1]);
+      } else {
+        const resolved = await resolveSearchProximity();
+        if (requestId !== originSearchRequestIdRef.current) return;
+        if (resolved) proximity = resolved;
+      }
       const suggestions = await suggestPlaces(query, {
         sessionToken: originSessionTokenRef.current,
         proximity,
         limit: 6,
+        signal: abort.signal,
       });
-      setOriginGeoResults(suggestions);
-    } catch {
-      setOriginGeoResults([]);
+      if (requestId !== originSearchRequestIdRef.current) return;
+      if (suggestions.length > 0) {
+        setOriginGeoResults(suggestions);
+      } else {
+        setOriginGeoResults([]);
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (requestId !== originSearchRequestIdRef.current) return;
     }
   }, [lastPosition]);
 

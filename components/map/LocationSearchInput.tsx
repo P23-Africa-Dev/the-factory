@@ -8,6 +8,7 @@ import {
   suggestPlaces,
   type PlaceSuggestion,
 } from '@/lib/utils/place-search';
+import { resolveSearchProximity } from '@/lib/utils/search-proximity';
 import type { LocationContext } from '@/lib/map/location-search';
 import { inferIsBusiness } from '@/lib/map/poi-display';
 import type { SavedLocation } from '@/lib/api/saved-locations';
@@ -63,13 +64,23 @@ export function LocationSearchInput({
 
     setBusy(true);
     try {
+      let proximity: [number, number] | undefined;
+      const resolved = await resolveSearchProximity();
+      if (requestId !== requestIdRef.current) return;
+      if (resolved) proximity = resolved;
+
       const results = await suggestPlaces(q, {
         sessionToken: sessionTokenRef.current,
+        proximity,
         limit: 6,
         signal: abort.signal,
       });
       if (requestId !== requestIdRef.current) return;
-      setSuggestions(results);
+      if (results.length > 0) {
+        setSuggestions(results);
+      } else {
+        setSuggestions([]);
+      }
       setOpen(true);
       setBusy(false);
     } catch (error) {

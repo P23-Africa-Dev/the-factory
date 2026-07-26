@@ -147,7 +147,12 @@ export async function suggestPlaces(
     }
   })()
     .then((results) => {
-      setCachedSuggestions(key, results);
+      // Never cache empty arrays — empty responses are often transient
+      // (provider timeout / incomplete waterfall) and must not sticky-block
+      // a later successful fan-out for 60s.
+      if (results.length > 0) {
+        setCachedSuggestions(key, results);
+      }
       return results;
     })
     .finally(() => {

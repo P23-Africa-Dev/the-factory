@@ -53,9 +53,6 @@ class PlaceQualityScorerTest extends TestCase
     {
         $scorer = new PlaceQualityScorer();
 
-        // Geoapify returns high-confidence same-category places in the wrong
-        // country for a brand query. Score is high, but none is named "Jara" —
-        // the waterfall must fall through to Foursquare/Google.
         $results = [
             new PlaceSuggestion(
                 id: '1',
@@ -78,13 +75,13 @@ class PlaceQualityScorerTest extends TestCase
         ];
 
         $this->assertFalse($scorer->isAdequateForProvider($results, 'autocomplete', 'geoapify', 'Jara Mall'));
+        $this->assertTrue($scorer->needsBackstop($results, 'Jara Mall', 6.60, 3.35));
     }
 
     public function test_correctly_named_brand_result_is_adequate(): void
     {
         $scorer = new PlaceQualityScorer();
 
-        // Geoapify genuinely indexes these branches by name — no need to fall through.
         $results = [
             new PlaceSuggestion(
                 id: '1',
@@ -107,6 +104,37 @@ class PlaceQualityScorerTest extends TestCase
         ];
 
         $this->assertTrue($scorer->isAdequateForProvider($results, 'autocomplete', 'geoapify', 'Shoprite'));
+        $this->assertFalse($scorer->needsBackstop($results, 'Shoprite', 6.60, 3.35));
+    }
+
+    public function test_rank_prefers_name_relevant_local_result(): void
+    {
+        $scorer = new PlaceQualityScorer();
+
+        $results = [
+            new PlaceSuggestion(
+                id: '1',
+                name: 'Jaraguá Mall',
+                formattedAddress: 'Piracicaba, Brazil',
+                provider: 'geoapify',
+                latitude: -22.7,
+                longitude: -47.6,
+                confidence: 1.0,
+            ),
+            new PlaceSuggestion(
+                id: '2',
+                name: 'Jara Mall',
+                formattedAddress: 'Ikeja, Lagos',
+                provider: 'foursquare',
+                latitude: 6.60,
+                longitude: 3.35,
+                confidence: 0.9,
+            ),
+        ];
+
+        $ranked = $scorer->rank($results, 'Jara Mall', 6.60, 3.35);
+        $this->assertSame('Jara Mall', $ranked[0]->name);
+        $this->assertSame('foursquare', $ranked[0]->provider);
     }
 
     public function test_name_relevance_folds_accents_and_ignores_descriptors(): void

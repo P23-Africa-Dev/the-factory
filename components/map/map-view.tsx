@@ -768,6 +768,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     }
 
     let cancelled = false;
+    const abort = new AbortController();
 
     const timer = setTimeout(() => {
       setSearchBusy(true);
@@ -783,14 +784,21 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         proximity,
         limit: 6,
         token,
+        signal: abort.signal,
       })
         .then((results) => {
           if (cancelled) return;
-          setPlaceResults(results);
+          // Keep prior results while empty responses settle — only clear on settled empty.
+          if (results.length > 0) {
+            setPlaceResults(results);
+          } else {
+            setPlaceResults([]);
+          }
         })
-        .catch(() => {
+        .catch((error) => {
           if (cancelled) return;
-          setPlaceResults([]);
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          // Keep last good results on hard failure.
         })
         .finally(() => {
           if (!cancelled) setSearchBusy(false);
@@ -799,6 +807,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
     return () => {
       cancelled = true;
+      abort.abort();
       clearTimeout(timer);
     };
   }, [compact, searchQuery, token]);

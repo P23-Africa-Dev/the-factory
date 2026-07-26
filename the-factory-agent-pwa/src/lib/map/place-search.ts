@@ -133,7 +133,10 @@ export async function suggestPlaces(
     }
   })()
     .then((results) => {
-      suggestCache.set(key, { value: results, expiresAt: Date.now() + CLIENT_CACHE_TTL_MS });
+      // Never cache empty arrays — empties are often transient.
+      if (results.length > 0) {
+        suggestCache.set(key, { value: results, expiresAt: Date.now() + CLIENT_CACHE_TTL_MS });
+      }
       return results;
     })
     .finally(() => {

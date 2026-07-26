@@ -10,6 +10,7 @@ use App\DTO\Places\PlaceSuggestion;
 use App\Services\Places\Exceptions\ProviderException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class GooglePlacesProvider implements PlaceSearchProviderInterface
@@ -213,12 +214,22 @@ class GooglePlacesProvider implements PlaceSearchProviderInterface
     private function handleResponse(int $status, mixed $json): array
     {
         if ($status === 401 || $status === 403) {
+            Log::warning('places.google_auth_failed', [
+                'status' => $status,
+                'body' => is_array($json) ? $json : ['raw' => $json],
+                'hint' => 'Enable billing + Places API (New) and ensure the server key has no HTTP-referrer restriction.',
+            ]);
             throw ProviderException::auth($this->name());
         }
         if ($status === 429) {
+            Log::warning('places.google_rate_limited', ['status' => $status]);
             throw ProviderException::rateLimited($this->name());
         }
         if ($status < 200 || $status >= 300) {
+            Log::warning('places.google_http_error', [
+                'status' => $status,
+                'body' => is_array($json) ? $json : ['raw' => $json],
+            ]);
             throw ProviderException::unavailable($this->name(), 'HTTP '.$status);
         }
         if (! is_array($json)) {

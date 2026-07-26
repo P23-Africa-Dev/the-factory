@@ -81,6 +81,29 @@ describe("suggestPlaces Laravel client", () => {
     expect(placesAutocomplete).toHaveBeenCalledTimes(1);
   });
 
+  it("does not cache empty autocomplete responses", async () => {
+    vi.mocked(placesAutocomplete)
+      .mockResolvedValueOnce({ data: [], meta: { provider: null, status: "empty" } })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "j1",
+            name: "Jara Mall",
+            formatted_address: "Lagos",
+            provider: "foursquare",
+          },
+        ],
+      });
+
+    const empty = await suggestPlaces("jara mall", { sessionToken: "a" });
+    expect(empty).toHaveLength(0);
+
+    const filled = await suggestPlaces("jara mall", { sessionToken: "b" });
+    expect(filled).toHaveLength(1);
+    expect(filled[0]?.provider).toBe("foursquare");
+    expect(placesAutocomplete).toHaveBeenCalledTimes(2);
+  });
+
   it("retrievePlace calls Laravel details", async () => {
     vi.mocked(placesDetails).mockResolvedValueOnce({
       data: [
