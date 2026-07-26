@@ -30,7 +30,7 @@ export default function AgentDashboardPage() {
   const [locationResults, setLocationResults] = useState<
     Array<{
       suggestionId: string;
-      provider: 'google' | 'mapbox';
+      provider: string;
       name: string;
       address: string;
       sessionToken: string;
@@ -215,8 +215,6 @@ export default function AgentDashboardPage() {
 
       if (query.trim().length >= 2 && suggestions.length === 0) {
         toast.error('No places found — try a fuller address.');
-      } else if (suggestions.length > 0 && suggestions.every((s) => s.provider === 'mapbox')) {
-        toast.info('Google search paused or unavailable. Showing Mapbox results.');
       }
     } catch {
       toast.error('Place search failed. Please try again.');

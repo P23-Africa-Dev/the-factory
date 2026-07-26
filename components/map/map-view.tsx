@@ -607,9 +607,9 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
   const handlePlaceResultSelect = useCallback(async (suggestion: PlaceSuggestion) => {
     setPlaceResolving(true);
-    const place = await retrievePlace(suggestion, { token });
+    const place = await retrievePlace(suggestion);
     setPlaceResolving(false);
-    // Retrieval closes the Search Box session; rotate to a fresh one.
+    // Retrieval closes the provider session; rotate to a fresh one.
     searchSessionTokenRef.current = createSearchSessionToken();
 
     if (!place) return;
@@ -626,7 +626,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     }, { place, suggestion });
     setSearchQuery('');
     setPlaceResults([]);
-  }, [handleLocationSelect, setPlaceResolving, setPlaceResults, setSearchQuery, token]);
+  }, [handleLocationSelect, setPlaceResolving, setPlaceResults, setSearchQuery]);
 
   const showHoverPopup = useCallback((position: [number, number], html: string) => {
     const map = mapRef.current;
