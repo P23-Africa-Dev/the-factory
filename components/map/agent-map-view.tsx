@@ -63,6 +63,7 @@ type GoogleLatLngBoundsLike = {
 type GoogleMapLike = {
     setCenter: (point: GoogleLatLng) => void;
     setZoom: (zoom: number) => void;
+    getZoom: () => number;
     panTo: (point: GoogleLatLng) => void;
     fitBounds: (bounds: GoogleLatLngBoundsLike, padding?: number) => void;
     setTilt?: (tilt: number) => void;
