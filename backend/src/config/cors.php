@@ -45,6 +45,9 @@ return [
         'Accept',
         'X-Requested-With',
         'X-XSRF-TOKEN',
+        // Places search clients tag traffic for admin analytics.
+        'X-Places-Source',
+        'X-Company-Id',
     ],
 
     'exposed_headers' => [],

@@ -1,6 +1,5 @@
 "use client";
 
-import { apiRequest } from "@/lib/api/onboarding";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { ingestCreditMeta } from "@/store/map-credits";
 
@@ -53,6 +52,9 @@ function appendCommon(
   if (options?.lng != null && Number.isFinite(options.lng)) params.set("lng", String(options.lng));
   if (options?.limit != null) params.set("limit", String(options.limit));
   if (options?.companyId != null) params.set("company_id", String(options.companyId));
+  // Prefer query param over custom header so browsers don't fail CORS preflight
+  // if X-Places-Source isn't yet on the API allow-list.
+  params.set("source", "dashboard");
 }
 
 async function placesGet(
@@ -70,7 +72,6 @@ async function placesGet(
       headers: {
         Accept: "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        "X-Places-Source": "dashboard",
       },
       signal,
     });
@@ -86,15 +87,6 @@ async function placesGet(
     return { data: payload.data ?? [], meta: payload.meta };
   }
 
-  const envelope = await apiRequest<PlacesApiPlace[]>({
-    method: "GET",
-    path,
-    token: authToken(),
-  });
-
-  // apiRequest returns { data, ... } but our controller nests meta at top level.
-  // Re-fetch via raw if meta missing — actually onboarding ApiEnvelope may not include meta.
-  // Use dedicated fetch always for places so we keep meta.
   const API_BASE =
     process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
     "https://api.thefactory23.com/api/v1";
@@ -104,7 +96,6 @@ async function placesGet(
     headers: {
       Accept: "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      "X-Places-Source": "dashboard",
     },
   });
   const payload = (await response.json()) as {
@@ -112,7 +103,6 @@ async function placesGet(
     meta?: PlacesApiMeta;
   };
   if (payload.meta?.credits) ingestCreditMeta(payload.meta.credits);
-  void envelope;
   return { data: payload.data ?? [], meta: payload.meta };
 }
 
@@ -175,7 +165,6 @@ export async function placesNearby(body: {
       Accept: "application/json",
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      "X-Places-Source": "dashboard",
     },
     body: JSON.stringify({
       lat: body.lat,
@@ -183,6 +172,7 @@ export async function placesNearby(body: {
       radius_m: body.radius_m,
       categories: body.categories,
       limit: body.limit,
+      source: "dashboard",
       ...(body.companyId != null ? { company_id: body.companyId } : {}),
     }),
     signal: body.signal,

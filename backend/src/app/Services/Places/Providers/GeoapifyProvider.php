@@ -39,6 +39,11 @@ class GeoapifyProvider implements PlaceSearchProviderInterface
             $params['bias'] = "proximity:{$lng},{$lat}";
         }
 
+        // Business-like queries: prefer amenity/POI matches over street addresses.
+        if ($this->looksLikeBusinessQuery($query)) {
+            $params['type'] = 'amenity';
+        }
+
         $payload = $this->get('/v1/geocode/autocomplete', $params);
         $results = [];
         foreach ($payload['results'] ?? [] as $row) {
@@ -48,6 +53,21 @@ class GeoapifyProvider implements PlaceSearchProviderInterface
             $suggestion = $this->mapSuggestion($row);
             if ($suggestion !== null) {
                 $results[] = $suggestion;
+            }
+        }
+
+        // If amenity filter returned nothing, retry without type restriction.
+        if ($results === [] && isset($params['type'])) {
+            unset($params['type']);
+            $payload = $this->get('/v1/geocode/autocomplete', $params);
+            foreach ($payload['results'] ?? [] as $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $suggestion = $this->mapSuggestion($row);
+                if ($suggestion !== null) {
+                    $results[] = $suggestion;
+                }
             }
         }
 
@@ -243,11 +263,14 @@ class GeoapifyProvider implements PlaceSearchProviderInterface
      */
     private function mapSuggestion(array $row): ?PlaceSuggestion
     {
-        $name = trim((string) ($row['name'] ?? $row['address_line1'] ?? ''));
+        $name = trim((string) ($row['name'] ?? $row['address_line1'] ?? $row['formatted'] ?? ''));
         $formatted = trim((string) ($row['formatted'] ?? $row['address_line2'] ?? $name));
         $id = (string) ($row['place_id'] ?? $row['datasource']['raw']['osm_id'] ?? '');
-        if ($name === '' || $id === '') {
+        if ($id === '') {
             return null;
+        }
+        if ($name === '') {
+            $name = $formatted !== '' ? $formatted : 'Place';
         }
 
         $lat = isset($row['lat']) && is_numeric($row['lat']) ? (float) $row['lat'] : null;
@@ -260,7 +283,7 @@ class GeoapifyProvider implements PlaceSearchProviderInterface
         return new PlaceSuggestion(
             id: $id,
             name: $name,
-            formattedAddress: $formatted,
+            formattedAddress: $formatted !== '' ? $formatted : $name,
             provider: $this->name(),
             latitude: $lat,
             longitude: $lng,
@@ -268,6 +291,23 @@ class GeoapifyProvider implements PlaceSearchProviderInterface
             categories: isset($row['category']) ? [(string) $row['category']] : [],
             rawMeta: $row,
         );
+    }
+
+    private function looksLikeBusinessQuery(string $query): bool
+    {
+        $q = strtolower(trim($query));
+        if ($q === '') {
+            return false;
+        }
+
+        if (preg_match('/\d+|street|st\.|road|rd\.|avenue|ave\.|lane|drive|boulevard|close|court/i', $q)) {
+            return false;
+        }
+
+        return (bool) preg_match(
+            '/restaurant|cafe|hotel|bank|mall|shop|store|pharmacy|hospital|bar|club|gym|market/i',
+            $q
+        ) || ! preg_match('/\s/', $q);
     }
 
     /**

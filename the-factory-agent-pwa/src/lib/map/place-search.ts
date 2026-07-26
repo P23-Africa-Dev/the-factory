@@ -109,7 +109,6 @@ export async function suggestPlaces(
           ...companyParams(),
           source: 'pwa',
         },
-        headers: { 'X-Places-Source': 'pwa' },
         signal: options.signal,
         suppressErrorToast: true,
       });
@@ -150,7 +149,6 @@ export async function retrievePlace(suggestion: PlaceSuggestion): Promise<Retrie
         ...companyParams(),
         source: 'pwa',
       },
-      headers: { 'X-Places-Source': 'pwa' },
       suppressErrorToast: true,
     });
     const place = data?.data?.[0];

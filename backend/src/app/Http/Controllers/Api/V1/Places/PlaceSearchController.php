@@ -167,7 +167,12 @@ class PlaceSearchController extends Controller
 
     private function source(Request $request): string
     {
-        $source = strtolower(trim((string) $request->header('X-Places-Source', $request->query('source', 'dashboard'))));
+        $fromBody = $request->input('source');
+        $source = strtolower(trim((string) (
+            $request->header('X-Places-Source')
+            ?: (is_string($fromBody) ? $fromBody : null)
+            ?: $request->query('source', 'dashboard')
+        )));
 
         return in_array($source, ['dashboard', 'pwa', 'system'], true) ? $source : 'dashboard';
     }
