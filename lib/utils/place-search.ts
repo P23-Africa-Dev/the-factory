@@ -27,6 +27,8 @@ export type PlaceSuggestion = {
   featureType?: string;
   maki?: string | null;
   confidence?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export type RetrievedPlace = {
@@ -92,6 +94,8 @@ function mapSuggestion(item: PlacesApiPlace, sessionToken: string): PlaceSuggest
     sessionToken,
     fullAddress: item.formatted_address?.trim() || null,
     confidence: item.confidence ?? null,
+    latitude: typeof item.latitude === "number" ? item.latitude : null,
+    longitude: typeof item.longitude === "number" ? item.longitude : null,
   };
 }
 
@@ -157,26 +161,45 @@ export async function suggestPlaces(
 export async function retrievePlace(
   suggestion: PlaceSuggestion,
 ): Promise<RetrievedPlace | null> {
-  // If suggestion already has coords (some providers), skip details.
-  // Otherwise resolve via Laravel details.
+  const suggestionHasCoords =
+    typeof suggestion.latitude === "number" &&
+    typeof suggestion.longitude === "number" &&
+    Number.isFinite(suggestion.latitude) &&
+    Number.isFinite(suggestion.longitude);
+
   try {
     const envelope = await placesDetails(suggestion.id, suggestion.provider);
     const place = envelope.data?.[0];
-    if (!place || typeof place.latitude !== "number" || typeof place.longitude !== "number") {
-      return null;
+    if (place && typeof place.latitude === "number" && typeof place.longitude === "number") {
+      return {
+        placeId: place.id,
+        name: place.name?.trim() || suggestion.name || "Location",
+        address: place.formatted_address?.trim() || suggestion.placeFormatted || "",
+        lat: place.latitude,
+        lng: place.longitude,
+        bbox: place.bbox ?? null,
+        provider: place.provider || suggestion.provider,
+      };
     }
-    return {
-      placeId: place.id,
-      name: place.name?.trim() || suggestion.name || "Location",
-      address: place.formatted_address?.trim() || suggestion.placeFormatted || "",
-      lat: place.latitude,
-      lng: place.longitude,
-      bbox: place.bbox ?? null,
-      provider: place.provider || suggestion.provider,
-    };
   } catch {
-    return null;
+    // Fall through to suggestion coords when details fails.
   }
+
+  // Autocomplete often already includes coordinates — use them so map fly-to still works
+  // when place-details returns a polygon-only geometry or the provider is down.
+  if (suggestionHasCoords) {
+    return {
+      placeId: suggestion.id,
+      name: suggestion.name || "Location",
+      address: suggestion.placeFormatted || suggestion.fullAddress || suggestion.name || "",
+      lat: suggestion.latitude as number,
+      lng: suggestion.longitude as number,
+      bbox: null,
+      provider: suggestion.provider,
+    };
+  }
+
+  return null;
 }
 
 /** @deprecated Prefer retrievePlace(suggestion). */

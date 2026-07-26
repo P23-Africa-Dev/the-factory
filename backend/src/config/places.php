@@ -47,7 +47,8 @@ return [
         'foursquare' => [
             'enabled' => (bool) env('PLACES_FOURSQUARE_ENABLED', true),
             'api_key' => env('FOURSQUARE_API_KEY'),
-            'base_url' => env('FOURSQUARE_BASE_URL', 'https://api.foursquare.com/v3'),
+            'base_url' => env('FOURSQUARE_BASE_URL', 'https://places-api.foursquare.com'),
+            'api_version' => env('FOURSQUARE_API_VERSION', '2025-06-17'),
             'credit_units' => (float) env('PLACES_FOURSQUARE_CREDIT_UNITS', 1.2),
         ],
         'google' => [

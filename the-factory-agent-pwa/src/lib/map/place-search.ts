@@ -16,6 +16,8 @@ export type PlaceSuggestion = {
   fullAddress?: string | null;
   featureType?: string;
   maki?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export type RetrievedPlace = {
@@ -122,6 +124,8 @@ export async function suggestPlaces(
         category: item.categories?.[0] ?? null,
         sessionToken: options.sessionToken,
         fullAddress: item.formatted_address?.trim() || null,
+        latitude: typeof item.latitude === 'number' ? item.latitude : null,
+        longitude: typeof item.longitude === 'number' ? item.longitude : null,
       }));
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') throw error;
@@ -141,6 +145,12 @@ export async function suggestPlaces(
 }
 
 export async function retrievePlace(suggestion: PlaceSuggestion): Promise<RetrievedPlace | null> {
+  const suggestionHasCoords =
+    typeof suggestion.latitude === 'number' &&
+    typeof suggestion.longitude === 'number' &&
+    Number.isFinite(suggestion.latitude) &&
+    Number.isFinite(suggestion.longitude);
+
   try {
     const { data } = await client.get<PlacesResponse>('/places/details', {
       params: {
@@ -152,20 +162,32 @@ export async function retrievePlace(suggestion: PlaceSuggestion): Promise<Retrie
       suppressErrorToast: true,
     });
     const place = data?.data?.[0];
-    if (!place || typeof place.latitude !== 'number' || typeof place.longitude !== 'number') {
-      return null;
+    if (place && typeof place.latitude === 'number' && typeof place.longitude === 'number') {
+      return {
+        name: place.name?.trim() || suggestion.name || 'Location',
+        address: place.formatted_address?.trim() || suggestion.placeFormatted || '',
+        lat: place.latitude,
+        lng: place.longitude,
+        bbox: place.bbox ?? null,
+        provider: place.provider || suggestion.provider,
+      };
     }
-    return {
-      name: place.name?.trim() || suggestion.name || 'Location',
-      address: place.formatted_address?.trim() || suggestion.placeFormatted || '',
-      lat: place.latitude,
-      lng: place.longitude,
-      bbox: place.bbox ?? null,
-      provider: place.provider || suggestion.provider,
-    };
   } catch {
-    return null;
+    // Fall through to suggestion coords.
   }
+
+  if (suggestionHasCoords) {
+    return {
+      name: suggestion.name || 'Location',
+      address: suggestion.placeFormatted || suggestion.fullAddress || suggestion.name || '',
+      lat: suggestion.latitude as number,
+      lng: suggestion.longitude as number,
+      bbox: null,
+      provider: suggestion.provider,
+    };
+  }
+
+  return null;
 }
 
 /** @deprecated Prefer retrievePlace */

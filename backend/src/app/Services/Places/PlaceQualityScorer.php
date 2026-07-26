@@ -46,13 +46,46 @@ final class PlaceQualityScorer
     {
         $threshold = (float) config('places.quality_threshold', 0.80);
 
-        // Business-intent queries can accept a slightly lower Geoapify score so
-        // Foursquare is reached when commercial POI data is weak.
+        // Business-intent queries need stronger adequacy before we skip Foursquare/Google.
+        // A single weak Geoapify amenity hit should not block the commercial waterfall.
         if ($query !== null && $this->looksLikeBusinessQuery($query) && $operation !== 'nearby') {
-            $threshold = max(0.55, $threshold - 0.15);
+            $threshold = max(0.82, $threshold);
         }
 
         return $score >= $threshold;
+    }
+
+    /**
+     * @param  list<PlaceSuggestion|PlaceResult>  $results
+     */
+    public function isAdequateForProvider(
+        array $results,
+        string $operation,
+        string $provider,
+        ?string $query = null,
+    ): bool {
+        if ($results === []) {
+            return false;
+        }
+
+        $score = $this->score($results, $operation, $query);
+        if (! $this->passes($score, $operation, $query)) {
+            return false;
+        }
+
+        // Geoapify geocode often returns 1 thin hit for brand names — keep falling through
+        // to Foursquare for business queries unless we have multiple solid matches.
+        if (
+            $provider === 'geoapify'
+            && $query !== null
+            && $this->looksLikeBusinessQuery($query)
+            && in_array($operation, ['autocomplete', 'search'], true)
+            && count($results) < 2
+        ) {
+            return false;
+        }
+
+        return true;
     }
 
     public function looksLikeBusinessQuery(string $query): bool
@@ -63,14 +96,13 @@ final class PlaceQualityScorer
         }
 
         // Address-like → not a business-primary query.
-        if (preg_match('/\d+|street|st\.|road|rd\.|avenue|ave\.|lane|drive|boulevard|close|court/i', $q)) {
+        if (preg_match('/\d+\s+\w+|street|st\.|road|rd\.|avenue|ave\.|lane|drive|boulevard|close|court/i', $q)) {
             return false;
         }
 
-        return (bool) preg_match(
-            '/restaurant|cafe|hotel|bank|mall|shop|store|pharmacy|hospital|bar|club|gym|market/i',
-            $q
-        ) || ! preg_match('/\s/', $q);
+        // Non-address free-text (brand names, venues, neighborhoods-as-POI) use the
+        // commercial waterfall so thin Geoapify hits still reach Foursquare/Google.
+        return true;
     }
 
     private function scoreOne(

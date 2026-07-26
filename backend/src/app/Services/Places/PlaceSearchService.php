@@ -352,7 +352,7 @@ final class PlaceSearchService
                 $fallbackDepth = max(0, count($tried) - 1);
             }
 
-            if ($this->scorer->passes($score, $operation, $query)) {
+            if ($this->scorer->isAdequateForProvider($results, $operation, $provider->name(), $query)) {
                 $best = $results;
                 $bestProvider = $provider->name();
                 $bestScore = $score;

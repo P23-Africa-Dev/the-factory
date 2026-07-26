@@ -10,6 +10,7 @@ use App\DTO\Places\PlaceSuggestion;
 use App\Services\Places\Exceptions\ProviderException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 class FoursquareProvider implements PlaceSearchProviderInterface
 {
@@ -78,8 +79,6 @@ class FoursquareProvider implements PlaceSearchProviderInterface
         ];
         if ($categories !== null && $categories !== []) {
             $params['categories'] = implode(',', $categories);
-        } else {
-            $params['categories'] = '13065,13032,13003,19014,10000'; // food, cafe, bar, hotel, business
         }
 
         $payload = $this->get('/places/search', $params);
@@ -101,7 +100,6 @@ class FoursquareProvider implements PlaceSearchProviderInterface
 
     public function geocode(string $query): ?PlaceResult
     {
-        // Foursquare is POI-oriented; treat as search.
         $results = $this->search($query, null, null, 1);
 
         return $results[0] ?? null;
@@ -116,12 +114,19 @@ class FoursquareProvider implements PlaceSearchProviderInterface
 
     private function apiKey(): string
     {
-        return trim((string) config('places.providers.foursquare.api_key'));
+        $key = trim((string) config('places.providers.foursquare.api_key'));
+
+        return Str::startsWith($key, 'Bearer ') ? substr($key, 7) : $key;
     }
 
     private function timeout(): float
     {
-        return (float) config('places.timeouts.foursquare', 2.0);
+        return (float) config('places.timeouts.foursquare', 2.5);
+    }
+
+    private function apiVersion(): string
+    {
+        return (string) config('places.providers.foursquare.api_version', '2025-06-17');
     }
 
     /**
@@ -130,13 +135,22 @@ class FoursquareProvider implements PlaceSearchProviderInterface
      */
     private function get(string $path, array $params): array
     {
-        $base = rtrim((string) config('places.providers.foursquare.base_url'), '/');
+        $base = rtrim((string) config(
+            'places.providers.foursquare.base_url',
+            'https://places-api.foursquare.com'
+        ), '/');
+
+        // Legacy v3 host returns 410 for autocomplete — normalize to the new Places API host.
+        if (str_contains($base, 'api.foursquare.com')) {
+            $base = 'https://places-api.foursquare.com';
+        }
 
         try {
             $response = Http::timeout($this->timeout())
                 ->withHeaders([
-                    'Authorization' => $this->apiKey(),
+                    'Authorization' => 'Bearer '.$this->apiKey(),
                     'Accept' => 'application/json',
+                    'X-Places-Api-Version' => $this->apiVersion(),
                 ])
                 ->get($base.$path, $params);
         } catch (ConnectionException) {
@@ -172,15 +186,25 @@ class FoursquareProvider implements PlaceSearchProviderInterface
             if (! is_array($row)) {
                 continue;
             }
-            $geocode = is_array($row['geocodes']['main'] ?? null) ? $row['geocodes']['main'] : [];
-            $lat = isset($geocode['latitude']) && is_numeric($geocode['latitude']) ? (float) $geocode['latitude'] : null;
-            $lng = isset($geocode['longitude']) && is_numeric($geocode['longitude']) ? (float) $geocode['longitude'] : null;
+
+            // New Places API returns lat/lng at the top level; legacy used geocodes.main.
+            $lat = isset($row['latitude']) && is_numeric($row['latitude']) ? (float) $row['latitude'] : null;
+            $lng = isset($row['longitude']) && is_numeric($row['longitude']) ? (float) $row['longitude'] : null;
+            if ($lat === null || $lng === null) {
+                $geocode = is_array($row['geocodes']['main'] ?? null) ? $row['geocodes']['main'] : [];
+                $lat = isset($geocode['latitude']) && is_numeric($geocode['latitude']) ? (float) $geocode['latitude'] : null;
+                $lng = isset($geocode['longitude']) && is_numeric($geocode['longitude']) ? (float) $geocode['longitude'] : null;
+            }
             if ($lat === null || $lng === null) {
                 continue;
             }
 
             $location = is_array($row['location'] ?? null) ? $row['location'] : [];
-            $address = trim((string) ($location['formatted_address'] ?? $location['address'] ?? ''));
+            $address = trim((string) (
+                $location['formatted_address']
+                ?? $location['address']
+                ?? ''
+            ));
             $categories = [];
             foreach ($row['categories'] ?? [] as $cat) {
                 if (is_array($cat) && isset($cat['name'])) {
@@ -189,7 +213,7 @@ class FoursquareProvider implements PlaceSearchProviderInterface
             }
 
             $results[] = new PlaceResult(
-                id: (string) ($row['fsq_id'] ?? $row['fsq_place_id'] ?? uniqid('fsq_', true)),
+                id: (string) ($row['fsq_place_id'] ?? $row['fsq_id'] ?? uniqid('fsq_', true)),
                 name: trim((string) ($row['name'] ?? 'Place')) ?: 'Place',
                 formattedAddress: $address,
                 latitude: $lat,
@@ -213,11 +237,27 @@ class FoursquareProvider implements PlaceSearchProviderInterface
      */
     private function mapSuggestion(array $place, array $text): ?PlaceSuggestion
     {
-        $id = (string) ($place['fsq_id'] ?? $place['fsq_place_id'] ?? '');
+        $id = (string) ($place['fsq_place_id'] ?? $place['fsq_id'] ?? '');
         $name = trim((string) ($text['primary'] ?? $place['name'] ?? ''));
-        $address = trim((string) ($text['secondary'] ?? $place['location']['formatted_address'] ?? ''));
+        $location = is_array($place['location'] ?? null) ? $place['location'] : [];
+        $address = trim((string) (
+            $text['secondary']
+            ?? $location['formatted_address']
+            ?? $location['address']
+            ?? ''
+        ));
         if ($id === '' || $name === '') {
             return null;
+        }
+
+        $lat = isset($place['latitude']) && is_numeric($place['latitude']) ? (float) $place['latitude'] : null;
+        $lng = isset($place['longitude']) && is_numeric($place['longitude']) ? (float) $place['longitude'] : null;
+
+        $categories = [];
+        foreach ($place['categories'] ?? [] as $cat) {
+            if (is_array($cat) && isset($cat['name'])) {
+                $categories[] = (string) $cat['name'];
+            }
         }
 
         return new PlaceSuggestion(
@@ -225,8 +265,10 @@ class FoursquareProvider implements PlaceSearchProviderInterface
             name: $name,
             formattedAddress: $address !== '' ? $address : $name,
             provider: $this->name(),
-            confidence: 0.75,
-            categories: [],
+            latitude: $lat,
+            longitude: $lng,
+            confidence: 0.8,
+            categories: $categories,
             rawMeta: $place,
         );
     }

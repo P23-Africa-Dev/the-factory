@@ -168,8 +168,18 @@ class GeoapifyProvider implements PlaceSearchProviderInterface
 
         $props = is_array($feature['properties'] ?? null) ? $feature['properties'] : [];
         $geometry = is_array($feature['geometry'] ?? null) ? $feature['geometry'] : [];
-        $coords = is_array($geometry['coordinates'] ?? null) ? $geometry['coordinates'] : null;
-        if (! is_array($coords) || count($coords) < 2) {
+
+        // Prefer explicit lat/lon on properties — geometry may be a Polygon.
+        $lat = isset($props['lat']) && is_numeric($props['lat']) ? (float) $props['lat'] : null;
+        $lng = isset($props['lon']) && is_numeric($props['lon']) ? (float) $props['lon'] : null;
+        if ($lat === null || $lng === null) {
+            $coords = is_array($geometry['coordinates'] ?? null) ? $geometry['coordinates'] : null;
+            if (is_array($coords) && isset($coords[0], $coords[1]) && is_numeric($coords[0]) && is_numeric($coords[1])) {
+                $lng = (float) $coords[0];
+                $lat = (float) $coords[1];
+            }
+        }
+        if ($lat === null || $lng === null) {
             return null;
         }
 
@@ -177,8 +187,8 @@ class GeoapifyProvider implements PlaceSearchProviderInterface
             id: $id,
             name: trim((string) ($props['name'] ?? 'Place')) ?: 'Place',
             formattedAddress: trim((string) ($props['formatted'] ?? '')),
-            latitude: (float) $coords[1],
-            longitude: (float) $coords[0],
+            latitude: $lat,
+            longitude: $lng,
             provider: $this->name(),
             confidence: 0.85,
             categories: isset($props['categories']) && is_array($props['categories'])
@@ -300,14 +310,11 @@ class GeoapifyProvider implements PlaceSearchProviderInterface
             return false;
         }
 
-        if (preg_match('/\d+|street|st\.|road|rd\.|avenue|ave\.|lane|drive|boulevard|close|court/i', $q)) {
+        if (preg_match('/\d+\s+\w+|street|st\.|road|rd\.|avenue|ave\.|lane|drive|boulevard|close|court/i', $q)) {
             return false;
         }
 
-        return (bool) preg_match(
-            '/restaurant|cafe|hotel|bank|mall|shop|store|pharmacy|hospital|bar|club|gym|market/i',
-            $q
-        ) || ! preg_match('/\s/', $q);
+        return true;
     }
 
     /**

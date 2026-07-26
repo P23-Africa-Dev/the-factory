@@ -56,6 +56,15 @@ class PlaceSearchServiceTest extends TestCase
                     longitude: 3.47,
                     confidence: 0.95,
                 ),
+                new PlaceSuggestion(
+                    id: 'g2',
+                    name: 'Shoprite Ikeja',
+                    formattedAddress: 'Ikeja, Lagos',
+                    provider: 'geoapify',
+                    latitude: 6.60,
+                    longitude: 3.35,
+                    confidence: 0.92,
+                ),
             ]);
 
         $fsq->shouldReceive('name')->andReturn('foursquare');
@@ -73,7 +82,7 @@ class PlaceSearchServiceTest extends TestCase
         $outcome = app(PlaceSearchService::class)->autocomplete('Shoprite Lekki');
 
         $this->assertSame('geoapify', $outcome->providerFinal);
-        $this->assertCount(1, $outcome->results);
+        $this->assertCount(2, $outcome->results);
         $this->assertSame(['geoapify'], $outcome->providersTried);
     }
 

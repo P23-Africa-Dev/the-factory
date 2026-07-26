@@ -32,11 +32,39 @@ class PlaceQualityScorerTest extends TestCase
                 confidence: 0.9,
                 categories: ['place'],
             ),
+            new PlaceSuggestion(
+                id: '2',
+                name: 'Lekki Phase 1 Gate',
+                formattedAddress: 'Lekki, Lagos, Nigeria',
+                provider: 'geoapify',
+                latitude: 6.451,
+                longitude: 3.471,
+                confidence: 0.85,
+            ),
         ];
 
         $score = $scorer->score($results, 'autocomplete', 'Lekki Phase 1', 6.45, 3.47);
         $this->assertGreaterThanOrEqual(0.8, $score);
-        $this->assertTrue($scorer->passes($score, 'autocomplete', 'Lekki Phase 1'));
+        $this->assertTrue($scorer->passes($score, 'autocomplete', '12 Admiralty Way Lekki'));
+        $this->assertTrue($scorer->isAdequateForProvider($results, 'autocomplete', 'geoapify', 'Shoprite'));
+    }
+
+    public function test_thin_geoapify_business_result_is_not_adequate(): void
+    {
+        $scorer = new PlaceQualityScorer();
+        $one = [
+            new PlaceSuggestion(
+                id: '1',
+                name: 'Shoprite',
+                formattedAddress: 'Lagos',
+                provider: 'geoapify',
+                latitude: 6.45,
+                longitude: 3.47,
+                confidence: 0.9,
+            ),
+        ];
+
+        $this->assertFalse($scorer->isAdequateForProvider($one, 'autocomplete', 'geoapify', 'Shoprite'));
     }
 
     public function test_nearby_requires_min_count(): void
