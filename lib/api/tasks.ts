@@ -36,6 +36,8 @@ export type TaskApiItem = {
   priority?: ApiTaskPriority;
   minimum_photos_required?: number;
   visit_verification_required?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
   project?: {
     id: number;
     name: string;

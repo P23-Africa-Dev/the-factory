@@ -344,6 +344,8 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
   const locationText = formatTaskLocationLabel(
     detailQuery.data?.location || task.location,
     detailQuery.data?.address,
+    "No location set",
+    detailQuery.data?.created_at || task.createdAt,
   );
   const dueDateText = detailQuery.data?.due_date
     ? new Date(detailQuery.data.due_date).toLocaleString()

@@ -21,7 +21,26 @@ export function formatTaskLocationLabel(
   location?: string | null,
   address?: string | null,
   fallback = "No location set",
+  createdAt?: string | null,
 ): string {
   const label = (address || location || "").trim();
-  return label || fallback;
+  if (label && label.toLowerCase() !== "no location set") return label;
+
+  if (createdAt) {
+    try {
+      const date = new Date(createdAt);
+      if (!isNaN(date.getTime())) {
+        const formattedDate = date.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
+        return `Created: ${formattedDate}`;
+      }
+    } catch {
+      // ignore date formatting errors
+    }
+  }
+
+  return fallback;
 }
