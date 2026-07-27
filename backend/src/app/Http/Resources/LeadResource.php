@@ -25,6 +25,7 @@ class LeadResource extends JsonResource
             'phone' => $this->phone,
             'location' => $this->location,
             'company_name' => $this->company_name,
+            'company_email' => $this->company_email,
             'website' => $this->website,
             'position' => $this->position,
             'profile_urls' => $this->profile_urls ?? [],

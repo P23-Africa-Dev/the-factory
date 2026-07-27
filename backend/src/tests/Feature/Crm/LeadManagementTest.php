@@ -49,11 +49,13 @@ class LeadManagementTest extends TestCase
                 'status' => 'qualified',
                 'priority' => 'urgent',
                 'last_interaction' => 'Requested formal quote',
+                'company_email' => 'sales@acme.example',
             ]);
 
         $updateResponse->assertOk()
             ->assertJsonPath('data.lead.status', 'qualified')
-            ->assertJsonPath('data.lead.priority', 'urgent');
+            ->assertJsonPath('data.lead.priority', 'urgent')
+            ->assertJsonPath('data.lead.company_email', 'sales@acme.example');
     }
 
     public function test_agent_can_create_and_only_view_owned_or_assigned_leads(): void
@@ -836,6 +838,7 @@ class LeadManagementTest extends TestCase
                 'status' => 'newly_lead',
                 'priority' => 'medium',
                 'company_name' => 'Acme Ltd',
+                'company_email' => 'hello@acme.example',
                 'website' => 'acme.com',
                 'position' => 'Head of Sales',
                 'profile_urls' => [
@@ -846,6 +849,7 @@ class LeadManagementTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('data.lead.company_name', 'Acme Ltd')
+            ->assertJsonPath('data.lead.company_email', 'hello@acme.example')
             ->assertJsonPath('data.lead.website', 'https://acme.com')
             ->assertJsonPath('data.lead.position', 'Head of Sales')
             ->assertJsonPath('data.lead.profile_urls', [
@@ -856,6 +860,7 @@ class LeadManagementTest extends TestCase
         $this->assertDatabaseHas('leads', [
             'name' => 'Jane Prospect',
             'company_name' => 'Acme Ltd',
+            'company_email' => 'hello@acme.example',
             'website' => 'https://acme.com',
             'position' => 'Head of Sales',
         ]);

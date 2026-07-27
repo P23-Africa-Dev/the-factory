@@ -53,6 +53,7 @@ export type LeadApiItem = {
     phone?: string | null;
     location?: string | null;
     company_name?: string | null;
+    company_email?: string | null;
     website?: string | null;
     position?: string | null;
     profile_urls?: string[] | null;
@@ -131,6 +132,7 @@ export type CreateLeadPayload = {
     phone?: string | null;
     location?: string | null;
     company_name?: string | null;
+    company_email?: string | null;
     website?: string | null;
     position?: string | null;
     profile_urls?: string[] | null;
@@ -154,6 +156,7 @@ export type UpdateLeadPayload = {
     phone?: string | null;
     location?: string | null;
     company_name?: string | null;
+    company_email?: string | null;
     website?: string | null;
     position?: string | null;
     profile_urls?: string[] | null;
