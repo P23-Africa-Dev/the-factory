@@ -26,6 +26,7 @@ export interface DndItem {
   taskType?: string;
   address?: string;
   dueDateIso?: string;
+  createdAt?: string;
   requiredActions?: string[];
   visitVerificationRequired?: boolean;
   minPhotosRequired?: number;
