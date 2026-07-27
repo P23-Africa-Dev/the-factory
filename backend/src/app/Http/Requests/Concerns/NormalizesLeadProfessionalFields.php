@@ -20,6 +20,11 @@ trait NormalizesLeadProfessionalFields
             $merged['company_name'] = $name !== '' ? $name : null;
         }
 
+        if ($this->has('company_email')) {
+            $email = trim((string) $this->input('company_email'));
+            $merged['company_email'] = $email !== '' ? $email : null;
+        }
+
         if ($this->has('website')) {
             $merged['website'] = LeadFieldNormalizer::normalizeWebsite(
                 $this->input('website') !== null ? (string) $this->input('website') : null

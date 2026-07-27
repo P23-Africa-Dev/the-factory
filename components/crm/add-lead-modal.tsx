@@ -26,6 +26,7 @@ type FormErrors = Partial<{
   phone: string;
   location: string;
   companyName: string;
+  companyEmail: string;
   website: string;
   position: string;
   profileUrls: string;
@@ -201,6 +202,7 @@ export function AddLeadModal({
   const [phone, setPhone] = useState(lead?.phone ?? "");
   const [location, setLocation] = useState(lead?.location ?? "");
   const [companyName, setCompanyName] = useState(lead?.company_name ?? "");
+  const [companyEmail, setCompanyEmail] = useState(lead?.company_email ?? "");
   const [website, setWebsite] = useState(lead?.website ?? "");
   const [position, setPosition] = useState(lead?.position ?? "");
   const [profileUrls, setProfileUrls] = useState<string[]>(
@@ -286,6 +288,9 @@ export function AddLeadModal({
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       e.email = "Enter a valid email address.";
     }
+    if (companyEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(companyEmail)) {
+      e.companyEmail = "Enter a valid company email address.";
+    }
     if (website.trim() && !isValidUrl(website)) {
       e.website = "Enter a valid website URL.";
     }
@@ -308,6 +313,7 @@ export function AddLeadModal({
       if (apiErr.errors.phone) fe.phone = apiErr.errors.phone[0];
       if (apiErr.errors.location) fe.location = apiErr.errors.location[0];
       if (apiErr.errors.company_name) fe.companyName = apiErr.errors.company_name[0];
+      if (apiErr.errors.company_email) fe.companyEmail = apiErr.errors.company_email[0];
       if (apiErr.errors.website) fe.website = apiErr.errors.website[0];
       if (apiErr.errors.position) fe.position = apiErr.errors.position[0];
       if (apiErr.errors.profile_urls) fe.profileUrls = apiErr.errors.profile_urls[0];
@@ -347,6 +353,7 @@ export function AddLeadModal({
       budget_currency: budgetAmount.trim() ? budgetCurrency : null,
       location: location.trim() || null,
       company_name: companyName.trim() || null,
+      company_email: companyEmail.trim() || null,
       website: website.trim() ? normalizeWebsite(website) : null,
       position: position.trim() || null,
       profile_urls: cleanedProfileUrls.length > 0 ? cleanedProfileUrls : null,
@@ -496,6 +503,19 @@ export function AddLeadModal({
                 />
               </FormRow>
               <FieldError message={errors.companyName} />
+            </div>
+
+            <div>
+              <FormRow label="Company Email" labelClassName="w-28">
+                <InlineInput
+                  type="email"
+                  value={companyEmail}
+                  onChange={(e) => { setCompanyEmail(e.target.value); clearError("companyEmail"); }}
+                  placeholder="E.g hello@company.com"
+                  className="col-span-2"
+                />
+              </FormRow>
+              <FieldError message={errors.companyEmail} />
             </div>
 
             <div>
