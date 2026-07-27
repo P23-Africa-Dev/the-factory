@@ -111,6 +111,7 @@ class LeadService
             'phone' => $data['phone'] ?? null,
             'location' => $data['location'] ?? null,
             'company_name' => $data['company_name'] ?? null,
+            'company_email' => $data['company_email'] ?? null,
             'website' => isset($data['website']) ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null,
             'position' => $data['position'] ?? null,
             'profile_urls' => ! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null,
@@ -221,6 +222,7 @@ class LeadService
             'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
             'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
             'company_name' => array_key_exists('company_name', $data) ? $data['company_name'] : $lead->company_name,
+            'company_email' => array_key_exists('company_email', $data) ? $data['company_email'] : $lead->company_email,
             'website' => array_key_exists('website', $data)
                 ? ($data['website'] !== null ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null)
                 : $lead->website,

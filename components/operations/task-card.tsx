@@ -29,6 +29,8 @@ export function TaskCard({ item, onClick, onViewMap, onEdit, onDelete }: TaskCar
     transition,
   };
 
+  const isFallbackLocation = item.location?.startsWith("Created:") || item.location === "No location set";
+
   return (
     <div
       ref={setNodeRef}
@@ -76,7 +78,11 @@ export function TaskCard({ item, onClick, onViewMap, onEdit, onDelete }: TaskCar
       <div className="space-y-2.5">
         <span className="text-[#0B1215] font-bold text-[15px] block">Location</span>
         <div className="flex items-start justify-between gap-3">
-          <span className="text-gray-500 text-[12px] underline decoration-gray-300 underline-offset-4 leading-relaxed flex-1">
+          <span className={`text-[12px] leading-relaxed flex-1 ${
+            isFallbackLocation
+              ? "text-gray-400 no-underline"
+              : "text-gray-500 underline decoration-gray-300 underline-offset-4"
+          }`}>
             {item.location}
           </span>
           <div className="flex flex-col items-end gap-2.5 shrink-0">

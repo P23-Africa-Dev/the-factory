@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Coins } from "lucide-react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -9,8 +10,10 @@ import { useMapCredits } from "@/hooks/use-map-credits";
 const MANAGEMENT_ROLES = new Set(["owner", "admin", "supervisor"]);
 
 export function MapCreditBadge() {
+  const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const { role, apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const isAgent = role === "agent";
   const isManagement = role != null && MANAGEMENT_ROLES.has(role);
 
   const { data } = useMapCredits(companyId ?? undefined, {
@@ -22,21 +25,45 @@ export function MapCreditBadge() {
   if (!isManagement || !data || !data.metered) return null;
 
   const balance = data.balance;
+  const isLow = balance <= 50;
   const exhausted = balance <= 0;
+
   const tone = exhausted
-    ? "bg-red-500/15 text-red-300 hover:bg-red-500/25"
-    : data.low
-      ? "bg-amber-500/15 text-amber-300 hover:bg-amber-500/25"
-      : "bg-white/5 text-white/70 hover:bg-white/10";
+    ? "bg-red-500/15 text-red-300 hover:bg-red-500/25 border border-red-500/20"
+    : isLow
+      ? "bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/20"
+      : "bg-white/5 text-white/70 hover:bg-white/10 border border-white/5";
+
+  const displayCount = balance.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const basePath = isAgent ? "/agent" : "";
+  const targetHref = `${basePath}/settings/map-credits`;
+
+  const handleNavigate = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    router.push(targetHref);
+  };
 
   return (
-    <Link
-      href="/settings/map-credits"
-      title="Map credits"
-      className={`hidden sm:inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors ${tone}`}
-    >
-      <Coins size={14} />
-      {balance.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-    </Link>
+    <div className="relative group hidden sm:inline-flex items-center">
+      <Link
+        href={targetHref}
+        onClick={handleNavigate}
+        title={`${displayCount} credits - Click to top up`}
+        className={`inline-flex items-center gap-1.5 rounded-full ${
+          isLow ? "px-3 py-1.5" : "p-2"
+        } text-[12px] font-semibold transition-all duration-200 cursor-pointer ${tone}`}
+      >
+        <Coins size={16} />
+        {isLow && <span>Low</span>}
+      </Link>
+
+      {/* Floating tooltip on hover */}
+      <div className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-2 opacity-0 group-hover:opacity-100 transition-all duration-200 z-50 flex flex-col items-center">
+        <div className="w-2 h-2 bg-[#0d2d3a] rotate-45 -mb-1 border-l border-t border-white/15" />
+        <div className="bg-[#0d2d3a] text-white text-[11px] font-medium px-3 py-1.5 rounded-xl shadow-xl border border-white/15 whitespace-nowrap">
+          {displayCount} credits remaining
+        </div>
+      </div>
+    </div>
   );
 }
