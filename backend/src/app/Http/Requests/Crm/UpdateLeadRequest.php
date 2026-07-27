@@ -86,6 +86,7 @@ class UpdateLeadRequest extends FormRequest
             'phone' => ['sometimes', 'nullable', 'string', 'max:40'],
             'location' => ['sometimes', 'nullable', 'string', 'max:255'],
             'company_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'company_email' => ['sometimes', 'nullable', 'email', 'max:255'],
             'website' => ['sometimes', 'nullable', 'string', 'max:255', 'url'],
             'position' => ['sometimes', 'nullable', 'string', 'max:120'],
             'profile_urls' => ['sometimes', 'nullable', 'array'],

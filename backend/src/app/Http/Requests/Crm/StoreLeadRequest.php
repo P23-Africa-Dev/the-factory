@@ -81,6 +81,7 @@ class StoreLeadRequest extends FormRequest
             'phone' => ['nullable', 'string', 'max:40'],
             'location' => ['nullable', 'string', 'max:255'],
             'company_name' => ['nullable', 'string', 'max:255'],
+            'company_email' => ['nullable', 'email', 'max:255'],
             'website' => ['nullable', 'string', 'max:255', 'url'],
             'position' => ['nullable', 'string', 'max:120'],
             'profile_urls' => ['nullable', 'array'],
