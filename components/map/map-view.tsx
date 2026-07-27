@@ -1712,7 +1712,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             isInitialHydrating={isInitialHydrating}
             followAllActive={followAllActive}
             showHistory={showHistoryFeeds}
-            searchQuery={leftSearchQuery || searchQuery}
+            searchQuery={leftSearchQuery}
             onToggleHistory={() => setShowHistoryFeeds((prev) => !prev)}
             onToggleFollowAll={handleToggleFollowAll}
             onSelectTask={handleSelectTask}
@@ -2878,7 +2878,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             isInitialHydrating={isInitialHydrating}
             followAllActive={followAllActive}
             showHistory={showHistoryFeeds}
-            searchQuery={leftSearchQuery || searchQuery}
+            searchQuery={leftSearchQuery}
             onToggleHistory={() => setShowHistoryFeeds((prev) => !prev)}
             onToggleFollowAll={handleToggleFollowAll}
             onSelectTask={handleSelectTask}
