@@ -54,6 +54,8 @@ use App\Http\Controllers\Api\V1\Kpi\KpiStatusController;
 use App\Http\Controllers\Api\V1\Map\MapPoiDisplayController;
 use App\Http\Controllers\Api\V1\Map\MapProviderController;
 use App\Http\Controllers\Api\V1\MapCredit\MapCreditController;
+use App\Http\Controllers\Api\V1\Places\PlaceSearchController;
+use App\Http\Controllers\Api\V1\Places\PlaceRecentsController;
 use App\Http\Controllers\Api\V1\Notification\NotificationController;
 use App\Http\Controllers\Api\V1\Notification\NotificationPreferenceController;
 use App\Http\Controllers\Api\V1\Notification\PushSubscriptionController;
@@ -221,6 +223,18 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             ->name('consume');
         Route::get('/transactions', [MapCreditController::class, 'transactions'])->name('transactions');
         Route::post('/topup/checkout', [MapCreditController::class, 'topupCheckout'])->name('topup.checkout');
+    });
+
+    Route::prefix('places')->name('places.')->middleware('throttle:api')->group(function (): void {
+        Route::get('/autocomplete', [PlaceSearchController::class, 'autocomplete'])->name('autocomplete');
+        Route::get('/search', [PlaceSearchController::class, 'search'])->name('search');
+        Route::post('/nearby', [PlaceSearchController::class, 'nearby'])->name('nearby');
+        Route::get('/details', [PlaceSearchController::class, 'details'])->name('details');
+        Route::get('/geocode', [PlaceSearchController::class, 'geocode'])->name('geocode');
+        Route::get('/reverse', [PlaceSearchController::class, 'reverse'])->name('reverse');
+        Route::get('/recents', [PlaceRecentsController::class, 'index'])->name('recents.index');
+        Route::post('/recents', [PlaceRecentsController::class, 'store'])->name('recents.store');
+        Route::delete('/recents/{id}', [PlaceRecentsController::class, 'destroy'])->name('recents.destroy');
     });
 
     Route::prefix('company')->name('company.')->group(function (): void {

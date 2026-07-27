@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode, type UIEvent } from 'react';
 import { Building2, Clock, MapPin, Phone } from 'lucide-react';
 import type { SavedLocation } from '@/lib/api/saved-locations';
 import { getSavedLocationType } from '@/lib/map/location-types';
@@ -18,6 +18,16 @@ type Props = {
   poiZoomTooLow?: boolean;
   savedLocations: SavedLocation[];
   savedLocationsLoading: boolean;
+  savedLocationsTotal?: number | null;
+  hasNextSavedPage?: boolean;
+  isFetchingNextSavedPage?: boolean;
+  onLoadMoreSaved?: () => void;
+  /** Override empty-state copy for the pinned list (e.g. agent "your pins"). */
+  pinnedEmptyMessage?: string;
+  pinnedEmptyHint?: string;
+  pinnedListHint?: string;
+  /** Override the pinned list heading (default: Pinned Locations / with total). */
+  pinnedTitleOverride?: string | null;
   onPoiClick: (p: PoiResult) => void;
   onSavedClick: (b: SavedLocation) => void;
 };
@@ -29,6 +39,14 @@ export function BusinessListPanel({
   poiZoomTooLow = false,
   savedLocations = [],
   savedLocationsLoading = false,
+  savedLocationsTotal = null,
+  hasNextSavedPage = false,
+  isFetchingNextSavedPage = false,
+  onLoadMoreSaved,
+  pinnedEmptyMessage = 'No pinned locations yet',
+  pinnedEmptyHint = 'Use Location Pinning on the map to save a place',
+  pinnedListHint = 'Scroll for more · search to find any pin',
+  pinnedTitleOverride = null,
   onPoiClick,
   onSavedClick,
 }: Props) {
@@ -37,9 +55,45 @@ export function BusinessListPanel({
     isSearching || pois.length > 0 || poiBusy || poiZoomTooLow;
   const bboxTooLarge =
     isSearching && activeLocation.bbox ? isBboxTooLarge(activeLocation.bbox) : false;
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+    if (!onLoadMoreSaved || !hasNextSavedPage || isFetchingNextSavedPage || showPoiList) {
+      return;
+    }
+    const el = event.currentTarget;
+    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (remaining < 120) {
+      onLoadMoreSaved();
+    }
+  };
+
+  // If the list is shorter than the viewport, still pull the next page.
+  useEffect(() => {
+    if (showPoiList || !onLoadMoreSaved || !hasNextSavedPage || isFetchingNextSavedPage) {
+      return;
+    }
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollHeight <= el.clientHeight + 8) {
+      onLoadMoreSaved();
+    }
+  }, [
+    showPoiList,
+    savedLocations.length,
+    hasNextSavedPage,
+    isFetchingNextSavedPage,
+    onLoadMoreSaved,
+  ]);
+
+  const pinnedTitle =
+    pinnedTitleOverride ??
+    (savedLocationsTotal != null && savedLocationsTotal > 0
+      ? `Pinned Locations (${savedLocationsTotal})`
+      : 'Pinned Locations');
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col flex-1 min-h-0 h-full overflow-hidden">
       <div className="px-5 pt-3 pb-2 shrink-0">
         {showPoiList ? (
           <div className="flex items-center gap-2 min-w-0">
@@ -54,16 +108,25 @@ export function BusinessListPanel({
             )}
           </div>
         ) : (
-          <p className="text-[13px] font-bold text-dash-dark">Pinned Locations</p>
+          <p className="text-[13px] font-bold text-dash-dark">{pinnedTitle}</p>
         )}
         {showPoiList && !poiBusy && !bboxTooLarge && !poiZoomTooLow && (
           <p className="text-[11px] text-slate-400 mt-0.5 pl-5">
             {isSearching ? 'Businesses in this area' : 'Pan and zoom the map to discover more'}
           </p>
         )}
+        {!showPoiList && savedLocations.length > 0 && (
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            {pinnedListHint}
+          </p>
+        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-1 min-h-0">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto overscroll-contain px-3 pb-4 space-y-1 min-h-0"
+      >
         {showPoiList ? (
           bboxTooLarge ? (
             <Empty
@@ -94,13 +157,25 @@ export function BusinessListPanel({
         ) : savedLocations.length === 0 ? (
           <Empty
             icon={<MapPin size={26} className="text-slate-300" />}
-            message="No pinned locations yet"
-            hint="Zoom in on the map to explore Google businesses nearby"
+            message={pinnedEmptyMessage}
+            hint={pinnedEmptyHint}
           />
         ) : (
-          savedLocations.map((b) => (
-            <SavedCard key={b.id} business={b} onClick={() => onSavedClick(b)} />
-          ))
+          <>
+            {savedLocations.map((b) => (
+              <SavedCard key={b.id} business={b} onClick={() => onSavedClick(b)} />
+            ))}
+            {isFetchingNextSavedPage && (
+              <div className="py-3 flex justify-center">
+                <span className="w-4 h-4 border-2 border-gray-200 border-t-dash-teal rounded-full animate-spin" />
+              </div>
+            )}
+            {!hasNextSavedPage && savedLocations.length > 0 && (
+              <p className="text-center text-[10px] text-slate-300 py-2">
+                All pinned locations loaded
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -179,6 +254,9 @@ function SavedCard({
         <div className="flex-1 min-w-0">
           <p className="text-[13px] font-semibold text-dash-dark leading-tight truncate group-hover:text-dash-teal transition-colors">
             {business.name}
+            {business.can_manage && (
+              <span className="ml-1.5 text-[10px] font-medium text-dash-teal">Your pin</span>
+            )}
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">{typeOpt.label}</p>
           {business.address && (

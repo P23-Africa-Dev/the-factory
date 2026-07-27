@@ -27,4 +27,9 @@ class TaskAccessContext
     {
         return $this->role === 'agent';
     }
+
+    public function isSupervisor(): bool
+    {
+        return $this->role === 'supervisor';
+    }
 }

@@ -201,6 +201,7 @@ export function AllProjectsTasksView() {
   const router = useRouter();
   const authUser = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(authUser);
+  const isSupervisor = role === "supervisor";
   const canManageTaskStatuses =
     role === "owner" ||
     role === "admin" ||
@@ -209,6 +210,7 @@ export function AllProjectsTasksView() {
     role === "supervisor";
 
   const [search, setSearch] = useState("");
+  const [taskScope, setTaskScope] = useState<"mine" | "all">("mine");
   const [showFilters, setShowFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState("All");
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -217,7 +219,12 @@ export function AllProjectsTasksView() {
   const [deleteTaskTarget, setDeleteTaskTarget] = useState<DndItem | null>(null);
 
   const { data: tasksData, isPending: loadingTasks } = useTasks(
-    companyId ? { company_id: companyId } : {}
+    companyId
+      ? {
+          company_id: companyId,
+          assigned_to_me: isSupervisor && taskScope === "mine",
+        }
+      : {}
   );
   const statusMutation = useUpdateTaskStatusAdmin();
   const updateTaskMutation = useUpdateTask({
@@ -402,6 +409,37 @@ export function AllProjectsTasksView() {
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {isSupervisor && (
+        <div
+          className="flex w-fit items-center gap-1 rounded-full border border-gray-200 bg-white p-1 shadow-sm"
+          role="group"
+          aria-label="Task visibility"
+        >
+          {([
+            ["mine", "My Tasks"],
+            ["all", "All Tasks"],
+          ] as const).map(([scope, label]) => {
+            const active = taskScope === scope;
+
+            return (
+              <button
+                key={scope}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setTaskScope(scope)}
+                className={`rounded-full px-5 py-2 text-[13px] font-bold transition-colors ${
+                  active
+                    ? "bg-[#09232D] text-white shadow-sm"
+                    : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* ── Toolbar ── */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 sm:justify-end min-w-0 transition-all duration-300 relative z-10">
         <div className="relative w-full md:w-114.5 group shrink-0">
@@ -666,7 +704,7 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     id: String(apiTask.id),
     label: assigneeLabel,
     description: apiTask.title,
-    location: formatTaskLocationLabel(apiTask.location, apiTask.address),
+    location: formatTaskLocationLabel(apiTask.location, apiTask.address, "No location set", apiTask.created_at),
     address: apiTask.address ?? undefined,
     latitude: apiTask.latitude ?? null,
     longitude: apiTask.longitude ?? null,
@@ -676,6 +714,7 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     category: (apiTask.type || "agent") as DndItem["category"],
     dueDate: apiTask.due_date ? new Date(apiTask.due_date).toLocaleDateString() : undefined,
     dueDateIso: apiTask.due_date ?? undefined,
+    createdAt: apiTask.created_at ?? undefined,
     assignedBy: apiTask.creator?.name || `User ID: ${apiTask.created_by_user_id}`,
     addedDescription: apiTask.description,
     taskType: apiTask.type ?? undefined,

@@ -50,6 +50,10 @@ class CompanyLocationService
             $query->where('type', (string) $filters['type']);
         }
 
+        if (! empty($filters['mine'])) {
+            $query->where('created_by_user_id', (int) $user->id);
+        }
+
         if (! empty($filters['q'])) {
             $search = trim((string) $filters['q']);
             $query->where(function (Builder $builder) use ($search): void {
@@ -59,9 +63,66 @@ class CompanyLocationService
             });
         }
 
-        $perPage = (int) ($filters['per_page'] ?? 100);
+        if ($this->hasCompleteBbox($filters)) {
+            $minLat = (float) $filters['min_lat'];
+            $maxLat = (float) $filters['max_lat'];
+            $minLng = (float) $filters['min_lng'];
+            $maxLng = (float) $filters['max_lng'];
 
-        return $query->latest('id')->paginate($perPage)->withQueryString();
+            $query->whereBetween('latitude', [min($minLat, $maxLat), max($minLat, $maxLat)])
+                ->whereBetween('longitude', [min($minLng, $maxLng), max($minLng, $maxLng)]);
+        }
+
+        $perPage = $this->clampPerPage($filters['per_page'] ?? null);
+
+        if ($this->hasNearPoint($filters)) {
+            $nearLat = (float) $filters['near_lat'];
+            $nearLng = (float) $filters['near_lng'];
+            // Approximate distance sort (degrees²). Good enough for nearby-first listing.
+            $query->orderByRaw(
+                '((latitude - ?) * (latitude - ?)) + ((longitude - ?) * (longitude - ?)) asc',
+                [$nearLat, $nearLat, $nearLng, $nearLng]
+            )->orderByDesc('id');
+        } else {
+            $query->latest('id');
+        }
+
+        return $query->paginate($perPage)->withQueryString();
+    }
+
+    private function clampPerPage(mixed $perPage): int
+    {
+        $value = (int) ($perPage ?? 50);
+
+        return max(1, min(100, $value));
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function hasCompleteBbox(array $filters): bool
+    {
+        foreach (['min_lat', 'max_lat', 'min_lng', 'max_lng'] as $key) {
+            if (! array_key_exists($key, $filters) || $filters[$key] === null || $filters[$key] === '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function hasNearPoint(array $filters): bool
+    {
+        foreach (['near_lat', 'near_lng'] as $key) {
+            if (! array_key_exists($key, $filters) || $filters[$key] === null || $filters[$key] === '') {
+                return false;
+            }
+        }
+
+        return is_numeric($filters['near_lat']) && is_numeric($filters['near_lng']);
     }
 
     public function create(User $user, array $data): CompanyLocation

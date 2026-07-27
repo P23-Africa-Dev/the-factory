@@ -10,12 +10,13 @@ import { AddLeadModal } from '@/features/crm/components/AddLeadModal';
 import { AttendanceCard } from '@/features/attendance';
 import { NotificationPanel, useUnreadCount } from '@/features/notifications';
 import { MeetingWidget, CreateMeetingModal, ViewMeetingsModal, useMeetingList } from '@/features/meetings';
-import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
+import { getRecentDestinations, saveRecentDestination, fetchRecentDestinations, rememberRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 import {
   createSearchSessionToken,
   retrievePlace,
   suggestPlaces,
 } from '@/lib/map/place-search';
+import { getCachedSearchProximity, warmSearchProximity } from '@/lib/map/search-proximity';
 import { LocationPermissionGate, useLocationPermissionBootstrap } from '@/features/tracking';
 import { useGeolocation } from '@/features/tracking';
 import { toast } from '@/lib/toast';
@@ -30,7 +31,7 @@ export default function AgentDashboardPage() {
   const [locationResults, setLocationResults] = useState<
     Array<{
       suggestionId: string;
-      provider: 'google' | 'mapbox';
+      provider: string;
       name: string;
       address: string;
       sessionToken: string;
@@ -130,11 +131,13 @@ export default function AgentDashboardPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- load persisted recent destinations on mount
     setRecentLocations(getRecentDestinations());
+    void fetchRecentDestinations().then(setRecentLocations);
   }, []);
 
   const handleSelectLocation = useCallback(
     (item: { name: string; address: string; latitude: number; longitude: number }) => {
       saveRecentDestination(item);
+      void rememberRecentDestination(item);
       setRecentLocations(getRecentDestinations());
       goToMapScreen({
         name: item.name,
@@ -181,9 +184,12 @@ export default function AgentDashboardPage() {
 
   const placeSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const placeSearchSessionRef = useRef(createSearchSessionToken());
+  const placeSearchAbortRef = useRef<AbortController | null>(null);
+  const placeSearchRequestIdRef = useRef(0);
 
   const searchPlaces = useCallback(async (query: string) => {
     if (!query.trim()) {
+      placeSearchAbortRef.current?.abort();
       setLocationResults([]);
       setIsSearchingPlaces(false);
       return;
@@ -191,38 +197,54 @@ export default function AgentDashboardPage() {
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       toast.error("You're offline — place search needs a connection.");
-      setLocationResults([]);
       setIsSearchingPlaces(false);
       return;
     }
 
+    placeSearchAbortRef.current?.abort();
+    const abort = new AbortController();
+    placeSearchAbortRef.current = abort;
+    const requestId = ++placeSearchRequestIdRef.current;
+
     setIsSearchingPlaces(true);
     try {
+      const cached = getCachedSearchProximity();
+      const proximity: [number, number] | undefined = cached ?? undefined;
+      if (!proximity) warmSearchProximity();
+
       const suggestions = await suggestPlaces(query, {
         sessionToken: placeSearchSessionRef.current,
+        proximity,
         limit: 5,
+        signal: abort.signal,
       });
 
-      setLocationResults(
-        suggestions.map((suggestion) => ({
-          suggestionId: suggestion.id,
-          provider: suggestion.provider,
-          name: suggestion.name,
-          address: suggestion.placeFormatted || suggestion.name,
-          sessionToken: suggestion.sessionToken,
-        })),
-      );
+      if (requestId !== placeSearchRequestIdRef.current) return;
 
-      if (query.trim().length >= 2 && suggestions.length === 0) {
-        toast.error('No places found — try a fuller address.');
-      } else if (suggestions.length > 0 && suggestions.every((s) => s.provider === 'mapbox')) {
-        toast.info('Google search paused or unavailable. Showing Mapbox results.');
+      if (suggestions.length > 0) {
+        setLocationResults(
+          suggestions.map((suggestion) => ({
+            suggestionId: suggestion.id,
+            provider: suggestion.provider,
+            name: suggestion.name,
+            address: suggestion.placeFormatted || suggestion.name,
+            sessionToken: suggestion.sessionToken,
+          })),
+        );
+      } else {
+        setLocationResults([]);
+        if (query.trim().length >= 2) {
+          toast.error('No places found — try a fuller address.');
+        }
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (requestId !== placeSearchRequestIdRef.current) return;
       toast.error('Place search failed. Please try again.');
-      setLocationResults([]);
     } finally {
-      setIsSearchingPlaces(false);
+      if (requestId === placeSearchRequestIdRef.current) {
+        setIsSearchingPlaces(false);
+      }
     }
   }, []);
 
@@ -230,6 +252,7 @@ export default function AgentDashboardPage() {
     setLocationQuery(text);
     if (placeSearchTimerRef.current) clearTimeout(placeSearchTimerRef.current);
     if (!text.trim()) {
+      placeSearchAbortRef.current?.abort();
       setLocationResults([]);
       setIsSearchingPlaces(false);
       placeSearchSessionRef.current = createSearchSessionToken();

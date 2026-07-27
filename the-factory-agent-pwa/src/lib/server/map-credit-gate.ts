@@ -1,12 +1,8 @@
 /**
  * Map-credit gate for the Agent PWA's Google Places proxy routes.
  *
- * Agent Google usage spends the organization's shared credits too. The PWA is a
- * separate origin storing its token in localStorage, so the client forwards it
- * explicitly as an Authorization header; this gate reads that (or a cookie
- * fallback) and meters against Laravel `/map-credits/consume`.
- *
- * Fails OPEN so the agent map never breaks on infra hiccups.
+ * Fail-closed for Google when there is no auth token (client uses Mapbox).
+ * Backend transport errors fail open unless PLACES_CREDIT_FAIL_CLOSED=true.
  */
 
 const AUTH_TOKEN_COOKIE = "factory_auth_token";
@@ -20,7 +16,7 @@ export type CreditGateResult = {
   skipped: boolean;
 };
 
-const SKIPPED: CreditGateResult = {
+const SKIPPED_OPEN: CreditGateResult = {
   allowed: true,
   blocked: false,
   low: false,
@@ -28,6 +24,20 @@ const SKIPPED: CreditGateResult = {
   balance: null,
   skipped: true,
 };
+
+const BLOCKED_UNMETERED: CreditGateResult = {
+  allowed: false,
+  blocked: true,
+  low: false,
+  metered: false,
+  balance: null,
+  skipped: true,
+};
+
+function strictFailClosed(): boolean {
+  const raw = process.env.PLACES_CREDIT_FAIL_CLOSED?.trim() ?? "";
+  return raw === "true" || raw === "1";
+}
 
 function apiBaseUrl(): string {
   const raw =
@@ -63,7 +73,7 @@ export async function consumeMapCredit(
   sku: string,
 ): Promise<CreditGateResult> {
   const token = tokenFromRequest(request);
-  if (!token) return SKIPPED;
+  if (!token) return BLOCKED_UNMETERED;
 
   const companyId = request.headers.get("x-company-id");
 
@@ -93,7 +103,9 @@ export async function consumeMapCredit(
       };
     }
 
-    if (!response.ok) return SKIPPED;
+    if (!response.ok) {
+      return strictFailClosed() ? BLOCKED_UNMETERED : SKIPPED_OPEN;
+    }
 
     const data = await response.json().catch(() => null);
     const detail = (data?.data ?? {}) as Record<string, unknown>;
@@ -107,6 +119,20 @@ export async function consumeMapCredit(
       skipped: false,
     };
   } catch {
-    return SKIPPED;
+    return strictFailClosed() ? BLOCKED_UNMETERED : SKIPPED_OPEN;
   }
+}
+
+export function creditMeta(result: CreditGateResult): {
+  balance: number | null;
+  low: boolean;
+  blocked: boolean;
+  metered: boolean;
+} {
+  return {
+    balance: result.balance,
+    low: result.low,
+    blocked: result.blocked,
+    metered: result.metered,
+  };
 }

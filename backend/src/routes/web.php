@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\Map\MapPoiDisplayController as AdminMapPoiDisplayController;
 use App\Http\Controllers\Admin\MapCredit\MapCreditController as AdminMapCreditController;
 use App\Http\Controllers\Admin\MapCredit\MapCreditSkuController as AdminMapCreditSkuController;
+use App\Http\Controllers\Admin\Places\PlacesAnalyticsController;
 use App\Http\Controllers\Admin\Database\DatabaseLockController;
 use App\Http\Controllers\Admin\Database\DatabaseManagerController;
 use App\Http\Controllers\Admin\Enterprise\DemoRequestController;
@@ -169,6 +170,12 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
             Route::get('/', [AdminMapPoiDisplayController::class, 'index'])->name('index');
             Route::post('/global', [AdminMapPoiDisplayController::class, 'updateGlobal'])->name('global.update');
             Route::post('/companies/{company}', [AdminMapPoiDisplayController::class, 'updateCompany'])->name('companies.update');
+        });
+
+        // ── Places Search analytics (Geoapify / Foursquare / Google) ──
+        Route::prefix('places')->name('places.')->middleware('admin.permission:manage_billing')->group(function (): void {
+            Route::get('/', [PlacesAnalyticsController::class, 'index'])->name('index');
+            Route::post('/settings', [PlacesAnalyticsController::class, 'updateSettings'])->name('settings.update');
         });
     });
 });

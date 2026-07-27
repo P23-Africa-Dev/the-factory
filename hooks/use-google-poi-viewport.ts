@@ -14,7 +14,6 @@ import {
   poiTileKey,
   type ViewportBounds,
 } from "@/lib/map/poi-viewport";
-import { ingestCreditMeta } from "@/store/map-credits";
 
 type PoiTile = { pois: PoiResult[]; ts: number };
 
@@ -150,22 +149,15 @@ export function useGooglePoiViewport(
 
   const selectPoi = useCallback((poi: PoiResult | null) => {
     setSelectedPoi(poi);
-    // Lazily enrich with phone + opening hours only when a pin is opened, so
-    // those Enterprise-tier fields are billed per click instead of per pin.
+    // Lazily enrich with phone + opening hours only when a pin is opened.
     if (!poi || (poi.phone && poi.openingHours)) return;
     void (async () => {
       try {
-        const params = new URLSearchParams({ placeId: poi.id });
-        const res = await fetch(`/api/places/poi-details?${params.toString()}`);
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          phone?: string | null;
-          openingHours?: string | null;
-          credits?: unknown;
-        };
-        ingestCreditMeta(data.credits);
-        const phone = data.phone ?? undefined;
-        const openingHours = data.openingHours ?? undefined;
+        const { placesDetails } = await import("@/lib/api/places");
+        const envelope = await placesDetails(poi.id, "geoapify");
+        const place = envelope.data?.[0];
+        const phone = place?.phone ?? undefined;
+        const openingHours = place?.opening_hours ?? undefined;
         if (!phone && !openingHours) return;
         const merge = (p: PoiResult): PoiResult => ({
           ...p,

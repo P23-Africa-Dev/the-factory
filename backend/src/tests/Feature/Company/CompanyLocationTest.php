@@ -429,6 +429,205 @@ class CompanyLocationTest extends TestCase
             ->assertJsonPath('data.items.0.name', 'Mobil Filling Station');
     }
 
+    public function test_list_paginates_and_clamps_per_page(): void
+    {
+        [$company, $admin] = $this->seedCompany('FAC-LOC010', 'Pagination Location Ltd');
+        $token = $admin->createToken('paginate-locations', ['*'])->plainTextToken;
+
+        for ($i = 1; $i <= 55; $i++) {
+            CompanyLocation::create([
+                'company_id' => $company->id,
+                'created_by_user_id' => $admin->id,
+                'name' => "Pin {$i}",
+                'type' => 'office',
+                'address' => "Address {$i}",
+                'latitude' => 6.4000000 + ($i * 0.0001),
+                'longitude' => 3.4000000 + ($i * 0.0001),
+            ]);
+        }
+
+        $page1 = $this->withToken($token)
+            ->getJson('/api/v1/admin/locations?company_id=' . $company->id . '&per_page=50');
+
+        $page1->assertOk()
+            ->assertJsonPath('data.pagination.per_page', 50)
+            ->assertJsonPath('data.pagination.current_page', 1)
+            ->assertJsonPath('data.pagination.last_page', 2)
+            ->assertJsonPath('data.pagination.total', 55)
+            ->assertJsonCount(50, 'data.items');
+
+        $page1Ids = collect($page1->json('data.items'))->pluck('id')->all();
+
+        $page2 = $this->withToken($token)
+            ->getJson('/api/v1/admin/locations?company_id=' . $company->id . '&per_page=50&page=2');
+
+        $page2->assertOk()
+            ->assertJsonPath('data.pagination.current_page', 2)
+            ->assertJsonCount(5, 'data.items');
+
+        $page2Ids = collect($page2->json('data.items'))->pluck('id')->all();
+        $this->assertEmpty(array_intersect($page1Ids, $page2Ids));
+
+        // Oldest pin is on page 2 (newest-first ordering).
+        $oldest = CompanyLocation::query()->where('company_id', $company->id)->orderBy('id')->first();
+        $this->assertNotNull($oldest);
+        $this->assertContains($oldest->id, $page2Ids);
+
+        $clamped = $this->withToken($token)
+            ->getJson('/api/v1/admin/locations?company_id=' . $company->id . '&per_page=500');
+
+        $clamped->assertOk()
+            ->assertJsonPath('data.pagination.per_page', 100)
+            ->assertJsonCount(55, 'data.items');
+    }
+
+    public function test_search_finds_location_beyond_first_page(): void
+    {
+        [$company, $admin] = $this->seedCompany('FAC-LOC011', 'Search Beyond Page Ltd');
+        $token = $admin->createToken('search-beyond', ['*'])->plainTextToken;
+
+        for ($i = 1; $i <= 30; $i++) {
+            CompanyLocation::create([
+                'company_id' => $company->id,
+                'created_by_user_id' => $admin->id,
+                'name' => "Generic Pin {$i}",
+                'type' => 'office',
+                'address' => "Street {$i}",
+                'latitude' => 6.5000000 + ($i * 0.0001),
+                'longitude' => 3.5000000 + ($i * 0.0001),
+            ]);
+        }
+
+        $needle = CompanyLocation::query()->where('company_id', $company->id)->orderBy('id')->first();
+        $this->assertNotNull($needle);
+        $needle->update(['name' => 'Hidden Ancient Cafe']);
+
+        $response = $this->withToken($token)
+            ->getJson('/api/v1/admin/locations?company_id=' . $company->id . '&q=Ancient&per_page=10');
+
+        $response->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.name', 'Hidden Ancient Cafe')
+            ->assertJsonPath('data.items.0.id', $needle->id);
+    }
+
+    public function test_list_supports_viewport_bbox_filter(): void
+    {
+        [$company, $admin] = $this->seedCompany('FAC-LOC012', 'BBox Location Ltd');
+        $token = $admin->createToken('bbox-locations', ['*'])->plainTextToken;
+
+        CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Inside Viewport',
+            'type' => 'cafe',
+            'latitude' => 6.4500000,
+            'longitude' => 3.4000000,
+        ]);
+
+        CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Outside Viewport',
+            'type' => 'cafe',
+            'latitude' => 7.4500000,
+            'longitude' => 4.4000000,
+        ]);
+
+        $response = $this->withToken($token)
+            ->getJson(
+                '/api/v1/admin/locations?company_id=' . $company->id
+                . '&min_lat=6.4&max_lat=6.5&min_lng=3.35&max_lng=3.45&per_page=50'
+            );
+
+        $response->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.name', 'Inside Viewport');
+    }
+
+    public function test_mine_filter_returns_only_caller_pins(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompany('FAC-LOC013', 'Mine Filter Ltd');
+        $agentToken = $agent->createToken('mine-filter', ['*'])->plainTextToken;
+
+        CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $agent->id,
+            'name' => 'Agent Own Pin',
+            'type' => 'client_site',
+            'latitude' => 6.4100000,
+            'longitude' => 3.4100000,
+        ]);
+
+        CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Admin Other Pin',
+            'type' => 'office',
+            'latitude' => 6.4200000,
+            'longitude' => 3.4200000,
+        ]);
+
+        $mineResponse = $this->withToken($agentToken)
+            ->getJson('/api/v1/agent/locations?company_id=' . $company->id . '&mine=1');
+
+        $mineResponse->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.name', 'Agent Own Pin')
+            ->assertJsonPath('data.items.0.can_manage', true);
+
+        $searchOther = $this->withToken($agentToken)
+            ->getJson('/api/v1/agent/locations?company_id=' . $company->id . '&q=Admin+Other');
+
+        $searchOther->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.name', 'Admin Other Pin');
+    }
+
+    public function test_list_sorts_by_near_point_when_provided(): void
+    {
+        [$company, $admin] = $this->seedCompany('FAC-LOC014', 'Near Sort Ltd');
+        $token = $admin->createToken('near-sort', ['*'])->plainTextToken;
+
+        CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Far Pin',
+            'type' => 'office',
+            'latitude' => 9.0000000,
+            'longitude' => 7.0000000,
+        ]);
+
+        CompanyLocation::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Near Pin',
+            'type' => 'office',
+            'latitude' => 6.4550000,
+            'longitude' => 3.4000000,
+        ]);
+
+        $response = $this->withToken($token)
+            ->getJson(
+                '/api/v1/admin/locations?company_id=' . $company->id
+                . '&near_lat=6.45&near_lng=3.39&per_page=10'
+            );
+
+        $response->assertOk()
+            ->assertJsonPath('data.pagination.total', 2)
+            ->assertJsonPath('data.items.0.name', 'Near Pin')
+            ->assertJsonPath('data.items.1.name', 'Far Pin');
+
+        $searchNear = $this->withToken($token)
+            ->getJson(
+                '/api/v1/admin/locations?company_id=' . $company->id
+                . '&q=Pin&near_lat=6.45&near_lng=3.39&per_page=10'
+            );
+
+        $searchNear->assertOk()
+            ->assertJsonPath('data.items.0.name', 'Near Pin');
+    }
+
     /**
      * @return array{0: Company, 1: User, 2: User, 3: User}
      */

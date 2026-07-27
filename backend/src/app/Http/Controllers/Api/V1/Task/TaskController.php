@@ -28,6 +28,7 @@ class TaskController extends Controller
             'status' => $request->string('status')->toString(),
             'priority' => $request->string('priority')->toString(),
             'type' => $request->string('type')->toString(),
+            'assigned_to_me' => $request->boolean('assigned_to_me'),
         ]);
 
         return $this->success(

@@ -25,7 +25,7 @@ export function SavedLocationInfoCard({
   const typeLabel = getSavedLocationLabel(location.type);
 
   return (
-    <div className="absolute bottom-24 left-4 md:left-10 z-20 w-[min(92vw,380px)] rounded-3xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+    <div className="absolute bottom-24 left-1/2 -translate-x-1/2 md:left-10 md:translate-x-0 z-50 w-[min(92vw,380px)] rounded-3xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-white to-slate-50">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0">

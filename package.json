@@ -10,8 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "node scripts/run-vitest.js run",
+    "test:watch": "node scripts/run-vitest.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

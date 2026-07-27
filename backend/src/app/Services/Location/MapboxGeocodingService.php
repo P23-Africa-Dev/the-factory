@@ -6,11 +6,19 @@ namespace App\Services\Location;
 
 use App\Models\Company;
 use App\Services\Demo\DemoCompanyService;
-use Illuminate\Support\Facades\Http;
+use App\Services\Places\PlaceSearchService;
 
+/**
+ * Compatibility facade: server geocode/reverse goes through the Places
+ * orchestrator (Geoapify → Foursquare → Google). Demo companies keep synthetic
+ * centroids. Class name retained for existing DI bindings.
+ */
 class MapboxGeocodingService
 {
-    public function __construct(private readonly DemoCompanyService $demoCompanyService) {}
+    public function __construct(
+        private readonly DemoCompanyService $demoCompanyService,
+        private readonly PlaceSearchService $places,
+    ) {}
 
     /**
      * @return array{latitude: float, longitude: float, place_name: string|null}|null
@@ -26,53 +34,25 @@ class MapboxGeocodingService
             return $this->demoGeocode($trimmed, $company);
         }
 
-        $token = trim((string) config('services.mapbox.access_token'));
-        if ($token === '') {
+        $companyModel = $this->resolveCompany($company);
+        $outcome = $this->places->geocode(
+            query: $trimmed,
+            company: $companyModel,
+            user: null,
+            source: 'system',
+        );
+
+        $place = $outcome->results[0] ?? null;
+        if ($place === null || ! isset($place->latitude, $place->longitude)) {
             return null;
         }
 
-        $url = 'https://api.mapbox.com/geocoding/v5/mapbox.places/' . rawurlencode($trimmed) . '.json';
-
-        try {
-            $response = Http::timeout(8)->get($url, [
-                'access_token' => $token,
-                'limit' => 1,
-            ]);
-
-            if (! $response->successful()) {
-                return null;
-            }
-
-            /** @var array{features?: array<int, array{center?: array<int, mixed>, place_name?: string}>} $payload */
-            $payload = $response->json();
-            $feature = $payload['features'][0] ?? null;
-
-            if (! is_array($feature)) {
-                return null;
-            }
-
-            $center = $feature['center'] ?? null;
-            if (! is_array($center) || count($center) !== 2) {
-                return null;
-            }
-
-            $longitude = is_numeric($center[0]) ? (float) $center[0] : null;
-            $latitude = is_numeric($center[1]) ? (float) $center[1] : null;
-
-            if ($latitude === null || $longitude === null) {
-                return null;
-            }
-
-            return [
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-                'place_name' => isset($feature['place_name']) && is_string($feature['place_name'])
-                    ? trim($feature['place_name'])
-                    : null,
-            ];
-        } catch (\Throwable) {
-            return null;
-        }
+        /** @var \App\DTO\Places\PlaceResult $place */
+        return [
+            'latitude' => $place->latitude,
+            'longitude' => $place->longitude,
+            'place_name' => $place->formattedAddress !== '' ? $place->formattedAddress : $place->name,
+        ];
     }
 
     /**
@@ -86,44 +66,36 @@ class MapboxGeocodingService
             ];
         }
 
-        $token = trim((string) config('services.mapbox.access_token'));
-        if ($token === '') {
-            return null;
-        }
-
-        $url = sprintf(
-            'https://api.mapbox.com/geocoding/v5/mapbox.places/%s,%s.json',
-            rawurlencode((string) $longitude),
-            rawurlencode((string) $latitude),
+        $companyModel = $this->resolveCompany($company);
+        $outcome = $this->places->reverseGeocode(
+            lat: $latitude,
+            lng: $longitude,
+            company: $companyModel,
+            user: null,
+            source: 'system',
         );
 
-        try {
-            $response = Http::timeout(8)->get($url, [
-                'access_token' => $token,
-                'limit' => 1,
-                'types' => 'address,poi,place,locality,neighborhood',
-            ]);
-
-            if (! $response->successful()) {
-                return null;
-            }
-
-            /** @var array{features?: array<int, array{place_name?: string}>} $payload */
-            $payload = $response->json();
-            $feature = $payload['features'][0] ?? null;
-
-            if (! is_array($feature)) {
-                return null;
-            }
-
-            return [
-                'place_name' => isset($feature['place_name']) && is_string($feature['place_name'])
-                    ? trim($feature['place_name'])
-                    : null,
-            ];
-        } catch (\Throwable) {
+        $place = $outcome->results[0] ?? null;
+        if ($place === null) {
             return null;
         }
+
+        /** @var \App\DTO\Places\PlaceResult $place */
+        return [
+            'place_name' => $place->formattedAddress !== '' ? $place->formattedAddress : $place->name,
+        ];
+    }
+
+    private function resolveCompany(Company|int|null $company): ?Company
+    {
+        if ($company instanceof Company) {
+            return $company;
+        }
+        if (is_int($company)) {
+            return Company::query()->find($company);
+        }
+
+        return null;
     }
 
     /**

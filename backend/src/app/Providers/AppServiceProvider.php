@@ -9,6 +9,7 @@ use App\Models\Task;
 use App\Observers\LeadObserver;
 use App\Observers\TaskObserver;
 use App\Listeners\HandleStripeWebhook;
+use App\Services\Places\PlacesSettingsService;
 use Illuminate\Support\Facades\Event;
 use Laravel\Cashier\Cashier;
 use Laravel\Cashier\Events\WebhookReceived;
@@ -39,6 +40,12 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureLoginRateLimiting();
         $this->configureApiRateLimiting();
+
+        try {
+            $this->app->make(PlacesSettingsService::class)->applyRuntimeConfig();
+        } catch (\Throwable) {
+            // DB may be unavailable during early boot / migrate.
+        }
 
         if ($this->app->isProduction()) {
             FreshCommand::prohibit();
