@@ -87,6 +87,56 @@ class TaskTrackingPublishTest extends TestCase
         $this->assertSame($agent->id, $locationEvent['payload']['data']['agent']['id'] ?? null);
     }
 
+    public function test_tracking_start_notifies_manager_with_map_deep_link(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers('FAC-TRACKMGR');
+        $manager = User::factory()->create(['email_verified_at' => now()]);
+
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $manager->id,
+            'role' => 'manager',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $connection = Mockery::mock();
+        $connection->shouldReceive('publish')->andReturn(1);
+        Redis::shouldReceive('connection')->with('pubsub')->andReturn($connection);
+
+        $task = $this->createAssignedTask($company->id, $admin->id, $agent->id, [
+            'status' => 'pending',
+            'latitude' => 6.4300,
+            'longitude' => 3.4200,
+        ]);
+
+        $this->withToken($agent->createToken('agent-notify-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/tasks/' . $task->id . '/start', [
+                'company_id' => $company->id,
+                'location_permission_granted' => true,
+                'latitude' => 6.4000,
+                'longitude' => 3.3900,
+                'accuracy_meters' => 5,
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $manager->id,
+            'company_id' => $company->id,
+            'type' => 'tracking.task.started',
+            'action_url' => '/map?taskId='.$task->id,
+            'is_in_app_visible' => true,
+        ]);
+
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $admin->id,
+            'company_id' => $company->id,
+            'type' => 'tracking.task.started',
+            'action_url' => '/map?taskId='.$task->id,
+        ]);
+    }
+
     private function createAssignedTask(int $companyId, int $creatorId, int $agentId, array $overrides = []): Task
     {
         $task = Task::query()->create(array_merge([

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { isActivelyOnTask } from "@/lib/tracking/live-feed-groups";
 import { trackingAgentIdentityKey, useTrackingStore } from "@/store/tracking";
 import type { TaskRoute, TrackingEnvelope } from "@/types/tracking";
 import type { TaskApiItem } from "@/lib/api/tasks";
@@ -10,6 +11,7 @@ function resetStore() {
     wsStatus: "idle",
     selectedTaskId: null,
     activeTrackingTaskId: null,
+    lastTaskStartedAlert: null,
   });
 }
 
@@ -179,5 +181,30 @@ describe("tracking store avatar identity", () => {
       trackingAgentIdentityKey({ userId: 5, agentAvatarUrl: "https://cdn.example.com/a.png" }),
     ).toBe("5:https://cdn.example.com/a.png");
     expect(trackingAgentIdentityKey({ userId: 5, agentAvatarUrl: undefined })).toBe("5:");
+  });
+
+  it("tracking.task.started with coords builds an active live feed task", () => {
+    useTrackingStore.getState().upsertFromWs(
+      baseEnvelope("tracking.task.started", {
+        data: {
+          latitude: 6.5,
+          longitude: 3.4,
+          agent: { id: 100, name: "Agent Alpha" },
+          task: { title: "Site visit" },
+        },
+      }),
+    );
+
+    const live = useTrackingStore.getState().liveTasks[10];
+    expect(live.trackingSessionId).toBe(20);
+    expect(live.lastPosition).toEqual([3.4, 6.5]);
+    expect(live.status).toBe("in_progress");
+    expect(isActivelyOnTask(live, Date.now())).toBe(true);
+
+    const alert = useTrackingStore.getState().lastTaskStartedAlert;
+    expect(alert?.taskId).toBe(10);
+    expect(alert?.agentName).toBe("Agent Alpha");
+    expect(alert?.taskTitle).toBe("Site visit");
+    expect(alert?.signal).toBe(1);
   });
 });

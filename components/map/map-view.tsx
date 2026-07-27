@@ -13,7 +13,6 @@ import {
 import { useEffectiveMapProvider, type EffectiveMapProviderState } from '@/hooks/use-effective-map-provider';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 import { useTrackingStore } from '@/store/tracking';
-import { useTrackingWebSocket } from '@/hooks/use-tracking-ws';
 import { RouteHistoryPanel } from '@/components/map/RouteHistoryPanel';
 import type { LiveTaskState } from '@/types/tracking';
 import {
@@ -488,6 +487,16 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       suppressFollowBreakRef.current = false;
     });
   }, [setSelectedTaskId]);
+
+  // Deep-link from live-feed alerts: /map?taskId=123 (coords optional)
+  const deepLinkTaskId = Number.parseInt(searchParams.get('taskId') ?? '', 10);
+  useEffect(() => {
+    if (!Number.isFinite(deepLinkTaskId) || deepLinkTaskId <= 0) return;
+    const task = liveTasks[deepLinkTaskId];
+    if (!task || !hasUsableTaskPosition(task)) return;
+    if (selectedTaskId === deepLinkTaskId) return;
+    handleSelectTask(deepLinkTaskId);
+  }, [deepLinkTaskId, liveTasks, selectedTaskId, handleSelectTask]);
 
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {
@@ -2107,6 +2116,15 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     if (map.getZoom() < 15.5) map.setZoom(15.5);
   }, [setSelectedTaskId]);
 
+  const deepLinkTaskIdGoogle = Number.parseInt(searchParams.get('taskId') ?? '', 10);
+  useEffect(() => {
+    if (!Number.isFinite(deepLinkTaskIdGoogle) || deepLinkTaskIdGoogle <= 0) return;
+    const task = liveTasks[deepLinkTaskIdGoogle];
+    if (!task || !hasUsableTaskPosition(task)) return;
+    if (selectedTaskId === deepLinkTaskIdGoogle) return;
+    handleSelectTask(deepLinkTaskIdGoogle);
+  }, [deepLinkTaskIdGoogle, liveTasks, selectedTaskId, handleSelectTask]);
+
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {
       if (!prev) {
@@ -3006,7 +3024,8 @@ function HydrationBridge({
 }: {
   onHydrationChange: (isHydrating: boolean) => void;
 }) {
-  const { isInitialHydrating } = useTrackingWebSocket();
+  // WS lives in dashboard layout (GlobalTrackingWsBridge). Map only mirrors hydrate state.
+  const isInitialHydrating = useTrackingStore((s) => s.isInitialHydrating);
 
   useEffect(() => {
     onHydrationChange(isInitialHydrating);
