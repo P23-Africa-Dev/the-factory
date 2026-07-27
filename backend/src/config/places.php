@@ -30,6 +30,15 @@ return [
     'google_daily_budget' => (int) env('PLACES_GOOGLE_DAILY_BUDGET', 200),
 
     /*
+    | Cache key bucketing / stampede protection (result cache only).
+    */
+    'cache' => [
+        'geohash_precision' => (int) env('PLACES_CACHE_GEOHASH_PRECISION', 6),
+        'reverse_decimals' => (int) env('PLACES_CACHE_REVERSE_DECIMALS', 3),
+        'lock_seconds' => (int) env('PLACES_CACHE_LOCK_SECONDS', 10),
+    ],
+
+    /*
     | Parallel fan-out for autocomplete / search.
     | charge_sku_once: one map-credit charge per settled user search (not per provider).
     */
@@ -50,6 +59,7 @@ return [
         'details' => (int) env('PLACES_TTL_DETAILS', 86400),
         'geocode' => (int) env('PLACES_TTL_GEOCODE', 86400),
         'reverse' => (int) env('PLACES_TTL_REVERSE', 86400),
+        'empty' => (int) env('PLACES_TTL_EMPTY', 900),
     ],
 
     'timeouts' => [
