@@ -57,12 +57,14 @@ export default function HeroSectionOption2({ onDownloadAgentApp }: HeroSectionOp
                 className="w-full h-auto block object-contain drop-shadow-sm select-none pointer-events-none"
               />
             </span>
-          </span>is out there. Do you know what they&rsquo;re doing?
+          </span>is out there.
+          <br />
+          Do you know what they&rsquo;re doing?
         </h1>
 
         {/* Subtitle / Description */}
         <p className="text-xs sm:text-[16px] font-light text-white/80 text-center leading-relaxed sm:leading-normal max-w-[760px] mx-auto mb-7 sm:mb-8 px-2">
-          Field teams across Africa run on guesswork, where agents are, who they&rsquo;re calling, whose territory is whose, what&rsquo;s actually been followed up. Every blind spot costs revenue. Factory 23 closes them.
+          Field teams across Africa run on guesswork, where agents are, who they&rsquo;re calling, whose territory is whose, what&rsquo;s actually been followed up. Every blind spot costs revenue. <span className="whitespace-nowrap">Factory 23</span> closes them.
         </p>
 
         {/* CTA Buttons */}
