@@ -16,6 +16,11 @@ return [
     'cache_enabled' => (bool) env('PLACES_CACHE_ENABLED', true),
     'fallback_enabled' => (bool) env('PLACES_FALLBACK_ENABLED', true),
 
+    'show_provider_attribution' => (bool) env('PLACES_SHOW_PROVIDER_ATTRIBUTION', true),
+    'foursquare_premium_fields' => (bool) env('PLACES_FOURSQUARE_PREMIUM_FIELDS', false),
+    'max_results_autocomplete' => (int) env('PLACES_MAX_RESULTS_AUTOCOMPLETE', 12),
+    'max_results_search' => (int) env('PLACES_MAX_RESULTS_SEARCH', 15),
+
     'quality_threshold' => (float) env('PLACES_QUALITY_THRESHOLD', 0.80),
     'min_results' => (int) env('PLACES_MIN_RESULTS', 1),
     'min_nearby_results' => (int) env('PLACES_MIN_NEARBY_RESULTS', 3),

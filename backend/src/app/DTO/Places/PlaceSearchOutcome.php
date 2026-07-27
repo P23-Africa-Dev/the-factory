@@ -10,6 +10,7 @@ final class PlaceSearchOutcome
      * @param  list<PlaceSuggestion|PlaceResult>  $results
      * @param  list<string>  $providersTried
      * @param  array<string, mixed>|null  $credits
+     * @param  array<string, int>|null  $sourcesMix  provider => row count tagged with that provider
      */
     public function __construct(
         public readonly array $results,
@@ -21,6 +22,8 @@ final class PlaceSearchOutcome
         public readonly int $latencyMs,
         public readonly ?array $credits = null,
         public readonly string $status = 'ok',
+        public readonly ?int $resultLimit = null,
+        public readonly ?array $sourcesMix = null,
     ) {}
 
     /**
@@ -43,6 +46,10 @@ final class PlaceSearchOutcome
                 'latency_ms' => $this->latencyMs,
                 'credits' => $this->credits,
                 'status' => $this->status,
+                'attribution_visible' => (bool) config('places.show_provider_attribution', true),
+                'foursquare_premium' => (bool) config('places.foursquare_premium_fields', false),
+                'result_limit' => $this->resultLimit,
+                'sources_mix' => $this->sourcesMix,
             ],
         ];
     }

@@ -323,6 +323,7 @@ final class PlaceSearchService
         $fallbackDepth = $bundle['fallbackDepth'];
         $bestScore = $bundle['confidence'];
         $creditsMeta = null;
+        $sourcesMix = $this->buildSourcesMix($results);
 
         if ($bestProvider !== null && $results !== []) {
             $chargeProvider = (bool) config('places.fanout.charge_sku_once', true)
@@ -346,6 +347,8 @@ final class PlaceSearchService
             latencyMs: $latencyMs,
             credits: $creditsMeta,
             status: $results === [] ? 'empty' : 'ok',
+            resultLimit: $limit,
+            sourcesMix: $sourcesMix,
         );
 
         if ($results !== []) {
@@ -736,8 +739,8 @@ final class PlaceSearchService
                 $out[] = $item;
                 continue;
             }
-            // Never drop a coord-bearing POI in favor of a name-only stub.
-            $out[$index] = $this->preferPlace($out[$index], $item);
+            // One card per place; union sources; keep canonical winner fields.
+            $out[$index] = $this->mergePlaceRecords($out[$index], $item);
         }
 
         return array_values($out);
@@ -777,15 +780,63 @@ final class PlaceSearchService
                 continue;
             }
 
-            // Same name and at least one side lacks coords — treat as the same place
-            // so preferPlace() can keep the coord-bearing candidate.
+            // Same name and at least one side lacks coords — treat as the same place.
             return $index;
         }
 
         return null;
     }
 
-    private function preferPlace(
+    private function mergePlaceRecords(
+        PlaceSuggestion|PlaceResult $a,
+        PlaceSuggestion|PlaceResult $b,
+    ): PlaceSuggestion|PlaceResult {
+        $winner = $this->pickCanonicalPlace($a, $b);
+        $loser = $winner === $a ? $b : $a;
+        $sources = $this->unionSources($a, $b);
+
+        if ($winner instanceof PlaceResult) {
+            return new PlaceResult(
+                id: $winner->id,
+                name: $winner->name,
+                formattedAddress: $winner->formattedAddress !== '' ? $winner->formattedAddress : $loser->formattedAddress,
+                latitude: $winner->latitude,
+                longitude: $winner->longitude,
+                provider: $winner->provider,
+                confidence: $winner->confidence ?? ($loser instanceof PlaceResult ? $loser->confidence : $loser->confidence),
+                categories: $winner->categories !== [] ? $winner->categories : $loser->categories,
+                phone: $winner->phone ?? ($loser instanceof PlaceResult ? $loser->phone : null),
+                website: $winner->website ?? ($loser instanceof PlaceResult ? $loser->website : null),
+                rating: $winner->rating ?? ($loser instanceof PlaceResult ? $loser->rating : null),
+                openingHours: $winner->openingHours ?? ($loser instanceof PlaceResult ? $loser->openingHours : null),
+                bbox: $winner->bbox ?? ($loser instanceof PlaceResult ? $loser->bbox : null),
+                sources: $sources,
+                rawMeta: $winner->rawMeta,
+            );
+        }
+
+        $winnerLat = $winner->latitude;
+        $winnerLng = $winner->longitude;
+        if (($winnerLat === null || $winnerLng === null) && $loser->latitude !== null && $loser->longitude !== null) {
+            $winnerLat = $loser->latitude;
+            $winnerLng = $loser->longitude;
+        }
+
+        return new PlaceSuggestion(
+            id: $winner->id,
+            name: $winner->name,
+            formattedAddress: $winner->formattedAddress !== '' ? $winner->formattedAddress : $loser->formattedAddress,
+            provider: $winner->provider,
+            latitude: $winnerLat,
+            longitude: $winnerLng,
+            confidence: $winner->confidence ?? $loser->confidence,
+            categories: $winner->categories !== [] ? $winner->categories : $loser->categories,
+            sources: $sources,
+            rawMeta: $winner->rawMeta,
+        );
+    }
+
+    private function pickCanonicalPlace(
         PlaceSuggestion|PlaceResult $a,
         PlaceSuggestion|PlaceResult $b,
     ): PlaceSuggestion|PlaceResult {
@@ -814,6 +865,59 @@ final class PlaceSearchService
         $bc = $b->confidence ?? 0.0;
 
         return $bc > $ac ? $b : $a;
+    }
+
+    /**
+     * @return list<array{provider: string, id: string}>
+     */
+    private function unionSources(PlaceSuggestion|PlaceResult $a, PlaceSuggestion|PlaceResult $b): array
+    {
+        $merged = [];
+        foreach (array_merge($a->resolvedSources(), $b->resolvedSources()) as $row) {
+            $provider = (string) ($row['provider'] ?? '');
+            $id = (string) ($row['id'] ?? '');
+            if ($provider === '') {
+                continue;
+            }
+            if (! isset($merged[$provider])) {
+                $merged[$provider] = ['provider' => $provider, 'id' => $id];
+            }
+        }
+
+        return array_values($merged);
+    }
+
+    /**
+     * @param  list<PlaceSuggestion|PlaceResult>  $results
+     * @return array<string, int>
+     */
+    private function buildSourcesMix(array $results): array
+    {
+        $mix = [
+            'geoapify' => 0,
+            'foursquare' => 0,
+            'google' => 0,
+            'multi_source' => 0,
+        ];
+        foreach ($results as $item) {
+            $sources = $item->resolvedSources();
+            $providers = [];
+            foreach ($sources as $row) {
+                $p = (string) ($row['provider'] ?? '');
+                if ($p === '') {
+                    continue;
+                }
+                $providers[$p] = true;
+                if (isset($mix[$p])) {
+                    $mix[$p]++;
+                }
+            }
+            if (count($providers) > 1) {
+                $mix['multi_source']++;
+            }
+        }
+
+        return $mix;
     }
 
     /**
@@ -991,6 +1095,7 @@ final class PlaceSearchService
                     website: isset($row['website']) ? (string) $row['website'] : null,
                     rating: isset($row['rating']) ? (float) $row['rating'] : null,
                     openingHours: isset($row['opening_hours']) ? (string) $row['opening_hours'] : null,
+                    sources: $this->sourcesFromCachedRow($row),
                 );
             } else {
                 $results[] = new PlaceSuggestion(
@@ -1002,9 +1107,14 @@ final class PlaceSearchService
                     longitude: isset($row['longitude']) ? (float) $row['longitude'] : null,
                     confidence: isset($row['confidence']) ? (float) $row['confidence'] : null,
                     categories: is_array($row['categories'] ?? null) ? array_values(array_map('strval', $row['categories'])) : [],
+                    sources: $this->sourcesFromCachedRow($row),
                 );
             }
         }
+
+        $sourcesMix = is_array($meta['sources_mix'] ?? null)
+            ? array_map('intval', $meta['sources_mix'])
+            : $this->buildSourcesMix($results);
 
         return new PlaceSearchOutcome(
             results: $results,
@@ -1016,7 +1126,32 @@ final class PlaceSearchService
             latencyMs: (int) ((hrtime(true) - $started) / 1_000_000),
             credits: null,
             status: 'ok',
+            resultLimit: isset($meta['result_limit']) ? (int) $meta['result_limit'] : null,
+            sourcesMix: $sourcesMix,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return list<array{provider: string, id: string}>
+     */
+    private function sourcesFromCachedRow(array $row): array
+    {
+        $sources = [];
+        if (is_array($row['sources'] ?? null)) {
+            foreach ($row['sources'] as $src) {
+                if (! is_array($src)) {
+                    continue;
+                }
+                $provider = (string) ($src['provider'] ?? '');
+                $id = (string) ($src['id'] ?? '');
+                if ($provider !== '') {
+                    $sources[] = ['provider' => $provider, 'id' => $id];
+                }
+            }
+        }
+
+        return $sources;
     }
 
     private function logEvent(
@@ -1062,6 +1197,7 @@ final class PlaceSearchService
             'query_truncated' => $truncated,
             'status' => $outcome->status,
             'ip_hash' => $ip !== null ? hash('sha256', $ip) : null,
+            'sources_mix' => $outcome->sourcesMix,
         ]);
     }
 }

@@ -89,6 +89,7 @@ import {
   type PlaceSuggestion,
   type RetrievedPlace,
 } from '@/lib/utils/place-search';
+import { placeAttributionLabel } from '@/lib/utils/place-attribution';
 import {
   fetchRecentPlaces,
   getLocalRecentPlaces,
@@ -805,7 +806,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       suggestPlaces(query, {
         sessionToken: searchSessionTokenRef.current,
         proximity,
-        limit: 6,
+        limit: 12,
         token,
         signal: abort.signal,
       })
@@ -1625,9 +1626,16 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
                     {result.category.replace(/_/g, ' ')}
                   </span>
                 )}
-                {result.provider === 'google' && (
-                  <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Google</span>
-                )}
+                {(() => {
+                  const label = placeAttributionLabel(
+                    result.sources,
+                    result.provider,
+                    result.attributionVisible,
+                  );
+                  return label ? (
+                    <span className="ml-1.5 text-[9px] font-medium text-slate-400">{label}</span>
+                  ) : null;
+                })()}
                 {result.placeFormatted && result.placeFormatted !== result.name && (
                   <span className="block text-[11px] text-slate-400 truncate">{result.placeFormatted}</span>
                 )}

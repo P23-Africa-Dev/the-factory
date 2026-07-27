@@ -16,11 +16,11 @@ import {
   retrievePlace,
   suggestPlaces,
 } from '@/lib/map/place-search';
+import { placeAttributionLabel, type PlaceSourceRef } from '@/lib/map/place-attribution';
 import { getCachedSearchProximity, warmSearchProximity } from '@/lib/map/search-proximity';
 import { LocationPermissionGate, useLocationPermissionBootstrap } from '@/features/tracking';
 import { useGeolocation } from '@/features/tracking';
 import { toast } from '@/lib/toast';
-
 export default function AgentDashboardPage() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -35,6 +35,10 @@ export default function AgentDashboardPage() {
       name: string;
       address: string;
       sessionToken: string;
+      sources?: PlaceSourceRef[];
+      attributionVisible?: boolean;
+      latitude?: number | null;
+      longitude?: number | null;
     }>
   >([]);
   const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
@@ -215,7 +219,7 @@ export default function AgentDashboardPage() {
       const suggestions = await suggestPlaces(query, {
         sessionToken: placeSearchSessionRef.current,
         proximity,
-        limit: 5,
+        limit: 12,
         signal: abort.signal,
       });
 
@@ -229,6 +233,10 @@ export default function AgentDashboardPage() {
             name: suggestion.name,
             address: suggestion.placeFormatted || suggestion.name,
             sessionToken: suggestion.sessionToken,
+            sources: suggestion.sources,
+            attributionVisible: suggestion.attributionVisible,
+            latitude: suggestion.latitude,
+            longitude: suggestion.longitude,
           })),
         );
       } else {
@@ -271,6 +279,8 @@ export default function AgentDashboardPage() {
       placeFormatted: item.address,
       category: null,
       sessionToken: item.sessionToken,
+      latitude: item.latitude,
+      longitude: item.longitude,
     });
 
     if (!place) {
@@ -675,7 +685,21 @@ export default function AgentDashboardPage() {
                             className="w-[38px] h-[38px] mr-3 object-contain flex-shrink-0"
                           />
                           <div className="flex-1 min-w-0 leading-tight">
-                            <p className="text-sm font-semibold text-[#09232D] truncate">{item.name}</p>
+                            <p className="text-sm font-semibold text-[#09232D] truncate">
+                              {item.name}
+                              {(() => {
+                                const label = placeAttributionLabel(
+                                  item.sources,
+                                  item.provider,
+                                  item.attributionVisible,
+                                );
+                                return label ? (
+                                  <span className="ml-1.5 text-[9px] font-medium text-[#09232D]/50">
+                                    {label}
+                                  </span>
+                                ) : null;
+                              })()}
+                            </p>
                             <p className="text-[10px] font-light text-[#09232D]/60 truncate mt-1">{item.address}</p>
                           </div>
                         </div>
