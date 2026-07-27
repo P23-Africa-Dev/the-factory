@@ -78,7 +78,14 @@ class TaskService
             $query->where('project_id', (int) $filters['project_id']);
         }
 
-        if ($context->isAgent()) {
+        if ($context->isSupervisor() && ! empty($filters['assigned_to_me'])) {
+            $query->where(function (Builder $q) use ($user): void {
+                $q->where('assigned_agent_id', $user->id)
+                    ->orWhereHas('currentAssignees', function (Builder $assigneeQuery) use ($user): void {
+                        $assigneeQuery->where('users.id', $user->id);
+                    });
+            });
+        } elseif ($context->isAgent()) {
             // Agents see currently owned tasks and historical tasks they previously owned.
             $query->where(function (Builder $q) use ($user): void {
                 $q->where('assigned_agent_id', $user->id)

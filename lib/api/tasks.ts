@@ -129,6 +129,7 @@ export type ListTasksParams = {
   company_id?: number | string;
   project_id?: number | string;
   status?: ApiTaskStatus;
+  assigned_to_me?: boolean;
   page?: number;
 };
 
@@ -229,6 +230,7 @@ export function listTasks(
   if (params.company_id != null) qs.set("company_id", String(params.company_id));
   if (params.project_id != null) qs.set("project_id", String(params.project_id));
   if (params.status) qs.set("status", params.status);
+  if (params.assigned_to_me) qs.set("assigned_to_me", "1");
   if (params.page) qs.set("page", String(params.page));
   const query = qs.toString() ? `?${qs.toString()}` : "";
 
