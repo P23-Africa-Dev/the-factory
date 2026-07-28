@@ -29,7 +29,31 @@ export function TaskCard({ item, onClick, onViewMap, onEdit, onDelete }: TaskCar
     transition,
   };
 
-  const isFallbackLocation = item.location?.startsWith("Created:") || item.location === "No location set";
+  const isFallbackLocation =
+    !item.location ||
+    item.location.startsWith("Created:") ||
+    item.location === "No location set" ||
+    item.location === "Location not set";
+
+  let displayLocation = item.location;
+  if (isFallbackLocation) {
+    if (item.location?.startsWith("Created:")) {
+      displayLocation = item.location.replace(/^Created:\s*/i, "");
+    } else if (item.createdAt) {
+      try {
+        const d = new Date(item.createdAt);
+        if (!isNaN(d.getTime())) {
+          displayLocation = d.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          });
+        }
+      } catch {
+        displayLocation = item.location;
+      }
+    }
+  }
 
   return (
     <div
@@ -76,14 +100,16 @@ export function TaskCard({ item, onClick, onViewMap, onEdit, onDelete }: TaskCar
       </div>
 
       <div className="space-y-2.5">
-        <span className="text-[#0B1215] font-bold text-[15px] block">Location</span>
+        <span className="text-[#0B1215] font-bold text-[15px] block">
+          {isFallbackLocation ? "Created" : "Location"}
+        </span>
         <div className="flex items-start justify-between gap-3">
           <span className={`text-[12px] leading-relaxed flex-1 ${
             isFallbackLocation
               ? "text-gray-400 no-underline"
               : "text-gray-500 underline decoration-gray-300 underline-offset-4"
           }`}>
-            {item.location}
+            {displayLocation}
           </span>
           <div className="flex flex-col items-end gap-2.5 shrink-0">
             {item.hasTrackableLocation ? (

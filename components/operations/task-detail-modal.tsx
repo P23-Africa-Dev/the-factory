@@ -606,9 +606,15 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
               </section>
 
               <section>
-                <h3 className="text-[15px] font-bold text-dash-dark mb-1.5">Location</h3>
-                <p className="text-[14px] text-gray-500 underline decoration-gray-300 underline-offset-4 leading-relaxed mb-3">
-                  {locationText}
+                <h3 className="text-[15px] font-bold text-dash-dark mb-1.5">
+                  {locationText.startsWith("Created:") || locationText === "No location set" ? "Created" : "Location"}
+                </h3>
+                <p className={`text-[14px] leading-relaxed mb-3 ${
+                  locationText.startsWith("Created:") || locationText === "No location set"
+                    ? "text-gray-400 no-underline"
+                    : "text-gray-500 underline decoration-gray-300 underline-offset-4"
+                }`}>
+                  {locationText.replace(/^Created:\s*/i, "")}
                 </p>
                 {hasTrackableLocation ? (
                   <button
