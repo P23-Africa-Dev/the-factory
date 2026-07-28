@@ -408,18 +408,29 @@ class TaskManagementTest extends TestCase
             ->assertJsonPath('data.task.assignee.id', $agent->id);
     }
 
-    public function test_assigned_to_me_filter_only_narrows_supervisor_task_list(): void
+    public function test_assigned_to_me_filter_narrows_management_task_lists(): void
     {
         [$company, $admin, $agent] = $this->seedCompanyUsers();
 
         $supervisor = User::factory()->create(['email_verified_at' => now()]);
+        $owner = User::factory()->create(['email_verified_at' => now()]);
         DB::table('company_users')->insert([
-            'company_id' => $company->id,
-            'user_id' => $supervisor->id,
-            'role' => 'supervisor',
-            'joined_at' => now(),
-            'created_at' => now(),
-            'updated_at' => now(),
+            [
+                'company_id' => $company->id,
+                'user_id' => $supervisor->id,
+                'role' => 'supervisor',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $company->id,
+                'user_id' => $owner->id,
+                'role' => 'owner',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
 
         $supervisorTask = Task::create([
@@ -431,14 +442,52 @@ class TaskManagementTest extends TestCase
             'status' => 'pending',
         ]);
 
+        $adminTask = Task::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Admin Workload Task',
+            'description' => 'Task shared with the admin as a current assignee.',
+            'status' => 'pending',
+        ]);
+
+        $ownerTask = Task::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Owner Workload Task',
+            'description' => 'Task shared with the owner as a current assignee.',
+            'status' => 'pending',
+        ]);
+
         DB::table('task_assignments')->insert([
-            'task_id' => $supervisorTask->id,
-            'assigned_by_user_id' => $admin->id,
-            'assigned_agent_id' => $supervisor->id,
-            'assigned_at' => now(),
-            'is_current' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
+            [
+                'task_id' => $supervisorTask->id,
+                'assigned_by_user_id' => $admin->id,
+                'assigned_agent_id' => $supervisor->id,
+                'assigned_at' => now(),
+                'is_current' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'task_id' => $adminTask->id,
+                'assigned_by_user_id' => $admin->id,
+                'assigned_agent_id' => $admin->id,
+                'assigned_at' => now(),
+                'is_current' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'task_id' => $ownerTask->id,
+                'assigned_by_user_id' => $admin->id,
+                'assigned_agent_id' => $owner->id,
+                'assigned_at' => now(),
+                'is_current' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
 
         Task::create([
@@ -450,10 +499,9 @@ class TaskManagementTest extends TestCase
             'status' => 'pending',
         ]);
 
-        $response = $this->withToken($supervisor->createToken('supervisor-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/tasks?company_id=' . $company->id . '&assigned_to_me=1');
-
-        $response->assertOk()
+        $this->actingAs($supervisor, 'sanctum')
+            ->getJson('/api/v1/tasks?company_id=' . $company->id . '&assigned_to_me=1')
+            ->assertOk()
             ->assertJsonCount(1, 'data.items')
             ->assertJsonPath('data.items.0.id', $supervisorTask->id)
             ->assertJsonPath('data.items.0.assigned_users.0.id', $supervisor->id);
@@ -461,7 +509,16 @@ class TaskManagementTest extends TestCase
         $this->actingAs($admin, 'sanctum')
             ->getJson('/api/v1/tasks?company_id=' . $company->id . '&assigned_to_me=1')
             ->assertOk()
-            ->assertJsonCount(2, 'data.items');
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.id', $adminTask->id)
+            ->assertJsonPath('data.items.0.assigned_users.0.id', $admin->id);
+
+        $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/tasks?company_id=' . $company->id . '&assigned_to_me=1')
+            ->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.id', $ownerTask->id)
+            ->assertJsonPath('data.items.0.assigned_users.0.id', $owner->id);
     }
 
     public function test_agent_sees_only_assigned_tasks(): void
