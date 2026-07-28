@@ -78,7 +78,7 @@ class TaskService
             $query->where('project_id', (int) $filters['project_id']);
         }
 
-        if ($context->isSupervisor() && ! empty($filters['assigned_to_me'])) {
+        if ($context->canManageTasks() && ! empty($filters['assigned_to_me'])) {
             $query->where(function (Builder $q) use ($user): void {
                 $q->where('assigned_agent_id', $user->id)
                     ->orWhereHas('currentAssignees', function (Builder $assigneeQuery) use ($user): void {
