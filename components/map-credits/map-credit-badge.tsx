@@ -21,8 +21,8 @@ export function MapCreditBadge() {
     refetchInterval: 60_000,
   });
 
-  // Hidden for agents, and when the org isn't metered (demo / enforcement off).
-  if (!isManagement || !data || !data.metered) return null;
+  // Hidden for agents, when the org isn't metered (demo / enforcement off), or when credit is above 50.
+  if (!isManagement || !data || !data.metered || data.balance > 50) return null;
 
   const balance = data.balance;
   const isLow = balance <= 50;
@@ -30,9 +30,7 @@ export function MapCreditBadge() {
 
   const tone = exhausted
     ? "bg-red-500/15 text-red-300 hover:bg-red-500/25 border border-red-500/20"
-    : isLow
-      ? "bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/20"
-      : "bg-white/5 text-white/70 hover:bg-white/10 border border-white/5";
+    : "bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/20";
 
   const displayCount = balance.toLocaleString(undefined, { maximumFractionDigits: 0 });
   const basePath = isAgent ? "/agent" : "";

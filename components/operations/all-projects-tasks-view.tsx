@@ -201,7 +201,10 @@ export function AllProjectsTasksView() {
   const router = useRouter();
   const authUser = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(authUser);
-  const isSupervisor = role === "supervisor";
+  const isManagementUser =
+    role === "owner" ||
+    role === "admin" ||
+    role === "supervisor";
   const canManageTaskStatuses =
     role === "owner" ||
     role === "admin" ||
@@ -222,7 +225,7 @@ export function AllProjectsTasksView() {
     companyId
       ? {
           company_id: companyId,
-          assigned_to_me: isSupervisor && taskScope === "mine",
+          assigned_to_me: isManagementUser && taskScope === "mine",
         }
       : {}
   );
@@ -409,7 +412,7 @@ export function AllProjectsTasksView() {
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {isSupervisor && (
+      {isManagementUser && (
         <div
           className="flex w-fit items-center gap-1 rounded-full border border-gray-200 bg-white p-1 shadow-sm"
           role="group"
