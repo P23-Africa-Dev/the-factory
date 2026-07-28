@@ -412,84 +412,86 @@ export function AllProjectsTasksView() {
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {isManagementUser && (
-        <div
-          className="flex w-fit items-center gap-1 rounded-full border border-gray-200 bg-white p-1 shadow-sm"
-          role="group"
-          aria-label="Task visibility"
-        >
-          {([
-            ["mine", "My Tasks"],
-            ["all", "All Tasks"],
-          ] as const).map(([scope, label]) => {
-            const active = taskScope === scope;
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        {isManagementUser && (
+          <div
+            className="flex w-fit items-center gap-1 rounded-full border border-gray-200 bg-white p-1 shadow-sm shrink-0"
+            role="group"
+            aria-label="Task visibility"
+          >
+            {([
+              ["mine", "My Tasks"],
+              ["all", "All Tasks"],
+            ] as const).map(([scope, label]) => {
+              const active = taskScope === scope;
 
-            return (
-              <button
-                key={scope}
-                type="button"
-                aria-pressed={active}
-                onClick={() => setTaskScope(scope)}
-                className={`rounded-full px-5 py-2 text-[13px] font-bold transition-colors ${
-                  active
-                    ? "bg-[#09232D] text-white shadow-sm"
-                    : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      )}
+              return (
+                <button
+                  key={scope}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setTaskScope(scope)}
+                  className={`rounded-full px-5 py-2 text-[13px] font-bold transition-colors ${
+                    active
+                      ? "bg-[#09232D] text-white shadow-sm"
+                      : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-      {/* ── Toolbar ── */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 sm:justify-end min-w-0 transition-all duration-300 relative z-10">
-        <div className="relative w-full md:w-114.5 group shrink-0">
-          <Search
-            className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-dark transition-colors"
-            size={18}
-            strokeWidth={2}
-          />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search tasks......"
-            className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-dash-dark/10 transition-all font-sans"
+        {/* ── Toolbar ── */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 sm:justify-end min-w-0 transition-all duration-300 relative z-10">
+          <div className="relative w-full md:w-114.5 group shrink-0">
+            <Search
+              className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-dark transition-colors"
+              size={18}
+              strokeWidth={2}
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search tasks......"
+              className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-dash-dark/10 transition-all font-sans"
+              style={{
+                height: "46px",
+                borderRadius: "24px",
+                border: "0.7px solid #D7D7D7",
+                boxShadow: "0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026",
+              }}
+            />
+          </div>
+
+          <button
+            onClick={() => setShowFilters((v) => !v)}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
+              showFilters ? "text-white" : "text-gray-500"
+            }`}
             style={{
-              height: "46px",
-              borderRadius: "24px",
-              border: "0.7px solid #D7D7D7",
-              boxShadow: "0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026",
+              background: showFilters ? "#34373C" : "#F8F8F8",
+              border: showFilters ? "0.5px solid #34373C" : "0.5px solid #D1D1D1",
+              boxShadow: showFilters ? "none" : "0 2px 8px rgba(0,0,0,0.06)",
             }}
-          />
+          >
+            <SlidersHorizontal size={14} strokeWidth={2} />
+            <span style={{ fontSize: "10px", fontWeight: 400 }}>Filter</span>
+          </button>
+
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
+            style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
+          >
+            <BookmarkPlus size={15} strokeWidth={2} />
+            <span className="hidden sm:inline whitespace-nowrap">Create New Task</span>
+            <span className="sm:hidden">Task</span>
+          </button>
         </div>
-
-        <button
-          onClick={() => setShowFilters((v) => !v)}
-          className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
-            showFilters ? "text-white" : "text-gray-500"
-          }`}
-          style={{
-            background: showFilters ? "#34373C" : "#F8F8F8",
-            border: showFilters ? "0.5px solid #34373C" : "0.5px solid #D1D1D1",
-            boxShadow: showFilters ? "none" : "0 2px 8px rgba(0,0,0,0.06)",
-          }}
-        >
-          <SlidersHorizontal size={14} strokeWidth={2} />
-          <span style={{ fontSize: "10px", fontWeight: 400 }}>Filter</span>
-        </button>
-
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
-          style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
-        >
-          <BookmarkPlus size={15} strokeWidth={2} />
-          <span className="hidden sm:inline whitespace-nowrap">Create New Task</span>
-          <span className="sm:hidden">Task</span>
-        </button>
       </div>
 
       {/* ── Filter panel ── */}
