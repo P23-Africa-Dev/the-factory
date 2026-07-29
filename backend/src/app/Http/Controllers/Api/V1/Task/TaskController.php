@@ -8,6 +8,7 @@ use App\Http\Controllers\Concerns\ResolvesCompanyContextId;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Task\CreateTaskRequest;
 use App\Http\Requests\Task\UpdateTaskRequest;
+use App\Http\Resources\TaskAssigneeResource;
 use App\Http\Resources\TaskResource;
 use App\Models\Task;
 use App\Services\Task\TaskService;
@@ -52,6 +53,19 @@ class TaskController extends Controller
             message: 'Task created successfully.',
             data: ['task' => new TaskResource($task)],
             status: 201,
+        );
+    }
+
+    public function assignees(Request $request): JsonResponse
+    {
+        $users = $this->taskService->listAssignableUsers(
+            $request->user(),
+            $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
+        return $this->success(
+            message: 'Task assignees fetched successfully.',
+            data: ['items' => TaskAssigneeResource::collection($users)],
         );
     }
 

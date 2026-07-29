@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\Agent\AgentLoginController;
+use App\Http\Controllers\Api\V1\Agent\AgentPlanningController;
 use App\Http\Controllers\Api\V1\AI\CopilotAutomationController;
 use App\Http\Controllers\Api\V1\AI\CopilotController;
 use App\Http\Controllers\Api\V1\AI\CopilotReportingController;
@@ -17,36 +18,36 @@ use App\Http\Controllers\Api\V1\Auth\SupportAccessController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
 use App\Http\Controllers\Api\V1\Billing\BillingCheckoutController;
-use App\Http\Controllers\Api\V1\Billing\BillingPlansController;
 use App\Http\Controllers\Api\V1\Billing\BillingPaymentMethodDefaultController;
 use App\Http\Controllers\Api\V1\Billing\BillingPaymentMethodDetachController;
 use App\Http\Controllers\Api\V1\Billing\BillingPaymentMethodsController;
 use App\Http\Controllers\Api\V1\Billing\BillingPaymentMethodSetupController;
+use App\Http\Controllers\Api\V1\Billing\BillingPlansController;
 use App\Http\Controllers\Api\V1\Billing\BillingPortalController;
 use App\Http\Controllers\Api\V1\Billing\BillingStatusController;
 use App\Http\Controllers\Api\V1\Billing\BillingWebhookController;
 use App\Http\Controllers\Api\V1\Billing\PaymentLinkController;
-use App\Http\Controllers\Api\V1\Company\CompanySettingsController;
-use App\Http\Controllers\Api\V1\Drive\DriveController;
 use App\Http\Controllers\Api\V1\Calendar\CalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Calendar\MeetingController;
 use App\Http\Controllers\Api\V1\Calendar\UserCalendarIntegrationController;
 use App\Http\Controllers\Api\V1\Company\CompanyLocationController;
-use App\Http\Controllers\Api\V1\GeographyController;
+use App\Http\Controllers\Api\V1\Company\CompanySettingsController;
 use App\Http\Controllers\Api\V1\CountryController;
 use App\Http\Controllers\Api\V1\Crm\CrmEmailController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
 use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
+use App\Http\Controllers\Api\V1\Drive\DriveController;
 use App\Http\Controllers\Api\V1\Enterprise\BookDemoController;
 use App\Http\Controllers\Api\V1\Enterprise\CompleteFirstTimeSetupController;
 use App\Http\Controllers\Api\V1\Enterprise\EnterpriseLoginController;
 use App\Http\Controllers\Api\V1\Enterprise\SetupInfoController;
 use App\Http\Controllers\Api\V1\Enterprise\VerifyCompanyIdController;
+use App\Http\Controllers\Api\V1\GeographyController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\Internal\CompanyZoneController;
 use App\Http\Controllers\Api\V1\Internal\InternalLoginController;
 use App\Http\Controllers\Api\V1\Internal\InternalOnboardingController;
-use App\Http\Controllers\Api\V1\Internal\CompanyZoneController;
 use App\Http\Controllers\Api\V1\Internal\InternalUserController;
 use App\Http\Controllers\Api\V1\Kpi\AdminKpiStatusController;
 use App\Http\Controllers\Api\V1\Kpi\KpiController;
@@ -54,16 +55,15 @@ use App\Http\Controllers\Api\V1\Kpi\KpiStatusController;
 use App\Http\Controllers\Api\V1\Map\MapPoiDisplayController;
 use App\Http\Controllers\Api\V1\Map\MapProviderController;
 use App\Http\Controllers\Api\V1\MapCredit\MapCreditController;
-use App\Http\Controllers\Api\V1\Places\PlaceSearchController;
-use App\Http\Controllers\Api\V1\Places\PlaceRecentsController;
 use App\Http\Controllers\Api\V1\Notification\NotificationController;
 use App\Http\Controllers\Api\V1\Notification\NotificationPreferenceController;
 use App\Http\Controllers\Api\V1\Notification\PushSubscriptionController;
 use App\Http\Controllers\Api\V1\Onboarding\WorkspaceController;
 use App\Http\Controllers\Api\V1\Payroll\PayrollController;
+use App\Http\Controllers\Api\V1\Places\PlaceRecentsController;
+use App\Http\Controllers\Api\V1\Places\PlaceSearchController;
 use App\Http\Controllers\Api\V1\Project\ProjectController;
 use App\Http\Controllers\Api\V1\Task\AdminTaskStatusController;
-use App\Http\Controllers\Api\V1\Agent\AgentPlanningController;
 use App\Http\Controllers\Api\V1\Task\AgentTaskController;
 use App\Http\Controllers\Api\V1\Task\TaskAssignmentController;
 use App\Http\Controllers\Api\V1\Task\TaskController;
@@ -415,6 +415,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         ->group(function (): void {
             Route::prefix('tasks')->name('tasks.')->group(function (): void {
                 Route::get('/', [TaskController::class, 'index'])->name('index');
+                Route::get('/assignees', [TaskController::class, 'assignees'])->name('assignees.index');
                 Route::post('/', [TaskController::class, 'store'])
                     ->middleware('throttle:api')
                     ->name('store');
@@ -817,6 +818,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
 
     Route::prefix('tasks')->name('tasks.')->group(function (): void {
         Route::get('/', [TaskController::class, 'index'])->name('index');
+        Route::get('/assignees', [TaskController::class, 'assignees'])->name('assignees.index');
         Route::post('/', [TaskController::class, 'store'])
             ->middleware('throttle:api')
             ->name('store');

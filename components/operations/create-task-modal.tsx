@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   X,
   MapPin,
@@ -16,8 +16,7 @@ import {
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth";
-import { useInternalUsers } from "@/hooks/use-projects";
-import { useCreateTask, useCreateSelfTask } from "@/hooks/use-tasks";
+import { useCreateTask, useCreateSelfTask, useTaskAssignees } from "@/hooks/use-tasks";
 import type { DndItem, TaskCategory } from "@/types/operations";
 import type { ApiTaskPriority } from "@/lib/api/tasks";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -161,9 +160,9 @@ export function CreateTaskModal({
   const isAgent = role === "agent";
   const canManageTasks = role === "owner" || role === "admin" || role === "supervisor";
 
-  const { data: agents = [], isLoading: loadingAgents } = useInternalUsers({
-    role: "agent",
-  });
+  const { data: assignees = [], isLoading: loadingAssignees } = useTaskAssignees(
+    canManageTasks ? companyId ?? undefined : undefined,
+  );
 
   const { mutate, isPending } = useCreateTask({
     onSuccess: () => {
@@ -182,7 +181,10 @@ export function CreateTaskModal({
     title: initialValues?.title ?? "",
     taskType: initialValues?.taskType ?? "",
     description: initialValues?.description ?? "",
-    assignTo: initialValues?.assignTo ?? "",
+    assignTo:
+      mode === "create" && canManageTasks && user?.id
+        ? String(user.id)
+        : initialValues?.assignTo ?? "",
     location: initialValues?.location ?? "",
     address: initialValues?.address ?? "",
     dueDate: initialValues?.dueDate ?? "",
@@ -196,6 +198,27 @@ export function CreateTaskModal({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const initializedOpenAssigneeRef = useRef(isOpen && user != null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      initializedOpenAssigneeRef.current = false;
+      return;
+    }
+
+    if (initializedOpenAssigneeRef.current || !user) return;
+
+    setForm((current) => ({
+      ...current,
+      assignTo:
+        mode === "edit"
+          ? initialValues?.assignTo ?? current.assignTo
+          : canManageTasks && user?.id
+            ? String(user.id)
+            : initialValues?.assignTo ?? "",
+    }));
+    initializedOpenAssigneeRef.current = true;
+  }, [canManageTasks, initialValues?.assignTo, isOpen, mode, user]);
 
   const set = <K extends keyof typeof form>(key: K, val: (typeof form)[K]) => {
     setForm((p) => {
@@ -445,8 +468,15 @@ export function CreateTaskModal({
               <SearchableSelect
                 value={form.assignTo}
                 onChange={(v) => set("assignTo", v)}
-                options={loadingAgents ? [] : agents.map((a) => ({ value: a.id.toString(), label: a.name }))}
-                placeholder={loadingAgents ? "Loading…" : "Select agent"}
+                options={
+                  loadingAssignees
+                    ? []
+                    : assignees.map((assignee) => ({
+                        value: assignee.id.toString(),
+                        label: assignee.name,
+                      }))
+                }
+                placeholder={loadingAssignees ? "Loading…" : "Select user"}
                 leftIcon={<User size={13} className="text-gray-400" />}
                 className={`${INPUT_CLS(errors.assignTo)} pl-9 pr-4 cursor-pointer`}
               />
