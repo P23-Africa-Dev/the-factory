@@ -8,23 +8,18 @@ import { SectionDivider } from "@/components/payroll/payroll/section-divider";
 import { FormRow } from "@/components/payroll/payroll/form-row";
 import { InlineInput } from "@/components/payroll/payroll/inline-input";
 import { InlineSelect } from "@/components/payroll/payroll/inline-select";
-import PhoneNumberInput from "@/components/ui/phone-number-input";
-import { useCreateLead, useUpdateLead, useCrmLabels, useCrmPipelines, useCrmPreferences } from "@/hooks/use-crm";
-import { useInternalUsers } from "@/hooks/use-internal-users";
+import { useCreateLead, useUpdateLead, useCrmAssignees, useCrmLabels, useCrmPipelines, useCrmPreferences } from "@/hooks/use-crm";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import type { ApiLeadStatus, ApiLeadPriority, ApiRoleBasePath, LeadApiItem } from "@/lib/api/crm";
+import type { ApiLeadStatus, ApiLeadPriority, ApiRoleBasePath, LeadApiItem, LeadContact } from "@/lib/api/crm";
 import type { ApiRequestError } from "@/lib/api/onboarding";
 import { ProfileUrlInputs } from "@/components/crm/profile-url-inputs";
+import { LeadContactsSlider, type LeadContactErrors } from "@/components/crm/lead-contacts";
 import { isValidUrl, normalizeWebsite, parseProfileUrls } from "@/lib/crm/lead-fields";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 
 type FormErrors = Partial<{
   pipelineId: string;
-  name: string;
-  email: string;
-  phone: string;
-  location: string;
   companyName: string;
   companyEmail: string;
   website: string;
@@ -194,13 +189,30 @@ export function AddLeadModal({
   lead?: LeadApiItem;
 }) {
   const user = useAuthStore((s) => s.user);
-  const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const isAgentContext = apiBasePath === "/agent";
+  const canManageLeads = role === "owner" || role === "admin" || role === "supervisor";
 
-  const [name, setName] = useState(lead?.name ?? "");
-  const [email, setEmail] = useState(lead?.email ?? "");
-  const [phone, setPhone] = useState(lead?.phone ?? "");
-  const [location, setLocation] = useState(lead?.location ?? "");
+  const [contacts, setContacts] = useState<LeadContact[]>(() =>
+    lead?.contacts?.length
+      ? lead.contacts.map(({ id, name, email, phone, location, sort_order }) => ({
+          id,
+          name,
+          email: email ?? "",
+          phone: phone ?? "",
+          location: location ?? "",
+          sort_order,
+        }))
+      : [{
+          name: lead?.name ?? "",
+          email: lead?.email ?? "",
+          phone: lead?.phone ?? "",
+          location: lead?.location ?? "",
+          sort_order: 0,
+        }],
+  );
+  const [activeContactIndex, setActiveContactIndex] = useState(0);
+  const [contactErrors, setContactErrors] = useState<LeadContactErrors[]>([]);
   const [companyName, setCompanyName] = useState(lead?.company_name ?? "");
   const [companyEmail, setCompanyEmail] = useState(lead?.company_email ?? "");
   const [website, setWebsite] = useState(lead?.website ?? "");
@@ -232,7 +244,16 @@ export function AddLeadModal({
 
   const [status, setStatus] = useState<ApiLeadStatus>(lead?.status ?? defaultStatus);
   const [priority, setPriority] = useState<ApiLeadPriority>(lead?.priority ?? "medium");
-  const [assignedToUserId, setAssignedToUserId] = useState(lead?.assigned_to_user_id ? String(lead.assigned_to_user_id) : "");
+  const [assignedToUserId, setAssignedToUserId] = useState(
+    lead
+      ? lead.assigned_to_user_id
+        ? String(lead.assigned_to_user_id)
+        : ""
+      : canManageLeads && user?.id
+        ? String(user.id)
+        : "",
+  );
+  const assigneeTouchedRef = useRef(false);
   const [budgetCurrency, setBudgetCurrency] = useState(() =>
     lead?.budget_currency ?? lead?.budget?.match(/^([A-Z]{3})/)?.[1] ?? "USD"
   );
@@ -254,9 +275,15 @@ export function AddLeadModal({
       ? labels[0].slug
       : status;
 
-  const { data: companyUsers = [], isLoading: loadingUsers } = useInternalUsers({
-    company_id: !isAgentContext ? (companyId ?? undefined) : undefined,
-  });
+  const { data: companyUsers = [], isLoading: loadingUsers } = useCrmAssignees(
+    canManageLeads ? companyId ?? undefined : undefined,
+    apiBasePath,
+  );
+
+  useEffect(() => {
+    if (lead || isAgentContext || !canManageLeads || !user?.id || assigneeTouchedRef.current) return;
+    setAssignedToUserId((current) => current || String(user.id));
+  }, [canManageLeads, isAgentContext, lead, user?.id]);
 
   const createMutation = useCreateLead(
     {
@@ -281,13 +308,38 @@ export function AddLeadModal({
   const clearError = (field: keyof FormErrors) =>
     setErrors((prev) => ({ ...prev, [field]: undefined }));
 
-  const validate = (): FormErrors => {
+  const updateContact = (index: number, contact: LeadContact) => {
+    setContacts((current) => current.map((item, itemIndex) => itemIndex === index ? contact : item));
+    setContactErrors((current) => current.map((item, itemIndex) => itemIndex === index ? {} : item));
+  };
+
+  const addContact = () => {
+    setContacts((current) => [
+      ...current,
+      { name: "", email: "", phone: "", location: "", sort_order: current.length },
+    ]);
+    setActiveContactIndex(contacts.length);
+  };
+
+  const removeContact = (index: number) => {
+    setContacts((current) => current
+      .filter((_, itemIndex) => itemIndex !== index)
+      .map((contact, sortOrder) => ({ ...contact, sort_order: sortOrder })));
+    setContactErrors((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    setActiveContactIndex((current) => Math.max(0, Math.min(current, contacts.length - 2)));
+  };
+
+  const validate = (): { fields: FormErrors; contacts: LeadContactErrors[] } => {
     const e: FormErrors = {};
+    const contactValidation = contacts.map<LeadContactErrors>((contact) => {
+      const errorsForContact: LeadContactErrors = {};
+      if (!contact.name.trim()) errorsForContact.name = "Name is required.";
+      if (contact.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)) {
+        errorsForContact.email = "Enter a valid email address.";
+      }
+      return errorsForContact;
+    });
     if (!effectivePipelineId) e.pipelineId = "Pipeline is required.";
-    if (!name.trim()) e.name = "Name is required.";
-    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      e.email = "Enter a valid email address.";
-    }
     if (companyEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(companyEmail)) {
       e.companyEmail = "Enter a valid company email address.";
     }
@@ -298,7 +350,7 @@ export function AddLeadModal({
     if (cleanedProfileUrls.some((url) => !isValidUrl(url))) {
       e.profileUrls = "One or more profile URLs are invalid.";
     }
-    return e;
+    return { fields: e, contacts: contactValidation };
   };
 
   const handleError = (err: unknown) => {
@@ -307,11 +359,19 @@ export function AddLeadModal({
     toast.error(msg);
     if (apiErr.errors) {
       const fe: FormErrors = {};
-      if (apiErr.errors.name) fe.name = apiErr.errors.name[0];
+      const ce: LeadContactErrors[] = contacts.map(() => ({}));
+      if (apiErr.errors.name) ce[0].name = apiErr.errors.name[0];
       if (apiErr.errors.pipeline_id) fe.pipelineId = apiErr.errors.pipeline_id[0];
-      if (apiErr.errors.email) fe.email = apiErr.errors.email[0];
-      if (apiErr.errors.phone) fe.phone = apiErr.errors.phone[0];
-      if (apiErr.errors.location) fe.location = apiErr.errors.location[0];
+      if (apiErr.errors.email) ce[0].email = apiErr.errors.email[0];
+      if (apiErr.errors.phone) ce[0].phone = apiErr.errors.phone[0];
+      if (apiErr.errors.location) ce[0].location = apiErr.errors.location[0];
+      Object.entries(apiErr.errors).forEach(([key, messages]) => {
+        const match = key.match(/^contacts\.(\d+)\.(name|email|phone|location)$/);
+        if (!match) return;
+        const index = Number(match[1]);
+        ce[index] ??= {};
+        ce[index][match[2] as keyof LeadContactErrors] = messages[0];
+      });
       if (apiErr.errors.company_name) fe.companyName = apiErr.errors.company_name[0];
       if (apiErr.errors.company_email) fe.companyEmail = apiErr.errors.company_email[0];
       if (apiErr.errors.website) fe.website = apiErr.errors.website[0];
@@ -325,14 +385,22 @@ export function AddLeadModal({
       if (apiErr.errors.last_interaction) fe.lastInteraction = apiErr.errors.last_interaction[0];
       if (apiErr.errors.last_interaction_at) fe.lastInteractionAt = apiErr.errors.last_interaction_at[0];
       setErrors(fe);
+      setContactErrors(ce);
+      const firstContactError = ce.findIndex((contactError) => Object.keys(contactError).length > 0);
+      if (firstContactError >= 0) setActiveContactIndex(firstContactError);
     }
   };
 
   const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const errs = validate();
-    if (Object.keys(errs).length > 0) {
-      setErrors(errs);
+    const validation = validate();
+    const firstContactError = validation.contacts.findIndex(
+      (contactError) => Object.keys(contactError).length > 0,
+    );
+    if (Object.keys(validation.fields).length > 0 || firstContactError >= 0) {
+      setErrors(validation.fields);
+      setContactErrors(validation.contacts);
+      if (firstContactError >= 0) setActiveContactIndex(firstContactError);
       return;
     }
 
@@ -342,23 +410,32 @@ export function AddLeadModal({
     }
 
     const cleanedProfileUrls = parseProfileUrls(profileUrls);
+    const normalizedContacts = contacts.map((contact, index) => ({
+      name: contact.name.trim(),
+      email: contact.email?.trim() || null,
+      phone: contact.phone?.trim() || null,
+      location: contact.location?.trim() || null,
+      sort_order: index,
+    }));
+    const primaryContact = normalizedContacts[0];
 
     const payload = {
       company_id: companyId,
       pipeline_id: Number(effectivePipelineId),
-      name: name.trim(),
-      email: email.trim() || null,
-      phone: phone || null,
+      name: primaryContact.name,
+      email: primaryContact.email,
+      phone: primaryContact.phone,
       budget_amount: budgetAmount.trim() ? Number(budgetAmount.replace(/,/g, "")) : null,
       budget_currency: budgetAmount.trim() ? budgetCurrency : null,
-      location: location.trim() || null,
+      location: primaryContact.location,
+      contacts: normalizedContacts,
       company_name: companyName.trim() || null,
       company_email: companyEmail.trim() || null,
       website: website.trim() ? normalizeWebsite(website) : null,
       position: position.trim() || null,
       profile_urls: cleanedProfileUrls.length > 0 ? cleanedProfileUrls : null,
       source: source.trim() || (isAgentContext ? "agent_upload" : null),
-      status,
+      status: effectiveStatus,
       priority,
       assigned_to_user_id: isAgentContext ? null : (assignedToUserId ? Number(assignedToUserId) : null),
       next_action: nextAction.trim() || null,
@@ -432,60 +509,15 @@ export function AddLeadModal({
           onSubmit={handleSubmit}
           className="flex-1 min-h-0 overflow-y-auto px-7 pb-6"
         >
-          <div className="space-y-4 mb-5">
-            <SectionDivider label={lead ? "Edit Contact Details" : "Lead Contact Details"} />
-
-            <div>
-              <FormRow label="Name *" labelClassName="w-28">
-                <InlineInput
-                  value={name}
-                  onChange={(e) => { setName(e.target.value); clearError("name"); }}
-                  placeholder="E.g John Doe"
-                  className="col-span-2"
-                />
-              </FormRow>
-              <FieldError message={errors.name} />
-            </div>
-
-            <div>
-              <FormRow label="Email" labelClassName="w-28">
-                <InlineInput
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); clearError("email"); }}
-                  placeholder="E.g john.doe@example.com"
-                  className="col-span-2"
-                />
-              </FormRow>
-              <FieldError message={errors.email} />
-            </div>
-
-            <div>
-              <FormRow label="Phone" labelClassName="w-28">
-                <div className="col-span-2 w-full">
-                  <PhoneNumberInput
-                    value={phone}
-                    onChange={(val) => { setPhone(val); clearError("phone"); }}
-                    placeholder="E.g 555-0199"
-                    defaultCountry="GB"
-                    variant="compact"
-                  />
-                </div>
-              </FormRow>
-              <FieldError message={errors.phone} />
-            </div>
-
-            <div>
-              <FormRow label="Location" labelClassName="w-28">
-                <InlineInput
-                  value={location}
-                  onChange={(e) => { setLocation(e.target.value); clearError("location"); }}
-                  placeholder="E.g New York, USA"
-                  className="col-span-2"
-                />
-              </FormRow>
-              <FieldError message={errors.location} />
-            </div>
-          </div>
+          <LeadContactsSlider
+            contacts={contacts}
+            activeIndex={activeContactIndex}
+            errors={contactErrors}
+            onActiveIndexChange={setActiveContactIndex}
+            onChange={updateContact}
+            onAdd={addContact}
+            onRemove={removeContact}
+          />
 
           <div className="space-y-4 mb-5">
             <SectionDivider
@@ -602,7 +634,7 @@ export function AddLeadModal({
             <div>
               <FormRow label="Status" labelClassName="w-28">
                 <InlineSelect
-                  value={status}
+                  value={effectiveStatus}
                   onChange={(v) => { setStatus(v as ApiLeadStatus); clearError("status"); }}
                   options={labels.map((l) => ({ value: l.slug, label: l.name }))}
                   className="col-span-2"
@@ -627,8 +659,15 @@ export function AddLeadModal({
               <FormRow label="Assignee" labelClassName="w-28">
                 <InlineSelect
                   value={assignedToUserId}
-                  onChange={(v) => { setAssignedToUserId(v); clearError("assignedToUserId"); }}
-                  options={[{ value: "", label: "Unassigned" }, ...companyUsers.map((u) => ({ value: String(u.id), label: u.name }))]}
+                  onChange={(v) => {
+                    assigneeTouchedRef.current = true;
+                    setAssignedToUserId(v);
+                    clearError("assignedToUserId");
+                  }}
+                  options={[
+                    { value: "", label: loadingUsers ? "Loading users…" : "Unassigned" },
+                    ...companyUsers.map((u) => ({ value: String(u.id), label: u.name })),
+                  ]}
                   className="col-span-2"
                 />
               </FormRow>
