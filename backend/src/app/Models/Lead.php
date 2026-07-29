@@ -92,6 +92,11 @@ class Lead extends Model
         return $this->hasMany(LeadActivity::class);
     }
 
+    public function contacts(): HasMany
+    {
+        return $this->hasMany(LeadContact::class)->orderBy('sort_order')->orderBy('id');
+    }
+
     public function meetings(): BelongsToMany
     {
         return $this->belongsToMany(Meeting::class, 'meeting_leads')->withTimestamps();

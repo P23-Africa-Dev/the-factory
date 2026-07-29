@@ -42,6 +42,7 @@ import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { EmailPanel } from "@/components/crm/email/email-panel";
 import { getLeadDetailDisplay } from "@/lib/crm/lead-details";
+import { LeadContactsView } from "@/components/crm/lead-contacts";
 
 /* --- Mock Lead Data -------------------------------------- */
 
@@ -570,6 +571,15 @@ export default function LeadDetailsPage() {
   }
 
   const leadDisplay = getLeadDetailDisplay(leadData);
+  const leadContacts = leadData.contacts?.length
+    ? leadData.contacts
+    : [{
+        name: leadData.name,
+        email: leadData.email,
+        phone: leadData.phone,
+        location: leadData.location,
+        sort_order: 0,
+      }];
   const currentAssigneeLabel = leadDisplay.assigneeName;
   const selectedStatusValue = isEditing ? editForm.status : (leadData.status || "newly_lead");
   const selectedStatusOption = statusOptions.find((option) => option.value === selectedStatusValue);
@@ -804,6 +814,10 @@ export default function LeadDetailsPage() {
                   <MapPreview name={leadData.name} location={leadDisplay.mapLocationLabel} />
                 </div>
               </div>
+            </div>
+
+            <div className="rounded-[24px] border border-gray-100 bg-white p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] sm:rounded-[32px] sm:p-8">
+              <LeadContactsView contacts={leadContacts} />
             </div>
 
             {/* -- Lead Details Card ------------------------ */}
