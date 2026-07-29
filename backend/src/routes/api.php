@@ -563,6 +563,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
 
             Route::prefix('crm')->name('crm.')->group(function (): void {
                 Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
+                Route::get('/assignees', [LeadController::class, 'assignees'])->name('assignees.index');
                 Route::post('/leads', [LeadController::class, 'store'])
                     ->middleware('throttle:api')
                     ->name('leads.store');
@@ -1020,6 +1021,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
 
     Route::prefix('crm')->name('crm.')->group(function (): void {
         Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
+        Route::get('/assignees', [LeadController::class, 'assignees'])->name('assignees.index');
         Route::post('/leads', [LeadController::class, 'store'])
             ->middleware('throttle:api')
             ->name('leads.store');

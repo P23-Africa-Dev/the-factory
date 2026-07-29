@@ -39,12 +39,14 @@ class LeadManagementTest extends TestCase
         $createResponse->assertCreated()
             ->assertJsonPath('data.lead.company_id', $company->id)
             ->assertJsonPath('data.lead.assigned_to_user_id', $agent->id)
-            ->assertJsonPath('data.lead.status', 'newly_lead');
+            ->assertJsonPath('data.lead.status', 'newly_lead')
+            ->assertJsonCount(1, 'data.lead.contacts')
+            ->assertJsonPath('data.lead.contacts.0.name', 'Acme Prospect');
 
         $leadId = (int) $createResponse->json('data.lead.id');
 
         $updateResponse = $this->withToken($admin->createToken('admin-token-2', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/crm/leads/' . $leadId, [
+            ->patchJson('/api/v1/crm/leads/'.$leadId, [
                 'company_id' => $company->id,
                 'status' => 'qualified',
                 'priority' => 'urgent',
@@ -56,6 +58,208 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.lead.status', 'qualified')
             ->assertJsonPath('data.lead.priority', 'urgent')
             ->assertJsonPath('data.lead.company_email', 'sales@acme.example');
+    }
+
+    public function test_admin_can_create_search_and_replace_ordered_lead_contacts(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+
+        $createResponse = $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'contacts' => [
+                    [
+                        'name' => 'Primary Person',
+                        'email' => 'primary@example.com',
+                        'phone' => '+2348000000001',
+                        'location' => 'Lagos',
+                    ],
+                    [
+                        'name' => 'Secondary Person',
+                        'email' => 'secondary-search@example.com',
+                        'phone' => '+2348000000002',
+                        'location' => 'Abuja',
+                    ],
+                ],
+                'status' => 'newly_lead',
+                'priority' => 'high',
+            ]);
+
+        $createResponse->assertCreated()
+            ->assertJsonPath('data.lead.name', 'Primary Person')
+            ->assertJsonPath('data.lead.email', 'primary@example.com')
+            ->assertJsonCount(2, 'data.lead.contacts')
+            ->assertJsonPath('data.lead.contacts.0.name', 'Primary Person')
+            ->assertJsonPath('data.lead.contacts.0.sort_order', 0)
+            ->assertJsonPath('data.lead.contacts.1.name', 'Secondary Person')
+            ->assertJsonPath('data.lead.contacts.1.sort_order', 1);
+
+        $leadId = (int) $createResponse->json('data.lead.id');
+        $this->assertDatabaseCount('lead_contacts', 2);
+        $this->assertDatabaseHas('lead_contacts', [
+            'lead_id' => $leadId,
+            'email' => 'secondary-search@example.com',
+            'sort_order' => 1,
+        ]);
+
+        $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/crm/leads?company_id='.$company->id.'&search=secondary-search')
+            ->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.id', $leadId);
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/leads/import/preview', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'rows' => [
+                    ['name' => 'Duplicate Secondary', 'email' => 'secondary-search@example.com'],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.duplicate_count', 1)
+            ->assertJsonPath('data.duplicate_rows.0.existing_lead_id', $leadId);
+
+        $this->actingAs($admin, 'sanctum')
+            ->patchJson('/api/v1/crm/leads/'.$leadId, [
+                'company_id' => $company->id,
+                'contacts' => [
+                    [
+                        'name' => 'Promoted Contact',
+                        'email' => 'promoted@example.com',
+                        'phone' => '+2348000000003',
+                        'location' => 'Port Harcourt',
+                    ],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.lead.name', 'Promoted Contact')
+            ->assertJsonPath('data.lead.location', 'Port Harcourt')
+            ->assertJsonCount(1, 'data.lead.contacts')
+            ->assertJsonPath('data.lead.contacts.0.name', 'Promoted Contact');
+
+        $this->assertDatabaseCount('lead_contacts', 1);
+        $this->assertDatabaseMissing('lead_contacts', [
+            'lead_id' => $leadId,
+            'email' => 'primary@example.com',
+        ]);
+    }
+
+    public function test_management_can_list_active_company_members_and_self_assign_leads(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $owner = User::factory()->create(['is_active' => true]);
+        $supervisor = User::factory()->create(['is_active' => true]);
+        $inactiveAgent = User::factory()->create(['is_active' => false]);
+        $otherCompanyUser = User::factory()->create(['is_active' => true]);
+        DB::table('company_users')->insert([
+            [
+                'company_id' => $company->id,
+                'user_id' => $owner->id,
+                'role' => 'owner',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $company->id,
+                'user_id' => $supervisor->id,
+                'role' => 'supervisor',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $company->id,
+                'user_id' => $inactiveAgent->id,
+                'role' => 'agent',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $otherCompany = Company::create([
+            'company_id' => 'FAC-CRM-OTHER',
+            'name' => 'Other CRM Company',
+            'country' => 'NG',
+            'team_size' => '1-10',
+            'use_case' => 'CRM isolation',
+            'status' => 'active',
+            'activated_at' => now(),
+        ]);
+        DB::table('company_users')->insert([
+            'company_id' => $otherCompany->id,
+            'user_id' => $otherCompanyUser->id,
+            'role' => 'admin',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/crm/assignees?company_id='.$company->id)
+            ->assertOk()
+            ->assertJsonCount(4, 'data.items')
+            ->assertJsonFragment(['id' => $admin->id, 'role' => 'admin'])
+            ->assertJsonFragment(['id' => $agent->id, 'role' => 'agent'])
+            ->assertJsonFragment(['id' => $owner->id, 'role' => 'owner'])
+            ->assertJsonFragment(['id' => $supervisor->id, 'role' => 'supervisor'])
+            ->assertJsonMissing(['id' => $inactiveAgent->id])
+            ->assertJsonMissing(['id' => $otherCompanyUser->id]);
+
+        $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/admin/crm/assignees?company_id='.$company->id)
+            ->assertOk()
+            ->assertJsonCount(4, 'data.items');
+
+        $this->actingAs($agent, 'sanctum')
+            ->getJson('/api/v1/crm/assignees?company_id='.$company->id)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('authorization');
+
+        foreach ([$admin, $owner, $supervisor] as $manager) {
+            $this->actingAs($manager, 'sanctum')
+                ->postJson('/api/v1/crm/leads', [
+                    'company_id' => $company->id,
+                    'pipeline_id' => $pipelineId,
+                    'name' => $manager->name.' Lead',
+                    'assigned_to_user_id' => $manager->id,
+                    'status' => 'newly_lead',
+                    'priority' => 'medium',
+                ])
+                ->assertCreated()
+                ->assertJsonPath('data.lead.assigned_to_user_id', $manager->id);
+        }
+    }
+
+    public function test_lead_contacts_reject_malformed_and_excessive_payloads(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+        $basePayload = [
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+        ];
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/leads', [
+                ...$basePayload,
+                'contacts' => [['name' => ['invalid']]],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('contacts.0.name');
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/leads', [
+                ...$basePayload,
+                'contacts' => array_fill(0, 51, ['name' => 'Contact']),
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('contacts');
     }
 
     public function test_agent_can_create_and_only_view_owned_or_assigned_leads(): void
@@ -106,25 +310,25 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.lead.assigned_to_user_id', $agent->id);
 
         $listResponse = $this->withToken($agent->createToken('agent-list-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/crm/leads?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads?company_id='.$company->id);
 
         $listResponse->assertOk()
             ->assertJsonPath('data.pagination.total', 2);
 
         $showResponse = $this->withToken($agent->createToken('agent-show-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/crm/leads/' . $assignedLead->id . '?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads/'.$assignedLead->id.'?company_id='.$company->id);
 
         $showResponse->assertOk()
             ->assertJsonPath('data.lead.id', $assignedLead->id);
 
         $hiddenShowResponse = $this->withToken($agent->createToken('agent-hidden-show-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/crm/leads/' . $hiddenLead->id . '?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads/'.$hiddenLead->id.'?company_id='.$company->id);
 
         $hiddenShowResponse->assertUnprocessable()
             ->assertJsonValidationErrors(['authorization']);
 
         $noteResponse = $this->withToken($agent->createToken('agent-note-token', ['*'])->plainTextToken)
-            ->postJson('/api/v1/crm/leads/' . $assignedLead->id . '/notes', [
+            ->postJson('/api/v1/crm/leads/'.$assignedLead->id.'/notes', [
                 'company_id' => $company->id,
                 'note' => 'Spoke with lead, awaiting budget confirmation.',
             ]);
@@ -135,7 +339,7 @@ class LeadManagementTest extends TestCase
         $agentCreatedLeadId = (int) $createResponse->json('data.lead.id');
 
         $updateStatusResponse = $this->withToken($agent->createToken('agent-update-status', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/crm/leads/' . $agentCreatedLeadId, [
+            ->patchJson('/api/v1/crm/leads/'.$agentCreatedLeadId, [
                 'company_id' => $company->id,
                 'status' => 'qualified',
             ]);
@@ -144,7 +348,7 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.lead.status', 'qualified');
 
         $forbiddenUpdateResponse = $this->withToken($agent->createToken('agent-update-forbidden', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/crm/leads/' . $agentCreatedLeadId, [
+            ->patchJson('/api/v1/crm/leads/'.$agentCreatedLeadId, [
                 'company_id' => $company->id,
                 'name' => 'Attempted Rename',
             ]);
@@ -178,7 +382,7 @@ class LeadManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($admin->createToken('admin-pipeline-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/crm/leads/pipeline?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads/pipeline?company_id='.$company->id);
 
         $response->assertOk()
             ->assertJsonPath('data.total', 2)
@@ -229,7 +433,7 @@ class LeadManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($admin->createToken('admin-cross-company-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/crm/leads/' . $lead->id . '?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads/'.$lead->id.'?company_id='.$company->id);
 
         $response->assertUnprocessable()
             ->assertJsonValidationErrors(['lead']);
@@ -264,7 +468,7 @@ class LeadManagementTest extends TestCase
         $labelId = (int) $createLabel->json('data.label.id');
 
         $this->withToken($token)
-            ->patchJson('/api/v1/crm/labels/' . $labelId, [
+            ->patchJson('/api/v1/crm/labels/'.$labelId, [
                 'company_id' => $company->id,
                 'name' => 'Follow Up Soon',
                 'color' => '#654321',
@@ -332,7 +536,7 @@ class LeadManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($admin->createToken('admin-agent-upload-overview', ['*'])->plainTextToken)
-            ->getJson('/api/v1/crm/leads/agent-uploads-overview?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads/agent-uploads-overview?company_id='.$company->id);
 
         $response->assertOk()
             ->assertJsonPath('data.total_uploaded_leads', 2)
@@ -341,7 +545,7 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.source_filter', 'agent_upload');
 
         $listResponse = $this->withToken($admin->createToken('admin-agent-upload-filter', ['*'])->plainTextToken)
-            ->getJson('/api/v1/crm/leads?company_id=' . $company->id . '&source=agent_upload');
+            ->getJson('/api/v1/crm/leads?company_id='.$company->id.'&source=agent_upload');
 
         $listResponse->assertOk()
             ->assertJsonPath('data.pagination.total', 2);
@@ -374,7 +578,7 @@ class LeadManagementTest extends TestCase
         ]);
 
         $noUploadResponse = $this->withToken($admin->createToken('admin-no-upload-overview', ['*'])->plainTextToken)
-            ->getJson('/api/v1/crm/leads/agent-uploads-overview?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads/agent-uploads-overview?company_id='.$company->id);
 
         $noUploadResponse->assertOk()
             ->assertJsonPath('data.total_uploaded_leads', 0)
@@ -402,7 +606,7 @@ class LeadManagementTest extends TestCase
         ]);
 
         $uploadedResponse = $this->withToken($admin->createToken('admin-after-upload-overview', ['*'])->plainTextToken)
-            ->getJson('/api/v1/crm/leads/agent-uploads-overview?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads/agent-uploads-overview?company_id='.$company->id);
 
         $uploadedResponse->assertOk()
             ->assertJsonPath('data.total_uploaded_leads', 2)
@@ -454,7 +658,7 @@ class LeadManagementTest extends TestCase
         $token = $admin->createToken('admin-leads-analytics', ['*'])->plainTextToken;
 
         $response = $this->withToken($token)
-            ->getJson('/api/v1/crm/leads/analytics?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads/analytics?company_id='.$company->id);
 
         $response->assertOk()
             ->assertJsonPath('data.total_leads', 8)
@@ -475,13 +679,13 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.highlight_day', 'Weds');
 
         $pipelineResponse = $this->withToken($token)
-            ->getJson('/api/v1/crm/leads/analytics?company_id=' . $company->id . '&pipeline_id=' . $pipelineId);
+            ->getJson('/api/v1/crm/leads/analytics?company_id='.$company->id.'&pipeline_id='.$pipelineId);
 
         $pipelineResponse->assertOk()
             ->assertJsonPath('data.total_leads', 7);
 
         $sourceResponse = $this->withToken($token)
-            ->getJson('/api/v1/crm/leads/analytics?company_id=' . $company->id . '&source=agent_upload');
+            ->getJson('/api/v1/crm/leads/analytics?company_id='.$company->id.'&source=agent_upload');
 
         $sourceResponse->assertOk()
             ->assertJsonPath('data.total_leads', 1);
@@ -538,18 +742,18 @@ class LeadManagementTest extends TestCase
         $this->assertDatabaseCount('leads', 3);
 
         $this->withToken($agentToken)
-            ->getJson('/api/v1/crm/leads?company_id=' . $company->id)
+            ->getJson('/api/v1/crm/leads?company_id='.$company->id)
             ->assertOk()
             ->assertJsonPath('data.pagination.total', 2);
 
         $agentResponse = $this->withToken($agentToken)
-            ->getJson('/api/v1/crm/leads/analytics?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads/analytics?company_id='.$company->id);
 
         $agentResponse->assertOk()
             ->assertJsonPath('data.total_leads', 2);
 
         $adminResponse = $this->withToken($admin->createToken('admin-agent-scope-analytics', ['*'])->plainTextToken)
-            ->getJson('/api/v1/crm/leads/analytics?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads/analytics?company_id='.$company->id);
 
         $adminResponse->assertOk();
 
@@ -576,7 +780,7 @@ class LeadManagementTest extends TestCase
         $labelId = (int) $createLabel->json('data.label.id');
 
         $deleteResponse = $this->withToken($token)
-            ->postJson('/api/v1/crm/labels/' . $labelId . '/delete', [
+            ->postJson('/api/v1/crm/labels/'.$labelId.'/delete', [
                 'company_id' => $company->id,
             ]);
 
@@ -618,7 +822,7 @@ class LeadManagementTest extends TestCase
         ]);
 
         $withoutForceResponse = $this->withToken($token)
-            ->postJson('/api/v1/crm/labels/' . $labelId . '/delete', [
+            ->postJson('/api/v1/crm/labels/'.$labelId.'/delete', [
                 'company_id' => $company->id,
             ]);
 
@@ -627,7 +831,7 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('errors.label_usage_count.0', '1');
 
         $forceResponse = $this->withToken($token)
-            ->postJson('/api/v1/crm/labels/' . $labelId . '/delete', [
+            ->postJson('/api/v1/crm/labels/'.$labelId.'/delete', [
                 'company_id' => $company->id,
                 'force' => true,
             ]);
@@ -661,7 +865,7 @@ class LeadManagementTest extends TestCase
         $pipelineId = (int) $createPipeline->json('data.pipeline.id');
 
         $deleteResponse = $this->withToken($token)
-            ->postJson('/api/v1/crm/pipelines/' . $pipelineId . '/delete', [
+            ->postJson('/api/v1/crm/pipelines/'.$pipelineId.'/delete', [
                 'company_id' => $company->id,
             ]);
 
@@ -701,7 +905,7 @@ class LeadManagementTest extends TestCase
         ]);
 
         $withoutForceResponse = $this->withToken($token)
-            ->postJson('/api/v1/crm/pipelines/' . $pipelineId . '/delete', [
+            ->postJson('/api/v1/crm/pipelines/'.$pipelineId.'/delete', [
                 'company_id' => $company->id,
             ]);
 
@@ -710,7 +914,7 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('errors.pipeline_usage_count.0', '1');
 
         $forceResponse = $this->withToken($token)
-            ->postJson('/api/v1/crm/pipelines/' . $pipelineId . '/delete', [
+            ->postJson('/api/v1/crm/pipelines/'.$pipelineId.'/delete', [
                 'company_id' => $company->id,
                 'force' => true,
             ]);
@@ -738,7 +942,7 @@ class LeadManagementTest extends TestCase
         LeadPipeline::query()->where('id', $pipelineId)->update(['is_default' => true]);
 
         $this->withToken($token)
-            ->postJson('/api/v1/crm/pipelines/' . $pipelineId . '/delete', [
+            ->postJson('/api/v1/crm/pipelines/'.$pipelineId.'/delete', [
                 'company_id' => $company->id,
                 'force' => true,
             ])
@@ -763,7 +967,7 @@ class LeadManagementTest extends TestCase
         $agentToken = $agent->createToken('agent-delete-pipeline', ['*'])->plainTextToken;
 
         $this->withToken($agentToken)
-            ->postJson('/api/v1/crm/pipelines/' . $pipeline->id . '/delete', [
+            ->postJson('/api/v1/crm/pipelines/'.$pipeline->id.'/delete', [
                 'company_id' => $company->id,
                 'force' => true,
             ])
@@ -779,8 +983,7 @@ class LeadManagementTest extends TestCase
     {
         [$company, $admin, $agent] = $this->seedCompanyUsers();
 
-        $adminToken = $admin->createToken('admin-create-label-for-agent-delete', ['*'])->plainTextToken;
-        $labelResponse = $this->withToken($adminToken)
+        $labelResponse = $this->actingAs($admin, 'sanctum')
             ->postJson('/api/v1/crm/labels', [
                 'company_id' => $company->id,
                 'name' => 'Agent Restricted Label',
@@ -790,14 +993,12 @@ class LeadManagementTest extends TestCase
         $labelResponse->assertCreated();
         $labelId = (int) $labelResponse->json('data.label.id');
 
-        $agentToken = $agent->createToken('agent-delete-label-attempt', ['*'])->plainTextToken;
-        $deleteResponse = $this->withToken($agentToken)
-            ->postJson('/api/v1/crm/labels/' . $labelId . '/delete', [
+        $deleteResponse = $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/crm/labels/'.$labelId.'/delete', [
                 'company_id' => $company->id,
             ]);
 
-        $deleteResponse->assertUnprocessable()
-            ->assertJsonValidationErrors(['authorization']);
+        $deleteResponse->assertForbidden();
     }
 
     public function test_create_lead_persists_budget_fields(): void
@@ -942,7 +1143,7 @@ class LeadManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($admin->createToken('admin-export-professional', ['*'])->plainTextToken)
-            ->get('/api/v1/crm/leads/export?company_id=' . $company->id . '&format=csv');
+            ->get('/api/v1/crm/leads/export?company_id='.$company->id.'&format=csv');
 
         $response->assertOk();
         $content = $response->streamedContent();
@@ -997,9 +1198,9 @@ class LeadManagementTest extends TestCase
 
         $this->withToken($admin->createToken('admin-find-updated-import', ['*'])->plainTextToken)
             ->getJson(
-                '/api/v1/crm/leads?company_id=' . $company->id
-                . '&pipeline_id=' . $targetPipeline->id
-                . '&search=New%20Co',
+                '/api/v1/crm/leads?company_id='.$company->id
+                .'&pipeline_id='.$targetPipeline->id
+                .'&search=New%20Co',
             )
             ->assertOk()
             ->assertJsonPath('data.pagination.total', 1)
@@ -1175,7 +1376,7 @@ class LeadManagementTest extends TestCase
 
         // Default CRM labels (including "Proposal Sent") are seeded on first CRM call.
         $this->withToken($token)
-            ->getJson('/api/v1/crm/labels?company_id=' . $company->id)
+            ->getJson('/api/v1/crm/labels?company_id='.$company->id)
             ->assertOk();
 
         $importResponse = $this->withToken($token)
@@ -1257,7 +1458,7 @@ class LeadManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($admin->createToken('admin-export-leads', ['*'])->plainTextToken)
-            ->get('/api/v1/crm/leads/export?company_id=' . $company->id . '&format=csv');
+            ->get('/api/v1/crm/leads/export?company_id='.$company->id.'&format=csv');
 
         $response->assertOk();
         $this->assertStringContainsString('text/csv', (string) $response->headers->get('Content-Type'));
@@ -1303,7 +1504,7 @@ class LeadManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($agent->createToken('agent-export-leads', ['*'])->plainTextToken)
-            ->get('/api/v1/agent/crm/leads/export?company_id=' . $company->id . '&format=csv');
+            ->get('/api/v1/agent/crm/leads/export?company_id='.$company->id.'&format=csv');
 
         $response->assertOk();
 
@@ -1345,7 +1546,7 @@ class LeadManagementTest extends TestCase
         ]);
 
         $adminResponse = $this->withToken($admin->createToken('admin-detail-contract', ['*'])->plainTextToken)
-            ->getJson('/api/v1/crm/leads/' . $lead->id . '?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads/'.$lead->id.'?company_id='.$company->id);
 
         $adminResponse->assertOk()
             ->assertJsonPath('data.lead.id', $lead->id)
@@ -1376,7 +1577,7 @@ class LeadManagementTest extends TestCase
         $this->assertNotEmpty($leadPayload['updated_at']);
 
         $agentResponse = $this->withToken($agent->createToken('agent-detail-contract', ['*'])->plainTextToken)
-            ->getJson('/api/v1/crm/leads/' . $lead->id . '?company_id=' . $company->id);
+            ->getJson('/api/v1/crm/leads/'.$lead->id.'?company_id='.$company->id);
 
         $agentResponse->assertOk()
             ->assertJsonPath('data.lead.email', 'detail@example.com')
@@ -1411,9 +1612,9 @@ class LeadManagementTest extends TestCase
         foreach (range(1, 21) as $page) {
             $response = $this->withToken($token)
                 ->getJson(
-                    '/api/v1/crm/leads?company_id=' . $company->id
-                    . '&pipeline_id=' . $pipelineId
-                    . '&status=newly_lead&per_page=20&page=' . $page,
+                    '/api/v1/crm/leads?company_id='.$company->id
+                    .'&pipeline_id='.$pipelineId
+                    .'&status=newly_lead&per_page=20&page='.$page,
                 )
                 ->assertOk()
                 ->assertJsonPath('data.pagination.total', 405)
@@ -1442,7 +1643,7 @@ class LeadManagementTest extends TestCase
 
         $token = $admin->createToken('admin-uncategorized', ['*'])->plainTextToken;
         $this->withToken($token)
-            ->getJson('/api/v1/crm/leads?company_id=' . $company->id . '&uncategorized=1')
+            ->getJson('/api/v1/crm/leads?company_id='.$company->id.'&uncategorized=1')
             ->assertOk()
             ->assertJsonPath('data.pagination.total', 1)
             ->assertJsonPath('data.items.0.id', $lead->id);
@@ -1457,7 +1658,7 @@ class LeadManagementTest extends TestCase
         $this->assertSame('newly_lead', $lead->status);
 
         $this->withToken($token)
-            ->getJson('/api/v1/crm/leads?company_id=' . $company->id . '&uncategorized=1')
+            ->getJson('/api/v1/crm/leads?company_id='.$company->id.'&uncategorized=1')
             ->assertOk()
             ->assertJsonPath('data.pagination.total', 0);
     }
@@ -1519,7 +1720,7 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.lead.pipeline.id', $supportPipeline->id);
 
         $this->actingAs($admin, 'sanctum')
-            ->postJson('/api/v1/crm/pipelines/' . $supportPipeline->id . '/set-default', [
+            ->postJson('/api/v1/crm/pipelines/'.$supportPipeline->id.'/set-default', [
                 'company_id' => $company->id,
             ])
             ->assertOk()
@@ -1536,7 +1737,7 @@ class LeadManagementTest extends TestCase
 
         $agent->forceFill(['internal_role' => 'agent'])->save();
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/crm/pipelines/' . $salesPipeline->id . '/set-default', [
+            ->postJson('/api/v1/crm/pipelines/'.$salesPipeline->id.'/set-default', [
                 'company_id' => $company->id,
             ])
             ->assertForbidden();
@@ -1564,7 +1765,7 @@ class LeadManagementTest extends TestCase
             ->assertOk();
 
         $this->actingAs($admin, 'sanctum')
-            ->postJson('/api/v1/crm/pipelines/' . $salesPipeline->id . '/delete', [
+            ->postJson('/api/v1/crm/pipelines/'.$salesPipeline->id.'/delete', [
                 'company_id' => $company->id,
                 'force' => true,
             ])
@@ -1623,7 +1824,7 @@ class LeadManagementTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     private function createLeadAt(array $attributes, string $createdAt): Lead
     {

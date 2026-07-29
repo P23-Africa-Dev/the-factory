@@ -9,6 +9,22 @@ export type ApiLeadStatus = string;
 
 export type ApiLeadPriority = "high" | "medium" | "low" | "urgent";
 
+export type LeadContact = {
+    id?: number;
+    name: string;
+    email?: string | null;
+    phone?: string | null;
+    location?: string | null;
+    sort_order?: number;
+};
+
+export type CrmAssignee = {
+    id: number;
+    name: string;
+    email: string;
+    role: "owner" | "admin" | "supervisor" | "agent";
+};
+
 export type LeadActor = {
     id: number;
     name: string;
@@ -52,6 +68,7 @@ export type LeadApiItem = {
     email?: string | null;
     phone?: string | null;
     location?: string | null;
+    contacts?: LeadContact[];
     company_name?: string | null;
     company_email?: string | null;
     website?: string | null;
@@ -131,6 +148,7 @@ export type CreateLeadPayload = {
     email?: string | null;
     phone?: string | null;
     location?: string | null;
+    contacts?: LeadContact[];
     company_name?: string | null;
     company_email?: string | null;
     website?: string | null;
@@ -155,6 +173,7 @@ export type UpdateLeadPayload = {
     email?: string | null;
     phone?: string | null;
     location?: string | null;
+    contacts?: LeadContact[];
     company_name?: string | null;
     company_email?: string | null;
     website?: string | null;
@@ -356,6 +375,20 @@ function buildQuery(params: Record<string, string | number | undefined>) {
 
 function withBase(basePath: ApiRoleBasePath, path: string) {
     return `${basePath}${path}`;
+}
+
+export function listCrmAssignees(
+    companyId: number | string,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin",
+): Promise<ApiEnvelope<{ items: CrmAssignee[] }>> {
+    const query = buildQuery({ company_id: companyId });
+
+    return apiRequest<{ items: CrmAssignee[] }>({
+        method: "GET",
+        path: withBase(basePath, `/crm/assignees${query}`),
+        token,
+    });
 }
 
 export function listLeads(

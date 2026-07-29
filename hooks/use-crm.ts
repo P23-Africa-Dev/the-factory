@@ -21,6 +21,7 @@ import {
     getLeadPipeline,
     importCrmLeads,
     listCrmLabels,
+    listCrmAssignees,
     listCrmPipelines,
     listLeads,
     previewImportCrmLeads,
@@ -30,6 +31,7 @@ import {
     type CrmLabel,
     type CrmPipeline,
     type CrmPreferences,
+    type CrmAssignee,
     type ExportLeadsParams,
     type ImportLeadsPayload,
     updateLead,
@@ -75,12 +77,29 @@ export const CRM_KEYS = {
         ["crm", "leads-analytics", basePath, params] as const,
     preferences: (companyId: number | string | undefined, basePath: ApiRoleBasePath) =>
         ["crm", "preferences", basePath, companyId] as const,
+    assignees: (companyId: number | string | undefined, basePath: ApiRoleBasePath) =>
+        ["crm", "assignees", basePath, companyId] as const,
 };
 
 export type LeadsResult = {
     leads: LeadApiItem[];
     pagination: PaginationData;
 };
+
+export function useCrmAssignees(
+    companyId?: number | string,
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useQuery({
+        queryKey: CRM_KEYS.assignees(companyId, basePath),
+        queryFn: async (): Promise<CrmAssignee[]> =>
+            (await listCrmAssignees(companyId!, token, basePath)).data.items,
+        enabled: hasActiveApiSession(token) && companyId != null && basePath === "/admin",
+        staleTime: 1000 * 60 * 5,
+    });
+}
 
 export function useLeads(
     params: ListLeadsParams = {},

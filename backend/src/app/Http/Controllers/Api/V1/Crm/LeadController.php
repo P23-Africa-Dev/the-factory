@@ -13,6 +13,7 @@ use App\Http\Requests\Crm\StoreLeadNoteRequest;
 use App\Http\Requests\Crm\StoreLeadRequest;
 use App\Http\Requests\Crm\UpdateLeadRequest;
 use App\Http\Resources\LeadActivityResource;
+use App\Http\Resources\LeadAssigneeResource;
 use App\Http\Resources\LeadNoteResource;
 use App\Http\Resources\LeadResource;
 use App\Models\Lead;
@@ -65,6 +66,19 @@ class LeadController extends Controller
             message: 'CRM lead created successfully.',
             data: ['lead' => new LeadResource($lead)],
             status: 201,
+        );
+    }
+
+    public function assignees(Request $request): JsonResponse
+    {
+        $assignees = $this->leadService->listAssignees(
+            $request->user(),
+            $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
+        return $this->success(
+            message: 'CRM assignees fetched successfully.',
+            data: ['items' => LeadAssigneeResource::collection($assignees)],
         );
     }
 

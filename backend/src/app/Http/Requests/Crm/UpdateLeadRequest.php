@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Http\Requests\Crm;
 
 use App\Enums\LeadPriority;
+use App\Http\Requests\Concerns\NormalizesLeadContacts;
 use App\Http\Requests\Concerns\NormalizesLeadProfessionalFields;
 use App\Http\Requests\Concerns\ResolvesCompanyContextId;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateLeadRequest extends FormRequest
 {
+    use NormalizesLeadContacts;
     use NormalizesLeadProfessionalFields;
     use ResolvesCompanyContextId;
 
@@ -22,6 +25,7 @@ class UpdateLeadRequest extends FormRequest
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
             ...$budget,
             ...$this->normalizeLeadProfessionalFields(),
+            ...$this->normalizeLeadContacts(),
         ]);
     }
 
@@ -85,6 +89,11 @@ class UpdateLeadRequest extends FormRequest
             'email' => ['sometimes', 'nullable', 'email', 'max:255'],
             'phone' => ['sometimes', 'nullable', 'string', 'max:40'],
             'location' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'contacts' => ['sometimes', 'array', 'min:1', 'max:50'],
+            'contacts.*.name' => ['required', 'string', 'max:255'],
+            'contacts.*.email' => ['nullable', 'email', 'max:255'],
+            'contacts.*.phone' => ['nullable', 'string', 'max:40'],
+            'contacts.*.location' => ['nullable', 'string', 'max:255'],
             'company_name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'company_email' => ['sometimes', 'nullable', 'email', 'max:255'],
             'website' => ['sometimes', 'nullable', 'string', 'max:255', 'url'],
@@ -93,7 +102,7 @@ class UpdateLeadRequest extends FormRequest
             'profile_urls.*' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
             'source' => ['sometimes', 'nullable', 'string', 'max:120'],
             'status' => ['sometimes', 'required', 'string', 'max:120'],
-            'priority' => ['sometimes', 'required', 'string', \Illuminate\Validation\Rule::in(LeadPriority::values())],
+            'priority' => ['sometimes', 'required', 'string', Rule::in(LeadPriority::values())],
             'budget_amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'budget_currency' => ['sometimes', 'nullable', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'budget' => ['sometimes', 'nullable', 'string', 'max:64'],
