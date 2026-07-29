@@ -7,6 +7,7 @@ import { useAuth } from '@/features/auth';
 import { usePushSubscription } from '@/features/notifications/hooks/usePushSubscription';
 import { useDeviceNotificationBridge } from '@/features/notifications/hooks/useDeviceNotificationBridge';
 import { ActiveTrackingProvider } from '@/features/tracking/ActiveTrackingProvider';
+import { FieldActivityProvider } from '@/features/field-activity';
 import { useTrackingWebSocket } from '@/hooks/useTrackingWebSocket';
 import { syncEngine } from '@/lib/sync/syncEngine';
 import { warmAgentRoutes } from '@/lib/pwa/routeWarming';
@@ -112,7 +113,9 @@ export default function AgentLayout({
 
   return (
     <ActiveTrackingProvider>
-      <AgentShell>{children}</AgentShell>
+      <FieldActivityProvider>
+        <AgentShell>{children}</AgentShell>
+      </FieldActivityProvider>
     </ActiveTrackingProvider>
   );
 }

@@ -22,6 +22,9 @@ class ToolPolicyService
         'dashboard.overview',
         'planning.daily',
         'drive.files',
+        'field.daily_summary',
+        'field.agent_visits',
+        'field.travel_vs_visit_time',
     ];
 
     private const READ_TOOLS_MANAGEMENT = [
@@ -43,6 +46,11 @@ class ToolPolicyService
         'kpi.team_performance',
         'org.users',
         'drive.files',
+        'field.daily_summary',
+        'field.agent_visits',
+        'field.unvisited_customers',
+        'field.territory_coverage',
+        'field.travel_vs_visit_time',
     ];
 
     private const ACTION_TOOLS_MANAGEMENT = [

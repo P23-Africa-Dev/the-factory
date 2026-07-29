@@ -5,6 +5,8 @@
 export interface LocationQueueEntry {
   id?: number; // Auto-incremented by IndexedDB
   taskId: number;
+  /** When set, point belongs to a day-level field activity session (not a task). */
+  fieldActivitySessionId?: number | null;
   latitude: number;
   longitude: number;
   accuracyMeters: number | null;
@@ -69,6 +71,7 @@ export type OfflineActionType =
   | 'meeting.cancel'
   | 'attendance.clock_in'
   | 'attendance.clock_out'
+  | 'field_activity.classify_stop'
   | 'location.create'
   | 'location.update'
   | 'location.delete'
