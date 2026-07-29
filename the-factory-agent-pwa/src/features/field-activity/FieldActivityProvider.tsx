@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { useFieldActivityToday } from '../queries';
-import { useFieldActivityReporter } from '../hooks/useFieldActivityReporter';
+import { useFieldActivityToday } from './queries';
+import { useFieldActivityReporter } from './hooks/useFieldActivityReporter';
 
 /**
  * Starts day-level field GPS when attendance-linked session is active.
