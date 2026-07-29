@@ -42,7 +42,7 @@ import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { EmailPanel } from "@/components/crm/email/email-panel";
 import { getLeadDetailDisplay } from "@/lib/crm/lead-details";
-import { LeadContactsView } from "@/components/crm/lead-contacts";
+import { LeadContactHeroSlider } from "@/components/crm/lead-contacts";
 
 /* --- Mock Lead Data -------------------------------------- */
 
@@ -705,46 +705,8 @@ export default function LeadDetailsPage() {
 
               {/* Right Part: Fields & Map */}
               <div className="flex-1 flex flex-col gap-6 w-full min-w-0">
+                <LeadContactHeroSlider contacts={leadContacts} />
                 <div className="grid grid-cols-1 min-[480px]:grid-cols-2 gap-x-6 sm:gap-x-8 gap-y-4">
-                  <div className="flex flex-col">
-                    <label className="text-gray-400 text-[11px] font-medium mb-1">
-                      Name
-                    </label>
-                    <p className="text-white text-[16px] font-semibold truncate">
-                      {leadData.name}
-                    </p>
-                  </div>
-                  <div className="flex flex-col">
-                    <label className="text-gray-400 text-[11px] font-medium mb-1">
-                      Phone Number
-                    </label>
-                    <p className="text-white text-[16px] font-semibold truncate">
-                      {leadDisplay.phone}
-                    </p>
-                  </div>
-                  <div className="flex flex-col">
-                    <label className="text-gray-400 text-[11px] font-medium mb-1">
-                      Email Address
-                    </label>
-                    {leadData.email ? (
-                      <a
-                        href={`mailto:${leadData.email}`}
-                        className="text-[#7DD3FC] text-[16px] font-semibold truncate hover:underline"
-                      >
-                        {leadData.email}
-                      </a>
-                    ) : (
-                      <p className="text-white text-[16px] font-semibold truncate">N/A</p>
-                    )}
-                  </div>
-                  <div className="flex flex-col">
-                    <label className="text-gray-400 text-[11px] font-medium mb-1">
-                      Location
-                    </label>
-                    <p className="text-white text-[16px] font-semibold truncate">
-                      {leadDisplay.location}
-                    </p>
-                  </div>
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Company Name
@@ -814,10 +776,6 @@ export default function LeadDetailsPage() {
                   <MapPreview name={leadData.name} location={leadDisplay.mapLocationLabel} />
                 </div>
               </div>
-            </div>
-
-            <div className="rounded-[24px] border border-gray-100 bg-white p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] sm:rounded-[32px] sm:p-8">
-              <LeadContactsView contacts={leadContacts} />
             </div>
 
             {/* -- Lead Details Card ------------------------ */}

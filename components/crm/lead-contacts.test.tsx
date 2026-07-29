@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { LeadContactsSlider, LeadContactsView } from "@/components/crm/lead-contacts";
+import { LeadContactHeroSlider, LeadContactsSlider, LeadContactsView } from "@/components/crm/lead-contacts";
 import type { LeadContact } from "@/lib/api/crm";
 
 vi.mock("@/components/ui/phone-number-input", () => ({
@@ -73,5 +73,31 @@ describe("LeadContactsView", () => {
     expect(screen.getByText("Secondary Person")).not.toBeNull();
     expect(screen.getByText("Primary")).not.toBeNull();
     expect(screen.getByText("2 total")).not.toBeNull();
+  });
+});
+
+describe("LeadContactHeroSlider", () => {
+  it("shows one contact at a time and navigates with arrows", () => {
+    render(
+      <LeadContactHeroSlider
+        contacts={[
+          { name: "Primary Person", email: "primary@example.com" },
+          { name: "Secondary Person", phone: "+2348000000002" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Primary Person")).not.toBeNull();
+    expect(screen.queryByText("Secondary Person")).toBeNull();
+    expect(screen.getByText("Contact 1 of 2 · Primary")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next contact" }));
+
+    expect(screen.queryByText("Primary Person")).toBeNull();
+    expect(screen.getByText("Secondary Person")).not.toBeNull();
+    expect(screen.getByText("Contact 2 of 2")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous contact" }));
+    expect(screen.getByText("Primary Person")).not.toBeNull();
   });
 });
