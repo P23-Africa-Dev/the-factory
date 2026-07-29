@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Mail, MapPin, Phone, Plus, Trash2, User } from "lucide-react";
+import { useState } from "react";
 
 import { FormRow } from "@/components/payroll/payroll/form-row";
 import { InlineInput } from "@/components/payroll/payroll/inline-input";
@@ -191,6 +192,87 @@ export function LeadContactsView({ contacts }: { contacts: LeadContact[] }) {
             </div>
           </article>
         ))}
+      </div>
+    </section>
+  );
+}
+
+export function LeadContactHeroSlider({ contacts }: { contacts: LeadContact[] }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const safeIndex = Math.min(activeIndex, Math.max(contacts.length - 1, 0));
+  const contact = contacts[safeIndex];
+
+  if (!contact) return null;
+
+  const canGoBack = safeIndex > 0;
+  const canGoForward = safeIndex < contacts.length - 1;
+
+  return (
+    <section aria-label="Lead contact details" className="space-y-5">
+      <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#7DD3FC]">
+            Contact Details
+          </p>
+          <p className="mt-1 text-[11px] text-gray-400">
+            Contact {safeIndex + 1} of {contacts.length}
+            {safeIndex === 0 ? " · Primary" : ""}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="Previous contact"
+            disabled={!canGoBack}
+            onClick={() => setActiveIndex(safeIndex - 1)}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white transition hover:border-white/30 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-25"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            type="button"
+            aria-label="Next contact"
+            disabled={!canGoForward}
+            onClick={() => setActiveIndex(safeIndex + 1)}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white transition hover:border-white/30 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-25"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </div>
+
+      <div
+        key={safeIndex}
+        className="grid animate-in grid-cols-1 gap-x-6 gap-y-4 fade-in slide-in-from-right-2 duration-200 min-[480px]:grid-cols-2 sm:gap-x-8"
+      >
+        <div className="flex min-w-0 flex-col">
+          <span className="mb-1 text-[11px] font-medium text-gray-400">Name</span>
+          <p className="truncate text-[16px] font-semibold text-white">{contact.name || "N/A"}</p>
+        </div>
+        <div className="flex min-w-0 flex-col">
+          <span className="mb-1 text-[11px] font-medium text-gray-400">Phone Number</span>
+          {contact.phone ? (
+            <a href={`tel:${contact.phone}`} className="truncate text-[16px] font-semibold text-white hover:underline">
+              {contact.phone}
+            </a>
+          ) : (
+            <p className="text-[16px] font-semibold text-white">N/A</p>
+          )}
+        </div>
+        <div className="flex min-w-0 flex-col">
+          <span className="mb-1 text-[11px] font-medium text-gray-400">Email Address</span>
+          {contact.email ? (
+            <a href={`mailto:${contact.email}`} className="truncate text-[16px] font-semibold text-[#7DD3FC] hover:underline">
+              {contact.email}
+            </a>
+          ) : (
+            <p className="text-[16px] font-semibold text-white">N/A</p>
+          )}
+        </div>
+        <div className="flex min-w-0 flex-col">
+          <span className="mb-1 text-[11px] font-medium text-gray-400">Location</span>
+          <p className="truncate text-[16px] font-semibold text-white">{contact.location || "N/A"}</p>
+        </div>
       </div>
     </section>
   );
