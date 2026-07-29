@@ -14,8 +14,9 @@ use App\Models\TaskProof;
 use App\Models\User;
 use App\Notifications\TaskAssignedNotification;
 use App\Services\Notification\NotificationService;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Contracts\Pagination\Paginator;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -25,6 +26,8 @@ use Throwable;
 
 class TaskService
 {
+    private const ASSIGNABLE_ROLES = ['owner', 'admin', 'supervisor', 'agent'];
+
     private const INDEX_RELATIONS = [
         'project',
         'creator',
@@ -108,6 +111,30 @@ class TaskService
         return $query->simplePaginate(20)->withQueryString();
     }
 
+    /**
+     * @return Collection<int, User>
+     */
+    public function listAssignableUsers(User $user, ?int $companyId = null): Collection
+    {
+        $context = $this->accessService->resolve($user, $companyId);
+        $this->accessService->ensureManager($context);
+
+        return User::query()
+            ->select([
+                'users.id',
+                'users.name',
+                'users.email',
+                'company_users.role as company_role',
+            ])
+            ->join('company_users', 'company_users.user_id', '=', 'users.id')
+            ->where('company_users.company_id', $context->company->id)
+            ->whereIn('company_users.role', self::ASSIGNABLE_ROLES)
+            ->where('users.is_active', true)
+            ->orderBy('company_users.role')
+            ->orderBy('users.name')
+            ->get();
+    }
+
     public function create(User $user, array $data): Task
     {
         $context = $this->accessService->resolve($user, $data['company_id'] ?? null);
@@ -115,7 +142,7 @@ class TaskService
 
         $agentId = isset($data['assigned_agent_id']) ? (int) $data['assigned_agent_id'] : null;
         if ($agentId !== null) {
-            $this->ensureAgentBelongsToCompany($context->company->id, $agentId);
+            $this->ensureAssigneeBelongsToCompany($context->company->id, $agentId);
         }
 
         if (! empty($data['project_id'])) {
@@ -279,7 +306,7 @@ class TaskService
                 'visit_verification_required' => array_key_exists('visit_verification_required', $data)
                     ? ($trackable && (bool) $data['visit_verification_required'])
                     : null,
-            ], static fn(mixed $value): bool => $value !== null);
+            ], static fn (mixed $value): bool => $value !== null);
 
             if ($payload !== []) {
                 $task->update($payload);
@@ -319,7 +346,7 @@ class TaskService
         $this->assertTaskIntegrityInCompany($task, $context->company->id);
 
         foreach ($agentIds as $agentId) {
-            $this->ensureAgentBelongsToCompany($context->company->id, $agentId);
+            $this->ensureAssigneeBelongsToCompany($context->company->id, $agentId);
         }
 
         if ($this->isTerminalStatus($task->status?->value)) {
@@ -616,19 +643,14 @@ class TaskService
         return basename($proof->file_path);
     }
 
-    private function ensureAgentBelongsToCompany(int $companyId, int $userId): void
+    private function ensureAssigneeBelongsToCompany(int $companyId, int $userId): void
     {
         $membership = $this->companyMembership($companyId, $userId);
+        $isActive = User::query()->whereKey($userId)->where('is_active', true)->exists();
 
-        if (! $membership) {
+        if (! $membership || ! $isActive || ! in_array((string) $membership->role, self::ASSIGNABLE_ROLES, true)) {
             throw ValidationException::withMessages([
-                'assigned_agent_id' => ['Selected agent is not a member of this company.'],
-            ]);
-        }
-
-        if ((string) $membership->role !== 'agent') {
-            throw ValidationException::withMessages([
-                'assigned_agent_id' => ['Selected user must have agent role.'],
+                'assigned_agent_id' => ['Selected user is not a member of this company.'],
             ]);
         }
     }
@@ -651,7 +673,7 @@ class TaskService
         if ($task->assigned_agent_id !== null) {
             $assignedMembership = $this->companyMembership($companyId, (int) $task->assigned_agent_id);
 
-            if (! $assignedMembership || ! in_array((string) $assignedMembership->role, ['agent', 'supervisor'], true)) {
+            if (! $assignedMembership || ! in_array((string) $assignedMembership->role, self::ASSIGNABLE_ROLES, true)) {
                 throw ValidationException::withMessages([
                     'task' => ['Task assignee is not a valid assignable user in the active company context.'],
                 ]);
@@ -712,7 +734,7 @@ class TaskService
                             ->from('company_users as assignee_memberships')
                             ->whereColumn('assignee_memberships.company_id', 'tasks.company_id')
                             ->whereColumn('assignee_memberships.user_id', 'tasks.assigned_agent_id')
-                            ->whereIn('assignee_memberships.role', ['agent', 'supervisor']);
+                            ->whereIn('assignee_memberships.role', self::ASSIGNABLE_ROLES);
                     });
             })
             ->where(function (Builder $query): void {
@@ -772,8 +794,8 @@ class TaskService
             ->where('task_id', $task->id)
             ->where('is_current', true)
             ->pluck('assigned_agent_id')
-            ->map(static fn(mixed $id): int => (int) $id)
-            ->filter(static fn(int $id): bool => $id > 0)
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
             ->unique()
             ->values()
             ->all();
@@ -818,8 +840,8 @@ class TaskService
             ->where('task_id', $task->id)
             ->where('is_current', true)
             ->pluck('assigned_agent_id')
-            ->map(static fn(mixed $id): int => (int) $id)
-            ->filter(static fn(int $id): bool => $id > 0)
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
             ->unique()
             ->values()
             ->all();
@@ -841,7 +863,7 @@ class TaskService
                     : "{$actor->name} assigned task '{$task->title}' to you.",
                 'reference_type' => Task::class,
                 'reference_id' => (int) $task->id,
-                'action_url' => '/tasks/' . $task->id,
+                'action_url' => '/tasks/'.$task->id,
                 'action_route' => 'tasks.show',
                 'priority' => NotificationPriority::HIGH->value,
                 'created_by_user_id' => (int) $actor->id,
@@ -851,7 +873,7 @@ class TaskService
                     'task_due_at' => $task->due_at?->toIso8601String(),
                     'self_assigned' => $selfAssigned,
                 ],
-                'dedupe_key' => 'task-assignment:' . $task->id . ':' . $assigneeId . ':' . ($task->updated_at?->timestamp ?? now()->timestamp),
+                'dedupe_key' => 'task-assignment:'.$task->id.':'.$assigneeId.':'.($task->updated_at?->timestamp ?? now()->timestamp),
             ]);
         }
     }
@@ -863,9 +885,9 @@ class TaskService
             (int) ($task->assigned_agent_id ?? 0),
         ])
             ->merge($this->managerUserIdsForCompany((int) $task->company_id))
-            ->filter(static fn(int $id): bool => $id > 0)
+            ->filter(static fn (int $id): bool => $id > 0)
             ->unique()
-            ->reject(static fn(int $id): bool => $id === (int) $actor->id)
+            ->reject(static fn (int $id): bool => $id === (int) $actor->id)
             ->values()
             ->all();
 
@@ -878,7 +900,7 @@ class TaskService
                 'message' => "Task '{$task->title}' is now {$status}.",
                 'reference_type' => Task::class,
                 'reference_id' => (int) $task->id,
-                'action_url' => '/tasks/' . $task->id,
+                'action_url' => '/tasks/'.$task->id,
                 'action_route' => 'tasks.show',
                 'priority' => in_array($status, [TaskStatus::COMPLETED->value, TaskStatus::CANCELLED->value], true)
                     ? NotificationPriority::HIGH->value
@@ -889,7 +911,7 @@ class TaskService
                     'task_status' => $status,
                     'updated_by_user_id' => (int) $actor->id,
                 ],
-                'dedupe_key' => 'task-status:' . $task->id . ':' . $status . ':' . ($task->updated_at?->timestamp ?? now()->timestamp),
+                'dedupe_key' => 'task-status:'.$task->id.':'.$status.':'.($task->updated_at?->timestamp ?? now()->timestamp),
             ]);
         }
     }
@@ -901,9 +923,9 @@ class TaskService
             (int) ($task->assigned_agent_id ?? 0),
         ])
             ->merge($this->managerUserIdsForCompany((int) $task->company_id))
-            ->filter(static fn(int $id): bool => $id > 0)
+            ->filter(static fn (int $id): bool => $id > 0)
             ->unique()
-            ->reject(static fn(int $id): bool => $id === (int) $actor->id)
+            ->reject(static fn (int $id): bool => $id === (int) $actor->id)
             ->values()
             ->all();
 
@@ -916,7 +938,7 @@ class TaskService
                 'message' => "{$actor->name} uploaded proof for task '{$task->title}'.",
                 'reference_type' => Task::class,
                 'reference_id' => (int) $task->id,
-                'action_url' => '/tasks/' . $task->id,
+                'action_url' => '/tasks/'.$task->id,
                 'action_route' => 'tasks.show',
                 'priority' => NotificationPriority::NORMAL->value,
                 'created_by_user_id' => (int) $actor->id,
@@ -924,7 +946,7 @@ class TaskService
                     'task_id' => (int) $task->id,
                     'uploaded_by_user_id' => (int) $actor->id,
                 ],
-                'dedupe_key' => 'task-proof:' . $task->id . ':' . ($task->updated_at?->timestamp ?? now()->timestamp),
+                'dedupe_key' => 'task-proof:'.$task->id.':'.($task->updated_at?->timestamp ?? now()->timestamp),
             ]);
         }
     }
@@ -935,7 +957,7 @@ class TaskService
             ->where('company_id', $companyId)
             ->whereIn('role', ['owner', 'admin', 'supervisor'])
             ->pluck('user_id')
-            ->map(static fn(mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => (int) $id)
             ->all();
     }
 

@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listTasks,
+  listTaskAssignees,
   createTask,
   getTask,
   assignTask,
@@ -26,6 +27,7 @@ import {
   type TaskApiItem,
   type PaginationData,
   type UpdateTaskPayload,
+  type TaskAssignee,
 } from "@/lib/api/tasks";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { hasActiveApiSession } from "@/lib/auth/support-session";
@@ -34,6 +36,7 @@ import { toast } from "sonner";
 export const TASK_KEYS = {
   all: ["tasks"] as const,
   list: (params: ListTasksParams) => ["tasks", params] as const,
+  assignees: (companyId: number | string) => ["tasks", "assignees", companyId] as const,
   detail: (taskId: number | string, companyId?: number | string) =>
     ["tasks", "detail", taskId, companyId] as const,
   reassignmentInbox: (params: TaskReassignmentsInboxParams) =>
@@ -44,6 +47,18 @@ export type TasksResult = {
   tasks: TaskApiItem[];
   pagination: PaginationData;
 };
+
+export function useTaskAssignees(companyId?: number | string) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useQuery({
+    queryKey: TASK_KEYS.assignees(companyId ?? ""),
+    queryFn: async (): Promise<TaskAssignee[]> =>
+      (await listTaskAssignees({ company_id: companyId! }, token)).data.items,
+    enabled: hasActiveApiSession(token) && companyId != null && companyId !== "",
+    staleTime: 1000 * 60 * 5,
+  });
+}
 
 export function useTasks(params: ListTasksParams = {}) {
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
