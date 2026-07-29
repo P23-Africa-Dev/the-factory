@@ -9,6 +9,14 @@ export type ApiTaskStatus =
   | "completed"
   | "cancelled";
 export type ApiTaskPriority = "high" | "medium" | "low";
+export type TaskAssigneeRole = "owner" | "admin" | "supervisor" | "agent";
+
+export type TaskAssignee = {
+  id: number;
+  name: string;
+  email: string;
+  role: TaskAssigneeRole;
+};
 
 export type TaskApiItem = {
   id: number;
@@ -147,6 +155,10 @@ export type TasksListData = {
   pagination: PaginationData;
 };
 
+export type TaskAssigneesData = {
+  items: TaskAssignee[];
+};
+
 export type CreateTaskPayload = {
   company_id: number | string;
   project_id?: number | string | null;
@@ -237,6 +249,19 @@ export function listTasks(
   return apiRequest<TasksListData>({
     method: "GET",
     path: `/tasks${query}`,
+    token,
+  });
+}
+
+export function listTaskAssignees(
+  params: { company_id: number | string },
+  token: string
+): Promise<ApiEnvelope<TaskAssigneesData>> {
+  const query = new URLSearchParams({ company_id: String(params.company_id) });
+
+  return apiRequest<TaskAssigneesData>({
+    method: "GET",
+    path: `/tasks/assignees?${query.toString()}`,
     token,
   });
 }

@@ -142,7 +142,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/tasks?company_id=' . $company->id . '&project_id=' . $project->id);
+            ->getJson('/api/v1/tasks?company_id='.$company->id.'&project_id='.$project->id);
 
         $response->assertOk()
             ->assertJsonCount(1, 'data.items')
@@ -230,7 +230,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($secondaryAgent->createToken('secondary-agent-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/tasks/' . $task->id . '?company_id=' . $company->id);
+            ->getJson('/api/v1/tasks/'.$task->id.'?company_id='.$company->id);
 
         $response->assertOk()
             ->assertJsonPath('data.task.id', $task->id);
@@ -323,14 +323,14 @@ class TaskManagementTest extends TestCase
         $agentToken = $agent->createToken('agent-token', ['*'])->plainTextToken;
 
         $listResponse = $this->withToken($agentToken)
-            ->getJson('/api/v1/tasks?company_id=' . strtolower($company->company_id));
+            ->getJson('/api/v1/tasks?company_id='.strtolower($company->company_id));
 
         $listResponse->assertOk()
             ->assertJsonPath('data.items.0.id', $taskId)
             ->assertJsonPath('data.items.0.company_id', $company->id);
 
         $showResponse = $this->withToken($agentToken)
-            ->getJson('/api/v1/tasks/' . $taskId . '?company_id=' . strtolower($company->company_id));
+            ->getJson('/api/v1/tasks/'.$taskId.'?company_id='.strtolower($company->company_id));
 
         $showResponse->assertOk()
             ->assertJsonPath('data.task.id', $taskId)
@@ -406,6 +406,142 @@ class TaskManagementTest extends TestCase
             ->assertJsonPath('data.task.project.id', $project->id)
             ->assertJsonPath('data.task.creator.id', $supervisor->id)
             ->assertJsonPath('data.task.assignee.id', $agent->id);
+    }
+
+    public function test_management_can_list_active_company_members_as_task_assignees(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $owner = User::factory()->create(['is_active' => true]);
+        $supervisor = User::factory()->create(['is_active' => true]);
+        $inactiveAgent = User::factory()->create(['is_active' => false]);
+        $otherCompanyUser = User::factory()->create(['is_active' => true]);
+
+        DB::table('company_users')->insert([
+            [
+                'company_id' => $company->id,
+                'user_id' => $owner->id,
+                'role' => 'owner',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $company->id,
+                'user_id' => $supervisor->id,
+                'role' => 'supervisor',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $company->id,
+                'user_id' => $inactiveAgent->id,
+                'role' => 'agent',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $otherCompany = Company::create([
+            'company_id' => 'FAC-TASK002',
+            'name' => 'Other Task Factory Ltd',
+            'country' => 'NG',
+            'team_size' => '1-10',
+            'use_case' => 'Cross-company task assignment checks',
+            'status' => 'active',
+            'activated_at' => now(),
+        ]);
+        DB::table('company_users')->insert([
+            'company_id' => $otherCompany->id,
+            'user_id' => $otherCompanyUser->id,
+            'role' => 'admin',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/tasks/assignees?company_id='.$company->id);
+
+        $response->assertOk()
+            ->assertJsonCount(4, 'data.items')
+            ->assertJsonFragment(['id' => $admin->id, 'role' => 'admin'])
+            ->assertJsonFragment(['id' => $agent->id, 'role' => 'agent'])
+            ->assertJsonFragment(['id' => $owner->id, 'role' => 'owner'])
+            ->assertJsonFragment(['id' => $supervisor->id, 'role' => 'supervisor'])
+            ->assertJsonMissing(['id' => $inactiveAgent->id])
+            ->assertJsonMissing(['id' => $otherCompanyUser->id]);
+
+        $this->actingAs($agent, 'sanctum')
+            ->getJson('/api/v1/tasks/assignees?company_id='.$company->id)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('authorization');
+    }
+
+    public function test_management_users_can_create_self_assigned_tasks_visible_in_my_and_all_tasks(): void
+    {
+        [$company, $admin] = $this->seedCompanyUsers();
+
+        $owner = User::factory()->create(['email_verified_at' => now()]);
+        $supervisor = User::factory()->create(['email_verified_at' => now()]);
+        DB::table('company_users')->insert([
+            [
+                'company_id' => $company->id,
+                'user_id' => $owner->id,
+                'role' => 'owner',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $company->id,
+                'user_id' => $supervisor->id,
+                'role' => 'supervisor',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $managers = [
+            'admin' => $admin,
+            'owner' => $owner,
+            'supervisor' => $supervisor,
+        ];
+
+        foreach ($managers as $role => $manager) {
+            $response = $this->actingAs($manager, 'sanctum')
+                ->postJson('/api/v1/tasks', [
+                    'company_id' => $company->id,
+                    'title' => ucfirst($role).' Self Task',
+                    'description' => 'A management user assigns this task to themselves.',
+                    'assigned_agent_id' => $manager->id,
+                ]);
+
+            $response->assertCreated()
+                ->assertJsonPath('data.task.assigned_agent_id', $manager->id)
+                ->assertJsonPath('data.task.assigned_users.0.id', $manager->id);
+
+            $taskId = (int) $response->json('data.task.id');
+            $this->assertDatabaseHas('task_assignments', [
+                'task_id' => $taskId,
+                'assigned_agent_id' => $manager->id,
+                'is_current' => true,
+            ]);
+
+            $this->actingAs($manager, 'sanctum')
+                ->getJson('/api/v1/tasks?company_id='.$company->id.'&assigned_to_me=1')
+                ->assertOk()
+                ->assertJsonCount(1, 'data.items')
+                ->assertJsonPath('data.items.0.id', $taskId);
+        }
+
+        $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/tasks?company_id='.$company->id)
+            ->assertOk()
+            ->assertJsonCount(3, 'data.items');
     }
 
     public function test_assigned_to_me_filter_narrows_management_task_lists(): void
@@ -500,21 +636,21 @@ class TaskManagementTest extends TestCase
         ]);
 
         $this->actingAs($supervisor, 'sanctum')
-            ->getJson('/api/v1/tasks?company_id=' . $company->id . '&assigned_to_me=1')
+            ->getJson('/api/v1/tasks?company_id='.$company->id.'&assigned_to_me=1')
             ->assertOk()
             ->assertJsonCount(1, 'data.items')
             ->assertJsonPath('data.items.0.id', $supervisorTask->id)
             ->assertJsonPath('data.items.0.assigned_users.0.id', $supervisor->id);
 
         $this->actingAs($admin, 'sanctum')
-            ->getJson('/api/v1/tasks?company_id=' . $company->id . '&assigned_to_me=1')
+            ->getJson('/api/v1/tasks?company_id='.$company->id.'&assigned_to_me=1')
             ->assertOk()
             ->assertJsonCount(1, 'data.items')
             ->assertJsonPath('data.items.0.id', $adminTask->id)
             ->assertJsonPath('data.items.0.assigned_users.0.id', $admin->id);
 
         $this->actingAs($owner, 'sanctum')
-            ->getJson('/api/v1/tasks?company_id=' . $company->id . '&assigned_to_me=1')
+            ->getJson('/api/v1/tasks?company_id='.$company->id.'&assigned_to_me=1')
             ->assertOk()
             ->assertJsonCount(1, 'data.items')
             ->assertJsonPath('data.items.0.id', $ownerTask->id)
@@ -570,7 +706,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/tasks?company_id=' . $company->id);
+            ->getJson('/api/v1/tasks?company_id='.$company->id);
 
         $response->assertOk()
             ->assertJsonPath('data.items.0.id', $task1->id)
@@ -622,7 +758,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/tasks?company_id=' . $company->id . '&project_id=' . $projectA->id);
+            ->getJson('/api/v1/tasks?company_id='.$company->id.'&project_id='.$projectA->id);
 
         $response->assertOk()
             ->assertJsonCount(1, 'data.items')
@@ -644,7 +780,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
+            ->patchJson('/api/v1/admin/tasks/'.$task->id.'/status', [
                 'company_id' => $company->id,
                 'status' => 'in_progress',
             ]);
@@ -678,7 +814,7 @@ class TaskManagementTest extends TestCase
         $token = $admin->createToken('admin-token', ['*'])->plainTextToken;
 
         $reopenResponse = $this->withToken($token)
-            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
+            ->patchJson('/api/v1/admin/tasks/'.$task->id.'/status', [
                 'company_id' => $company->id,
                 'status' => 'in_progress',
             ]);
@@ -693,7 +829,7 @@ class TaskManagementTest extends TestCase
         $this->assertNotNull($task->started_at);
 
         $revertResponse = $this->withToken($token)
-            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
+            ->patchJson('/api/v1/admin/tasks/'.$task->id.'/status', [
                 'company_id' => $company->id,
                 'status' => 'pending',
             ]);
@@ -728,7 +864,7 @@ class TaskManagementTest extends TestCase
         $token = $admin->createToken('admin-token', ['*'])->plainTextToken;
 
         $pauseResponse = $this->withToken($token)
-            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
+            ->patchJson('/api/v1/admin/tasks/'.$task->id.'/status', [
                 'company_id' => $company->id,
                 'status' => 'paused',
             ]);
@@ -744,7 +880,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $resumeResponse = $this->withToken($token)
-            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
+            ->patchJson('/api/v1/admin/tasks/'.$task->id.'/status', [
                 'company_id' => $company->id,
                 'status' => 'resumed',
             ]);
@@ -788,7 +924,7 @@ class TaskManagementTest extends TestCase
 
         $uploadResponse = $this->withToken($token)
             ->withHeader('Accept', 'application/json')
-            ->post('/api/v1/tasks/' . $task->id . '/proofs', [
+            ->post('/api/v1/tasks/'.$task->id.'/proofs', [
                 'company_id' => $company->id,
                 'file' => UploadedFile::fake()->image('proof.jpg', 1000, 1000),
                 'latitude' => 6.45,
@@ -805,7 +941,7 @@ class TaskManagementTest extends TestCase
         $this->assertSame('drive', $proof->disk);
         $this->assertTrue(Storage::disk('drive')->exists((string) $proof->file_path));
 
-        $inProgressResponse = $this->withToken($token)->patchJson('/api/v1/tasks/' . $task->id . '/status', [
+        $inProgressResponse = $this->withToken($token)->patchJson('/api/v1/tasks/'.$task->id.'/status', [
             'company_id' => $company->id,
             'status' => 'in_progress',
         ]);
@@ -813,7 +949,7 @@ class TaskManagementTest extends TestCase
         $inProgressResponse->assertOk()
             ->assertJsonPath('data.task.status', 'in_progress');
 
-        $statusResponse = $this->withToken($token)->patchJson('/api/v1/tasks/' . $task->id . '/status', [
+        $statusResponse = $this->withToken($token)->patchJson('/api/v1/tasks/'.$task->id.'/status', [
             'company_id' => $company->id,
             'status' => 'completed',
         ]);
@@ -841,7 +977,7 @@ class TaskManagementTest extends TestCase
 
         $token = $agent->createToken('agent-token', ['*'])->plainTextToken;
 
-        $reopenResponse = $this->withToken($token)->patchJson('/api/v1/tasks/' . $task->id . '/status', [
+        $reopenResponse = $this->withToken($token)->patchJson('/api/v1/tasks/'.$task->id.'/status', [
             'company_id' => $company->id,
             'status' => 'in_progress',
         ]);
@@ -850,7 +986,7 @@ class TaskManagementTest extends TestCase
             ->assertJsonPath('data.task.status', 'in_progress')
             ->assertJsonPath('data.task.completed_at', null);
 
-        $revertResponse = $this->withToken($token)->patchJson('/api/v1/tasks/' . $task->id . '/status', [
+        $revertResponse = $this->withToken($token)->patchJson('/api/v1/tasks/'.$task->id.'/status', [
             'company_id' => $company->id,
             'status' => 'pending',
         ]);
@@ -937,7 +1073,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($agent->createToken('agent-token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/tasks/' . $task->id . '/status', [
+            ->patchJson('/api/v1/tasks/'.$task->id.'/status', [
                 'company_id' => $company->id,
                 'status' => 'completed',
             ]);
@@ -969,7 +1105,7 @@ class TaskManagementTest extends TestCase
 
         $token = $agent->createToken('agent-token', ['*'])->plainTextToken;
 
-        $cancelResponse = $this->withToken($token)->patchJson('/api/v1/tasks/' . $task->id . '/status', [
+        $cancelResponse = $this->withToken($token)->patchJson('/api/v1/tasks/'.$task->id.'/status', [
             'company_id' => $company->id,
             'status' => 'cancelled',
         ]);
@@ -977,7 +1113,7 @@ class TaskManagementTest extends TestCase
         $cancelResponse->assertOk()
             ->assertJsonPath('data.task.status', 'cancelled');
 
-        $retryResponse = $this->withToken($token)->patchJson('/api/v1/tasks/' . $task->id . '/status', [
+        $retryResponse = $this->withToken($token)->patchJson('/api/v1/tasks/'.$task->id.'/status', [
             'company_id' => $company->id,
             'status' => 'in_progress',
         ]);
@@ -1030,7 +1166,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($supervisor->createToken('supervisor-token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/tasks/' . $task->id . '/assign', [
+            ->patchJson('/api/v1/tasks/'.$task->id.'/assign', [
                 'company_id' => $company->id,
                 'assigned_agent_id' => $newAgent->id,
                 'reason' => 'Coverage gap in current zone.',
@@ -1043,7 +1179,7 @@ class TaskManagementTest extends TestCase
         $reassignmentId = (int) $response->json('data.reassignment.id');
 
         $acceptResponse = $this->withToken($newAgent->createToken('new-agent-token', ['*'])->plainTextToken)
-            ->postJson('/api/v1/tasks/reassignments/' . $reassignmentId . '/accept', [
+            ->postJson('/api/v1/tasks/reassignments/'.$reassignmentId.'/accept', [
                 'company_id' => $company->id,
             ]);
 
@@ -1104,7 +1240,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/tasks/' . $task->id . '/assign', [
+            ->patchJson('/api/v1/tasks/'.$task->id.'/assign', [
                 'company_id' => $company->id,
                 'assigned_agent_id' => $otherAgent->id,
             ]);
@@ -1155,7 +1291,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $requestResponse = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/tasks/' . $task->id . '/assign', [
+            ->patchJson('/api/v1/tasks/'.$task->id.'/assign', [
                 'company_id' => $company->id,
                 'assigned_agent_id' => $newOwner->id,
             ]);
@@ -1165,19 +1301,19 @@ class TaskManagementTest extends TestCase
         $reassignmentId = (int) $requestResponse->json('data.reassignment.id');
 
         $this->withToken($newOwner->createToken('new-owner-token', ['*'])->plainTextToken)
-            ->postJson('/api/v1/tasks/reassignments/' . $reassignmentId . '/accept', [
+            ->postJson('/api/v1/tasks/reassignments/'.$reassignmentId.'/accept', [
                 'company_id' => $company->id,
             ])
             ->assertOk();
 
         $viewResponse = $this->withToken($oldOwner->createToken('old-owner-token', ['*'])->plainTextToken)
-            ->getJson('/api/v1/tasks/' . $task->id . '?company_id=' . $company->id);
+            ->getJson('/api/v1/tasks/'.$task->id.'?company_id='.$company->id);
 
         $viewResponse->assertOk()
             ->assertJsonPath('data.task.id', $task->id);
 
         $updateResponse = $this->withToken($oldOwner->createToken('old-owner-status-token', ['*'])->plainTextToken)
-            ->patchJson('/api/v1/tasks/' . $task->id . '/status', [
+            ->patchJson('/api/v1/tasks/'.$task->id.'/status', [
                 'company_id' => $company->id,
                 'status' => 'in_progress',
             ]);
@@ -1234,7 +1370,7 @@ class TaskManagementTest extends TestCase
         ]);
 
         $path = Storage::disk('drive')->putFile(
-            'task-proofs/company-' . $company->id . '/task-' . $task->id,
+            'task-proofs/company-'.$company->id.'/task-'.$task->id,
             UploadedFile::fake()->image('evidence.jpg')
         );
 
@@ -1249,29 +1385,29 @@ class TaskManagementTest extends TestCase
         ]);
 
         $adminResponse = $this->actingAs($admin, 'sanctum')
-            ->get('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
+            ->get('/api/v1/tasks/'.$task->id.'/proofs/'.$proof->id.'?company_id='.$company->id);
 
         $adminResponse->assertOk();
 
         $ownerResponse = $this->actingAs($owner, 'sanctum')
-            ->get('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
+            ->get('/api/v1/tasks/'.$task->id.'/proofs/'.$proof->id.'?company_id='.$company->id);
 
         $ownerResponse->assertOk();
 
         $taskDetailResponse = $this->actingAs($admin, 'sanctum')
-            ->getJson('/api/v1/tasks/' . $task->id . '?company_id=' . $company->id);
+            ->getJson('/api/v1/tasks/'.$task->id.'?company_id='.$company->id);
 
         $taskDetailResponse->assertOk()
             ->assertJsonPath('data.task.proofs.0.file_name', 'evidence.jpg');
 
         $supervisorResponse = $this->actingAs($supervisor, 'sanctum')
-            ->getJson('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
+            ->getJson('/api/v1/tasks/'.$task->id.'/proofs/'.$proof->id.'?company_id='.$company->id);
 
         $supervisorResponse->assertUnprocessable()
             ->assertJsonPath('errors.authorization.0', 'Only owners and admins can view proof files.');
 
         $agentResponse = $this->actingAs($agent, 'sanctum')
-            ->getJson('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
+            ->getJson('/api/v1/tasks/'.$task->id.'/proofs/'.$proof->id.'?company_id='.$company->id);
 
         $agentResponse->assertUnprocessable()
             ->assertJsonPath('errors.authorization.0', 'Only owners and admins can view proof files.');
@@ -1279,13 +1415,13 @@ class TaskManagementTest extends TestCase
         Storage::disk('drive')->delete((string) $proof->file_path);
 
         $missingResponse = $this->actingAs($admin, 'sanctum')
-            ->getJson('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
+            ->getJson('/api/v1/tasks/'.$task->id.'/proofs/'.$proof->id.'?company_id='.$company->id);
 
         $missingResponse->assertNotFound()
             ->assertJsonPath('message', 'Proof file is no longer available.');
 
         $replaceResponse = $this->actingAs($admin, 'sanctum')
-            ->post('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id, [
+            ->post('/api/v1/tasks/'.$task->id.'/proofs/'.$proof->id, [
                 'company_id' => $company->id,
                 'file' => UploadedFile::fake()->image('restored.jpg'),
             ]);
@@ -1298,7 +1434,7 @@ class TaskManagementTest extends TestCase
         $this->assertTrue(Storage::disk('drive')->exists((string) $proof->fresh()->file_path));
 
         $restoredDownload = $this->actingAs($admin, 'sanctum')
-            ->get('/api/v1/tasks/' . $task->id . '/proofs/' . $proof->id . '?company_id=' . $company->id);
+            ->get('/api/v1/tasks/'.$task->id.'/proofs/'.$proof->id.'?company_id='.$company->id);
 
         $restoredDownload->assertOk();
     }
