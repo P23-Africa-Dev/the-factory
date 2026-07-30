@@ -208,7 +208,10 @@ export function LeadContactHeroSlider({ contacts }: { contacts: LeadContact[] })
   const canGoForward = safeIndex < contacts.length - 1;
 
   return (
-    <section aria-label="Lead contact details" className="space-y-5">
+    <section
+      aria-label="Lead contact details"
+      className="space-y-5 border-b border-white/10 pb-6"
+    >
       <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-3">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#7DD3FC]">
