@@ -519,6 +519,10 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::post('/alerts/scan', [FieldActivityManagementController::class, 'runAlerts'])
                     ->middleware('throttle:api')
                     ->name('alerts.scan');
+                Route::get('/agents/{agent}/journeys', [FieldActivityManagementController::class, 'agentJourneys'])
+                    ->name('agents.journeys');
+                Route::get('/journeys/{session}', [FieldActivityManagementController::class, 'showJourney'])
+                    ->name('journeys.show');
             });
 
             Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
@@ -818,6 +822,10 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::get('/today', [FieldActivityAgentController::class, 'today'])->name('today');
                 Route::get('/daily-summary', [FieldActivityAgentController::class, 'dailySummary'])
                     ->name('daily-summary');
+                Route::get('/journeys', [FieldActivityAgentController::class, 'journeys'])
+                    ->name('journeys.index');
+                Route::get('/journeys/{session}', [FieldActivityAgentController::class, 'showJourney'])
+                    ->name('journeys.show');
                 Route::post('/sessions/{session}/points', [FieldActivityAgentController::class, 'recordPoints'])
                     ->middleware('throttle:api-heavy')
                     ->name('sessions.points');
@@ -1006,6 +1014,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::post('/alerts/scan', [FieldActivityManagementController::class, 'runAlerts'])
             ->middleware(['access.role:management', 'throttle:api'])
             ->name('alerts.scan');
+        Route::get('/agents/{agent}/journeys', [FieldActivityManagementController::class, 'agentJourneys'])
+            ->middleware('access.role:management')
+            ->name('agents.journeys');
+        Route::get('/journeys/{session}', [FieldActivityManagementController::class, 'showJourney'])
+            ->middleware('access.role:management')
+            ->name('journeys.show');
 
         Route::get('/today', [FieldActivityAgentController::class, 'today'])
             ->middleware('access.role:agent')
@@ -1013,6 +1027,9 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::get('/daily-summary', [FieldActivityAgentController::class, 'dailySummary'])
             ->middleware('access.role:agent')
             ->name('daily-summary');
+        Route::get('/journeys', [FieldActivityAgentController::class, 'journeys'])
+            ->middleware('access.role:agent')
+            ->name('journeys.index');
         Route::post('/sessions/{session}/points', [FieldActivityAgentController::class, 'recordPoints'])
             ->middleware(['access.role:agent', 'throttle:api-heavy'])
             ->name('sessions.points');

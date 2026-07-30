@@ -81,6 +81,8 @@ class ReadToolRegistry
             'field.unvisited_customers' => $this->fieldActivityElyService->unvisitedCustomers($user, $companyId, $args),
             'field.territory_coverage' => $this->fieldActivityElyService->territoryCoverage($user, $companyId, $args),
             'field.travel_vs_visit_time' => $this->fieldActivityElyService->travelVsVisitTime($user, $companyId, $args),
+            'field.journey_history' => $this->fieldActivityElyService->journeyHistory($user, $companyId, $args),
+            'field.journey_detail' => $this->fieldActivityElyService->journeyDetail($user, $companyId, $args),
             default => [
                 'tool' => $tool,
                 'summary' => 'Unsupported read tool requested.',

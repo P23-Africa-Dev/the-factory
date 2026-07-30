@@ -6,6 +6,7 @@ namespace App\Services\FieldActivity;
 
 use App\Enums\FieldStopClassification;
 use App\Models\CompanyLocation;
+use App\Models\FieldActivitySession;
 use App\Models\FieldDailySummary;
 use App\Models\FieldStop;
 use App\Models\User;
@@ -18,6 +19,7 @@ class FieldActivityElyService
         private readonly CompanyContextService $companyContextService,
         private readonly FieldActivityAnalyticsService $analyticsService,
         private readonly FieldActivitySessionService $sessionService,
+        private readonly FieldJourneyService $journeyService,
     ) {}
 
     /**
@@ -243,6 +245,112 @@ class FieldActivityElyService
                 'agents' => $overview['agents'],
             ],
             'sources' => ['field.travel_vs_visit_time'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $args
+     * @return array<string, mixed>
+     */
+    public function journeyHistory(User $user, int $companyId, array $args = []): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $role = (string) $context['role'];
+        $targetUserId = isset($args['user_id']) ? (int) $args['user_id'] : (int) $user->id;
+        if ($role === 'agent') {
+            $targetUserId = (int) $user->id;
+        }
+
+        $target = User::query()->findOrFail($targetUserId);
+        $filters = [
+            'company_id' => $companyId,
+            'from' => $args['from'] ?? null,
+            'to' => $args['to'] ?? null,
+            'preset' => $args['preset'] ?? 'last_30_days',
+            'per_page' => min(30, max(1, (int) ($args['limit'] ?? 10))),
+        ];
+
+        $data = $this->journeyService->listForAgent($user, $target, $filters);
+        $count = count($data['items'] ?? []);
+
+        return [
+            'tool' => 'field.journey_history',
+            'summary' => sprintf(
+                'Found %d journeys for %s (%s–%s).',
+                $count,
+                $data['agent']['name'] ?? 'agent',
+                $data['summary']['from'] ?? '',
+                $data['summary']['to'] ?? '',
+            ),
+            'payload' => $data,
+            'sources' => ['field.journey_history'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $args
+     * @return array<string, mixed>
+     */
+    public function journeyDetail(User $user, int $companyId, array $args = []): array
+    {
+        $sessionId = isset($args['session_id']) ? (int) $args['session_id'] : null;
+        $date = isset($args['date']) ? Carbon::parse((string) $args['date'])->toDateString() : null;
+        $targetUserId = isset($args['user_id']) ? (int) $args['user_id'] : (int) $user->id;
+
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $role = (string) $context['role'];
+        if ($role === 'agent') {
+            $targetUserId = (int) $user->id;
+        }
+
+        $session = null;
+        if ($sessionId) {
+            $session = FieldActivitySession::query()->find($sessionId);
+        } elseif ($date) {
+            $session = FieldActivitySession::query()
+                ->where('company_id', $companyId)
+                ->where('user_id', $targetUserId)
+                ->whereDate('started_at', $date)
+                ->orderByDesc('started_at')
+                ->first();
+        }
+
+        if ($session === null) {
+            return [
+                'tool' => 'field.journey_detail',
+                'summary' => 'No journey found for that agent/date.',
+                'payload' => null,
+                'sources' => ['field.journey_detail'],
+            ];
+        }
+
+        $detail = $this->journeyService->showJourney($user, $session, [
+            'company_id' => $companyId,
+            'include_route' => false,
+            'include_timeline' => true,
+        ]);
+
+        $journey = $detail['journey'] ?? [];
+        $stats = $detail['stats'] ?? [];
+
+        return [
+            'tool' => 'field.journey_detail',
+            'summary' => sprintf(
+                'Journey on %s: %.1f km, %d visits, %d stops, %d unknown.',
+                $journey['date'] ?? 'unknown',
+                ((int) ($stats['distance_meters'] ?? 0)) / 1000,
+                (int) ($stats['visit_count'] ?? 0),
+                (int) ($stats['stop_count'] ?? 0),
+                (int) ($stats['unknown_stop_count'] ?? 0),
+            ),
+            'payload' => [
+                'journey' => $journey,
+                'stats' => $stats,
+                'timeline' => $detail['timeline'] ?? [],
+                'navigation' => $detail['navigation'] ?? null,
+                'agent' => $detail['agent'] ?? null,
+            ],
+            'sources' => ['field.journey_detail'],
         ];
     }
 }

@@ -217,6 +217,17 @@ class IntentClassifier
                 '/\bproductive\s+vs\s+personal\b/i',
                 '/\btime\s+spent\s+(travelling|traveling|with\s+customers)\b/i',
             ],
+            'field.journey_history' => [
+                '/\bjourney\s+history\b/i',
+                '/\b(daily\s+)?journeys?\b/i',
+                '/\btracking\s+history\b/i',
+                '/\bfield\s+activity\s+timeline\b/i',
+            ],
+            'field.journey_detail' => [
+                '/\b(show|replay|open)\s+.+\s+journey\b/i',
+                '/\bjourney\s+(yesterday|today|on\s+\w+)\b/i',
+                '/\breplay\s+.+\s+(day|journey)\b/i',
+            ],
             'dashboard.overview' => [
                 '/\b(dashboard|overview|kpi\s+snapshot|performance\s+snapshot)\b/i',
             ],

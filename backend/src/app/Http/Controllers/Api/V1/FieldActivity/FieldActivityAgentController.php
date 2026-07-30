@@ -6,10 +6,13 @@ namespace App\Http\Controllers\Api\V1\FieldActivity;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\FieldActivity\ClassifyFieldStopRequest;
+use App\Http\Requests\FieldActivity\FieldJourneyListRequest;
+use App\Http\Requests\FieldActivity\FieldJourneyShowRequest;
 use App\Http\Requests\FieldActivity\RecordFieldActivityPointsRequest;
 use App\Models\FieldActivitySession;
 use App\Models\FieldStop;
 use App\Services\FieldActivity\FieldActivitySessionService;
+use App\Services\FieldActivity\FieldJourneyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -17,6 +20,7 @@ class FieldActivityAgentController extends Controller
 {
     public function __construct(
         private readonly FieldActivitySessionService $sessionService,
+        private readonly FieldJourneyService $journeyService,
     ) {}
 
     public function today(Request $request): JsonResponse
@@ -88,4 +92,33 @@ class FieldActivityAgentController extends Controller
             ],
         );
     }
+
+    public function journeys(FieldJourneyListRequest $request): JsonResponse
+    {
+        $data = $this->journeyService->listForAgent(
+            $request->user(),
+            $request->user(),
+            $request->validated(),
+        );
+
+        return $this->success(
+            message: 'Journey history loaded.',
+            data: $data,
+        );
+    }
+
+    public function showJourney(FieldJourneyShowRequest $request, FieldActivitySession $session): JsonResponse
+    {
+        $data = $this->journeyService->showJourney(
+            $request->user(),
+            $session,
+            $request->validated(),
+        );
+
+        return $this->success(
+            message: 'Journey loaded.',
+            data: $data,
+        );
+    }
 }
+

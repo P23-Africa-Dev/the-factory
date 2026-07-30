@@ -25,6 +25,8 @@ class ToolPolicyService
         'field.daily_summary',
         'field.agent_visits',
         'field.travel_vs_visit_time',
+        'field.journey_history',
+        'field.journey_detail',
     ];
 
     private const READ_TOOLS_MANAGEMENT = [
@@ -51,6 +53,8 @@ class ToolPolicyService
         'field.unvisited_customers',
         'field.territory_coverage',
         'field.travel_vs_visit_time',
+        'field.journey_history',
+        'field.journey_detail',
     ];
 
     private const ACTION_TOOLS_MANAGEMENT = [

@@ -6,11 +6,16 @@ namespace App\Http\Controllers\Api\V1\FieldActivity;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\FieldActivity\FieldActivityAnalyticsRequest;
+use App\Http\Requests\FieldActivity\FieldJourneyListRequest;
+use App\Http\Requests\FieldActivity\FieldJourneyShowRequest;
 use App\Http\Requests\FieldActivity\UpdateFieldActivitySettingsRequest;
+use App\Models\FieldActivitySession;
+use App\Models\User;
 use App\Services\Attendance\AttendanceAccessService;
 use App\Services\FieldActivity\FieldActivityAlertService;
 use App\Services\FieldActivity\FieldActivityAnalyticsService;
 use App\Services\FieldActivity\FieldActivitySettingService;
+use App\Services\FieldActivity\FieldJourneyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -21,6 +26,7 @@ class FieldActivityManagementController extends Controller
         private readonly FieldActivitySettingService $settingService,
         private readonly FieldActivityAnalyticsService $analyticsService,
         private readonly FieldActivityAlertService $alertService,
+        private readonly FieldJourneyService $journeyService,
     ) {}
 
     public function settings(Request $request): JsonResponse
@@ -97,4 +103,33 @@ class FieldActivityManagementController extends Controller
             data: $result,
         );
     }
+
+    public function agentJourneys(FieldJourneyListRequest $request, User $agent): JsonResponse
+    {
+        $data = $this->journeyService->listForAgent(
+            $request->user(),
+            $agent,
+            $request->validated(),
+        );
+
+        return $this->success(
+            message: 'Agent journey history loaded.',
+            data: $data,
+        );
+    }
+
+    public function showJourney(FieldJourneyShowRequest $request, FieldActivitySession $session): JsonResponse
+    {
+        $data = $this->journeyService->showJourney(
+            $request->user(),
+            $session,
+            $request->validated(),
+        );
+
+        return $this->success(
+            message: 'Journey loaded.',
+            data: $data,
+        );
+    }
 }
+

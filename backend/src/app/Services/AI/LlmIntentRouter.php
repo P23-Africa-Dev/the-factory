@@ -110,6 +110,8 @@ PROMPT;
             'field.unvisited_customers' => 'Customers/leads not visited recently',
             'field.territory_coverage' => 'Territory field coverage',
             'field.travel_vs_visit_time' => 'Travel vs productive visit time',
+            'field.journey_history' => 'List daily field journeys for an agent',
+            'field.journey_detail' => 'Replay one daily journey with timeline and stats',
             'projects.at_risk_summary' => 'Projects at risk',
             'org.users' => 'List organization users',
             'drive.files' => 'Find company drive files or answer questions from a document the user can access',

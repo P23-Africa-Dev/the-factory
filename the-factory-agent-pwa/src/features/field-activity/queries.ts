@@ -5,6 +5,8 @@ import type { ClassifyStopPayload, FieldPointPayload } from './types';
 export const FIELD_ACTIVITY_KEYS = {
   all: ['field-activity'] as const,
   today: ['field-activity', 'today'] as const,
+  journeys: (preset = 'last_30_days') => ['field-activity', 'journeys', preset] as const,
+  journey: (id: number | string) => ['field-activity', 'journey', id] as const,
 };
 
 export function useFieldActivityToday(enabled = true) {
@@ -13,6 +15,24 @@ export function useFieldActivityToday(enabled = true) {
     queryFn: () => fieldActivityApi.today(),
     enabled,
     refetchInterval: 60_000,
+  });
+}
+
+export function useMyJourneys(enabled = true) {
+  return useQuery({
+    queryKey: FIELD_ACTIVITY_KEYS.journeys(),
+    queryFn: () => fieldActivityApi.journeys({ preset: 'last_30_days' }),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function useJourneyDetail(sessionId: number | string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: FIELD_ACTIVITY_KEYS.journey(sessionId ?? 'none'),
+    queryFn: () => fieldActivityApi.journeyDetail(Number(sessionId)),
+    enabled: enabled && !!sessionId,
+    staleTime: 60_000,
   });
 }
 

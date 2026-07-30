@@ -101,4 +101,107 @@ export const fieldActivityApi = {
     const data = unwrapData(res.data) as { stop: FieldStop };
     return data.stop;
   },
+
+  journeys: async (params?: {
+    from?: string;
+    to?: string;
+    preset?: string;
+    per_page?: number;
+  }): Promise<{
+    items: Array<{
+      id: number;
+      date: string | null;
+      status: string;
+      clock_in_at: string | null;
+      clock_out_at: string | null;
+      distance_meters: number;
+      stop_count: number;
+      visit_count: number;
+      unknown_stop_count: number;
+      active_seconds: number;
+      travel_efficiency: number | null;
+    }>;
+    summary: {
+      journey_count: number;
+      distance_meters: number;
+      visit_count: number;
+      from: string;
+      to: string;
+    };
+  }> => {
+    const companyId = getActiveCompanyId();
+    const res = await client.get('/agent/field-activity/journeys', {
+      params: {
+        company_id: companyId ?? undefined,
+        preset: params?.preset ?? 'last_30_days',
+        from: params?.from,
+        to: params?.to,
+        per_page: params?.per_page ?? 30,
+      },
+    });
+    return unwrapData(res.data) as {
+      items: Array<{
+        id: number;
+        date: string | null;
+        status: string;
+        clock_in_at: string | null;
+        clock_out_at: string | null;
+        distance_meters: number;
+        stop_count: number;
+        visit_count: number;
+        unknown_stop_count: number;
+        active_seconds: number;
+        travel_efficiency: number | null;
+      }>;
+      summary: {
+        journey_count: number;
+        distance_meters: number;
+        visit_count: number;
+        from: string;
+        to: string;
+      };
+    };
+  },
+
+  journeyDetail: async (sessionId: number): Promise<{
+    journey: { id: number; date: string | null; distance_meters: number };
+    stats: Record<string, unknown>;
+    timeline: Array<{
+      id: string;
+      type: string;
+      label: string;
+      occurred_at: string | null;
+      duration_seconds?: number;
+      color: string;
+    }>;
+    navigation: {
+      previous_id: number | null;
+      next_id: number | null;
+    };
+  }> => {
+    const companyId = getActiveCompanyId();
+    const res = await client.get(`/agent/field-activity/journeys/${sessionId}`, {
+      params: {
+        company_id: companyId ?? undefined,
+        include_route: false,
+        include_timeline: true,
+      },
+    });
+    return unwrapData(res.data) as {
+      journey: { id: number; date: string | null; distance_meters: number };
+      stats: Record<string, unknown>;
+      timeline: Array<{
+        id: string;
+        type: string;
+        label: string;
+        occurred_at: string | null;
+        duration_seconds?: number;
+        color: string;
+      }>;
+      navigation: {
+        previous_id: number | null;
+        next_id: number | null;
+      };
+    };
+  },
 };
