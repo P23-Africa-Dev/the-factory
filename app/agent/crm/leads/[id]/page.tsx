@@ -740,7 +740,7 @@ export default function LeadDetailsPage() {
                       {leadData.position || "N/A"}
                     </p>
                   </div>
-                  <div className="flex flex-col min-[480px]:col-span-2">
+                  <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Profile URLs
                     </label>
@@ -761,14 +761,6 @@ export default function LeadDetailsPage() {
                     ) : (
                       <p className="text-white text-[16px] font-semibold truncate">N/A</p>
                     )}
-                  </div>
-                  <div className="flex flex-col">
-                    <label className="text-gray-400 text-[11px] font-medium mb-1">
-                      Status
-                    </label>
-                    <p className="text-white text-[16px] font-semibold capitalize">
-                      {(selectedStatusOption?.label || "New Lead")}
-                    </p>
                   </div>
                 </div>
                 {/* Map */}
