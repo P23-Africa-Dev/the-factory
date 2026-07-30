@@ -199,7 +199,10 @@ class LeadService
         if ($role === 'agent') {
             $this->assertAgentCanAccessLead($lead, (int) $user->id);
 
-            $allowedFields = ['company_id', 'pipeline_id', 'status'];
+            $editsContacts = array_key_exists('contacts', $data);
+            $allowedFields = $editsContacts
+                ? ['company_id', 'pipeline_id', 'status', 'contacts', 'name', 'email', 'phone', 'location']
+                : ['company_id', 'pipeline_id', 'status'];
             $forbiddenFields = collect(array_keys($data))
                 ->reject(static fn (string $field): bool => in_array($field, $allowedFields, true))
                 ->values()
@@ -207,7 +210,7 @@ class LeadService
 
             if ($forbiddenFields !== []) {
                 throw ValidationException::withMessages([
-                    'authorization' => ['Agents can only update lead status and pipeline.'],
+                    'authorization' => ['Agents can only update lead status, pipeline, and contact details.'],
                     'forbidden_fields' => $forbiddenFields,
                 ]);
             }
@@ -220,10 +223,26 @@ class LeadService
                 $this->assertLabelExists($companyId, (string) $data['status']);
             }
 
-            $lead->update([
-                'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
-                'status' => array_key_exists('status', $data) ? (string) $data['status'] : $lead->status,
-            ]);
+            $lead = DB::transaction(function () use ($lead, $data, $editsContacts): Lead {
+                $lead->update([
+                    'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
+                    'status' => array_key_exists('status', $data) ? (string) $data['status'] : $lead->status,
+                    'name' => $data['name'] ?? $lead->name,
+                    'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
+                    'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
+                    'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
+                ]);
+
+                if ($editsContacts) {
+                    $this->replaceContacts($lead, $this->contactPayloads($data));
+                }
+
+                return $lead->fresh();
+            });
+
+            if ($editsContacts && $lead->company_location_id !== null) {
+                $this->mapSavedLeadBridgeService->syncLeadToLocation($lead);
+            }
 
             return $this->findForUser($user, $lead->fresh(), $companyId);
         }

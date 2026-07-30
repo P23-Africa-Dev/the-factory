@@ -36,13 +36,14 @@ import {
   LeadApiItem,
   LeadNote,
   LeadActivity,
+  LeadContact,
   UpdateLeadPayload,
 } from "@/lib/api/crm";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { EmailPanel } from "@/components/crm/email/email-panel";
 import { getLeadDetailDisplay } from "@/lib/crm/lead-details";
-import { LeadContactHeroSlider } from "@/components/crm/lead-contacts";
+import { LeadContactHeroSlider, LeadContactsSlider, type LeadContactErrors } from "@/components/crm/lead-contacts";
 
 /* --- Mock Lead Data -------------------------------------- */
 
@@ -476,9 +477,7 @@ function MapPreview({ name, location }: { name: string; location: string }) {
 
 
 type EditLeadForm = {
-  name: string;
-  phone: string;
-  location: string;
+  contacts: LeadContact[];
   status: ApiLeadStatus;
   source: string;
   priority: ApiLeadPriority;
@@ -507,20 +506,26 @@ export default function LeadDetailsPage() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<EditLeadForm>({
-    name: "",
-    phone: "",
-    location: "",
+    contacts: [{ name: "", email: "", phone: "", location: "", sort_order: 0 }],
     status: "newly_lead",
     source: "",
     priority: "medium",
     assigned_to_user_id: "",
     next_action: "",
   });
+  const [activeContactIndex, setActiveContactIndex] = useState(0);
+  const [contactErrors, setContactErrors] = useState<LeadContactErrors[]>([]);
 
   const buildEditForm = (lead: LeadApiItem): EditLeadForm => ({
-    name: lead.name || "",
-    phone: lead.phone || "",
-    location: lead.location || "",
+    contacts: lead.contacts?.length
+      ? lead.contacts.map((contact, index) => ({ ...contact, sort_order: index }))
+      : [{
+          name: lead.name || "",
+          email: lead.email || "",
+          phone: lead.phone || "",
+          location: lead.location || "",
+          sort_order: 0,
+        }],
     status: lead.status || "newly_lead",
     source: lead.source || "",
     priority: lead.priority || "medium",
@@ -531,6 +536,8 @@ export default function LeadDetailsPage() {
   const startEditing = () => {
     if (!leadData) return;
     setEditForm(buildEditForm(leadData));
+    setActiveContactIndex(0);
+    setContactErrors([]);
     setIsEditing(true);
   };
 
@@ -538,10 +545,64 @@ export default function LeadDetailsPage() {
     setEditForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const updateContact = (index: number, contact: LeadContact) => {
+    setEditForm((current) => ({
+      ...current,
+      contacts: current.contacts.map((item, itemIndex) => itemIndex === index ? contact : item),
+    }));
+    setContactErrors((current) => current.map((item, itemIndex) => itemIndex === index ? {} : item));
+  };
+
+  const addContact = () => {
+    setEditForm((current) => ({
+      ...current,
+      contacts: [
+        ...current.contacts,
+        { name: "", email: "", phone: "", location: "", sort_order: current.contacts.length },
+      ],
+    }));
+    setActiveContactIndex(editForm.contacts.length);
+  };
+
+  const removeContact = (index: number) => {
+    setEditForm((current) => ({
+      ...current,
+      contacts: current.contacts
+        .filter((_, itemIndex) => itemIndex !== index)
+        .map((contact, sortOrder) => ({ ...contact, sort_order: sortOrder })),
+    }));
+    setContactErrors((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    setActiveContactIndex((current) => Math.max(0, Math.min(current, editForm.contacts.length - 2)));
+  };
+
   const handleSave = () => {
+    const nextContactErrors = editForm.contacts.map<LeadContactErrors>((contact) => {
+      const errors: LeadContactErrors = {};
+      if (!contact.name.trim()) errors.name = "Name is required.";
+      if (contact.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)) {
+        errors.email = "Enter a valid email address.";
+      }
+      return errors;
+    });
+    const firstContactError = nextContactErrors.findIndex((errors) => Object.keys(errors).length > 0);
+    if (firstContactError >= 0) {
+      setContactErrors(nextContactErrors);
+      setActiveContactIndex(firstContactError);
+      toast.error(`Check Contact ${firstContactError + 1}.`);
+      return;
+    }
+
+    const contacts = editForm.contacts.map((contact, index) => ({
+      name: contact.name.trim(),
+      email: contact.email?.trim() || null,
+      phone: contact.phone?.trim() || null,
+      location: contact.location?.trim() || null,
+      sort_order: index,
+    }));
     const payload: UpdateLeadPayload = {
       status: editForm.status,
       company_id: companyId,
+      contacts,
     };
     updateLead({ leadId, payload });
   };
@@ -705,7 +766,21 @@ export default function LeadDetailsPage() {
 
               {/* Right Part: Fields & Map */}
               <div className="flex-1 flex flex-col gap-6 w-full min-w-0">
-                <LeadContactHeroSlider contacts={leadContacts} />
+                {isEditing ? (
+                  <div className="rounded-[20px] bg-white p-4 sm:p-5">
+                    <LeadContactsSlider
+                      contacts={editForm.contacts}
+                      activeIndex={activeContactIndex}
+                      errors={contactErrors}
+                      onActiveIndexChange={setActiveContactIndex}
+                      onChange={updateContact}
+                      onAdd={addContact}
+                      onRemove={removeContact}
+                    />
+                  </div>
+                ) : (
+                  <LeadContactHeroSlider contacts={leadContacts} />
+                )}
                 <div className="grid grid-cols-1 min-[480px]:grid-cols-2 gap-x-6 sm:gap-x-8 gap-y-4">
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
