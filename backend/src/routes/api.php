@@ -660,9 +660,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
 
             Route::prefix('locations')->name('locations.')->group(function (): void {
                 Route::get('/', [CompanyLocationController::class, 'index'])->name('index');
-                Route::post('/', [CompanyLocationController::class, 'store'])
-                    ->middleware('throttle:api')
-                    ->name('store');
+                Route::post('/', [CompanyLocationController::class, 'store'])->name('store');
                 Route::get('/{location}', [CompanyLocationController::class, 'show'])->name('show');
                 Route::patch('/{location}', [CompanyLocationController::class, 'update'])
                     ->middleware('throttle:api')
