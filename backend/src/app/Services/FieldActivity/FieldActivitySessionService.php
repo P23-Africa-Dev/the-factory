@@ -46,6 +46,11 @@ class FieldActivitySessionService
     public function startForAttendance(AttendanceRecord $record, Company $company): ?FieldActivitySession
     {
         if (! $this->settingService->isEnabledForCompany($company)) {
+            Log::info('field_activity.lifecycle.start_skipped_disabled', [
+                'company_id' => $company->id,
+                'attendance_record_id' => $record->id,
+                'user_id' => $record->user_id,
+            ]);
             return null;
         }
 
@@ -55,11 +60,17 @@ class FieldActivitySessionService
             ->first();
 
         if ($existing !== null) {
+            Log::info('field_activity.lifecycle.start_reused_active', [
+                'company_id' => $company->id,
+                'attendance_record_id' => $record->id,
+                'user_id' => $record->user_id,
+                'session_id' => $existing->id,
+            ]);
             return $existing;
         }
 
         // Close any stale active sessions for this user.
-        FieldActivitySession::query()
+        $staleClosed = FieldActivitySession::query()
             ->where('company_id', $company->id)
             ->where('user_id', $record->user_id)
             ->where('status', FieldActivitySessionStatus::ACTIVE)
@@ -70,7 +81,7 @@ class FieldActivitySessionService
 
         $meta = is_array($record->metadata) ? $record->metadata : [];
 
-        return FieldActivitySession::query()->create([
+        $session = FieldActivitySession::query()->create([
             'company_id' => $company->id,
             'user_id' => $record->user_id,
             'attendance_record_id' => $record->id,
@@ -82,6 +93,19 @@ class FieldActivitySessionService
             'last_recorded_at' => $record->clock_in_at ?? now(),
             'last_movement_state' => FieldMovementState::STOPPED,
         ]);
+
+        $seededPoint = $this->seedInitialPointFromClockIn($session, $record, $meta);
+
+        Log::info('field_activity.lifecycle.session_started', [
+            'company_id' => $company->id,
+            'attendance_record_id' => $record->id,
+            'user_id' => $record->user_id,
+            'session_id' => $session->id,
+            'stale_sessions_closed' => $staleClosed,
+            'seed_point_persisted' => $seededPoint,
+        ]);
+
+        return $session->fresh() ?? $session;
     }
 
     public function endForAttendance(
@@ -102,6 +126,12 @@ class FieldActivitySessionService
         }
 
         if ($session === null) {
+            Log::warning('field_activity.lifecycle.end_missing_session', [
+                'attendance_record_id' => $record->id,
+                'company_id' => $record->company_id,
+                'user_id' => $record->user_id,
+                'auto_closed' => $autoClosed,
+            ]);
             return null;
         }
 
@@ -133,6 +163,18 @@ class FieldActivitySessionService
         $summary = $this->dailySummaryService->buildForSession($session->fresh() ?? $session, $withNarrative);
 
         $this->notifyEndOfDayReview($session->fresh() ?? $session, $summary);
+
+        Log::info('field_activity.lifecycle.session_completed', [
+            'session_id' => $session->id,
+            'company_id' => $session->company_id,
+            'user_id' => $session->user_id,
+            'auto_closed' => $autoClosed,
+            'ended_at' => $ended->toIso8601String(),
+            'distance_meters' => (int) $summary->distance_meters,
+            'stop_count' => (int) $summary->stop_count,
+            'visit_count' => (int) $summary->visit_count,
+            'unknown_stop_count' => (int) $summary->unknown_stop_count,
+        ]);
 
         return $summary;
     }
@@ -220,6 +262,16 @@ class FieldActivitySessionService
             $this->publishRealtime($session, $last);
             $this->maybeSendStopReminder($session);
         }
+
+        Log::debug('field_activity.lifecycle.points_ingested', [
+            'session_id' => $session->id,
+            'company_id' => $session->company_id,
+            'user_id' => $session->user_id,
+            'received_count' => count($rawPoints),
+            'persisted_count' => $persisted->count(),
+            'stop_count' => (int) $session->stop_count,
+            'unknown_stop_count' => (int) $session->unknown_stop_count,
+        ]);
 
         return [
             'session' => $this->serializeSession($session->fresh() ?? $session),
@@ -527,12 +579,27 @@ class FieldActivitySessionService
             'session' => $session ? $this->serializeSession($session) : null,
             'summary' => $summary ? $this->serializeSummary($summary) : null,
             'stops' => $stops,
+            'pending_review' => $this->pendingReviewSnapshot(
+                (int) $context->company->id,
+                (int) $user->id,
+            ),
             'config' => [
                 'moving_interval_seconds' => (int) config('field_activity.moving_interval_seconds', 60),
                 'stationary_interval_seconds' => (int) config('field_activity.stationary_interval_seconds', 300),
                 'stop_dwell_seconds' => (int) config('field_activity.stop_dwell_seconds', 900),
             ],
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function pendingReviewForAgent(User $user, ?int $companyId = null): array
+    {
+        $context = $this->attendanceAccessService->resolve($user, $companyId);
+        $this->attendanceAccessService->ensureAgent($context);
+
+        return $this->pendingReviewSnapshot((int) $context->company->id, (int) $user->id);
     }
 
     /**
@@ -648,6 +715,127 @@ class FieldActivitySessionService
             'visit_count' => $stops->filter(static fn (FieldStop $s): bool => $s->isVisit())->count(),
             'unknown_stop_count' => $stops->filter(static fn (FieldStop $s): bool => $s->isPending())->count(),
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $clockMeta
+     */
+    private function seedInitialPointFromClockIn(
+        FieldActivitySession $session,
+        AttendanceRecord $record,
+        array $clockMeta,
+    ): bool {
+        if (! isset($clockMeta['clock_in_latitude'], $clockMeta['clock_in_longitude'])) {
+            return false;
+        }
+
+        $lat = (float) $clockMeta['clock_in_latitude'];
+        $lng = (float) $clockMeta['clock_in_longitude'];
+        if (! GeoDistance::isValidCoordinate($lat, $lng)) {
+            return false;
+        }
+
+        $recordedAt = $record->clock_in_at ?? $session->started_at ?? now();
+        $existingPoint = FieldLocationPoint::query()
+            ->where('field_activity_session_id', $session->id)
+            ->exists();
+        if ($existingPoint) {
+            return false;
+        }
+
+        FieldLocationPoint::query()->create([
+            'field_activity_session_id' => $session->id,
+            'company_id' => $session->company_id,
+            'user_id' => $session->user_id,
+            'task_id' => null,
+            'task_tracking_session_id' => null,
+            'latitude' => $lat,
+            'longitude' => $lng,
+            'accuracy_meters' => isset($clockMeta['clock_in_accuracy_m']) ? (float) $clockMeta['clock_in_accuracy_m'] : null,
+            'speed_mps' => 0.0,
+            'heading_degrees' => null,
+            'distance_from_previous_meters' => 0.0,
+            'movement_state' => FieldMovementState::STOPPED,
+            'recorded_at' => $recordedAt,
+        ]);
+
+        $session->forceFill([
+            'last_latitude' => $lat,
+            'last_longitude' => $lng,
+            'last_accuracy_meters' => isset($clockMeta['clock_in_accuracy_m']) ? (float) $clockMeta['clock_in_accuracy_m'] : null,
+            'last_recorded_at' => $recordedAt,
+            'last_movement_state' => FieldMovementState::STOPPED,
+            'last_persisted_latitude' => $lat,
+            'last_persisted_longitude' => $lng,
+            'last_persisted_recorded_at' => $recordedAt,
+        ])->save();
+
+        Log::debug('field_activity.lifecycle.seed_clock_in_point', [
+            'session_id' => $session->id,
+            'company_id' => $session->company_id,
+            'user_id' => $session->user_id,
+            'recorded_at' => $recordedAt->toIso8601String(),
+        ]);
+
+        return true;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function pendingReviewSnapshot(int $companyId, int $userId): array
+    {
+        $days = max(7, min(90, (int) config('field_activity.retention_days', 90)));
+        $fromDate = now()->subDays($days)->startOfDay();
+
+        $pendingStops = FieldStop::query()
+            ->where('company_id', $companyId)
+            ->where('user_id', $userId)
+            ->where('classification', FieldStopClassification::PENDING)
+            ->where('arrived_at', '>=', $fromDate)
+            ->whereHas('session', function ($q): void {
+                $q->whereIn('status', [
+                    FieldActivitySessionStatus::COMPLETED->value,
+                    FieldActivitySessionStatus::AUTO_CLOSED->value,
+                ]);
+            })
+            ->with('session')
+            ->orderBy('arrived_at')
+            ->limit(120)
+            ->get();
+
+        $grouped = $pendingStops
+            ->groupBy('field_activity_session_id')
+            ->map(function ($items, $sessionId): array {
+                /** @var FieldStop $first */
+                $first = $items->first();
+                $session = $first->session;
+
+                return [
+                    'session_id' => (int) $sessionId,
+                    'started_at' => $session?->started_at?->toIso8601String(),
+                    'ended_at' => $session?->ended_at?->toIso8601String(),
+                    'status' => $session?->status?->value,
+                    'pending_stop_count' => $items->count(),
+                    'stops' => $items
+                        ->sortBy('arrived_at')
+                        ->values()
+                        ->map(fn (FieldStop $stop): array => $this->serializeStop($stop))
+                        ->all(),
+                ];
+            })
+            ->sortBy('started_at')
+            ->values()
+            ->all();
+
+        $oldest = $pendingStops->sortBy('arrived_at')->first();
+
+        return [
+            'pending_stop_count' => $pendingStops->count(),
+            'pending_session_count' => count($grouped),
+            'oldest_pending_date' => $oldest?->arrived_at?->toDateString(),
+            'sessions' => $grouped,
+        ];
     }
 
     /**

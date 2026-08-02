@@ -1,9 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { toast } from '@/lib/toast';
 import { flattenApiError } from '@/lib/api/errors';
-import { useClassifyFieldStop, useFieldActivityToday } from '../queries';
+import {
+  useClassifyFieldStop,
+  useFieldActivityPendingReview,
+  useFieldActivityToday,
+} from '../queries';
 import type { FieldStop, FieldStopClassification } from '../types';
 
 function formatKm(meters: number): string {
@@ -122,13 +126,50 @@ function StopRow({
 
 export function FieldActivitySummaryCard(): React.ReactElement | null {
   const { data, isLoading, isError } = useFieldActivityToday();
+  const { data: pendingReview } = useFieldActivityPendingReview();
   const classifyMutation = useClassifyFieldStop();
+  const [collapsedSessionIds, setCollapsedSessionIds] = useState<Record<number, boolean>>({});
+  const skipStateStorageKey = 'field-activity:pending-review:collapsed-sessions';
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem(skipStateStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== 'object') return;
+      const restored = Object.entries(parsed as Record<string, unknown>).reduce<Record<number, boolean>>(
+        (acc, [sessionId, value]) => {
+          const numericSessionId = Number(sessionId);
+          if (Number.isFinite(numericSessionId) && typeof value === 'boolean') {
+            acc[numericSessionId] = value;
+          }
+          return acc;
+        },
+        {},
+      );
+      setCollapsedSessionIds(restored);
+    } catch {
+      // Ignore malformed local state and continue with defaults.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(skipStateStorageKey, JSON.stringify(collapsedSessionIds));
+    } catch {
+      // Storage writes are optional and should not block UI interactions.
+    }
+  }, [collapsedSessionIds]);
 
   if (isLoading || isError || !data?.enabled) {
     return null;
   }
 
   const pendingStops = (data.stops ?? []).filter((s) => s.classification === 'pending');
+  const backlogSessions = pendingReview?.sessions ?? [];
+  const totalPendingCount = pendingReview?.pending_stop_count ?? pendingStops.length;
   const session = data.session;
   const summary = data.summary;
   const distance = summary?.distance_meters ?? session?.distance_meters ?? 0;
@@ -155,6 +196,10 @@ export function FieldActivitySummaryCard(): React.ReactElement | null {
     } catch (err) {
       toast.error(flattenApiError(err) || 'Could not classify stop');
     }
+  };
+
+  const toggleSessionCollapsed = (sessionId: number) => {
+    setCollapsedSessionIds((prev) => ({ ...prev, [sessionId]: !prev[sessionId] }));
   };
 
   return (
@@ -193,6 +238,11 @@ export function FieldActivitySummaryCard(): React.ReactElement | null {
         {session?.status === 'active' && (
           <p className="mt-4 text-xs font-medium text-[#75ADAF]">Live tracking active</p>
         )}
+        {!session && totalPendingCount > 0 && (
+          <p className="mt-4 text-xs font-medium text-[#F6C470]">
+            You still have pending stop reviews from previous days.
+          </p>
+        )}
       </div>
 
       {pendingStops.length > 0 && (
@@ -206,6 +256,64 @@ export function FieldActivitySummaryCard(): React.ReactElement | null {
               onClassify={handleClassify}
             />
           ))}
+        </div>
+      )}
+
+      {backlogSessions.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-sm font-semibold text-white">Pending review backlog</h3>
+            <span className="text-xs text-[#8F9098]">
+              {totalPendingCount} pending stop{totalPendingCount === 1 ? '' : 's'}
+            </span>
+          </div>
+          {backlogSessions.map((session) => {
+            const collapsed = !!collapsedSessionIds[session.session_id];
+            const label = session.started_at
+              ? new Date(session.started_at).toLocaleDateString()
+              : 'Unknown date';
+
+            return (
+              <div key={session.session_id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-white">{label}</p>
+                    <p className="mt-1 text-xs text-[#8F9098]">
+                      {session.pending_stop_count} stop{session.pending_stop_count === 1 ? '' : 's'} need classification
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleSessionCollapsed(session.session_id)}
+                      className="rounded-full border border-white/15 px-3 py-1 text-xs text-white"
+                    >
+                      {collapsed ? 'Show' : 'Hide'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleSessionCollapsed(session.session_id)}
+                      className="rounded-full bg-[#75ADAF]/20 px-3 py-1 text-xs font-semibold text-[#75ADAF]"
+                    >
+                      Skip for now
+                    </button>
+                  </div>
+                </div>
+                {!collapsed && (
+                  <div className="mt-3 space-y-3">
+                    {session.stops.map((stop) => (
+                      <StopRow
+                        key={stop.id}
+                        stop={stop}
+                        busy={classifyMutation.isPending}
+                        onClassify={handleClassify}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </section>

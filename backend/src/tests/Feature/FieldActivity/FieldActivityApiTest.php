@@ -9,11 +9,13 @@ use App\Models\AttendanceSetting;
 use App\Models\Company;
 use App\Models\CompanyLocation;
 use App\Models\FieldActivitySession;
+use App\Models\FieldLocationPoint;
 use App\Models\FieldStop;
 use App\Models\Lead;
 use App\Models\User;
 use App\Services\Location\MapboxGeocodingService;
 use App\Services\AI\Providers\AiProviderRouter;
+use App\Services\Attendance\AttendanceService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
@@ -69,6 +71,32 @@ class FieldActivityApiTest extends TestCase
             'user_id' => $agent->id,
             'status' => 'active',
         ]);
+    }
+
+    public function test_clock_in_seeds_initial_field_location_point(): void
+    {
+        [$company, $owner, $agent] = $this->seedCompany();
+        $company->forceFill(['field_activity_enabled' => true])->save();
+        $this->seedAttendanceSettings($company);
+
+        Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/agent/attendance/clock-in', [
+                'company_id' => $company->id,
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
+                'accuracy_m' => 10,
+            ])
+            ->assertCreated();
+
+        $session = FieldActivitySession::query()->where('company_id', $company->id)->where('user_id', $agent->id)->firstOrFail();
+        $point = FieldLocationPoint::query()->where('field_activity_session_id', $session->id)->first();
+
+        $this->assertNotNull($point);
+        $this->assertSame(6.5244, round((float) $point->latitude, 4));
+        $this->assertSame(3.3792, round((float) $point->longitude, 4));
+        $this->assertSame('stopped', $point->movement_state?->value);
     }
 
     public function test_clock_in_skips_field_session_when_disabled(): void
@@ -305,6 +333,195 @@ class FieldActivityApiTest extends TestCase
             ->assertJsonPath('data.enabled', true);
 
         $this->assertTrue((bool) $company->fresh()->field_activity_enabled);
+    }
+
+    public function test_auto_clock_out_exposes_pending_review_backlog_on_next_day(): void
+    {
+        [$company, $owner, $agent] = $this->seedCompany();
+        $company->forceFill(['field_activity_enabled' => true])->save();
+        $this->seedAttendanceSettings($company);
+
+        Carbon::setTestNow(Carbon::parse('2026-07-29 09:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/agent/attendance/clock-in', [
+                'company_id' => $company->id,
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
+                'accuracy_m' => 10,
+            ])
+            ->assertCreated();
+
+        $session = FieldActivitySession::query()->where('company_id', $company->id)->where('user_id', $agent->id)->firstOrFail();
+
+        FieldStop::query()->create([
+            'field_activity_session_id' => $session->id,
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'arrived_at' => Carbon::parse('2026-07-29 12:00:00', 'Africa/Lagos'),
+            'departed_at' => Carbon::parse('2026-07-29 12:30:00', 'Africa/Lagos'),
+            'latitude' => 6.53,
+            'longitude' => 3.38,
+            'duration_seconds' => 1800,
+            'confidence' => 0.25,
+            'match_type' => 'unknown',
+            'classification' => 'pending',
+        ]);
+
+        Carbon::setTestNow(Carbon::parse('2026-07-29 18:20:00', 'Africa/Lagos'));
+        /** @var AttendanceService $attendanceService */
+        $attendanceService = app(AttendanceService::class);
+        $attendanceService->autoClockOutForOpenRecords($company->id);
+
+        $this->assertDatabaseHas('field_activity_sessions', [
+            'id' => $session->id,
+            'status' => 'auto_closed',
+        ]);
+
+        Carbon::setTestNow(Carbon::parse('2026-07-30 09:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->getJson("/api/v1/agent/field-activity/pending-review?company_id={$company->id}")
+            ->assertOk()
+            ->assertJsonPath('data.pending_stop_count', 1)
+            ->assertJsonPath('data.pending_session_count', 1);
+
+        $this->actingAs($agent, 'sanctum')
+            ->getJson("/api/v1/agent/field-activity/today?company_id={$company->id}")
+            ->assertOk()
+            ->assertJsonPath('data.pending_review.pending_stop_count', 1);
+    }
+
+    public function test_manual_clock_out_exposes_pending_review_backlog_on_next_day(): void
+    {
+        [$company, $owner, $agent] = $this->seedCompany();
+        $company->forceFill(['field_activity_enabled' => true])->save();
+        $this->seedAttendanceSettings($company);
+
+        Carbon::setTestNow(Carbon::parse('2026-07-29 09:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/agent/attendance/clock-in', [
+                'company_id' => $company->id,
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
+                'accuracy_m' => 10,
+            ])
+            ->assertCreated();
+
+        $session = FieldActivitySession::query()->where('company_id', $company->id)->where('user_id', $agent->id)->firstOrFail();
+
+        FieldStop::query()->create([
+            'field_activity_session_id' => $session->id,
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'arrived_at' => Carbon::parse('2026-07-29 12:00:00', 'Africa/Lagos'),
+            'departed_at' => Carbon::parse('2026-07-29 12:30:00', 'Africa/Lagos'),
+            'latitude' => 6.53,
+            'longitude' => 3.38,
+            'duration_seconds' => 1800,
+            'confidence' => 0.25,
+            'match_type' => 'unknown',
+            'classification' => 'pending',
+        ]);
+
+        // Agent finishes early and clocks out manually well before closing time.
+        Carbon::setTestNow(Carbon::parse('2026-07-29 15:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/agent/attendance/clock-out', [
+                'company_id' => $company->id,
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('field_activity_sessions', [
+            'id' => $session->id,
+            'status' => 'completed',
+        ]);
+
+        $this->assertTrue(
+            \App\Models\FieldDailySummary::query()
+                ->where('company_id', $company->id)
+                ->where('user_id', $agent->id)
+                ->whereDate('summary_date', '2026-07-29')
+                ->exists(),
+        );
+
+        Carbon::setTestNow(Carbon::parse('2026-07-30 09:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->getJson("/api/v1/agent/field-activity/pending-review?company_id={$company->id}")
+            ->assertOk()
+            ->assertJsonPath('data.pending_stop_count', 1)
+            ->assertJsonPath('data.pending_session_count', 1);
+
+        $this->actingAs($agent, 'sanctum')
+            ->getJson("/api/v1/agent/field-activity/today?company_id={$company->id}")
+            ->assertOk()
+            ->assertJsonPath('data.pending_review.pending_stop_count', 1);
+    }
+
+    public function test_classification_clears_pending_review_queue(): void
+    {
+        [$company, $owner, $agent] = $this->seedCompany();
+        $company->forceFill(['field_activity_enabled' => true])->save();
+        $this->seedAttendanceSettings($company);
+
+        Carbon::setTestNow(Carbon::parse('2026-07-29 09:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/agent/attendance/clock-in', [
+                'company_id' => $company->id,
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
+                'accuracy_m' => 10,
+            ])
+            ->assertCreated();
+
+        $session = FieldActivitySession::query()->where('company_id', $company->id)->where('user_id', $agent->id)->firstOrFail();
+
+        $stop = FieldStop::query()->create([
+            'field_activity_session_id' => $session->id,
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'arrived_at' => Carbon::parse('2026-07-29 12:00:00', 'Africa/Lagos'),
+            'departed_at' => Carbon::parse('2026-07-29 12:30:00', 'Africa/Lagos'),
+            'latitude' => 6.53,
+            'longitude' => 3.38,
+            'duration_seconds' => 1800,
+            'confidence' => 0.25,
+            'match_type' => 'unknown',
+            'classification' => 'pending',
+        ]);
+
+        Carbon::setTestNow(Carbon::parse('2026-07-29 18:20:00', 'Africa/Lagos'));
+        /** @var AttendanceService $attendanceService */
+        $attendanceService = app(AttendanceService::class);
+        $attendanceService->autoClockOutForOpenRecords($company->id);
+
+        Carbon::setTestNow(Carbon::parse('2026-07-30 09:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->getJson("/api/v1/agent/field-activity/pending-review?company_id={$company->id}")
+            ->assertOk()
+            ->assertJsonPath('data.pending_stop_count', 1)
+            ->assertJsonPath('data.pending_session_count', 1);
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson("/api/v1/agent/field-activity/stops/{$stop->id}/classify", [
+                'company_id' => $company->id,
+                'classification' => 'ignore',
+                'source' => 'agent',
+            ])
+            ->assertOk();
+
+        $this->actingAs($agent, 'sanctum')
+            ->getJson("/api/v1/agent/field-activity/pending-review?company_id={$company->id}")
+            ->assertOk()
+            ->assertJsonPath('data.pending_stop_count', 0)
+            ->assertJsonPath('data.pending_session_count', 0);
     }
 
     /**

@@ -660,7 +660,9 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
 
             Route::prefix('locations')->name('locations.')->group(function (): void {
                 Route::get('/', [CompanyLocationController::class, 'index'])->name('index');
-                Route::post('/', [CompanyLocationController::class, 'store'])->middleware('throttle:api-heavy')->name('store');
+                Route::post('/', [CompanyLocationController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('store');
                 Route::get('/{location}', [CompanyLocationController::class, 'show'])->name('show');
                 Route::patch('/{location}', [CompanyLocationController::class, 'update'])
                     ->middleware('throttle:api')
@@ -789,7 +791,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             Route::prefix('locations')->name('locations.')->group(function (): void {
                 Route::get('/', [CompanyLocationController::class, 'index'])->name('index');
                 Route::post('/', [CompanyLocationController::class, 'store'])
-                    ->middleware('throttle:api-heavy')
+                    ->middleware('throttle:api')
                     ->name('store');
                 Route::get('/{location}', [CompanyLocationController::class, 'show'])->name('show');
                 Route::patch('/{location}', [CompanyLocationController::class, 'update'])
@@ -820,6 +822,8 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::get('/today', [FieldActivityAgentController::class, 'today'])->name('today');
                 Route::get('/daily-summary', [FieldActivityAgentController::class, 'dailySummary'])
                     ->name('daily-summary');
+                Route::get('/pending-review', [FieldActivityAgentController::class, 'pendingReview'])
+                    ->name('pending-review');
                 Route::get('/journeys', [FieldActivityAgentController::class, 'journeys'])
                     ->name('journeys.index');
                 Route::get('/journeys/{session}', [FieldActivityAgentController::class, 'showJourney'])
@@ -1025,6 +1029,9 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::get('/daily-summary', [FieldActivityAgentController::class, 'dailySummary'])
             ->middleware('access.role:agent')
             ->name('daily-summary');
+        Route::get('/pending-review', [FieldActivityAgentController::class, 'pendingReview'])
+            ->middleware('access.role:agent')
+            ->name('pending-review');
         Route::get('/journeys', [FieldActivityAgentController::class, 'journeys'])
             ->middleware('access.role:agent')
             ->name('journeys.index');

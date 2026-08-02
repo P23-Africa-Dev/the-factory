@@ -470,14 +470,26 @@ export function JourneyView({
               )}
             </div>
             <div className="flex-1 min-h-[280px] p-2">
-              <JourneyMap
-                coordinates={(route?.coordinates ?? []) as [number, number][]}
-                timeline={timeline}
-                selectedId={selectedId}
-                clockIn={route?.clock_in ?? null}
-                clockOut={route?.clock_out ?? null}
-                bounds={route?.bounds ?? null}
-              />
+              {route && (route.raw_point_count ?? 0) === 0 ? (
+                <div className="h-full w-full rounded-2xl border border-dashed border-gray-200 bg-[#F8F9FA] flex flex-col items-center justify-center gap-2">
+                  <Route className="text-gray-300" size={26} />
+                  <p className="text-[12px] font-semibold text-gray-500">
+                    Session was recorded, but no route points were captured.
+                  </p>
+                  <p className="text-[11px] text-gray-400 text-center max-w-[320px]">
+                    This usually means background location collection was interrupted for that day.
+                  </p>
+                </div>
+              ) : (
+                <JourneyMap
+                  coordinates={(route?.coordinates ?? []) as [number, number][]}
+                  timeline={timeline}
+                  selectedId={selectedId}
+                  clockIn={route?.clock_in ?? null}
+                  clockOut={route?.clock_out ?? null}
+                  bounds={route?.bounds ?? null}
+                />
+              )}
             </div>
           </section>
 

@@ -4,6 +4,7 @@ import { queueOfflineAction } from '@/lib/offline/queue';
 import type {
   ClassifyStopPayload,
   FieldActivityToday,
+  PendingReviewPayload,
   FieldPointPayload,
   FieldStop,
 } from './types';
@@ -37,6 +38,14 @@ export const fieldActivityApi = {
       session: FieldActivityToday['session'];
       stops: FieldActivityToday['stops'];
     };
+  },
+
+  pendingReview: async (): Promise<PendingReviewPayload> => {
+    const companyId = getActiveCompanyId();
+    const res = await client.get('/agent/field-activity/pending-review', {
+      params: { company_id: companyId ?? undefined },
+    });
+    return unwrapData(res.data) as PendingReviewPayload;
   },
 
   recordPoints: async (

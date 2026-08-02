@@ -66,11 +66,28 @@ export interface FieldDailySummary {
   generated_at: string | null;
 }
 
+export interface PendingReviewSession {
+  session_id: number;
+  started_at: string | null;
+  ended_at: string | null;
+  status: string | null;
+  pending_stop_count: number;
+  stops: FieldStop[];
+}
+
+export interface PendingReviewPayload {
+  pending_stop_count: number;
+  pending_session_count: number;
+  oldest_pending_date: string | null;
+  sessions: PendingReviewSession[];
+}
+
 export interface FieldActivityToday {
   enabled: boolean;
   session: FieldActivitySession | null;
   summary: FieldDailySummary | null;
   stops: FieldStop[];
+  pending_review?: PendingReviewPayload;
   config: {
     moving_interval_seconds: number;
     stationary_interval_seconds: number;

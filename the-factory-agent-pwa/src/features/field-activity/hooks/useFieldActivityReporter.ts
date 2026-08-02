@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { getDb } from '@/lib/db/client';
 import { requestBackgroundSync } from '@/lib/offline/queue';
 import { getActiveCompanyId } from '@/lib/storage/stores';
+import { toast } from '@/lib/toast';
 import { useGeolocation, type LocationObject } from '@/features/tracking/hooks/useGeolocation';
 import {
   buildLiveTrackingMessage,
@@ -19,6 +20,7 @@ import type { FieldPointPayload } from '../types';
 
 const MAX_BATCH = 50;
 const MAX_QUEUE = 200;
+const WATCHDOG_INTERVAL_MS = 45_000;
 
 function speedKmh(loc: LocationObject): number | null {
   const speed = loc.coords.speed;
@@ -54,6 +56,32 @@ export function useFieldActivityReporter(options: {
   const activeRef = useRef(active);
   const movingRef = useRef(movingIntervalSeconds);
   const stationaryRef = useRef(stationaryIntervalSeconds);
+  const watchdogIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastWatchdogToastAt = useRef(0);
+  const restartWatcher = useCallback(() => {
+    if (!isNativeAndroid()) return;
+    if (!activeRef.current || !sessionIdRef.current) return;
+    if (isNativeBackgroundWatching()) return;
+
+    void startNativeBackgroundWatch(
+      (loc) => {
+        void enqueue(loc);
+      },
+      (message) => {
+        if (Date.now() - lastWatchdogToastAt.current > 60_000) {
+          lastWatchdogToastAt.current = Date.now();
+          toast.warning(
+            'Field tracking warning',
+            message || 'Background location watcher was lost and is restarting.',
+          );
+        }
+      },
+      {
+        title: buildLiveTrackingTitle('Field activity'),
+        message: buildLiveTrackingMessage(null),
+      },
+    );
+  }, [enqueue]);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -177,6 +205,10 @@ export function useFieldActivityReporter(options: {
         clearInterval(flushIntervalRef.current);
         flushIntervalRef.current = null;
       }
+      if (watchdogIntervalRef.current) {
+        clearInterval(watchdogIntervalRef.current);
+        watchdogIntervalRef.current = null;
+      }
       return;
     }
 
@@ -187,7 +219,15 @@ export function useFieldActivityReporter(options: {
           (loc) => {
             void enqueue(loc);
           },
-          () => {},
+          (message) => {
+            if (Date.now() - lastWatchdogToastAt.current > 60_000) {
+              lastWatchdogToastAt.current = Date.now();
+              toast.warning(
+                'Field tracking degraded',
+                message || 'Background location paused. Re-open the app to resume.',
+              );
+            }
+          },
           {
             title: buildLiveTrackingTitle('Field activity'),
             message: buildLiveTrackingMessage(null),
@@ -204,6 +244,21 @@ export function useFieldActivityReporter(options: {
       void flushRef.current?.();
     }, 30_000);
 
+    watchdogIntervalRef.current = setInterval(() => {
+      restartWatcher();
+    }, WATCHDOG_INTERVAL_MS);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        restartWatcher();
+      }
+    };
+    const handleOnline = () => {
+      restartWatcher();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('online', handleOnline);
+
     return () => {
       stopWatching();
       if (isNativeAndroid()) {
@@ -213,10 +268,16 @@ export function useFieldActivityReporter(options: {
         clearInterval(flushIntervalRef.current);
         flushIntervalRef.current = null;
       }
+      if (watchdogIntervalRef.current) {
+        clearInterval(watchdogIntervalRef.current);
+        watchdogIntervalRef.current = null;
+      }
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleOnline);
       void flushRef.current?.();
       void companyId;
     };
-  }, [active, sessionId, enqueue, startWatching, stopWatching]);
+  }, [active, sessionId, enqueue, restartWatcher, startWatching, stopWatching]);
 
   return { flush };
 }

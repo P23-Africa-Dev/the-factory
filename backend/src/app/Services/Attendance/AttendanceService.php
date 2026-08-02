@@ -139,7 +139,13 @@ class AttendanceService
 
         $record = $record->fresh();
         try {
-            $this->fieldActivitySessionService->startForAttendance($record, $context->company);
+            $session = $this->fieldActivitySessionService->startForAttendance($record, $context->company);
+            Log::info('field_activity.lifecycle.attendance_clock_in_hook', [
+                'company_id' => (int) $context->company->id,
+                'attendance_record_id' => (int) $record->id,
+                'user_id' => (int) $record->user_id,
+                'field_activity_session_id' => $session?->id,
+            ]);
         } catch (Throwable $e) {
             Log::warning('field_activity.start_on_clock_in_failed', [
                 'attendance_record_id' => $record->id,
@@ -800,11 +806,19 @@ class AttendanceService
                 ]);
 
                 try {
-                    $this->fieldActivitySessionService->endForAttendance(
+                    $summary = $this->fieldActivitySessionService->endForAttendance(
                         $record->fresh() ?? $record,
                         autoClosed: true,
                         withNarrative: true,
                     );
+                    Log::info('field_activity.lifecycle.auto_clock_out_hook', [
+                        'company_id' => (int) $record->company_id,
+                        'attendance_record_id' => (int) $record->id,
+                        'user_id' => (int) $record->user_id,
+                        'closed_at' => $closingTime->toIso8601String(),
+                        'summary_generated' => $summary !== null,
+                        'summary_unknown_stop_count' => $summary?->unknown_stop_count,
+                    ]);
                 } catch (Throwable $e) {
                     Log::warning('field_activity.end_on_auto_clock_out_failed', [
                         'attendance_record_id' => $record->id,

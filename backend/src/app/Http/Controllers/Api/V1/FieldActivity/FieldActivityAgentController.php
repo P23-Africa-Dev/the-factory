@@ -93,6 +93,19 @@ class FieldActivityAgentController extends Controller
         );
     }
 
+    public function pendingReview(Request $request): JsonResponse
+    {
+        $data = $this->sessionService->pendingReviewForAgent(
+            $request->user(),
+            $request->integer('company_id') ?: null,
+        );
+
+        return $this->success(
+            message: 'Pending field stop review loaded.',
+            data: $data,
+        );
+    }
+
     public function journeys(FieldJourneyListRequest $request): JsonResponse
     {
         $data = $this->journeyService->listForAgent(

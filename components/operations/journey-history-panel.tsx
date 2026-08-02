@@ -44,6 +44,7 @@ function JourneyEntry({
     ? format(parseISO(journey.clock_out_at), "h:mma")
     : null;
   const isActive = journey.status === "active";
+  const hasNoRoutePoints = !isActive && journey.distance_meters <= 0;
 
   return (
     <div className="flex items-stretch gap-3 group">
@@ -136,6 +137,12 @@ function JourneyEntry({
               </span>
             </div>
           </div>
+
+          {hasNoRoutePoints && (
+            <p className="mb-2 text-[10px] text-amber-600 bg-amber-50 rounded-lg px-2 py-1">
+              Session exists, but route points were not captured for this day.
+            </p>
+          )}
 
           <Link
             href={href}

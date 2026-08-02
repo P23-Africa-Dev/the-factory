@@ -45,26 +45,37 @@ class FieldDailySummaryService
             'ignored' => $ignored,
         ];
 
-        $summary = FieldDailySummary::query()->updateOrCreate(
-            [
+        $existingSummary = FieldDailySummary::query()
+            ->where('company_id', $session->company_id)
+            ->where('user_id', $session->user_id)
+            ->whereDate('summary_date', $date)
+            ->first();
+
+        $summaryPayload = [
+            'field_activity_session_id' => $session->id,
+            'distance_meters' => (int) $session->distance_meters,
+            'travel_seconds' => (int) $session->travel_seconds,
+            'stationary_seconds' => (int) $session->stationary_seconds,
+            'stop_count' => $stops->count(),
+            'visit_count' => $visits,
+            'unknown_stop_count' => $unknown,
+            'personal_stop_count' => $personal,
+            'ignored_stop_count' => $ignored,
+            'metrics' => $metrics,
+            'generated_at' => now(),
+        ];
+
+        if ($existingSummary !== null) {
+            $existingSummary->fill($summaryPayload)->save();
+            $summary = $existingSummary;
+        } else {
+            $summary = FieldDailySummary::query()->create([
                 'company_id' => $session->company_id,
                 'user_id' => $session->user_id,
                 'summary_date' => $date,
-            ],
-            [
-                'field_activity_session_id' => $session->id,
-                'distance_meters' => (int) $session->distance_meters,
-                'travel_seconds' => (int) $session->travel_seconds,
-                'stationary_seconds' => (int) $session->stationary_seconds,
-                'stop_count' => $stops->count(),
-                'visit_count' => $visits,
-                'unknown_stop_count' => $unknown,
-                'personal_stop_count' => $personal,
-                'ignored_stop_count' => $ignored,
-                'metrics' => $metrics,
-                'generated_at' => now(),
-            ],
-        );
+                ...$summaryPayload,
+            ]);
+        }
 
         if ($withNarrative) {
             $this->attachNarrative($summary, $session);
