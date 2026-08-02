@@ -58,30 +58,6 @@ export function useFieldActivityReporter(options: {
   const stationaryRef = useRef(stationaryIntervalSeconds);
   const watchdogIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastWatchdogToastAt = useRef(0);
-  const restartWatcher = useCallback(() => {
-    if (!isNativeAndroid()) return;
-    if (!activeRef.current || !sessionIdRef.current) return;
-    if (isNativeBackgroundWatching()) return;
-
-    void startNativeBackgroundWatch(
-      (loc) => {
-        void enqueue(loc);
-      },
-      (message) => {
-        if (Date.now() - lastWatchdogToastAt.current > 60_000) {
-          lastWatchdogToastAt.current = Date.now();
-          toast.warning(
-            'Field tracking warning',
-            message || 'Background location watcher was lost and is restarting.',
-          );
-        }
-      },
-      {
-        title: buildLiveTrackingTitle('Field activity'),
-        message: buildLiveTrackingMessage(null),
-      },
-    );
-  }, [enqueue]);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -143,6 +119,31 @@ export function useFieldActivityReporter(options: {
       });
     }
   }, []);
+
+  const restartWatcher = useCallback(() => {
+    if (!isNativeAndroid()) return;
+    if (!activeRef.current || !sessionIdRef.current) return;
+    if (isNativeBackgroundWatching()) return;
+
+    void startNativeBackgroundWatch(
+      (loc) => {
+        void enqueue(loc);
+      },
+      (message) => {
+        if (Date.now() - lastWatchdogToastAt.current > 60_000) {
+          lastWatchdogToastAt.current = Date.now();
+          toast.warning(
+            'Field tracking warning',
+            message || 'Background location watcher was lost and is restarting.',
+          );
+        }
+      },
+      {
+        title: buildLiveTrackingTitle('Field activity'),
+        message: buildLiveTrackingMessage(null),
+      },
+    );
+  }, [enqueue]);
 
   const flush = useCallback(async () => {
     const sid = sessionIdRef.current;
