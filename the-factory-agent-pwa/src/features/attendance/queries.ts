@@ -33,6 +33,7 @@ export function useClockIn() {
     onSettled: () => {
       if (typeof navigator !== 'undefined' && navigator.onLine) {
         queryClient.invalidateQueries({ queryKey: attendanceKeys.today() });
+        queryClient.invalidateQueries({ queryKey: ['field-activity'] });
       }
     },
   });
@@ -57,6 +58,7 @@ export function useClockOut() {
     onSettled: () => {
       if (typeof navigator !== 'undefined' && navigator.onLine) {
         queryClient.invalidateQueries({ queryKey: attendanceKeys.today() });
+        queryClient.invalidateQueries({ queryKey: ['field-activity'] });
       }
     },
   });

@@ -3,18 +3,27 @@ import {
   placesDetails,
   type PlacesApiPlace,
 } from "@/lib/api/places";
+import type { PlaceSourceRef } from "@/lib/utils/place-attribution";
 
 /**
  * Unified place search via Laravel Places orchestrator
- * (Geoapify → Foursquare → Google). Mapbox is not used for search.
+ * (Geoapify ∥ Foursquare, Google backstop). Mapbox is not used for search.
  */
 
 const CLIENT_CACHE_TTL_MS = 60_000;
 const CLIENT_CACHE_MAX = 100;
+const DEFAULT_SUGGEST_LIMIT = 12;
 
 type CacheEntry = { value: PlaceSuggestion[]; expiresAt: number };
 const suggestCache = new Map<string, CacheEntry>();
 const suggestInflight = new Map<string, Promise<PlaceSuggestion[]>>();
+
+/** Last known admin toggle from autocomplete meta (clients hide badges when false). */
+let lastAttributionVisible = true;
+
+export function getPlacesAttributionVisible(): boolean {
+  return lastAttributionVisible;
+}
 
 export type PlaceSuggestion = {
   provider: string;
@@ -29,6 +38,8 @@ export type PlaceSuggestion = {
   confidence?: number | null;
   latitude?: number | null;
   longitude?: number | null;
+  sources?: PlaceSourceRef[];
+  attributionVisible?: boolean;
 };
 
 export type RetrievedPlace = {
@@ -58,7 +69,7 @@ function suggestCacheKey(
     Number.isFinite(options.proximity[1])
       ? `${options.proximity[0].toFixed(3)},${options.proximity[1].toFixed(3)}`
       : "_";
-  return [query.toLowerCase(), prox, String(options.limit ?? 6)].join("|");
+  return [query.toLowerCase(), prox, String(options.limit ?? DEFAULT_SUGGEST_LIMIT)].join("|");
 }
 
 function getCachedSuggestions(key: string): PlaceSuggestion[] | null {
@@ -82,9 +93,21 @@ function setCachedSuggestions(key: string, value: PlaceSuggestion[]): void {
 export function __resetPlaceSearchCachesForTests(): void {
   suggestCache.clear();
   suggestInflight.clear();
+  lastAttributionVisible = true;
 }
 
-function mapSuggestion(item: PlacesApiPlace, sessionToken: string): PlaceSuggestion {
+function mapSuggestion(
+  item: PlacesApiPlace,
+  sessionToken: string,
+  attributionVisible: boolean,
+): PlaceSuggestion {
+  const sources =
+    Array.isArray(item.sources) && item.sources.length > 0
+      ? item.sources
+          .filter((s) => s && typeof s.provider === "string" && typeof s.id === "string")
+          .map((s) => ({ provider: s.provider, id: s.id }))
+      : [{ provider: item.provider || "unknown", id: item.id }];
+
   return {
     provider: item.provider || "unknown",
     id: item.id,
@@ -96,6 +119,8 @@ function mapSuggestion(item: PlacesApiPlace, sessionToken: string): PlaceSuggest
     confidence: item.confidence ?? null,
     latitude: typeof item.latitude === "number" ? item.latitude : null,
     longitude: typeof item.longitude === "number" ? item.longitude : null,
+    sources,
+    attributionVisible,
   };
 }
 
@@ -137,10 +162,14 @@ export async function suggestPlaces(
       const envelope = await placesAutocomplete(trimmed, {
         lat: options.proximity?.[1],
         lng: options.proximity?.[0],
-        limit: options.limit ?? 6,
+        limit: options.limit ?? DEFAULT_SUGGEST_LIMIT,
         signal: options.signal,
       });
-      return (envelope.data ?? []).map((item) => mapSuggestion(item, options.sessionToken));
+      const attributionVisible = envelope.meta?.attribution_visible !== false;
+      lastAttributionVisible = attributionVisible;
+      return (envelope.data ?? []).map((item) =>
+        mapSuggestion(item, options.sessionToken, attributionVisible),
+      );
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") throw error;
       return [];

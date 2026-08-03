@@ -5,8 +5,9 @@ import { Search, SlidersHorizontal, BookmarkPlus } from "lucide-react";
 import { AgentCurveChart } from "./agent-curve-chart";
 import { AgentList } from "./agent-list";
 import type { AgentItem } from "./agent-list";
-import { AgentInfoCard, AgentLiveDetails } from "./agent-sidebar";
+import { AgentInfoCard } from "./agent-sidebar";
 import { AddAgentModal } from "./add-agent-modal";
+import { JourneyHistoryPanel } from "@/components/operations/journey-history-panel";
 import { useInternalUsersPaginated } from "@/hooks/use-internal-users";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -272,17 +273,14 @@ export function AgentView({ basePath }: { basePath: string }) {
 
         {/* Row 1 / Col 2 — Agent info */}
         {selectedAgent && (
-          <div className="xl:col-start-2 xl:row-start-1">
+          <div className="xl:col-start-2 xl:row-start-1 xl:row-span-2 flex flex-col gap-5">
             <AgentInfoCard agent={selectedAgent} />
+            <JourneyHistoryPanel
+              selected={{ userId: selectedAgent.id, name: selectedAgent.name }}
+              companyId={companyId ?? undefined}
+            />
           </div>
         )}
-
-        {/* Row 2 / Col 2 — Live Details (aligns with agents list) */}
-        {/* {selectedAgent && (
-          <div className="xl:col-start-2 xl:row-start-2">
-            <AgentLiveDetails agent={selectedAgent} />
-          </div>
-        )} */}
       </div>
 
       {/* ── Modal ─────────────────────────────────────────────── */}

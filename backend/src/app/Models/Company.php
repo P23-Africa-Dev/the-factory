@@ -46,6 +46,7 @@ class Company extends Model
         'pm_exp_year',
         'settings',
         'map_poi_display_enabled',
+        'field_activity_enabled',
     ];
 
     protected function casts(): array
@@ -55,6 +56,7 @@ class Company extends Model
             'demo_config' => 'array',
             'settings' => 'array',
             'map_poi_display_enabled' => 'boolean',
+            'field_activity_enabled' => 'boolean',
             'activated_at' => 'datetime',
             'subscription_current_period_start' => 'datetime',
             'subscription_current_period_end' => 'datetime',

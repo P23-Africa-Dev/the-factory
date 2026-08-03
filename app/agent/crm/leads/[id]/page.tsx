@@ -535,6 +535,10 @@ export default function LeadDetailsPage() {
 
   const startEditing = () => {
     if (!leadData) return;
+    if (Number(leadData.created_by_user_id) !== Number(user?.id)) {
+      toast.error("You can only edit leads you created");
+      return;
+    }
     setEditForm(buildEditForm(leadData));
     setActiveContactIndex(0);
     setContactErrors([]);
@@ -642,6 +646,7 @@ export default function LeadDetailsPage() {
         sort_order: 0,
       }];
   const currentAssigneeLabel = leadDisplay.assigneeName;
+  const canEditContacts = Number(leadData.created_by_user_id) === Number(user?.id);
   const selectedStatusValue = isEditing ? editForm.status : (leadData.status || "newly_lead");
   const selectedStatusOption = statusOptions.find((option) => option.value === selectedStatusValue);
 
@@ -683,14 +688,20 @@ export default function LeadDetailsPage() {
                 {isUpdating ? "Saving..." : "Save"}
               </button>
             ) : (
-              <button
-                onClick={startEditing}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-[14px] text-[13px] font-bold hover:opacity-90 transition-all shadow-lg"
-                id="edit-lead-btn"
+              <span
+                className="flex-1 sm:flex-none"
+                title={canEditContacts ? undefined : "You can only edit leads you created"}
               >
-                <Pencil size={16} />
-                Edit
-              </button>
+                <button
+                  onClick={startEditing}
+                  disabled={!canEditContacts}
+                  className="w-full flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-[14px] text-[13px] font-bold hover:opacity-90 transition-all shadow-lg disabled:cursor-not-allowed disabled:opacity-45"
+                  id="edit-lead-btn"
+                >
+                  <Pencil size={16} />
+                  Edit
+                </button>
+              </span>
             )}
           </div>
         </div>
@@ -866,9 +877,19 @@ export default function LeadDetailsPage() {
                     color={selectedStatusOption?.color || "#2563EB"}
                     options={statusOptions}
                     onChange={(value) => {
-                      updateField("status", value as ApiLeadStatus);
+                      const nextStatus = value as ApiLeadStatus;
+                      if (isEditing) {
+                        updateField("status", nextStatus);
+                        return;
+                      }
+                      updateLead({
+                        leadId,
+                        payload: {
+                          status: nextStatus,
+                          company_id: companyId,
+                        },
+                      });
                     }}
-                    disabled={!isEditing}
                   />
                 </div>
                 <div className="flex flex-col gap-1">

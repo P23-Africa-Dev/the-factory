@@ -10,6 +10,7 @@ import {
   type PlaceSuggestion,
   type RetrievedPlace,
 } from "@/lib/utils/place-search";
+import { placeAttributionLabel } from "@/lib/utils/place-attribution";
 import { getCachedSearchProximity, warmSearchProximity } from "@/lib/utils/search-proximity";
 import {
   fetchRecentPlaces,
@@ -53,7 +54,7 @@ export function PlaceAutocompleteField({
   className,
   inputClassName,
   proximity,
-  limit = 6,
+  limit = 12,
   id,
   name,
   onFocus,
@@ -327,15 +328,16 @@ export function PlaceAutocompleteField({
                 >
                   <span className="block text-[13px] font-semibold text-[#0B1215] leading-tight">
                     {s.name}
-                    {s.provider === "google" && (
-                      <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Google</span>
-                    )}
-                    {s.provider === "foursquare" && (
-                      <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Foursquare</span>
-                    )}
-                    {s.provider === "geoapify" && (
-                      <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Geoapify</span>
-                    )}
+                    {(() => {
+                      const label = placeAttributionLabel(
+                        s.sources,
+                        s.provider,
+                        s.attributionVisible,
+                      );
+                      return label ? (
+                        <span className="ml-1.5 text-[9px] font-medium text-slate-400">{label}</span>
+                      ) : null;
+                    })()}
                   </span>
                   {s.placeFormatted && s.placeFormatted !== s.name && (
                     <span className="block text-[11px] text-gray-500 leading-tight mt-0.5 truncate">

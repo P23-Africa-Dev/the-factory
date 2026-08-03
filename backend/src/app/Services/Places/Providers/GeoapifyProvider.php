@@ -171,7 +171,7 @@ class GeoapifyProvider implements PlaceSearchProviderInterface
         $params = [
             'text' => $query,
             'apiKey' => $this->apiKey(),
-            'limit' => max(1, min(10, $limit)),
+            'limit' => max(1, min(15, $limit)),
             'format' => 'json',
         ];
         if ($lat !== null && $lng !== null) {

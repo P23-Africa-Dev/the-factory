@@ -62,6 +62,7 @@ import {
   createSearchSessionToken,
   type PlaceSuggestion,
 } from '@/lib/map/place-search';
+import { placeAttributionLabel } from '@/lib/map/place-attribution';
 import { getCachedSearchProximity, setCachedSearchProximity, warmSearchProximity } from '@/lib/map/search-proximity';
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
 import type { SavedLocationPin } from '@/features/tracking/components/MapboxMap';
@@ -565,6 +566,20 @@ function DestinationSearch({
                               {(item as unknown as PlaceSuggestion).category!.replace(/_/g, ' ')}
                             </span>
                           )}
+                          {isSuggestion &&
+                            (() => {
+                              const s = item as unknown as PlaceSuggestion;
+                              const label = placeAttributionLabel(
+                                s.sources,
+                                s.provider,
+                                s.attributionVisible,
+                              );
+                              return label ? (
+                                <span className="ml-1.5 text-[9px] font-medium text-white/40">
+                                  {label}
+                                </span>
+                              ) : null;
+                            })()}
                         </p>
                         {('placeFormatted' in item
                           ? (item as unknown as PlaceSuggestion).placeFormatted
@@ -685,6 +700,16 @@ function OriginSearch({
                           {item.category.replace(/_/g, ' ')}
                         </span>
                       )}
+                      {(() => {
+                        const label = placeAttributionLabel(
+                          item.sources,
+                          item.provider,
+                          item.attributionVisible,
+                        );
+                        return label ? (
+                          <span className="ml-1.5 text-[9px] font-medium text-white/40">{label}</span>
+                        ) : null;
+                      })()}
                     </p>
                     {item.placeFormatted && item.placeFormatted !== item.name && (
                       <p className="text-[10px] text-gray-400 truncate mt-1">{item.placeFormatted}</p>
@@ -1078,7 +1103,7 @@ function MapContent() {
       const suggestions = await suggestPlaces(query, {
         sessionToken: destSessionTokenRef.current,
         proximity,
-        limit: 6,
+        limit: 12,
         signal: abort.signal,
       });
       if (requestId !== destSearchRequestIdRef.current) return;
@@ -1152,7 +1177,7 @@ function MapContent() {
       const suggestions = await suggestPlaces(query, {
         sessionToken: originSessionTokenRef.current,
         proximity,
-        limit: 6,
+        limit: 12,
         signal: abort.signal,
       });
       if (requestId !== originSearchRequestIdRef.current) return;

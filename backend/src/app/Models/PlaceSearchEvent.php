@@ -18,6 +18,7 @@ class PlaceSearchEvent extends Model
         'operation',
         'provider_final',
         'providers_tried',
+        'sources_mix',
         'cache_hit',
         'fallback_depth',
         'latency_ms',
@@ -37,6 +38,7 @@ class PlaceSearchEvent extends Model
     {
         return [
             'providers_tried' => 'array',
+            'sources_mix' => 'array',
             'cache_hit' => 'boolean',
             'fallback_depth' => 'integer',
             'latency_ms' => 'integer',

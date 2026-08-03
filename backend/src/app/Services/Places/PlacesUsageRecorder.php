@@ -37,10 +37,12 @@ final class PlacesUsageRecorder
                 'query_truncated' => $payload['query_truncated'] ?? null,
                 'status' => $payload['status'] ?? 'ok',
                 'ip_hash' => $payload['ip_hash'] ?? null,
+                'sources_mix' => $payload['sources_mix'] ?? null,
                 'created_at' => now(),
             ]);
 
             $this->bumpLiveCounters($payload);
+            $this->bumpSourcesMixCounters($payload);
         } catch (\Throwable $e) {
             Log::warning('places.usage_record_failed', ['error' => $e->getMessage()]);
         }
@@ -73,12 +75,33 @@ final class PlacesUsageRecorder
     }
 
     /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function bumpSourcesMixCounters(array $payload): void
+    {
+        $mix = $payload['sources_mix'] ?? null;
+        if (! is_array($mix)) {
+            return;
+        }
+
+        $day = now()->toDateString();
+        $prefix = "places:metrics:{$day}:srcmix";
+        foreach (['geoapify', 'foursquare', 'google', 'multi_source'] as $key) {
+            $n = (int) ($mix[$key] ?? 0);
+            if ($n > 0) {
+                Cache::increment("{$prefix}:{$key}", $n);
+            }
+        }
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function liveSnapshot(?string $day = null): array
     {
         $day ??= now()->toDateString();
         $prefix = "places:metrics:{$day}";
+        $mixPrefix = "{$prefix}:srcmix";
 
         return [
             'day' => $day,
@@ -94,6 +117,12 @@ final class PlacesUsageRecorder
                 'dashboard' => (int) Cache::get("{$prefix}:source:dashboard", 0),
                 'pwa' => (int) Cache::get("{$prefix}:source:pwa", 0),
                 'system' => (int) Cache::get("{$prefix}:source:system", 0),
+            ],
+            'sources_mix' => [
+                'geoapify' => (int) Cache::get("{$mixPrefix}:geoapify", 0),
+                'foursquare' => (int) Cache::get("{$mixPrefix}:foursquare", 0),
+                'google' => (int) Cache::get("{$mixPrefix}:google", 0),
+                'multi_source' => (int) Cache::get("{$mixPrefix}:multi_source", 0),
             ],
         ];
     }

@@ -34,7 +34,7 @@ class FoursquareProvider implements PlaceSearchProviderInterface
     {
         $params = [
             'query' => $query,
-            'limit' => max(1, min(10, $limit)),
+            'limit' => max(1, min(15, $limit)),
             'types' => 'place',
         ];
         if ($lat !== null && $lng !== null) {
@@ -61,7 +61,7 @@ class FoursquareProvider implements PlaceSearchProviderInterface
     {
         $params = [
             'query' => $query,
-            'limit' => max(1, min(10, $limit)),
+            'limit' => max(1, min(15, $limit)),
             'types' => 'place',
         ];
         if ($lat !== null && $lng !== null) {
@@ -81,6 +81,9 @@ class FoursquareProvider implements PlaceSearchProviderInterface
         ];
         if ($lat !== null && $lng !== null) {
             $params['ll'] = "{$lat},{$lng}";
+        }
+        if ($this->premiumFieldsEnabled()) {
+            $params['fields'] = $this->premiumFieldList();
         }
         $pool->as($this->name())
             ->timeout($this->timeout())
@@ -138,6 +141,9 @@ class FoursquareProvider implements PlaceSearchProviderInterface
         if ($lat !== null && $lng !== null) {
             $params['ll'] = "{$lat},{$lng}";
         }
+        if ($this->premiumFieldsEnabled()) {
+            $params['fields'] = $this->premiumFieldList();
+        }
 
         $payload = $this->get('/places/search', $params);
 
@@ -154,6 +160,9 @@ class FoursquareProvider implements PlaceSearchProviderInterface
         if ($categories !== null && $categories !== []) {
             $params['categories'] = implode(',', $categories);
         }
+        if ($this->premiumFieldsEnabled()) {
+            $params['fields'] = $this->premiumFieldList();
+        }
 
         $payload = $this->get('/places/search', $params);
 
@@ -162,7 +171,11 @@ class FoursquareProvider implements PlaceSearchProviderInterface
 
     public function details(string $id): ?PlaceResult
     {
-        $payload = $this->get('/places/'.$id, []);
+        $params = [];
+        if ($this->premiumFieldsEnabled()) {
+            $params['fields'] = $this->premiumFieldList();
+        }
+        $payload = $this->get('/places/'.$id, $params);
         if ($payload === []) {
             return null;
         }
@@ -307,14 +320,46 @@ class FoursquareProvider implements PlaceSearchProviderInterface
                 provider: $this->name(),
                 confidence: 0.8,
                 categories: $categories,
-                phone: isset($row['tel']) ? (string) $row['tel'] : null,
+                phone: isset($row['tel']) ? (string) $row['tel'] : (isset($row['phone']) ? (string) $row['phone'] : null),
                 website: isset($row['website']) ? (string) $row['website'] : null,
                 rating: isset($row['rating']) && is_numeric($row['rating']) ? (float) $row['rating'] : null,
+                openingHours: $this->mapOpeningHours($row),
+                sources: [],
                 rawMeta: $row,
             );
         }
 
         return $results;
+    }
+
+    private function premiumFieldsEnabled(): bool
+    {
+        return (bool) config('places.foursquare_premium_fields', false);
+    }
+
+    private function premiumFieldList(): string
+    {
+        // Lean premium set — no photos blobs.
+        return 'fsq_place_id,name,geocodes,location,categories,tel,website,rating,hours';
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function mapOpeningHours(array $row): ?string
+    {
+        $hours = $row['hours'] ?? null;
+        if (! is_array($hours)) {
+            return null;
+        }
+        if (isset($hours['display']) && is_string($hours['display']) && trim($hours['display']) !== '') {
+            return trim($hours['display']);
+        }
+        if (isset($hours['regular']) && is_array($hours['regular'])) {
+            return json_encode($hours['regular']) ?: null;
+        }
+
+        return null;
     }
 
     /**

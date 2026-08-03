@@ -55,6 +55,31 @@ final class PlacesAnalyticsService
 
         $providerTotal = max(1, array_sum($byProvider));
 
+        $mixLive = is_array($live['sources_mix'] ?? null) ? $live['sources_mix'] : [];
+        $mixDb = [
+            'geoapify' => 0,
+            'foursquare' => 0,
+            'google' => 0,
+            'multi_source' => 0,
+        ];
+        $mixRows = PlaceSearchEvent::query()
+            ->where('created_at', '>=', $from)
+            ->whereNotNull('sources_mix')
+            ->pluck('sources_mix');
+        foreach ($mixRows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            foreach ($mixDb as $key => $_) {
+                $mixDb[$key] += (int) ($row[$key] ?? 0);
+            }
+        }
+        $mixTotal = max(1, array_sum([
+            $mixDb['geoapify'],
+            $mixDb['foursquare'],
+            $mixDb['google'],
+        ]));
+
         return [
             'days' => $days,
             'from' => $from->toIso8601String(),
@@ -73,7 +98,15 @@ final class PlacesAnalyticsService
             ],
             'sources' => $bySource,
             'operations' => $byOperation,
+            'sources_mix' => $mixDb,
+            'sources_mix_pct' => [
+                'geoapify' => round(($mixDb['geoapify'] / $mixTotal) * 100, 1),
+                'foursquare' => round(($mixDb['foursquare'] / $mixTotal) * 100, 1),
+                'google' => round(($mixDb['google'] / $mixTotal) * 100, 1),
+                'multi_source' => $mixDb['multi_source'],
+            ],
             'live_today' => $live,
+            'live_sources_mix' => $mixLive,
             'settings' => $this->settings->snapshot(),
         ];
     }
