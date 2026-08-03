@@ -200,6 +200,12 @@ class LeadService
             $this->assertAgentCanAccessLead($lead, (int) $user->id);
 
             $editsContacts = array_key_exists('contacts', $data);
+            if ($editsContacts && (int) $lead->created_by_user_id !== (int) $user->id) {
+                throw ValidationException::withMessages([
+                    'authorization' => ['Agents can only edit contact details on leads they created.'],
+                ]);
+            }
+
             $allowedFields = $editsContacts
                 ? ['company_id', 'pipeline_id', 'status', 'contacts', 'name', 'email', 'phone', 'location']
                 : ['company_id', 'pipeline_id', 'status'];
@@ -210,7 +216,7 @@ class LeadService
 
             if ($forbiddenFields !== []) {
                 throw ValidationException::withMessages([
-                    'authorization' => ['Agents can only update lead status, pipeline, and contact details.'],
+                    'authorization' => ['Agents can only update lead status, pipeline, and contact details on leads they created.'],
                     'forbidden_fields' => $forbiddenFields,
                 ]);
             }
