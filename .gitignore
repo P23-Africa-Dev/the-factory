@@ -76,9 +76,9 @@ debug-*.log
 **/outputs/bundle/**
 
 # Single published Agent APK for QR install (always overwritten by apk:debug/release)
-!public/downloads/
-!public/downloads/.gitkeep
-!public/downloads/factory23-agent.apk
+# !public/downloads/
+# !public/downloads/.gitkeep
+# !public/downloads/factory23-agent.apk
 
 # vercel
 .vercel
