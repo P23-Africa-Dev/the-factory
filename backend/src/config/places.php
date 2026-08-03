@@ -16,6 +16,11 @@ return [
     'cache_enabled' => (bool) env('PLACES_CACHE_ENABLED', true),
     'fallback_enabled' => (bool) env('PLACES_FALLBACK_ENABLED', true),
 
+    'show_provider_attribution' => (bool) env('PLACES_SHOW_PROVIDER_ATTRIBUTION', true),
+    'foursquare_premium_fields' => (bool) env('PLACES_FOURSQUARE_PREMIUM_FIELDS', false),
+    'max_results_autocomplete' => (int) env('PLACES_MAX_RESULTS_AUTOCOMPLETE', 12),
+    'max_results_search' => (int) env('PLACES_MAX_RESULTS_SEARCH', 15),
+
     'quality_threshold' => (float) env('PLACES_QUALITY_THRESHOLD', 0.80),
     'min_results' => (int) env('PLACES_MIN_RESULTS', 1),
     'min_nearby_results' => (int) env('PLACES_MIN_NEARBY_RESULTS', 3),
@@ -23,6 +28,15 @@ return [
     'store_truncated_query' => (bool) env('PLACES_STORE_TRUNCATED_QUERY', false),
 
     'google_daily_budget' => (int) env('PLACES_GOOGLE_DAILY_BUDGET', 200),
+
+    /*
+    | Cache key bucketing / stampede protection (result cache only).
+    */
+    'cache' => [
+        'geohash_precision' => (int) env('PLACES_CACHE_GEOHASH_PRECISION', 6),
+        'reverse_decimals' => (int) env('PLACES_CACHE_REVERSE_DECIMALS', 3),
+        'lock_seconds' => (int) env('PLACES_CACHE_LOCK_SECONDS', 10),
+    ],
 
     /*
     | Parallel fan-out for autocomplete / search.
@@ -45,6 +59,7 @@ return [
         'details' => (int) env('PLACES_TTL_DETAILS', 86400),
         'geocode' => (int) env('PLACES_TTL_GEOCODE', 86400),
         'reverse' => (int) env('PLACES_TTL_REVERSE', 86400),
+        'empty' => (int) env('PLACES_TTL_EMPTY', 900),
     ],
 
     'timeouts' => [

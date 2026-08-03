@@ -8,6 +8,7 @@ vi.mock("@/lib/api/places", () => ({
 import { placesAutocomplete, placesDetails } from "@/lib/api/places";
 import {
   __resetPlaceSearchCachesForTests,
+  getPlacesAttributionVisible,
   retrievePlace,
   suggestPlaces,
 } from "@/lib/utils/place-search";
@@ -147,5 +148,28 @@ describe("suggestPlaces Laravel client", () => {
     expect(place?.lng).toBe(3.351);
     expect(place?.provider).toBe("foursquare");
     expect(placesDetails).not.toHaveBeenCalled();
+  });
+
+  it("maps sources and attribution_visible from Laravel meta", async () => {
+    vi.mocked(placesAutocomplete).mockResolvedValueOnce({
+      data: [
+        {
+          id: "fsq_1",
+          name: "Shoprite",
+          formatted_address: "Ikeja",
+          provider: "foursquare",
+          sources: [
+            { provider: "foursquare", id: "fsq_1" },
+            { provider: "geoapify", id: "geo_1" },
+          ],
+        },
+      ],
+      meta: { attribution_visible: false, provider: "foursquare" },
+    });
+
+    const results = await suggestPlaces("shoprite", { sessionToken: "s1" });
+    expect(results[0]?.sources).toHaveLength(2);
+    expect(results[0]?.attributionVisible).toBe(false);
+    expect(getPlacesAttributionVisible()).toBe(false);
   });
 });

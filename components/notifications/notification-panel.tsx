@@ -273,11 +273,30 @@ function EmptyState({ filter }: { filter: "all" | "unread" }) {
   );
 }
 
-function resolveWebNotificationUrl(notification: AppNotification, isAgent: boolean): string | null {
+export function resolveWebNotificationUrl(notification: AppNotification, isAgent: boolean): string | null {
   const target = notification.action_url || notification.action_route;
+
+  // Tracking events always deep-link managers to the live Map feed.
+  if (notification.type?.startsWith("tracking.") && !isAgent) {
+    const taskId =
+      notification.metadata?.task_id ??
+      notification.reference_id ??
+      (typeof target === "string" ? target.match(/taskId=(\d+)/)?.[1] : undefined);
+    if (taskId) return `/map?taskId=${taskId}`;
+  }
 
   // Let's first try to resolve based on action_url/action_route
   if (target) {
+    // Map live feed deep-link
+    const mapMatch = target.match(/^\/map(?:\?taskId=(\d+))?/);
+    if (mapMatch) {
+      return isAgent
+        ? (mapMatch[1] ? `/agent/map?taskId=${mapMatch[1]}` : "/agent/map")
+        : target.startsWith("/map")
+          ? target
+          : "/map";
+    }
+
     // 1. Tasks: e.g. /tasks/123
     const taskMatch = target.match(/^\/tasks\/(\d+)/);
     if (taskMatch) {

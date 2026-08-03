@@ -69,11 +69,21 @@ function resolveLocationLiveStatus(params: {
 
 type WsStatus = "idle" | "connecting" | "connected" | "reconnecting" | "error";
 
+export type TrackingTaskStartedAlert = {
+  taskId: number;
+  agentName: string;
+  taskTitle: string;
+  occurredAt: string;
+  signal: number;
+};
+
 interface TrackingStore {
   liveTasks: Record<number, LiveTaskState>;
   wsStatus: WsStatus;
+  isInitialHydrating: boolean;
   selectedTaskId: number | null;
   activeTrackingTaskId: number | null; // agent-side: task being tracked on this device
+  lastTaskStartedAlert: TrackingTaskStartedAlert | null;
 
   upsertFromWs: (envelope: TrackingEnvelope) => void;
   hydrateFromRoute: (taskId: number, route: TaskRoute, task: TaskApiItem) => void;
@@ -98,6 +108,7 @@ interface TrackingStore {
   setSelectedTask: (taskId: number | null) => void;
   setActiveTrackingTask: (taskId: number | null) => void;
   setWsStatus: (status: WsStatus) => void;
+  setInitialHydrating: (value: boolean) => void;
 }
 
 function normalizeLiveStatus(
@@ -263,8 +274,10 @@ function buildFromEnvelope(
 export const useTrackingStore = create<TrackingStore>((set, get) => ({
   liveTasks: {},
   wsStatus: "idle",
+  isInitialHydrating: false,
   selectedTaskId: null,
   activeTrackingTaskId: null,
+  lastTaskStartedAlert: null,
 
   upsertFromWs(envelope) {
     const taskId = envelope.payload.task_id;
@@ -278,10 +291,24 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
       const updated = buildFromEnvelope(prev, envelope);
 
       if (type === "tracking.task.started") {
+        const sessionId = Number(payload.tracking_session_id) || updated.trackingSessionId;
+        const startedTask = {
+          ...updated,
+          status: "in_progress" as const,
+          trackingSessionId: sessionId > 0 ? sessionId : updated.trackingSessionId,
+          ...(hasCoords ? { lastPosition: [lng!, lat!] as [number, number] } : {}),
+        };
         return {
           liveTasks: {
             ...s.liveTasks,
-            [taskId]: { ...updated, status: "in_progress" },
+            [taskId]: startedTask,
+          },
+          lastTaskStartedAlert: {
+            taskId,
+            agentName: startedTask.agentName || "Agent",
+            taskTitle: startedTask.taskTitle || `Task #${taskId}`,
+            occurredAt: payload.occurred_at || new Date().toISOString(),
+            signal: (s.lastTaskStartedAlert?.signal ?? 0) + 1,
           },
         };
       }
@@ -717,5 +744,9 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
 
   setWsStatus(status) {
     set({ wsStatus: status });
+  },
+
+  setInitialHydrating(value) {
+    set({ isInitialHydrating: value });
   },
 }));

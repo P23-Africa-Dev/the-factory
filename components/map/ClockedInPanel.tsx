@@ -92,12 +92,22 @@ export function ClockedInPanel({
       })}
 
       {showAttendanceLink && (
-        <Link
-          href="/operations/attendance"
-          className="block text-center text-[12px] font-semibold text-dash-teal pt-2"
-        >
-          View attendance records
-        </Link>
+        <div className="pt-2 space-y-1">
+          <Link
+            href="/operations/attendance"
+            className="block text-center text-[12px] font-semibold text-dash-teal"
+          >
+            View attendance records
+          </Link>
+          {selectedUserId != null && (
+            <Link
+              href="/operations"
+              className="block text-center text-[12px] font-semibold text-[#2F5E71]"
+            >
+              Open Journey History
+            </Link>
+          )}
+        </div>
       )}
     </div>
   );

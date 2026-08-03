@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Support\AvatarUrlResolver;
 use App\Services\Location\MapboxGeocodingService;
 use App\Services\Notification\NotificationService;
+use App\Services\FieldActivity\FieldActivitySessionService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +31,7 @@ class AttendanceService
         private readonly AttendanceAccessService $attendanceAccessService,
         private readonly NotificationService $notificationService,
         private readonly MapboxGeocodingService $mapboxGeocodingService,
+        private readonly FieldActivitySessionService $fieldActivitySessionService,
     ) {}
 
     public function clockIn(User $user, array $data): AttendanceRecord
@@ -135,7 +137,23 @@ class AttendanceService
             'dedupe_key' => 'attendance-clock-in:' . (int) $context->company->id . ':' . (int) $user->id . ':' . $attendanceDate,
         ]);
 
-        return $record->fresh();
+        $record = $record->fresh();
+        try {
+            $session = $this->fieldActivitySessionService->startForAttendance($record, $context->company);
+            Log::info('field_activity.lifecycle.attendance_clock_in_hook', [
+                'company_id' => (int) $context->company->id,
+                'attendance_record_id' => (int) $record->id,
+                'user_id' => (int) $record->user_id,
+                'field_activity_session_id' => $session?->id,
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('field_activity.start_on_clock_in_failed', [
+                'attendance_record_id' => $record->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        return $record;
     }
 
     public function clockOut(User $user, array $data): AttendanceRecord
@@ -230,7 +248,17 @@ class AttendanceService
             'dedupe_key' => 'attendance-clock-out:' . (int) $context->company->id . ':' . (int) $user->id . ':' . $attendanceDate,
         ]);
 
-        return $record->fresh();
+        $record = $record->fresh();
+        try {
+            $this->fieldActivitySessionService->endForAttendance($record, autoClosed: false, withNarrative: true);
+        } catch (Throwable $e) {
+            Log::warning('field_activity.end_on_clock_out_failed', [
+                'attendance_record_id' => $record->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        return $record;
     }
 
     public function todayForAgent(User $user, ?int $companyId = null): array
@@ -776,6 +804,27 @@ class AttendanceService
                     'is_auto_clocked_out' => true,
                     'work_duration_minutes' => $workDurationMinutes,
                 ]);
+
+                try {
+                    $summary = $this->fieldActivitySessionService->endForAttendance(
+                        $record->fresh() ?? $record,
+                        autoClosed: true,
+                        withNarrative: true,
+                    );
+                    Log::info('field_activity.lifecycle.auto_clock_out_hook', [
+                        'company_id' => (int) $record->company_id,
+                        'attendance_record_id' => (int) $record->id,
+                        'user_id' => (int) $record->user_id,
+                        'closed_at' => $closingTime->toIso8601String(),
+                        'summary_generated' => $summary !== null,
+                        'summary_unknown_stop_count' => $summary?->unknown_stop_count,
+                    ]);
+                } catch (Throwable $e) {
+                    Log::warning('field_activity.end_on_auto_clock_out_failed', [
+                        'attendance_record_id' => $record->id,
+                        'message' => $e->getMessage(),
+                    ]);
+                }
 
                 $this->notificationService->notifyUser((int) $record->user_id, [
                     'company_id' => (int) $record->company_id,

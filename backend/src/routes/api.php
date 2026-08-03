@@ -43,6 +43,8 @@ use App\Http\Controllers\Api\V1\Enterprise\CompleteFirstTimeSetupController;
 use App\Http\Controllers\Api\V1\Enterprise\EnterpriseLoginController;
 use App\Http\Controllers\Api\V1\Enterprise\SetupInfoController;
 use App\Http\Controllers\Api\V1\Enterprise\VerifyCompanyIdController;
+use App\Http\Controllers\Api\V1\FieldActivity\FieldActivityAgentController;
+use App\Http\Controllers\Api\V1\FieldActivity\FieldActivityManagementController;
 use App\Http\Controllers\Api\V1\GeographyController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\Internal\CompanyZoneController;
@@ -506,6 +508,23 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->name('map-snapshots');
             });
 
+            Route::prefix('field-activity')->name('field-activity.')->group(function (): void {
+                Route::get('/settings', [FieldActivityManagementController::class, 'settings'])
+                    ->name('settings.show');
+                Route::put('/settings', [FieldActivityManagementController::class, 'updateSettings'])
+                    ->middleware('throttle:api')
+                    ->name('settings.update');
+                Route::get('/analytics', [FieldActivityManagementController::class, 'analytics'])
+                    ->name('analytics');
+                Route::post('/alerts/scan', [FieldActivityManagementController::class, 'runAlerts'])
+                    ->middleware('throttle:api')
+                    ->name('alerts.scan');
+                Route::get('/agents/{agent}/journeys', [FieldActivityManagementController::class, 'agentJourneys'])
+                    ->name('agents.journeys');
+                Route::get('/journeys/{session}', [FieldActivityManagementController::class, 'showJourney'])
+                    ->name('journeys.show');
+            });
+
             Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
                 Route::get('/zones', [CompanyZoneController::class, 'index'])
                     ->middleware('throttle:api')
@@ -799,6 +818,26 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->name('map-snapshot');
             });
 
+            Route::prefix('field-activity')->name('field-activity.')->group(function (): void {
+                Route::get('/today', [FieldActivityAgentController::class, 'today'])->name('today');
+                Route::get('/daily-summary', [FieldActivityAgentController::class, 'dailySummary'])
+                    ->name('daily-summary');
+                Route::get('/pending-review', [FieldActivityAgentController::class, 'pendingReview'])
+                    ->name('pending-review');
+                Route::get('/journeys', [FieldActivityAgentController::class, 'journeys'])
+                    ->name('journeys.index');
+                Route::get('/journeys/{session}', [FieldActivityAgentController::class, 'showJourney'])
+                    ->name('journeys.show');
+                Route::post('/sessions/{session}/points', [FieldActivityAgentController::class, 'recordPoints'])
+                    ->middleware('throttle:api-heavy')
+                    ->name('sessions.points');
+                Route::get('/sessions/{session}/stops', [FieldActivityAgentController::class, 'stops'])
+                    ->name('sessions.stops');
+                Route::post('/stops/{stop}/classify', [FieldActivityAgentController::class, 'classifyStop'])
+                    ->middleware('throttle:api')
+                    ->name('stops.classify');
+            });
+
             Route::get('/dashboard/overview', DashboardOverviewController::class)
                 ->name('dashboard.overview');
 
@@ -962,6 +1001,49 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::get('/map-snapshot', [AttendanceAgentController::class, 'mapSnapshot'])
             ->middleware('access.role:agent')
             ->name('map-snapshot');
+    });
+
+    Route::prefix('field-activity')->name('field-activity.')->group(function (): void {
+        Route::get('/settings', [FieldActivityManagementController::class, 'settings'])
+            ->middleware('access.role:management')
+            ->name('settings.show');
+        Route::put('/settings', [FieldActivityManagementController::class, 'updateSettings'])
+            ->middleware(['access.role:management', 'throttle:api'])
+            ->name('settings.update');
+        Route::get('/analytics', [FieldActivityManagementController::class, 'analytics'])
+            ->middleware('access.role:management')
+            ->name('analytics');
+        Route::post('/alerts/scan', [FieldActivityManagementController::class, 'runAlerts'])
+            ->middleware(['access.role:management', 'throttle:api'])
+            ->name('alerts.scan');
+        Route::get('/agents/{agent}/journeys', [FieldActivityManagementController::class, 'agentJourneys'])
+            ->middleware('access.role:management')
+            ->name('agents.journeys');
+        Route::get('/journeys/{session}', [FieldActivityManagementController::class, 'showJourney'])
+            ->middleware('access.role:management')
+            ->name('journeys.show');
+
+        Route::get('/today', [FieldActivityAgentController::class, 'today'])
+            ->middleware('access.role:agent')
+            ->name('today');
+        Route::get('/daily-summary', [FieldActivityAgentController::class, 'dailySummary'])
+            ->middleware('access.role:agent')
+            ->name('daily-summary');
+        Route::get('/pending-review', [FieldActivityAgentController::class, 'pendingReview'])
+            ->middleware('access.role:agent')
+            ->name('pending-review');
+        Route::get('/journeys', [FieldActivityAgentController::class, 'journeys'])
+            ->middleware('access.role:agent')
+            ->name('journeys.index');
+        Route::post('/sessions/{session}/points', [FieldActivityAgentController::class, 'recordPoints'])
+            ->middleware(['access.role:agent', 'throttle:api-heavy'])
+            ->name('sessions.points');
+        Route::get('/sessions/{session}/stops', [FieldActivityAgentController::class, 'stops'])
+            ->middleware('access.role:agent')
+            ->name('sessions.stops');
+        Route::post('/stops/{stop}/classify', [FieldActivityAgentController::class, 'classifyStop'])
+            ->middleware(['access.role:agent', 'throttle:api'])
+            ->name('stops.classify');
     });
 
     Route::prefix('internal-users')->name('internal-users.')->group(function (): void {

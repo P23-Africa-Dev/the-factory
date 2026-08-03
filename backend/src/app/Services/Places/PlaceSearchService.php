@@ -54,6 +54,8 @@ final class PlaceSearchService
         string $source = 'dashboard',
         ?string $ip = null,
     ): PlaceSearchOutcome {
+        $this->fanoutLimit = max(1, $limit);
+
         return $this->runListOperation(
             operation: 'autocomplete',
             sku: 'places.autocomplete',
@@ -65,7 +67,12 @@ final class PlaceSearchService
             limit: $limit,
             source: $source,
             ip: $ip,
-            invoker: fn (PlaceSearchProviderInterface $p, ?string $q): array => $p->autocomplete((string) $q, $lat, $lng, $limit),
+            invoker: fn (PlaceSearchProviderInterface $p, ?string $q): array => $p->autocomplete(
+                (string) $q,
+                $lat,
+                $lng,
+                max(1, $this->fanoutLimit),
+            ),
         );
     }
 
@@ -79,6 +86,8 @@ final class PlaceSearchService
         string $source = 'dashboard',
         ?string $ip = null,
     ): PlaceSearchOutcome {
+        $this->fanoutLimit = max(1, $limit);
+
         return $this->runListOperation(
             operation: 'search',
             sku: 'places.search',
@@ -90,7 +99,12 @@ final class PlaceSearchService
             limit: $limit,
             source: $source,
             ip: $ip,
-            invoker: fn (PlaceSearchProviderInterface $p, ?string $q): array => $p->search((string) $q, $lat, $lng, $limit),
+            invoker: fn (PlaceSearchProviderInterface $p, ?string $q): array => $p->search(
+                (string) $q,
+                $lat,
+                $lng,
+                max(1, $this->fanoutLimit),
+            ),
         );
     }
 
@@ -108,6 +122,8 @@ final class PlaceSearchService
         string $source = 'dashboard',
         ?string $ip = null,
     ): PlaceSearchOutcome {
+        $this->fanoutLimit = max(1, $limit);
+
         return $this->runListOperation(
             operation: 'nearby',
             sku: 'places.nearby',
@@ -119,8 +135,14 @@ final class PlaceSearchService
             limit: $limit,
             source: $source,
             ip: $ip,
-            cacheParts: [$lat, $lng, $radiusM, $categories ?? [], $limit],
-            invoker: fn (PlaceSearchProviderInterface $p, ?string $q): array => $p->nearby($lat, $lng, $radiusM, $categories, $limit),
+            cacheParts: $this->cache->nearbyParts($lat, $lng, $radiusM, $categories ?? []),
+            invoker: fn (PlaceSearchProviderInterface $p, ?string $q): array => $p->nearby(
+                $lat,
+                $lng,
+                $radiusM,
+                $categories,
+                max(1, $this->fanoutLimit),
+            ),
         );
     }
 
@@ -134,6 +156,7 @@ final class PlaceSearchService
     ): PlaceSearchOutcome {
         $started = hrtime(true);
         $cacheKey = $this->cache->makeKey('details', [$providerHint, $id]);
+
         $cached = $this->cache->get('details', $cacheKey);
         if (is_array($cached)) {
             $outcome = $this->outcomeFromCache($cached, $started);
@@ -142,82 +165,104 @@ final class PlaceSearchService
             return $outcome;
         }
 
-        $provider = $this->providerByName($providerHint) ?? $this->geoapify;
-        $tried = [];
-        $result = null;
-        $creditsMeta = null;
+        $producerOutcome = null;
+        $envelope = $this->cache->rememberWithLock('details', $cacheKey, function () use (
+            $id,
+            $providerHint,
+            $company,
+            $source,
+            &$producerOutcome,
+            $started,
+        ): array {
+            $provider = $this->providerByName($providerHint) ?? $this->geoapify;
+            $tried = [];
+            $result = null;
+            $creditsMeta = null;
 
-        if ($company !== null) {
-            $snapshot = $this->mapCredits->snapshot($company);
-            if (! empty($snapshot['metered']) && ! empty($snapshot['exhausted'])) {
-                return $this->emptyBlocked($started, [
-                    'balance' => $snapshot['balance'] ?? 0,
-                    'low' => true,
-                    'blocked' => true,
-                    'metered' => true,
-                ]);
-            }
-        }
+            if ($company !== null) {
+                $snapshot = $this->mapCredits->snapshot($company);
+                if (! empty($snapshot['metered']) && ! empty($snapshot['exhausted'])) {
+                    $blocked = $this->emptyBlocked($started, [
+                        'balance' => $snapshot['balance'] ?? 0,
+                        'low' => true,
+                        'blocked' => true,
+                        'metered' => true,
+                    ]);
+                    $producerOutcome = $blocked;
 
-        if ($provider->isConfigured()) {
-            $tried[] = $provider->name();
-            try {
-                $result = $provider->details($id);
-            } catch (ProviderException $e) {
-                Log::info('places.provider_failed', ['provider' => $e->provider, 'reason' => $e->reason, 'op' => 'details']);
-            }
-        }
-
-        if ($result === null && (bool) config('places.fallback_enabled', true)) {
-            foreach ($this->providers as $fallback) {
-                if ($fallback->name() === $provider->name() || ! $fallback->isConfigured()) {
-                    continue;
+                    return $blocked->toApiEnvelope();
                 }
-                if ($fallback->name() === 'google' && $this->usage->googleBudgetExceeded()) {
-                    continue;
-                }
-                $tried[] = $fallback->name();
+            }
+
+            if ($provider->isConfigured()) {
+                $tried[] = $provider->name();
                 try {
-                    $result = $fallback->details($id);
-                    if ($result !== null) {
-                        if ($fallback->name() === 'google') {
-                            $this->usage->recordGoogleCall();
-                        }
-                        break;
-                    }
+                    $result = $provider->details($id);
                 } catch (ProviderException $e) {
                     Log::info('places.provider_failed', ['provider' => $e->provider, 'reason' => $e->reason, 'op' => 'details']);
                 }
             }
-        }
 
-        if ($result !== null) {
-            $gate = $this->chargeIfNeeded($company, 'places.details', $result->provider, $source);
-            if ($gate['blocked']) {
-                return $this->emptyBlocked($started, $gate['credits']);
+            if ($result === null && (bool) config('places.fallback_enabled', true)) {
+                foreach ($this->providers as $fallback) {
+                    if ($fallback->name() === $provider->name() || ! $fallback->isConfigured()) {
+                        continue;
+                    }
+                    if ($fallback->name() === 'google' && $this->usage->googleBudgetExceeded()) {
+                        continue;
+                    }
+                    $tried[] = $fallback->name();
+                    try {
+                        $result = $fallback->details($id);
+                        if ($result !== null) {
+                            if ($fallback->name() === 'google') {
+                                $this->usage->recordGoogleCall();
+                            }
+                            break;
+                        }
+                    } catch (ProviderException $e) {
+                        Log::info('places.provider_failed', ['provider' => $e->provider, 'reason' => $e->reason, 'op' => 'details']);
+                    }
+                }
             }
-            $creditsMeta = $gate['credits'];
+
+            if ($result !== null) {
+                $gate = $this->chargeIfNeeded($company, 'places.details', $result->provider, $source);
+                if ($gate['blocked']) {
+                    $blocked = $this->emptyBlocked($started, $gate['credits']);
+                    $producerOutcome = $blocked;
+
+                    return $blocked->toApiEnvelope();
+                }
+                $creditsMeta = $gate['credits'];
+            }
+
+            $results = $result !== null ? [$result] : [];
+            $confidence = $this->scorer->score($results, 'details');
+            $latencyMs = (int) ((hrtime(true) - $started) / 1_000_000);
+            $outcome = new PlaceSearchOutcome(
+                results: $results,
+                providerFinal: $result?->provider,
+                providersTried: $tried,
+                cacheHit: false,
+                fallbackDepth: max(0, count($tried) - 1),
+                confidence: $confidence,
+                latencyMs: $latencyMs,
+                credits: $creditsMeta,
+                status: $results === [] ? 'empty' : 'ok',
+            );
+            $producerOutcome = $outcome;
+
+            return $outcome->toApiEnvelope();
+        });
+
+        if ($producerOutcome !== null) {
+            $this->logEvent($producerOutcome, 'places.details', $company, $user, $source, $ip, null, $id);
+
+            return $producerOutcome;
         }
 
-        $results = $result !== null ? [$result] : [];
-        $confidence = $this->scorer->score($results, 'details');
-        $latencyMs = (int) ((hrtime(true) - $started) / 1_000_000);
-        $outcome = new PlaceSearchOutcome(
-            results: $results,
-            providerFinal: $result?->provider,
-            providersTried: $tried,
-            cacheHit: false,
-            fallbackDepth: max(0, count($tried) - 1),
-            confidence: $confidence,
-            latencyMs: $latencyMs,
-            credits: $creditsMeta,
-            status: $results === [] ? 'empty' : 'ok',
-        );
-
-        if ($result !== null) {
-            $this->cache->put('details', $cacheKey, $outcome->toApiEnvelope());
-        }
-
+        $outcome = $this->outcomeFromCache(is_array($envelope) ? $envelope : [], $started);
         $this->logEvent($outcome, 'places.details', $company, $user, $source, $ip, null, $id);
 
         return $outcome;
@@ -240,6 +285,7 @@ final class PlaceSearchService
             lng: null,
             source: $source,
             ip: $ip,
+            cacheParts: [$this->cache->normalizeQuery($query)],
             invoker: fn (PlaceSearchProviderInterface $p, ?string $q): ?PlaceResult => $p->geocode((string) $q),
         );
     }
@@ -262,7 +308,7 @@ final class PlaceSearchService
             lng: $lng,
             source: $source,
             ip: $ip,
-            cacheParts: [$lat, $lng],
+            cacheParts: $this->cache->reverseParts($lat, $lng),
             invoker: fn (PlaceSearchProviderInterface $p, ?string $q): ?PlaceResult => $p->reverseGeocode($lat, $lng),
         );
     }
@@ -286,75 +332,154 @@ final class PlaceSearchService
         ?array $cacheParts = null,
     ): PlaceSearchOutcome {
         $started = hrtime(true);
-        $parts = $cacheParts ?? [strtolower(trim((string) $query)), $lat, $lng, $limit];
+        $parts = $cacheParts ?? $this->cache->listSearchParts($query, $lat, $lng);
         $cacheKey = $this->cache->makeKey($operation, $parts);
+        $storeCap = $this->storeCapFor($operation, $limit);
+
         $cached = $this->cache->get($operation, $cacheKey);
         if (is_array($cached)) {
-            $outcome = $this->outcomeFromCache($cached, $started);
+            $outcome = $this->outcomeFromCache($cached, $started, $limit);
             $this->logEvent($outcome, $sku, $company, $user, $source, $ip, $query);
 
             return $outcome;
         }
 
-        if ($company !== null) {
-            $snapshot = $this->mapCredits->snapshot($company);
-            if (! empty($snapshot['metered']) && ! empty($snapshot['exhausted'])) {
-                return $this->emptyBlocked($started, [
-                    'balance' => $snapshot['balance'] ?? 0,
-                    'low' => true,
-                    'blocked' => true,
-                    'metered' => true,
-                ]);
+        $producerOutcome = null;
+        $envelope = $this->cache->rememberWithLock($operation, $cacheKey, function () use (
+            $operation,
+            $sku,
+            $query,
+            $company,
+            $lat,
+            $lng,
+            $limit,
+            $source,
+            $invoker,
+            $storeCap,
+            $started,
+            &$producerOutcome,
+        ): array {
+            if ($company !== null) {
+                $snapshot = $this->mapCredits->snapshot($company);
+                if (! empty($snapshot['metered']) && ! empty($snapshot['exhausted'])) {
+                    $blocked = $this->emptyBlocked($started, [
+                        'balance' => $snapshot['balance'] ?? 0,
+                        'low' => true,
+                        'blocked' => true,
+                        'metered' => true,
+                    ]);
+                    $producerOutcome = $blocked;
+
+                    return $blocked->toApiEnvelope();
+                }
             }
-        }
 
-        $fanoutOps = in_array($operation, ['autocomplete', 'search'], true)
-            && (bool) config('places.fanout.enabled', true);
+            $fetchLimit = max($limit, $storeCap);
+            $this->fanoutLimit = $fetchLimit;
+            $fanoutOps = in_array($operation, ['autocomplete', 'search'], true)
+                && (bool) config('places.fanout.enabled', true);
 
-        if ($fanoutOps) {
-            $bundle = $this->runFanout($operation, $query, $lat, $lng, $limit, $invoker);
-        } else {
-            $bundle = $this->runSequentialWaterfall($operation, $query, $lat, $lng, $invoker);
-        }
-
-        $results = array_slice($bundle['results'], 0, max(1, $limit));
-        $bestProvider = $bundle['providerFinal'];
-        $tried = $bundle['providersTried'];
-        $fallbackDepth = $bundle['fallbackDepth'];
-        $bestScore = $bundle['confidence'];
-        $creditsMeta = null;
-
-        if ($bestProvider !== null && $results !== []) {
-            $chargeProvider = (bool) config('places.fanout.charge_sku_once', true)
-                ? $bestProvider
-                : $bestProvider;
-            $gate = $this->chargeIfNeeded($company, $sku, $chargeProvider, $source);
-            if ($gate['blocked']) {
-                return $this->emptyBlocked($started, $gate['credits']);
+            if ($fanoutOps) {
+                $bundle = $this->runFanout($operation, $query, $lat, $lng, $fetchLimit, $invoker);
+            } else {
+                $bundle = $this->runSequentialWaterfall($operation, $query, $lat, $lng, $invoker);
             }
-            $creditsMeta = $gate['credits'];
+
+            $results = array_slice($bundle['results'], 0, $storeCap);
+            $bestProvider = $bundle['providerFinal'];
+            $tried = $bundle['providersTried'];
+            $fallbackDepth = $bundle['fallbackDepth'];
+            $bestScore = $bundle['confidence'];
+            $creditsMeta = null;
+            $sourcesMix = $this->buildSourcesMix($results);
+
+            if ($bestProvider !== null && $results !== []) {
+                $gate = $this->chargeIfNeeded($company, $sku, $bestProvider, $source);
+                if ($gate['blocked']) {
+                    $blocked = $this->emptyBlocked($started, $gate['credits']);
+                    $producerOutcome = $blocked;
+
+                    return $blocked->toApiEnvelope();
+                }
+                $creditsMeta = $gate['credits'];
+            }
+
+            $latencyMs = (int) ((hrtime(true) - $started) / 1_000_000);
+            $outcome = new PlaceSearchOutcome(
+                results: $results,
+                providerFinal: $bestProvider,
+                providersTried: $tried,
+                cacheHit: false,
+                fallbackDepth: $fallbackDepth,
+                confidence: $bestScore,
+                latencyMs: $latencyMs,
+                credits: $creditsMeta,
+                status: $results === [] ? 'empty' : 'ok',
+                resultLimit: $storeCap,
+                sourcesMix: $sourcesMix,
+            );
+            $producerOutcome = $outcome;
+
+            return $outcome->toApiEnvelope();
+        });
+
+        if ($producerOutcome !== null) {
+            $sliced = $this->sliceOutcome($producerOutcome, $limit);
+            $this->logEvent($sliced, $sku, $company, $user, $source, $ip, $query);
+
+            return $sliced;
         }
 
-        $latencyMs = (int) ((hrtime(true) - $started) / 1_000_000);
-        $outcome = new PlaceSearchOutcome(
-            results: $results,
-            providerFinal: $bestProvider,
-            providersTried: $tried,
-            cacheHit: false,
-            fallbackDepth: $fallbackDepth,
-            confidence: $bestScore,
-            latencyMs: $latencyMs,
-            credits: $creditsMeta,
-            status: $results === [] ? 'empty' : 'ok',
-        );
-
-        if ($results !== []) {
-            $this->cache->put($operation, $cacheKey, $outcome->toApiEnvelope());
-        }
-
+        $outcome = $this->outcomeFromCache(is_array($envelope) ? $envelope : [], $started, $limit);
         $this->logEvent($outcome, $sku, $company, $user, $source, $ip, $query);
 
         return $outcome;
+    }
+
+    private function storeCapFor(string $operation, int $limit): int
+    {
+        return match ($operation) {
+            'autocomplete' => max(1, min(15, (int) config('places.max_results_autocomplete', 12))),
+            'search' => max(1, min(20, (int) config('places.max_results_search', 15))),
+            'nearby' => max(1, min(40, max($limit, 20))),
+            default => max(1, $limit),
+        };
+    }
+
+    private function sliceOutcome(PlaceSearchOutcome $outcome, int $limit): PlaceSearchOutcome
+    {
+        $cap = max(1, $limit);
+        if (count($outcome->results) <= $cap) {
+            return new PlaceSearchOutcome(
+                results: $outcome->results,
+                providerFinal: $outcome->providerFinal,
+                providersTried: $outcome->providersTried,
+                cacheHit: $outcome->cacheHit,
+                fallbackDepth: $outcome->fallbackDepth,
+                confidence: $outcome->confidence,
+                latencyMs: $outcome->latencyMs,
+                credits: $outcome->credits,
+                status: $outcome->status,
+                resultLimit: $cap,
+                sourcesMix: $outcome->sourcesMix ?? $this->buildSourcesMix($outcome->results),
+            );
+        }
+
+        $sliced = array_slice($outcome->results, 0, $cap);
+
+        return new PlaceSearchOutcome(
+            results: $sliced,
+            providerFinal: $outcome->providerFinal,
+            providersTried: $outcome->providersTried,
+            cacheHit: $outcome->cacheHit,
+            fallbackDepth: $outcome->fallbackDepth,
+            confidence: $outcome->confidence,
+            latencyMs: $outcome->latencyMs,
+            credits: $outcome->credits,
+            status: $sliced === [] ? 'empty' : $outcome->status,
+            resultLimit: $cap,
+            sourcesMix: $this->buildSourcesMix($sliced),
+        );
     }
 
     /**
@@ -736,8 +861,8 @@ final class PlaceSearchService
                 $out[] = $item;
                 continue;
             }
-            // Never drop a coord-bearing POI in favor of a name-only stub.
-            $out[$index] = $this->preferPlace($out[$index], $item);
+            // One card per place; union sources; keep canonical winner fields.
+            $out[$index] = $this->mergePlaceRecords($out[$index], $item);
         }
 
         return array_values($out);
@@ -777,15 +902,63 @@ final class PlaceSearchService
                 continue;
             }
 
-            // Same name and at least one side lacks coords — treat as the same place
-            // so preferPlace() can keep the coord-bearing candidate.
+            // Same name and at least one side lacks coords — treat as the same place.
             return $index;
         }
 
         return null;
     }
 
-    private function preferPlace(
+    private function mergePlaceRecords(
+        PlaceSuggestion|PlaceResult $a,
+        PlaceSuggestion|PlaceResult $b,
+    ): PlaceSuggestion|PlaceResult {
+        $winner = $this->pickCanonicalPlace($a, $b);
+        $loser = $winner === $a ? $b : $a;
+        $sources = $this->unionSources($a, $b);
+
+        if ($winner instanceof PlaceResult) {
+            return new PlaceResult(
+                id: $winner->id,
+                name: $winner->name,
+                formattedAddress: $winner->formattedAddress !== '' ? $winner->formattedAddress : $loser->formattedAddress,
+                latitude: $winner->latitude,
+                longitude: $winner->longitude,
+                provider: $winner->provider,
+                confidence: $winner->confidence ?? ($loser instanceof PlaceResult ? $loser->confidence : $loser->confidence),
+                categories: $winner->categories !== [] ? $winner->categories : $loser->categories,
+                phone: $winner->phone ?? ($loser instanceof PlaceResult ? $loser->phone : null),
+                website: $winner->website ?? ($loser instanceof PlaceResult ? $loser->website : null),
+                rating: $winner->rating ?? ($loser instanceof PlaceResult ? $loser->rating : null),
+                openingHours: $winner->openingHours ?? ($loser instanceof PlaceResult ? $loser->openingHours : null),
+                bbox: $winner->bbox ?? ($loser instanceof PlaceResult ? $loser->bbox : null),
+                sources: $sources,
+                rawMeta: $winner->rawMeta,
+            );
+        }
+
+        $winnerLat = $winner->latitude;
+        $winnerLng = $winner->longitude;
+        if (($winnerLat === null || $winnerLng === null) && $loser->latitude !== null && $loser->longitude !== null) {
+            $winnerLat = $loser->latitude;
+            $winnerLng = $loser->longitude;
+        }
+
+        return new PlaceSuggestion(
+            id: $winner->id,
+            name: $winner->name,
+            formattedAddress: $winner->formattedAddress !== '' ? $winner->formattedAddress : $loser->formattedAddress,
+            provider: $winner->provider,
+            latitude: $winnerLat,
+            longitude: $winnerLng,
+            confidence: $winner->confidence ?? $loser->confidence,
+            categories: $winner->categories !== [] ? $winner->categories : $loser->categories,
+            sources: $sources,
+            rawMeta: $winner->rawMeta,
+        );
+    }
+
+    private function pickCanonicalPlace(
         PlaceSuggestion|PlaceResult $a,
         PlaceSuggestion|PlaceResult $b,
     ): PlaceSuggestion|PlaceResult {
@@ -814,6 +987,59 @@ final class PlaceSearchService
         $bc = $b->confidence ?? 0.0;
 
         return $bc > $ac ? $b : $a;
+    }
+
+    /**
+     * @return list<array{provider: string, id: string}>
+     */
+    private function unionSources(PlaceSuggestion|PlaceResult $a, PlaceSuggestion|PlaceResult $b): array
+    {
+        $merged = [];
+        foreach (array_merge($a->resolvedSources(), $b->resolvedSources()) as $row) {
+            $provider = (string) ($row['provider'] ?? '');
+            $id = (string) ($row['id'] ?? '');
+            if ($provider === '') {
+                continue;
+            }
+            if (! isset($merged[$provider])) {
+                $merged[$provider] = ['provider' => $provider, 'id' => $id];
+            }
+        }
+
+        return array_values($merged);
+    }
+
+    /**
+     * @param  list<PlaceSuggestion|PlaceResult>  $results
+     * @return array<string, int>
+     */
+    private function buildSourcesMix(array $results): array
+    {
+        $mix = [
+            'geoapify' => 0,
+            'foursquare' => 0,
+            'google' => 0,
+            'multi_source' => 0,
+        ];
+        foreach ($results as $item) {
+            $sources = $item->resolvedSources();
+            $providers = [];
+            foreach ($sources as $row) {
+                $p = (string) ($row['provider'] ?? '');
+                if ($p === '') {
+                    continue;
+                }
+                $providers[$p] = true;
+                if (isset($mix[$p])) {
+                    $mix[$p]++;
+                }
+            }
+            if (count($providers) > 1) {
+                $mix['multi_source']++;
+            }
+        }
+
+        return $mix;
     }
 
     /**
@@ -968,7 +1194,7 @@ final class PlaceSearchService
     /**
      * @param  array<string, mixed>  $cached
      */
-    private function outcomeFromCache(array $cached, int|float $started): PlaceSearchOutcome
+    private function outcomeFromCache(array $cached, int|float $started, ?int $limit = null): PlaceSearchOutcome
     {
         $data = is_array($cached['data'] ?? null) ? $cached['data'] : [];
         $meta = is_array($cached['meta'] ?? null) ? $cached['meta'] : [];
@@ -991,6 +1217,7 @@ final class PlaceSearchService
                     website: isset($row['website']) ? (string) $row['website'] : null,
                     rating: isset($row['rating']) ? (float) $row['rating'] : null,
                     openingHours: isset($row['opening_hours']) ? (string) $row['opening_hours'] : null,
+                    sources: $this->sourcesFromCachedRow($row),
                 );
             } else {
                 $results[] = new PlaceSuggestion(
@@ -1002,9 +1229,16 @@ final class PlaceSearchService
                     longitude: isset($row['longitude']) ? (float) $row['longitude'] : null,
                     confidence: isset($row['confidence']) ? (float) $row['confidence'] : null,
                     categories: is_array($row['categories'] ?? null) ? array_values(array_map('strval', $row['categories'])) : [],
+                    sources: $this->sourcesFromCachedRow($row),
                 );
             }
         }
+
+        if ($limit !== null) {
+            $results = array_slice($results, 0, max(1, $limit));
+        }
+
+        $sourcesMix = $this->buildSourcesMix($results);
 
         return new PlaceSearchOutcome(
             results: $results,
@@ -1015,8 +1249,33 @@ final class PlaceSearchService
             confidence: (float) ($meta['confidence'] ?? 0),
             latencyMs: (int) ((hrtime(true) - $started) / 1_000_000),
             credits: null,
-            status: 'ok',
+            status: $results === [] ? 'empty' : (string) ($meta['status'] ?? 'ok'),
+            resultLimit: $limit ?? (isset($meta['result_limit']) ? (int) $meta['result_limit'] : null),
+            sourcesMix: $sourcesMix,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return list<array{provider: string, id: string}>
+     */
+    private function sourcesFromCachedRow(array $row): array
+    {
+        $sources = [];
+        if (is_array($row['sources'] ?? null)) {
+            foreach ($row['sources'] as $src) {
+                if (! is_array($src)) {
+                    continue;
+                }
+                $provider = (string) ($src['provider'] ?? '');
+                $id = (string) ($src['id'] ?? '');
+                if ($provider !== '') {
+                    $sources[] = ['provider' => $provider, 'id' => $id];
+                }
+            }
+        }
+
+        return $sources;
     }
 
     private function logEvent(
@@ -1062,6 +1321,7 @@ final class PlaceSearchService
             'query_truncated' => $truncated,
             'status' => $outcome->status,
             'ip_hash' => $ip !== null ? hash('sha256', $ip) : null,
+            'sources_mix' => $outcome->sourcesMix,
         ]);
     }
 }

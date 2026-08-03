@@ -43,7 +43,11 @@ class PlacesAnalyticsController extends Controller
             'foursquare_enabled' => ['nullable', 'boolean'],
             'google_enabled' => ['nullable', 'boolean'],
             'cache_enabled' => ['nullable', 'boolean'],
+            'show_provider_attribution' => ['nullable', 'boolean'],
+            'foursquare_premium_fields' => ['nullable', 'boolean'],
             'quality_threshold' => ['required', 'numeric', 'min:0.1', 'max:1'],
+            'max_results_autocomplete' => ['required', 'integer', 'min:1', 'max:15'],
+            'max_results_search' => ['required', 'integer', 'min:1', 'max:20'],
         ]);
 
         $this->settings->update([
@@ -51,7 +55,11 @@ class PlacesAnalyticsController extends Controller
             'foursquare_enabled' => $request->boolean('foursquare_enabled'),
             'google_enabled' => $request->boolean('google_enabled'),
             'cache_enabled' => $request->boolean('cache_enabled'),
+            'show_provider_attribution' => $request->boolean('show_provider_attribution'),
+            'foursquare_premium_fields' => $request->boolean('foursquare_premium_fields'),
             'quality_threshold' => (float) $validated['quality_threshold'],
+            'max_results_autocomplete' => (int) $validated['max_results_autocomplete'],
+            'max_results_search' => (int) $validated['max_results_search'],
         ], $admin);
 
         return redirect()

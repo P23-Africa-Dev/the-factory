@@ -42,6 +42,12 @@ Schedule::command('meetings:dispatch-reminders')->everyMinute();
 // Auto close attendance records at/after configured company closing times.
 Schedule::command('attendance:auto-clockout')->everyTenMinutes();
 
+// Field Activity Intelligence: EOD close, alerts, optional narratives.
+Schedule::command('field-activity:eod --narrative')->hourly();
+
+// Prune old field activity trails.
+Schedule::command('field-activity:prune')->dailyAt('02:30');
+
 // Generate attendance payroll summaries for the previous month.
 Schedule::command('attendance:generate-monthly-payroll')->monthlyOn(1, '00:30');
 

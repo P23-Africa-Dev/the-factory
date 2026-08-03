@@ -13,7 +13,6 @@ import {
 import { useEffectiveMapProvider, type EffectiveMapProviderState } from '@/hooks/use-effective-map-provider';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 import { useTrackingStore } from '@/store/tracking';
-import { useTrackingWebSocket } from '@/hooks/use-tracking-ws';
 import { RouteHistoryPanel } from '@/components/map/RouteHistoryPanel';
 import type { LiveTaskState } from '@/types/tracking';
 import {
@@ -89,6 +88,7 @@ import {
   type PlaceSuggestion,
   type RetrievedPlace,
 } from '@/lib/utils/place-search';
+import { placeAttributionLabel } from '@/lib/utils/place-attribution';
 import {
   fetchRecentPlaces,
   getLocalRecentPlaces,
@@ -488,6 +488,16 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     });
   }, [setSelectedTaskId]);
 
+  // Deep-link from live-feed alerts: /map?taskId=123 (coords optional)
+  const deepLinkTaskId = Number.parseInt(searchParams.get('taskId') ?? '', 10);
+  useEffect(() => {
+    if (!Number.isFinite(deepLinkTaskId) || deepLinkTaskId <= 0) return;
+    const task = liveTasks[deepLinkTaskId];
+    if (!task || !hasUsableTaskPosition(task)) return;
+    if (selectedTaskId === deepLinkTaskId) return;
+    handleSelectTask(deepLinkTaskId);
+  }, [deepLinkTaskId, liveTasks, selectedTaskId, handleSelectTask]);
+
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {
       if (!prev) {
@@ -805,7 +815,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       suggestPlaces(query, {
         sessionToken: searchSessionTokenRef.current,
         proximity,
-        limit: 6,
+        limit: 12,
         token,
         signal: abort.signal,
       })
@@ -1625,9 +1635,16 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
                     {result.category.replace(/_/g, ' ')}
                   </span>
                 )}
-                {result.provider === 'google' && (
-                  <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Google</span>
-                )}
+                {(() => {
+                  const label = placeAttributionLabel(
+                    result.sources,
+                    result.provider,
+                    result.attributionVisible,
+                  );
+                  return label ? (
+                    <span className="ml-1.5 text-[9px] font-medium text-slate-400">{label}</span>
+                  ) : null;
+                })()}
                 {result.placeFormatted && result.placeFormatted !== result.name && (
                   <span className="block text-[11px] text-slate-400 truncate">{result.placeFormatted}</span>
                 )}
@@ -1695,7 +1712,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             isInitialHydrating={isInitialHydrating}
             followAllActive={followAllActive}
             showHistory={showHistoryFeeds}
-            searchQuery={leftSearchQuery || searchQuery}
+            searchQuery={leftSearchQuery}
             onToggleHistory={() => setShowHistoryFeeds((prev) => !prev)}
             onToggleFollowAll={handleToggleFollowAll}
             onSelectTask={handleSelectTask}
@@ -2098,6 +2115,15 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     map.panTo({ lat, lng });
     if (map.getZoom() < 15.5) map.setZoom(15.5);
   }, [setSelectedTaskId]);
+
+  const deepLinkTaskIdGoogle = Number.parseInt(searchParams.get('taskId') ?? '', 10);
+  useEffect(() => {
+    if (!Number.isFinite(deepLinkTaskIdGoogle) || deepLinkTaskIdGoogle <= 0) return;
+    const task = liveTasks[deepLinkTaskIdGoogle];
+    if (!task || !hasUsableTaskPosition(task)) return;
+    if (selectedTaskId === deepLinkTaskIdGoogle) return;
+    handleSelectTask(deepLinkTaskIdGoogle);
+  }, [deepLinkTaskIdGoogle, liveTasks, selectedTaskId, handleSelectTask]);
 
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {
@@ -2852,7 +2878,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             isInitialHydrating={isInitialHydrating}
             followAllActive={followAllActive}
             showHistory={showHistoryFeeds}
-            searchQuery={leftSearchQuery || searchQuery}
+            searchQuery={leftSearchQuery}
             onToggleHistory={() => setShowHistoryFeeds((prev) => !prev)}
             onToggleFollowAll={handleToggleFollowAll}
             onSelectTask={handleSelectTask}
@@ -2998,7 +3024,8 @@ function HydrationBridge({
 }: {
   onHydrationChange: (isHydrating: boolean) => void;
 }) {
-  const { isInitialHydrating } = useTrackingWebSocket();
+  // WS lives in dashboard layout (GlobalTrackingWsBridge). Map only mirrors hydrate state.
+  const isInitialHydrating = useTrackingStore((s) => s.isInitialHydrating);
 
   useEffect(() => {
     onHydrationChange(isInitialHydrating);
