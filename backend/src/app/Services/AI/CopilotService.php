@@ -1149,6 +1149,18 @@ class CopilotService
         if (is_string($dueDateText) && trim($dueDateText) !== '') {
             $text = strtolower(trim($dueDateText));
 
+            if (preg_match('/\bnext\s+week\b/i', $text) === 1) {
+                return now()->addWeek()->endOfWeek(\Carbon\CarbonInterface::FRIDAY)->setTime(17, 0)->toDateTimeString();
+            }
+
+            if (preg_match('/\bthis\s+week\b/i', $text) === 1) {
+                $thisFriday = now()->endOfWeek(\Carbon\CarbonInterface::FRIDAY)->setTime(17, 0);
+                if ($thisFriday->lessThanOrEqualTo(now())) {
+                    $thisFriday = $thisFriday->addWeek();
+                }
+                return $thisFriday->toDateTimeString();
+            }
+
             if (preg_match('/\btomorrow(?:\s+(morning|afternoon|evening|night))?\b/i', $text, $m) === 1) {
                 $candidate = now()->addDay();
                 $part = strtolower((string) ($m[1] ?? ''));
@@ -1797,6 +1809,9 @@ class CopilotService
                     ->on('company_users.user_id', '=', 'users.id')
                     ->where('company_users.company_id', '=', $resolvedCompanyId)
             )
+            ->when($context['role'] === 'supervisor', function ($query) use ($user): void {
+                $query->where('users.supervisor_user_id', $user->id);
+            })
             ->when($search !== '', function ($query) use ($search): void {
                 $like = '%' . $search . '%';
                 $query->where(static function ($nested) use ($like): void {
