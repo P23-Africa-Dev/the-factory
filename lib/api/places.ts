@@ -17,6 +17,7 @@ export type PlacesApiPlace = {
   rating?: number | null;
   opening_hours?: string | null;
   bbox?: [number, number, number, number] | null;
+  sources?: { provider: string; id: string }[];
 };
 
 export type PlacesApiMeta = {
@@ -33,6 +34,10 @@ export type PlacesApiMeta = {
     metered?: boolean;
   } | null;
   status?: string;
+  attribution_visible?: boolean;
+  foursquare_premium?: boolean;
+  result_limit?: number | null;
+  sources_mix?: Record<string, number> | null;
 };
 
 type PlacesEnvelope = {

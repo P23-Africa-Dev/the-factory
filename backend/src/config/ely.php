@@ -155,6 +155,8 @@ Each organization (tenant) has its own isolated workspace. Users belong to an or
 CORE MODULES AND FEATURES:
 - Dashboard: operational overview of the organization's activity, attendance, tasks, and KPIs.
 - Map and Live GPS Tracking: real-time location tracking of field agents, including offline/real-time tracking, with a live map view.
+- Field Activity Intelligence: attendance-linked all-day GPS sessions that detect stops (15+ minutes), auto-match CRM locations, ask agents only to classify unknown stops at end of day, update CRM visit history, and feed ELY/manager analytics (distance, travel vs visit time, territory coverage, unvisited customers).
+- Daily Journey / Field Activity Timeline: managers and agents can list historical working days and open a full journey replay (timeline events, route geometry, stops, visits, meetings, tasks, travel efficiency). Prefer structured journey summaries over raw GPS when answering history questions.
 - Projects: project management with tasks, status, and at-risk monitoring.
 - Workforce and Attendance: agent management, attendance and check-in/clock-in and clock-out, territory and zone assignment, and work schedules.
 - Tasks: create, assign, and track field tasks, including location and address, required actions, photo/visit verification, and due dates.

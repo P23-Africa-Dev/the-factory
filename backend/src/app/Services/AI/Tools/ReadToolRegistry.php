@@ -27,6 +27,7 @@ use App\Services\Dashboard\DashboardAggregateService;
 use App\Services\Drive\CompanyDriveService;
 use App\Support\UserDisplayNameResolver;
 use App\Services\Tracking\AgentLocationSnapshotService;
+use App\Services\FieldActivity\FieldActivityElyService;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -51,6 +52,7 @@ class ReadToolRegistry
         private readonly CompanyDriveService $companyDriveService,
         private readonly DriveFileContentReader $driveFileContentReader,
         private readonly TaskInferenceService $taskInferenceService,
+        private readonly FieldActivityElyService $fieldActivityElyService,
     ) {}
 
     public function execute(string $tool, User $user, int $companyId, array $args = []): array
@@ -78,6 +80,13 @@ class ReadToolRegistry
             'map.pinned_locations_count' => $this->pinnedLocationsCount($user, $companyId, $args),
             'crm.calls_count' => $this->crmCallsCount($user, $companyId, $args),
             'attendance.duration_summary' => $this->attendanceDurationSummary($user, $companyId, $args),
+            'field.daily_summary' => $this->fieldActivityElyService->dailySummary($user, $companyId, $args),
+            'field.agent_visits' => $this->fieldActivityElyService->agentVisits($user, $companyId, $args),
+            'field.unvisited_customers' => $this->fieldActivityElyService->unvisitedCustomers($user, $companyId, $args),
+            'field.territory_coverage' => $this->fieldActivityElyService->territoryCoverage($user, $companyId, $args),
+            'field.travel_vs_visit_time' => $this->fieldActivityElyService->travelVsVisitTime($user, $companyId, $args),
+            'field.journey_history' => $this->fieldActivityElyService->journeyHistory($user, $companyId, $args),
+            'field.journey_detail' => $this->fieldActivityElyService->journeyDetail($user, $companyId, $args),
             default => [
                 'tool' => $tool,
                 'summary' => 'Unsupported read tool requested.',

@@ -262,6 +262,15 @@ export const useLocationReporter = ({
       console.error('[tracking] failed to start location watch', err);
     });
 
+    // Safety flushes: cover races where the first GPS sample arrives before
+    // the flush callback is wired, or the immediate flag is already cleared.
+    const safetyZero = window.setTimeout(() => {
+      void flushRef.current?.();
+    }, 0);
+    const safetyOneSec = window.setTimeout(() => {
+      void flushRef.current?.();
+    }, 1000);
+
     flushIntervalRef.current = setInterval(() => {
       void flushRef.current?.();
     }, FLUSH_INTERVAL_MS);
@@ -289,6 +298,8 @@ export const useLocationReporter = ({
 
     return () => {
       // Do not stopWatching here — only when `active` becomes false (above) or provider stops.
+      window.clearTimeout(safetyZero);
+      window.clearTimeout(safetyOneSec);
       if (flushIntervalRef.current) {
         clearInterval(flushIntervalRef.current);
         flushIntervalRef.current = null;

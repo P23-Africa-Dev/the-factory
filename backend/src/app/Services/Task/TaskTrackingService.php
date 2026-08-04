@@ -1530,7 +1530,7 @@ class TaskTrackingService
     ): void {
         $recipientIds = DB::table('company_users')
             ->where('company_id', $task->company_id)
-            ->whereIn('role', ['owner', 'admin', 'supervisor'])
+            ->whereIn('role', ['owner', 'admin', 'supervisor', 'manager', 'management'])
             ->pluck('user_id')
             ->map(static fn(mixed $id): int => (int) $id)
             ->merge([(int) $task->created_by_user_id, (int) ($task->assigned_agent_id ?? 0)])
@@ -1549,8 +1549,8 @@ class TaskTrackingService
                 'message' => $message,
                 'reference_type' => Task::class,
                 'reference_id' => (int) $task->id,
-                'action_url' => '/tasks/' . $task->id,
-                'action_route' => 'tasks.show',
+                'action_url' => '/map?taskId='.$task->id,
+                'action_route' => 'map.show',
                 'priority' => $priority,
                 'created_by_user_id' => (int) $actor->id,
                 'metadata' => [
@@ -1558,7 +1558,7 @@ class TaskTrackingService
                     'task_status' => $task->status?->value,
                     'actor_user_id' => (int) $actor->id,
                 ],
-                'dedupe_key' => $type . ':' . $task->id . ':' . $recipientId,
+                'dedupe_key' => $type.':'.$task->id.':'.$recipientId,
             ]);
         }
     }

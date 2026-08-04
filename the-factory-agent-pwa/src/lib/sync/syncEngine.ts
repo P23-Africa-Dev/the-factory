@@ -99,7 +99,80 @@ async function syncLocationQueue(): Promise<void> {
   const runnable = pending.filter((item) => canRunNow(item.nextAttemptAt));
   if (runnable.length === 0) return;
 
-  const byTask = runnable.reduce<Record<number, LocationQueueEntry[]>>((acc, row) => {
+  const fieldRows = runnable.filter((row) => row.fieldActivitySessionId != null && row.fieldActivitySessionId > 0);
+  const taskRows = runnable.filter((row) => !row.fieldActivitySessionId);
+
+  const byFieldSession = fieldRows.reduce<Record<number, typeof fieldRows>>((acc, row) => {
+    const sid = Number(row.fieldActivitySessionId);
+    const existing = acc[sid];
+    if (existing) existing.push(row);
+    else acc[sid] = [row];
+    return acc;
+  }, {});
+
+  for (const [sessionIdRaw, rows] of Object.entries(byFieldSession)) {
+    const sessionId = Number(sessionIdRaw);
+    const batch = rows.slice(0, MAX_BATCH_SIZE);
+    try {
+      await client.post(
+        `/agent/field-activity/sessions/${sessionId}/points`,
+        {
+          company_id: companyId,
+          points: batch.map((r) => ({
+            latitude: r.latitude,
+            longitude: r.longitude,
+            accuracy_meters: r.accuracyMeters ?? null,
+            speed_mps: r.speedMps ?? null,
+            heading_degrees: r.headingDegrees ?? null,
+            recorded_at: r.recordedAt,
+          })),
+        },
+        BACKGROUND_REQUEST,
+      );
+
+      const tx = db.transaction('locationQueue', 'readwrite');
+      for (const row of batch) {
+        if (row.id != null) {
+          await tx.store.put({
+            ...row,
+            synced: 1,
+            attempts: 0,
+            nextAttemptAt: null,
+            lastError: null,
+          });
+        }
+      }
+      await tx.done;
+    } catch (error) {
+      const apiError = error as ApiError;
+      const is422 = apiError.status === 422;
+      const tx = db.transaction('locationQueue', 'readwrite');
+      for (const row of batch) {
+        if (row.id != null) {
+          if (is422) {
+            await tx.store.put({
+              ...row,
+              synced: 1,
+              attempts: row.attempts ?? 0,
+              nextAttemptAt: null,
+              lastError: apiError.message ?? null,
+            });
+          } else {
+            const attempts = (row.attempts ?? 0) + 1;
+            await tx.store.put({
+              ...row,
+              attempts,
+              nextAttemptAt: buildNextAttemptIso(attempts),
+              lastError: apiError.message ?? 'Field activity location sync failed',
+            });
+          }
+        }
+      }
+      await tx.done;
+    }
+  }
+
+  const byTask = taskRows.reduce<Record<number, typeof taskRows>>((acc, row) => {
     const existing = acc[row.taskId];
     if (existing) existing.push(row);
     else acc[row.taskId] = [row];
@@ -108,6 +181,7 @@ async function syncLocationQueue(): Promise<void> {
 
   for (const [taskIdRaw, rows] of Object.entries(byTask)) {
     const taskId = Number(taskIdRaw);
+    if (!taskId) continue;
     const batch = rows.slice(0, MAX_BATCH_SIZE);
     try {
       await client.post(
@@ -341,6 +415,30 @@ async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<voi
     case 'attendance.clock_out': {
       const payload = parseOfflinePayload<Record<string, unknown>>(entry);
       await client.post('/agent/attendance/clock-out', payload, BACKGROUND_REQUEST);
+      return;
+    }
+    case 'field_activity.classify_stop': {
+      const payload = parseOfflinePayload<{
+        stop_id: number;
+        company_id?: number;
+        classification: string;
+        lead_id?: number;
+        company_location_id?: number;
+        note?: string;
+        source?: string;
+      }>(entry);
+      await client.post(
+        `/agent/field-activity/stops/${payload.stop_id}/classify`,
+        {
+          company_id: payload.company_id,
+          classification: payload.classification,
+          lead_id: payload.lead_id,
+          company_location_id: payload.company_location_id,
+          note: payload.note,
+          source: payload.source ?? 'agent',
+        },
+        BACKGROUND_REQUEST,
+      );
       return;
     }
     case 'location.create': {

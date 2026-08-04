@@ -8,6 +8,7 @@ import {
   suggestPlaces,
   type PlaceSuggestion,
 } from '@/lib/utils/place-search';
+import { placeAttributionLabel } from '@/lib/utils/place-attribution';
 import { getCachedSearchProximity, warmSearchProximity } from '@/lib/utils/search-proximity';
 import {
   fetchRecentPlaces,
@@ -79,7 +80,7 @@ export function LocationSearchInput({
       const results = await suggestPlaces(q, {
         sessionToken: sessionTokenRef.current,
         proximity,
-        limit: 6,
+        limit: 12,
         signal: abort.signal,
       });
       if (requestId !== requestIdRef.current) return;
@@ -308,9 +309,16 @@ export function LocationSearchInput({
                             {s.category.replace(/_/g, ' ')}
                           </span>
                         )}
-                        {s.provider === 'google' && (
-                          <span className="ml-1.5 text-[9px] font-medium text-slate-400">via Google</span>
-                        )}
+                        {(() => {
+                          const label = placeAttributionLabel(
+                            s.sources,
+                            s.provider,
+                            s.attributionVisible,
+                          );
+                          return label ? (
+                            <span className="ml-1.5 text-[9px] font-medium text-slate-400">{label}</span>
+                          ) : null;
+                        })()}
                       </p>
                       {s.placeFormatted && s.placeFormatted !== s.name && (
                         <p className="text-[11px] text-slate-400 leading-tight mt-0.5 truncate">{s.placeFormatted}</p>

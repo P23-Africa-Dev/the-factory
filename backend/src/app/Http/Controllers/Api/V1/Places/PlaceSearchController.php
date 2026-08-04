@@ -24,6 +24,10 @@ class PlaceSearchController extends Controller
             return $this->envelope(['data' => [], 'meta' => ['provider' => null, 'cache_hit' => false, 'status' => 'ok']]);
         }
 
+        $adminCap = max(1, min(15, (int) config('places.max_results_autocomplete', 12)));
+        $requested = (int) $request->query('limit', $adminCap);
+        $limit = max(1, min($adminCap, $requested > 0 ? $requested : $adminCap));
+
         ['company' => $company] = $this->resolveCompany($request);
         $outcome = $this->places->autocomplete(
             query: $query,
@@ -31,7 +35,7 @@ class PlaceSearchController extends Controller
             user: $request->user(),
             lat: $this->floatOrNull($request->query('lat')),
             lng: $this->floatOrNull($request->query('lng')),
-            limit: min(10, max(1, (int) $request->query('limit', 6))),
+            limit: $limit,
             source: $this->source($request),
             ip: $request->ip(),
         );
@@ -46,6 +50,10 @@ class PlaceSearchController extends Controller
             return response()->json(['success' => false, 'message' => 'q is required.', 'data' => null, 'errors' => ['q' => ['required']]], 422);
         }
 
+        $adminCap = max(1, min(20, (int) config('places.max_results_search', 15)));
+        $requested = (int) $request->query('limit', $adminCap);
+        $limit = max(1, min($adminCap, $requested > 0 ? $requested : $adminCap));
+
         ['company' => $company] = $this->resolveCompany($request);
         $outcome = $this->places->search(
             query: $query,
@@ -53,7 +61,7 @@ class PlaceSearchController extends Controller
             user: $request->user(),
             lat: $this->floatOrNull($request->query('lat')),
             lng: $this->floatOrNull($request->query('lng')),
-            limit: min(20, max(1, (int) $request->query('limit', 10))),
+            limit: $limit,
             source: $this->source($request),
             ip: $request->ip(),
         );

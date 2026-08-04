@@ -22,6 +22,20 @@ let watcherId: string | null = null;
 let onUpdateCb: LocationCallback | null = null;
 let onErrorCb: ErrorCallback | null = null;
 
+function normalizeNativeLocationError(error: { message?: string; code?: string | number }): string {
+  const code = String(error.code ?? '').toUpperCase();
+  const msg = (error.message ?? '').trim();
+
+  if (code === 'NOT_AUTHORIZED' || msg.toLowerCase().includes('denied')) {
+    return 'Location permission denied. Allow "Always" location and restart tracking.';
+  }
+  if (code === 'LOCATION_UNAVAILABLE' || msg.toLowerCase().includes('unavailable')) {
+    return 'Location unavailable. Enable GPS and disable aggressive battery optimization.';
+  }
+
+  return msg || 'Location error';
+}
+
 function toLocationObject(raw: {
   latitude: number;
   longitude: number;
@@ -94,7 +108,7 @@ async function addWatcherInternal(title: string, message: string): Promise<void>
     },
     (location, error) => {
       if (error) {
-        onErrorCb?.(error.message || String(error.code) || 'Location error');
+        onErrorCb?.(normalizeNativeLocationError(error));
         return;
       }
       if (!location) return;

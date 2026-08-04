@@ -9,6 +9,7 @@ final class PlaceResult
     /**
      * @param  list<string>  $categories
      * @param  array{0: float, 1: float, 2: float, 3: float}|null  $bbox
+     * @param  list<array{provider: string, id: string}>  $sources
      * @param  array<string, mixed>  $rawMeta
      */
     public function __construct(
@@ -25,8 +26,21 @@ final class PlaceResult
         public readonly ?float $rating = null,
         public readonly ?string $openingHours = null,
         public readonly ?array $bbox = null,
+        public readonly array $sources = [],
         public readonly array $rawMeta = [],
     ) {}
+
+    /**
+     * @return list<array{provider: string, id: string}>
+     */
+    public function resolvedSources(): array
+    {
+        if ($this->sources !== []) {
+            return array_values($this->sources);
+        }
+
+        return [['provider' => $this->provider, 'id' => $this->id]];
+    }
 
     /**
      * @return array<string, mixed>
@@ -47,6 +61,7 @@ final class PlaceResult
             'rating' => $this->rating,
             'opening_hours' => $this->openingHours,
             'bbox' => $this->bbox,
+            'sources' => $this->resolvedSources(),
         ];
     }
 }

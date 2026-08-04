@@ -357,6 +357,138 @@ class LeadManagementTest extends TestCase
             ->assertJsonValidationErrors(['authorization']);
     }
 
+    public function test_agent_can_replace_contacts_on_leads_they_created(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $lead = Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $agent->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Original Contact',
+            'email' => 'original@example.com',
+            'phone' => '+2348000000001',
+            'status' => 'contacted',
+            'priority' => 'medium',
+        ]);
+
+        $response = $this->actingAs($agent, 'sanctum')
+            ->patchJson('/api/v1/crm/leads/'.$lead->id, [
+                'company_id' => $company->id,
+                'contacts' => [
+                    [
+                        'name' => 'Updated Primary',
+                        'email' => 'updated.primary@example.com',
+                        'phone' => '+2348000000002',
+                        'location' => 'Lekki, Lagos',
+                    ],
+                    [
+                        'name' => 'Second Contact',
+                        'email' => 'second@example.com',
+                    ],
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.lead.name', 'Updated Primary')
+            ->assertJsonPath('data.lead.email', 'updated.primary@example.com')
+            ->assertJsonPath('data.lead.contacts.0.name', 'Updated Primary')
+            ->assertJsonPath('data.lead.contacts.0.location', 'Lekki, Lagos')
+            ->assertJsonPath('data.lead.contacts.1.name', 'Second Contact');
+
+        $this->assertDatabaseCount('lead_contacts', 2);
+        $this->assertDatabaseHas('lead_contacts', [
+            'lead_id' => $lead->id,
+            'name' => 'Second Contact',
+            'sort_order' => 1,
+        ]);
+
+        $forbiddenResponse = $this->actingAs($agent, 'sanctum')
+            ->patchJson('/api/v1/crm/leads/'.$lead->id, [
+                'company_id' => $company->id,
+                'contacts' => [['name' => 'Still Primary']],
+                'company_name' => 'Agent Should Not Set This',
+            ]);
+
+        $forbiddenResponse->assertUnprocessable()
+            ->assertJsonValidationErrors(['authorization']);
+    }
+
+    public function test_agent_cannot_edit_contacts_on_assigned_lead_they_did_not_create(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $lead = Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Assigned Lead',
+            'email' => 'assigned@example.com',
+            'status' => 'contacted',
+            'priority' => 'medium',
+        ]);
+
+        $this->actingAs($agent, 'sanctum')
+            ->patchJson('/api/v1/crm/leads/'.$lead->id, [
+                'company_id' => $company->id,
+                'contacts' => [
+                    [
+                        'name' => 'Hijacked Contact',
+                        'email' => 'hijacked@example.com',
+                    ],
+                ],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['authorization']);
+
+        $this->actingAs($agent, 'sanctum')
+            ->patchJson('/api/v1/crm/leads/'.$lead->id, [
+                'company_id' => $company->id,
+                'status' => 'qualified',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.lead.status', 'qualified');
+
+        $this->assertDatabaseMissing('lead_contacts', ['name' => 'Hijacked Contact']);
+    }
+
+    public function test_agent_cannot_edit_contacts_on_inaccessible_lead(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $otherAgent = User::factory()->create(['email_verified_at' => now()]);
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $otherAgent->id,
+            'role' => 'agent',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $hiddenLead = Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'assigned_to_user_id' => $otherAgent->id,
+            'name' => 'Hidden Lead',
+            'status' => 'contacted',
+            'priority' => 'medium',
+        ]);
+
+        $this->actingAs($agent, 'sanctum')
+            ->patchJson('/api/v1/crm/leads/'.$hiddenLead->id, [
+                'company_id' => $company->id,
+                'contacts' => [['name' => 'Hijacked Contact']],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['authorization']);
+
+        $this->assertDatabaseMissing('lead_contacts', ['name' => 'Hijacked Contact']);
+    }
+
     public function test_crm_pipeline_returns_stage_counts(): void
     {
         [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();

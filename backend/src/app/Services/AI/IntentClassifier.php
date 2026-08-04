@@ -194,6 +194,40 @@ class IntentClassifier
                 '/\b(active\s+agents?|currently\s+online|currently\s+moving|closest\s+agent)\b/i',
                 '/\bwhere\s+is\b/i',
             ],
+            'field.daily_summary' => [
+                '/\bfield\s+(activity|summary|day)\b/i',
+                '/\bdaily\s+field\s+summary\b/i',
+                '/\bhow\s+many\s+(customer\s+)?visits?\b/i',
+            ],
+            'field.agent_visits' => [
+                '/\b(customer|lead|field)\s+visits?\b/i',
+                '/\bvisits?\s+(yesterday|today|this\s+week)\b/i',
+            ],
+            'field.unvisited_customers' => [
+                '/\b(haven.?t\s+been\s+visited|not\s+visited|unvisited)\b/i',
+                '/\bcustomers?\s+not\s+visited\b/i',
+            ],
+            'field.territory_coverage' => [
+                '/\bterritory\s+coverage\b/i',
+                '/\bpoor\s+coverage\b/i',
+                '/\bcoverage\s+heatmap\b/i',
+            ],
+            'field.travel_vs_visit_time' => [
+                '/\b(travel|travelling|traveling)\s+time\b/i',
+                '/\bproductive\s+vs\s+personal\b/i',
+                '/\btime\s+spent\s+(travelling|traveling|with\s+customers)\b/i',
+            ],
+            'field.journey_history' => [
+                '/\bjourney\s+history\b/i',
+                '/\b(daily\s+)?journeys?\b/i',
+                '/\btracking\s+history\b/i',
+                '/\bfield\s+activity\s+timeline\b/i',
+            ],
+            'field.journey_detail' => [
+                '/\b(show|replay|open)\s+.+\s+journey\b/i',
+                '/\bjourney\s+(yesterday|today|on\s+\w+)\b/i',
+                '/\breplay\s+.+\s+(day|journey)\b/i',
+            ],
             'dashboard.overview' => [
                 '/\b(dashboard|overview|kpi\s+snapshot|performance\s+snapshot)\b/i',
             ],
