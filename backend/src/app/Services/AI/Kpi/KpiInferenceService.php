@@ -129,23 +129,41 @@ class KpiInferenceService
         }
 
         if (is_string($normalized['assignee'] ?? null) && trim((string) $normalized['assignee']) !== '') {
-            $resolved = $this->resolveAssignedUserId(
-                'assign to ' . trim((string) $normalized['assignee']),
-                $companyId,
-                [],
-            );
-            if ($resolved !== null) {
-                $normalized['assigned_to_user_id'] = $resolved;
-            }
+            $assigneeToken = trim((string) $normalized['assignee']);
             unset($normalized['assignee']);
+            $tokens = array_map('trim', explode(',', $assigneeToken));
+            $resolvedIds = [];
+            $unresolvedTokens = [];
+            foreach ($tokens as $token) {
+                $resolved = $this->resolveAssignedUserId('assign to ' . $token, $companyId, []);
+                if ($resolved !== null) {
+                    $resolvedIds[] = $resolved;
+                } else {
+                    $unresolvedTokens[] = $token;
+                }
+            }
+            if ($resolvedIds !== []) {
+                $normalized['assigned_to_user_ids'] = $resolvedIds;
+                $normalized['assigned_to_user_id'] = $resolvedIds[0];
+            }
+            if ($unresolvedTokens !== []) {
+                $normalized['assignee'] = implode(', ', $unresolvedTokens);
+            }
         } elseif (isset($normalized['assigned_to_user_id']) && is_numeric($normalized['assigned_to_user_id'])) {
             $normalized['assigned_to_user_id'] = (int) $normalized['assigned_to_user_id'];
+            $normalized['assigned_to_user_ids'] = [$normalized['assigned_to_user_id']];
         } elseif (isset($normalized['assigned_to_user_id']) && is_string($normalized['assigned_to_user_id'])) {
             $resolved = $this->findUserIdByHint($companyId, (string) $normalized['assigned_to_user_id']);
             if ($resolved !== null) {
                 $normalized['assigned_to_user_id'] = $resolved;
+                $normalized['assigned_to_user_ids'] = [$resolved];
             } else {
                 unset($normalized['assigned_to_user_id']);
+            }
+        } elseif (is_array($normalized['assigned_to_user_ids'] ?? null)) {
+            $normalized['assigned_to_user_ids'] = array_map('intval', $normalized['assigned_to_user_ids']);
+            if ($normalized['assigned_to_user_ids'] !== []) {
+                $normalized['assigned_to_user_id'] = $normalized['assigned_to_user_ids'][0];
             }
         }
 
@@ -389,6 +407,15 @@ class KpiInferenceService
     {
         $start = $this->extractLabeledValue($message, ['start date', 'start']);
         $end = $this->extractLabeledValue($message, ['end date', 'end', 'deadline']);
+
+        if (preg_match('/\bthis\s+week\b/i', $message) === 1) {
+            return [now()->startOfWeek(\Carbon\CarbonInterface::MONDAY)->toDateString(), now()->endOfWeek(\Carbon\CarbonInterface::SUNDAY)->toDateString(), false];
+        }
+
+        if (preg_match('/\bnext\s+week\b/i', $message) === 1) {
+            $next = now()->addWeek();
+            return [$next->copy()->startOfWeek(\Carbon\CarbonInterface::MONDAY)->toDateString(), $next->copy()->endOfWeek(\Carbon\CarbonInterface::SUNDAY)->toDateString(), false];
+        }
 
         if (preg_match('/\bthis\s+month\b/i', $message) === 1) {
             return [now()->startOfMonth()->toDateString(), now()->endOfMonth()->toDateString(), false];

@@ -3,6 +3,7 @@
 import React from 'react';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { useProfile, useAuth, useAuthNavigation, useAgentIdentity } from '@/features/auth';
+import { JourneyHistoryPanel } from '@/features/field-activity';
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—';
@@ -225,6 +226,9 @@ export default function ProfilePage() {
                   </div>
                 </SectionCard>
               )}
+
+              {/* Journey History */}
+              <JourneyHistoryPanel agentName={displayName} />
             </>
           )}
         </div>

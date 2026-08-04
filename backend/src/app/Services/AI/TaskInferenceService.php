@@ -182,20 +182,40 @@ class TaskInferenceService
                 $assigneeToken = trim((string) $normalized['assignee']);
                 unset($normalized['assignee']);
                 if ($assigneeToken !== '') {
-                    $resolved = $this->resolveAgentIdFromAssigneeToken($assigneeToken, $companyId);
-                    $normalized['assigned_agent_id'] = $resolved;
-                    if ($resolved === null) {
-                        $normalized['assignee'] = $assigneeToken;
+                    $tokens = array_map('trim', explode(',', $assigneeToken));
+                    $resolvedIds = [];
+                    $unresolvedTokens = [];
+                    foreach ($tokens as $token) {
+                        $resolved = $this->resolveAgentIdFromAssigneeToken($token, $companyId);
+                        if ($resolved !== null) {
+                            $resolvedIds[] = $resolved;
+                        } else {
+                            $unresolvedTokens[] = $token;
+                        }
+                    }
+                    if ($resolvedIds !== []) {
+                        $normalized['assigned_agent_ids'] = $resolvedIds;
+                        $normalized['assigned_agent_id'] = $resolvedIds[0];
+                    }
+                    if ($unresolvedTokens !== []) {
+                        $normalized['assignee'] = implode(', ', $unresolvedTokens);
                     }
                 }
             } elseif (is_string($normalized['assigned_agent_id'] ?? null) && is_numeric($normalized['assigned_agent_id'])) {
                 $normalized['assigned_agent_id'] = (int) $normalized['assigned_agent_id'];
+                $normalized['assigned_agent_ids'] = [$normalized['assigned_agent_id']];
+            } elseif (is_array($normalized['assigned_agent_ids'] ?? null)) {
+                $normalized['assigned_agent_ids'] = array_map('intval', $normalized['assigned_agent_ids']);
+                if ($normalized['assigned_agent_ids'] !== []) {
+                    $normalized['assigned_agent_id'] = $normalized['assigned_agent_ids'][0];
+                }
             }
 
             if (($normalized['assigned_agent_id'] ?? null) === null) {
                 $fallbackAgent = $this->resolveAgentIdForTaskMessage($message, $companyId, $entities);
                 if ($fallbackAgent !== null) {
                     $normalized['assigned_agent_id'] = $fallbackAgent;
+                    $normalized['assigned_agent_ids'] = [$fallbackAgent];
                     unset($normalized['assignee']);
                 }
             }
@@ -721,6 +741,18 @@ PROMPT);
         if (is_string($dueDateText) && trim($dueDateText) !== '') {
             $text = strtolower(trim($dueDateText));
 
+            if (preg_match('/\bnext\s+week\b/i', $text) === 1) {
+                return now()->addWeek()->endOfWeek(\Carbon\CarbonInterface::FRIDAY)->setTime(17, 0)->toDateTimeString();
+            }
+
+            if (preg_match('/\bthis\s+week\b/i', $text) === 1) {
+                $thisFriday = now()->endOfWeek(\Carbon\CarbonInterface::FRIDAY)->setTime(17, 0);
+                if ($thisFriday->lessThanOrEqualTo(now())) {
+                    $thisFriday = $thisFriday->addWeek();
+                }
+                return $thisFriday->toDateTimeString();
+            }
+
             if (preg_match('/\btomorrow(?:\s+(morning|afternoon|evening|night))?\b/i', $text, $m) === 1) {
                 $candidate = now()->addDay();
                 $part = strtolower((string) ($m[1] ?? ''));
@@ -779,6 +811,10 @@ PROMPT);
 
     private function extractDueDateHintFromSentence(string $message): ?string
     {
+        if (preg_match('/\b(?:due|by|for)\s+(this\s+week|next\s+week)\b/i', $message, $m) === 1) {
+            return trim((string) $m[1]);
+        }
+
         if (preg_match('/\b(?:due|by|for)\s+(tomorrow(?:\s+(?:morning|afternoon|evening|night))?)\b/i', $message, $m) === 1) {
             return trim((string) $m[1]);
         }

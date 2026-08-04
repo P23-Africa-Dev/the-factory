@@ -60,6 +60,7 @@ export default function AgentDashboardPage() {
   const dragStartY = useRef(0);
   const dragDistance = useRef(0);
   const currentTranslateY = useRef(0);
+  const calendarScrollRef = useRef<HTMLDivElement>(null);
 
   const { gateVisible, gateMode, isGateBusy, dismissGate, retryGate } =
     useLocationPermissionBootstrap();
@@ -297,20 +298,41 @@ export default function AgentDashboardPage() {
     });
   };
 
-  // Weekly calendar strip mapping
+  // 30-day calendar strip mapping (-14 days to +15 days)
   const calendarDays = useMemo(() => {
+    const days = [];
     const today = new Date();
-    const currentDayOfWeek = today.getDay();
-    const distanceToMonday = currentDayOfWeek === 0 ? -6 : 1 - currentDayOfWeek;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + distanceToMonday);
-    const daysOfWeek = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
-    return daysOfWeek.map((dayName, index) => {
-      const dateObj = new Date(monday);
-      dateObj.setDate(monday.getDate() + index);
-      return { day: dayName, date: dateObj.getDate(), fullDate: dateObj };
-    });
+    const daysOfWeek = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+    for (let i = -14; i <= 15; i++) {
+      const dateObj = new Date();
+      dateObj.setDate(today.getDate() + i);
+      const dayName = daysOfWeek[dateObj.getDay()];
+      days.push({ day: dayName, date: dateObj.getDate(), fullDate: dateObj });
+    }
+    return days;
   }, []);
+
+  const CARD_WIDTH = 42;
+  const CARD_GAP = 8; // gap-2
+  const CARD_OUTER_WIDTH = CARD_WIDTH + CARD_GAP;
+
+  const todayIndex = useMemo(() => {
+    return calendarDays.findIndex(
+      (item) => item.fullDate.toDateString() === new Date().toDateString()
+    );
+  }, [calendarDays]);
+
+  useEffect(() => {
+    if (todayIndex !== -1 && calendarScrollRef.current) {
+      const containerWidth = calendarScrollRef.current.clientWidth || 350;
+      const offset = todayIndex * CARD_OUTER_WIDTH - containerWidth / 2 + CARD_WIDTH / 2;
+      setTimeout(() => {
+        if (calendarScrollRef.current) {
+          calendarScrollRef.current.scrollLeft = Math.max(0, offset);
+        }
+      }, 150);
+    }
+  }, [todayIndex]);
 
   const handleConfirmLogout = () => {
     logoutMutate(undefined, {
@@ -446,7 +468,10 @@ export default function AgentDashboardPage() {
           </div>
 
           {/* Calendar strip */}
-          <div className="w-full flex items-center justify-between px-2 mb-5 overflow-visible">
+          <div
+            ref={calendarScrollRef}
+            className="w-full flex gap-2 overflow-x-auto no-scrollbar scroll-smooth pb-2 px-1 mb-3 select-none justify-start"
+          >
             {calendarDays.map((item, index) => {
               const isActive = selectedDate.toDateString() === item.fullDate.toDateString();
               const hasTasks = tasks.some((t) => isSameDay(t.dueDate, item.fullDate));
@@ -457,7 +482,7 @@ export default function AgentDashboardPage() {
                     setSelectedDate(item.fullDate);
                     setIsViewMeetingsOpen(true);
                   }}
-                  className={`flex flex-col items-center justify-center w-[42px] h-[65px] rounded-[16px] transition-all active:scale-95 ${isActive ? 'bg-[#7BB6B8]' : 'bg-transparent'
+                  className={`flex-shrink-0 flex flex-col items-center justify-center w-[42px] h-[65px] rounded-[16px] transition-all active:scale-95 ${isActive ? 'bg-[#7BB6B8]' : 'bg-transparent'
                     }`}
                 >
                   <span className={`text-[10px] font-semibold uppercase tracking-wider ${isActive ? 'text-[#B4DBFF]' : 'text-[#8F9098]'}`}>

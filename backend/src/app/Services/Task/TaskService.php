@@ -140,16 +140,24 @@ class TaskService
         $context = $this->accessService->resolve($user, $data['company_id'] ?? null);
         $this->accessService->ensureManager($context);
 
-        $agentId = isset($data['assigned_agent_id']) ? (int) $data['assigned_agent_id'] : null;
-        if ($agentId !== null) {
-            $this->ensureAssigneeBelongsToCompany($context->company->id, $agentId);
+        $agentIds = [];
+        if (! empty($data['assigned_agent_ids'])) {
+            $agentIds = array_map('intval', $data['assigned_agent_ids']);
+        } elseif (isset($data['assigned_agent_id'])) {
+            $agentIds = [(int) $data['assigned_agent_id']];
+        }
+
+        foreach ($agentIds as $agentId) {
+            $this->ensureAssigneeBelongsToCompany($context->company->id, $agentId, $user);
         }
 
         if (! empty($data['project_id'])) {
             $this->ensureProjectBelongsToCompany($context->company->id, (int) $data['project_id']);
         }
 
-        $task = DB::transaction(function () use ($context, $user, $data, $agentId): Task {
+        $primaryAgentId = $agentIds[0] ?? null;
+
+        $task = DB::transaction(function () use ($context, $user, $data, $agentIds, $primaryAgentId): Task {
             $latitude = isset($data['latitude']) ? (float) $data['latitude'] : null;
             $longitude = isset($data['longitude']) ? (float) $data['longitude'] : null;
             $trackable = (new Task([
@@ -163,7 +171,7 @@ class TaskService
                 'company_id' => $context->company->id,
                 'project_id' => $data['project_id'] ?? null,
                 'created_by_user_id' => $user->id,
-                'assigned_agent_id' => $agentId,
+                'assigned_agent_id' => $primaryAgentId,
                 'title' => $data['title'],
                 'type' => $data['type'] ?? null,
                 'description' => $data['description'] ?? null,
@@ -179,7 +187,7 @@ class TaskService
                 'status' => TaskStatus::PENDING->value,
             ]);
 
-            if ($agentId !== null) {
+            foreach ($agentIds as $agentId) {
                 TaskAssignment::create([
                     'task_id' => $task->id,
                     'assigned_by_user_id' => $user->id,
@@ -346,7 +354,7 @@ class TaskService
         $this->assertTaskIntegrityInCompany($task, $context->company->id);
 
         foreach ($agentIds as $agentId) {
-            $this->ensureAssigneeBelongsToCompany($context->company->id, $agentId);
+            $this->ensureAssigneeBelongsToCompany($context->company->id, $agentId, $user);
         }
 
         if ($this->isTerminalStatus($task->status?->value)) {
@@ -643,7 +651,7 @@ class TaskService
         return basename($proof->file_path);
     }
 
-    private function ensureAssigneeBelongsToCompany(int $companyId, int $userId): void
+    private function ensureAssigneeBelongsToCompany(int $companyId, int $userId, ?User $creator = null): void
     {
         $membership = $this->companyMembership($companyId, $userId);
         $isActive = User::query()->whereKey($userId)->where('is_active', true)->exists();
@@ -652,6 +660,18 @@ class TaskService
             throw ValidationException::withMessages([
                 'assigned_agent_id' => ['Selected user is not a member of this company.'],
             ]);
+        }
+
+        if ($creator !== null) {
+            $creatorMembership = $this->companyMembership($companyId, $creator->id);
+            if ($creatorMembership && (string) $creatorMembership->role === 'supervisor') {
+                $assigneeUser = User::query()->find($userId);
+                if (! $assigneeUser || (int) $assigneeUser->supervisor_user_id !== (int) $creator->id) {
+                    throw ValidationException::withMessages([
+                        'assigned_agent_id' => ['You can only assign tasks to agents under your direct supervision.'],
+                    ]);
+                }
+            }
         }
     }
 

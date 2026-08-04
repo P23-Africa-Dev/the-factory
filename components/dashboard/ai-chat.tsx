@@ -3347,7 +3347,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                           ))}
                         </div>
                       )}
-                      {messagePayload(msg)?.confirmation_required === true && (
+                      {messagePayload(msg)?.confirmation_required === true && index === messages.length - 1 && (
                         <div className="pl-1">
                           {(() => {
                             const previewRows = confirmationPreviewRows(msg);
