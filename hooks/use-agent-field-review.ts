@@ -44,17 +44,22 @@ export function useClassifyAgentFieldStop() {
       stopId: number;
       classification: string;
       lead_id?: number;
-    }) =>
-      classifyAgentFieldStop(
+    }) => {
+      const companyId =
+        apiCompanyId == null || apiCompanyId === ""
+          ? undefined
+          : Number(apiCompanyId);
+      return classifyAgentFieldStop(
         args.stopId,
         {
-          company_id: apiCompanyId ?? undefined,
+          company_id: Number.isFinite(companyId) ? companyId : undefined,
           classification: args.classification,
           lead_id: args.lead_id,
           source: "agent",
         },
         token,
-      ),
+      );
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: AGENT_FIELD_REVIEW_KEYS.pending });
       void queryClient.invalidateQueries({ queryKey: ["field-journeys"] });
